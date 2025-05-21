@@ -1,11 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# IMPORT CORRECTO, usando el paquete 'backend'
+# IMPORTS ABSOLUTOS apuntando al paquete backend
 from backend.database import engine, Base
-from backend.models import *  
+from backend.models import *
 
-# Crea tablas
+# crea tablas al arrancar
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -21,5 +21,4 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"message": "¡Aplicación FastAPI desplegada 
-correctamente!"}
+    return {"message": "¡Aplicación FastAPI desplegada correctamente en Passenger!"}
