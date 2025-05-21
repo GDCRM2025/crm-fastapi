@@ -40,7 +40,7 @@ class CRMGeneral(Base):
     dia = Column(String)
     mes = Column(String)
     semana = Column(String)
-    año = Column(String)
+    anio = Column(String)
     comuna = Column(String)
     telefono = Column(String)
     link_whatsapp = Column(String)
