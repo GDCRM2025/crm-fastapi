@@ -1,0 +1,4 @@
+PassengerEnabled on
+PassengerAppEnv production
+PassengerPython /home/bf68ec5/crm_app/env39/bin/python3.9
+
