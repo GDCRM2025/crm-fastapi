@@ -1,4 +1,0 @@
-<IfModule mod_passenger.c>
-  PassengerAppEnv development
-  PassengerFriendlyErrorPages on
-</IfModule>
