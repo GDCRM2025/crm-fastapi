@@ -14,7 +14,7 @@ except Exception:  # pragma: no cover
         return {"role": "Admin", "marcas": []}
 
 router = APIRouter(prefix="/cotizador")
-BUILD = "COTIZADOR-2026-03-09-01"
+BUILD = "COTIZADOR-2026-02-27-01"
 
 # Numeración por marca (inicio)
 BASE_SERIES = {
@@ -108,23 +108,6 @@ def safe_query(conn, sql: str):
         return []
 
 
-def _producto_expr_from_cols(cols: set[str]) -> str:
-    """
-    Devuelve una expresión SQL segura para el nombre del producto.
-    Prioriza `producto`, pero cae a `nombre` en esquemas legacy.
-    """
-    has_producto = "producto" in cols
-    has_nombre = "nombre" in cols
-
-    if has_producto and has_nombre:
-        return "COALESCE(NULLIF(BTRIM(producto),''), NULLIF(BTRIM(nombre),''), '')"
-    if has_producto:
-        return "COALESCE(NULLIF(BTRIM(producto),''), '')"
-    if has_nombre:
-        return "COALESCE(NULLIF(BTRIM(nombre),''), '')"
-    return "''"
-
-
 @router.get("/version")
 def version():
     return {"ok": True, "build": BUILD}
@@ -153,6 +136,7 @@ def _log500(where: str, payload: dict, err: Exception) -> str:
             f"{traceback.format_exc()}\n"
         )
     except Exception:
+        # si no podemos escribir log, igual devolvemos RID
         pass
     return rid
 
@@ -160,61 +144,45 @@ def _log500(where: str, payload: dict, err: Exception) -> str:
 def _product_snapshot(conn, id_producto: int) -> dict | None:
     """
     Devuelve snapshot del producto para guardar en cotizacion_items,
-    sin asumir columnas fijas.
-    Acepta producto en `producto` o en `nombre`.
+    sin asumir columnas fijas (en algunos entornos no existe `ingredientes` o `descripcion`).
     """
     pid = int(id_producto or 0)
     if pid <= 0:
         return None
 
-    # Preferimos productos_vw si existe.
+    # Preferimos productos_vw si existe (es más estable y suele traer descripcion).
     if table_exists(conn, "productos_vw"):
         try:
-            vw_cols = cols_for(conn, "productos_vw")
-            prod_expr = _producto_expr_from_cols(vw_cols)
-
-            desc_parts = []
-            if "descripcion" in vw_cols:
-                desc_parts.append("NULLIF(descripcion,'')")
-            if "ingredientes" in vw_cols:
-                desc_parts.append("NULLIF(ingredientes,'')")
-            desc_expr = "COALESCE(" + ", ".join(desc_parts + ["''"]) + ")" if desc_parts else "''"
-
-            marca_expr = "COALESCE(marca,'')" if "marca" in vw_cols else "''"
-
             row = conn.execute(
                 text(
-                    f"""
-                    SELECT {prod_expr} AS producto,
-                           {desc_expr} AS descripcion,
-                           {marca_expr} AS marca
+                    """
+                    SELECT producto,
+                           COALESCE(NULLIF(descripcion,''), NULLIF(ingredientes,''), '') AS descripcion,
+                           COALESCE(marca,'') AS marca
                     FROM public.productos_vw
                     WHERE id_producto=:p
-                    LIMIT 1
                     """
                 ),
                 {"p": pid},
             ).mappings().first()
-
-            if row and str(row.get("producto") or "").strip():
+            if row:
                 return dict(row)
         except Exception:
             pass
 
-    # Fallback: tabla productos.
+    # Fallback: tabla productos con columnas variables.
     cols = cols_for(conn, "productos") if table_exists(conn, "productos") else set()
     if not cols:
         return None
 
-    prod_expr = _producto_expr_from_cols(cols)
-
+    # Construye expresiones seguras según columnas disponibles.
+    prod_expr = "producto" if "producto" in cols else "''"
     desc_parts = []
     if "descripcion" in cols:
         desc_parts.append("NULLIF(descripcion,'')")
     if "ingredientes" in cols:
         desc_parts.append("NULLIF(ingredientes,'')")
     desc_expr = "COALESCE(" + ", ".join(desc_parts + ["''"]) + ")" if desc_parts else "''"
-
     marca_expr = "COALESCE(marca,'')" if "marca" in cols else "''"
 
     try:
@@ -226,16 +194,26 @@ def _product_snapshot(conn, id_producto: int) -> dict | None:
                        {marca_expr} AS marca
                 FROM public.productos
                 WHERE id_producto=:p
-                LIMIT 1
                 """
             ),
             {"p": pid},
         ).mappings().first()
-        if row and str(row.get("producto") or "").strip():
-            return dict(row)
-        return None
+        return dict(row) if row else None
     except Exception:
         return None
+
+
+_ACC_FROM = "ÁÉÍÓÚÜÑáéíóúüñ"
+_ACC_TO = "AEIOUUNAEIOUUN"
+
+
+def _brand_key(s: str) -> str:
+    return (
+        (s or "")
+        .strip()
+        .translate(str.maketrans(_ACC_FROM, _ACC_TO))
+        .upper()
+    )
 
 
 @router.get("/catalogos")
@@ -261,7 +239,7 @@ def catalogos(user: dict = Depends(get_current_user)):
                   WHERE is_active=true
                   ORDER BY nombre ASC
                 """)
-
+        # completar logo_path con catálogo si viene vacío
         marcas = [dict(m) for m in (marcas or [])]
         for m in marcas:
             key = normalize_marca(m.get("marca") or "")
@@ -297,46 +275,17 @@ def catalogos(user: dict = Depends(get_current_user)):
                 """)
 
         productos = []
-
         # prefer view productos_vw, fallback a productos
         if table_exists(conn, "productos_vw"):
-            vw_cols = cols_for(conn, "productos_vw")
-            prod_col = _producto_expr_from_cols(vw_cols)
-
-            if "descripcion" in vw_cols and "ingredientes" in vw_cols:
-                desc_col = "COALESCE(NULLIF(descripcion,''), ingredientes)"
-            elif "descripcion" in vw_cols:
-                desc_col = "descripcion"
-            elif "ingredientes" in vw_cols:
-                desc_col = "ingredientes"
-            else:
-                desc_col = "''"
-
-            ing_col = "ingredientes" if "ingredientes" in vw_cols else "''"
-            marca_col = "marca" if "marca" in vw_cols else "''"
-            costo_col = "COALESCE(costo,0)" if "costo" in vw_cols else "0"
-            active_col = "COALESCE(is_active,true)" if "is_active" in vw_cols else "true"
-            orden_col = "orden" if "orden" in vw_cols else "NULL"
-
-            productos = safe_query(conn, f"""
-              SELECT id_producto,
-                     {prod_col} AS producto,
-                     {desc_col} AS descripcion,
-                     {ing_col} AS ingredientes,
-                     {marca_col} AS marca,
-                     {costo_col} AS costo,
-                     {active_col} AS is_active,
-                     {orden_col} AS orden
+            productos = safe_query(conn, """
+              SELECT id_producto, producto, descripcion, ingredientes, marca, costo, is_active, orden
               FROM public.productos_vw
-              WHERE {active_col}=true
-                AND NULLIF(BTRIM({prod_col}), '') IS NOT NULL
-              ORDER BY COALESCE({orden_col},999999) ASC, {prod_col} ASC
+              WHERE is_active=true
+              ORDER BY COALESCE(orden,999999) ASC, producto ASC
             """)
-
         elif table_exists(conn, "productos"):
+            # columnas variables
             cols = cols_for(conn, "productos")
-            prod_col = _producto_expr_from_cols(cols)
-
             if "descripcion" in cols and "ingredientes" in cols:
                 desc_col = "COALESCE(NULLIF(descripcion,''), ingredientes)"
             elif "descripcion" in cols:
@@ -345,32 +294,34 @@ def catalogos(user: dict = Depends(get_current_user)):
                 desc_col = "ingredientes"
             else:
                 desc_col = "''"
-
             ing_col = "ingredientes" if "ingredientes" in cols else "''"
             marca_col = "marca" if "marca" in cols else "''"
-            costo_col = "COALESCE(costo,0)" if "costo" in cols else "0"
-            active_col = "COALESCE(is_active,true)" if "is_active" in cols else "true"
             orden_col = "orden" if "orden" in cols else "NULL"
-
             productos = safe_query(conn, f"""
               SELECT id_producto,
-                     {prod_col} AS producto,
+                     producto,
                      {desc_col} AS descripcion,
                      {ing_col} AS ingredientes,
                      {marca_col} AS marca,
-                     {costo_col} AS costo,
-                     {active_col} AS is_active,
+                     COALESCE(costo,0) AS costo,
+                     COALESCE(is_active,true) AS is_active,
                      {orden_col} AS orden
               FROM public.productos
-              WHERE {active_col}=true
-                AND NULLIF(BTRIM({prod_col}), '') IS NOT NULL
-              ORDER BY COALESCE({orden_col},999999) ASC, {prod_col} ASC
+              WHERE COALESCE(is_active,true)=true
+              ORDER BY COALESCE({orden_col},999999) ASC, producto ASC
             """)
 
         # filtra productos por marcas asignadas
         if role in ("EJECUTIVO DE VENTAS", "VENDEDOR") and user_marcas:
-            allowed_names = {str(m.get("marca") or "").upper() for m in marcas}
-            productos = [p for p in productos if str(p.get("marca") or "").upper() in allowed_names]
+            allowed_names = {
+                _brand_key(str(m.get("marca") or ""))
+                for m in marcas
+                if (m.get("marca") or "").strip()
+            }
+            productos = [
+                p for p in productos
+                if _brand_key(str(p.get("marca") or "")) in allowed_names
+            ]
 
         return {"marcas": list(marcas), "comunas": list(comunas), "productos": list(productos)}
 
@@ -413,18 +364,22 @@ def cotizar(payload: dict = Body(...)):
 
         neto = max(0.0, subtotal - desc)
         tipo_cliente = str(payload.get("tipo_cliente") or "").strip().upper()
-        is_empresa = ("EMP" in tipo_cliente)
+        is_empresa = ("EMP" in tipo_cliente)  # EMPRESA / EMPRESAS
+        # IVA (si EMPRESA) se calcula sobre el total neto incluyendo traslado.
         base_iva = neto + traslado
         iva = round(base_iva * 0.19, 2) if is_empresa else 0.0
         total = round(base_iva + iva, 2)
 
         with get_connection() as conn:
+            # valida lead existe
             ok = conn.execute(text("SELECT 1 FROM public.leads WHERE id_lead=:id"), {"id": id_lead}).first()
             if not ok:
                 raise HTTPException(404, "Lead no existe")
 
+            # numero por marca
             marca_key = (payload.get("marca") or "").strip()
             if not marca_key:
+                # La tabla `marcas` no siempre tiene ambas columnas (marca/nombre).
                 marca_cols = cols_for(conn, "marcas") if table_exists(conn, "marcas") else set()
                 if "marca" in marca_cols:
                     sql = "SELECT COALESCE(m.marca,'') FROM public.marcas m JOIN public.leads l ON l.id_marca=m.id_marca WHERE l.id_lead=:id"
@@ -435,9 +390,10 @@ def cotizar(payload: dict = Body(...)):
                 if sql:
                     mk = conn.execute(text(sql), {"id": id_lead}).scalar()
                     marca_key = (mk or "").strip()
-
             numero = next_num_for_marca(conn, marca_key)
 
+            # crea cabecera
+            # asegurar columna version
             cot_cols = cols_for(conn, "cotizaciones")
             if "version" not in cot_cols:
                 conn.execute(text("ALTER TABLE public.cotizaciones ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 0"))
@@ -459,25 +415,26 @@ def cotizar(payload: dict = Body(...)):
           )
           RETURNING id_cotizacion
         """), {
-            "id_lead": id_lead,
-            "numero": int(numero),
-            "traslado": traslado,
-            "descuento_valor": descuento_valor,
-            "descuento_tipo": descuento_tipo or None,
-            "subtotal": neto,
-            "iva": iva,
-            "total": total,
-            "nombre_cliente": payload.get("cliente") or payload.get("nombre_cliente"),
-            "marca": payload.get("marca"),
-            "fecha_evento": payload.get("fecha_evento"),
-            "tipo_cliente": payload.get("tipo_cliente"),
+                "id_lead": id_lead,
+                "numero": int(numero),
+                "traslado": traslado,
+                "descuento_valor": descuento_valor,
+                "descuento_tipo": descuento_tipo or None,
+                "subtotal": neto,
+                "iva": iva,
+                "total": total,
+                "nombre_cliente": payload.get("cliente") or payload.get("nombre_cliente"),
+                "marca": payload.get("marca"),
+                "fecha_evento": payload.get("fecha_evento"),
+                "tipo_cliente": payload.get("tipo_cliente"),
             }).scalar_one()
 
+            # items
             for it in items:
                 id_prod = int(it.get("id_producto") or 0)
                 cant = int(it.get("cantidad") or 0)
                 pu = float(it.get("precio_unitario") or 0)
-
+                # nombre/desc desde productos para snapshot
                 prod = _product_snapshot(conn, id_prod)
                 if not prod or not (prod.get("producto") or "").strip():
                     raise HTTPException(400, f"Producto inválido: {id_prod}")
@@ -500,10 +457,10 @@ def cotizar(payload: dict = Body(...)):
                     "marca": prod.get("marca") or "",
                 })
 
+            # set cotización vigente + monto neto en lead (+ marcar estado Cotizado si aplica)
             cotizado_id = _estado_id(conn, "%COTIZ%")
             confirmado_id = _estado_id(conn, "%CONFIRM%")
             declinado_id = _estado_id(conn, "%DECLIN%")
-
             conn.execute(text("""
           UPDATE public.leads
           SET id_cotizacion_vigente=:id_cot, monto_cotizado=:m, updated_at=now()
@@ -512,6 +469,7 @@ def cotizar(payload: dict = Body(...)):
             AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
         """), {"id_cot": int(id_cot), "id_lead": id_lead, "m": neto, "conf": confirmado_id, "decl": declinado_id})
 
+            # num_cotizacion: si está vacío, usa el número del cotizador
             try:
                 conn.execute(
                     text(
@@ -572,7 +530,8 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
 
         neto = max(0.0, subtotal - desc)
         tipo_cliente = str(payload.get("tipo_cliente") or "").strip().upper()
-        is_empresa = ("EMP" in tipo_cliente)
+        is_empresa = ("EMP" in tipo_cliente)  # EMPRESA / EMPRESAS
+        # IVA (si EMPRESA) se calcula sobre el total neto incluyendo traslado.
         base_iva = neto + traslado
         iva = round(base_iva * 0.19, 2) if is_empresa else 0.0
         total = round(base_iva + iva, 2)
@@ -622,6 +581,7 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
             q = text(f"INSERT INTO public.cotizaciones ({cols_sql}) VALUES ({vals_sql}) RETURNING id_cotizacion")
             new_id = conn.execute(q, insert_data).scalar_one()
 
+            # Reemplaza items
             conn.execute(text("DELETE FROM public.cotizacion_items WHERE id_cotizacion=:id"), {"id": new_id})
             for it in items:
                 id_prod = int(it.get("id_producto") or 0)
@@ -653,6 +613,7 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
                     },
                 )
 
+            # Actualiza lead (+ si está vacío num_cotizacion, lo completa con el número del cotizador)
             cotizado_id = _estado_id(conn, "%COTIZ%")
             confirmado_id = _estado_id(conn, "%CONFIRM%")
             declinado_id = _estado_id(conn, "%DECLIN%")
@@ -669,6 +630,7 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
                 {"id_cot": int(new_id), "id_lead": id_lead, "m": neto, "conf": confirmado_id, "decl": declinado_id},
             )
             try:
+                # traer número existente de la cotización (si existe)
                 num2 = conn.execute(
                     text("SELECT numero FROM public.cotizaciones WHERE id_cotizacion=:id"),
                     {"id": int(new_id)},

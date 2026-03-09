@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>Finanzas • Gastos</title>
+  <style>
+    body{padding:18px;}
+    .wrap{max-width:1100px; margin:0 auto;}
+    .grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
+    .grid .full{grid-column:1 / -1;}
+    .card{margin-bottom:14px;}
+    .label{font-size:12px; opacity:.7; font-weight:800; text-transform:uppercase; letter-spacing:.04em;}
+    input,select{width:100%; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px;}
+    .btn{background:#22c55e; color:#062315; border:none; padding:8px 12px; border-radius:10px; font-weight:900; cursor:pointer;}
+    .btn.secondary{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.15);}    
+    table{width:100%; border-collapse:collapse; font-size:13px;}
+    th,td{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <h2 style="margin:0 0 4px 0">Registrar gasto</h2>
+          <div class="muted">Asigna el gasto a una cuenta y, si aplica, a marca/centro de costo.</div>
+        </div>
+        <button class="btn" id="btnSave">Guardar gasto</button>
+      </div>
+
+      <div class="grid" style="margin-top:12px;">
+        <div>
+          <div class="label">Fecha</div>
+          <input id="fFecha" type="date" />
+        </div>
+        <div class="full">
+          <div class="label">Cuenta (Plan de cuentas)</div>
+          <select id="fCuenta"></select>
+        </div>
+        <div>
+          <div class="label">Monto</div>
+          <input id="fMonto" />
+        </div>
+        <div>
+          <div class="label">Proveedor</div>
+          <input id="fProveedor" list="dlProv" placeholder="Escribe para buscar…" />
+          <datalist id="dlProv"></datalist>
+        </div>
+        <div>
+          <div class="label">Marca</div>
+          <select id="fMarca"></select>
+        </div>
+        <div>
+          <div class="label">Centro de costo</div>
+          <select id="fCentro"></select>
+        </div>
+        <div>
+          <div class="label">Tipo documento</div>
+          <select id="fTipoDoc">
+            <option value="">(sin tipo)</option>
+            <option value="FACTURA">Factura</option>
+            <option value="BOLETA">Boleta</option>
+            <option value="NOTA DE CREDITO">Nota de crédito</option>
+            <option value="NOTA DE DEBITO">Nota de débito</option>
+            <option value="OTRO">Otro</option>
+          </select>
+        </div>
+        <div>
+          <div class="label">N° Documento</div>
+          <input id="fDoc" placeholder="Ej: 12345" />
+        </div>
+        <div>
+          <div class="label">Vence</div>
+          <input id="fVenc" type="date" />
+        </div>
+        <div>
+          <div class="label">Pagado</div>
+          <label style="display:flex;align-items:center;gap:10px;height:40px">
+            <input id="fPag" type="checkbox" style="width:auto" />
+            <span class="muted">Marcar como pagado</span>
+          </label>
+        </div>
+        <div class="full">
+          <div class="label">Fecha pago (si pagado)</div>
+          <input id="fPago" type="date" />
+        </div>
+        <div class="full">
+          <div class="label">Descripción</div>
+          <input id="fDesc" />
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <h3 style="margin:0">Gastos registrados (últimos 50)</h3>
+        <button class="btn secondary" id="btnReload">Actualizar</button>
+      </div>
+      <div class="table-wrap" style="margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Fecha</th><th>Cuenta</th><th>Monto</th><th>Descripción</th><th>Marca</th>
+            </tr>
+          </thead>
+          <tbody id="rows"><tr><td class="muted" colspan="6">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    const fmt = new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const apiURL = (p) => {
+      const s = String(p || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    };
+
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    async function api(url, opts={}){
+      const r = await fetch(apiURL(url), { ...opts, headers: authHeaders({ "Content-Type":"application/json", ...(opts.headers||{}) }) });
+      const data = await r.json().catch(()=>null);
+      if (!r.ok) throw new Error((data && (data.detail||data.message)) || "Error");
+      return data;
+    }
+
+    async function loadCatalogos(){
+      // Proveedores desde inventario (ops)
+      try{
+        const prov = await api("/ops/inventario/proveedores?q=");
+        const items = prov.items || [];
+        const dl = document.getElementById("dlProv");
+        if (dl){
+          dl.innerHTML = items.map(p => `<option value="${String(p.nombre||"").replace(/\"/g,"&quot;")}"></option>`).join("");
+        }
+      }catch(_){}
+      // Marcas del CRM
+      try{
+        const cat = await api("/catalogos");
+        const marcas = cat.marcas || [];
+        const sel = document.getElementById("fMarca");
+        if (sel){
+          sel.innerHTML = `<option value="">(sin marca)</option>` + marcas.map(m => {
+            const n = (m.marca || m.nombre || "").toString();
+            return `<option value="${n}">${n}</option>`;
+          }).join("");
+        }
+      }catch(_){}
+
+      // Centros de costo (solo admin; para compras puede venir vacío)
+      try{
+        const cc = await api("/finanzas/centros_costo");
+        const items = cc.items || [];
+        const sel = document.getElementById("fCentro");
+        if (sel){
+          const act = items.filter(x => x.is_active !== false);
+          sel.innerHTML = `<option value="">(sin centro)</option>` + act.map(x => `<option value="${String(x.nombre||"")}">${String(x.nombre||"")}</option>`).join("");
+        }
+      }catch(_){
+        const sel = document.getElementById("fCentro");
+        if (sel) sel.innerHTML = `<option value="">(sin centro)</option>`;
+      }
+    }
+
+    async function loadCuentas(){
+      const res = await api("/finanzas/plan-cuentas");
+      const items = res.items || [];
+      const gastos = items.filter(i => i.type === "expense");
+      $("#fCuenta").innerHTML = gastos.map(i => `<option value="${i.code}">${i.code} · ${i.name}</option>`).join("");
+    }
+
+    async function loadGastos(){
+      const res = await api("/finanzas/gastos");
+      const items = res.items || [];
+      $("#rows").innerHTML = items.map(i => `
+        <tr>
+          <td>${i.id_gasto}</td>
+          <td>${(i.fecha||"").slice(0,10)}</td>
+          <td>${i.cuenta_code||""}</td>
+          <td>${fmt.format(Number(i.monto||0))}</td>
+          <td>${i.descripcion||""}</td>
+          <td>${i.marca||""}</td>
+        </tr>
+      `).join("") || `<tr><td class="muted" colspan="6">Sin registros.</td></tr>`;
+    }
+
+    $("#btnSave").addEventListener("click", async () => {
+      const payload = {
+        fecha: $("#fFecha").value,
+        cuenta_code: $("#fCuenta").value,
+        monto: Number($("#fMonto").value || 0),
+        descripcion: $("#fDesc").value,
+        proveedor: $("#fProveedor").value,
+        marca: $("#fMarca").value,
+        centro_costo: $("#fCentro").value,
+        tipo_doc: $("#fTipoDoc").value || null,
+        doc_num: $("#fDoc").value || null,
+        pagado: !!$("#fPag").checked,
+        fecha_vencimiento: $("#fVenc").value || null,
+        fecha_pago: ($("#fPag").checked ? ($("#fPago").value || null) : null),
+      };
+      await api("/finanzas/gastos", { method:"POST", body: JSON.stringify(payload) });
+      alert("Gasto registrado");
+      await loadGastos();
+    });
+
+    $("#btnReload").addEventListener("click", loadGastos);
+
+    loadCatalogos();
+    loadCuentas();
+    loadGastos();
+    try{ $("#fFecha").value = new Date().toISOString().slice(0,10); }catch(_){}
+    try{
+      const syncPago = ()=>{
+        const on = !!$("#fPag")?.checked;
+        $("#fPago").disabled = !on;
+        if (on && !$("#fPago").value){
+          $("#fPago").value = new Date().toISOString().slice(0,10);
+        }
+      };
+      $("#fPag")?.addEventListener("change", syncPago);
+      syncPago();
+    }catch(_){}
+  </script>
+</body>
+</html>
