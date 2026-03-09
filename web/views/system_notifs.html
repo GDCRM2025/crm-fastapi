@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Notificaciones internas</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{ margin:0; padding:14px; background:transparent; color:var(--text); }
+    .wrap{ max-width: 1100px; margin: 0 auto; }
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.28);
+      border-radius: 18px;
+      padding: 12px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 18px 50px rgba(0,0,0,.30);
+    }
+    :root.light .card{ background: rgba(255,255,255,.78); border-color: rgba(0,0,0,.10); }
+    h2{ margin:0; font-size:16px; font-weight:1100; letter-spacing:.2px; }
+    .muted{ opacity:.72; font-weight:800; font-size:12px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-top:10px; }
+    .btn{
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.22);
+      color: inherit;
+      border-radius: 12px;
+      padding: 9px 11px;
+      font-weight: 1000;
+      cursor:pointer;
+    }
+    .btn.primary{
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    }
+    .btn:disabled{ opacity:.55; cursor:not-allowed; }
+    .tog{
+      display:flex; align-items:center; gap:8px;
+      border:1px solid rgba(148,163,184,.18);
+      border-radius: 999px;
+      padding: 7px 10px;
+      background: rgba(2,6,23,.18);
+      font-weight: 950;
+      font-size: 12px;
+    }
+    .grid{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+    }
+    @media(max-width: 980px){ .grid{ grid-template-columns: 1fr; } }
+    .list{
+      border:1px solid rgba(148,163,184,.14);
+      border-radius: 16px;
+      overflow:auto;
+      max-height: 70vh;
+      background: rgba(2,6,23,.14);
+    }
+    :root.light .list{ background: rgba(255,255,255,.62); }
+    .item{
+      padding:10px 10px;
+      border-bottom: 1px solid rgba(148,163,184,.10);
+      cursor:pointer;
+    }
+    .item:hover{ background: rgba(255,255,255,.04); }
+    :root.light .item:hover{ background: rgba(0,0,0,.04); }
+    .item.unread{ border-left: 4px solid color-mix(in srgb, var(--accent) 75%, transparent); }
+    .meta{ display:flex; gap:8px; align-items:center; justify-content:space-between; }
+    .ttl{ font-weight:1100; }
+    .sub{ font-size:12px; opacity:.72; font-weight:850; margin-top:4px; }
+    .pill{
+      font-size: 11px;
+      font-weight: 1100;
+      opacity:.85;
+      border:1px solid rgba(148,163,184,.18);
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: rgba(2,6,23,.14);
+      white-space: nowrap;
+    }
+    .detail{
+      border:1px solid rgba(148,163,184,.14);
+      border-radius: 16px;
+      padding:12px;
+      background: rgba(2,6,23,.14);
+      min-height: 240px;
+    }
+    :root.light .detail{ background: rgba(255,255,255,.62); }
+    pre{
+      margin:0;
+      white-space:pre-wrap;
+      word-break:break-word;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2>Notificaciones internas</h2>
+      <div class="muted">Eventos agendados y avisos por rol (Operaciones/Compras/Bodega/Admin).</div>
+
+      <div class="row">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <label class="tog">
+            <input id="unreadOnly" type="checkbox" />
+            Solo no leídas
+          </label>
+          <button class="btn" id="btnReload" type="button">Recargar</button>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn" id="btnReadAll" type="button">Marcar todo leído</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="list" id="list"></div>
+      <div class="detail" id="detail">
+        <div class="muted">Selecciona una notificación para ver el detalle.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    const API_BASE = location.pathname.startsWith("/crm/") ? "/crm" : "";
+
+    function authHeaders(extra={}){
+      try{
+        const GD = window.parent && window.parent.GD;
+        if (GD && typeof GD.authHeaders === "function") return GD.authHeaders(extra);
+      }catch(_){}
+      const t = localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    function esc(s){
+      return String(s ?? "").replace(/[&<>"']/g, (m) => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+      }[m]));
+    }
+
+    function openLead(id_lead){
+      if (!id_lead) return;
+      const url = `/web/views/leads.html?open_lead=${encodeURIComponent(String(id_lead))}`;
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*");
+      }catch(_){
+        location.href = url;
+      }
+    }
+
+    function openUrl(url, id="ext"){
+      if (!url) return;
+      try{
+        window.parent?.postMessage({ type:"openItem", id, url }, "*");
+      }catch(_){
+        location.href = url;
+      }
+    }
+
+    async function api(url, opt={}){
+      const r = await fetch(API_BASE + url, { ...opt, headers: authHeaders(opt.headers || {}) });
+      const txt = await r.text().catch(()=> "");
+      let j = null;
+      try{ j = txt ? JSON.parse(txt) : null; }catch(_){ j = { raw: txt }; }
+      if (!r.ok) throw new Error(j?.detail || j?.error || j?.raw || ("HTTP " + r.status));
+      return j;
+    }
+
+    let ITEMS = [];
+    let ACTIVE_ID = null;
+
+    function renderList(){
+      const list = $("#list");
+      if (!list) return;
+      if (!ITEMS.length){
+        list.innerHTML = `<div class="item"><div class="muted">Sin notificaciones.</div></div>`;
+        return;
+      }
+      list.innerHTML = ITEMS.map(it => {
+        const unread = !it.read_at;
+        const active = (String(ACTIVE_ID) === String(it.id));
+        const cls = ["item", unread ? "unread" : "", active ? "active" : ""].filter(Boolean).join(" ");
+        const dt = (it.created_at || "").replace("T"," ").slice(0,16);
+        return `
+          <div class="${cls}" data-id="${esc(it.id)}">
+            <div class="meta">
+              <div class="ttl">${esc(it.title || "Notificación")}</div>
+              <div class="pill">${esc(dt || "")}</div>
+            </div>
+            <div class="sub">
+              ${esc(it.kind || "")}
+              ${it.id_lead && Number(it.id_lead) > 0 ? (" · Lead #" + esc(it.id_lead)) : ""}
+              ${it.id_lead && Number(it.id_lead) < 0 ? " · Producto" : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".item[data-id]").forEach(el => {
+        el.addEventListener("click", () => {
+          const id = el.getAttribute("data-id");
+          const it = ITEMS.find(x => String(x.id) === String(id));
+          if (!it) return;
+          ACTIVE_ID = it.id;
+          renderList();
+          renderDetail(it);
+        });
+      });
+    }
+
+    function renderDetail(it){
+      const box = $("#detail");
+      if (!box) return;
+      const payload = it.payload && typeof it.payload === "object" ? it.payload : {};
+      const deepUrl = String(payload.url || "");
+      const isLead = it.id_lead && Number(it.id_lead) > 0;
+      const isProducto = (it.kind === "PRODUCTO_NUEVO") || (it.id_lead && Number(it.id_lead) < 0) || !!payload.id_producto;
+      box.innerHTML = `
+        <div style="display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
+          <div>
+            <div style="font-weight:1100">${esc(it.title || "Notificación")}</div>
+            <div class="muted" style="margin-top:4px">
+              ${esc((it.created_at || "").replace("T"," ").slice(0,19))} · ${esc(it.kind || "")}
+              ${isLead ? (" · Lead #" + esc(it.id_lead)) : ""}
+              ${(!isLead && isProducto) ? " · Producto" : ""}
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            ${isLead ? `<button class="btn primary" id="btnOpenLead" type="button">Abrir lead</button>` : ""}
+            ${(!isLead && deepUrl) ? `<button class="btn primary" id="btnOpenUrl" type="button">Abrir</button>` : ""}
+            <button class="btn" id="btnRead" type="button"${it.read_at ? " disabled" : ""}>Marcar leído</button>
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <pre>${esc(it.body || "")}</pre>
+        </div>
+      `;
+      $("#btnOpenLead")?.addEventListener("click", () => openLead(it.id_lead));
+      $("#btnOpenUrl")?.addEventListener("click", () => openUrl(deepUrl, "notif_link"));
+      $("#btnRead")?.addEventListener("click", async () => {
+        try{
+          await api(`/notifications/system/${encodeURIComponent(String(it.id))}/read`, { method:"POST" });
+          it.read_at = new Date().toISOString();
+          renderList();
+          renderDetail(it);
+        }catch(e){
+          alert(String(e?.message || e));
+        }
+      });
+    }
+
+    async function load(){
+      const unreadOnly = $("#unreadOnly")?.checked ? 1 : 0;
+      const j = await api(`/notifications/system?limit=120&unread_only=${unreadOnly}`);
+      ITEMS = Array.isArray(j?.items) ? j.items : [];
+      ACTIVE_ID = null;
+      renderList();
+      $("#detail").innerHTML = `<div class="muted">Selecciona una notificación para ver el detalle.</div>`;
+    }
+
+    $("#btnReload")?.addEventListener("click", () => load().catch(e => alert(String(e?.message||e))));
+    $("#unreadOnly")?.addEventListener("change", () => load().catch(e => alert(String(e?.message||e))));
+    $("#btnReadAll")?.addEventListener("click", async () => {
+      if (!confirm("¿Marcar todas como leídas?")) return;
+      try{
+        await api(`/notifications/system/read_all`, { method:"POST" });
+        load();
+      }catch(e){
+        alert(String(e?.message||e));
+      }
+    });
+
+    load().catch(e => {
+      $("#list").innerHTML = `<div class="item"><div class="muted">No se pudo cargar: ${esc(String(e?.message||e))}</div></div>`;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Historial Cotizaciones</title>
+  <style>
+    :root{
+      --bg:#07131F; --surface:#0C1B2B; --surface2:#102235; --border:#22384F;
+      --text:#EAF2FF; --muted:#A9BBD2; --accent:#19C37D; --shadow:0 10px 30px rgba(0,0,0,.35);
+      --r:16px;
+    }
+    :root.light{
+      --bg:#F6F9FF; --surface:#FFFFFF; --surface2:#F2F6FF; --border:#D5E1F3;
+      --text:#0A1B2B; --muted:#56708D; --shadow:0 10px 30px rgba(10,27,43,.10);
+    }
+    html,body{height:100%; background:transparent; color:var(--text); font-family: ui-sans-serif, system-ui;}
+    *{box-sizing:border-box;}
+    .wrap{height:100%; padding:16px;}
+    .panel{
+      height:100%;
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:var(--r);
+      padding:14px;
+      box-shadow:var(--shadow);
+      overflow:auto;
+    }
+    .head{
+      display:flex; align-items:center; gap:10px;
+      padding-bottom:10px; border-bottom:1px solid var(--border);
+    }
+    .title{font-weight:1000;}
+    .search{
+      margin-left:auto;
+      display:flex; align-items:center; gap:8px;
+      border:1px solid var(--border);
+      background:var(--surface2);
+      padding:8px 12px;
+      border-radius:999px;
+      min-width:260px;
+    }
+    .search input{flex:1;border:0;outline:none;background:transparent;color:var(--text);font-weight:800;}
+    .btn{
+      border:1px solid var(--border);
+      background:var(--surface2);
+      color:var(--text);
+      padding:9px 12px;
+      border-radius:12px;
+      font-weight:900;
+      cursor:pointer;
+    }
+    table{width:100%; border-collapse:separate; border-spacing:0; font-size:13px; margin-top:12px;}
+    thead th{
+      position:sticky; top:0;
+      background:var(--surface);
+      border-bottom:1px solid var(--border);
+      color:var(--muted);
+      text-align:left;
+      padding:10px;
+      font-weight:900;
+    }
+    tbody td{
+      padding:10px;
+      border-bottom:1px solid rgba(34,56,79,.35);
+      font-weight:800;
+    }
+    tbody tr:hover{background:rgba(25,195,125,.06); cursor:pointer;}
+    .tag{display:inline-flex; border:1px solid var(--border); background:var(--surface2); padding:3px 8px; border-radius:999px; color:var(--muted); font-weight:900; font-size:12px;}
+    .tooltip{
+      position:fixed;
+      z-index:9999;
+      display:none;
+      max-width:360px;
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:10px;
+      box-shadow:var(--shadow);
+      color:var(--text);
+      font-weight:800;
+      font-size:12px;
+      white-space:pre-wrap;
+    }
+    .muted{color:var(--muted);}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="head">
+      <div class="title">Historial de Cotizaciones</div>
+      <div class="search">
+        🔎 <input id="q" placeholder="Buscar por cliente / nro cotización..." />
+      </div>
+      <button class="btn" id="reload">Recargar</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Cliente</th><th>Fecha evento</th><th>Total</th><th>Creada</th><th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="body"></tbody>
+    </table>
+
+    <div class="muted" id="empty" style="margin-top:12px; font-weight:900;"></div>
+  </div>
+</div>
+
+<div class="tooltip" id="tip"></div>
+
+<script>
+  window.addEventListener("message", (ev) => {
+    if (ev.data?.type === "theme") {
+      document.documentElement.classList.toggle("light", ev.data.mode === "light");
+    }
+  });
+
+  const API = location.origin;
+  const token = localStorage.getItem("gd_token") || "";
+  const qs = (s, el=document)=>el.querySelector(s);
+
+  async function api(path, opts={}){
+    const r = await fetch(API + path, {
+      ...opts,
+      headers: {
+        "Content-Type":"application/json",
+        ...(opts.headers||{}),
+        ...(token ? {"Authorization":"Bearer " + token} : {}),
+      }
+    });
+    let data=null;
+    try{ data = await r.json(); }catch(e){}
+    if(!r.ok){
+      const msg = (data && (data.detail || data.message)) ? (data.detail || data.message) : ("HTTP " + r.status);
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  function fmtMoney(v){
+    try{
+      return new Intl.NumberFormat("es-CL", {style:"currency", currency:"CLP", maximumFractionDigits:0}).format(Number(v||0));
+    }catch(e){ return "$0"; }
+  }
+
+  const itemsCache = new Map();
+  const tip = qs("#tip");
+
+  function showTip(x,y,txt){
+    tip.textContent = txt;
+    tip.style.left = Math.min(x+14, window.innerWidth-380) + "px";
+    tip.style.top = Math.min(y+14, window.innerHeight-220) + "px";
+    tip.style.display = "block";
+  }
+  function hideTip(){ tip.style.display="none"; }
+
+  async function load(){
+    const res = await api("/quotes/historial?limit=500");
+    const q = qs("#q").value.trim().toLowerCase();
+    const rows = (res.items||[]).filter(r=>{
+      if(!q) return true;
+      const s = [r.num_cotizacion, r.nombre_cliente].join(" ").toLowerCase();
+      return s.includes(q);
+    });
+
+    const body = qs("#body");
+    body.innerHTML = "";
+    for(const r of rows){
+      const tr = document.createElement("tr");
+      const id = r.id;
+      tr.innerHTML = `
+        <td><span class="tag">${r.num_cotizacion || ("#" + id)}</span></td>
+        <td><b>${r.nombre_cliente||"—"}</b></td>
+        <td>${(r.fecha_evento||"").toString().slice(0,10) || "—"}</td>
+        <td><b>${fmtMoney(r.total||0)}</b></td>
+        <td class="muted">${(r.created_at||"").toString().slice(0,19).replace("T"," ") || "—"}</td>
+        <td>
+          <button class="tag" data-act="pdf">PDF</button>
+        </td>
+      `;
+
+      tr.addEventListener("mouseenter", async (ev)=>{
+        hideTip();
+        if(itemsCache.has(id)){
+          showTip(ev.clientX, ev.clientY, itemsCache.get(id));
+          return;
+        }
+        try{
+          const it = await api(`/quotes/${id}/items`);
+          const items = it.items || [];
+          const lines = items.slice(0,12).map(x=>{
+            const n = x.producto || x.nombre || x.nombre_producto || "Producto";
+            const c = x.cantidad || x.qty || 0;
+            return `• ${c} ${n}`;
+          });
+          const txt = lines.length ? lines.join("\n") : "(Sin items)";
+          itemsCache.set(id, txt);
+          showTip(ev.clientX, ev.clientY, txt);
+        }catch(e){
+          itemsCache.set(id, "(No pude cargar items)");
+        }
+      });
+
+      tr.addEventListener("mousemove", (ev)=>{
+        if(tip.style.display==="block"){
+          tip.style.left = Math.min(ev.clientX+14, window.innerWidth-380) + "px";
+          tip.style.top = Math.min(ev.clientY+14, window.innerHeight-220) + "px";
+        }
+      });
+
+      tr.addEventListener("mouseleave", hideTip);
+
+      qs("[data-act='pdf']", tr).addEventListener("click", async (ev)=>{
+        ev.stopPropagation();
+        try{
+          const p = await api(`/quotes/${id}/pdf`);
+          window.open(p.pdf_url, "_blank");
+        }catch(e){
+          alert("PDF no disponible: " + e.message);
+        }
+      });
+
+      body.appendChild(tr);
+    }
+
+    qs("#empty").textContent = rows.length ? "" : "No hay cotizaciones para mostrar.";
+  }
+
+  qs("#reload").onclick = ()=>load().catch(e=>alert(e.message));
+  qs("#q").addEventListener("input", ()=>load().catch(()=>{}));
+
+  load().catch(e=>alert("Error cargando historial: " + e.message));
+</script>
+</body>
+</html>

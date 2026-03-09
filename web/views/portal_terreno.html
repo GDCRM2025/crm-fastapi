@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Portal Terreno · Operaciones</title>
+  <link rel="stylesheet" href="../styles.css?v=20260305-portal-terreno1" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; margin:0; }
+    body{
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background:#010b05;
+      color:#fff;
+      overflow-x:hidden;
+    }
+    a{ color: inherit; }
+
+    /* Fondo de estrellas */
+    #stars{ position:fixed; inset:0; width:100%; height:100%; overflow:hidden; z-index:-1; pointer-events:none; }
+    .star{ position:absolute; border-radius:50%; animation: starTwinkle linear infinite; }
+    .star.flare{
+      background: radial-gradient(circle at center, rgba(255,255,255,0.9) 0%, rgba(12,217,12,0.5) 60%, rgba(12,217,12,0) 100%);
+      box-shadow:0 0 12px 4px rgba(12,217,12,0.6), 0 0 20px 10px rgba(12,217,12,0.3);
+    }
+    @keyframes starTwinkle{
+      from{ transform:translateY(0) scale(1); opacity:1; }
+      to{ transform:translateY(-150vh) scale(.4); opacity:0; }
+    }
+
+    /* Top bar */
+    header{
+      position:fixed;
+      top:0; left:0; right:0;
+      z-index:1000;
+      padding:10px 10px;
+      background: rgba(0,0,0,.72);
+      border-bottom:1px solid rgba(255,255,255,.12);
+      backdrop-filter: blur(10px);
+    }
+    .topbar{
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .who{
+      font-weight: 1000;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: 12px;
+      white-space:nowrap;
+      max-width: 220px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      opacity:.92;
+      display:none;
+    }
+    .nav{
+      display:flex;
+      gap:10px;
+      flex:1;
+      overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
+      padding-bottom:2px;
+    }
+    .btn{
+      height:40px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:999px;
+      padding:0 12px;
+      border:1px solid rgba(12,217,12,.35);
+      background: rgba(255,255,255,.06);
+      color:#0cd90c;
+      font-weight: 1000;
+      cursor:pointer;
+      white-space:nowrap;
+      gap:8px;
+    }
+    .btn:hover{ filter:brightness(1.12); }
+    .btn.primary{ background:#0cd90c; color:#000; }
+    .btn.ghost{ border-color: rgba(255,255,255,.18); color: rgba(255,255,255,.86); }
+    .btn.danger{ border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.12); color:#fff; }
+    .btn .badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      padding: 0 7px;
+      font-size: 12px;
+      font-weight: 1100;
+      background: rgba(239,68,68,.90);
+      color:#fff;
+    }
+    .sel{
+      height:40px;
+      border-radius:999px;
+      border:1px solid rgba(12,217,12,.35);
+      background: rgba(255,255,255,.06);
+      color:#0cd90c;
+      font-weight: 1000;
+      padding:0 12px;
+      cursor:pointer;
+      outline:none;
+      appearance:none;
+    }
+
+    /* Home / hero */
+    main{ padding-top: 70px; padding-bottom: 18px; }
+    .hero{
+      min-height: calc(100vh - 88px);
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding: 24px 14px 40px;
+    }
+    .hero h1{
+      margin:0 0 18px;
+      font-size: 30px;
+      text-transform: uppercase;
+      text-shadow:0 0 10px rgba(12,217,12,.7);
+      letter-spacing:.06em;
+    }
+    .brands{
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:center;
+      gap:18px;
+      margin-top: 20px;
+      opacity:.95;
+    }
+    .brands figure{ margin:0; display:flex; flex-direction:column; align-items:center; gap:8px; }
+    .brands img{ width:72px; height:72px; filter:brightness(0) invert(1); }
+    .brands figcaption{ font-size: 12px; opacity:.9; font-weight: 900; }
+
+    .commit{
+      width: min(880px, 92vw);
+      margin-top: 18px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.05);
+      border-radius: 16px;
+      padding: 16px 14px;
+      backdrop-filter: blur(8px);
+      font-weight: 900;
+      opacity:.92;
+      line-height: 1.35;
+    }
+
+    /* Module overlay */
+    #overlay{
+      position:fixed;
+      inset:0;
+      z-index: 1200;
+      display:none;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(10px);
+    }
+    #overlay.open{ display:block; }
+    .sheet{
+      position:absolute;
+      inset: 70px 10px 10px;
+      border-radius: 18px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(2,6,23,.55);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      box-shadow: 0 22px 80px rgba(0,0,0,.55);
+    }
+    /* En móvil: full width real (calendario y módulos). */
+    @media (max-width: 900px){
+      .sheet{
+        inset: 60px 0 0;
+        border-radius: 0;
+      }
+    }
+    .sheetHead{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding: 10px 10px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+    }
+    .sheetTitle{
+      font-weight: 1100;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: 12px;
+      opacity:.92;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .sheetBody{ flex:1; min-height:0; }
+    .sheetBody iframe{ width:100%; height:100%; border:0; display:block; background:transparent; }
+
+    /* Rotate hint */
+    #rotateHint{
+      position:fixed;
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      z-index: 1400;
+      display:none;
+      border:1px solid rgba(12,217,12,.35);
+      background: rgba(0,0,0,.75);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-weight: 950;
+      color: rgba(255,255,255,.92);
+      backdrop-filter: blur(10px);
+    }
+    #rotateHint b{ color:#0cd90c; }
+    @media (orientation: portrait) and (max-width: 900px){
+      #rotateHint{ display:block; }
+    }
+    @media (max-width: 980px){
+      .who{ display:none; }
+      .btn{ height:38px; padding:0 10px; }
+      .sel{ height:38px; }
+      .sheet{ inset: 66px 8px 8px; }
+      main{ padding-top: 66px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="stars"></div>
+
+  <header>
+    <div class="topbar">
+      <div class="who" id="who">—</div>
+      <div class="nav">
+        <button class="btn primary" id="btnCal" type="button">Calendario</button>
+
+        <select class="sel" id="selMenu" aria-label="Menú por marca">
+          <option value="">Menú (marca…)</option>
+          <option value="CAMALEON">Camaleón</option>
+          <option value="GOURMET">Gourmet</option>
+          <option value="EXPRESS">Express</option>
+          <option value="DEL SABOR">Del Sabor</option>
+          <option value="BRONTOS">Brontos</option>
+        </select>
+
+        <button class="btn ghost" id="btnUni" type="button">Universidad GD</button>
+        <button class="btn ghost" id="btnCont" type="button">Contactos</button>
+        <button class="btn ghost driver-only" id="btnGPS" type="button">GPS</button>
+        <button class="btn ghost driver-only" id="btnRuta" type="button">Ruta</button>
+        <button class="btn ghost" id="btnNotifs" type="button">Notifs <span class="badge" id="bNotifs" style="display:none">0</span></button>
+      </div>
+      <button class="btn danger" id="btnLogout" type="button">Salir</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="home">
+      <h1 id="ttl">Bienvenidos</h1>
+      <div class="brands">
+        <figure><img src="../icons/chameleon.svg" alt="Camaleón" /><figcaption>Camaleón</figcaption></figure>
+        <figure><img src="../icons/chef-hat.svg" alt="Gourmet" /><figcaption>Gourmet</figcaption></figure>
+        <figure><img src="../icons/hot-dog.svg" alt="Del Sabor" /><figcaption>Del Sabor</figcaption></figure>
+        <figure><img src="../icons/food-truck.svg" alt="Express" /><figcaption>Express</figcaption></figure>
+      </div>
+      <div class="commit">
+        Tú eres la chispa que hace brillar nuestros eventos. Para una mejor navegación en terreno,
+        usa <b>modo horizontal</b> (gira el teléfono).
+      </div>
+    </section>
+  </main>
+
+  <div id="overlay" aria-hidden="true">
+    <div class="sheet">
+      <div class="sheetHead">
+        <div class="sheetTitle" id="sheetTitle">—</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn ghost" id="btnClose" type="button">Cerrar</button>
+        </div>
+      </div>
+      <div class="sheetBody">
+        <iframe id="frame" title="Módulo"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <div id="rotateHint">Para terreno: <b>gira el teléfono</b> (horizontal) para ver el calendario completo.</div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const apiURL = (p) => {
+      const s = String(p || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    };
+    const token = () => localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    const authHeaders = (h={}) => token() ? ({...h, Authorization:"Bearer "+token()}) : h;
+
+    function createStars(){
+      const container = qs("#stars");
+      const total = 120;
+      for(let i=0;i<total;i++){
+        const star = document.createElement("div");
+        star.classList.add("star");
+        const flare = Math.random() < .10;
+        if (flare){
+          star.classList.add("flare");
+          const s = Math.random()*6+6;
+          star.style.width = s+"px";
+          star.style.height = s+"px";
+          star.style.animationDuration = (Math.random()*20+20)+"s";
+        }else{
+          const s = Math.random()*2+1;
+          star.style.width = s+"px";
+          star.style.height = s+"px";
+          star.style.background = "rgba(255,255,255,.8)";
+          star.style.animationDuration = (Math.random()*20+40)+"s";
+        }
+        star.style.left = (Math.random()*100)+"%";
+        star.style.top = (Math.random()*100)+"%";
+        container.appendChild(star);
+      }
+    }
+
+    async function fetchMe(){
+      try{
+        const r = await fetch(apiURL("/me"), { headers: authHeaders() });
+        if (!r.ok) return null;
+        return await r.json();
+      }catch(_){ return null; }
+    }
+
+    const overlay = qs("#overlay");
+    const frame = qs("#frame");
+    const sheetTitle = qs("#sheetTitle");
+    function openModule(title, url){
+      sheetTitle.textContent = title || "Módulo";
+      frame.src = apiURL(url) + (String(url).includes("?") ? "&" : "?") + "v=" + Date.now();
+      overlay.classList.add("open");
+      overlay.setAttribute("aria-hidden","false");
+    }
+    function closeModule(){
+      overlay.classList.remove("open");
+      overlay.setAttribute("aria-hidden","true");
+      try{ frame.src = "about:blank"; }catch(_){}
+    }
+
+    // Notifs (para Ops que no ven el panel completo)
+    let lastSysCount = null;
+    async function pollNotifs(){
+      try{
+        const r = await fetch(apiURL("/notifications"), { headers: authHeaders() });
+        if (!r.ok) return;
+        const j = await r.json();
+        const items = Array.isArray(j?.items) ? j.items : [];
+        const sys = items.find(x => x.key === "system_notifs");
+        const c = Number(sys?.count || 0) || 0;
+        const b = qs("#bNotifs");
+        if (b){
+          if (c > 0){
+            b.style.display = "";
+            b.textContent = String(c);
+          }else{
+            b.style.display = "none";
+          }
+        }
+        if (lastSysCount !== null && c > lastSysCount){
+          // sonido: reutilizamos el beep simple sin depender de panel.js
+          try{
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            gain.gain.value = 0.06;
+            osc.type = "sine";
+            osc.frequency.value = 523;
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.start();
+            setTimeout(()=>{ osc.frequency.value = 784; }, 120);
+            setTimeout(()=>{ osc.stop(); ctx.close(); }, 260);
+          }catch(_){}
+        }
+        lastSysCount = c;
+      }catch(_){}
+    }
+
+    function showRotateTipOnce(userKey){
+      try{
+        const k = "gd_rotate_tip_" + String(userKey || "default");
+        if (localStorage.getItem(k)) return;
+        localStorage.setItem(k, "1");
+        Swal.fire({
+          title: "Sugerencia",
+          text: "Para ver el calendario completo y trabajar más rápido en terreno: gira el teléfono (horizontal).",
+          icon: "info",
+          confirmButtonText: "Entendido"
+        });
+      }catch(_){}
+    }
+
+    (async () => {
+      createStars();
+
+      if (!token()){
+        location.href = apiURL("/web/login.html");
+        return;
+      }
+
+      const me = await fetchMe();
+      const name = (me?.nombre || me?.name || me?.username || "Operaciones").toString();
+      qs("#ttl").textContent = `Bienvenido, ${name}`;
+      qs("#who").textContent = name;
+
+      const role = String(me?.role || me?.rol || "").toUpperCase();
+      const isDriver = role.includes("CONDUCTOR") || role.includes("CHOFER") || role.includes("CHOP");
+      document.querySelectorAll(".driver-only").forEach(el => { el.style.display = isDriver ? "" : "none"; });
+
+      showRotateTipOnce(me?.id || me?.username || name);
+
+      // Hooks
+      qs("#btnClose").addEventListener("click", closeModule);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModule(); });
+
+      const V = "20260305-pt1";
+
+      qs("#btnCal").addEventListener("click", () => openModule("Calendario", "/web/views/operadores.html?embed=1&only=cal&v=" + V));
+      qs("#btnUni").addEventListener("click", () => openModule("Universidad GD", "/web/views/operadores.html?embed=1&only=uni&v=" + V));
+      qs("#btnCont").addEventListener("click", () => openModule("Contactos", "/web/views/operadores.html?embed=1&only=contactos&v=" + V));
+      qs("#btnGPS").addEventListener("click", () => openModule("GPS", "/web/views/conductores_gps.html?embed=1"));
+      qs("#btnRuta").addEventListener("click", () => openModule("Ruta", "/web/views/conductores_ruta.html?embed=1"));
+      qs("#btnNotifs").addEventListener("click", () => openModule("Notificaciones", "/web/views/system_notifs.html?embed=1"));
+
+      qs("#selMenu").addEventListener("change", (ev) => {
+        const v = String(ev.target.value || "").trim();
+        if (!v) return;
+        openModule("Menú · " + v, "/web/views/operadores.html?embed=1&only=menu&brand=" + encodeURIComponent(v) + "&v=" + V);
+        ev.target.value = "";
+      });
+
+      qs("#btnLogout").addEventListener("click", async () => {
+        const res = await Swal.fire({
+          title: "Cerrar sesión",
+          text: "¿Seguro que quieres salir?",
+          showCancelButton: true,
+          confirmButtonText: "Salir",
+          cancelButtonText: "Cancelar",
+          confirmButtonColor: "#ef4444"
+        });
+        if (!res.isConfirmed) return;
+        try{
+          await fetch(apiURL("/auth/logout"), { method:"POST", headers: authHeaders({"Content-Type":"application/json"}), body: JSON.stringify({ reason:"manual" }) });
+        }catch(_){}
+        try{
+          localStorage.removeItem("token"); localStorage.removeItem("gd_token");
+          sessionStorage.removeItem("token"); sessionStorage.removeItem("gd_token");
+        }catch(_){}
+        location.href = apiURL("/web/login.html");
+      });
+
+      // Start polling notifs
+      pollNotifs();
+      setInterval(pollNotifs, 8000);
+
+      // Entrada: el calendario es el "home" real para terreno.
+      try{
+        openModule("Calendario", "/web/views/operadores.html?embed=1&only=cal&v=" + V);
+      }catch(_){}
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+/* ===== Topbar sizing fix ===== */
+.topbar{
+  padding: 10px 12px !important;
+  gap: 10px !important;
+}
+.brandbtn{
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-weight: 800;
+  letter-spacing: .6px;
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.brandbtn:hover{
+  background: rgba(255,255,255,.06);
+}
+
+/* Ensure right controls are compact */
+.top-meta{ padding: 6px 10px !important; font-size: 12px !important; }
+.wx-pill{ padding: 6px 10px !important; font-size: 12px !important; }
+.wx-temp{ font-weight: 900; }
+.wx-city{ opacity: .85; }
+
+/* ===== Real toggle (Day/Night) ===== */
+.theme-toggle{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.05);
+  user-select:none;
+}
+.theme-toggle input{ display:none; }
+.theme-toggle .track{
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.14);
+  position: relative;
+  border: 1px solid rgba(255,255,255,.12);
+}
+:root.light .theme-toggle .track{
+  background: rgba(0,0,0,.10);
+  border-color: rgba(0,0,0,.10);
+}
+.theme-toggle .knob{
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  position:absolute;
+  top: 50%;
+  left: 2px;
+  transform: translateY(-50%);
+  background: rgba(255,255,255,.92);
+  transition: left .18s ease;
+}
+:root.light .theme-toggle .knob{ left: 20px; }
+.theme-toggle .tg-icons{
+  display:flex;
+  gap:6px;
+  opacity:.85;
+  font-size: 12px;
+}
+
+/* ===== Sidebar collapse behavior: keep icons visible ===== */
+body.collapsed .acc-title{ display:none !important; }
+
+/* ===== Acc separators ===== */
+.acc-sep{
+  height:1px;
+  background: rgba(255,255,255,.10);
+  margin: 8px 10px;
+}
+:root.light .acc-sep{ background: rgba(0,0,0,.10); }
+
+/* ===== Leads: ocultar Agenda (va en Tools, no en Leads) ===== */
+#btnAgenda, #agenda{ display:none !important; }
+
+/* ===== Weather modal: iOS-like polish ===== */
+.wx-modal-content{
+  width: min(620px, calc(100vw - 24px)) !important;
+  border-radius: 22px !important;
+  background: linear-gradient(180deg, rgba(46,112,210,.55), rgba(14,24,46,.78)) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  backdrop-filter: blur(18px) saturate(140%);
+}
+:root.light .wx-modal-content{
+  background: linear-gradient(180deg, rgba(80,170,255,.55), rgba(255,255,255,.72)) !important;
+  border-color: rgba(0,0,0,.10) !important;
+}
+.wx-header{ text-align:center; padding-top: 6px !important; }
+.wx-loc{ font-weight: 900 !important; letter-spacing: .2px; }
+.wx-big{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top: 6px; }
+.wx-big-temp{ font-size: 64px !important; font-weight: 900 !important; line-height: 1; }
+.wx-big-ico{ font-size: 42px !important; }
+.wx-cond{ opacity:.92; font-weight: 800; margin-top: 6px; }
+.wx-summary{ opacity:.82; margin-top: 4px; }
+
+.wx-card{
+  border-radius: 18px !important;
+  background: rgba(255,255,255,.10) !important;
+  border: 1px solid rgba(255,255,255,.14) !important;
+}
+:root.light .wx-card{
+  background: rgba(255,255,255,.62) !important;
+  border-color: rgba(0,0,0,.10) !important;
+}
+.wx-card-title{ font-weight: 900 !important; opacity:.85; }
+
+.wx-hours{ display:flex; gap:10px; overflow:auto; padding-bottom: 4px; }
+.wx-hour{
+  min-width: 84px;
+  padding: 10px 10px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12);
+  text-align:center;
+}
+:root.light .wx-hour{
+  background: rgba(255,255,255,.70);
+  border-color: rgba(0,0,0,.10);
+}
+.wx-hour .t{ font-weight: 900; opacity:.9; font-size: 12px; }
+.wx-hour .i{ font-size: 18px; margin: 6px 0; }
+.wx-hour .v{ font-weight: 900; font-size: 14px; }
+
+.wx-days{ display:flex; flex-direction:column; gap:10px; }
+.wx-day{
+  display:grid;
+  grid-template-columns: 70px 28px 42px 1fr 42px;
+  align-items:center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+}
+:root.light .wx-day{
+  background: rgba(255,255,255,.70);
+  border-color: rgba(0,0,0,.10);
+}
+.wx-day .d{ font-weight: 900; }
+.wx-day .i{ text-align:center; }
+.wx-day .min{ opacity:.82; font-weight: 900; text-align:right; }
+.wx-day .max{ font-weight: 900; text-align:right; }
+
+.wx-bar{
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  overflow:hidden;
+  position:relative;
+}
+:root.light .wx-bar{ background: rgba(0,0,0,.10); }
+.wx-bar > span{
+  position:absolute; top:0; bottom:0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,215,0,.95), rgba(255,165,0,.95));
+}

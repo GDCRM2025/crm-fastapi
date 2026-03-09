@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="format-detection" content="telephone=no,email=no,address=no" />
+  <title>Inventario • Mercancía</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    .wrap{max-width:none; margin:0 auto; width:100%;}
+    .topbar{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;}
+    section.card{ box-shadow:none; background:rgba(8,14,20,.92); }
+    section.card h2{ text-shadow:none; }
+    .subhead{font-size:12px; letter-spacing:.14em; text-transform:uppercase; opacity:.6; font-weight:900;}
+    .filters{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;}
+    .filters input,.filters select{background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px; min-width:180px;}
+    .btn{background:#22c55e; color:#062315; border:none; padding:8px 12px; border-radius:10px; font-weight:900; cursor:pointer;}
+    .btn.secondary{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.15);}
+    .table-wrap{margin-top:12px; overflow-y:auto; overflow-x:auto; border-radius:14px; border:1px solid rgba(255,255,255,.12); max-height:70vh;}
+    table{width:100%; border-collapse:collapse; font-size:13px; table-layout:auto;}
+    th,td{padding:10px 12px; text-align:left; border-bottom:1px solid rgba(255,255,255,.08); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .nowrap{white-space:nowrap;}
+    th{font-size:12px; letter-spacing:.06em; text-transform:uppercase; opacity:.7;}
+    tr:hover{background:rgba(255,255,255,.03);}
+    .modal{position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); z-index:50;}
+    .modal.open{display:flex;}
+    .modal-card{width:min(720px, 94vw); max-height:85vh; overflow:auto; border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.16); background:rgba(8,14,20,.98);}
+    .modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;}
+    .form-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
+    .form-grid input,.form-grid select,.form-grid textarea{
+      background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.14); color:inherit; padding:8px 10px; border-radius:10px; width:100%;
+    }
+    .form-grid textarea{min-height:70px; resize:vertical;}
+    .full{grid-column:1 / -1;}
+    .row-actions{display:flex; gap:6px; flex-wrap:nowrap; align-items:center; min-width:320px;}
+    .btn.tiny{padding:6px 8px; border-radius:8px; font-size:11px;}
+    .prov-name{font-weight:900; font-size:14px;}
+    .prov-contact{opacity:.75; font-size:12px; margin-top:4px;}
+    .pill{padding:2px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.15); font-size:11px; font-weight:900;}
+    .row-actions{ width:auto; }
+    .prov-actions{display:flex; gap:6px; align-items:center; flex-wrap:nowrap; white-space:nowrap; overflow:visible;}
+    .prov-chip{
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.14);
+      background: rgba(2,6,23,.35); color:inherit; font-weight:900; font-size:11px;
+      cursor:pointer;
+    }
+    .prov-chip:hover{border-color: rgba(34,197,94,.45); background: rgba(16,185,129,.12);}
+    body[data-tab="proveedores"] th, body[data-tab="proveedores"] td{ white-space:normal; }
+    body[data-tab="proveedores"] td{ vertical-align:top; }
+    .prov-grid{display:grid; grid-template-columns:1fr; gap:8px;}
+    .prov-row{display:flex; gap:10px; align-items:flex-start; font-size:12px; color:#cbd5e1;}
+    .prov-k{min-width:70px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; opacity:.6; font-weight:900;}
+    .prov-v{font-weight:700; color:#e2e8f0;}
+    #pager select{background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.14); color:inherit; padding:6px 8px; border-radius:10px;}
+    #pager{margin-top:10px;}
+    .gd-pager{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; flex-direction:column; text-align:center; }
+    .gd-pages{ display:flex; align-items:center; gap:8px; }
+    .gd-page-btn{
+      display:flex; align-items:center; justify-content:center;
+      width:44px; height:44px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.06); color:var(--text);
+      cursor:pointer; transition:transform .08s ease, background .2s ease, color .2s ease;
+    }
+    .gd-page-btn:hover{ background:rgba(255,255,255,.12); }
+    .gd-page-btn.active{ background:#22c55e; color:#062315; border-color:transparent; }
+    .gd-page-btn:disabled{ opacity:.5; cursor:default; }
+    .gd-page-select{ padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.25); color:inherit; }
+
+    body[data-tab="stock"] th:nth-child(2),
+    body[data-tab="stock"] td:nth-child(2){ width:24%; }
+    body[data-tab="stock"] th:nth-child(1),
+    body[data-tab="stock"] td:nth-child(1){ width:10%; }
+    body[data-tab="proveedores"] th:nth-child(1),
+    body[data-tab="proveedores"] td:nth-child(1){ width:26%; }
+    body[data-tab="proveedores"] th:nth-child(2),
+    body[data-tab="proveedores"] td:nth-child(2){ width:44%; }
+    body[data-tab="proveedores"] th:nth-child(3),
+    body[data-tab="proveedores"] td:nth-child(3){ width:30%; }
+  </style>
+</head>
+<body style="padding:18px">
+  <div class="wrap">
+    <section class="card">
+      <div class="topbar">
+        <div>
+          <h2 style="margin:0 0 4px 0">Inventario Mercancía</h2>
+          <div class="subhead" id="sectionLabel">Inventario</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn secondary" id="btnReload">Actualizar</button>
+          <button class="btn" id="btnNew">Nuevo</button>
+        </div>
+      </div>
+
+      <div class="filters">
+        <input id="q" placeholder="Buscar ingrediente..." />
+      </div>
+      <div class="muted" id="tabHint" style="margin-top:6px">Precio unitario por ingrediente (según unidad de medida).</div>
+
+      <div id="movForm"></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead id="thead"></thead>
+          <tbody id="rows">
+            <tr><td class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="pager"></div>
+    </section>
+  </div>
+
+    <div id="modal" class="modal">
+      <div class="modal-card">
+        <div class="modal-head">
+          <strong id="modalTitle">Nuevo</strong>
+          <button class="btn secondary" id="modalClose">Cerrar</button>
+        </div>
+        <div class="form-grid" id="modalForm"></div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+          <button class="btn secondary" id="btnDelete">Eliminar</button>
+          <button class="btn" id="btnSave">Guardar</button>
+        </div>
+      </div>
+    </div>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+
+    function toast(title, icon="info"){
+      if (!window.Swal) return;
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon,
+        title,
+        showConfirmButton: false,
+        timer: 1800,
+        timerProgressBar: true,
+        background: "#0b1220",
+        color: "#fff",
+      });
+    }
+
+    async function confirmSwal(title, text){
+      if (!window.Swal) return confirm(text || title);
+      const r = await Swal.fire({
+        title,
+        text,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Continuar",
+        cancelButtonText: "Cancelar",
+        background: "#0b1220",
+        color: "#fff",
+      });
+      return !!r.isConfirmed;
+    }
+    const state = { tab: "stock", items: [], catalogos: null, editing: null, page: 1, pageSize: 25, me: null, tomas: [], stockIndex: {} };
+    const fmtCL = new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
+    const sectionLabels = {
+      tomar: "Tomar inventario",
+      stock: "Stock Ingredientes",
+      productos: "Stock Ingredientes",
+      categorias: "Categorías",
+      unidades: "Unidades",
+      proveedores: "Proveedores",
+      movimientos: "Movimiento de Inventario",
+    };
+
+    function authHeaders(extra={}){
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    async function ensureMe(){
+      if (state.me) return state.me;
+      try{
+        const GD = window.parent && window.parent.GD;
+        if (GD?.me){ state.me = GD.me; return state.me; }
+      }catch(_){}
+      try{
+        const r = await fetch("/me", { headers: authHeaders() });
+        if (r.ok) state.me = await r.json();
+      }catch(_){}
+      return state.me;
+    }
+
+    function fmtDate(ts){
+      if (!ts) return "—";
+      try{ return String(ts).replace("T"," ").slice(0,16); }catch(_){ return ts; }
+    }
+
+    async function loadTomas(){
+      await ensureMe();
+      const res = await fetch("/ops/inventario/tomas", { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      state.tomas = data.items || [];
+      renderTomas();
+    }
+
+    function renderTomas(){
+      const el = $("#tomasList");
+      if (!el) return;
+      if (!state.tomas.length){
+        el.innerHTML = `<div class="muted">Sin tomas registradas.</div>`;
+        return;
+      }
+      const me = state.me || {};
+      const role = (me.role || me.rol || "").toUpperCase();
+      const canApprove = ["ADMIN","SUPERADMIN","JEFE DE OPERACIONES","COMPRAS"].includes(role);
+      el.innerHTML = `
+        <div class="table-wrap" style="margin-top:6px">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>Fecha</th><th>Creado por</th><th>Items</th><th>Estado</th><th>Aprobaciones</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.tomas.map(t => {
+                const aprob = (t.aprobaciones || []).map(a => `${a.rol}: ${a.approved_by_name || "-"}`).join(" · ");
+                const roles = (t.aprobaciones || []).map(a => a.rol);
+                const allow = canApprove && t.status !== "APROBADO" && !roles.includes(role === "SUPERADMIN" ? "ADMIN" : role);
+                return `
+                  <tr>
+                    <td><strong>#${t.id_toma}</strong></td>
+                    <td>${fmtDate(t.created_at)}</td>
+                    <td>${t.created_by_name || "—"}</td>
+                    <td>${t.items_count || 0}</td>
+                    <td><span class="pill">${t.status || "PENDIENTE"}</span></td>
+                    <td class="muted">${aprob || "—"}</td>
+                    <td>${allow ? `<button class="btn secondary" data-approve="${t.id_toma}">Aprobar</button>` : ""}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+      el.querySelectorAll("[data-approve]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.approve;
+          const res = await fetch(`/ops/inventario/tomas/${id}/approve`, { method:"POST", headers: authHeaders() });
+          if (!res.ok){ alert("No se pudo aprobar"); return; }
+          await loadTomas();
+        });
+      });
+    }
+
+    function setTab(tab){
+      if (tab === "productos") tab = "stock";
+      state.tab = tab;
+      document.body.dataset.tab = tab;
+      $("#sectionLabel").textContent = sectionLabels[tab] || "Inventario";
+      const q = $("#q");
+      if (q){
+        const ph = {
+          stock: "Buscar ingrediente...",
+          proveedores: "Buscar proveedor...",
+          categorias: "Buscar categoría...",
+          unidades: "Buscar unidad...",
+          movimientos: "Buscar movimiento...",
+          tomar: "Buscar ingrediente...",
+        }[tab] || "Buscar...";
+        q.placeholder = ph;
+      }
+      state.editing = null;
+      state.page = 1;
+      load();
+    }
+
+    async function loadCatalogos(){
+      const r = await fetch("/ops/inventario/catalogos", { headers: authHeaders() });
+      if (!r.ok) return;
+      state.catalogos = await r.json();
+    }
+
+    async function loadStockIndex(){
+      const r = await fetch("/ops/inventario/stock", { headers: authHeaders() });
+      if (!r.ok) return;
+      const data = await r.json();
+      const idx = {};
+      (data.items || []).forEach(it => { idx[it.id_producto] = it; });
+      state.stockIndex = idx;
+    }
+
+    async function load(){
+      await loadCatalogos();
+      const norm = (v) => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const qRaw = $("#q").value || "";
+      const q = encodeURIComponent(norm(qRaw));
+      if (state.tab === "tomar"){
+        state.items = [];
+        await loadStockIndex();
+        render();
+        return;
+      }
+      if (state.tab === "productos") state.tab = "stock";
+      let url = `/ops/inventario/${state.tab}?q=${q}`;
+      const r = await fetch(url, { headers: authHeaders() });
+      if (!r.ok){
+        $("#rows").innerHTML = `<tr><td class="muted">No autorizado o error de carga.</td></tr>`;
+        return;
+      }
+      const data = await r.json();
+      state.items = data.items || [];
+      render();
+    }
+
+    function render(){
+      const total = state.items.length;
+      const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+      if (state.page > totalPages) state.page = totalPages;
+      const start = (state.page - 1) * state.pageSize;
+      const end = start + state.pageSize;
+      const pageItems = state.items.slice(start, end);
+
+      const pagerHtml = `
+        <div class="gd-pager">
+          <div class="muted">Página ${state.page} / ${totalPages}</div>
+          <div class="gd-pages">
+            <button class="gd-page-btn" id="prevPage">‹</button>
+            <button class="gd-page-btn" id="nextPage">›</button>
+            <select id="pageSize" class="gd-page-select">
+              ${[10,25,50,100].map(n => `<option value="${n}" ${n===state.pageSize?"selected":""}>${n}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+      `;
+
+      const setPager = () => {
+        const holder = $("#pager");
+        if (holder) holder.innerHTML = pagerHtml;
+        $("#prevPage")?.addEventListener("click", () => { if (state.page>1){ state.page--; render(); } });
+        $("#nextPage")?.addEventListener("click", () => { if (state.page<totalPages){ state.page++; render(); } });
+        $("#pageSize")?.addEventListener("change", (e) => { state.pageSize = Number(e.target.value || 25); state.page = 1; render(); });
+      };
+      const hint = $("#tabHint");
+      if (hint) hint.textContent = "";
+
+      if (state.tab === "stock"){
+        if (hint) hint.textContent = "Precio unitario por ingrediente (según unidad de medida).";
+        $("#pager").innerHTML = "";
+        $("#movForm").innerHTML = "";
+        $("#thead").innerHTML = `
+          <tr>
+            <th>SKU</th><th>Ingrediente</th><th>Categoría</th><th>Unidad</th>
+            <th>Proveedor</th><th>Precio unit.</th>
+            <th>Bodega</th><th>Cocina</th><th>Total</th>
+            <th>Mín</th><th>Máx</th><th>A Reponer</th>
+            <th></th>
+          </tr>`;
+        $("#rows").innerHTML = pageItems.map(i => `
+          <tr>
+            <td><strong>${i.sku || ""}</strong></td>
+            <td>${i.nombre || ""}</td>
+            <td>${i.categoria || "—"}</td>
+            <td>${i.unidad || "—"}</td>
+            <td>${i.proveedor || "—"}</td>
+            <td class="nowrap">${(i.precio != null && i.precio !== "") ? fmtCL.format(i.precio) : "—"}</td>
+            <td class="nowrap">${i.stock_bodega ?? "—"}</td>
+            <td class="nowrap">${i.stock_cocina ?? "—"}</td>
+            <td class="nowrap"><strong>${i.stock_total ?? i.stock_actual ?? 0}</strong></td>
+            <td class="nowrap">${i.stock_min ?? "—"}</td>
+            <td class="nowrap">${i.stock_max ?? "—"}</td>
+            <td class="nowrap"><span class="pill">${i.a_reponer ?? 0}</span></td>
+            <td class="row-actions"><button class="btn secondary" data-edit-stock="${i.id_producto}">Editar</button></td>
+          </tr>
+        `).join("") || `<tr><td class="muted">Sin resultados.</td></tr>`;
+        setPager();
+      }
+
+      if (state.tab === "tomar"){
+        $("#pager").innerHTML = "";
+        $("#movForm").innerHTML = "";
+        $("#thead").innerHTML = `<tr><th>Acción</th></tr>`;
+        $("#rows").innerHTML = `
+          <tr><td>
+            <div class="muted">Carga por CSV crea una toma pendiente de aprobación.</div>
+            <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:center;">
+              <select id="adjProducto">
+                <option value="">Selecciona ingrediente</option>
+                ${(state.catalogos?.productos || []).map(p => `<option value="${p.id_producto}">${p.sku} · ${p.nombre}</option>`).join("")}
+              </select>
+              <select id="adjCentro">
+                <option value="TOTAL">Total</option>
+                <option value="BODEGA">Bodega</option>
+                <option value="COCINA">Cocina</option>
+              </select>
+              <input id="adjStock" placeholder="Nuevo stock" style="width:140px" />
+              <button class="btn" id="btnAdj">Guardar ajuste</button>
+              <button class="btn secondary" id="btnDownloadCsv">Descargar plantilla CSV</button>
+              <button class="btn secondary" id="btnPrintList">Imprimir listado</button>
+              <input type="file" id="csvUpload" accept=".csv" />
+            </div>
+            <div class="muted" style="margin-top:8px">Requiere aprobación (Admin / Jefe Ops / Compras).</div>
+            <div id="tomasList" style="margin-top:12px"></div>
+          </td></tr>`;
+        $("#btnAdj")?.addEventListener("click", async () => {
+          const id_producto = Number($("#adjProducto").value || 0);
+          const val = Number($("#adjStock").value || 0);
+          const centro = ($("#adjCentro").value || "TOTAL").toUpperCase();
+          if (!id_producto){ toast("Selecciona un ingrediente", "warning"); return; }
+          const current = state.stockIndex[id_producto] || {};
+          let payload = { id_producto };
+          if (centro === "BODEGA"){
+            payload.stock_bodega = val;
+            const total = (val || 0) + (Number(current.stock_cocina || 0));
+            payload.stock_total = total;
+          } else if (centro === "COCINA"){
+            payload.stock_cocina = val;
+            const total = (Number(current.stock_bodega || 0)) + (val || 0);
+            payload.stock_total = total;
+          } else {
+            payload.stock_total = val;
+          }
+          const res = await fetch(`/ops/inventario/stock/${id_producto}`, {
+            method: "PUT",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok){ toast("No se pudo ajustar", "error"); return; }
+          $("#adjStock").value = "";
+          toast("Ajuste registrado", "success");
+          await loadStockIndex();
+        });
+        $("#btnDownloadCsv")?.addEventListener("click", () => {
+          const items = state.catalogos?.productos || [];
+          const header = ["id_producto","producto","stock_total"];
+          const rows = items.map(p => [p.id_producto, p.nombre, ""]);
+          const csv = [header.join(","), ...rows.map(r => r.map(x => `"${String(x||"").replace(/\"/g,'""')}"`).join(","))].join("\\n");
+          const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "plantilla_inventario.csv";
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+        $("#btnPrintList")?.addEventListener("click", () => {
+          const items = (state.catalogos?.productos || []).slice().sort((a,b) => {
+            const ca = (a.categoria || "").toString().localeCompare((b.categoria || "").toString());
+            if (ca !== 0) return ca;
+            const na = (a.nombre || "").toString().localeCompare((b.nombre || "").toString());
+            if (na !== 0) return na;
+            return (a.sku || "").toString().localeCompare((b.sku || "").toString());
+          });
+          const win = window.open("", "_blank");
+          if (!win) return;
+          win.document.write(`
+            <html><head><title>Inventario</title>
+            <style>
+              @page{ size:A4 portrait; margin:14mm; }
+              body{font-family:Arial, sans-serif; padding:20px;}
+              h1{font-size:18px;}
+              .muted{color:#666; font-size:12px;}
+              table{width:100%; border-collapse:collapse;}
+              th,td{border:1px solid #ddd; padding:6px; font-size:12px;}
+            </style>
+            </head><body>
+              <h1>Listado Inventario (toma)</h1>
+              <div class="muted">Total ingredientes: ${items.length}</div>
+              <table>
+                <thead><tr><th>SKU</th><th>Ingrediente</th><th>Cantidad</th></tr></thead>
+                <tbody>
+                  ${items.map(p => `<tr><td>${p.sku||""}</td><td>${p.nombre||""}</td><td></td></tr>`).join("")}
+                </tbody>
+              </table>
+            </body></html>
+          `);
+          win.document.close();
+          win.focus();
+        });
+        $("#csvUpload")?.addEventListener("change", async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const text = await file.text();
+          const lines = text.split(/\\r?\\n/).filter(l => l.trim());
+          const header = lines.shift()?.split(",") || [];
+          const idxId = header.findIndex(h => h.toLowerCase().includes("id_producto"));
+          const idxStock = header.findIndex(h => h.toLowerCase().includes("stock"));
+          if (idxId < 0 || idxStock < 0){
+            if (window.Swal) Swal.fire({ icon:"error", title:"CSV inválido", text:"Debe tener columnas id_producto y stock_total.", background:"#0b1220", color:"#fff" });
+            else alert("CSV inválido. Debe tener columnas id_producto y stock_total.");
+            return;
+          }
+
+          // No permitir "productos nuevos" en el CSV:
+          // validamos que id_producto exista en el catálogo actual.
+          const valid = new Map();
+          (state.catalogos?.productos || []).forEach(p => {
+            const id = Number(p.id_producto || 0);
+            if (id) valid.set(id, p.nombre || p.producto || String(id));
+          });
+
+          let emptyCount = 0;
+          let zeroCount = 0;
+          const zeros = [];
+          const unknown = [];
+          const items = lines.map(line => {
+            const cols = line.split(",").map(c => c.replace(/^\"|\"$/g,"").replace(/\"\"/g,'"'));
+            const raw = (cols[idxStock] ?? "").toString().trim();
+            const idp = Number(cols[idxId] || 0);
+            if (idp && valid.size && !valid.has(idp)) unknown.push(idp);
+            if (raw === "") emptyCount++;
+            const num = raw === "" ? null : Number(raw);
+            if (num === 0){
+              zeroCount++;
+              const name = valid.get(idp) || `ID ${idp}`;
+              zeros.push(name);
+            }
+            return {
+              id_producto: idp,
+              stock_total: (raw === "" || num === null || Number.isNaN(num)) ? 0 : num
+            };
+          }).filter(x => x.id_producto);
+
+          if (unknown.length){
+            const uniq = Array.from(new Set(unknown)).slice(0, 20);
+            const msg = `El CSV contiene id_producto que no existen en el inventario: ${uniq.join(", ")}${unknown.length>uniq.length ? " …" : ""}.\\nNo puedes agregar productos nuevos desde el archivo.`;
+            if (window.Swal) Swal.fire({ icon:"error", title:"IDs inválidos", text: msg, background:"#0b1220", color:"#fff" });
+            else alert(msg);
+            return;
+          }
+
+          if (emptyCount > 0){
+            const ok = await confirmSwal("Filas sin cantidad", `Hay ${emptyCount} filas sin cantidad. Se guardarán como 0. ¿Continuar?`);
+            if (!ok) return;
+          }
+          if (zeroCount > 0){
+            const sample = Array.from(new Set(zeros)).slice(0, 18);
+            const txt = `Hay ${zeroCount} productos con cantidad 0.\\n\\n` +
+                        `${sample.map(x=>`• ${x}`).join("\\n")}` +
+                        `${zeroCount > sample.length ? `\\n… y ${zeroCount - sample.length} más.` : ""}` +
+                        `\\n\\n¿Subir igual?`;
+            const ok2 = await confirmSwal("Productos en 0", txt);
+            if (!ok2) return;
+          }
+          const res = await fetch("/ops/inventario/stock/bulk", {
+            method: "POST",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ items, replace_pending: true })
+          });
+          if (!res.ok){ toast("No se pudo subir CSV", "error"); return; }
+          toast("Toma cargada (pendiente de aprobación)", "success");
+          await loadTomas();
+        });
+        loadTomas();
+      }
+
+      if (state.tab === "movimientos"){
+        $("#pager").innerHTML = "";
+        const productos = state.catalogos?.productos || [];
+        const marcas = state.catalogos?.marcas || [];
+        const centros = state.catalogos?.centros || [];
+        const norm = (v) => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const renderOptions = (filter="") => {
+          const f = norm(filter || "");
+          const list = productos.filter(p => {
+            const txt = norm(`${p.sku} ${p.nombre}`);
+            return !f || txt.includes(f);
+          });
+          return list.map(p => `<option value="${p.id_producto}">${p.sku} · ${p.nombre}</option>`).join("");
+        };
+
+        $("#movForm").innerHTML = `
+          <div class="card" style="margin-top:10px">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <input id="movBuscar" placeholder="Buscar ingrediente..." style="min-width:220px" />
+              <select id="movProducto">
+                <option value="" selected>Selecciona ingrediente</option>
+                ${renderOptions("")}
+              </select>
+              <select id="movTipo">
+                <option value="ingreso">Ingreso</option>
+                <option value="salida">Salida</option>
+                <option value="ajuste">Ajuste</option>
+              </select>
+              <select id="movSub">
+                <option value="">Subtipo</option>
+                <option value="compra">Compra</option>
+                <option value="cocina">Cocina</option>
+                <option value="eventos">Eventos</option>
+                <option value="delivery">Delivery</option>
+                <option value="merma">Merma</option>
+              </select>
+              <input id="movCantidad" placeholder="Cantidad" style="width:120px" />
+              <input id="movFecha" type="date" />
+              <select id="movCentro">
+                <option value="">Centro costo</option>
+                ${centros.map(c => `<option value="${c}">${c}</option>`).join("")}
+              </select>
+              <select id="movMarca">
+                <option value="">Marca</option>
+                ${marcas.map(m => `<option value="${m}">${m}</option>`).join("")}
+              </select>
+              <input id="movNota" placeholder="Nota" style="min-width:220px" />
+              <button class="btn" id="btnMov">Registrar</button>
+            </div>
+          </div>
+        `;
+        $("#movProducto").value = "";
+        $("#movBuscar")?.addEventListener("input", (e) => {
+          const q = e.target.value || "";
+          const sel = $("#movProducto");
+          const current = sel.value;
+          sel.innerHTML = `<option value="">Selecciona ingrediente</option>` + renderOptions(q);
+          if (current) sel.value = current;
+        });
+        $("#btnMov")?.addEventListener("click", async () => {
+          const payload = {
+            id_producto: Number($("#movProducto").value || 0),
+            tipo: $("#movTipo").value,
+            subtipo: $("#movSub").value || null,
+            cantidad: Number($("#movCantidad").value || 0),
+            fecha: $("#movFecha").value || null,
+            centro_costo: $("#movCentro").value || null,
+            marca: $("#movMarca").value || null,
+            nota: $("#movNota").value || null
+          };
+          if (!payload.id_producto){
+            alert("Selecciona un producto");
+            return;
+          }
+          const res = await fetch("/ops/inventario/movimientos", {
+            method: "POST",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok){ alert("No se pudo registrar"); return; }
+          $("#movCantidad").value = "";
+          $("#movNota").value = "";
+          await load();
+        });
+        $("#thead").innerHTML = `
+          <tr>
+            <th>Fecha</th><th>Ingrediente</th><th>Tipo</th><th>Subtipo</th>
+            <th>Cantidad</th><th>Centro costo</th><th>Marca</th><th>Nota</th>
+          </tr>`;
+        $("#rows").innerHTML = pageItems.map(i => `
+          <tr>
+            <td>${i.fecha || ""}</td>
+            <td>${i.sku ? i.sku + " · " : ""}${i.producto || ""}</td>
+            <td>${i.tipo || ""}</td>
+            <td>${i.subtipo || ""}</td>
+            <td>${i.cantidad || 0}</td>
+            <td>${i.centro_costo || "—"}</td>
+            <td>${i.marca || "—"}</td>
+            <td>${i.nota || ""}</td>
+          </tr>
+        `).join("") || `<tr><td class="muted">Sin resultados.</td></tr>`;
+        setPager();
+      }
+
+      if (state.tab === "productos"){
+        state.tab = "stock";
+      }
+
+      if (state.tab === "proveedores"){
+        if (hint) hint.textContent = "Directorio de proveedores con contacto y acceso rápido.";
+        $("#pager").innerHTML = "";
+        $("#movForm").innerHTML = "";
+        $("#thead").innerHTML = `
+          <tr>
+            <th>Proveedor</th><th>Contacto</th><th>Acciones</th>
+          </tr>`;
+        $("#rows").innerHTML = pageItems.map(i => `
+          <tr>
+            <td>
+              <div class="prov-name">${i.nombre || ""}</div>
+              <div class="prov-contact">${i.contacto || "—"}</div>
+            </td>
+            <td>
+              <div class="prov-grid">
+                <div class="prov-row"><span class="prov-k">Teléfono</span><span class="prov-v">${i.telefono || "—"}</span></div>
+                <div class="prov-row"><span class="prov-k">Email</span><span class="prov-v">${i.email || "—"}</span></div>
+                <div class="prov-row"><span class="prov-k">Dirección</span><span class="prov-v">${i.direccion || "—"}</span></div>
+              </div>
+            </td>
+            <td class="row-actions">
+              <div class="prov-actions">
+                ${i.telefono ? `<button class="prov-chip" data-call="${i.telefono}">Llamar</button>` : `<button class="prov-chip" disabled style="opacity:.4;cursor:not-allowed;">Llamar</button>`}
+                ${i.email ? `<button class="prov-chip" data-mail="${i.email}">Email</button>` : `<button class="prov-chip" disabled style="opacity:.4;cursor:not-allowed;">Email</button>`}
+                ${i.direccion ? `<button class="prov-chip" data-map="${encodeURIComponent(i.direccion)}">Mapa</button>` : `<button class="prov-chip" disabled style="opacity:.4;cursor:not-allowed;">Mapa</button>`}
+                <button class="prov-chip" data-edit="${i.id_proveedor}">Editar</button>
+              </div>
+            </td>
+          </tr>
+        `).join("") || `<tr><td class="muted">Sin resultados.</td></tr>`;
+        setPager();
+      }
+
+      if (state.tab === "categorias"){
+        if (hint) hint.textContent = "Categorías para clasificar ingredientes.";
+        $("#pager").innerHTML = "";
+        $("#movForm").innerHTML = "";
+        $("#thead").innerHTML = `<tr><th>Categoría</th><th></th></tr>`;
+        $("#rows").innerHTML = pageItems.map(i => `
+          <tr>
+            <td><strong>${i.nombre || ""}</strong></td>
+            <td class="row-actions"><button class="btn secondary" data-edit="${i.id_categoria}">Editar</button></td>
+          </tr>
+        `).join("") || `<tr><td class="muted">Sin resultados.</td></tr>`;
+        setPager();
+      }
+
+      if (state.tab === "unidades"){
+        if (hint) hint.textContent = "Unidades de medida disponibles.";
+        $("#pager").innerHTML = "";
+        $("#movForm").innerHTML = "";
+        $("#thead").innerHTML = `<tr><th>Unidad</th><th>Abreviatura</th><th></th></tr>`;
+        $("#rows").innerHTML = pageItems.map(i => `
+          <tr>
+            <td><strong>${i.nombre || ""}</strong></td>
+            <td>${i.abreviatura || "—"}</td>
+            <td class="row-actions"><button class="btn secondary" data-edit="${i.id_unidad}">Editar</button></td>
+          </tr>
+        `).join("") || `<tr><td class="muted">Sin resultados.</td></tr>`;
+        setPager();
+      }
+
+      $("#rows").querySelectorAll("[data-edit]").forEach(b => {
+        b.addEventListener("click", () => openModal(state.items.find(x =>
+          String(x.sku || x.id_proveedor || x.id_categoria || x.id_unidad) === b.dataset.edit
+        )));
+      });
+      $("#rows").querySelectorAll("[data-call]").forEach(b => {
+        b.addEventListener("click", () => window.open(`tel:${b.dataset.call}`));
+      });
+      $("#rows").querySelectorAll("[data-mail]").forEach(b => {
+        b.addEventListener("click", () => window.open(`mailto:${b.dataset.mail}`));
+      });
+      $("#rows").querySelectorAll("[data-map]").forEach(b => {
+        b.addEventListener("click", () => window.open(`https://www.google.com/maps/search/?api=1&query=${b.dataset.map}`));
+      });
+      $("#rows").querySelectorAll("[data-edit-stock]").forEach(b => {
+        b.addEventListener("click", () => {
+          const row = state.items.find(x => String(x.id_producto) === b.dataset.editStock);
+          if (!row) return;
+          openStockModal(row);
+        });
+      });
+    }
+
+    function openModal(item){
+      state.editing = item || null;
+      const f = $("#modalForm");
+      f.innerHTML = "";
+      $("#modalTitle").textContent = item ? "Editar" : "Nuevo";
+      $("#btnDelete").style.display = item ? "inline-flex" : "none";
+
+      if (state.tab === "productos"){
+        const cats = state.catalogos?.categorias || [];
+        const unis = state.catalogos?.unidades || [];
+        const prov = state.catalogos?.proveedores || [];
+        f.innerHTML = `
+          <div><label>SKU</label><input id="fSku" value="${item?.sku || ""}" ${item ? "disabled" : ""}></div>
+          <div><label>Ingrediente</label><input id="fNombre" value="${item?.nombre || ""}"></div>
+          <div><label>Categoría</label>
+            <select id="fCat">${cats.map(c => `<option value="${c.id_categoria}" ${c.nombre===item?.categoria?"selected":""}>${c.nombre}</option>`).join("")}</select>
+          </div>
+          <div><label>Unidad</label>
+            <select id="fUni">${unis.map(u => `<option value="${u.id_unidad}" ${u.nombre===item?.unidad?"selected":""}>${u.nombre}</option>`).join("")}</select>
+          </div>
+          <div><label>Proveedor</label>
+            <select id="fProv">${prov.map(p => `<option value="${p.id_proveedor}" ${p.nombre===item?.proveedor?"selected":""}>${p.nombre}</option>`).join("")}</select>
+          </div>
+          <div><label>Precio</label><input id="fPrecio" value="${item?.precio ?? ""}"></div>
+        `;
+      }
+      if (state.tab === "proveedores"){
+        f.innerHTML = `
+          <div><label>Proveedor</label><input id="fNombre" value="${item?.nombre || ""}"></div>
+          <div><label>Contacto</label><input id="fContacto" value="${item?.contacto || ""}"></div>
+          <div><label>Teléfono</label><input id="fTelefono" value="${item?.telefono || ""}"></div>
+          <div><label>Email</label><input id="fEmail" value="${item?.email || ""}"></div>
+          <div class="full"><label>Dirección</label><textarea id="fDireccion">${item?.direccion || ""}</textarea></div>
+        `;
+      }
+      if (state.tab === "categorias"){
+        f.innerHTML = `<div class="full"><label>Categoría</label><input id="fNombre" value="${item?.nombre || ""}"></div>`;
+      }
+      if (state.tab === "unidades"){
+        f.innerHTML = `
+          <div><label>Unidad</label><input id="fNombre" value="${item?.nombre || ""}"></div>
+          <div><label>Abreviatura</label><input id="fAbbr" value="${item?.abreviatura || ""}"></div>
+        `;
+      }
+
+      $("#modal").classList.add("open");
+    }
+
+    async function save(){
+      if (state.tab === "stock"){
+        const payloadProd = {
+          sku: $("#fSku")?.value?.trim() || null,
+          nombre: $("#fNombre")?.value?.trim() || "",
+          id_categoria: Number($("#fCat")?.value || 0) || null,
+          id_unidad: Number($("#fUni")?.value || 0) || null,
+          id_proveedor: Number($("#fProv")?.value || 0) || null,
+          precio: Number($("#fPrecio")?.value || 0) || null,
+          pack_cantidad: null
+        };
+        const payloadStock = {
+          stock_inicial: Number($("#fStockInicial")?.value || 0) || null,
+          stock_bodega: Number($("#fStockBodega")?.value || 0) || null,
+          stock_cocina: Number($("#fStockCocina")?.value || 0) || null,
+          stock_total: Number($("#fStockTotal")?.value || 0) || null,
+          stock_min: Number($("#fStockMin")?.value || 0) || null,
+          stock_max: Number($("#fStockMax")?.value || 0) || null
+        };
+        let id = state.editing?.id_producto || null;
+        if (state.editing){
+          const r1 = await fetch(`/ops/inventario/productos/${id}`, {
+            method: "PUT",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(payloadProd)
+          });
+          if (!r1.ok){ alert("No se pudo guardar el ingrediente"); return; }
+        } else {
+          const r1 = await fetch(`/ops/inventario/productos`, {
+            method: "POST",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(payloadProd)
+          });
+          if (!r1.ok){ alert("No se pudo crear el ingrediente"); return; }
+          const res = await r1.json();
+          id = res.id_producto;
+        }
+        if (id){
+          const r2 = await fetch(`/ops/inventario/stock/${id}`, {
+            method: "PUT",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ id_producto: id, ...payloadStock })
+          });
+          if (!r2.ok){ alert("No se pudo guardar el stock"); return; }
+        }
+        $("#modal").classList.remove("open");
+        await load();
+        return;
+      }
+      let payload = {};
+      let url = `/ops/inventario/${state.tab}`;
+      let method = state.editing ? "PUT" : "POST";
+      if (state.tab === "productos"){
+        payload = {
+          sku: $("#fSku").value.trim(),
+          nombre: $("#fNombre").value.trim(),
+          id_categoria: Number($("#fCat").value || 0) || null,
+          id_unidad: Number($("#fUni").value || 0) || null,
+          id_proveedor: Number($("#fProv").value || 0) || null,
+          precio: Number($("#fPrecio").value || 0) || null
+        };
+      }
+      if (state.tab === "proveedores"){
+        payload = {
+          nombre: $("#fNombre").value.trim(),
+          contacto: $("#fContacto").value.trim(),
+          telefono: $("#fTelefono").value.trim(),
+          email: $("#fEmail").value.trim(),
+          direccion: $("#fDireccion").value.trim()
+        };
+      }
+      if (state.tab === "categorias"){
+        payload = { nombre: $("#fNombre").value.trim() };
+      }
+      if (state.tab === "unidades"){
+        payload = { nombre: $("#fNombre").value.trim(), abreviatura: $("#fAbbr").value.trim() };
+      }
+
+      if (state.editing){
+        if (state.tab === "productos") url = `/ops/inventario/productos/${state.editing.id_producto}`;
+        if (state.tab === "proveedores") url = `/ops/inventario/proveedores/${state.editing.id_proveedor}`;
+        if (state.tab === "categorias") url = `/ops/inventario/categorias/${state.editing.id_categoria}`;
+        if (state.tab === "unidades") url = `/ops/inventario/unidades/${state.editing.id_unidad}`;
+      }
+
+      const res = await fetch(url, {
+        method,
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok){ alert("No se pudo guardar"); return; }
+      $("#modal").classList.remove("open");
+      await load();
+    }
+
+    function openStockModal(item){
+      state.editing = item || null;
+      const f = $("#modalForm");
+      const cats = state.catalogos?.categorias || [];
+      const unis = state.catalogos?.unidades || [];
+      const prov = state.catalogos?.proveedores || [];
+      const total = item?.stock_total ?? item?.stock_actual ?? "";
+      f.innerHTML = `
+        <div><label>SKU</label><input id="fSku" value="${item?.sku || ""}" ${item ? "disabled" : ""} placeholder="Auto"></div>
+        <div><label>Ingrediente</label><input id="fNombre" value="${item?.nombre || ""}"></div>
+        <div><label>Categoría</label>
+          <select id="fCat">
+            <option value="">—</option>
+            ${cats.map(c => `<option value="${c.id_categoria}" ${c.nombre===item?.categoria?"selected":""}>${c.nombre}</option>`).join("")}
+          </select>
+        </div>
+        <div><label>Unidad</label>
+          <select id="fUni">
+            <option value="">—</option>
+            ${unis.map(u => `<option value="${u.id_unidad}" ${u.nombre===item?.unidad?"selected":""}>${u.nombre}</option>`).join("")}
+          </select>
+        </div>
+        <div><label>Proveedor</label>
+          <select id="fProv">
+            <option value="">—</option>
+            ${prov.map(p => `<option value="${p.id_proveedor}" ${p.nombre===item?.proveedor?"selected":""}>${p.nombre}</option>`).join("")}
+          </select>
+        </div>
+        <div><label>Precio unitario</label><input id="fPrecio" value="${item?.precio ?? ""}"></div>
+        <div><label>Stock inicial</label><input id="fStockInicial" value="${item?.stock_inicial ?? ""}"></div>
+        <div><label>Stock bodega</label><input id="fStockBodega" value="${item?.stock_bodega ?? ""}"></div>
+        <div><label>Stock cocina</label><input id="fStockCocina" value="${item?.stock_cocina ?? ""}"></div>
+        <div><label>Stock total</label><input id="fStockTotal" value="${total}"></div>
+        <div><label>Stock mínimo</label><input id="fStockMin" value="${item?.stock_min ?? ""}"></div>
+        <div><label>Stock máximo</label><input id="fStockMax" value="${item?.stock_max ?? ""}"></div>
+      `;
+      $("#modalTitle").textContent = item ? "Editar ingrediente" : "Nuevo ingrediente";
+      $("#btnDelete").style.display = item ? "inline-flex" : "none";
+      $("#modal").classList.add("open");
+    }
+
+    async function removeItem(){
+      if (!state.editing) return;
+      let id = state.editing.id_proveedor || state.editing.id_categoria || state.editing.id_unidad || state.editing.id_producto;
+      let url = `/ops/inventario/${state.tab}/${id}`;
+      if (state.tab === "productos" || state.tab === "stock"){
+        url = `/ops/inventario/productos/${state.editing.id_producto}`;
+      }
+      const res = await fetch(url, { method: "DELETE", headers: authHeaders() });
+      if (!res.ok){ alert("No se pudo eliminar"); return; }
+      $("#modal").classList.remove("open");
+      await load();
+    }
+
+    $("#btnNew").addEventListener("click", () => {
+      if (state.tab === "stock"){
+        openStockModal(null);
+        return;
+      }
+      if (state.tab === "movimientos"){
+        $("#movCantidad")?.focus();
+        return;
+      }
+      openModal(null);
+    });
+    $("#modalClose").addEventListener("click", () => $("#modal").classList.remove("open"));
+    $("#btnSave").addEventListener("click", save);
+    $("#btnDelete").addEventListener("click", removeItem);
+    $("#btnReload").addEventListener("click", load);
+    $("#q").addEventListener("input", () => { state.page = 1; load(); });
+
+      const rawHash = (location.hash || "").replace("#","").trim();
+      const hash = rawHash.split("?")[0];
+      setTab(hash || "stock");
+    window.addEventListener("hashchange", () => {
+      const raw = (location.hash || "").replace("#","").trim();
+      const h = raw.split("?")[0];
+      setTab(h || "stock");
+    });
+  </script>
+</body>
+</html>

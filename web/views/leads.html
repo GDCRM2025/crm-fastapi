@@ -1,0 +1,3118 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Leads</title>
+  <!-- build: GD-LEADS-2026-02-25-13 -->
+
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <style>
+    :root{
+      --app-bg:#07131F; --surface:#0C1B2B; --surface2:#102235;
+      --border:#22384F; --text:#EAF2FF; --muted:#A9BBD2; --accent:#19C37D;
+      --radius:14px;
+    }
+    :root.light{
+      --app-bg:#eef5ff; --surface:#fff; --surface2:#f3f7ff;
+      --border:#d7e2f2; --text:#0b1523; --muted:#516781; --accent:#19C37D;
+    }
+
+    html,body{ height:100%; }
+    body{
+      margin:0; background:var(--app-bg); color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      overflow-x:hidden; /* NO scroll lateral */
+    }
+    .page{ padding:14px; overflow-x:hidden; }
+
+    .toolbar{
+      display:flex; align-items:center; gap:10px; padding:10px;
+      border:1px solid var(--border); border-radius:var(--radius); background:var(--surface);
+      flex-wrap:wrap;
+    }
+
+    .toggle{
+      display:flex; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--surface2);
+    }
+    .toggle button{
+      border:0; background:transparent; color:var(--muted);
+      font-weight:900; padding:9px 12px; cursor:pointer; letter-spacing:.2px;
+    }
+    .toggle button.active{ background:var(--accent); color:#062016; }
+
+    .search{
+      flex:1; display:flex; align-items:center; gap:8px;
+      border:1px solid var(--border); border-radius:12px; background:var(--surface2);
+      padding:8px 10px; min-width:220px;
+    }
+    .search svg{ width:16px; height:16px; color:var(--muted); flex:0 0 auto; }
+    .search input{
+      width:100%; border:0; outline:none; background:transparent; color:var(--text);
+      font-weight:700; font-size:13px;
+    }
+    .search:focus-within{
+      border-color: rgba(25,195,125,.55);
+      box-shadow: 0 0 0 3px rgba(25,195,125,.12);
+    }
+
+    .badge{
+      border:1px solid var(--border); border-radius:999px; padding:7px 10px;
+      background:var(--surface2); color:var(--muted); font-weight:900; font-size:12px; white-space:nowrap;
+    }
+
+    .btn{
+      border:1px solid var(--border); background:transparent; color:var(--text);
+      border-radius:12px; padding:9px 12px; font-weight:900; cursor:pointer; white-space:nowrap;
+    }
+    .btn:hover{ border-color: rgba(234,242,255,.35); background: rgba(255,255,255,.03); }
+    .btn.primary{ background:var(--accent); color:#062016; border-color:transparent; }
+    .btn.primary:hover{ filter:brightness(1.03); }
+    .btn.toggle{
+      font-size:12px; letter-spacing:.06em; text-transform:uppercase;
+      padding:8px 10px;
+    }
+    .btn.toggle.active{
+      background:var(--accent); color:#062016; border-color:transparent;
+    }
+
+    .kanban{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr)); /* NO scroll lateral */
+      gap:12px;
+      align-items:start;
+      height: calc(100vh - 170px);
+    }
+
+    .column{
+      border:2px solid var(--col-color, var(--border));
+      border-radius:var(--radius);
+      background:var(--surface);
+      padding:8px;
+      min-height:140px;
+      display:flex;
+      flex-direction:column;
+      min-width:0;
+      max-height: 100%;
+      overflow:auto;
+    }
+
+    .colHead{
+      display:flex; justify-content:space-between; align-items:center;
+      margin-bottom:10px; gap:10px;
+      padding:6px 8px; border-radius:10px;
+      background: color-mix(in srgb, var(--col-color) 20%, transparent);
+      border:1px solid color-mix(in srgb, var(--col-color) 35%, var(--border));
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .colTitle{
+      font-size:12px; font-weight:1000; color:var(--text);
+      letter-spacing:.10em; text-transform:uppercase; line-height:1.1;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .colCount{
+      font-size:12px; font-weight:1000; color:var(--text);
+      border:1px solid color-mix(in srgb, var(--col-color) 45%, var(--border));
+      background: color-mix(in srgb, var(--col-color) 55%, var(--surface2));
+      border-radius:999px; padding:5px 8px; min-width:26px; text-align:center;
+    }
+
+    .cardList{
+      display:flex; flex-direction:column; gap:8px; min-height:60px;
+      background: color-mix(in srgb, var(--col-color) 10%, var(--surface2));
+      border:1px solid color-mix(in srgb, var(--col-color) 28%, var(--border));
+      border-radius:12px;
+      padding:8px;
+    }
+    .cardList.dropHover{
+      outline:2px dashed rgba(25,195,125,.35);
+      outline-offset:6px;
+      border-radius:12px;
+    }
+
+    .card{
+      border:1px solid var(--border);
+      border-radius:12px;
+      background:var(--surface2);
+      padding:6px 8px;
+      cursor:grab;
+      user-select:none;
+      min-width:0;
+    }
+    .card:hover{ border-color: rgba(234,242,255,.28); }
+    .card.dragging{ opacity:.65; }
+    .card.placeholder{ border-style:dashed; background:transparent; height:58px; }
+
+    /* FICHA CHICA (lo que pediste) */
+    .cardRow{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+    .cardName{
+      font-weight:950; font-size:13px; line-height:1.15;
+      flex:1 1 auto; min-width:0;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .cardDate{
+      flex:0 0 auto;
+      font-size:11px; font-weight:950; color:var(--muted);
+      border:1px solid var(--border);
+      background: rgba(0,0,0,.10);
+      border-radius:999px;
+      padding:4px 8px;
+      white-space:nowrap;
+    }
+    :root.light .cardDate{ background: rgba(0,0,0,.04); }
+
+    .cardRow2{
+      margin-top:4px;
+      display:flex; justify-content:space-between; gap:8px; align-items:center;
+      font-size:12px; color:var(--muted);
+      min-width:0;
+    }
+    .cardComuna{
+      flex:1 1 auto; min-width:0;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .cardMonto{
+      flex:0 0 auto;
+      font-weight:950; color:var(--text); opacity:.92;
+      white-space:nowrap;
+    }
+
+    .cardActions{ margin-top:6px; display:flex; gap:6px; justify-content:center; }
+    .iconBtn{
+      width:30px; height:30px; display:grid; place-items:center;
+      border:1px solid var(--border); background:transparent;
+      border-radius:10px; color:var(--text); cursor:pointer;
+    }
+    .iconBtn svg{ width:16px; height:16px; }
+    .iconBtn.icon-edit{ color:#60a5fa; border-color:rgba(96,165,250,.45); }
+    .iconBtn.icon-phone{ color:#22c55e; border-color:rgba(34,197,94,.45); }
+    .iconBtn.icon-wa{ color:#25D366; border-color:rgba(37,211,102,.45); }
+    .iconBtn.icon-quote{ color:#f59e0b; border-color:rgba(245,158,11,.45); }
+    .iconBtn:hover{
+      border-color: rgba(234,242,255,.28);
+      background: rgba(255,255,255,.03);
+    }
+
+    .tableWrap{
+      margin-top:12px;
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      background:var(--surface);
+      max-height:62vh;
+      overflow:auto;
+    }
+    table{ width:100%; border-collapse:collapse; font-size:13px; }
+    thead th{
+      text-align:left; font-size:12px; letter-spacing:.10em; text-transform:uppercase;
+      color:var(--muted); padding:12px 12px; border-bottom:1px solid var(--border);
+      position:sticky; top:0; z-index:3; background:var(--surface);
+    }
+    tbody td{
+      padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top;
+    }
+    tbody tr:hover td{ background: rgba(255,255,255,.02); }
+
+    .sub{ color:var(--muted); font-weight:800; font-size:12px; margin-top:2px; }
+
+    .statePill{
+      display:inline-flex; align-items:center; gap:8px;
+      border:1px solid var(--border); background:var(--surface2);
+      border-left:4px solid var(--s, var(--border));
+      padding:6px 10px; border-radius:999px;
+      font-weight:950; font-size:12px; color:var(--text); white-space:nowrap;
+    }
+
+    td.actions{ white-space:nowrap; display:flex; gap:6px; align-items:center; }
+
+    .errorBox{
+      margin-top:12px;
+      padding:12px;
+      border:1px solid rgba(255,80,80,.35);
+      background: rgba(255,80,80,.08);
+      border-radius:14px;
+      color: rgba(255,220,220,.95);
+      font-weight:850;
+      display:none;
+      white-space: pre-wrap;
+    }
+
+    .card.flash{
+      border-color:#facc15;
+      box-shadow: 0 0 0 2px rgba(250,204,21,.22), 0 10px 20px rgba(250,204,21,.08);
+      animation: flashCard 2.6s ease-out 1;
+    }
+    @keyframes flashCard{
+      0%{ transform: translateY(-1px); background: rgba(250,204,21,.10); }
+      100%{ transform: translateY(0); background: var(--surface2); }
+    }
+    tbody tr.flash td{
+      background: rgba(250,204,21,.12);
+      animation: flashRow 2.6s ease-out 1;
+    }
+    @keyframes flashRow{
+      0%{ background: rgba(250,204,21,.16); }
+      100%{ background: transparent; }
+    }
+
+    /* === SweetAlert form (FALTABA en tu versión actual) === */
+    .swForm{ text-align:left; margin-top:6px; }
+    .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .grid2 .span2{ grid-column: 1 / -1; }
+
+    .swForm label{
+      display:block;
+      font-size:12px;
+      font-weight:950;
+      color:var(--muted);
+      letter-spacing:.02em;
+    }
+    .swInp, .swSel, .swTa{
+      width:100%;
+      margin-top:6px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background:var(--surface2);
+      color:var(--text);
+      padding:10px 10px;
+      font-weight:850;
+      outline:none;
+      box-sizing:border-box;
+    }
+    .swTa{ resize:vertical; min-height:88px; }
+    .swInp:focus, .swSel:focus, .swTa:focus{
+      border-color: rgba(25,195,125,.55);
+      box-shadow: 0 0 0 3px rgba(25,195,125,.12);
+    }
+
+    .swal2-popup{
+      background: var(--surface) !important;
+      color: var(--text) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 16px !important;
+    }
+    .swal2-title{ color: var(--text) !important; }
+    .swal2-html-container{ color: var(--text) !important; }
+
+    /* ===== Mobile pragmatic mode ===== */
+    @media (max-width: 820px){
+      .page{ padding:10px; }
+      .toolbar{ padding:10px; gap:8px; }
+      .toggle{ width:100%; }
+      /* en móvil usamos Tabla por defecto (más rápido y usable) */
+      #btnKanban{ display:none; }
+      .search{ min-width: 0; width:100%; }
+      #btnMonth{ display:none; }
+      #monthBadge{ display:none; }
+      #status{ display:none; }
+      .badge{ padding:6px 10px; font-size:12px; }
+      .btn.primary{ width:100%; padding:12px 14px; border-radius:14px; }
+
+      .tableWrap{ max-height: calc(100vh - 190px); }
+      table{ font-size:12px; }
+      thead th{ padding:10px 10px; font-size:11px; }
+      tbody td{ padding:10px 10px; }
+
+      /* oculta columnas menos importantes en móvil */
+      .col-marca, .col-comuna, .col-email, .col-estado { display:none; }
+
+      /* botones táctiles */
+      .iconBtn{ width:38px; height:38px; border-radius:12px; }
+      .iconBtn svg{ width:18px; height:18px; }
+      td.actions{ gap:8px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div class="toggle">
+        <button id="btnKanban" type="button" class="active">Kanban</button>
+        <button id="btnTable" type="button">Tabla</button>
+      </div>
+
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path d="m21 21-4.3-4.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input id="q" placeholder="Buscar cliente, email, comuna, marca..." autocomplete="off" />
+      </div>
+
+      <button class="btn toggle" id="btnMonth" type="button" title="Mostrar solo eventos del mes actual">
+        Mes actual
+      </button>
+
+      <div class="badge" id="status">Init…</div>
+      <div class="badge" id="monthBadge">Mes actual: 0</div>
+      <div class="badge" id="leadCount">0 leads</div>
+      <button class="btn primary" id="btnCreate" type="button">+ Crear lead</button>
+    </div>
+
+    <div class="errorBox" id="errBox"></div>
+
+    <div id="kanbanView" class="kanban"></div>
+
+    <div id="tableView" class="tableWrap" style="display:none">
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Marca</th>
+            <th>Comuna</th>
+            <th>Fecha</th>
+            <th>Monto</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tblBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+/* ========= Helpers ========= */
+const qs  = (s, el=document) => el.querySelector(s);
+const qsa = (s, el=document) => Array.from(el.querySelectorAll(s));
+const IS_MOBILE = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+
+window.addEventListener("message", (ev) => {
+  if (ev.data?.type === "openLead"){
+    const id = ev.data.id;
+    if (Array.isArray(ev.data.stale_ids) && ev.data.stale_ids.length){
+      STALE_IDS = new Set(ev.data.stale_ids.map(x => String(x)));
+      FILTER_MONTH = false;
+    }
+    if (!id) return;
+    if (LEADS && LEADS.length){
+      const lead = LEADS.find(x => String(x.id_lead) === String(id));
+      if (lead) setTimeout(() => openEditModal(lead), 80);
+    }else{
+      PENDING_OPEN_ID = String(id);
+    }
+  }
+});
+
+function setStatus(s){ qs("#status").textContent = s; }
+
+function showError(msg){
+  const box = qs("#errBox");
+  box.style.display = "block";
+  box.textContent = msg;
+  setStatus("ERROR");
+}
+function clearError(){
+  const box = qs("#errBox");
+  box.style.display = "none";
+  box.textContent = "";
+}
+
+window.addEventListener("error", (e)=> showError("JS error: " + (e.message || String(e.error || e))));
+window.addEventListener("unhandledrejection", (e)=> showError("Promise error: " + String(e.reason || e)));
+
+function getToken(){
+  // soporte para diferentes claves (tu login devuelve access_token/token/jwt)
+  const keys = ["token","access_token","jwt","gd_token","gd_access_token","crm_token"];
+  for (const k of keys){
+    const v1 = localStorage.getItem(k);
+    if (v1 && String(v1).trim()) return String(v1).trim();
+    const v2 = sessionStorage.getItem(k);
+    if (v2 && String(v2).trim()) return String(v2).trim();
+  }
+  try{
+    const auth = localStorage.getItem("auth") || sessionStorage.getItem("auth");
+    if (auth){
+      const o = JSON.parse(auth);
+      if (o?.access_token) return String(o.access_token);
+      if (o?.token) return String(o.token);
+      if (o?.jwt) return String(o.jwt);
+    }
+  }catch(_){}
+  // Fallback: si este view está dentro del shell (/web/index.html),
+  // el parent expone GD.getToken()
+  try{
+    const tParent = window.parent?.GD?.getToken?.();
+    if (tParent && String(tParent).trim()) return String(tParent).trim();
+  }catch(_){}
+  return "";
+}
+function authHeaders(extra={}){
+  const t = getToken();
+  const base = { Accept:"application/json", ...(extra||{}) };
+  return t ? { ...base, Authorization: "Bearer " + t } : base;
+}
+
+function _plainToast(title, kind="success"){
+  let box = document.getElementById("gdToast");
+  if (!box){
+    box = document.createElement("div");
+    box.id = "gdToast";
+    box.style.cssText = [
+      "position:fixed",
+      "top:14px",
+      "right:14px",
+      "z-index:99999",
+      "display:grid",
+      "gap:8px",
+      "max-width:min(520px,92vw)"
+    ].join(";");
+    document.body.appendChild(box);
+  }
+  const item = document.createElement("div");
+  const bg = kind === "error" ? "rgba(239,68,68,.22)" : "rgba(34,197,94,.18)";
+  const br = kind === "error" ? "rgba(239,68,68,.45)" : "rgba(34,197,94,.40)";
+  item.style.cssText = [
+    "padding:10px 12px",
+    "border-radius:12px",
+    "background:" + bg,
+    "border:1px solid " + br,
+    "backdrop-filter:blur(8px)",
+    "color:#fff",
+    "box-shadow:0 10px 30px rgba(0,0,0,.28)",
+    "font-weight:800",
+    "line-height:1.25"
+  ].join(";");
+  item.textContent = String(title || "");
+  box.appendChild(item);
+  setTimeout(()=>{ try{ item.remove(); }catch(_){ } }, 2400);
+}
+
+function toast(title, icon="success"){
+  // Importante: SweetAlert2 solo permite un modal activo; un "toast" de Swal puede cerrar el modal actual.
+  // Así que siempre usamos un toast propio (DOM) para no romper el flujo.
+  _plainToast(title, icon);
+}
+
+(function themeBootstrap(){
+  try{
+    const mode = localStorage.getItem("gd_theme") || "dark";
+    document.documentElement.classList.toggle("light", mode==="light");
+  }catch(_){}
+  window.addEventListener("message", (ev)=>{
+    if (ev.data && ev.data.type === "theme"){
+      document.documentElement.classList.toggle("light", ev.data.mode === "light");
+    }
+  });
+})();
+
+// Hosting: el CRM corre bajo /crm (no siempre hay rewrite desde /).
+// Para evitar 404 por rutas absolutas, prefijamos automáticamente con /crm cuando aplica.
+const API_BASE = (() => {
+  try{
+    const p = String(location.pathname || "");
+    const host = String(location.hostname || "").toLowerCase();
+    const isLocal = (host === "127.0.0.1" || host === "localhost");
+
+    // Producción: los HTML suelen abrirse bajo `/web/...` pero el API vive bajo `/crm/...`.
+    if (!isLocal && (p.includes("/crm/") || p.startsWith("/web/"))) return "/crm";
+
+    // Fallback seguro en prod (evita /tools/... y /leads/... sin /crm)
+    if (!isLocal) return "/crm";
+
+    // Local dev
+    return p.includes("/crm/") ? "/crm" : "";
+  }catch(_){
+    return "";
+  }
+})();
+function apiURL(url){
+  const u = String(url || "");
+  if (!u) return u;
+  if (/^https?:\/\//i.test(u)) return u;
+  if (u.startsWith("/crm/")) return u;
+  if (u.startsWith("/")) return API_BASE + u;
+  return API_BASE + "/" + u;
+}
+
+async function apiJSON(url, opts={}){
+  const r = await fetch(apiURL(url), { ...opts, headers: authHeaders(opts.headers || {}) });
+  const ct = (r.headers.get("content-type") || "").toLowerCase();
+  const txt = await r.text();
+
+  let data = null;
+  try{ data = txt ? JSON.parse(txt) : null; }
+  catch(_){
+    throw new Error(`Respuesta NO JSON en ${apiURL(url)} (${r.status}). Content-Type=${ct}. Primeros 200 chars:\n${txt.slice(0,200)}`);
+  }
+
+  if (r.status === 401){
+    try{ window.parent?.postMessage({type:"auth:expired"}, "*"); }catch(_){}
+    throw new Error("401 No autorizado (token vencido o inválido).");
+  }
+
+  if (!r.ok){
+    const detail = (data && typeof data==="object" && data.detail) ? data.detail : data;
+    throw new Error(`${r.status} ${typeof detail==="string" ? detail : JSON.stringify(detail)}`);
+  }
+  return data;
+}
+
+/* ========= Normalizadores ========= */
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[c]));
+}
+
+// ===== OCR (PDF imagen/escaneado) en el navegador =====
+// Nota: lo cargamos on-demand para no impactar rendimiento normal.
+const __scriptOnce = new Map();
+function loadScriptRaw(src){
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("script");
+    el.src = src;
+    el.async = true;
+    el.onload = () => resolve(true);
+    el.onerror = () => reject(new Error("No pude cargar: " + src));
+    document.head.appendChild(el);
+  });
+}
+async function loadScriptFirstAvailable(key, sources){
+  if (__scriptOnce.has(key)) return __scriptOnce.get(key);
+  const p = (async ()=>{
+    let lastErr = null;
+    for (const src of (sources || [])){
+      try{
+        await loadScriptRaw(src);
+        return true;
+      }catch(err){
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error("No pude cargar script");
+  })();
+  __scriptOnce.set(key, p);
+  return p;
+}
+
+async function ensurePdfJs(){
+  if (window.pdfjsLib?.getDocument) return;
+  // Usamos versiones conocidas (evitamos 404). Probamos varios CDNs por si hay bloqueo/CSP.
+  const v = "3.11.174";
+  await loadScriptFirstAvailable("pdfjs", [
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${v}/pdf.min.js`,
+    `https://cdn.jsdelivr.net/npm/pdfjs-dist@${v}/build/pdf.min.js`,
+    `https://unpkg.com/pdfjs-dist@${v}/build/pdf.min.js`,
+  ]);
+  if (window.pdfjsLib?.GlobalWorkerOptions){
+    // Importante: el worker también puede fallar; probamos el 1ero que funcione.
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${v}/pdf.worker.min.js`;
+  }
+}
+
+async function ensureTesseract(){
+  if (window.Tesseract?.recognize) return;
+  await loadScriptFirstAvailable("tesseract", [
+    "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js",
+    "https://unpkg.com/tesseract.js@5/dist/tesseract.min.js",
+  ]);
+}
+
+function guessItemsFromOcrText(raw){
+  const out = [];
+  const seen = new Set();
+  const text = String(raw || "").replace(/\r/g, "\n");
+  const lines = text
+    .split("\n")
+    .map(l => l.trim())
+    .filter(Boolean)
+    // normaliza espacios y OCR raro
+    .map(l => l.replace(/\s{2,}/g, " "));
+
+  // 1) Heurística de tabla tipo Camaleón (fecha -> producto -> cantidad (columna) -> total).
+  const rxDate = /(LUNES|MARTES|MIERCOLES|MIÉRCOLES|JUEVES|VIERNES|SABADO|SÁBADO|DOMINGO)\s+(\d{1,2})\s+([A-ZÑ]+)\s+(\d{4})/i;
+  const isNoise = (l) => /DETALLE DE PRODUCTOS|CANTIDAD|TOTAL|PORTADA|TERMINOS|T[ÉE]RMINOS/i.test(l);
+  const isExtra = (l) => /TRASLADOS|MONTAJE|DESMONTAJE|PERSONAL/i.test(l);
+  const isMoneyLike = (l) => /\$/.test(l) || /\b\d{1,3}(?:\.\d{3})+\b/.test(l);
+  const parseMoney = (l) => {
+    const m = String(l).match(/(\d{1,3}(?:\.\d{3})+|\d+)/);
+    if (!m) return null;
+    const n = Number(m[1].replace(/\./g, ""));
+    return Number.isFinite(n) ? n : null;
+  };
+  const parseQty = (l) => {
+    if (!/^\d{1,5}$/.test(l)) return null;
+    const n = Number(l);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    // cantidad razonable
+    if (n > 50000) return null;
+    return n;
+  };
+  const isProductLine = (l) => {
+    if (isNoise(l) || isExtra(l)) return false;
+    if (l.length <= 3) return false;
+    // típicamente: "Helados SOFT: barquillo, sabor..."
+    if (/:/.test(l) && /[A-Za-zÁÉÍÓÚÑ]/.test(l)) return true;
+    // fallback: texto con "HELADOS" etc
+    if (/HELADOS|SOFT/i.test(l) && /[A-Za-zÁÉÍÓÚÑ]/.test(l)) return true;
+    return false;
+  };
+
+  let currentDate = "";
+  for (let i = 0; i < lines.length; i++){
+    const line = lines[i];
+    if (!line) continue;
+    const dm = line.match(rxDate);
+    if (dm){
+      // ejemplo: "MIERCOLES 11 FEBRERO 2026"
+      currentDate = `${dm[1]} ${dm[2]} ${dm[3]} ${dm[4]}`.toUpperCase().replace("MIÉRCOLES","MIERCOLES").replace("SÁBADO","SABADO");
+      continue;
+    }
+    if (!isProductLine(line)) continue;
+
+    // Producto: sacamos solo el título antes de ":" si existe, para no guardar la descripción larga.
+    let productoBase = line;
+    if (productoBase.includes(":")){
+      productoBase = productoBase.split(":")[0].trim();
+    }
+    productoBase = productoBase.replace(/\s{2,}/g, " ").trim();
+    if (!productoBase) continue;
+
+    // Busca cantidad y total en las próximas líneas (la tabla suele traer "90", "$", "175.000")
+    let qty = null;
+    let total = null;
+    let sawDollar = false;
+
+    // Caso frecuente OCR: "Producto ... 65 $ 165" en la misma línea.
+    // Si hay $, nos quedamos con el lado izquierdo para no confundir monto con cantidad.
+    const leftNoMoney = (line.includes("$") ? line.split("$")[0] : line).trim();
+    const mInline = leftNoMoney.match(/\b(\d{1,4})\b/);
+    if (mInline){
+      const inline = Number(mInline[1]);
+      if (Number.isFinite(inline) && inline > 0 && inline < 500){
+        qty = inline;
+      }
+    }
+
+    for (let j = i + 1; j < Math.min(lines.length, i + 10); j++){
+      const l2 = lines[j];
+      if (!l2) continue;
+      if (l2.match(rxDate)) break;
+      if (isProductLine(l2) && !isExtra(l2)) break;
+
+      const q = parseQty(l2);
+      if (q != null && qty == null){
+        qty = q;
+        continue;
+      }
+
+      if (l2 === "$"){ sawDollar = true; continue; }
+      if ((sawDollar || isMoneyLike(l2)) && total == null){
+        const mny = parseMoney(l2);
+        if (mny != null && mny >= 1000){
+          total = mny;
+          continue;
+        }
+      }
+    }
+
+    if (qty != null){
+      const producto = currentDate ? `${productoBase} (${currentDate})` : productoBase;
+      const key = (producto + "|" + qty).toUpperCase();
+      if (!seen.has(key)){
+        seen.add(key);
+        out.push({ producto, cantidad: qty, _total: total || null });
+      }
+    }
+    if (out.length >= 40) break;
+  }
+
+  // Limpieza final: fuera basura típica OCR
+  const cleaned = out.filter(it => {
+    const p = String(it.producto || "").trim();
+    if (!p || p.length < 4) return false;
+    if (/TOTAL|SUBTOTAL|NETO|IVA|VALIDEZ|D[IÍ]AS|H[ÁA]BILES|PEDIDO/i.test(p)) return false;
+    return true;
+  });
+  if (cleaned.length) return cleaned;
+
+  // 2) Fallback simple: "PRODUCTO .... 2" (número al final)
+  const rx = /^(.+?)\s+(\d+(?:[.,]\d+)?)\s*$/;
+  for (const line of lines){
+    const m = line.match(rx);
+    if (!m) continue;
+    let producto = (m[1] || "").trim();
+    const cantidad = Number(String(m[2] || "").replace(",", "."));
+    if (!producto || !Number.isFinite(cantidad) || cantidad <= 0) continue;
+    // Evita años/fechas/ruido
+    if (cantidad >= 1900) continue;        // 2026, etc
+    if (cantidad > 500) continue;          // totales/montos no son qty
+    if (/\$/.test(producto)) continue;
+    if (/TOTAL|SUBTOTAL|NETO|IVA|VALIDEZ|D[IÍ]AS|H[ÁA]BILES|PEDIDO/i.test(producto)) continue;
+    if (/(LUNES|MARTES|MIERCOLES|MIÉRCOLES|JUEVES|VIERNES|SABADO|SÁBADO|DOMINGO)\b/i.test(producto)) continue;
+    producto = producto.replace(/\s{2,}/g, " ").replace(/[-–—]+$/g, "").trim();
+    const key = (producto + "|" + cantidad).toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ producto, cantidad });
+    if (out.length >= 80) break;
+  }
+  return out;
+}
+
+async function ocrPdfToText({ url, headers, maxPages=2, onProgress }){
+  await ensurePdfJs();
+  await ensureTesseract();
+
+  const task = window.pdfjsLib.getDocument({ url, httpHeaders: headers || {} });
+  const pdf = await task.promise;
+  const total = Math.min(maxPages, pdf.numPages || maxPages);
+  let all = "";
+
+  for (let i=1; i<=total; i++){
+    onProgress && onProgress({ phase:"render", page:i, total });
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    onProgress && onProgress({ phase:"ocr", page:i, total });
+    const r = await window.Tesseract.recognize(canvas, "spa", {
+      logger: (m) => {
+        if (m?.status === "recognizing text"){
+          onProgress && onProgress({ phase:"ocr", page:i, total, pct: m.progress });
+        }
+      }
+    });
+    all += "\n" + (r?.data?.text || "");
+  }
+
+  return { text: all, pages: total };
+}
+
+// Igual que ocrPdfToText, pero usando un PDF local (File) sin depender del servidor.
+async function ocrPdfToTextFromFile(file, { maxPages=2, onProgress } = {}){
+  await ensurePdfJs();
+  await ensureTesseract();
+
+  const buf = await file.arrayBuffer();
+  const task = window.pdfjsLib.getDocument({ data: buf });
+  const pdf = await task.promise;
+  const total = Math.min(maxPages, pdf.numPages || maxPages);
+  let all = "";
+
+  for (let i=1; i<=total; i++){
+    onProgress && onProgress({ phase:"render", page:i, total });
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    onProgress && onProgress({ phase:"ocr", page:i, total });
+    const r = await window.Tesseract.recognize(canvas, "spa", {
+      logger: (m) => {
+        if (m?.status === "recognizing text"){
+          onProgress && onProgress({ phase:"ocr", page:i, total, pct: m.progress });
+        }
+      }
+    });
+    all += "\n" + (r?.data?.text || "");
+  }
+
+  return { text: all, pages: total };
+}
+function fmtDate(iso){
+  if (!iso) return "-";
+  try{
+    const s = String(iso).trim();
+    // Evita el desfase de zona horaria para fechas sin hora (YYYY-MM-DD)
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m){
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return new Intl.DateTimeFormat("es-CL",{year:"numeric",month:"2-digit",day:"2-digit"}).format(d);
+    }
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return s.slice(0,10);
+    return new Intl.DateTimeFormat("es-CL",{year:"numeric",month:"2-digit",day:"2-digit"}).format(d);
+  }catch{ return String(iso).slice(0,10); }
+}
+function money(n){
+  const v = Number(n || 0);
+  if (!v) return "-";
+  try{ return v.toLocaleString("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}); }
+  catch{ return "$" + Math.round(v).toLocaleString("es-CL"); }
+}
+function mapBy(arr, key){
+  const m = new Map();
+  for (const x of (arr||[])) m.set(x[key], x);
+  return m;
+}
+
+function isInCurrentMonth(lead){
+  const raw = lead?.fecha_evento;
+  if (!raw) return true; // sin fecha: mantener visible (formularios)
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return true;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+}
+
+function computeMonthTotal(){
+  MONTH_TOTAL = LEADS.filter(isInCurrentMonth).length;
+  const mb = qs("#monthBadge");
+  if (mb) mb.textContent = `Mes actual: ${MONTH_TOTAL}`;
+}
+
+function computeHighlightIds(){
+  HIGHLIGHT_IDS = new Set();
+  const maxId = LEADS.reduce((m, l)=>Math.max(m, Number(l.id_lead||0)), 0);
+  const prev = Number(localStorage.getItem(LAST_LEAD_KEY) || "0");
+  const force = new URLSearchParams(location.search).get("highlight") === "new";
+
+  if (!prev && !force){
+    if (maxId) localStorage.setItem(LAST_LEAD_KEY, String(maxId));
+    return;
+  }
+
+  let candidates = LEADS.slice().sort((a,b)=>(Number(b.id_lead||0)-Number(a.id_lead||0)));
+  if (prev){
+    candidates = candidates.filter(l => Number(l.id_lead||0) > prev);
+  }
+  // limita para no destacar demasiados
+  candidates = candidates.slice(0, 10);
+  for (const l of candidates) HIGHLIGHT_IDS.add(Number(l.id_lead||0));
+  if (maxId) localStorage.setItem(LAST_LEAD_KEY, String(maxId));
+}
+
+function normEstado(e){
+  return {
+    id_estado: Number(e.id_estado),
+    nombre: e.nombre ?? e.estado ?? String(e.id_estado),
+    color: e.color || "#64748b",
+    orden: Number(e.orden ?? 999),
+    is_active: (e.is_active === undefined) ? true : !!e.is_active
+  };
+}
+function normMarca(m){
+  return {
+    id_marca: Number(m.id_marca),
+    nombre: m.nombre ?? m.marca ?? String(m.id_marca),
+    is_active: (m.is_active === undefined) ? true : !!m.is_active,
+    logo_path: m.logo_path || ""
+  };
+}
+function normComuna(c){
+  return {
+    id_comuna: Number(c.id_comuna),
+    nombre: c.nombre ?? c.comuna ?? String(c.id_comuna),
+    is_active: (c.is_active === undefined) ? true : !!c.is_active,
+    neto: c.neto, bruto: c.bruto, costo_traslado: c.costo_traslado
+  };
+}
+function normTipo(t){
+  return {
+    id_tipo_cliente: Number(t.id_tipo_cliente ?? t.id ?? 0),
+    nombre: t.nombre ?? t.tipo ?? t.descripcion ?? String(t.id_tipo_cliente ?? t.id ?? ""),
+    is_active: (t.is_active === undefined) ? true : !!t.is_active
+  };
+}
+
+function normLead(l){
+  // tu backend devuelve: cliente, marca, comuna, estado_nombre/estado_color...
+  return {
+    id_lead: Number(l.id_lead),
+    cliente: l.cliente ?? l.nombre_cliente ?? "",
+    email: l.email ?? "",
+    telefono: l.telefono ?? "",
+    direccion: l.direccion ?? "",
+    id_marca: Number(l.id_marca ?? 0),
+    id_estado: Number(l.id_estado ?? 0),
+    id_comuna: Number(l.id_comuna ?? 0),
+    fecha_evento: l.fecha_evento ?? null,
+    monto_cotizado: Number(l.monto_cotizado ?? 0),
+    plataforma: l.plataforma ?? null,
+    notas: l.notas ?? null,
+    codigo_cliente: l.codigo_cliente ?? null,
+    id_tipo_cliente: l.id_tipo_cliente ?? null,
+
+    marca_nombre: l.marca ?? l.marca_nombre ?? null,
+    comuna_nombre: l.comuna ?? l.comuna_nombre ?? null,
+    estado_nombre: l.estado ?? l.estado_nombre ?? null,
+    estado_color: l.color ?? l.estado_color ?? null,
+  };
+}
+
+/* ========= App state ========= */
+let VIEW = "kanban";
+let CATS = { marcas:[], comunas:[], estados:[], tipos:[] };
+let LEADS = [];
+let FILTER_MONTH = true;
+let MONTH_TOTAL = 0;
+let HIGHLIGHT_IDS = new Set();
+let STALE_IDS = null;
+let PENDING_OPEN_ID = null;
+
+const MONTH_FILTER_KEY = "gd_leads_month_filter";
+const LAST_LEAD_KEY = "gd_last_lead_id";
+
+function loadPrefs(){
+  const v = localStorage.getItem(MONTH_FILTER_KEY);
+  FILTER_MONTH = (v === null) ? true : (v !== "0");
+  if (IS_MOBILE) VIEW = "table";
+}
+function savePrefs(){
+  localStorage.setItem(MONTH_FILTER_KEY, FILTER_MONTH ? "1" : "0");
+}
+
+/* ========= Endpoints reales (con fallback) ========= */
+async function tryGetFirstJSON(urls){
+  let lastErr = null;
+  for (const u of urls){
+    try{ return await apiJSON(u); }
+    catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error("No pude cargar endpoint.");
+}
+
+async function loadCatalogos(){
+  // 1) marcas/comunas/tipos desde /leads/catalogos (respeta marcas del usuario)
+  const cat = await tryGetFirstJSON(["/leads/catalogos", "/catalogos", "/cotizador/catalogos"]);
+
+  const marcasRaw = (cat.marcas || cat.items?.marcas || []);
+  const comunasRaw = (cat.comunas || cat.items?.comunas || []);
+  const tiposRaw  = (cat.tipos_cliente || cat.tipos || []);
+
+  let marcas = (marcasRaw||[]).map(normMarca).filter(x=>x.is_active);
+  // extra: filtra marcas por usuario (si no es admin)
+  try{
+    const GD = window.parent && window.parent.GD;
+    const me = GD?.me;
+    const role = (me?.role || me?.rol || "").toString().toUpperCase();
+    const isAdmin = ["ADMIN","SUPERADMIN","JEFE DE OPERACIONES","OPERACIONES"].includes(role);
+    const userMarcas = (me?.marcas || []).map(m => Number(m)).filter(n => Number.isFinite(n));
+    if (!isAdmin && userMarcas.length){
+      marcas = marcas.filter(m => userMarcas.includes(Number(m.id_marca)));
+    }
+  }catch(_){}
+  let comunas = (comunasRaw||[]).map(normComuna).filter(x=>x.is_active);
+
+  // si no trajo comunas, intentamos endpoints alternativos (si existen)
+  if (!comunas.length){
+    try{
+      const c2 = await tryGetFirstJSON(["/comunas?limit=500", "/settings/comunas?limit=500&active_only=true"]);
+      const items = Array.isArray(c2) ? c2 : (c2.items || []);
+      comunas = (items||[]).map(normComuna).filter(x=>x.is_active);
+    }catch(_){}
+  }
+
+  // 2) estados: endpoint real
+  const est = await apiJSON("/lead-estados");
+  const estados = (est.items || est || []).map(normEstado).filter(x=>x.is_active).sort((a,b)=>a.orden-b.orden);
+
+  // 3) tipos: opcional
+  const tipos = (tiposRaw||[]).map(normTipo).filter(x=>x.is_active);
+
+  CATS = { marcas, comunas, estados, tipos };
+}
+
+async function loadLeads(){
+  const raw = await tryGetFirstJSON(["/leads?limit=5000", "/leads?limit=1000", "/leads"]);
+  const items = Array.isArray(raw) ? raw : (raw.items || raw.leads || []);
+  LEADS = (items||[]).map(normLead);
+  computeMonthTotal();
+  computeHighlightIds();
+}
+
+function openLeadFromQuery(){
+  const params = new URLSearchParams(location.search);
+  const id = params.get("open_lead") || params.get("id_lead") || params.get("lead_id");
+  if (!id) return;
+  const lead = LEADS.find(x => String(x.id_lead) === String(id));
+  if (lead){
+    setTimeout(() => openEditModal(lead), 120);
+  }
+}
+function loadStaleFilterFromQuery(){
+  const params = new URLSearchParams(location.search);
+  const raw = params.get("stale_ids");
+  if (!raw) return;
+  const ids = raw.split(",").map(x => x.trim()).filter(Boolean);
+  if (ids.length){
+    STALE_IDS = new Set(ids);
+    FILTER_MONTH = false;
+  }
+}
+
+/* ========= View ========= */
+function setView(v){
+  VIEW = v;
+  qs("#btnKanban").classList.toggle("active", v==="kanban");
+  qs("#btnTable").classList.toggle("active", v==="table");
+  qs("#kanbanView").style.display = v==="kanban" ? "" : "none";
+  qs("#tableView").style.display = v==="table" ? "" : "none";
+  render();
+  openLeadFromQuery();
+}
+
+function getFilteredLeads(){
+  const t = (qs("#q").value || "").trim().toLowerCase();
+  let base = FILTER_MONTH ? LEADS.filter(isInCurrentMonth) : LEADS.slice();
+  if (STALE_IDS && STALE_IDS.size){
+    base = base.filter(l => STALE_IDS.has(String(l.id_lead)));
+  }
+  if (!t) return base;
+
+  const mMarca = mapBy(CATS.marcas,"id_marca");
+  const mComuna = mapBy(CATS.comunas,"id_comuna");
+
+  return base.filter(l=>{
+    const marca = l.marca_nombre || (mMarca.get(l.id_marca)||{}).nombre || "";
+    const comuna = l.comuna_nombre || (mComuna.get(l.id_comuna)||{}).nombre || "";
+    const blob = [
+      l.cliente, l.codigo_cliente, l.email, l.telefono,
+      l.direccion, l.plataforma, l.notas,
+      marca, comuna
+    ].filter(Boolean).join(" ").toLowerCase();
+    return blob.includes(t);
+  });
+}
+
+function render(){
+  clearError();
+  const list = getFilteredLeads();
+  const total = LEADS.length;
+  const baseTotal = FILTER_MONTH ? MONTH_TOTAL : total;
+  qs("#leadCount").textContent = `Mostrando ${list.length} / ${baseTotal}`;
+  qs("#btnMonth").classList.toggle("active", FILTER_MONTH);
+
+  // columnas visibles, sin scroll lateral
+  qs("#kanbanView").style.setProperty("--cols", String(Math.max(1, (CATS.estados||[]).length)));
+
+  if (VIEW==="kanban") renderKanban(list);
+  else renderTable(list);
+}
+
+/* ========= Icons ========= */
+function svgIcon(name){
+  const icons = {
+    edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    phone:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8 9a16 16 0 0 0 7 7l.6-1.2a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    wa:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8.4 8.4 0 0 1 7.7 19L4 20l1-3.5A8.4 8.4 0 1 1 20 11.6Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.5 9.5c.3-1 1-1 1.4-1h.4c.3 0 .6.1.7.4l.7 1.7c.1.3.1.6-.1.8l-.5.6c-.2.2-.2.5 0 .8.6 1.1 1.5 1.9 2.6 2.5.3.2.6.2.8 0l.6-.5c.2-.2.5-.2.8-.1l1.7.7c.3.1.4.4.4.7v.4c0 .4 0 1.1-1 1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    msg:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 8h10M7 12h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    quote:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10M7 11h10M7 15h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6 3h12a2 2 0 0 1 2 2v14l-4-2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  };
+  return icons[name] || "";
+}
+function iconButton(title, iconName, handler){
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "iconBtn icon-" + iconName;
+  b.title = title;
+  b.innerHTML = svgIcon(iconName);
+  b.addEventListener("click", handler);
+  return b;
+}
+
+/* ========= Kanban render ========= */
+function renderKanban(list){
+  const mMarca = mapBy(CATS.marcas,"id_marca");
+  const mComuna = mapBy(CATS.comunas,"id_comuna");
+
+  const by = new Map();
+  for (const st of CATS.estados) by.set(st.id_estado, []);
+  for (const l of list){
+    const sid = l.id_estado ?? 0;
+    if (!by.has(sid)) by.set(sid, []);
+    by.get(sid).push(l);
+  }
+
+  const root = qs("#kanbanView");
+  root.innerHTML = "";
+
+  // SIEMPRE mostrar todos los estados (aunque no haya leads)
+  for (const st of CATS.estados){
+    const col = document.createElement("div");
+    col.className = "column";
+    col.style.setProperty("--col-color", st.color || "transparent");
+
+    const head = document.createElement("div");
+    head.className = "colHead";
+
+    const title = document.createElement("div");
+    title.className = "colTitle";
+    title.textContent = st.nombre || st.estado || st.name || ("Estado " + (st.id_estado ?? ""));
+
+    const count = document.createElement("div");
+    count.className = "colCount";
+    count.textContent = String((by.get(st.id_estado)||[]).length);
+
+    head.appendChild(title);
+    head.appendChild(count);
+
+    const listEl = document.createElement("div");
+    listEl.className = "cardList";
+    listEl.addEventListener("dragover", (e)=>onDragOver(e, listEl));
+    listEl.addEventListener("drop", (e)=>onDrop(e, st.id_estado));
+
+    const arr = (by.get(st.id_estado)||[]).slice().sort((a,b)=>(b.id_lead||0)-(a.id_lead||0));
+
+    for (const l of arr){
+      const card = document.createElement("div");
+      card.className = "card";
+      card.draggable = true;
+      if (HIGHLIGHT_IDS.has(Number(l.id_lead||0))){
+        card.classList.add("flash");
+        setTimeout(()=>card.classList.remove("flash"), 2600);
+      }
+
+      card.addEventListener("dragstart", (e)=>onDragStart(e, l.id_lead, card));
+      card.addEventListener("dragend", ()=>onDragEnd());
+
+      card.addEventListener("click",(ev)=>{
+        if (ev.target?.closest?.("button")) return;
+        openEditModal(l);
+      });
+
+      const marca = l.marca_nombre || (mMarca.get(l.id_marca)||{}).nombre || "-";
+      const comuna = l.comuna_nombre || (mComuna.get(l.id_comuna)||{}).nombre || "-";
+
+      // FICHA CHICA: A + B + iconos
+      const row1 = document.createElement("div");
+      row1.className = "cardRow";
+      row1.innerHTML = `
+        <div class="cardName">${escapeHtml(l.cliente || "-")}</div>
+        <div class="cardDate">${escapeHtml(fmtDate(l.fecha_evento))}</div>
+      `;
+
+      const row2 = document.createElement("div");
+      row2.className = "cardRow2";
+      row2.innerHTML = `
+        <div class="cardComuna">${escapeHtml(comuna)} · ${escapeHtml(marca)}</div>
+        <div class="cardMonto">${escapeHtml(money(l.monto_cotizado))}</div>
+      `;
+
+      const actions = document.createElement("div");
+      actions.className = "cardActions";
+      actions.appendChild(iconButton("Editar","edit",(e)=>{ e.stopPropagation(); openEditModal(l); }));
+      actions.appendChild(iconButton("Llamar","phone",(e)=>{ e.stopPropagation(); doCall(l); }));
+      actions.appendChild(iconButton("WhatsApp","wa",(e)=>{ e.stopPropagation(); doWhatsApp(l); }));
+      if (ENABLE_SEGUIMIENTO){
+        actions.appendChild(iconButton("Seguimiento","msg",(e)=>{ e.stopPropagation(); doSeguimiento(l); }));
+      }
+      actions.appendChild(iconButton("Cotizar","quote",(e)=>{ e.stopPropagation(); doCotizar(l); }));
+
+      card.appendChild(row1);
+      card.appendChild(row2);
+      card.appendChild(actions);
+      listEl.appendChild(card);
+    }
+
+    col.appendChild(head);
+    col.appendChild(listEl);
+    root.appendChild(col);
+  }
+}
+
+function renderTable(list){
+  const mMarca = mapBy(CATS.marcas,"id_marca");
+  const mComuna = mapBy(CATS.comunas,"id_comuna");
+  const mEstado = mapBy(CATS.estados,"id_estado");
+
+  const tb = qs("#tblBody");
+  tb.innerHTML = "";
+
+  for (const l of list){
+    const tr = document.createElement("tr");
+    if (HIGHLIGHT_IDS.has(Number(l.id_lead||0))){
+      tr.classList.add("flash");
+      setTimeout(()=>tr.classList.remove("flash"), 2600);
+    }
+
+    const est = mEstado.get(l.id_estado);
+    const estado = est ? est.nombre : (l.estado_nombre || ("#" + (l.id_estado ?? "-")));
+    const color = est ? (est.color || "") : (l.estado_color || "");
+
+    const marca = l.marca_nombre || (mMarca.get(l.id_marca)||{}).nombre || "-";
+    const comuna = l.comuna_nombre || (mComuna.get(l.id_comuna)||{}).nombre || "-";
+
+    tr.innerHTML =
+      `<td><strong>${escapeHtml(l.cliente || "-")}</strong><div class="sub col-email">${escapeHtml(l.email || "")}</div></td>` +
+      `<td class="col-marca">${escapeHtml(marca)}</td>` +
+      `<td class="col-comuna">${escapeHtml(comuna)}</td>` +
+      `<td>${escapeHtml(fmtDate(l.fecha_evento))}</td>` +
+      `<td>${escapeHtml(money(l.monto_cotizado))}</td>` +
+      `<td class="col-estado"><span class="statePill" style="--s:${escapeHtml(color)}">${escapeHtml(estado)}</span></td>` +
+      `<td class="actions"></td>`;
+
+    const actionsTd = tr.querySelector(".actions");
+    actionsTd.appendChild(iconButton("Editar","edit",()=>openEditModal(l)));
+    actionsTd.appendChild(iconButton("Llamar","phone",()=>doCall(l)));
+    actionsTd.appendChild(iconButton("WhatsApp","wa",()=>doWhatsApp(l)));
+    if (ENABLE_SEGUIMIENTO){
+      actionsTd.appendChild(iconButton("Seguimiento","msg",()=>doSeguimiento(l)));
+    }
+    actionsTd.appendChild(iconButton("Cotizar","quote",()=>doCotizar(l)));
+
+    tr.addEventListener("dblclick", ()=>openEditModal(l));
+    tb.appendChild(tr);
+  }
+}
+
+/* ========= Acciones ========= */
+function doCall(lead){
+  const tel = String(lead.telefono || "").trim();
+  if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+  window.open("tel:" + tel, "_self");
+}
+function doWhatsApp(lead){
+  const tel = String(lead.telefono || "").replace(/\D/g,"");
+  if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+  window.open("https://wa.me/" + tel, "_blank", "noopener");
+}
+
+async function doSeguimiento(lead){
+  const tel = String(lead.telefono || "").replace(/\D/g,"");
+  if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+  const tpls = followupTemplatesFor(lead);
+  const opts = tpls.map((t, i) => `<option value="${i}">Seguimiento ${String(i+1).padStart(2,"0")}</option>`).join("");
+  const res = await Swal.fire({
+    title:"Mensaje de seguimiento",
+    html: `
+      <div style="text-align:left;display:grid;gap:10px">
+        <label>Plantilla
+          <select id="sw_fu_tpl" class="swInp">${opts}</select>
+        </label>
+        <label>Mensaje (editable)
+          <textarea id="sw_fu_txt" class="swInp" rows="6"></textarea>
+        </label>
+      </div>
+    `,
+    showCancelButton:true,
+    confirmButtonText:"Abrir WhatsApp",
+    cancelButtonText:"Cancelar",
+    showDenyButton:true,
+    denyButtonText:"Copiar",
+    didOpen: () => {
+      const sel = document.getElementById("sw_fu_tpl");
+      const ta = document.getElementById("sw_fu_txt");
+      const apply = () => {
+        const idx = Number(sel?.value || 0);
+        const msg = String(tpls[idx] || "");
+        if (ta) ta.value = msg;
+      };
+      if (sel) sel.addEventListener("change", apply);
+      apply();
+    },
+    preConfirm: () => {
+      const ta = document.getElementById("sw_fu_txt");
+      const v = (ta?.value || "").trim();
+      if (!v) {
+        Swal.showValidationMessage("Mensaje vacío");
+        return false;
+      }
+      return v;
+    },
+    preDeny: () => {
+      const ta = document.getElementById("sw_fu_txt");
+      const v = (ta?.value || "").trim();
+      if (!v) return false;
+      try{ navigator.clipboard.writeText(v); }catch(_){}
+      return false;
+    }
+  });
+  if (!res.isConfirmed) return;
+  const msg = String(res.value || "").trim();
+  const url = "https://wa.me/" + tel + "?text=" + encodeURIComponent(msg);
+  window.open(url, "_blank", "noopener");
+}
+function doCotizar(lead){
+  const id = encodeURIComponent(lead.id_lead);
+  location.href = `/web/views/cotizador.html?id_lead=${id}&lead_id=${id}`;
+}
+
+/* ========= Drag & Drop (con fallback endpoint) ========= */
+let DRAG_ID = null;
+let PLACEHOLDER = null;
+
+function getDragAfterElement(container, y){
+  const els = [...container.querySelectorAll(".card:not(.dragging):not(.placeholder)")];
+  let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+  for (const el of els){
+    const box = el.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    if (offset < 0 && offset > closest.offset) closest = { offset, element: el };
+  }
+  return closest.element;
+}
+function onDragStart(e, id, cardEl){
+  DRAG_ID = id;
+  cardEl.classList.add("dragging");
+  if (e.dataTransfer){
+    e.dataTransfer.setData("text/plain", String(id));
+    e.dataTransfer.setDragImage(cardEl, 20, 20);
+  }
+  PLACEHOLDER = document.createElement("div");
+  PLACEHOLDER.className = "card placeholder";
+  PLACEHOLDER.innerHTML = "&nbsp;";
+}
+function onDragEnd(){
+  document.querySelector(".card.dragging")?.classList.remove("dragging");
+  if (PLACEHOLDER?.parentElement) PLACEHOLDER.parentElement.removeChild(PLACEHOLDER);
+  PLACEHOLDER = null; DRAG_ID = null;
+  qsa(".cardList").forEach(el=>el.classList.remove("dropHover"));
+}
+function onDragOver(e, listEl){
+  e.preventDefault();
+  listEl.classList.add("dropHover");
+  if (!PLACEHOLDER) return;
+  const after = getDragAfterElement(listEl, e.clientY);
+  if (after == null) listEl.appendChild(PLACEHOLDER);
+  else listEl.insertBefore(PLACEHOLDER, after);
+}
+
+async function setLeadEstado(leadId, newEstado, extra = {}){
+  const payloads = [
+    { url: `/leads/${leadId}/estado_ex`, method:"POST", body: { id_estado: Number(newEstado), ...extra } },
+    { url: `/leads/${leadId}/estado`,    method:"POST", body: { id_estado: Number(newEstado), ...extra } },
+    { url: `/leads/${leadId}`,           method:"PUT",  body: { id_estado: Number(newEstado), ...extra } },
+    { url: `/leads/${leadId}`,           method:"PATCH",body: { id_estado: Number(newEstado), ...extra } },
+  ];
+
+  let lastErr = null;
+  for (const p of payloads){
+    try{
+      await apiJSON(p.url, {
+        method: p.method,
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify(p.body),
+      });
+      return;
+    }catch(e){
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("No pude actualizar estado.");
+}
+
+function estadoNombre(id){
+  const est = (CATS.estados || []).find(e => Number(e.id_estado) === Number(id));
+  return (est?.nombre || est?.estado || "").toString().toUpperCase();
+}
+
+/* ========= Mensajes predefinidos ========= */
+const DECLINE_TEMPLATES = [
+  { id:"no_responde", label:"Cliente no contesta", text:"Cliente no contesta. Cierro el lead por falta de respuesta." },
+  { id:"sin_presupuesto", label:"Sin presupuesto", text:"Cliente indica que no cuenta con presupuesto. Queda declinado." },
+  { id:"cambio_fecha", label:"Cambió fecha / no hay disponibilidad", text:"Cliente cambió la fecha o no hay disponibilidad. Lead declinado." },
+  { id:"cancelado", label:"Evento cancelado", text:"Evento cancelado por el cliente. Lead declinado." },
+  { id:"competencia", label:"Eligió otra opción", text:"Cliente eligió otra alternativa. Lead declinado." },
+  { id:"no_califica", label:"No califica", text:"No califica para el servicio solicitado. Lead declinado." },
+  { id:"fuera_zona", label:"Fuera de cobertura", text:"Fuera de cobertura/logística. Lead declinado." },
+  { id:"sin_contacto", label:"Sin datos / contacto inválido", text:"Contacto inválido o incompleto. Lead declinado." },
+  { id:"duplicado", label:"Duplicado", text:"Lead duplicado. Se declina para evitar duplicidad." },
+  { id:"otro", label:"Otro (editar)", text:"" },
+];
+
+// Seguimiento masivo (plantillas): se habilita al final del dia.
+const ENABLE_SEGUIMIENTO = false;
+
+function renderTpl(t, lead){
+  const cliente = (lead?.cliente || lead?.nombre_cliente || "").trim();
+  const marca = (lead?.marca_nombre || lead?.marca || "").trim();
+  const fecha = String(lead?.fecha_evento || "").slice(0,10);
+  return String(t || "")
+    .replaceAll("{cliente}", cliente || "cliente")
+    .replaceAll("{marca}", marca || "marca")
+    .replaceAll("{fecha_evento}", fecha || "");
+}
+
+function followupTemplatesFor(lead){
+  const st = estadoNombre(lead?.id_estado || "");
+  const base = [
+    "Hola {cliente}, soy del equipo {marca}. Te escribo para confirmar detalles del evento {fecha_evento}.",
+    "Hola {cliente}, ¿cómo estás? Quedo atento(a) para avanzar con tu cotización y coordinar el servicio.",
+    "Hola {cliente}, te dejo este mensaje para saber si seguimos avanzando con el evento.",
+    "Hola {cliente}, ¿me confirmas si el evento sigue en pie y la fecha {fecha_evento} se mantiene?",
+    "Hola {cliente}, si te parece, puedo enviarte alternativas y cerrar la reserva hoy.",
+    "Hola {cliente}, te escribo para ayudarte a cerrar la cotización y reservar el servicio.",
+    "Hola {cliente}, ¿tienes un minuto para confirmar cantidades y horario?",
+    "Hola {cliente}, sigo atento(a) para coordinar la logística del evento {fecha_evento}.",
+    "Hola {cliente}, ¿quieres que te llame para cerrar en 2 minutos?",
+    "Hola {cliente}, quedo pendiente de tu confirmación para bloquear disponibilidad.",
+  ];
+  const asks = [
+    "¿Prefieres que te llame o lo coordinamos por WhatsApp?",
+    "¿Cuántas personas serán aproximadamente?",
+    "¿La dirección y comuna se mantienen?",
+    "¿Tienes alguna preferencia de horario?",
+    "¿Te envío la cotización final para aprobación?",
+    "¿Mantienes el servicio para la fecha indicada?",
+    "¿Deseas agregar o quitar productos del servicio?",
+    "¿Confirmamos horario de montaje y desmontaje?",
+    "¿Puedo enviarte el link de pago/confirmación?",
+    "¿Me confirmas el nombre para emitir la cotización?",
+  ];
+  const close = "Quedo atento(a).";
+  const out = [];
+  // Genera 100 variaciones (10x10).
+  for (const b of base){
+    for (const a of asks){
+      out.push(renderTpl(`${b}\n\n${a}\n\n${close}`, lead));
+    }
+  }
+  // Ajuste leve por estado (prioriza primeros, pero mantiene 100)
+  if (st.includes("NUEVO")) return out.slice(0, 100);
+  if (st.includes("CONTACT")) return out.slice(0, 100);
+  if (st.includes("COTIZ")) return out.slice(0, 100);
+  return out.slice(0, 100);
+}
+
+async function handleDeclinado(lead, newEstado){
+  const res = await Swal.fire({
+    icon:"warning",
+    title:"¿Declinar lead?",
+    text:"Se solicitará un motivo.",
+    showCancelButton:true,
+    confirmButtonText:"Sí, declinar",
+    cancelButtonText:"Cancelar"
+  });
+  if (!res.isConfirmed) return false;
+
+  const selOpts = DECLINE_TEMPLATES.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`).join("");
+  const motivo = await Swal.fire({
+    title:"Motivo de declinación",
+    html: `
+      <div style="text-align:left;display:grid;gap:10px">
+        <label>Mensaje predefinido
+          <select id="sw_decl_tpl" class="swInp">${selOpts}</select>
+        </label>
+        <label>Motivo (editable)
+          <textarea id="sw_decl_txt" class="swInp" rows="4" placeholder="Escribe el motivo..."></textarea>
+        </label>
+        <div class="muted">Tip: puedes editar el texto antes de guardar.</div>
+      </div>
+    `,
+    showCancelButton:true,
+    confirmButtonText:"Guardar",
+    cancelButtonText:"Cancelar",
+    didOpen: () => {
+      const sel = document.getElementById("sw_decl_tpl");
+      const ta = document.getElementById("sw_decl_txt");
+      const apply = () => {
+        const id = sel?.value || "no_responde";
+        const tpl = DECLINE_TEMPLATES.find(x => x.id === id) || DECLINE_TEMPLATES[0];
+        const txt = renderTpl(tpl.text || "", lead);
+        if (ta && !ta.value) ta.value = txt;
+        if (ta && txt) ta.value = txt; // siempre reemplaza al cambiar template
+      };
+      if (sel) sel.addEventListener("change", apply);
+      apply();
+    },
+    preConfirm: () => {
+      const ta = document.getElementById("sw_decl_txt");
+      const v = (ta?.value || "").trim();
+      if (!v) {
+        Swal.showValidationMessage("Motivo requerido");
+        return false;
+      }
+      return v;
+    }
+  });
+  if (!motivo.isConfirmed) return false;
+
+  await setLeadEstado(lead.id_lead, newEstado, { motivo: motivo.value || "" });
+  return true;
+}
+
+async function handleConfirmado(lead, newEstado){
+  // Refrescamos el lead desde API para evitar usar data stale (p.ej. id_cotizacion_vigente).
+  try{
+    const fresh = await apiJSON(`/leads/${lead.id_lead}`);
+    if (fresh && typeof fresh === "object"){
+      Object.assign(lead, fresh);
+    }
+  }catch(_){ }
+
+  if (!lead.fecha_evento){
+    await Swal.fire("Falta fecha", "El lead no tiene fecha de evento.", "warning");
+    return false;
+  }
+
+  // Historial cotizador
+  let qItems = [];
+  try{
+    let hist = null;
+    try{ hist = await apiJSON(`/quotes/history?id_lead=${lead.id_lead}`); }
+    catch(_){ hist = await apiJSON(`/crm/quotes/history?id_lead=${lead.id_lead}`); }
+    qItems = Array.isArray(hist) ? hist : (hist?.items || []);
+  }catch(err){
+    await Swal.fire("Error", "No pude cargar las cotizaciones del CRM para este lead. " + String(err?.message||err), "error");
+    return false;
+  }
+
+  // Manual/MICE items (si existen)
+  let manualItems = [];
+  try{
+    const mi = await apiJSON(`/leads/${lead.id_lead}/mice_items`);
+    // Preferimos by_day para soportar multi-día.
+    manualItems = Array.isArray(mi?.by_day) ? mi.by_day : (Array.isArray(mi?.items) ? mi.items : []);
+    lead._mice_items = manualItems;
+  }catch(_){ }
+  const manualAvailable = (manualItems.length > 0)
+    || !!String(lead.cotizacion_pdf_url || "").trim()
+    || !!String(lead.num_cotizacion || "").trim()
+    || (Number(lead.monto_cotizado || 0) > 0);
+
+  async function ensureQuoteMeta(){
+    const curNum = String(lead.num_cotizacion || "").trim();
+    const curMonto = Number(lead.monto_cotizado || 0);
+    if (curNum && Number.isFinite(curMonto) && curMonto > 0) return true;
+    const resMeta = await Swal.fire({
+      title: "Datos de cotización externa",
+      html: `
+        <div style="text-align:left;display:grid;gap:10px">
+          <label>N° cotización<input id="sw_numcot" class="swInp" value="${escapeHtml(curNum)}" placeholder="Ej: 12876" /></label>
+          <label>Monto<input id="sw_monto" class="swInp" type="number" step="0.01" value="${escapeHtml(String(curMonto || ""))}" placeholder="Ej: 1500000" /></label>
+          <div class="muted">Obligatorio cuando la cotización NO está hecha en el cotizador.</div>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Guardar",
+      cancelButtonText: "Cancelar",
+      focusConfirm: false,
+      preConfirm: ()=>{
+        const n = (qs("#sw_numcot").value || "").trim();
+        const m = Number(qs("#sw_monto").value || 0);
+        if (!n) return Swal.showValidationMessage("Falta N° cotización.");
+        if (!Number.isFinite(m) || m <= 0) return Swal.showValidationMessage("Monto inválido.");
+        return { num_cotizacion: n, monto_cotizado: m };
+      }
+    });
+    if (!resMeta.isConfirmed) return false;
+    try{
+      await apiJSON(`/leads/${lead.id_lead}`, {
+        method:"PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(resMeta.value)
+      });
+      lead.num_cotizacion = resMeta.value.num_cotizacion;
+      lead.monto_cotizado = resMeta.value.monto_cotizado;
+      return true;
+    }catch(err){
+      await Swal.fire("Error", "No pude guardar N°/monto. " + String(err.message||err), "error");
+      return false;
+    }
+  }
+
+  async function ensureManualMiceItems(){
+    // Si ya existen productos cargados manualmente, no volver a pedirlos.
+    try{
+      const cur = await apiJSON(`/leads/${lead.id_lead}/mice_items`);
+      const itemsCur = (cur?.by_day || cur?.items || []);
+      if (Array.isArray(itemsCur) && itemsCur.length){
+        lead._mice_items = itemsCur;
+        return true;
+      }
+    }catch(_){ }
+
+    // 1) intento: parsear PDF si existe (rápido si el PDF tiene texto).
+    let parsed = null;
+    try{
+      if (lead.cotizacion_pdf_url){
+        parsed = await apiJSON(`/leads/${lead.id_lead}/cotizacion_pdf/parse`, { method:"POST" });
+      }
+    }catch(_){ }
+
+    // Carga catálogo de productos (venta) para ayudar al usuario (solo selección, sin texto libre).
+    const marcaName = (()=>{
+      try{
+        const hit = (CATS?.marcas || []).find(m => Number(m.id_marca)===Number(lead.id_marca));
+        return String(hit?.nombre || hit?.marca || "").trim();
+      }catch(_){ return ""; }
+    })();
+    let allProds = [];
+    try{
+      const r = await apiJSON("/crm/productos?limit=5000");
+      const arr = Array.isArray(r) ? r : (r?.items || []);
+      const norm = (s)=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toUpperCase();
+      const want = norm(marcaName);
+      allProds = want ? arr.filter(p => norm(p?.marca) === want) : arr;
+    }catch(_){
+      allProds = [];
+    }
+
+    const defaultDay = String(lead.fecha_evento || "").slice(0,10);
+    const list = [];
+    if (parsed?.ok && Array.isArray(parsed.items) && parsed.items.length){
+      parsed.items.forEach(it => {
+        const producto = String(it.producto || "").trim();
+        const cantidad = Number(it.cantidad || 0);
+        if (producto && Number.isFinite(cantidad) && cantidad > 0){
+          list.push({ producto, cantidad, service_date: defaultDay || null });
+        }
+      });
+    }
+
+    const parserHint = (parsed && parsed.ok)
+      ? (parsed.items?.length ? `Leí ${parsed.items.length} líneas desde el PDF (${parsed.used}). Revísalas y aprueba.` : `No encontré productos en el PDF (${parsed.used}). Agrega manualmente.`)
+      : (parsed && parsed.ok === false)
+        ? (`No pude leer el PDF automáticamente (${parsed.error || "error"}). Agrega manualmente.`)
+        : (`Carga aquí los productos y cantidades para que el sistema calcule montaje y OPS.`);
+
+    const html = `
+      <div style="text-align:left;display:grid;gap:10px">
+        <div class="muted">${escapeHtml(parserHint)}</div>
+        ${lead.cotizacion_pdf_url ? `
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <button type="button" class="swBtn secondary" id="mi_ocr">Escanear PDF (OCR)</button>
+            <div class="muted" id="mi_ocr_status">Si el PDF es imagen/escaneado, usa OCR desde tu PC (puede tardar).</div>
+          </div>
+        ` : ``}
+	        <div style="border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.10);display:grid;gap:10px">
+	          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+	            <label style="width:180px">
+	              <div class="muted" style="margin-bottom:6px">Día</div>
+	              <input id="mi_day" class="swInp" type="date" value="${escapeHtml(defaultDay)}" />
+	            </label>
+	            <label style="flex:1;min-width:240px">
+	              <div class="muted" style="margin-bottom:6px">Producto (marca: ${escapeHtml(marcaName || "—")})</div>
+	              <input id="mi_prod_search" class="swInp" placeholder="Buscar producto…" />
+	            </label>
+            <label style="flex:1;min-width:260px">
+              <div class="muted" style="margin-bottom:6px">Selecciona</div>
+              <select id="mi_prod_sel" class="swSel"><option value="">${allProds.length ? "— Selecciona —" : "(sin productos)"}</option></select>
+            </label>
+            <label style="width:140px">
+              <div class="muted" style="margin-bottom:6px">Cantidad</div>
+              <input id="mi_qty" class="swInp" type="number" step="0.001" value="1" />
+            </label>
+            <button type="button" class="swBtn" id="mi_add">Agregar</button>
+          </div>
+          <div class="muted" id="mi_prod_status">${allProds.length ? `Productos cargados: ${allProds.length}` : "No hay productos para esta marca."}</div>
+        </div>
+        <div id="mi_list" style="display:grid;gap:6px"></div>
+      </div>
+    `;
+
+    function renderList(){
+      const box = qs("#mi_list");
+      if (!box) return;
+      box.innerHTML = list.length ? list.map((it, idx)=>{
+        const d = String(it.service_date || it.fecha || it.dia || defaultDay || "").slice(0,10);
+        return `
+        <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 10px;background:rgba(0,0,0,.12)">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <input class="swInp" type="date" value="${escapeHtml(d)}" style="width:160px" data-mi-day="${idx}" />
+            <div style="min-width:220px"><b>${escapeHtml(it.producto)}</b></div>
+            <input class="swInp" type="number" step="0.001" value="${escapeHtml(String(it.cantidad))}" style="width:120px" data-mi-qty="${idx}" />
+          </div>
+          <button type="button" class="swBtn secondary" data-mi-del="${idx}">Quitar</button>
+        </div>
+        `;
+      }).join("") : `<div class="muted">Aún no agregas productos.</div>`;
+      box.querySelectorAll("[data-mi-del]").forEach(btn=>{
+        btn.onclick = ()=>{ const i = Number(btn.getAttribute("data-mi-del")); if (!Number.isFinite(i)) return; list.splice(i,1); renderList(); };
+      });
+      box.querySelectorAll("[data-mi-day]").forEach(inp=>{
+        inp.onchange = ()=>{
+          const i = Number(inp.getAttribute("data-mi-day"));
+          if (!Number.isFinite(i) || !list[i]) return;
+          const v = String(inp.value || "").slice(0,10);
+          list[i].service_date = v || null;
+        };
+      });
+      box.querySelectorAll("[data-mi-qty]").forEach(inp=>{
+        inp.onchange = ()=>{
+          const i = Number(inp.getAttribute("data-mi-qty"));
+          if (!Number.isFinite(i) || !list[i]) return;
+          const v = Number(inp.value || 0);
+          if (!Number.isFinite(v) || v <= 0) return;
+          list[i].cantidad = v;
+        };
+      });
+    }
+
+    const res = await Swal.fire({
+      title: "Productos para MICE",
+      html,
+      width: 900,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: "Guardar productos",
+      cancelButtonText: "Cancelar",
+      didOpen: ()=>{
+        const addBtn = qs("#mi_add");
+        const prodSel = qs("#mi_prod_sel");
+        const prodSearch = qs("#mi_prod_search");
+        const qtyEl  = qs("#mi_qty");
+        const dayEl  = qs("#mi_day");
+        const prodSt = qs("#mi_prod_status");
+
+        function renderProducts(filterText=""){
+          if (!prodSel) return;
+          const ft = String(filterText || "").trim().toLowerCase();
+          const items = ft
+            ? allProds.filter(p => String(p.producto || "").toLowerCase().includes(ft))
+            : allProds;
+          const opts = items.length
+            ? items.slice(0, 2000).map(p => `<option value="${escapeHtml(p.producto || "")}">${escapeHtml(p.producto || "")}</option>`).join("")
+            : `<option value="">(sin productos)</option>`;
+          prodSel.innerHTML = `<option value="">— Selecciona —</option>` + opts;
+          if (prodSt){
+            prodSt.textContent = allProds.length ? `Productos cargados: ${allProds.length}` : "No hay productos para esta marca.";
+          }
+        }
+        renderProducts("");
+        prodSearch && prodSearch.addEventListener("input", ()=>{
+          renderProducts(prodSearch.value);
+          if (prodSel) prodSel.value = "";
+        });
+
+        const add = ()=>{
+          const producto = String(prodSel?.value || "").trim();
+          const cantidad = Number(qtyEl?.value || 0);
+          const day = String(dayEl?.value || "").slice(0,10);
+          if (!producto){ toast("Selecciona un producto de la lista", "error"); return; }
+          if (!Number.isFinite(cantidad) || cantidad <= 0){ toast("Cantidad inválida", "error"); return; }
+          list.push({ producto, cantidad, service_date: day || defaultDay || null });
+          if (prodSearch) prodSearch.value = "";
+          if (prodSel) prodSel.value = "";
+          if (qtyEl) qtyEl.value = "1";
+          renderList();
+        };
+        addBtn && (addBtn.onclick = add);
+        prodSearch && prodSearch.addEventListener("keydown", e=>{ if (e.key==="Enter"){ e.preventDefault(); add(); }});
+        renderList();
+
+        const ocrBtn = qs("#mi_ocr");
+        const ocrStatus = qs("#mi_ocr_status");
+        if (ocrBtn && lead.cotizacion_pdf_url){
+          ocrBtn.onclick = async ()=>{
+            const ask = await Swal.fire({
+              title:"OCR del PDF",
+              text:"Esto usa el PC del ejecutivo y puede tardar 30–120 segundos. ¿Continuar?",
+              icon:"question",
+              showCancelButton:true,
+              confirmButtonText:"Escanear",
+              cancelButtonText:"Cancelar"
+            });
+            if (!ask.isConfirmed) return;
+
+            const setMsg = (msg)=>{ if (ocrStatus) ocrStatus.textContent = msg; };
+            try{
+              ocrBtn.disabled = true;
+              setMsg("Preparando OCR…");
+
+	              const pdfUrl = apiURL(`/leads/${lead.id_lead}/cotizacion_pdf`);
+              const prog = ({ phase, page, total, pct })=>{
+                const p = (pct != null) ? ` · ${(pct*100).toFixed(0)}%` : "";
+                setMsg(phase === "render"
+                  ? `Renderizando página ${page}/${total}…`
+                  : `OCR página ${page}/${total}${p}…`);
+              };
+
+              const r = await ocrPdfToText({
+                url: pdfUrl,
+                headers: authHeaders(),
+                maxPages: 2,
+                onProgress: prog
+              });
+
+              const guessed = guessItemsFromOcrText(r.text);
+              if (!guessed.length){
+                setMsg("OCR listo, pero no pude detectar líneas (agrega manualmente).");
+                return;
+              }
+
+	              guessed.forEach(it => list.push({ ...it, service_date: defaultDay || null }));
+	              renderList();
+	              setMsg(`OCR listo: agregué ${guessed.length} línea(s). Revísalas y ajusta cantidades.`);
+            }catch(err){
+              setMsg("Error OCR: " + String(err?.message || err));
+            }finally{
+              ocrBtn.disabled = false;
+            }
+          };
+        }
+      },
+      preConfirm: ()=>{
+        if (!list.length){
+          Swal.showValidationMessage("Debes agregar al menos 1 producto.");
+          return false;
+        }
+        const items = list.map(it=>({
+          producto: String(it.producto || "").trim(),
+          cantidad: Number(it.cantidad || 0),
+          service_date: String(it.service_date || "").slice(0,10) || null
+        })).filter(it=>it.producto && Number.isFinite(it.cantidad) && it.cantidad > 0);
+        return { items };
+      }
+    });
+    if (!res.isConfirmed) return false;
+
+    await apiJSON(`/leads/${lead.id_lead}/mice_items`, {
+      method: "PUT",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify(res.value),
+    });
+    try{
+      const cur = await apiJSON(`/leads/${lead.id_lead}/mice_items`);
+      lead._mice_items = Array.isArray(cur?.by_day) ? cur.by_day : (Array.isArray(cur?.items) ? cur.items : []);
+    }catch(_){ }
+    return true;
+  }
+
+  // Google Calendar status (para el UI)
+  let gcalConnected = false;
+  try{
+    const st = await apiJSON("/tools/gcal/status");
+    gcalConnected = !!st?.connected;
+  }catch(_){ }
+
+  const money = (n)=>{
+    const x = Number(n||0);
+    if (!Number.isFinite(x)) return "";
+    return "$" + new Intl.NumberFormat("es-CL",{maximumFractionDigits:0}).format(x);
+  };
+
+  const quoteOptions = (()=>{
+    const opts = [];
+    const manualLabel = (()=>{
+      const num = String(lead.num_cotizacion || "").trim();
+      const monto = Number(lead.monto_cotizado || 0);
+      const mTxt = Number.isFinite(monto) && monto > 0 ? ` — ${money(monto)}` : "";
+      const nTxt = num ? `N°${num}` : "sin N°";
+      const itTxt = (lead._mice_items?.length || 0) ? ` · ${lead._mice_items.length} item(s)` : " · sin productos";
+      return `Manual (${nTxt}${mTxt}${itTxt})`;
+    })();
+    opts.push(`<option value="manual">${escapeHtml(manualLabel)}</option>`);
+    qItems.forEach(q=>{
+      const id = q.id_cotizacion || q.id;
+      const num = q.numero ? `N°${q.numero}` : `#${id}`;
+      const rev = (q.revision != null) ? Number(q.revision) : Number(q.version || 0);
+      const ver = rev > 0 ? ` (${rev})` : "";
+      const total = q.total ? ` — ${money(q.total)}` : "";
+      const fecha = q.fecha_evento || q.fecha_emision || q.created_at || "";
+      opts.push(`<option value="${id}">${escapeHtml(num + ver + total + (fecha ? " · " + fecha : ""))}</option>`);
+    });
+    return opts.join("");
+  })();
+
+  const leadCot = lead.id_cotizacion_vigente;
+  const leadCotId = (leadCot != null && String(leadCot).trim() != "") ? String(leadCot) : null;
+  const defCotId = leadCotId || (qItems[0] ? String(qItems[0].id_cotizacion || qItems[0].id || "").trim() : null);
+  const defaultSel = (manualAvailable && manualItems.length) ? "manual" : (defCotId || (qItems[0] ? String(qItems[0].id_cotizacion || qItems[0].id || "") : "manual"));
+
+  const html = `
+    <style>
+      .agGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .agCard{border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.10);display:grid;gap:10px}
+      .agRow{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+      .agLabel{display:grid;gap:6px}
+      .agLabel > .muted{font-weight:900}
+      .agSmall{font-size:12px;opacity:.9}
+      @media (max-width: 980px){ .agGrid{grid-template-columns:1fr} }
+    </style>
+    <div style="text-align:left;display:grid;gap:12px">
+      <div class="agGrid">
+        <div class="agCard">
+          <div class="agRow">
+            <label class="agLabel" style="flex:1;min-width:280px">
+              <div class="muted">Cotización aprobada</div>
+              <select id="ag_quote" class="swSel">${quoteOptions}</select>
+            </label>
+            <button type="button" class="swBtn secondary" id="ag_edit_manual" style="display:none;white-space:nowrap">Editar manual</button>
+          </div>
+
+          <div class="agRow">
+            <label class="agLabel">
+              <div class="muted">Inicio</div>
+              <input id="ag_hini" class="swInp" type="time" />
+            </label>
+            <label class="agLabel">
+              <div class="muted">Fin</div>
+              <input id="ag_hfin" class="swInp" type="time" />
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:26px">
+              <input id="ag_hrtbd" type="checkbox" checked />
+              <span class="muted" style="font-weight:1000">HR TBD</span>
+            </label>
+            <div class="muted agSmall" id="ag_duracion" style="align-self:center;margin-top:26px">Duración: —</div>
+          </div>
+
+          <label class="agLabel">
+            <div class="muted">Teléfono</div>
+            <input id="ag_tel" class="swInp" value="${escapeHtml(lead.telefono||"")}" placeholder="POR CONFIRMAR" />
+          </label>
+          <label class="agLabel">
+            <div class="muted">Dirección</div>
+            <input id="ag_dir" class="swInp" value="${escapeHtml(lead.direccion||"")}" placeholder="POR CONFIRMAR" />
+          </label>
+          <label class="agLabel">
+            <div class="muted">Location</div>
+            <input id="ag_loc" class="swInp" placeholder="Comuna o lugar (ej: Las Condes)" />
+          </label>
+        </div>
+
+        <div class="agCard">
+          <div class="agRow">
+            <label class="agLabel" style="width:140px">
+              <div class="muted">OPS</div>
+              <input id="ag_ops" class="swInp" type="number" min="0" step="1" />
+            </label>
+            <div class="muted agSmall" id="ag_calc_status" style="flex:1;align-self:center">Calculando…</div>
+            <button type="button" class="swBtn secondary" id="ag_recalc">Recalcular</button>
+          </div>
+
+          <label class="agLabel">
+            <div class="muted">Título</div>
+            <input id="ag_title" class="swInp" placeholder="Título del evento" />
+          </label>
+
+          <div class="agRow" style="align-items:stretch">
+            <label class="agLabel" style="flex:1;min-width:300px">
+              <div class="muted">Montaje</div>
+              <textarea id="ag_montaje" class="swTa" rows="3" placeholder="Montaje sugerido…"></textarea>
+            </label>
+            <label class="agLabel" style="flex:1;min-width:300px">
+              <div class="muted">Descripción</div>
+              <textarea id="ag_desc" class="swTa" rows="3" placeholder="Descripción para Calendar…"></textarea>
+            </label>
+          </div>
+
+          <div style="border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.10)">
+            <div class="muted" style="margin-bottom:6px;font-weight:1000">Productos</div>
+            <pre id="ag_products" style="margin:0;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;opacity:.95;max-height:110px;overflow:auto">(cargando…)</pre>
+          </div>
+
+          <div class="muted agSmall" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+            <div>Google Calendar: <b>${gcalConnected ? "conectado" : "NO conectado"}</b></div>
+            ${gcalConnected ? "" : `<a href="${escapeHtml(apiURL("/tools/gcal/start"))}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:1000">Conectar</a>`}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const touched = { title:false, loc:false, ops:false, montaje:false, desc:false };
+  const runPreview = async ()=>{
+    const st = qs("#ag_calc_status");
+    const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
+    const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
+    const idCot = (quoteSource === "cotizador") ? qSel : null;
+    const hrTbd = !!qs("#ag_hrtbd")?.checked;
+    const hIni = (qs("#ag_hini")?.value || "").trim();
+    const hFin = (qs("#ag_hfin")?.value || "").trim();
+    const tel = (qs("#ag_tel")?.value || "").trim();
+    const dir = (qs("#ag_dir")?.value || "").trim();
+
+    if (st) st.textContent = "Calculando…";
+    try{
+      const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
+        method:"POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          id_estado: Number(newEstado),
+          agendar: true,
+          dry_run: true,
+          quote_source: quoteSource,
+          ...(idCot ? { id_cotizacion: Number(idCot) } : {}),
+          telefono: tel,
+          direccion: dir,
+          ...(hrTbd ? { hr_tbd: true } : { start_time: hIni, end_time: hFin, hr_tbd: false }),
+        })
+      });
+      const ev = out?.evento || {};
+      if (!touched.title && qs("#ag_title")) qs("#ag_title").value = ev.title || "";
+      if (!touched.loc && qs("#ag_loc")) qs("#ag_loc").value = ev.location || "";
+      if (!touched.ops && qs("#ag_ops")) qs("#ag_ops").value = (ev.ops != null) ? String(ev.ops) : "";
+      if (!touched.montaje && qs("#ag_montaje")) qs("#ag_montaje").value = ev.montaje_text || "";
+      if (!touched.desc && qs("#ag_desc")) qs("#ag_desc").value = ev.description || "";
+      if (qs("#ag_products")) qs("#ag_products").textContent = ev.products_text || "(sin productos)";
+      if (st) st.textContent = "Listo";
+    }catch(err){
+      if (qs("#ag_products")) qs("#ag_products").textContent = "(sin productos)";
+      if (st) st.textContent = String(err?.message || err);
+    }
+  };
+
+  const res = await Swal.fire({
+    title:"Confirmar + Agenda",
+    html,
+    width: 1040,
+    focusConfirm:false,
+    showCancelButton:true,
+    showDenyButton:true,
+    confirmButtonText:"Confirmar y crear en Calendar",
+    denyButtonText:"Confirmar sin agendar",
+    cancelButtonText:"Cancelar",
+    didOpen: async ()=>{
+      const q = qs("#ag_quote");
+      if (q) q.value = defaultSel || "manual";
+
+      const editManualBtn = qs("#ag_edit_manual");
+      const refreshManualBtn = ()=>{
+        const v = (qs("#ag_quote")?.value || "").toString().trim();
+        if (editManualBtn) editManualBtn.style.display = (v === "manual") ? "" : "none";
+      };
+      refreshManualBtn();
+      q && q.addEventListener("change", async ()=>{ refreshManualBtn(); await runPreview(); });
+
+      qs("#ag_title") && qs("#ag_title").addEventListener("input", ()=>{ touched.title=true; });
+      qs("#ag_loc") && qs("#ag_loc").addEventListener("input", ()=>{ touched.loc=true; });
+      qs("#ag_ops") && qs("#ag_ops").addEventListener("input", ()=>{ touched.ops=true; });
+      qs("#ag_montaje") && qs("#ag_montaje").addEventListener("input", ()=>{ touched.montaje=true; });
+      qs("#ag_desc") && qs("#ag_desc").addEventListener("input", ()=>{ touched.desc=true; });
+
+      editManualBtn && (editManualBtn.onclick = async ()=>{
+        const okMeta = await ensureQuoteMeta();
+        if (!okMeta) return;
+        const okItems = await ensureManualMiceItems();
+        if (!okItems) return;
+        await runPreview();
+      });
+
+      const updDur = ()=>{
+        const el = qs("#ag_duracion");
+        if (!el) return;
+        const hrTbd = !!qs("#ag_hrtbd")?.checked;
+        const hIni = (qs("#ag_hini")?.value || "").trim();
+        const hFin = (qs("#ag_hfin")?.value || "").trim();
+        if (hrTbd || !hIni || !hFin){
+          el.textContent = "Duración: —";
+          return;
+        }
+        const parse = (hhmm)=>{
+          const m = String(hhmm||"").match(/^\\s*(\\d{1,2}):(\\d{2})\\s*$/);
+          if (!m) return null;
+          const h = Number(m[1]); const mi = Number(m[2]);
+          if (!Number.isFinite(h) || !Number.isFinite(mi) || h<0 || h>23 || mi<0 || mi>59) return null;
+          return h*60 + mi;
+        };
+        const a = parse(hIni), b = parse(hFin);
+        if (a == null || b == null){
+          el.textContent = "Duración: —";
+          return;
+        }
+        let d = b - a;
+        if (d < 0) d += 24*60; // cruza medianoche
+        const hh = Math.floor(d/60);
+        const mm = d%60;
+        el.textContent = `Duración: ${hh}h ${mm.toString().padStart(2,"0")}m`;
+      };
+
+      qs("#ag_hrtbd") && qs("#ag_hrtbd").addEventListener("change", ()=>{ updDur(); runPreview(); });
+      qs("#ag_hini") && qs("#ag_hini").addEventListener("change", ()=>{ updDur(); runPreview(); });
+      qs("#ag_hfin") && qs("#ag_hfin").addEventListener("change", ()=>{ updDur(); runPreview(); });
+      qs("#ag_tel") && qs("#ag_tel").addEventListener("change", runPreview);
+      qs("#ag_dir") && qs("#ag_dir").addEventListener("change", runPreview);
+      qs("#ag_recalc") && (qs("#ag_recalc").onclick = async ()=>{
+        // Importante: NO abrir otro Swal acá, porque SweetAlert2 cierra el modal actual.
+        // Recalcular debe sobrescribir sugerencias automáticamente.
+        touched.title = false;
+        touched.loc = false;
+        touched.ops = false;
+        touched.montaje = false;
+        touched.desc = false;
+        await runPreview();
+        toast("Recalculado", "success");
+      });
+
+      updDur();
+      await runPreview();
+    },
+    preConfirm: ()=>{
+      const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
+      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
+      const idCot = (quoteSource === "cotizador") ? qSel : null;
+      const hrTbd = !!qs("#ag_hrtbd")?.checked;
+      const hIni = (qs("#ag_hini")?.value || "").trim();
+      const hFin = (qs("#ag_hfin")?.value || "").trim();
+      if (!hrTbd && (!hIni || !hFin)) return Swal.showValidationMessage("Debes indicar horas o marcar HR TBD.");
+      return {
+        quote_source: quoteSource,
+        id_cotizacion: idCot ? Number(idCot) : null,
+        hr_tbd: hrTbd,
+        start_time: hIni,
+        end_time: hFin,
+        telefono: (qs("#ag_tel")?.value || "").trim(),
+        direccion: (qs("#ag_dir")?.value || "").trim(),
+        override_title: (qs("#ag_title")?.value || "").trim(),
+        override_location: (qs("#ag_loc")?.value || "").trim(),
+        override_ops: (qs("#ag_ops")?.value || "").trim(),
+        override_montaje_text: (qs("#ag_montaje")?.value || "").trim(),
+        override_description: (qs("#ag_desc")?.value || "").trim(),
+      };
+    }
+    ,
+    // Deny = confirmar sin agendar: NO validamos horas ni obligamos productos manuales aquí.
+    preDeny: ()=>{
+      const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
+      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
+      const idCot = (quoteSource === "cotizador") ? qSel : null;
+      return {
+        quote_source: quoteSource,
+        id_cotizacion: idCot ? Number(idCot) : null,
+      };
+    }
+  });
+
+  if (!res.isConfirmed && !res.isDenied) return false;
+  const v = res.value || {};
+
+  if (res.isDenied){
+    if (v.quote_source === "manual"){
+      // Para confirmar sin agendar SOLO exigimos meta (monto + número),
+      // pero NO obligamos productos manuales (se pueden cargar después).
+      const okMeta = await ensureQuoteMeta();
+      if (!okMeta) return false;
+    }
+    const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        id_estado: Number(newEstado),
+        agendar: false,
+        quote_source: v.quote_source,
+        ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
+      })
+    });
+    if (out?.warning === "NO_MICE_ITEMS"){
+      toast("Confirmado, pero falta cargar productos para MICE (pendiente de agendar).", "warning");
+    }
+    return true;
+  }
+
+  if (v.quote_source === "manual"){
+    const okMeta = await ensureQuoteMeta();
+    if (!okMeta) return false;
+    const okItems = await ensureManualMiceItems();
+    if (!okItems) return false;
+  }
+
+  const payload = {
+    id_estado: Number(newEstado),
+    agendar: true,
+    quote_source: v.quote_source,
+    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
+    telefono: v.telefono,
+    direccion: v.direccion,
+    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
+    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
+    ...(v.override_ops ? { override_ops: Number(v.override_ops) } : {}),
+    ...(v.override_montaje_text ? { override_montaje_text: v.override_montaje_text } : {}),
+    ...(v.override_title ? { override_title: v.override_title } : {}),
+    ...(v.override_location ? { override_location: v.override_location } : {}),
+    ...(v.override_description ? { override_description: v.override_description } : {}),
+  };
+
+  const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload),
+  });
+  const ev = out?.evento || {};
+
+  let gcal = null;
+  try{
+    gcal = await apiJSON(`/tools/agenda/${lead.id_lead}/approve`, { method:"PUT" });
+  }catch(err){
+    gcal = { connected:false, calendar_html_link:"", calendar_event_id:"", gcal_error: String(err?.message||err) };
+  }
+  const gcalLink = String(gcal?.calendar_html_link || "");
+  const gcalEid = String(gcal?.calendar_event_id || "");
+  const gcalErr = String(gcal?.gcal_error || "");
+
+  const fmtDT = (s)=>{
+    if (!s) return "";
+    try{ return new Date(s).toLocaleString("es-CL",{weekday:"long", day:"2-digit", month:"long", hour:"2-digit", minute:"2-digit"}); }
+    catch(_){ return String(s); }
+  };
+
+  await Swal.fire({
+    icon: (gcalLink && gcalEid) ? "success" : "warning",
+    title: (gcalLink && gcalEid) ? "Evento creado" : "Confirmado (sin Calendar)",
+    html: `
+      <div style="text-align:left">
+        <div style="font-weight:1000;font-size:14px">${escapeHtml(ev.title||"")}</div>
+        <div style="opacity:.7;margin-top:4px">${escapeHtml(fmtDT(ev.start_at))} → ${escapeHtml(fmtDT(ev.end_at))}</div>
+        <div style="margin-top:6px;font-weight:900">Location: ${escapeHtml(ev.location||"")}</div>
+        <div style="margin-top:6px;font-weight:900">OPS: ${escapeHtml(String(ev.ops ?? ""))}</div>
+        ${gcalLink ? `<div style="margin-top:10px"><a href="${escapeHtml(gcalLink)}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:1000">Abrir en Google Calendar</a></div>` : ``}
+        ${(!gcalLink || !gcalEid) ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);border-radius:12px">
+          <div style="font-weight:1000">No se creó el evento en Google Calendar.</div>
+          <div class="muted" style="margin-top:4px">${escapeHtml(gcalErr || "Revisar conexión/credenciales.")}</div>
+        </div>` : ``}
+        <div style="margin-top:10px;white-space:pre-line;font-size:12px;opacity:.95">${escapeHtml(ev.description||"")}</div>
+      </div>
+    `,
+  });
+
+  return true;
+}
+
+
+async function onDrop(e, newEstado){
+  e.preventDefault();
+  const id = Number((e.dataTransfer && e.dataTransfer.getData("text/plain")) || DRAG_ID || 0);
+  if (!id) return;
+
+  const lead = LEADS.find(x => Number(x.id_lead) === id);
+  if (!lead){ onDragEnd(); return; }
+
+  const prev = lead.id_estado;
+  if (Number(prev) === Number(newEstado)){ onDragEnd(); return; }
+
+  const prevName = estadoNombre(prev);
+  const nextName = estadoNombre(newEstado);
+
+  try{
+    if (nextName.includes("CONFIRMADO")){
+      const ok = await handleConfirmado(lead, newEstado);
+      if (!ok){ onDragEnd(); render(); return; }
+    } else if (nextName.includes("DECLINADO")){
+      const ok = await handleDeclinado(lead, newEstado);
+      if (!ok){ onDragEnd(); render(); return; }
+    } else {
+      if (prevName.includes("CONFIRMADO") && !nextName.includes("CONFIRMADO")){
+        const res = await Swal.fire({
+          icon:"warning",
+          title:"¿Salir de Confirmado?",
+          text:"Esto eliminará la pre-agenda y sus datos.",
+          showCancelButton:true,
+          confirmButtonText:"Sí, mover",
+          cancelButtonText:"Cancelar"
+        });
+        if (!res.isConfirmed){ onDragEnd(); render(); return; }
+        await setLeadEstado(id, newEstado, { undo_preagenda: true });
+      } else {
+        await setLeadEstado(id, newEstado);
+      }
+    }
+
+    lead.id_estado = Number(newEstado);
+    toast("Estado actualizado", "success");
+  }catch(err){
+    toast("Error moviendo lead: " + String(err.message||err), "error");
+  }finally{
+    onDragEnd();
+    render();
+  }
+}
+
+/* ========= Create / Edit (payload correcto: cliente) ========= */
+async function openCreateModal(){
+  const marcas = CATS.marcas || [];
+  const comunas = CATS.comunas || [];
+  const tipos  = CATS.tipos  || [];
+  const estados = CATS.estados || [];
+
+  const defaultEstado = estados[0]?.id_estado ?? null;
+
+  if (!marcas.length || !comunas.length){
+    toast("Catálogos incompletos (marcas/comunas)", "error");
+    return;
+  }
+
+  const html =
+    '<div class="swForm"><div class="grid2">' +
+    '<label>Nombre cliente<input id="c_cliente" class="swInp" placeholder="Ej: Juan Pérez" /></label>' +
+    '<label>Email<input id="c_email" class="swInp" placeholder="correo@dominio.cl" /></label>' +
+    '<label>Marca<select id="c_marca" class="swSel">' +
+      marcas.map(m=>`<option value="${m.id_marca}">${escapeHtml(m.nombre || m.marca || m.id_marca)}</option>`).join("") +
+    '</select></label>' +
+    '<label>Comuna<select id="c_comuna" class="swSel">' +
+      comunas.map(c=>`<option value="${c.id_comuna}">${escapeHtml(c.nombre || c.comuna || c.id_comuna)}</option>`).join("") +
+    '</select></label>' +
+    '<label>Tipo cliente<select id="c_tipo" class="swSel">' +
+      '<option value="">- Seleccionar -</option>' +
+      tipos.map(t=>`<option value="${t.id_tipo_cliente}">${escapeHtml(t.nombre || t.tipo || t.id_tipo_cliente)}</option>`).join("") +
+    '</select></label>' +
+    '<label>Plataforma<select id="c_plataforma" class="swSel">' +
+      '<option value="FORMULARIO">FORMULARIO</option>' +
+      '<option value="WHATSAPP">WHATSAPP</option>' +
+      '<option value="INSTAGRAM">INSTAGRAM</option>' +
+      '<option value="CORREO">CORREO</option>' +
+      '<option value="LLAMADO">LLAMADO</option>' +
+      '<option value="OTRO">OTRO</option>' +
+    '</select></label>' +
+    '<label>Teléfono<input id="c_tel" class="swInp" placeholder="+569..." /></label>' +
+    '<label>Fecha evento<input id="c_fecha" class="swInp" type="date" /></label>' +
+    '<label class="span2">Dirección<input id="c_dir" class="swInp" placeholder="Calle #, Depto, referencia" /></label>' +
+    '<label class="span2">Notas<textarea id="c_notas" class="swTa" placeholder="Contexto, requerimientos, etc."></textarea></label>' +
+    '</div></div>';
+
+  const res = await Swal.fire({
+    title: "Crear lead",
+    html,
+    width: 860,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: "Crear",
+    cancelButtonText: "Cancelar",
+    preConfirm: ()=>{
+      const cliente = (qs("#c_cliente").value || "").trim();
+      if (!cliente){
+        Swal.showValidationMessage("Nombre cliente es obligatorio.");
+        return false;
+      }
+      const payload = {
+        cliente,
+        email: (qs("#c_email").value || "").trim() || null,
+        telefono: (qs("#c_tel").value || "").trim() || null,
+        id_marca: Number(qs("#c_marca").value),
+        id_comuna: Number(qs("#c_comuna").value),
+        id_tipo_cliente: qs("#c_tipo").value ? Number(qs("#c_tipo").value) : null,
+        plataforma: (qs("#c_plataforma").value || "").trim() || null,
+        fecha_evento: (qs("#c_fecha").value || null),
+        direccion: (qs("#c_dir").value || "").trim() || null,
+        notas: (qs("#c_notas").value || "").trim() || null
+      };
+      if (defaultEstado != null) payload.id_estado = Number(defaultEstado);
+      return payload;
+    }
+  });
+
+  if (!res.isConfirmed) return;
+
+  try{
+    await apiJSON("/leads", {
+      method:"POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify(res.value)
+    });
+    toast("Lead creado", "success");
+    await loadLeads();
+    render();
+    setStatus("Leads: " + LEADS.length);
+  }catch(err){
+    toast("Error creando lead: " + String(err.message||err), "error");
+  }
+}
+
+async function openEditModal(lead){
+  const marcas = CATS.marcas || [];
+  const comunas = CATS.comunas || [];
+  const tipos  = CATS.tipos  || [];
+  const estados = CATS.estados || [];
+  let pdfFile = null;
+  let isAdmin = false;
+
+  try{
+    const GD = window.parent && window.parent.GD;
+    const me = GD?.me;
+    const role = (me?.role || me?.rol || "").toString().toUpperCase();
+    // Importante: SOLO Admin/SuperAdmin puede borrar leads (para no ensuciar métricas).
+    isAdmin = ["ADMIN","SUPERADMIN"].includes(role);
+  }catch(_){}
+
+  const html =
+    '<div class="swForm"><div class="grid2">' +
+    `<label>Nombre cliente<input id="e_cliente" class="swInp" value="${escapeHtml(lead.cliente || "")}" /></label>` +
+    `<label>Email<input id="e_email" class="swInp" value="${escapeHtml(lead.email || "")}" /></label>` +
+    '<label>Marca<select id="e_marca" class="swSel">' +
+      marcas.map(m=>`<option value="${m.id_marca}" ${Number(m.id_marca)===Number(lead.id_marca)?"selected":""}>${escapeHtml(m.nombre)}</option>`).join("") +
+    '</select></label>' +
+    '<label>Comuna<select id="e_comuna" class="swSel">' +
+      comunas.map(c=>`<option value="${c.id_comuna}" ${Number(c.id_comuna)===Number(lead.id_comuna)?"selected":""}>${escapeHtml(c.nombre)}</option>`).join("") +
+    '</select></label>' +
+    '<label>Tipo cliente<select id="e_tipo" class="swSel">' +
+      '<option value="">- Seleccionar -</option>' +
+      tipos.map(t=>`<option value="${t.id_tipo_cliente}" ${Number(t.id_tipo_cliente)===Number(lead.id_tipo_cliente)?"selected":""}>${escapeHtml(t.nombre)}</option>`).join("") +
+    '</select></label>' +
+    '<label>Estado<select id="e_estado" class="swSel">' +
+      estados.map(s=>`<option value="${s.id_estado}" ${Number(s.id_estado)===Number(lead.id_estado)?"selected":""}>${escapeHtml(s.nombre)}</option>`).join("") +
+    '</select></label>' +
+    `<label>Teléfono<input id="e_tel" class="swInp" value="${escapeHtml(lead.telefono || "")}" /></label>` +
+    `<label>Fecha evento<input id="e_fecha" class="swInp" type="date" value="${escapeHtml(String(lead.fecha_evento||"").slice(0,10))}" /></label>` +
+    `<label>N° Cotización<input id="e_numcot" class="swInp" value="${escapeHtml(String(lead.num_cotizacion ?? ""))}" /></label>` +
+    `<label>Monto cotizado<input id="e_monto" class="swInp" type="number" step="0.01" value="${escapeHtml(String(lead.monto_cotizado ?? 0))}" /></label>` +
+    `<label class="span2">Dirección<input id="e_dir" class="swInp" value="${escapeHtml(lead.direccion || "")}" /></label>` +
+    `<label class="span2">PDF Cotización
+        <input id="e_pdf" class="swInp" type="file" accept="application/pdf" />
+        <div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap">
+          <button type="button" class="swBtn secondary" id="e_viewpdf" disabled>Ver PDF</button>
+          <button type="button" class="swBtn secondary" id="e_ocrpdf" disabled>Cargar productos</button>
+          <div class="muted" id="e_pdfhint">${lead.cotizacion_pdf_url ? "PDF cargado. Puedes verlo y/o cargar productos manualmente." : "Sin PDF (opcional). Igual puedes cargar productos manualmente."}</div>
+        </div>
+     </label>` +
+    `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa">${escapeHtml(lead.notas || "")}</textarea></label>` +
+    `<label class="span2">Agregar comentario<textarea id="e_comment" class="swTa" placeholder="Nuevo comentario..."></textarea></label>` +
+    '</div></div>';
+
+  const res = await Swal.fire({
+    title: "Editar lead de: " + (lead.cliente || lead.nombre_cliente || ("#" + lead.id_lead)),
+    html,
+    width: 860,
+    focusConfirm: false,
+    allowOutsideClick: false,
+    showCancelButton: true,
+    confirmButtonText: "Guardar",
+    cancelButtonText: "Cerrar",
+    showDenyButton: isAdmin,
+    denyButtonText: "Borrar lead",
+    denyButtonColor: "#ef4444",
+    didOpen: ()=>{
+      const viewBtn = qs("#e_viewpdf");
+      const ocrBtn = qs("#e_ocrpdf");
+      const hint = qs("#e_pdfhint");
+      const fileEl = qs("#e_pdf");
+      let localPdfFile = null;
+      let isUploadingPdf = false;
+      let metaSaveT = null;
+
+      function setButtonsState(){
+        const hasLocal = !!localPdfFile;
+        const hasRemote = !!lead.cotizacion_pdf_url;
+        if (viewBtn) viewBtn.disabled = !(hasLocal || hasRemote);
+        // Cargar productos se puede abrir incluso sin PDF (carga manual).
+        if (ocrBtn) ocrBtn.disabled = false;
+        if (hint){
+          if (isUploadingPdf) hint.textContent = "Subiendo PDF…";
+          else if (hasLocal && !hasRemote) hint.textContent = "PDF seleccionado. Subiendo automáticamente…";
+          else if (hasRemote) hint.textContent = "PDF cargado. Puedes verlo y/o cargar productos manualmente.";
+          else hint.textContent = "Sin PDF (opcional). Igual puedes cargar productos manualmente.";
+        }
+      }
+
+      async function uploadSelectedPdf(){
+        if (!localPdfFile || isUploadingPdf) return;
+        isUploadingPdf = true;
+        setButtonsState();
+        try{
+          const fd = new FormData();
+          fd.append("file", localPdfFile);
+          const r = await fetch(apiURL(`/leads/${lead.id_lead}/cotizacion_pdf`), { method:"POST", headers: authHeaders(), body: fd });
+          if (!r.ok){
+            const t = await r.text().catch(()=> "");
+            throw new Error("No pude subir PDF" + (t ? (": " + t.slice(0,200)) : ""));
+          }
+          const data = await r.json().catch(()=>null);
+          if (data?.path) lead.cotizacion_pdf_url = data.path;
+
+          toast("PDF subido", "success");
+        }catch(err){
+          toast(String(err?.message || err), "error");
+        }finally{
+          isUploadingPdf = false;
+          setButtonsState();
+        }
+      }
+
+      async function saveMetaNow(){
+        try{
+          const num = (qs("#e_numcot")?.value || "").trim();
+          const montoRaw = (qs("#e_monto")?.value || "").trim();
+          const meta = {};
+          if (num) meta.num_cotizacion = num;
+          if (montoRaw) meta.monto_cotizado = Number(montoRaw);
+          if (!Object.keys(meta).length) return;
+
+          await apiJSON("/leads/" + lead.id_lead, {
+            method: "PUT",
+            headers: { "Content-Type":"application/json" },
+            body: JSON.stringify(meta),
+          });
+          lead.num_cotizacion = meta.num_cotizacion ?? lead.num_cotizacion;
+          if (meta.monto_cotizado != null) lead.monto_cotizado = meta.monto_cotizado;
+          toast("Cotización guardada", "success");
+        }catch(err){
+          toast("No pude guardar cotización: " + String(err?.message || err), "error");
+        }
+      }
+
+      function scheduleMetaSave(){
+        if (metaSaveT) clearTimeout(metaSaveT);
+        metaSaveT = setTimeout(saveMetaNow, 500);
+      }
+
+      if (fileEl){
+        fileEl.addEventListener("change", ()=>{
+          localPdfFile = fileEl.files && fileEl.files[0] ? fileEl.files[0] : null;
+          setButtonsState();
+          // UX: al seleccionar PDF, lo subimos inmediatamente para evitar que el usuario "olvide guardar".
+          uploadSelectedPdf();
+        });
+      }
+      setButtonsState();
+
+      // Guardado "a prueba de cierres": al cambiar número/monto, lo guardamos (debounce).
+      const numEl = qs("#e_numcot");
+      const montoEl = qs("#e_monto");
+      if (numEl){
+        numEl.addEventListener("input", scheduleMetaSave);
+        numEl.addEventListener("blur", saveMetaNow);
+      }
+      if (montoEl){
+        montoEl.addEventListener("input", scheduleMetaSave);
+        montoEl.addEventListener("blur", saveMetaNow);
+      }
+
+      if (viewBtn){
+        viewBtn.onclick = async ()=>{
+          try{
+            if (hint) hint.textContent = "Cargando PDF…";
+            let blob = null;
+            if (localPdfFile){
+              blob = localPdfFile;
+            }else{
+              const r = await fetch(apiURL(`/leads/${lead.id_lead}/cotizacion_pdf`), { headers: authHeaders() });
+              if (!r.ok) throw new Error("No pude abrir PDF (HTTP " + r.status + ")");
+              blob = await r.blob();
+            }
+            const url = URL.createObjectURL(blob);
+            window.open(url, "_blank", "noopener");
+            setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){ } }, 60_000);
+            if (hint) hint.textContent = "PDF abierto.";
+          }catch(err){
+            if (hint) hint.textContent = "Error abriendo PDF.";
+            toast("No pude abrir el PDF: " + String(err?.message||err), "error");
+          }
+        };
+      }
+
+      if (ocrBtn){
+        ocrBtn.onclick = async ()=>{
+          try{
+            const list = [];
+            const leadDay = String(lead.fecha_evento || "").slice(0,10);
+
+            // Antes de abrir el modal, preguntamos si es 1 día o varios.
+            const mode = await Swal.fire({
+              title: "Productos para MICE",
+              input: "radio",
+              inputOptions: {
+                single: leadDay ? `Un día (fecha evento: ${leadDay})` : "Un día (fecha evento)",
+                multi: "Varios días (día por día)",
+              },
+              inputValue: "single",
+              showCancelButton: true,
+              confirmButtonText: "Continuar",
+              cancelButtonText: "Cancelar",
+              inputValidator: (v)=> !v ? "Selecciona una opción." : null,
+            });
+            if (!mode.isConfirmed) return;
+            const isMulti = String(mode.value || "single") === "multi";
+
+            const marcaName = (()=>{
+              try{
+                const hit = (CATS.marcas || []).find(m => Number(m.id_marca) === Number(lead.id_marca));
+                return (hit?.nombre || hit?.marca || "").toString().trim();
+              }catch(_){ return ""; }
+            })();
+            const html2 = `
+              <div style="text-align:left;display:grid;gap:10px">
+                <div class="muted">Recomendado: carga manual (rápido y confiable). Si quieres, puedes intentar OCR como ayuda (opcional).</div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                  <button type="button" class="swBtn secondary" id="mi2_toggle_ocr">Probar OCR</button>
+                  <div class="muted" id="mi_ocr2_status"></div>
+                </div>
+                <div id="mi2_ocr_tools" style="display:none;flex-wrap:wrap;gap:10px;align-items:center">
+                  <button type="button" class="swBtn secondary" id="mi_parse2">Leer PDF (rápido)</button>
+                  <button type="button" class="swBtn secondary" id="mi_ocr2">Escanear PDF (OCR)</button>
+                  <div class="muted" id="mi_ocr2_tip">Tip: OCR escanea hasta 2 páginas (más rápido).</div>
+                </div>
+                <div style="border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.10);display:grid;gap:10px">
+                  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+                    ${isMulti ? `
+                    <label style="width:170px">
+                      <div class="muted" style="margin-bottom:6px">Día</div>
+                      <input id="mi2_day" class="swInp" type="date" value="${escapeHtml(leadDay)}" />
+                    </label>` : ``}
+                    <label style="flex:1;min-width:240px">
+                      <div class="muted" style="margin-bottom:6px">Producto (marca: ${escapeHtml(marcaName || "—")})</div>
+                      <input id="mi2_prod_search" class="swInp" placeholder="Buscar producto…" />
+                    </label>
+                    <label style="flex:1;min-width:260px">
+                      <div class="muted" style="margin-bottom:6px">Selecciona</div>
+                      <select id="mi2_prod_sel" class="swSel"><option value="">Cargando…</option></select>
+                    </label>
+                    <label style="width:120px">
+                      <div class="muted" style="margin-bottom:6px">Cantidad</div>
+                      <input id="mi2_prod_qty" class="swInp" type="number" step="0.01" value="1" />
+                    </label>
+                    <button type="button" class="swBtn secondary" id="mi2_prod_add">Agregar</button>
+                  </div>
+                  <div class="muted" id="mi2_prod_status">Carga manual recomendada: elige productos de la marca y ajusta cantidades.</div>
+                </div>
+                <div id="mi_list2" style="display:grid;gap:6px"></div>
+              </div>
+            `;
+
+            function currentDay(){
+              if (!isMulti) return leadDay || "";
+              const d = (qs("#mi2_day")?.value || "").trim();
+              return d || (leadDay || "");
+            }
+
+            function renderList2(){
+              const box = qs("#mi_list2");
+              if (!box) return;
+              const row = (it, idx) => `
+                <div style="display:grid;grid-template-columns:${isMulti ? "170px 1fr 120px 96px" : "1fr 120px 96px"};gap:8px;align-items:center;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;background:rgba(0,0,0,.12)">
+                  ${isMulti ? `<input class="swInp" data-mi2-d="${idx}" type="date" value="${escapeHtml(String(it.service_date || leadDay || "").slice(0,10))}" />` : ``}
+                  <input class="swInp" data-mi2-p="${idx}" value="${escapeHtml(it.producto || "")}" placeholder="Producto" />
+                  <input class="swInp" data-mi2-q="${idx}" type="number" step="0.01" value="${escapeHtml(String(it.cantidad ?? ""))}" placeholder="Cantidad" />
+                  <button type="button" class="swBtn secondary" data-mi2-del="${idx}">Quitar</button>
+                </div>
+              `;
+
+              if (!list.length){
+                box.innerHTML = `
+                  <div style="display:grid;gap:10px">
+                    <div class="muted">Aún no hay productos.</div>
+                    <button type="button" class="swBtn secondary" id="mi2_add">+ Agregar línea</button>
+                  </div>
+                `;
+              }else if (!isMulti){
+                box.innerHTML = `
+                  <div style="display:grid;gap:8px">
+                    ${list.map((it, idx)=> row(it, idx)).join("")}
+                    <button type="button" class="swBtn secondary" id="mi2_add">+ Agregar línea</button>
+                  </div>
+                `;
+              }else{
+                // Agrupar por día (día por día)
+                const groups = {};
+                for (let i=0;i<list.length;i++){
+                  const it = list[i] || {};
+                  const d = String(it.service_date || leadDay || "").slice(0,10) || "(sin día)";
+                  (groups[d] ||= []).push({ idx:i, it });
+                }
+                const days = Object.keys(groups).sort();
+                box.innerHTML = `
+                  <div style="display:grid;gap:10px">
+                    ${days.map(d => `
+                      <div style="border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.08)">
+                        <div style="font-weight:1000;margin-bottom:8px">${escapeHtml(d)}</div>
+                        <div style="display:grid;gap:8px">
+                          ${groups[d].map(x => row(x.it, x.idx)).join("")}
+                        </div>
+                      </div>
+                    `).join("")}
+                    <button type="button" class="swBtn secondary" id="mi2_add">+ Agregar línea</button>
+                  </div>
+                `;
+              }
+
+              // wire edits
+              box.querySelectorAll("[data-mi2-d]").forEach(inp=>{
+                inp.oninput = ()=>{
+                  const i = Number(inp.getAttribute("data-mi2-d"));
+                  if (!Number.isFinite(i) || !list[i]) return;
+                  list[i].service_date = String(inp.value || "").slice(0,10) || null;
+                };
+              });
+              box.querySelectorAll("[data-mi2-p]").forEach(inp=>{
+                inp.oninput = ()=>{
+                  const i = Number(inp.getAttribute("data-mi2-p"));
+                  if (!Number.isFinite(i) || !list[i]) return;
+                  list[i].producto = String(inp.value || "").trim();
+                };
+              });
+              box.querySelectorAll("[data-mi2-q]").forEach(inp=>{
+                inp.oninput = ()=>{
+                  const i = Number(inp.getAttribute("data-mi2-q"));
+                  if (!Number.isFinite(i) || !list[i]) return;
+                  list[i].cantidad = Number(inp.value || 0) || 0;
+                };
+              });
+              box.querySelectorAll("[data-mi2-del]").forEach(btn=>{
+                btn.onclick = ()=>{ const i = Number(btn.getAttribute("data-mi2-del")); if (!Number.isFinite(i)) return; list.splice(i,1); renderList2(); };
+              });
+              const addBtn = qs("#mi2_add");
+              addBtn && (addBtn.onclick = ()=>{
+                const d = currentDay();
+                list.push({ producto: "", cantidad: 1, service_date: isMulti ? (d || null) : null });
+                renderList2();
+              });
+            }
+
+            const res2 = await Swal.fire({
+              title: "Cargar productos manualmente",
+              html: html2,
+              width: 860,
+              focusConfirm: false,
+              showCancelButton: true,
+              confirmButtonText: "Guardar productos",
+              cancelButtonText: "Cerrar",
+              didOpen: ()=>{
+                renderList2();
+                // toggle OCR tools
+                const tBtn = qs("#mi2_toggle_ocr");
+                const tools = qs("#mi2_ocr_tools");
+                if (tBtn && tools){
+                  tBtn.onclick = ()=>{
+                    const open = tools.style.display !== "none";
+                    tools.style.display = open ? "none" : "flex";
+                    tBtn.textContent = open ? "Probar OCR" : "Ocultar OCR";
+                  };
+                }
+                const parseBtn = qs("#mi_parse2");
+                const btn2 = qs("#mi_ocr2");
+                const st2 = qs("#mi_ocr2_status");
+                const setMsg = (m)=>{ if (st2) st2.textContent = m; };
+
+                // ===== Manual: productos por marca =====
+                const sel = qs("#mi2_prod_sel");
+                const search = qs("#mi2_prod_search");
+                const qtyEl = qs("#mi2_prod_qty");
+                const addBtn = qs("#mi2_prod_add");
+                const st = qs("#mi2_prod_status");
+                let allProds = [];
+
+                function renderProducts(filterText=""){
+                  if (!sel) return;
+                  const ft = String(filterText || "").trim().toLowerCase();
+                  const items = ft
+                    ? allProds.filter(p => String(p.producto || "").toLowerCase().includes(ft))
+                    : allProds;
+                  const opts = items.length
+                    ? items.slice(0, 2000).map(p => `<option value="${escapeHtml(p.producto || "")}">${escapeHtml(p.producto || "")}</option>`).join("")
+                    : `<option value="">(sin productos)</option>`;
+                  sel.innerHTML = `<option value="">— Selecciona —</option>` + opts;
+                }
+
+                (async ()=>{
+                  try{
+                    if (st) st.textContent = "Cargando productos…";
+                    // Ojo: en este hosting el filtro `?marca=` puede ser case-sensitive y retornar vacío.
+                    // Para que SIEMPRE funcione, traemos el catálogo completo y filtramos aquí.
+                    // Además, /productos no siempre reescribe a /crm/productos, así que pegamos a /crm.
+                    const data = await apiJSON("/crm/productos?limit=5000");
+                    // Compat: algunos endpoints/versions devuelven array directo en vez de {items:[...]}.
+                    allProds = Array.isArray(data) ? data : (data?.items || []);
+
+                    // Si el backend ignora el query param marca, filtramos acá por seguridad.
+                    const norm = (s)=>String(s||"")
+                      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+                      .trim().toUpperCase();
+                    const want = norm(marcaName);
+                    if (want && allProds.length){
+                      const filtered = allProds.filter(p => norm(p?.marca) === want);
+                      // fallback: contiene (por si hay variantes tipo "CARRITOS DEL SABOR")
+                      allProds = filtered.length ? filtered : allProds.filter(p => norm(p?.marca).includes(want));
+                    }
+                    renderProducts("");
+                    if (st) st.textContent = allProds.length ? `Productos cargados: ${allProds.length}` : "No hay productos para esta marca.";
+                  }catch(err){
+                    allProds = [];
+                    renderProducts("");
+                    if (st) st.textContent = "No pude cargar productos: " + String(err?.message || err);
+                  }
+                })();
+
+                search && search.addEventListener("input", ()=>{
+                  // el input solo filtra; el valor real debe seleccionarse en el <select>
+                  renderProducts(search.value);
+                  if (sel) sel.value = "";
+                });
+                addBtn && (addBtn.onclick = ()=>{
+                  const prod = String(sel?.value || "").trim();
+                  const qty = Number(qtyEl?.value || 0) || 0;
+                  const d = currentDay();
+                  if (!prod){
+                    toast("Selecciona un producto de la lista", "error");
+                    return;
+                  }
+                  if (qty <= 0){
+                    toast("Cantidad inválida", "error");
+                    return;
+                  }
+                  const hit = list.find(x =>
+                    String(x.producto || "").toUpperCase() === prod.toUpperCase()
+                    && String(x.service_date || "").slice(0,10) === String(isMulti ? (d || "") : "").slice(0,10)
+                  );
+                  if (hit) hit.cantidad = (Number(hit.cantidad || 0) || 0) + qty;
+                  else list.push({ producto: prod, cantidad: qty, service_date: isMulti ? (d || null) : null });
+                  renderList2();
+                  toast("Producto agregado", "success");
+                });
+
+                parseBtn && (parseBtn.onclick = async ()=>{
+                  try{
+                    parseBtn.disabled = true;
+                    setMsg("Leyendo PDF (texto)…");
+                    const parsed = await apiJSON(`/leads/${lead.id_lead}/cotizacion_pdf/parse`, { method:"POST" });
+                    const items = (parsed && parsed.items) ? parsed.items : [];
+                    if (!items.length){
+                      setMsg("No pude detectar items por texto. Si el PDF es escaneado, usa OCR.");
+                      return;
+                    }
+                    // Normaliza a {producto,cantidad}
+                    const guessed = items.map(it => ({
+                      producto: it.producto || it.nombre || it.item || "",
+                      cantidad: Number(it.cantidad || it.qty || 0) || 0,
+                    })).filter(x => x.producto && x.cantidad > 0);
+                    const withDay = guessed.map(x => ({ ...x, service_date: isMulti ? (currentDay() || null) : null }));
+                    if (!guessed.length){
+                      setMsg("Leí el PDF, pero no pude armar items (usa OCR o agrega manual).");
+                      return;
+                    }
+                    list.splice(0, list.length, ...withDay);
+                    renderList2();
+                    setMsg(`Listo: detecté ${guessed.length} producto(s). Revisa y guarda.`);
+                  }catch(err){
+                    setMsg("Error leyendo PDF: " + String(err?.message || err));
+                  }finally{
+                    parseBtn.disabled = false;
+                  }
+                });
+                btn2 && (btn2.onclick = async ()=>{
+                  try{
+                    btn2.disabled = true;
+                    setMsg("Preparando OCR…");
+                    const prog = ({ phase, page, total, pct })=>{
+                      const p = (pct != null) ? ` · ${(pct*100).toFixed(0)}%` : "";
+                      setMsg(phase === "render"
+                        ? `Renderizando página ${page}/${total}…`
+                        : `OCR página ${page}/${total}${p}…`);
+                    };
+                    const r = localPdfFile
+                      ? await ocrPdfToTextFromFile(localPdfFile, { maxPages: 2, onProgress: prog })
+                      : await ocrPdfToText({
+                          url: `/leads/${lead.id_lead}/cotizacion_pdf`,
+                          headers: authHeaders(),
+                          maxPages: 2,
+                          onProgress: prog
+                        });
+                    const guessed = guessItemsFromOcrText(r.text);
+                    if (!guessed.length){
+                      setMsg("OCR listo, pero no pude detectar líneas (revisar PDF/contraste).");
+                      return;
+                    }
+                    const withDay = guessed.map(x => ({ ...x, service_date: isMulti ? (currentDay() || null) : null }));
+                    list.splice(0, list.length, ...withDay);
+                    renderList2();
+                    setMsg(`OCR listo: ${guessed.length} línea(s). Revísalas y guarda.${isMulti ? " (Si es multi-día, ajusta el día por línea.)" : ""}`);
+                  }catch(err){
+                    setMsg("Error OCR: " + String(err?.message || err));
+                  }finally{
+                    btn2.disabled = false;
+                  }
+                });
+
+                // Manual (sin auto-scan): el usuario decide si leer rápido u OCR.
+              },
+              preConfirm: ()=>{
+                if (!list.length){
+                  Swal.showValidationMessage("No hay productos para guardar.");
+                  return false;
+                }
+                if (isMulti){
+                  const bad = list.find(x => !String(x.service_date || "").slice(0,10));
+                  if (bad){
+                    Swal.showValidationMessage("Falta el día en al menos un producto.");
+                    return false;
+                  }
+                }
+                const items = list.map(x => ({
+                  producto: String(x.producto || "").trim(),
+                  cantidad: Number(x.cantidad || 0) || 0,
+                  service_date: (isMulti ? String(x.service_date || "").slice(0,10) : (leadDay || "")) || null,
+                })).filter(x => x.producto && x.cantidad > 0);
+                return { items };
+              }
+            });
+            if (!res2.isConfirmed) return;
+
+            await apiJSON(`/leads/${lead.id_lead}/mice_items`, {
+              method: "PUT",
+              headers: { "Content-Type":"application/json" },
+              body: JSON.stringify(res2.value),
+            });
+            try{
+              const cur = await apiJSON(`/leads/${lead.id_lead}/mice_items`);
+              const use = Array.isArray(cur?.by_day) ? cur.by_day : (cur?.items || []);
+              const n = Array.isArray(use) ? use.length : 0;
+              lead._mice_items = use || [];
+              toast(`Productos guardados (${n})`, "success");
+            }catch(_){
+              toast("Productos guardados", "success");
+            }
+
+            // SweetAlert2 no soporta modales anidados; al abrir este modal se cierra el del lead.
+            // Reabrimos el lead para que el usuario siga trabajando sin perder contexto.
+            setTimeout(()=>{ try{ openEditModal(lead); }catch(_){ } }, 50);
+          }catch(err){
+            toast("OCR: " + String(err?.message||err), "error");
+          }
+        };
+      }
+    },
+    preConfirm: ()=>{
+      const cliente = (qs("#e_cliente").value || "").trim();
+      if (!cliente){
+        Swal.showValidationMessage("Nombre cliente es obligatorio.");
+        return false;
+      }
+      const comment = (qs("#e_comment").value || "").trim();
+      const prevNotes = (qs("#e_notas").value || "").trim();
+      let notes = prevNotes;
+      if (comment){
+        const stamp = new Date();
+        const ts = stamp.toISOString().slice(0,16).replace("T"," ");
+        notes = (notes ? (notes + "\n") : "") + `[${ts}] ${comment}`;
+      }
+      const fileEl = qs("#e_pdf");
+      pdfFile = fileEl?.files?.[0] || null;
+      return {
+        cliente,
+        email: (qs("#e_email").value || "").trim() || null,
+        telefono: (qs("#e_tel").value || "").trim() || null,
+        id_marca: Number(qs("#e_marca").value),
+        id_comuna: Number(qs("#e_comuna").value),
+        id_tipo_cliente: qs("#e_tipo").value ? Number(qs("#e_tipo").value) : null,
+        id_estado: Number(qs("#e_estado").value),
+        fecha_evento: (qs("#e_fecha").value || null),
+        direccion: (qs("#e_dir").value || "").trim() || null,
+        notas: notes || null,
+        num_cotizacion: (qs("#e_numcot").value || "").trim() || null,
+        monto_cotizado: qs("#e_monto").value ? Number(qs("#e_monto").value) : 0
+      };
+    }
+  });
+
+  if (res.isDenied){
+    const ok = await Swal.fire({
+      title: `¿Borrar lead #${lead.id_lead}?`,
+      html: `<div style="text-align:left">
+        <div>Esta acción <b>no elimina</b> definitivamente: lo marca como borrado para no ensuciar métricas.</div>
+        <div class="muted" style="margin-top:8px">Solo Admin puede hacerlo.</div>
+      </div>`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Sí, borrar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ef4444",
+    });
+    if (!ok.isConfirmed) return;
+
+    try{
+      await apiJSON("/leads/" + lead.id_lead, { method:"DELETE" });
+      toast("Lead borrado", "success");
+      await loadLeads();
+      render();
+      setStatus("Leads: " + LEADS.length);
+    }catch(err){
+      toast("No pude borrar el lead: " + String(err.message||err), "error");
+    }
+    return;
+  }
+
+  if (!res.isConfirmed) return;
+
+  try{
+    const estados = CATS.estados || [];
+    const confirmadoId = (()=>{
+      const hit = estados.find(s => String(s?.nombre || "").toUpperCase().includes("CONFIRM"));
+      return hit ? Number(hit.id_estado) : null;
+    })();
+    const wantsConfirmFlow = (confirmadoId != null) && (Number(res.value.id_estado) === Number(confirmadoId));
+
+    // 1) Guardar cambios del lead (sin tocar el estado) para no saltarnos el flujo de confirmación/agendamiento.
+    const payloadNoEstado = { ...res.value };
+    delete payloadNoEstado.id_estado;
+    await apiJSON("/leads/" + lead.id_lead, {
+      method:"PUT",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify(payloadNoEstado)
+    });
+
+    // 2) Subir PDF si corresponde
+    if (pdfFile){
+      const fd = new FormData();
+      fd.append("file", pdfFile);
+      const r = await fetch(apiURL(`/leads/${lead.id_lead}/cotizacion_pdf`), { method:"POST", headers: authHeaders(), body: fd });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        throw new Error("No pude subir PDF" + (t ? (": " + t.slice(0,200)) : ""));
+      }
+      try{
+        const data = await r.json().catch(()=>null);
+        if (data?.path) lead.cotizacion_pdf_url = data.path;
+      }catch(_){}
+    }
+
+    // Reflejar cambios locales antes del flujo (fecha_evento, num/monto, marca, etc.)
+    Object.assign(lead, res.value);
+
+    // 3) Si el usuario dejó "Confirmado", ejecutamos el flujo correcto (elige cotización, calcula OPS/montaje y agenda).
+    if (wantsConfirmFlow){
+      const ok = await handleConfirmado(lead, Number(confirmadoId));
+      if (!ok){
+        toast("Confirmación cancelada", "warning");
+      }
+    }else{
+      // Si NO es confirmado, actualizamos el estado normalmente.
+      await apiJSON("/leads/" + lead.id_lead, {
+        method:"PUT",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ id_estado: res.value.id_estado })
+      });
+      toast("Lead actualizado", "success");
+    }
+
+    await loadLeads();
+    render();
+    setStatus("Leads: " + LEADS.length);
+  }catch(err){
+    toast("Error guardando lead: " + String(err.message||err), "error");
+  }
+}
+
+/* ========= Init ========= */
+async function init(){
+  const t = getToken();
+  if (!t){
+    showError("No hay token. Vuelve a /web/login.html y entra de nuevo.");
+    return;
+  }
+
+  loadPrefs();
+  loadStaleFilterFromQuery();
+  setStatus("Token OK");
+
+  try{
+    await loadCatalogos();
+    setStatus("Catálogos OK");
+  }catch(err){
+    showError("Error catálogos: " + String(err.message||err));
+    return;
+  }
+
+  try{
+    await loadLeads();
+    setStatus("Leads: " + LEADS.length);
+    if (PENDING_OPEN_ID){
+      const lead = LEADS.find(x => String(x.id_lead) === String(PENDING_OPEN_ID));
+      if (lead) setTimeout(() => openEditModal(lead), 80);
+      PENDING_OPEN_ID = null;
+    }
+  }catch(err){
+    showError("Error leads: " + String(err.message||err));
+    return;
+  }
+
+  qs("#btnKanban").onclick = ()=>setView("kanban");
+  qs("#btnTable").onclick  = ()=>setView("table");
+  qs("#q").addEventListener("input", render);
+  qs("#btnCreate").onclick = openCreateModal;
+  qs("#btnMonth").onclick = ()=>{
+    FILTER_MONTH = !FILTER_MONTH;
+    savePrefs();
+    render();
+  };
+
+  // Respeta VIEW (en móvil se fuerza a Tabla en loadPrefs()).
+  setView(VIEW);
+  openLeadFromQuery();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CRM 2025</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/panel.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+  <header class="topbar">
+    <button class="iconbtn" id="btnPin" type="button" title="Fijar / liberar menú">☰</button>
+
+    <button class="brand" id="btnHome" type="button" title="Dashboard">
+      GREEN DIAMOND
+    </button>
+
+    <div class="topspacer"></div>
+
+    <button class="wx-pill" id="wxPill" type="button" title="Clima">
+      <span class="wx-ico" id="wxIco">⛅</span>
+      <span class="wx-temp" id="wxTemp">—°</span>
+      <span class="wx-city" id="wxCity">—</span>
+    </button>
+
+    <div class="pill" id="clockBox">—</div>
+
+    <span class="ticon" title="Día">🌞</span>
+    <label class="switch" title="Día / Noche">
+      <input id="themeToggle" type="checkbox" />
+      <span class="slider"></span>
+    </label>
+    <span class="ticon" title="Noche">🌙</span>
+
+    <div class="pill userpill" id="userBox">Usuario: —</div>
+
+    <button class="iconbtn" id="btnLogout" type="button" title="Salir">⎋</button>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar collapsed" id="sidebar" aria-label="Menú principal">
+      <nav class="nav" id="nav"></nav>
+    </aside>
+
+    <main class="main">
+      <iframe id="mainFrame" class="frame" title="Contenido" src="/web/views/dashboard.html"></iframe>
+    </main>
+  </div>
+
+  <!-- Weather modal -->
+  <div class="wx-modal" id="wxModal" aria-hidden="true">
+    <div class="wx-modal-bg" id="wxModalBg"></div>
+    <div class="wx-modal-content" role="dialog" aria-modal="true" aria-label="Clima">
+      <button class="wx-close" id="wxClose" aria-label="Cerrar">✕</button>
+
+      <header class="wx-header">
+        <div class="wx-loc" id="wxModalCity">—</div>
+        <div class="wx-big">
+          <div class="wx-big-temp" id="wxModalTemp">—°</div>
+          <div class="wx-big-ico" id="wxModalIco">⛅</div>
+        </div>
+        <div class="wx-cond" id="wxModalNow">—</div>
+        <div class="wx-summary" id="wxSummary">—</div>
+      </header>
+
+      <section class="wx-card">
+        <div class="wx-card-title">AHORA</div>
+        <div class="wx-hours" id="wxHours"></div>
+      </section>
+
+      <section class="wx-card">
+        <div class="wx-card-title">PREVISIÓN (7 DÍAS)</div>
+        <div class="wx-days" id="wxDays"></div>
+      </section>
+    </div>
+  </div>
+
+  <script type="module" src="/web/js/panel.js"></script>
+  <script type="module" src="/web/js/weather.js"></script>
+</body>
+</html>

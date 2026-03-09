@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Settings — Green Diamond</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="./settings.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body class="gd-settings">
+  <div class="s-wrap">
+    <header class="s-top">
+      <div class="s-title">
+        <div class="s-kicker">SETTINGS</div>
+        <h1 id="h1">—</h1>
+        <div class="s-sub" id="sub">—</div>
+      </div>
+
+      <div class="s-actions">
+        <button class="s-btn" id="btnReload" type="button">Recargar</button>
+        <button class="s-btn primary" id="btnNew" type="button">Nuevo</button>
+      </div>
+    </header>
+
+    <section class="s-panel">
+      <div class="s-toolbar">
+        <div class="s-tabs" id="tabs"></div>
+        <div class="s-search">
+          <input id="q" placeholder="Buscar…" />
+        </div>
+      </div>
+
+      <div class="s-body">
+        <div class="s-state" id="stateBox" style="display:none"></div>
+        <div class="s-tablewrap">
+          <table class="s-table">
+            <thead><tr id="thead"></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="../js/settings/catalog.js"></script>
+</body>
+</html>

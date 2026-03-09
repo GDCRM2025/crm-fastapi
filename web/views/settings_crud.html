@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Settings</title>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    :root{
+      --bg:#0f172a;
+      --panel:#111c33;
+      --panel2:#0e1930;
+      --text:rgba(255,255,255,.92);
+      --muted:rgba(255,255,255,.62);
+      --line:rgba(255,255,255,.10);
+      --acc:#22c55e;
+      --r:16px;
+      --shadowOut: 10px 10px 22px rgba(0,0,0,.55), -10px -10px 18px rgba(255,255,255,.04);
+      --shadowIn: inset 10px 10px 18px rgba(0,0,0,.55), inset -10px -10px 18px rgba(255,255,255,.04);
+    }
+    :root.light{
+      --bg:#e8effc;
+      --panel:#eaf2ff;
+      --panel2:#e1ecff;
+      --text:rgba(0,0,0,.85);
+      --muted:rgba(0,0,0,.55);
+      --line:rgba(0,0,0,.10);
+      --shadowOut: 10px 10px 22px rgba(0,0,0,.16), -10px -10px 18px rgba(255,255,255,.75);
+      --shadowIn: inset 10px 10px 18px rgba(0,0,0,.10), inset -10px -10px 18px rgba(255,255,255,.85);
+    }
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      overflow:hidden;
+    }
+    .wrap{ height:100%; padding:14px; display:flex; flex-direction:column; gap:12px; }
+    .top{
+      display:flex; align-items:center; gap:12px;
+      padding:12px; border-radius: var(--r);
+      border:1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadowOut);
+    }
+    .title{ font-weight:950; font-size:18px; }
+    .sub{ color:var(--muted); font-weight:800; font-size:13px; margin-top:2px; }
+    .sp{ flex:1; }
+    .search{
+      display:flex; align-items:center; gap:10px;
+      height:34px; padding:0 12px;
+      border-radius: 999px;
+      border:1px solid var(--line);
+      background: var(--panel2);
+      box-shadow: var(--shadowIn);
+      min-width: 320px;
+    }
+    .search input{ flex:1; border:0; outline:none; background:transparent; color:var(--text); font-weight:800; }
+    .btn{
+      height:34px; padding:0 14px;
+      border-radius: 999px;
+      border:1px solid var(--line);
+      background: var(--panel2);
+      box-shadow: var(--shadowIn);
+      cursor:pointer;
+      font-weight:950;
+      color:var(--text);
+    }
+    .btn.primary{
+      border-color: rgba(34,197,94,.45);
+      background: color-mix(in oklab, var(--panel2) 70%, var(--acc) 30%);
+    }
+
+    .card{
+      flex:1; min-height:0;
+      border-radius: var(--r);
+      border:1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadowOut);
+      overflow:auto;
+      padding:12px;
+    }
+    table{ width:100%; border-collapse:separate; border-spacing:0 10px; font-size:13px; }
+    th{ text-align:left; padding:0 10px 6px; color:var(--muted); font-weight:950; letter-spacing:.08em; font-size:11px; }
+    td{
+      background: var(--panel2);
+      border:1px solid var(--line);
+      padding:10px;
+      box-shadow: var(--shadowIn);
+      vertical-align:middle;
+    }
+    tr td:first-child{ border-top-left-radius: 14px; border-bottom-left-radius: 14px; }
+    tr td:last-child{ border-top-right-radius: 14px; border-bottom-right-radius: 14px; }
+    tr.sel td{ outline: 2px solid rgba(34,197,94,.55); outline-offset:-2px; }
+
+    .chip{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:2px 10px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadowIn);
+      font-weight:950;
+    }
+    .dot{ width:10px; height:10px; border-radius:999px; }
+    .muted{ color:var(--muted); font-weight:800; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="title" id="ttl">Settings</div>
+      <div class="sub" id="sub">CRUD real (crear/editar/eliminar/buscar/ver más).</div>
+    </div>
+    <div class="sp"></div>
+    <div class="search">
+      <span style="opacity:.75">🔎</span>
+      <input id="q" placeholder="Buscar… (Enter)"/>
+    </div>
+    <button class="btn" id="btnReload">Recargar</button>
+    <button class="btn primary" id="btnCreate">Crear</button>
+    <button class="btn" id="btnEdit">Editar</button>
+    <button class="btn" id="btnDel">Eliminar</button>
+    <button class="btn" id="btnMore">Ver más</button>
+  </div>
+
+  <div class="card">
+    <div id="err" class="muted" style="display:none; padding:8px 4px 14px"></div>
+    <table id="tbl">
+      <thead><tr id="th"></tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  // theme from parent
+  function applyThemeLocal(mode){
+    document.documentElement.classList.toggle("light", mode === "light");
+  }
+  applyThemeLocal((localStorage.getItem("gd_theme")||"dark")==="light" ? "light":"dark");
+  window.addEventListener("message", (ev) => {
+    if (ev.data?.type === "theme") applyThemeLocal(ev.data.mode);
+  });
+
+  // El CRM corre bajo /crm (Passenger). Si no prefijamos, se va a /settings (404/HTML).
+  const API_BASE = location.pathname.startsWith("/crm/") ? "/crm" : "";
+
+  function getToken(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+  function authHeaders(extra={}){
+    const t = getToken();
+    return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+  }
+  async function jget(url){
+    const r = await fetch(url, { headers: authHeaders() });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    return await r.json();
+  }
+  async function jpost(url, body){
+    const r = await fetch(url, { method:"POST", headers: authHeaders({ "Content-Type":"application/json" }), body: JSON.stringify(body||{}) });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    return await r.json();
+  }
+  async function jput(url, body){
+    const r = await fetch(url, { method:"PUT", headers: authHeaders({ "Content-Type":"application/json" }), body: JSON.stringify(body||{}) });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    return await r.json();
+  }
+  async function jdel(url){
+    const r = await fetch(url, { method:"DELETE", headers: authHeaders() });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    return await r.json();
+  }
+
+  const params = new URLSearchParams(location.search);
+  const asked = (params.get("entity") || "").trim();
+  const ALIASES = {
+    "tipos_cliente": ["tipos_cliente","tipo_cliente","tiposclientE","tipoCliente"],
+    "estados_lead": ["estados_lead","estado_lead","estados"],
+  };
+
+  let ENTITY = asked || "usuarios";
+  let PK = "";
+  let COLS = [];
+  let ROWS = [];
+  let OFFSET = 0;
+  const LIMIT = 25;
+  let SELECTED = null;
+  let ME = null;
+  let ALL_MARCAS = [];
+  let ALLOWED_MARCAS = [];
+
+  const elErr = document.getElementById("err");
+  const elTh = document.getElementById("th");
+  const elTb = document.getElementById("tb");
+
+  function setError(msg){
+    elErr.style.display = "block";
+    elErr.textContent = msg;
+  }
+  function clearError(){
+    elErr.style.display = "none";
+    elErr.textContent = "";
+  }
+
+  function titleize(e){
+    return (e||"").replaceAll("_"," ").replace(/\b\w/g, m => m.toUpperCase());
+  }
+
+  function normMarca(s){
+    s = (s||"").toString().trim();
+    if (!s) return "";
+    // sin tildes, sin puntos raros, a MAYUSCULA
+    const k = s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/gi," ").trim().toUpperCase();
+    if (k.includes("CAMALEON")) return "CAMALEON";
+    if (k.includes("DEL") && k.includes("SABOR")) return "DEL SABOR";
+    if (k.includes("GOURMET")) return "GOURMET";
+    if (k.includes("EXPRESS")) return "EXPRESS";
+    return k;
+  }
+
+  async function loadMeAndMarcas(){
+    try{
+      ME = await jget(`${API_BASE}/me`);
+    }catch(_){ ME = null; }
+
+    try{
+      const mj = await jget(`${API_BASE}/marcas?limit=500`);
+      const raw = (mj.items || mj.marcas || mj || []);
+      ALL_MARCAS = raw.map(x => ({
+        id: x.id_marca ?? x.id ?? null,
+        nombre: (x.nombre || x.marca || x.name || "").toString().trim()
+      })).filter(x => x.nombre);
+    }catch(_){ ALL_MARCAS = []; }
+
+    const role = (ME?.role || "").toString().toUpperCase();
+    const isAdmin = role.includes("ADMIN") || role.includes("SUPER");
+    if (isAdmin){
+      ALLOWED_MARCAS = ALL_MARCAS.map(m => normMarca(m.nombre));
+    } else {
+      const ids = Array.isArray(ME?.marcas) ? ME.marcas : [];
+      const set = new Set(ids.map(Number));
+      ALLOWED_MARCAS = ALL_MARCAS
+        .filter(m => m.id !== null && set.has(Number(m.id)))
+        .map(m => normMarca(m.nombre));
+    }
+    ALLOWED_MARCAS = Array.from(new Set(ALLOWED_MARCAS)).filter(Boolean).sort();
+  }
+
+  async function metaFor(entity){
+    return await jget(`${API_BASE}/settings/meta/${encodeURIComponent(entity)}`);
+  }
+  async function listFor(entity, q, offset){
+    const u = new URL(`${API_BASE}/settings/${encodeURIComponent(entity)}`, location.origin);
+    u.searchParams.set("limit", String(LIMIT));
+    u.searchParams.set("offset", String(offset||0));
+    if (q) u.searchParams.set("q", q);
+    return await jget(u.pathname + "?" + u.searchParams.toString());
+  }
+
+  async function resolveEntity(){
+    const tries = [ENTITY, ...(ALIASES[ENTITY]||[])].filter((v,i,a)=>v && a.indexOf(v)===i);
+    let lastErr = null;
+
+    for (const t of tries){
+      try{
+        const m = await metaFor(t);
+        ENTITY = t;
+        PK = m.pk;
+        COLS = (m.columns||[]).map(c => ({ name:c.column_name, type:(c.data_type||"").toLowerCase(), nullable:c.is_nullable === "YES" }));
+        return;
+      }catch(e){
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error("Entidad no soportada");
+  }
+
+  function render(){
+    document.getElementById("ttl").textContent = `Settings · ${titleize(ENTITY)}`;
+    elTh.innerHTML = "";
+    elTb.innerHTML = "";
+    SELECTED = null;
+
+    // headers
+    for (const c of COLS){
+      const th = document.createElement("th");
+      th.textContent = c.name;
+      elTh.appendChild(th);
+    }
+
+    // rows
+    for (const r of ROWS){
+      const tr = document.createElement("tr");
+      tr.addEventListener("click", () => {
+        document.querySelectorAll("#tb tr").forEach(x => x.classList.remove("sel"));
+        tr.classList.add("sel");
+        SELECTED = r;
+      });
+
+      for (const c of COLS){
+        const td = document.createElement("td");
+        const v = r[c.name];
+
+        if (c.name.toLowerCase().includes("color") && typeof v === "string"){
+          td.innerHTML = `<span class="chip"><span class="dot" style="background:${v}"></span>${v}</span>`;
+        } else if (typeof v === "boolean"){
+          td.textContent = v ? "Activo" : "Inactivo";
+        } else {
+          td.textContent = (v === null || v === undefined) ? "" : String(v);
+        }
+        tr.appendChild(td);
+      }
+
+      elTb.appendChild(tr);
+    }
+  }
+
+  const PALETTE = ["#22c55e","#16a34a","#06b6d4","#3b82f6","#6366f1","#a855f7","#f97316","#ef4444","#64748b","#111827"];
+
+  function fieldInput(col, value){
+    const name = col.name;
+    const lower = name.toLowerCase();
+
+    // ocultar PK en create (se maneja solo)
+    if (name === PK) return "";
+
+    // Productos: marca es SELECT y se normaliza a MAYUSCULA (evita que desaparezcan productos)
+    if (ENTITY === "productos" && lower === "marca"){
+      const current = normMarca(value || "");
+      const list = (ALLOWED_MARCAS.length ? ALLOWED_MARCAS : ALL_MARCAS.map(m => normMarca(m.nombre)))
+        .filter(Boolean);
+      const options = list.map(m => `<option value="${m.replaceAll('"',"&quot;")}" ${m===current ? "selected":""}>${m}</option>`).join("");
+      const placeholder = `<option value="" ${!current ? "selected":""}>(Selecciona…)</option>`;
+      const helper = ALLOWED_MARCAS.length
+        ? `Solo puedes usar tus marcas asignadas.`
+        : `No se pudo detectar marcas del usuario; se muestran todas.`;
+      return `<label><b>${name}</b><br><select id="f_${name}" class="swal2-input" style="width:100%">${placeholder}${options}</select><div style="opacity:.72;font-weight:800;font-size:12px;margin-top:6px">${helper} Se guarda en MAYÚSCULA.</div></label>`;
+    }
+
+    // is_active como toggle, NO como input feo
+    if (lower === "is_active"){
+      const on = (value === undefined ? true : !!value);
+      return `
+        <div style="display:flex; align-items:center; gap:12px">
+          <div style="font-weight:950">Activo</div>
+          <label style="display:inline-flex; align-items:center; gap:10px">
+            <input id="f_${name}" type="checkbox" ${on?"checked":""} style="width:18px; height:18px">
+            <span style="font-weight:900; opacity:.85">${on ? "Sí" : "No"}</span>
+          </label>
+        </div>
+      `;
+    }
+
+    // color: input type color + paleta + texto “selecciona”
+    if (lower.includes("color")){
+      const v = (value || "#64748b");
+      const chips = PALETTE.map(x => `<button type="button" data-p="${x}" style="height:24px;width:24px;border-radius:10px;border:1px solid rgba(0,0,0,.12);background:${x};cursor:pointer"></button>`).join("");
+      return `
+        <div>
+          <div style="font-weight:950; margin-bottom:6px">Color del estado</div>
+          <div style="opacity:.75; font-weight:800; font-size:12px; margin-bottom:8px">Selecciona un color (paleta rápida) o elige uno libre.</div>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+            <input id="f_${name}" type="color" value="${v}" style="height:36px;width:56px;border:0; background:transparent; cursor:pointer">
+            <div id="pal" style="display:flex; gap:8px; flex-wrap:wrap">${chips}</div>
+            <div class="chip"><span class="dot" id="prev" style="background:${v}"></span><span id="hex">${v}</span></div>
+          </div>
+        </div>
+      `;
+    }
+
+    // tipos por data_type
+    const t = (col.type||"");
+    const safe = (value === null || value === undefined) ? "" : String(value).replaceAll('"','&quot;');
+    if (t.includes("int") || t.includes("numeric") || t.includes("double")){
+      return `<label><b>${name}</b><br><input id="f_${name}" class="swal2-input" type="number" value="${safe}"></label>`;
+    }
+    if (t.includes("date")){
+      return `<label><b>${name}</b><br><input id="f_${name}" class="swal2-input" type="date" value="${safe}"></label>`;
+    }
+    return `<label><b>${name}</b><br><input id="f_${name}" class="swal2-input" value="${safe}"></label>`;
+  }
+
+  function collectForm(){
+    const obj = {};
+    for (const c of COLS){
+      const name = c.name;
+      if (name === PK) continue;
+      const lower = name.toLowerCase();
+
+      if (lower === "is_active"){
+        const el = document.getElementById(`f_${name}`);
+        obj[name] = !!el?.checked;
+        continue;
+      }
+
+      if (lower.includes("color")){
+        const el = document.getElementById(`f_${name}`);
+        obj[name] = el?.value || null;
+        continue;
+      }
+
+      const el = document.getElementById(`f_${name}`);
+      if (!el) continue;
+      let v = el.value;
+
+      if (ENTITY === "productos" && lower === "marca"){
+        v = normMarca(v);
+      }
+
+      if (c.type.includes("int")) v = (v === "" ? null : Number(v));
+      obj[name] = (v === "" ? null : v);
+    }
+    return obj;
+  }
+
+  async function modalCreate(){
+    const html = COLS.map(c => fieldInput(c, undefined)).filter(Boolean).join(`<div style="height:8px"></div>`);
+    const { value } = await Swal.fire({
+      title: `Crear ${titleize(ENTITY)}`,
+      html: `<div style="display:grid; gap:10px; text-align:left">${html}</div>`,
+      showCancelButton:true,
+      confirmButtonText:"Crear",
+      didOpen: () => hookPalette()
+    });
+    if (value === undefined) return;
+
+    const body = collectForm();
+    await jpost(`/settings/${encodeURIComponent(ENTITY)}`, body);
+    await reload(true);
+  }
+
+  async function modalEdit(){
+    if (!SELECTED){
+      Swal.fire({ icon:"info", title:"Selecciona un registro", text:"Haz click en una fila primero." });
+      return;
+    }
+    const html = COLS.map(c => fieldInput(c, SELECTED[c.name])).filter(Boolean).join(`<div style="height:8px"></div>`);
+    const { value } = await Swal.fire({
+      title: `Editar ${titleize(ENTITY)} (#${SELECTED[PK]})`,
+      html: `<div style="display:grid; gap:10px; text-align:left">${html}</div>`,
+      showCancelButton:true,
+      confirmButtonText:"Guardar",
+      didOpen: () => hookPalette()
+    });
+    if (value === undefined) return;
+
+    const body = collectForm();
+    await jput(`/settings/${encodeURIComponent(ENTITY)}/${encodeURIComponent(SELECTED[PK])}`, body);
+    await reload(true);
+  }
+
+  async function delSelected(){
+    if (!SELECTED){
+      Swal.fire({ icon:"info", title:"Selecciona un registro", text:"Haz click en una fila primero." });
+      return;
+    }
+    const res = await Swal.fire({
+      icon:"warning", title:"Eliminar", text:"¿Seguro? Esto no se puede deshacer.",
+      showCancelButton:true, confirmButtonText:"Sí, eliminar", cancelButtonText:"Cancelar"
+    });
+    if (!res.isConfirmed) return;
+    await jdel(`/settings/${encodeURIComponent(ENTITY)}/${encodeURIComponent(SELECTED[PK])}`);
+    await reload(true);
+  }
+
+  function hookPalette(){
+    // para color inputs
+    const colorCol = COLS.find(c => c.name.toLowerCase().includes("color"));
+    if (!colorCol) return;
+    const name = colorCol.name;
+    const input = document.getElementById(`f_${name}`);
+    const prev = document.getElementById("prev");
+    const hex = document.getElementById("hex");
+    const pal = document.getElementById("pal");
+
+    function sync(){
+      if (!input) return;
+      if (prev) prev.style.background = input.value;
+      if (hex) hex.textContent = input.value;
+    }
+    input?.addEventListener("input", sync);
+    pal?.addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-p]");
+      if (!b) return;
+      input.value = b.dataset.p;
+      sync();
+    });
+    sync();
+  }
+
+  async function reload(resetOffset){
+    clearError();
+    if (resetOffset) OFFSET = 0;
+
+    const q = document.getElementById("q").value.trim();
+    const data = await listFor(ENTITY, q, OFFSET);
+    ROWS = data.items || data.data || data || [];
+    render();
+  }
+
+  async function more(){
+    OFFSET += LIMIT;
+    const q = document.getElementById("q").value.trim();
+    const data = await listFor(ENTITY, q, OFFSET);
+    const moreRows = data.items || data.data || data || [];
+    ROWS = ROWS.concat(moreRows);
+    render();
+  }
+
+  async function init(){
+    try{
+      await loadMeAndMarcas();
+      await resolveEntity();
+      await reload(true);
+    }catch(e){
+      setError(`Settings error: ${String(e)}`);
+      document.getElementById("tbl").style.display = "none";
+    }
+  }
+
+  document.getElementById("btnReload").onclick = () => reload(true);
+  document.getElementById("btnCreate").onclick = () => modalCreate().catch(e => setError(String(e)));
+  document.getElementById("btnEdit").onclick = () => modalEdit().catch(e => setError(String(e)));
+  document.getElementById("btnDel").onclick = () => delSelected().catch(e => setError(String(e)));
+  document.getElementById("btnMore").onclick = () => more().catch(e => setError(String(e)));
+  document.getElementById("q").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") reload(true).catch(err => setError(String(err)));
+  });
+
+  init();
+</script>
+</body>
+</html>

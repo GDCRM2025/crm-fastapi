@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Conductores</title>
+  <link rel="stylesheet" href="/web/styles.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    :root{ --app-bg:#07131F; --surface:#0C1B2B; --surface2:#102235; --border:#22384F; --text:#EAF2FF; --muted:#A9BBD2; --accent:#19C37D; --shadow:0 12px 30px rgba(0,0,0,.35); }
+    :root.light{ --app-bg:#f6f8ff; --surface:#fff; --surface2:#f2f5ff; --border:#d9e2f2; --text:#0b1220; --muted:#4b5f7a; --shadow:0 10px 24px rgba(0,0,0,.10); }
+    *{box-sizing:border-box;}
+    body{margin:0;background:var(--app-bg);color:var(--text);font-family:ui-sans-serif,system-ui;}
+    .wrap{padding:12px;}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:12px;}
+    .btn{border:1px solid rgba(25,195,125,.30);background: rgba(25,195,125,.16);color: var(--text);padding:10px 12px;border-radius:12px;font-weight:900;cursor:pointer;}
+    .btn.primary{background:var(--accent);color:#052016;border-color:rgba(0,0,0,.15);}
+    table{width:100%;border-collapse:collapse;margin-top:12px;}
+    th,td{padding:10px;border-bottom:1px solid var(--border);font-size:13px;}
+    th{background:var(--surface2);color:var(--muted);text-align:left;font-weight:950;font-size:12px;}
+    .muted{color:var(--muted);font-weight:800;font-size:12px;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:950">GPS Conductores</div>
+          <div class="muted">Admin ve últimas ubicaciones. Conductor usa “Conectar GPS”.</div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" id="btnDriver">Conectar GPS (Conductor)</button>
+          <button class="btn primary" id="btnReload">Recargar</button>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:140px">Usuario</th>
+            <th style="width:200px">Timestamp</th>
+            <th style="width:120px">Lat</th>
+            <th style="width:120px">Lon</th>
+            <th style="width:160px">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script type="module">
+    const qs=(s,el=document)=>el.querySelector(s);
+    function getToken(){ return localStorage.getItem("token")||sessionStorage.getItem("token")||""; }
+    function authHeaders(extra={}){ const t=getToken(); return t?{...extra,Authorization:`Bearer ${t}`} : extra; }
+
+    window.addEventListener("message",(ev)=>{
+      if(ev.data?.type==="theme") document.documentElement.classList.toggle("light", ev.data.mode==="light");
+    });
+
+    async function load(){
+      try{
+        const r=await fetch("/gps/last",{headers:authHeaders()});
+        if(!r.ok) throw new Error(await r.text());
+        const j=await r.json();
+        const rows=j.items||[];
+        const tb=qs("#tb"); tb.innerHTML="";
+        for(const x of rows){
+          const tr=document.createElement("tr");
+          const maps=`https://www.google.com/maps?q=${x.lat},${x.lon}`;
+          tr.innerHTML=`
+            <td>${x.username||x.id_usuario}</td>
+            <td>${x.ts||"—"}</td>
+            <td>${x.lat}</td>
+            <td>${x.lon}</td>
+            <td><button class="btn" data-url="${maps}">Abrir Maps</button></td>
+          `;
+          tr.querySelector("button").onclick=()=>window.open(maps,"_blank");
+          tb.appendChild(tr);
+        }
+      }catch(e){
+        Swal.fire("GPS", "No pude cargar /gps/last (¿incluiste gps_router en main?).", "warning");
+      }
+    }
+
+    qs("#btnReload").onclick=load;
+    qs("#btnDriver").onclick=()=>{
+      try{
+        const fr = window.parent?.document?.getElementById("mainFrame");
+        if(fr) fr.src="/web/views/driver_gps.html";
+        else location.href="/web/views/driver_gps.html";
+      }catch(_){
+        location.href="/web/views/driver_gps.html";
+      }
+    };
+
+    load();
+  </script>
+</body>
+</html>

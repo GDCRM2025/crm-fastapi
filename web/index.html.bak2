@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CRM 2025 — Panel</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/panel.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+  <nav class="topbar">
+    <button class="iconbtn" id="btnSidebar" aria-label="Menú">☰</button>
+
+    <div class="brand">GREEN DIAMOND</div>
+
+    <!-- MENU PRINCIPAL (desktop) -->
+    <ul class="topmenu" id="topMenu"></ul>
+
+    <div class="topspacer"></div>
+
+    <!-- CLIMA (fuera del menú) -->
+    <button class="wx-pill" id="wxPill" type="button" title="Clima">
+      <span id="wxIco">☀️</span>
+      <span class="wx-temp" id="wxTemp">—°</span>
+      <span class="wx-city" id="wxCity">—</span>
+    </button>
+
+    <div class="iconbtn" id="clockBox" style="cursor:default">—</div>
+    <button class="iconbtn" id="btnTheme" title="Día / Noche">🌙</button>
+    <div class="iconbtn" id="userBox" style="cursor:default">Usuario: —</div>
+    <button class="iconbtn" id="btnLogout" title="Salir">⎋</button>
+  </nav>
+
+  <!-- Drawer móvil -->
+  <div class="drawer-bg" id="drawerBg" aria-hidden="true"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <div class="drawer-title">Menú</div>
+      <button class="iconbtn" id="drawerClose" aria-label="Cerrar">✕</button>
+    </div>
+    <ul class="drawer-menu" id="drawerMenu"></ul>
+    <div class="drawer-footer">
+      <button class="drawer-item" id="drawerSettings">⚙️ Settings</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <iframe id="mainFrame" class="frame" title="Contenido" src="/web/views/leads.html"></iframe>
+  </main>
+
+  <!-- Weather modal (iOS-ish) -->
+  <div class="wx-modal" id="wxModal" aria-hidden="true">
+    <div class="wx-modal-bg" id="wxModalBg"></div>
+
+    <div class="wx-modal-content" role="dialog" aria-modal="true" aria-label="Clima">
+      <button class="wx-close" id="wxClose" aria-label="Cerrar">✕</button>
+
+      <header class="wx-header">
+        <div class="wx-loc" id="wxModalCity">—</div>
+
+        <div class="wx-big">
+          <div class="wx-big-temp" id="wxModalTemp">—°</div>
+          <div class="wx-big-ico" id="wxModalIco">☀️</div>
+        </div>
+
+        <div class="wx-cond" id="wxModalNow">—</div>
+        <div class="wx-summary" id="wxSummary">—</div>
+      </header>
+
+      <section class="wx-card">
+        <div class="wx-card-title">AHORA</div>
+        <div class="wx-hours" id="wxHours"></div>
+      </section>
+
+      <section class="wx-card">
+        <div class="wx-card-title">PREVISIÓN (7 DÍAS)</div>
+        <div class="wx-days" id="wxDays"></div>
+      </section>
+    </div>
+  </div>
+
+  <script type="module" src="/web/js/panel.js"></script>
+  <script type="module" src="/web/js/weather.js"></script>
+  <script type="module" src="/web/js/calc_modal.js"></script>
+</body>
+</html>

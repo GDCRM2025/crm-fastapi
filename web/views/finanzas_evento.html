@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>Finanzas • Registrar evento</title>
+  <style>
+    body{padding:18px;}
+    .wrap{max-width:1100px; margin:0 auto;}
+    .grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
+    .grid .full{grid-column:1 / -1;}
+    .card{margin-bottom:14px;}
+    .label{font-size:12px; opacity:.7; font-weight:800; text-transform:uppercase; letter-spacing:.04em;}
+    input,select{width:100%; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px;}
+    .btn{background:#22c55e; color:#062315; border:none; padding:8px 12px; border-radius:10px; font-weight:900; cursor:pointer;}
+    .btn.secondary{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.15);}    
+    table{width:100%; border-collapse:collapse; font-size:13px;}
+    th,td{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left;}
+    .pill{display:inline-flex; gap:6px; align-items:center; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.12); font-size:11px; font-weight:900;}
+    .modal{position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); z-index:50;}
+    .modal.open{display:flex;}
+    .modal-card{width:min(760px, 94vw); max-height:85vh; overflow:auto; border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.16); background:rgba(8,14,20,.98);}
+    .modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <h2 style="margin:0 0 4px 0">Registrar evento</h2>
+          <div class="muted">Basado en lead confirmado o ingreso manual.</div>
+        </div>
+        <button class="btn" id="btnSave">Guardar evento</button>
+      </div>
+
+      <div class="grid" style="margin-top:12px;">
+        <div class="full">
+          <div class="label">Lead confirmado</div>
+          <select id="leadSelect"></select>
+        </div>
+
+        <div>
+          <div class="label">Cliente</div>
+          <input id="fCliente" />
+        </div>
+        <div>
+          <div class="label">Comuna</div>
+          <input id="fComuna" />
+        </div>
+        <div>
+          <div class="label">Marca</div>
+          <input id="fMarca" />
+        </div>
+        <div>
+          <div class="label">Tipo cliente</div>
+          <select id="fTipo">
+            <option value="PARTICULAR">Particular</option>
+            <option value="EMPRESA">Empresa</option>
+          </select>
+        </div>
+
+        <div>
+          <div class="label">Fecha evento</div>
+          <input id="fFecha" type="date" />
+        </div>
+        <div>
+          <div class="label">Nro cotización</div>
+          <input id="fCot" />
+        </div>
+        <div>
+          <div class="label">Monto bruto</div>
+          <input id="fBruto" />
+        </div>
+        <div>
+          <div class="label">Traslado</div>
+          <input id="fTraslado" value="0" />
+        </div>
+
+        <div>
+          <div class="label">Abono</div>
+          <input id="fAbono" value="0" />
+        </div>
+        <div>
+          <div class="label">Comisión %</div>
+          <input id="fComPct" value="3" />
+        </div>
+        <div>
+          <div class="label">Neto (auto)</div>
+          <input id="fNeto" disabled />
+        </div>
+
+        <div>
+          <div class="label">IVA (auto)</div>
+          <input id="fIva" disabled />
+        </div>
+        <div>
+          <div class="label">Saldo (auto)</div>
+          <input id="fSaldo" disabled />
+        </div>
+        <div>
+          <div class="label">Comisión (auto)</div>
+          <input id="fComMonto" disabled />
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <h3 style="margin:0">Eventos registrados (últimos 50)</h3>
+        <button class="btn secondary" id="btnReload">Actualizar</button>
+      </div>
+      <div class="table-wrap" style="margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Cotización</th><th>Cliente</th><th>Comuna</th><th>Marca</th><th>Fecha</th><th>Neto</th><th>Bruto</th><th>Traslado</th><th>Saldo</th>
+            </tr>
+          </thead>
+          <tbody id="rows"><tr><td class="muted" colspan="10">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div id="modal" class="modal">
+      <div class="modal-card">
+        <div class="modal-head">
+          <strong id="mTitle">Pagos</strong>
+          <button class="btn secondary" id="mClose">Cerrar</button>
+        </div>
+        <div class="grid">
+          <div>
+            <div class="label">Fecha</div>
+            <input id="pFecha" type="date" />
+          </div>
+          <div>
+            <div class="label">Monto</div>
+            <input id="pMonto" />
+          </div>
+          <div>
+            <div class="label">Método</div>
+            <input id="pMetodo" placeholder="Transferencia / Efectivo / OC" />
+          </div>
+          <div>
+            <div class="label">Documento</div>
+            <input id="pDoc" placeholder="N° transacción / OC" />
+          </div>
+          <div class="full">
+            <div class="label">Referencia</div>
+            <input id="pRef" />
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
+          <button class="btn" id="pAdd">Agregar abono</button>
+        </div>
+        <div class="table-wrap" style="margin-top:10px">
+          <table>
+            <thead><tr><th>Fecha</th><th>Monto</th><th>Método</th><th>Documento</th><th>Ref</th></tr></thead>
+            <tbody id="pRows"><tr><td class="muted" colspan="5">Sin pagos.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    const fmt = new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
+
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    async function api(url, opts={}){
+      const r = await fetch(url, { ...opts, headers: authHeaders({ "Content-Type":"application/json", ...(opts.headers||{}) }) });
+      const data = await r.json().catch(()=>null);
+      if (!r.ok) throw new Error((data && (data.detail||data.message)) || "Error");
+      return data;
+    }
+
+    function parseCL(v){
+      const s = String(v||"").replace(/\\./g,"").replace(/,/g,".").trim();
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    }
+    function round(n){ return Math.round(Number(n||0)); }
+
+    function calc(){
+      const bruto = round(parseCL($("#fBruto").value || 0));
+      const traslado = round(parseCL($("#fTraslado").value || 0));
+      const abono = round(parseCL($("#fAbono").value || 0));
+      const pct = Number($("#fComPct").value || 0);
+      const tipo = $("#fTipo").value;
+
+      let neto = bruto;
+      let iva = 0;
+      if (tipo === "EMPRESA"){
+        neto = bruto / 1.19;
+        iva = bruto - neto;
+      }
+      const baseComision = Math.max(neto - traslado, 0);
+      const comision = baseComision * (pct / 100);
+      const saldo = bruto - abono;
+
+      $("#fBruto").value = round(bruto);
+      $("#fTraslado").value = round(traslado);
+      $("#fAbono").value = round(abono);
+      $("#fNeto").value = fmt.format(round(neto || 0));
+      $("#fIva").value = fmt.format(round(iva || 0));
+      $("#fSaldo").value = fmt.format(round(saldo || 0));
+      $("#fComMonto").value = fmt.format(round(comision || 0));
+      return { neto: round(neto), iva: round(iva), saldo: round(saldo), comision: round(comision), bruto, traslado, abono };
+    }
+
+    async function loadLeads(){
+      const res = await api("/leads?limit=2000");
+      const items = res.items || [];
+      const conf = items.filter(l => (l.estado_nombre||"" ).toUpperCase().includes("CONFIRM"));
+      $("#leadSelect").innerHTML = `<option value="">— Selecciona lead confirmado —</option>` +
+        conf.map(l => `<option value="${l.id_lead}" data-cliente="${l.cliente||""}" data-marca="${l.marca||""}" data-comuna="${l.comuna||""}" data-fecha="${l.fecha_evento||""}" data-tipo="${l.tipo_cliente||""}" data-monto="${l.monto_cotizado||0}" data-cot="${l.num_cotizacion||""}">${l.id_lead} · ${l.cliente||""} · ${l.marca||""}</option>`).join("");
+    }
+
+    let comisiones = [];
+    async function loadComisiones(){
+      try{
+        const res = await api("/settings/comisiones?limit=200");
+        comisiones = res.items || [];
+      }catch(_){ comisiones = []; }
+    }
+    function pickComision(marca){
+      const m = (marca || "").toUpperCase();
+      const direct = comisiones.find(c => (c.marca || "").toUpperCase() === m && (c.is_active !== false));
+      if (direct) return Number(direct.porcentaje || 0);
+      const any = comisiones.find(c => ["*", "TODAS"].includes((c.marca||"").toUpperCase()) && (c.is_active !== false));
+      return any ? Number(any.porcentaje || 0) : 3;
+    }
+
+    async function loadEventos(){
+      const res = await api("/finanzas/eventos");
+      const items = res.items || [];
+      $("#rows").innerHTML = items.map(i => `
+        <tr>
+          <td>${i.id_evento}</td>
+          <td>${i.num_cotizacion || ""}</td>
+          <td>${i.cliente||""}</td>
+          <td>${i.comuna||""}</td>
+          <td>${i.marca||""}</td>
+          <td>${(i.fecha_evento||"").slice(0,10)}</td>
+          <td>${fmt.format(Number(i.monto_neto||0))}</td>
+          <td>${fmt.format(Number(i.monto_bruto||0))}</td>
+          <td>${fmt.format(Number(i.traslado||0))}</td>
+          <td>${fmt.format(Number(i.saldo||0))}</td>
+        </tr>
+      `).join("") || `<tr><td class="muted" colspan="10">Sin registros.</td></tr>`;
+
+      document.querySelectorAll("#rows tr").forEach((tr, idx) => {
+        const it = items[idx];
+        if (!it) return;
+        tr.style.cursor = "pointer";
+        tr.addEventListener("click", () => openPagos(it));
+      });
+    }
+
+    $("#leadSelect").addEventListener("change", async (e) => {
+      const id = Number(e.target.value || 0);
+      if (!id) return;
+      try{
+        const lead = await api(`/leads/${id}`);
+        $("#fCliente").value = lead.cliente || lead.nombre_cliente || "";
+        $("#fMarca").value = lead.marca_nombre || lead.marca || "";
+        $("#fComuna").value = lead.comuna || lead.comuna_nombre || "";
+        $("#fFecha").value = (lead.fecha_evento || "").slice(0,10);
+        const tipo = (lead.tipo_cliente_nombre || "").toUpperCase().includes("EMPRESA") ? "EMPRESA" : "PARTICULAR";
+        $("#fTipo").value = tipo;
+        $("#fBruto").value = lead.monto_cotizado || 0;
+        $("#fCot").value = lead.num_cotizacion || "";
+        $("#fComPct").value = pickComision(lead.marca || "");
+      }catch(_){
+        const opt = e.target.selectedOptions?.[0];
+        if (!opt) return;
+        $("#fCliente").value = opt.dataset.cliente || "";
+        $("#fMarca").value = opt.dataset.marca || "";
+        $("#fComuna").value = opt.dataset.comuna || "";
+        $("#fFecha").value = (opt.dataset.fecha || "").slice(0,10);
+        const tipo = (opt.dataset.tipo || "").toUpperCase().includes("EMPRESA") ? "EMPRESA" : "PARTICULAR";
+        $("#fTipo").value = tipo;
+        $("#fBruto").value = opt.dataset.monto || "0";
+        $("#fCot").value = opt.dataset.cot || "";
+        $("#fComPct").value = pickComision(opt.dataset.marca || "");
+      }
+      calc();
+    });
+
+    ["#fBruto","#fTraslado","#fAbono","#fComPct","#fTipo"].forEach(sel => {
+      $(sel).addEventListener("input", calc);
+      $(sel).addEventListener("change", calc);
+    });
+
+    $("#btnSave").addEventListener("click", async () => {
+      const { neto, iva, saldo, comision, bruto, traslado, abono } = calc();
+      const payload = {
+        id_lead: Number($("#leadSelect").value || 0) || null,
+        num_cotizacion: $("#fCot").value || null,
+        cliente: $("#fCliente").value,
+        comuna: $("#fComuna").value,
+        marca: $("#fMarca").value,
+        tipo_cliente: $("#fTipo").value,
+        fecha_evento: $("#fFecha").value || null,
+        monto_bruto: bruto,
+        monto_neto: neto,
+        iva,
+        traslado,
+        abono,
+        saldo,
+        comision_pct: Number($("#fComPct").value || 0),
+        comision_monto: comision,
+      };
+      await api("/finanzas/eventos", { method:"POST", body: JSON.stringify(payload) });
+      alert("Evento registrado");
+      await loadEventos();
+    });
+
+    $("#btnReload").addEventListener("click", loadEventos);
+
+    let currentEvento = null;
+    async function openPagos(evento){
+      currentEvento = evento;
+      $("#mTitle").textContent = `Pagos · Evento #${evento.id_evento}`;
+      $("#pFecha").value = new Date().toISOString().slice(0,10);
+      $("#pMonto").value = "";
+      $("#pMetodo").value = "";
+      $("#pDoc").value = "";
+      $("#pRef").value = "";
+      $("#modal").classList.add("open");
+      await loadPagos();
+    }
+    async function loadPagos(){
+      if (!currentEvento) return;
+      const res = await api(`/finanzas/eventos/${currentEvento.id_evento}/pagos`);
+      const items = res.items || [];
+      $("#pRows").innerHTML = items.map(p => `
+        <tr>
+          <td>${(p.fecha||"").slice(0,10)}</td>
+          <td>${fmt.format(Number(p.monto||0))}</td>
+          <td>${p.metodo||""}</td>
+          <td>${p.doc_num||""}</td>
+          <td>${p.referencia||""}</td>
+        </tr>
+      `).join("") || `<tr><td class="muted" colspan="5">Sin pagos.</td></tr>`;
+    }
+    $("#pAdd").addEventListener("click", async () => {
+      if (!currentEvento) return;
+      const payload = {
+        monto: Number($("#pMonto").value || 0),
+        metodo: $("#pMetodo").value || null,
+        referencia: $("#pRef").value || null,
+        doc_num: $("#pDoc").value || null,
+        fecha: $("#pFecha").value || null
+      };
+      await api(`/finanzas/eventos/${currentEvento.id_evento}/pagos`, { method:"POST", body: JSON.stringify(payload) });
+      await loadEventos();
+      await loadPagos();
+    });
+    $("#mClose").addEventListener("click", () => $("#modal").classList.remove("open"));
+
+    (async () => {
+      await loadComisiones();
+      await loadLeads();
+      await loadEventos();
+    })();
+    try{ $("#fFecha").value = new Date().toISOString().slice(0,10); }catch(_){}
+  </script>
+</body>
+</html>

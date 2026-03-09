@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CRM 2025 — Panel</title>
+  <link rel="stylesheet" href="./panel.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+  <nav class="topbar">
+    <div class="brand">CRM 2025</div>
+    <ul class="menu">
+      <li><a href="#">Leads</a></li>
+      <li><a href="#">Cotizador</a></li>
+      <li><a href="#">Reportes</a></li>
+      <li><a href="#">Operaciones</a></li>
+      <li><a href="#">Tools</a></li>
+      <li><a href="#">Conductores</a></li>
+      <li><a href="#">Finanzas</a></li>
+    </ul>
+    <div class="user" id="userBox"></div>
+  </nav>
+
+  <main class="content">
+    <section class="hello card">
+      <h2>Panel principal</h2>
+      <p>Aquí irá el tablero y los accesos. Por ahora solo el menú.</p>
+    </section>
+  </main>
+
+  <script type="module" src="./panel.js"></script>
+</body>
+</html>

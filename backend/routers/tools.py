@@ -1,0 +1,2741 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, date, time
+from typing import Any, Optional, Tuple, List, Dict
+import os
+from pathlib import Path
+import json
+from zoneinfo import ZoneInfo
+from urllib.parse import urlencode
+import re
+import unicodedata
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from backend.db import get_db
+try:
+    from backend.routers.auth import get_current_user  # type: ignore
+except Exception:
+    # fallback simple
+    def get_current_user():  # type: ignore
+        return {"nombre": "admin", "role": "ADMIN", "marcas": []}
+
+router = APIRouter(prefix="/tools", tags=["tools"])
+
+# Google Calendar OAuth (opcional)
+try:
+    from google_auth_oauthlib.flow import Flow
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+except Exception:  # pragma: no cover
+    Flow = None
+    Credentials = None
+    Request = None
+    build = None
+
+GCAL_SCOPES = ["https://www.googleapis.com/auth/calendar"]
+GCAL_REDIRECT = "http://127.0.0.1:8000/tools/gcal/callback"
+GCAL_DEFAULT_CAL = "simonurrutia.m@gmail.com"
+
+def _gcal_client_file() -> str:
+    # En producción (Passenger) no existe el path local de macOS.
+    # Usamos:
+    # 1) GCAL_OAUTH_FILE si está seteado
+    # 2) keys/gcal_oauth.json relativo al repo del servidor
+    env = os.getenv("GCAL_OAUTH_FILE")
+    if env:
+        return env
+    base = Path(__file__).resolve().parents[2]  # .../crm
+    return str(base / "keys" / "gcal_oauth.json")
+
+
+def _gcal_redirect_uri() -> str:
+    override = os.getenv("GCAL_REDIRECT_URI")
+    if override:
+        return override
+    app = (os.getenv("APP_URL") or "").rstrip("/")
+    if app:
+        return f"{app}/crm/tools/gcal/callback"
+    # try to read from client file
+    try:
+        with open(_gcal_client_file(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if "installed" in data and data["installed"].get("redirect_uris"):
+            return data["installed"]["redirect_uris"][0]
+        if "web" in data and data["web"].get("redirect_uris"):
+            return data["web"]["redirect_uris"][0]
+    except Exception:
+        pass
+    return GCAL_REDIRECT
+
+
+def _ensure_lead_calendar_cols(db: Session):
+    # Importante: en algunos hosting las columnas existen pero con tipos distintos o valores "sucios".
+    # Si una conversión falla, NO debemos hacer rollback de los ADD COLUMN ya ejecutados.
+    try:
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS calendar_event_id TEXT"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS calendar_html_link TEXT"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS calendar_start TIMESTAMP"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS calendar_end TIMESTAMP"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_start TIMESTAMP"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_end TIMESTAMP"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_location TEXT"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_title TEXT"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_description TEXT"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS agenda_approved_by TEXT"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS agenda_approved_at TIMESTAMP"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pendiente_agendar BOOLEAN DEFAULT FALSE"))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    # Compatibilidad: si venían como TEXT en tablas viejas, intenta migrar a TIMESTAMP.
+    # Cada ALTER se intenta por separado para no romper el resto.
+    for col in ("calendar_start", "calendar_end", "pre_start", "pre_end", "agenda_approved_at"):
+        try:
+            db.execute(
+                text(
+                    f"ALTER TABLE public.leads ALTER COLUMN {col} TYPE TIMESTAMP "
+                    f"USING NULLIF({col}::text,'')::timestamp"
+                )
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+
+
+def _parse_event_time(raw: dict) -> Tuple[Optional[datetime], Optional[str]]:
+    if not raw:
+        return None, None
+    if raw.get("dateTime"):
+        dt = raw.get("dateTime")
+        if dt.endswith("Z"):
+            dt = dt.replace("Z", "+00:00")
+        try:
+            d = datetime.fromisoformat(dt)
+            return d, d.date().isoformat()
+        except Exception:
+            return None, None
+    if raw.get("date"):
+        try:
+            d = datetime.fromisoformat(raw.get("date") + "T00:00:00")
+            return d, raw.get("date")
+        except Exception:
+            return None, None
+    return None, None
+
+
+def _infer_marca_from_text(db: Session, text_in: str) -> Tuple[int, str]:
+    txt = (text_in or "").upper()
+    rows = db.execute(text("SELECT id_marca, COALESCE(nombre,marca) AS nombre FROM marcas ORDER BY 1")).mappings().all()
+    for r in rows:
+        nombre = (r.get("nombre") or "").upper()
+        if nombre and nombre in txt:
+            return int(r.get("id_marca")), r.get("nombre")
+    return 0, ""
+
+
+def _table_exists_pg(db: Session, table: str) -> bool:
+    row = db.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema='public' AND table_name=:t
+            """
+        ),
+        {"t": table},
+    ).first()
+    return bool(row)
+
+
+def _cols_pg(db: Session, table: str) -> set[str]:
+    rows = db.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema='public' AND table_name=:t
+            """
+        ),
+        {"t": table},
+    ).fetchall()
+    return {r[0] for r in rows}
+
+def _ensure_gcal_tables(db: Session):
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS gcal_tokens (
+                id_token SERIAL PRIMARY KEY,
+                creds_json TEXT,
+                calendar_id TEXT DEFAULT 'primary',
+                updated_at TIMESTAMP DEFAULT now()
+            )
+            """
+        )
+    )
+    db.commit()
+
+def _load_gcal_creds(db: Session) -> Optional["Credentials"]:
+    if Credentials is None:
+        return None
+    _ensure_gcal_tables(db)
+    row = db.execute(text("SELECT id_token, creds_json FROM gcal_tokens ORDER BY id_token DESC LIMIT 1")).fetchone()
+    if not row or not row[1]:
+        return None
+    try:
+        data = json.loads(row[1])
+        creds = Credentials.from_authorized_user_info(data, GCAL_SCOPES)
+        if creds and creds.expired and creds.refresh_token and Request:
+            creds.refresh(Request())
+            _save_gcal_creds(db, creds)
+        return creds
+    except Exception:
+        return None
+
+def _save_gcal_creds(db: Session, creds: "Credentials"):
+    _ensure_gcal_tables(db)
+    data = {
+        "token": creds.token,
+        "refresh_token": creds.refresh_token,
+        "token_uri": creds.token_uri,
+        "client_id": creds.client_id,
+        "client_secret": creds.client_secret,
+        "scopes": creds.scopes,
+    }
+    db.execute(
+        text("INSERT INTO gcal_tokens(creds_json, updated_at) VALUES (:c, now())"),
+        {"c": json.dumps(data)},
+    )
+    db.commit()
+
+def _gcal_service(db: Session):
+    creds = _load_gcal_creds(db)
+    if not creds or not build:
+        return None
+    return build("calendar", "v3", credentials=creds)
+
+BASELINE_SALES = [
+    {"mes": 1, "marca": "CAMALEON", "monto": 13338700, "empresa": 6, "particular": 22},
+    {"mes": 1, "marca": "EXPRESS", "monto": 10568500, "empresa": 9, "particular": 21},
+    {"mes": 1, "marca": "GOURMET", "monto": 14966420, "empresa": 10, "particular": 16},
+
+    {"mes": 2, "marca": "CAMALEON", "monto": 4825000, "empresa": 3, "particular": 10},
+    {"mes": 2, "marca": "EXPRESS", "monto": 6984500, "empresa": 12, "particular": 19},
+    {"mes": 2, "marca": "GOURMET", "monto": 11899400, "empresa": 6, "particular": 14},
+
+    {"mes": 3, "marca": "CAMALEON", "monto": 21472900, "empresa": 14, "particular": 28},
+    {"mes": 3, "marca": "GOURMET", "monto": 11030050, "empresa": 16, "particular": 13},
+    {"mes": 3, "marca": "EXPRESS", "monto": 20213540, "empresa": 5, "particular": 30},
+
+    {"mes": 4, "marca": "CAMALEON", "monto": 34485115, "empresa": 25, "particular": 57},
+    {"mes": 4, "marca": "GOURMET", "monto": 19835650, "empresa": 14, "particular": 8},
+    {"mes": 4, "marca": "EXPRESS", "monto": 3565200, "empresa": 1, "particular": 1},
+
+    {"mes": 5, "marca": "CAMALEON", "monto": 22746200, "empresa": 17, "particular": 28},
+    {"mes": 5, "marca": "GOURMET", "monto": 16186700, "empresa": 15, "particular": 13},
+    {"mes": 5, "marca": "EXPRESS", "monto": 7025300, "empresa": 8, "particular": 13},
+    {"mes": 5, "marca": "DEL SABOR", "monto": 812825, "empresa": 0, "particular": 5},
+
+    {"mes": 6, "marca": "CAMALEON", "monto": 15494528, "empresa": 13, "particular": 28},
+    {"mes": 6, "marca": "GOURMET", "monto": 8878000, "empresa": 13, "particular": 11},
+    {"mes": 6, "marca": "EXPRESS", "monto": 10929065, "empresa": 8, "particular": 21},
+    {"mes": 6, "marca": "DEL SABOR", "monto": 4113671, "empresa": 0, "particular": 13},
+
+    {"mes": 7, "marca": "CAMALEON", "monto": 14427530, "empresa": 14, "particular": 19},
+    {"mes": 7, "marca": "GOURMET", "monto": 13048218, "empresa": 21, "particular": 6},
+    {"mes": 7, "marca": "EXPRESS", "monto": 9053500, "empresa": 5, "particular": 5},
+    {"mes": 7, "marca": "DEL SABOR", "monto": 1163520, "empresa": 1, "particular": 9},
+
+    {"mes": 8, "marca": "CAMALEON", "monto": 25372576, "empresa": 30, "particular": 20},
+    {"mes": 8, "marca": "DEL SABOR", "monto": 7527000, "empresa": 6, "particular": 13},
+    {"mes": 8, "marca": "GOURMET", "monto": 7689600, "empresa": 10, "particular": 17},
+    {"mes": 8, "marca": "EXPRESS", "monto": 17617600, "empresa": 12, "particular": 25},
+
+    {"mes": 9, "marca": "CAMALEON", "monto": 30431825, "empresa": 14, "particular": 20},
+    {"mes": 9, "marca": "DEL SABOR", "monto": 12685894, "empresa": 6, "particular": 8},
+    {"mes": 9, "marca": "GOURMET", "monto": 23295700, "empresa": 19, "particular": 10},
+    {"mes": 9, "marca": "EXPRESS", "monto": 16342500, "empresa": 18, "particular": 14},
+
+    {"mes": 10, "marca": "CAMALEON", "monto": 29680950, "empresa": 18, "particular": 35},
+    {"mes": 10, "marca": "DEL SABOR", "monto": 9640100, "empresa": 5, "particular": 16},
+    {"mes": 10, "marca": "GOURMET", "monto": 13687600, "empresa": 10, "particular": 18},
+    {"mes": 10, "marca": "EXPRESS", "monto": 16903420, "empresa": 19, "particular": 19},
+
+    {"mes": 11, "marca": "CAMALEON", "monto": 40440299, "empresa": 20, "particular": 48},
+    {"mes": 11, "marca": "DEL SABOR", "monto": 14112500, "empresa": 10, "particular": 35},
+    {"mes": 11, "marca": "GOURMET", "monto": 25176900, "empresa": 12, "particular": 12},
+    {"mes": 11, "marca": "EXPRESS", "monto": 13565600, "empresa": 11, "particular": 21},
+
+    {"mes": 12, "marca": "CAMALEON", "monto": 60900692, "empresa": 34, "particular": 31},
+    {"mes": 12, "marca": "DEL SABOR", "monto": 19366400, "empresa": 16, "particular": 27},
+    {"mes": 12, "marca": "GOURMET", "monto": 39578050, "empresa": 33, "particular": 26},
+    {"mes": 12, "marca": "EXPRESS", "monto": 59339050, "empresa": 16, "particular": 27},
+]
+
+
+def _gcal_link(title: str, start: datetime, end: datetime, details: str = "", location: str = "") -> str:
+    # Google Calendar template (sin Z para que lo trate como hora local)
+    def fmt(dt: datetime) -> str:
+        return dt.strftime("%Y%m%dT%H%M%S")
+
+    params = {
+        "action": "TEMPLATE",
+        "text": title or "Evento",
+        "dates": f"{fmt(start)}/{fmt(end)}",
+        "details": details or "",
+        "location": location or "",
+    }
+    return "https://www.google.com/calendar/render?" + urlencode(params)
+
+
+def _col_exists(db: Session, table: str, col: str) -> bool:
+    r = db.execute(
+        text(
+            """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='public' AND table_name=:t AND column_name=:c
+            """
+        ),
+        {"t": table, "c": col},
+    ).first()
+    return bool(r)
+
+
+def _estado_id(db: Session, name_like: str) -> int | None:
+    r = db.execute(
+        text("SELECT id_estado FROM estados_lead WHERE UPPER(nombre) LIKE :n LIMIT 1"),
+        {"n": f"%{name_like.upper()}%"},
+    ).fetchone()
+    return int(r[0]) if r else None
+
+
+def _is_admin(role: str) -> bool:
+    return role in ("ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "OPERACIONES")
+
+
+def _lead_name_expr(db: Session) -> str:
+    has_nombre = _col_exists(db, "leads", "nombre_cliente")
+    has_cliente = _col_exists(db, "leads", "cliente")
+    if has_nombre and has_cliente:
+        return "COALESCE(l.nombre_cliente, l.cliente)"
+    if has_nombre:
+        return "l.nombre_cliente"
+    if has_cliente:
+        return "l.cliente"
+    return "''"
+
+
+def _lead_col(db: Session, col: str) -> str:
+    return f"l.{col}" if _col_exists(db, "leads", col) else "NULL"
+
+
+def _ensure_baseline(db: Session) -> None:
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS ventas_baseline (
+                id_baseline SERIAL PRIMARY KEY,
+                mes INT NOT NULL,
+                marca TEXT NOT NULL,
+                monto NUMERIC(14,2) NOT NULL DEFAULT 0,
+                empresa INT NOT NULL DEFAULT 0,
+                particular INT NOT NULL DEFAULT 0,
+                UNIQUE (mes, marca)
+            )
+            """
+        )
+    )
+    existing = db.execute(text("SELECT COUNT(*) FROM ventas_baseline")).scalar_one()
+    if existing:
+        return
+    for row in BASELINE_SALES:
+        db.execute(
+            text(
+                """
+                INSERT INTO ventas_baseline(mes, marca, monto, empresa, particular)
+                VALUES (:mes, :marca, :monto, :empresa, :particular)
+                ON CONFLICT (mes, marca) DO NOTHING
+                """
+            ),
+            row,
+        )
+    db.commit()
+
+
+@router.get("/gcal/status")
+def gcal_status(db: Session = Depends(get_db)):
+    creds = _load_gcal_creds(db)
+    return {"ok": True, "connected": bool(creds)}
+
+@router.get("/gcal/calendars")
+def gcal_calendars(db: Session = Depends(get_db), me=Depends(get_current_user)):
+    if build is None:
+        raise HTTPException(status_code=500, detail="Google API no disponible")
+    svc = _gcal_service(db)
+    if not svc:
+        raise HTTPException(status_code=400, detail="Google Calendar no conectado")
+    try:
+        items = svc.calendarList().list(maxResults=250).execute().get("items") or []
+        out = []
+        for it in items:
+            out.append({
+                "id": it.get("id"),
+                "summary": it.get("summary"),
+                "primary": bool(it.get("primary", False)),
+            })
+        return {"ok": True, "items": out}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo listar calendarios: {e}")
+
+
+@router.get("/gcal/stats")
+def gcal_stats(
+    days: int = 14,
+    calendar_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    if build is None:
+        raise HTTPException(status_code=500, detail="Google API no disponible")
+    svc = _gcal_service(db)
+    if not svc:
+        raise HTTPException(status_code=400, detail="Google Calendar no conectado")
+
+    tz = ZoneInfo("America/Santiago")
+    now = datetime.now(tz)
+    time_min = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    time_max = (now + timedelta(days=days)).replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+
+    cal_id = calendar_id or os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+    evs = svc.events().list(
+        calendarId=cal_id,
+        timeMin=time_min,
+        timeMax=time_max,
+        singleEvents=True,
+        orderBy="startTime",
+        maxResults=2500,
+    ).execute()
+    events = evs.get("items") or []
+
+    counts: dict[str, int] = {}
+    filtered = []
+    for ev in events:
+        title = (ev.get("summary") or "").strip()
+        if re.search(r"\b(vacaciones|cumplea(?:n|ñ)os|feriado|holiday)\b", title.lower()):
+            continue
+        _, start_date = _parse_event_time(ev.get("start") or {})
+        if not start_date:
+            continue
+        counts[start_date] = counts.get(start_date, 0) + 1
+        filtered.append({"date": start_date, "title": title, "id": ev.get("id")})
+
+    return {"ok": True, "counts": counts, "events": filtered}
+
+
+@router.get("/gcal/events")
+def gcal_events(
+    from_date: str | None = None,  # YYYY-MM-DD
+    to_date: str | None = None,    # YYYY-MM-DD
+    calendar_id: str | None = None,
+    limit: int = 2500,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Devuelve eventos DIRECTO desde Google Calendar (mismo calendario de Simon).
+    Esto permite que Operadores vean el calendario real sin depender de que los leads estén "aprobados".
+    """
+    if build is None:
+        raise HTTPException(status_code=500, detail="Google API no disponible")
+    svc = _gcal_service(db)
+    if not svc:
+        raise HTTPException(status_code=400, detail="Google Calendar no conectado")
+
+    tz = ZoneInfo("America/Santiago")
+    now = datetime.now(tz)
+    # rango por defecto: mes actual +/- 45 días
+    if from_date:
+        time_min = datetime.fromisoformat(from_date + "T00:00:00").replace(tzinfo=tz).isoformat()
+    else:
+        time_min = (now - timedelta(days=45)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if to_date:
+        time_max = datetime.fromisoformat(to_date + "T23:59:59").replace(tzinfo=tz).isoformat()
+    else:
+        time_max = (now + timedelta(days=45)).replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+
+    cal_id = calendar_id or os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+    try:
+        evs = svc.events().list(
+            calendarId=cal_id,
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy="startTime",
+            maxResults=max(1, min(5000, int(limit))),
+        ).execute()
+        events = evs.get("items") or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo leer calendar: {e}")
+
+    out = []
+    for ev in events:
+        eid = ev.get("id")
+        if not eid:
+            continue
+        summary = (ev.get("summary") or "").strip()
+        start = ev.get("start") or {}
+        end = ev.get("end") or {}
+
+        # all-day events come with "date" (end date is exclusive)
+        all_day = bool(start.get("date")) and not bool(start.get("dateTime"))
+        if all_day:
+            start_s = start.get("date")
+            end_s = end.get("date") or start_s
+        else:
+            start_s = start.get("dateTime") or ""
+            end_s = end.get("dateTime") or ""
+        out.append(
+            {
+                "id": eid,
+                "title": summary,
+                "start": start_s,
+                "end": end_s,
+                "all_day": all_day,
+                "location": ev.get("location") or "",
+                "description": ev.get("description") or "",
+                "html_link": ev.get("htmlLink") or "",
+            }
+        )
+
+    return {"ok": True, "calendar_id": cal_id, "items": out}
+
+
+@router.get("/gcal/start")
+def gcal_start(db: Session = Depends(get_db)):
+    if Flow is None:
+        raise HTTPException(status_code=500, detail="Google OAuth no disponible")
+    client_file = _gcal_client_file()
+    if not os.path.exists(client_file):
+        raise HTTPException(status_code=400, detail="Archivo OAuth no encontrado")
+    flow = Flow.from_client_secrets_file(
+        client_file, scopes=GCAL_SCOPES, redirect_uri=_gcal_redirect_uri()
+    )
+    auth_url, state = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+    )
+    _ensure_gcal_tables(db)
+    db.execute(text("DELETE FROM gcal_tokens WHERE creds_json IS NULL"))
+    db.execute(text("INSERT INTO gcal_tokens(creds_json, updated_at) VALUES (:s, now())"), {"s": json.dumps({"state": state})})
+    db.commit()
+    return {"ok": True, "auth_url": auth_url}
+
+
+@router.get("/gcal/callback")
+def gcal_callback(code: str, state: str | None = None, db: Session = Depends(get_db)):
+    if Flow is None:
+        raise HTTPException(status_code=500, detail="Google OAuth no disponible")
+    client_file = _gcal_client_file()
+    flow = Flow.from_client_secrets_file(
+        client_file, scopes=GCAL_SCOPES, redirect_uri=_gcal_redirect_uri()
+    )
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    _save_gcal_creds(db, creds)
+    return {"ok": True, "message": "Google Calendar conectado. Puedes cerrar esta ventana."}
+
+
+@router.post("/gcal/sync")
+def gcal_sync(
+    days: int = 30,
+    calendar_id: str | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    if build is None:
+        raise HTTPException(status_code=500, detail="Google API no disponible")
+    svc = _gcal_service(db)
+    if not svc:
+        raise HTTPException(status_code=400, detail="Google Calendar no conectado")
+
+    _ensure_lead_calendar_cols(db)
+
+    tz = ZoneInfo("America/Santiago")
+    now = datetime.now(tz)
+    time_min = (now - timedelta(days=1)).isoformat()
+    time_max = (now + timedelta(days=days)).isoformat()
+    events = []
+    try:
+        cal_id = calendar_id or os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+        evs = svc.events().list(
+            calendarId=cal_id,
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy="startTime",
+            maxResults=2500,
+        ).execute()
+        events = evs.get("items") or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo leer calendar: {e}")
+
+    confirmado_id = _estado_id(db, "CONFIRM")
+    if not confirmado_id:
+        raise HTTPException(status_code=400, detail="Estado CONFIRMADO no existe")
+
+    created = 0
+    linked = 0
+    skipped = 0
+    name_expr = _lead_name_expr(db)
+    pre_title_expr = _lead_col(db, "pre_title")
+    def _norm(s: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+    def _score(a: str, b: str) -> float:
+        a = _norm(a)
+        b = _norm(b)
+        if not a or not b:
+            return 0.0
+        if a == b:
+            return 1.0
+        # overlap score
+        aset = set([a[i:i+4] for i in range(max(1, len(a)-3))])
+        bset = set([b[i:i+4] for i in range(max(1, len(b)-3))])
+        if not aset or not bset:
+            return 0.0
+        return len(aset & bset) / max(len(aset), len(bset))
+
+    parsed_events = []
+    for ev in events:
+        event_id = ev.get("id")
+        if not event_id:
+            continue
+        summary_raw = (ev.get("summary") or "").strip()
+        if re.search(r"\b(vacaciones|cumplea(?:n|ñ)os|feriado|holiday)\b", summary_raw.lower()):
+            skipped += 1
+            continue
+        start_dt, start_date = _parse_event_time(ev.get("start") or {})
+        end_dt, _ = _parse_event_time(ev.get("end") or {})
+        parsed_events.append({
+            "id": event_id,
+            "summary": summary_raw,
+            "description": ev.get("description") or "",
+            "location": ev.get("location") or "",
+            "start_dt": start_dt,
+            "end_dt": end_dt,
+            "start_date": start_date,
+            "html_link": ev.get("htmlLink") or "",
+        })
+        exists = db.execute(
+            text("SELECT id_lead FROM leads WHERE calendar_event_id=:eid LIMIT 1"),
+            {"eid": event_id},
+        ).first()
+        if exists:
+            # Asegura que el lead ya vinculado tenga datos mínimos de agenda
+            # Usa cast seguro porque algunas instalaciones antiguas guardaron
+            # estas columnas como TEXT con valores no parseables.
+            cal_start = "CASE WHEN calendar_start IS NULL THEN NULL WHEN calendar_start::text ~ '^[0-9]{4}-' THEN calendar_start::timestamp ELSE NULL END"
+            cal_end = "CASE WHEN calendar_end IS NULL THEN NULL WHEN calendar_end::text ~ '^[0-9]{4}-' THEN calendar_end::timestamp ELSE NULL END"
+            pre_start = "CASE WHEN pre_start IS NULL THEN NULL WHEN pre_start::text ~ '^[0-9]{4}-' THEN pre_start::timestamp ELSE NULL END"
+            pre_end = "CASE WHEN pre_end IS NULL THEN NULL WHEN pre_end::text ~ '^[0-9]{4}-' THEN pre_end::timestamp ELSE NULL END"
+            appr_at = "CASE WHEN agenda_approved_at IS NULL THEN NULL WHEN agenda_approved_at::text ~ '^[0-9]{4}-' THEN agenda_approved_at::timestamp ELSE NULL END"
+            db.execute(
+                text(
+                    """
+                    UPDATE leads
+                    SET calendar_html_link = COALESCE(calendar_html_link, :link),
+                        calendar_start = COALESCE({cal_start}, :cs),
+                        calendar_end = COALESCE({cal_end}, :ce),
+                        pre_start = COALESCE({pre_start}, :ps),
+                        pre_end = COALESCE({pre_end}, :pe),
+                        pre_location = COALESCE(pre_location, :ploc),
+                        pre_title = COALESCE(pre_title, :ptitle),
+                        pre_description = COALESCE(pre_description, :pdesc),
+                        agenda_approved_at = COALESCE({appr_at}, now()),
+                        pendiente_agendar = FALSE,
+                        updated_at = now()
+                    WHERE calendar_event_id = :eid
+                    """
+                    .format(
+                        cal_start=cal_start,
+                        cal_end=cal_end,
+                        pre_start=pre_start,
+                        pre_end=pre_end,
+                        appr_at=appr_at,
+                    )
+                ),
+                {
+                    "eid": event_id,
+                    "link": ev.get("htmlLink") or "",
+                    "cs": _parse_event_time(ev.get("start") or {})[0],
+                    "ce": _parse_event_time(ev.get("end") or {})[0],
+                    "ps": _parse_event_time(ev.get("start") or {})[0],
+                    "pe": _parse_event_time(ev.get("end") or {})[0],
+                    "ploc": ev.get("location") or "",
+                    "ptitle": (ev.get("summary") or "Evento sin título").strip(),
+                    "pdesc": ev.get("description") or "",
+                },
+            )
+            skipped += 1
+            continue
+
+        # Si no hay event_id pero ya existe el htmlLink en un lead, lo amarramos
+        html_link = ev.get("htmlLink") or ""
+        if html_link:
+            row = db.execute(
+                text("SELECT id_lead FROM leads WHERE calendar_event_id IS NULL AND calendar_html_link=:link LIMIT 1"),
+                {"link": html_link},
+            ).first()
+            if row:
+                db.execute(
+                    text(
+                        """
+                        UPDATE leads
+                        SET calendar_event_id = :eid,
+                            calendar_start = :cs,
+                            calendar_end = :ce,
+                            pre_start = COALESCE(pre_start, :ps),
+                            pre_end = COALESCE(pre_end, :pe),
+                            pre_location = COALESCE(pre_location, :ploc),
+                            pre_title = COALESCE(pre_title, :ptitle),
+                            pre_description = COALESCE(pre_description, :pdesc),
+                            agenda_approved_at = COALESCE(agenda_approved_at, now()),
+                            pendiente_agendar = FALSE,
+                            updated_at = now()
+                        WHERE id_lead = :id
+                        """
+                    ),
+                    {
+                        "id": int(row[0]),
+                        "eid": event_id,
+                        "cs": _parse_event_time(ev.get("start") or {})[0],
+                        "ce": _parse_event_time(ev.get("end") or {})[0],
+                        "ps": _parse_event_time(ev.get("start") or {})[0],
+                        "pe": _parse_event_time(ev.get("end") or {})[0],
+                        "ploc": ev.get("location") or "",
+                        "ptitle": (ev.get("summary") or "Evento sin título").strip(),
+                        "pdesc": ev.get("description") or "",
+                    },
+                )
+                linked += 1
+                continue
+
+        summary = summary_raw or "Evento sin título"
+        desc = ev.get("description") or ""
+        loc = ev.get("location") or ""
+        html_link = ev.get("htmlLink") or ""
+
+        id_marca, marca_name = _infer_marca_from_text(db, f"{summary} {desc} {loc}")
+        nota = f"Creado desde Google Calendar. EventID={event_id}"
+        if not id_marca:
+            nota += " | Marca no detectada"
+
+        # Intento 1: vincular a lead existente (misma fecha + nombre parecido)
+        lead_id = None
+        if start_date:
+            params = {"fecha": start_date, "conf": confirmado_id}
+            where = "l.fecha_evento = :fecha AND l.id_estado = :conf AND (l.calendar_event_id IS NULL OR l.calendar_event_id = '')"
+            if id_marca:
+                where += " AND l.id_marca = :id_marca"
+                params["id_marca"] = id_marca
+            rows = db.execute(
+                text(f"SELECT l.id_lead, {name_expr} AS nombre, {pre_title_expr} AS pre_title FROM leads l WHERE {where}"),
+                params,
+            ).mappings().all()
+            if rows:
+                s_clean = summary
+                if marca_name:
+                    pattern = r"\b" + re.escape(marca_name) + r"\b"
+                    s_clean = re.sub(pattern, "", s_clean, flags=re.IGNORECASE).strip()
+                scored = []
+                for r in rows:
+                    title = r.get("pre_title") or r.get("nombre") or ""
+                    sc = _score(s_clean, title)
+                    scored.append((sc, r["id_lead"]))
+                scored.sort(reverse=True)
+                if scored:
+                    top = scored[0][0]
+                    if len(scored) == 1:
+                        if top >= 0.25:
+                            lead_id = int(scored[0][1])
+                    else:
+                        if top >= 0.30 and (top - scored[1][0] >= 0.10):
+                            lead_id = int(scored[0][1])
+
+        if lead_id:
+            db.execute(
+                text(
+                    """
+                    UPDATE leads
+                    SET id_estado = :conf,
+                        calendar_event_id = :eid,
+                        calendar_html_link = :link,
+                        calendar_start = :cs,
+                        calendar_end = :ce,
+                        pre_start = :ps,
+                        pre_end = :pe,
+                        pre_location = :ploc,
+                        pre_title = :ptitle,
+                        pre_description = :pdesc,
+                        agenda_approved_at = COALESCE(agenda_approved_at, now()),
+                        pendiente_agendar = FALSE,
+                        updated_at = now()
+                    WHERE id_lead = :id
+                    """
+                ),
+                {
+                    "id": lead_id,
+                    "conf": confirmado_id,
+                    "eid": event_id,
+                    "link": html_link,
+                    "cs": start_dt,
+                    "ce": end_dt,
+                    "ps": start_dt,
+                    "pe": end_dt,
+                    "ploc": loc,
+                    "ptitle": summary,
+                    "pdesc": desc,
+                },
+            )
+            linked += 1
+            continue
+
+        row = db.execute(
+            text(
+                """
+                INSERT INTO public.leads(
+                  cliente,email,telefono,direccion,id_marca,id_estado,id_comuna,id_tipo_cliente,
+                  fecha_evento,monto_cotizado,plataforma,notas,num_cotizacion,created_at,updated_at,
+                  calendar_event_id,calendar_html_link,calendar_start,calendar_end,
+                  pre_start,pre_end,pre_location,pre_title,pre_description,agenda_approved_at,pendiente_agendar
+                ) VALUES (
+                  :cliente,NULL,NULL,NULL,:id_marca,:id_estado,0,NULL,
+                  :fecha_evento,0,'Google Calendar',:notas,NULL, now(), now(),
+                  :eid,:link,:cs,:ce,
+                  :ps,:pe,:ploc,:ptitle,:pdesc, now(), FALSE
+                )
+                RETURNING id_lead
+                """
+            ),
+            {
+                "cliente": summary,
+                "id_marca": id_marca,
+                "id_estado": confirmado_id,
+                "fecha_evento": start_date,
+                "notas": nota,
+                "eid": event_id,
+                "link": html_link,
+                "cs": start_dt,
+                "ce": end_dt,
+                "ps": start_dt,
+                "pe": end_dt,
+                "ploc": loc,
+                "ptitle": summary,
+                "pdesc": desc,
+            },
+        ).scalar_one()
+        created += 1
+    db.commit()
+
+    # Fallback: vincula confirmados sin calendario por fecha (y marca si existe)
+    if parsed_events:
+        # index eventos por fecha y marca inferida
+        ev_by_date_brand: dict[tuple, list[dict]] = {}
+        for evd in parsed_events:
+            if not evd.get("start_date"):
+                continue
+            id_m, marca_name = _infer_marca_from_text(db, f"{evd.get('summary','')} {evd.get('description','')} {evd.get('location','')}")
+            key = (str(evd["start_date"]), id_m or 0)
+            ev_by_date_brand.setdefault(key, []).append({**evd, "id_marca": id_m})
+
+        # busca leads confirmados sin calendar_event_id ni link
+        rows = db.execute(
+            text(
+                """
+                SELECT id_lead, fecha_evento, id_marca, COALESCE(pre_title, cliente) AS titulo
+                FROM leads
+                WHERE id_estado = :conf
+                  AND (calendar_event_id IS NULL OR calendar_event_id = '')
+                  AND (calendar_html_link IS NULL OR calendar_html_link = '')
+                  AND fecha_evento IS NOT NULL
+                """
+            ),
+            {"conf": confirmado_id},
+        ).mappings().all()
+
+        for l in rows:
+            fecha = str(l.get("fecha_evento"))
+            id_marca = l.get("id_marca") or 0
+            # si hay un solo evento ese día para la marca, lo vinculamos
+            candidates = ev_by_date_brand.get((fecha, id_marca)) or []
+            if not candidates and id_marca:
+                candidates = ev_by_date_brand.get((fecha, 0)) or []
+            if len(candidates) != 1:
+                continue
+            evd = candidates[0]
+            db.execute(
+                text(
+                    """
+                    UPDATE leads
+                    SET calendar_event_id=:eid,
+                        calendar_html_link=:link,
+                        calendar_start=:cs,
+                        calendar_end=:ce,
+                        pre_start=COALESCE(pre_start,:ps),
+                        pre_end=COALESCE(pre_end,:pe),
+                        pre_title=COALESCE(pre_title,:ptitle),
+                        pre_location=COALESCE(pre_location,:ploc),
+                        pre_description=COALESCE(pre_description,:pdesc),
+                        agenda_approved_at=COALESCE(agenda_approved_at, now()),
+                        pendiente_agendar=FALSE,
+                        updated_at=now()
+                    WHERE id_lead=:id
+                    """
+                ),
+                {
+                    "id": l["id_lead"],
+                    "eid": evd["id"],
+                    "link": evd.get("html_link") or "",
+                    "cs": evd.get("start_dt"),
+                    "ce": evd.get("end_dt"),
+                    "ps": evd.get("start_dt"),
+                    "pe": evd.get("end_dt"),
+                    "ptitle": (evd.get("summary") or "").strip(),
+                    "ploc": evd.get("location") or "",
+                    "pdesc": evd.get("description") or "",
+                },
+            )
+        db.commit()
+    return {"ok": True, "created": created, "linked": linked, "skipped": skipped, "total": len(events)}
+
+
+@router.get("/agenda")
+def agenda(db: Session = Depends(get_db), me=Depends(get_current_user)):
+    name_expr = _lead_name_expr(db)
+    role = (me.get("role") or me.get("rol") or "").upper()
+    only_own = not _is_admin(role)
+    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    marca_sql = ""
+    marca_params: dict[str, Any] = {}
+    if only_own and marcas:
+        marca_sql = " AND l.id_marca = ANY(:marcas) "
+        marca_params["marcas"] = marcas
+
+    has_pre_start = _col_exists(db, "leads", "pre_start")
+    has_agenda_approved_at = _col_exists(db, "leads", "agenda_approved_at")
+    has_pendiente_agendar = _col_exists(db, "leads", "pendiente_agendar")
+    has_calendar_link = _col_exists(db, "leads", "calendar_html_link")
+    has_calendar_id = _col_exists(db, "leads", "calendar_event_id")
+
+    pre_title_expr = _lead_col(db, "pre_title")
+    pre_start_expr = _lead_col(db, "pre_start")
+    pre_end_expr = _lead_col(db, "pre_end")
+    pre_location_expr = _lead_col(db, "pre_location")
+    pre_products_expr = _lead_col(db, "pre_products_text")
+    pre_montaje_expr = _lead_col(db, "pre_montaje_text")
+    pre_ops_expr = _lead_col(db, "pre_ops")
+    calendar_expr = _lead_col(db, "calendar_html_link")
+    agenda_by_expr = _lead_col(db, "agenda_approved_by")
+    agenda_at_expr = _lead_col(db, "agenda_approved_at")
+
+    por_aprobar = []
+    if has_pre_start:
+        where = "l.pre_start IS NOT NULL"
+        if has_agenda_approved_at:
+            where += " AND l.agenda_approved_at IS NULL"
+        por_aprobar = db.execute(text(f"""
+            SELECT l.id_lead, {name_expr} AS nombre_cliente, l.telefono, l.email, l.fecha_evento, l.monto_cotizado,
+                   {pre_title_expr} AS pre_title, {pre_start_expr} AS pre_start, {pre_end_expr} AS pre_end,
+                   {pre_location_expr} AS pre_location, {pre_products_expr} AS pre_products_text,
+                   {pre_montaje_expr} AS pre_montaje_text, {pre_ops_expr} AS pre_ops,
+                   m.nombre AS marca, c.nombre AS comuna, e.nombre AS estado
+            FROM leads l
+            LEFT JOIN marcas m ON m.id_marca=l.id_marca
+            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+            LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+            WHERE {where} {marca_sql}
+            ORDER BY l.pre_start ASC NULLS LAST, l.id_lead DESC
+        """), marca_params).mappings().all()
+
+    confirmados_sin_preagenda = []
+    confirmado_id = _estado_id(db, "CONFIRM")
+    if confirmado_id:
+        where_parts = ["l.id_estado=:conf"]
+        params = {"conf": confirmado_id, **marca_params}
+        if has_calendar_link:
+            where_parts.append("(l.calendar_html_link IS NULL OR l.calendar_html_link = '')")
+        if has_calendar_id:
+            where_parts.append("(l.calendar_event_id IS NULL OR l.calendar_event_id = '')")
+        pre_parts = []
+        if has_pendiente_agendar:
+            pre_parts.append("l.pendiente_agendar = TRUE")
+        if has_pre_start:
+            pre_parts.append("l.pre_start IS NULL")
+        if pre_parts:
+            where_parts.append("(" + " OR ".join(pre_parts) + ")")
+        where = " AND ".join(where_parts)
+        confirmados_sin_preagenda = db.execute(text(f"""
+            SELECT l.id_lead, {name_expr} AS nombre_cliente, l.telefono, l.email, l.fecha_evento, l.monto_cotizado,
+                   m.nombre AS marca, c.nombre AS comuna, e.nombre AS estado
+            FROM leads l
+            LEFT JOIN marcas m ON m.id_marca=l.id_marca
+            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+            LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+            WHERE {where} {marca_sql}
+            ORDER BY l.id_lead DESC
+        """), params).mappings().all()
+
+    agendados = []
+    if has_agenda_approved_at or has_calendar_link:
+        where = "1=0"
+        if has_agenda_approved_at and has_calendar_link:
+            where = "l.agenda_approved_at IS NOT NULL OR (l.calendar_html_link IS NOT NULL AND l.calendar_html_link <> '')"
+        elif has_agenda_approved_at:
+            where = "l.agenda_approved_at IS NOT NULL"
+        elif has_calendar_link:
+            where = "(l.calendar_html_link IS NOT NULL AND l.calendar_html_link <> '')"
+        agendados = db.execute(text(f"""
+            SELECT l.id_lead, {name_expr} AS nombre_cliente, l.telefono, l.email, l.fecha_evento, l.monto_cotizado,
+                   {calendar_expr} AS calendar_html_link, {agenda_by_expr} AS agenda_approved_by, {agenda_at_expr} AS agenda_approved_at,
+                   m.nombre AS marca, c.nombre AS comuna, e.nombre AS estado
+            FROM leads l
+            LEFT JOIN marcas m ON m.id_marca=l.id_marca
+            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+            LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+            WHERE {where} {marca_sql}
+            ORDER BY l.agenda_approved_at DESC NULLS LAST, l.id_lead DESC
+        """), marca_params).mappings().all()
+
+    return {
+        "ok": True,
+        "por_aprobar": list(por_aprobar),
+        "confirmados_sin_preagenda": list(confirmados_sin_preagenda),
+        "por_agendar": list(confirmados_sin_preagenda),
+        "agendados_no_confirmados": list(por_aprobar),
+        "agendados": list(agendados),
+        "counts": {
+            "por_aprobar": len(por_aprobar),
+            "confirmados_sin_preagenda": len(confirmados_sin_preagenda),
+            "por_agendar": len(confirmados_sin_preagenda),
+            "agendados_no_confirmados": len(por_aprobar),
+            "agendados": len(agendados),
+        },
+    }
+
+
+@router.get("/dashboard")
+def dashboard(
+    id_marca: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    tz = ZoneInfo("America/Santiago")
+    now = datetime.now(tz)
+    today = now.date()
+    week_start = today - timedelta(days=today.weekday())  # lunes
+    week_end = week_start + timedelta(days=6)            # domingo
+    week_num = week_start.isocalendar().week
+    week_days = [(week_start + timedelta(days=i)).isoformat() for i in range(7)]
+
+    role = (me.get("role") or me.get("rol") or "").upper()
+    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    only_own = not _is_admin(role)
+    if only_own and not marcas:
+        return {
+            "ok": True,
+            "week": {"start": str(week_start), "end": str(week_end), "number": week_num},
+            "pipeline": [],
+            "tasks": {"preagenda": 0, "confirmados_sin_preagenda": 0},
+            "events": [],
+            "kpis": {"venta_dia": 0, "venta_semana": 0, "cierre_pct": 0, "total_semana": 0, "confirmados_semana": 0},
+        }
+
+    if _col_exists(db, "leads", "fecha_ingreso"):
+        date_col = "fecha_ingreso"
+    elif _col_exists(db, "leads", "created_at"):
+        date_col = "created_at"
+    else:
+        date_col = "fecha_evento"
+    name_expr = _lead_name_expr(db)
+    pre_start_expr = _lead_col(db, "pre_start")
+    pre_end_expr = _lead_col(db, "pre_end")
+    pre_location_expr = _lead_col(db, "pre_location")
+    pre_title_expr = _lead_col(db, "pre_title")
+    cal_expr = _lead_col(db, "calendar_html_link")
+    has_pre_start = _col_exists(db, "leads", "pre_start")
+    has_pre_end = _col_exists(db, "leads", "pre_end")
+    confirmado_id = _estado_id(db, "CONFIRM")
+    params = {"ws": week_start, "we": week_end}
+
+    marca_sql = ""
+    if only_own and marcas:
+        marca_sql = " AND l.id_marca = ANY(:marcas) "
+        params["marcas"] = marcas
+        # Si el usuario pidió filtrar por marca, debe ser una de sus marcas.
+        if id_marca and int(id_marca) in set(marcas):
+            marca_sql += " AND l.id_marca = :id_marca "
+            params["id_marca"] = int(id_marca)
+    elif id_marca:
+        # Admin/roles privilegiados pueden filtrar por marca explícita.
+        marca_sql = " AND l.id_marca = :id_marca "
+        params["id_marca"] = int(id_marca)
+
+    # Mapa de marcas (para tablas/resúmenes)
+    brand_rows = db.execute(
+        text("SELECT id_marca, COALESCE(nombre, marca) AS nombre FROM marcas")
+    ).mappings().all()
+    brand_map = {int(r["id_marca"]): r["nombre"] for r in brand_rows if r.get("id_marca")}
+
+    # Pipeline (total, por estado)
+    q_pipe = f"""
+        SELECT COALESCE(e.nombre,'') AS estado,
+               COALESCE(e.color,'#64748b') AS color,
+               COUNT(*)::int AS cantidad,
+               COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+        FROM leads l
+        LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+        WHERE 1=1
+        {marca_sql}
+        GROUP BY e.nombre, e.color
+        ORDER BY cantidad DESC
+    """
+    pipeline = db.execute(text(q_pipe), params).mappings().all()
+
+    # Pipeline semanal
+    q_pipe_week = f"""
+        SELECT COALESCE(e.nombre,'') AS estado,
+               COALESCE(e.color,'#64748b') AS color,
+               COUNT(*)::int AS cantidad,
+               COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+        FROM leads l
+        LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+        WHERE l.{date_col}::date BETWEEN :ws AND :we
+        {marca_sql}
+        GROUP BY e.nombre, e.color
+        ORDER BY cantidad DESC
+    """
+    pipeline_week = db.execute(text(q_pipe_week), params).mappings().all()
+
+    # Pipeline mensual (mes actual)
+    month_start = date(today.year, today.month, 1)
+    month_end = date(today.year, today.month, 28) + timedelta(days=4)
+    month_end = month_end.replace(day=1) - timedelta(days=1)
+    q_pipe_month = f"""
+        SELECT COALESCE(e.nombre,'') AS estado,
+               COALESCE(e.color,'#64748b') AS color,
+               COUNT(*)::int AS cantidad,
+               COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+        FROM leads l
+        LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+        WHERE l.{date_col}::date BETWEEN :ms AND :me
+        {marca_sql}
+        GROUP BY e.nombre, e.color
+        ORDER BY cantidad DESC
+    """
+    pipeline_month = db.execute(
+        text(q_pipe_month),
+        {**params, "ms": month_start, "me": month_end},
+    ).mappings().all()
+
+    # Tareas
+    q_pre = f"""
+        SELECT COUNT(*)::int AS n
+        FROM leads l
+        WHERE l.pre_start IS NOT NULL AND l.agenda_approved_at IS NULL
+        {marca_sql}
+    """
+    if _col_exists(db, "leads", "calendar_event_id"):
+        q_pre = q_pre.replace("WHERE", "WHERE (l.calendar_event_id IS NULL OR l.calendar_event_id='') AND")
+    if _col_exists(db, "leads", "calendar_html_link"):
+        q_pre = q_pre.replace("WHERE", "WHERE (l.calendar_html_link IS NULL OR l.calendar_html_link='') AND")
+    preagenda = db.execute(text(q_pre), params).scalar_one()
+
+    conf_sin = 0
+    conf_where = ""
+    conf_params = dict(params)
+    if confirmado_id:
+        conf_where = "l.id_estado=:conf"
+        conf_params["conf"] = confirmado_id
+    else:
+        conf_where = "EXISTS (SELECT 1 FROM estados_lead e WHERE e.id_estado=l.id_estado AND UPPER(e.nombre) LIKE :confname)"
+        conf_params["confname"] = "%CONFIRM%"
+
+    if conf_where:
+        q_conf = f"""
+            SELECT COUNT(*)::int AS n
+            FROM leads l
+            WHERE {conf_where} AND (l.pendiente_agendar IS TRUE OR l.pre_start IS NULL)
+            {marca_sql}
+        """
+        if _col_exists(db, "leads", "calendar_event_id"):
+            q_conf = q_conf.replace("WHERE", "WHERE (l.calendar_event_id IS NULL OR l.calendar_event_id='') AND")
+        if _col_exists(db, "leads", "calendar_html_link"):
+            q_conf = q_conf.replace("WHERE", "WHERE (l.calendar_html_link IS NULL OR l.calendar_html_link='') AND")
+        conf_sin = db.execute(text(q_conf), conf_params).scalar_one()
+
+    # Eventos confirmados de la semana
+    events = []
+    if conf_where:
+        pre_title_expr = _lead_col(db, "pre_title")
+        q_ev = f"""
+            SELECT l.id_lead, {name_expr} AS nombre_cliente, l.fecha_evento,
+                   {pre_start_expr} AS pre_start, {pre_end_expr} AS pre_end, {pre_location_expr} AS pre_location,
+                   {cal_expr} AS calendar_html_link,
+                   l.calendar_event_id,
+                   {pre_title_expr} AS pre_title,
+                   COALESCE(m.nombre,m.marca,'') AS marca,
+                   COALESCE(c.nombre,'') AS comuna
+            FROM leads l
+            LEFT JOIN marcas m ON m.id_marca=l.id_marca
+            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+            WHERE {conf_where}
+              AND l.fecha_evento BETWEEN :ws AND :we
+            {marca_sql}
+            ORDER BY l.fecha_evento ASC, l.id_lead DESC
+        """
+        rows = db.execute(text(q_ev), conf_params).mappings().all()
+        seen = set()
+        def _n(s: str | None) -> str:
+            return re.sub(r"[^a-z0-9]+", "", (s or "").strip().lower())
+        for r in rows:
+            key = r.get("calendar_event_id") or ""
+            if key:
+                if key in seen:
+                    continue
+                seen.add(key)
+            else:
+                tup = (
+                    str(r.get("fecha_evento") or ""),
+                    _n(r.get("pre_title") or r.get("nombre_cliente") or ""),
+                    _n(r.get("marca") or ""),
+                    _n(r.get("comuna") or ""),
+                )
+                if tup in seen:
+                    continue
+                seen.add(tup)
+            link = r.get("calendar_html_link") or ""
+            if not link and has_pre_start and has_pre_end and r.get("pre_start") and r.get("pre_end"):
+                try:
+                    link = _gcal_link(
+                        f"Evento {r.get('nombre_cliente') or ''}",
+                        r["pre_start"],
+                        r["pre_end"],
+                        details="Evento confirmado",
+                        location=r.get("pre_location") or r.get("comuna") or "",
+                    )
+                except Exception:
+                    link = ""
+            events.append({
+                "id_lead": r.get("id_lead"),
+                "cliente": r.get("nombre_cliente"),
+                "fecha_evento": str(r.get("fecha_evento") or ""),
+                "marca": r.get("marca"),
+                "comuna": r.get("comuna"),
+                "calendar_html_link": link,
+            })
+
+    # KPIs semanales / diarios
+    total_semana = db.execute(
+        text(f"SELECT COUNT(*)::int FROM leads l WHERE l.{date_col}::date BETWEEN :ws AND :we {marca_sql}"),
+        params,
+    ).scalar_one()
+
+    leads_hoy = db.execute(
+        text(f"SELECT COUNT(*)::int FROM leads l WHERE l.{date_col}::date = :today {marca_sql}"),
+        {**params, "today": today},
+    ).scalar_one()
+
+    confirmados_semana = 0
+    venta_semana = 0
+    venta_dia = 0
+    # Venta diaria por marca (semana actual): negocio la define como "confirmado/vendido ese día"
+    # (no por fecha_evento). Usamos activity_log como fuente de "fecha de venta".
+    sales_daily: list[dict] = []
+    if conf_where:
+        confirmados_semana = db.execute(
+            text(f"""
+                SELECT COUNT(*)::int
+                FROM leads l
+                WHERE {conf_where} AND l.{date_col}::date BETWEEN :ws AND :we
+                {marca_sql}
+            """),
+            conf_params,
+        ).scalar_one()
+
+        if _table_exists_pg(db, "activity_log"):
+            try:
+                tzname = "America/Santiago"
+                rows = db.execute(
+                    text(
+                        f"""
+                        WITH conf AS (
+                          SELECT entity_id::bigint AS id_lead,
+                                 MAX(created_at AT TIME ZONE :tz) AS confirmed_local
+                          FROM public.activity_log
+                          WHERE entity_type='lead'
+                            AND action IN ('EVENT_CONFIRMED_AGENDED')
+                            AND entity_id IS NOT NULL
+                          GROUP BY entity_id
+                        )
+                        SELECT
+                          (c.confirmed_local::date) AS dia,
+                          l.id_marca,
+                          COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                        FROM conf c
+                        JOIN leads l ON l.id_lead = c.id_lead
+                        WHERE c.confirmed_local::date BETWEEN :ws AND :we
+                        {marca_sql}
+                        GROUP BY 1,2
+                        ORDER BY 1 ASC, 2 ASC
+                        """
+                    ),
+                    {**params, "tz": tzname},
+                ).mappings().all()
+                for r in rows:
+                    mid = r.get("id_marca")
+                    name = brand_map.get(int(mid)) if mid is not None else ""
+                    if not name:
+                        continue
+                    sales_daily.append({
+                        "dia": str(r.get("dia")),
+                        "id_marca": int(mid) if mid is not None else None,
+                        "marca": str(name).upper(),
+                        "monto": float(r.get("monto") or 0),
+                    })
+                venta_semana = float(sum([float(x.get("monto") or 0) for x in sales_daily]) or 0)
+                venta_dia = float(sum([float(x.get("monto") or 0) for x in sales_daily if x.get("dia") == str(today)]) or 0)
+            except Exception:
+                sales_daily = []
+
+        # Fallback si aún no hay activity_log/confirmaciones registradas:
+        # usamos updated_at (fecha en que se movió/confirmó), NO fecha_evento.
+        if not sales_daily:
+            try:
+                rows = db.execute(
+                    text(
+                        f"""
+                        SELECT l.updated_at::date AS dia,
+                               l.id_marca,
+                               COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                        FROM leads l
+                        WHERE {conf_where}
+                          AND l.updated_at::date BETWEEN :ws AND :we
+                          {marca_sql}
+                        GROUP BY 1,2
+                        ORDER BY 1 ASC, 2 ASC
+                        """
+                    ),
+                    conf_params,
+                ).mappings().all()
+                for r in rows:
+                    mid = r.get("id_marca")
+                    name = brand_map.get(int(mid)) if mid is not None else ""
+                    if not name:
+                        continue
+                    sales_daily.append({
+                        "dia": str(r.get("dia")),
+                        "id_marca": int(mid) if mid is not None else None,
+                        "marca": str(name).upper(),
+                        "monto": float(r.get("monto") or 0),
+                    })
+                venta_semana = float(sum([float(x.get("monto") or 0) for x in sales_daily]) or 0)
+                venta_dia = float(sum([float(x.get("monto") or 0) for x in sales_daily if x.get("dia") == str(today)]) or 0)
+            except Exception:
+                # último fallback: suma simple por rango
+                venta_semana = db.execute(
+                    text(f"""
+                        SELECT COALESCE(SUM(l.monto_cotizado),0)::float
+                        FROM leads l
+                        WHERE {conf_where} AND l.updated_at::date BETWEEN :ws AND :we
+                        {marca_sql}
+                    """),
+                    conf_params,
+                ).scalar_one()
+                venta_dia = db.execute(
+                    text(f"""
+                        SELECT COALESCE(SUM(l.monto_cotizado),0)::float
+                        FROM leads l
+                        WHERE {conf_where} AND l.updated_at::date = :today
+                        {marca_sql}
+                    """),
+                    {**conf_params, "today": today},
+                ).scalar_one()
+
+    cierre_pct = (confirmados_semana / total_semana * 100) if total_semana else 0
+
+    # =====================
+    # Comparativo mensual (baseline +12%)
+    # =====================
+    _ensure_baseline(db)
+    month = today.month
+
+    allowed_names = None
+    if only_own and marcas:
+        allowed_names = {brand_map.get(m) for m in marcas if brand_map.get(m)}
+
+    baseline_rows = db.execute(
+        text("SELECT marca, monto, empresa, particular FROM ventas_baseline WHERE mes=:m"),
+        {"m": month},
+    ).mappings().all()
+    if allowed_names is not None:
+        baseline_rows = [b for b in baseline_rows if b.get("marca") in allowed_names]
+
+    actual_rows = []
+    if conf_where:
+        # Preferimos "fecha de venta" (confirmación) via activity_log; si no, updated_at.
+        if _table_exists_pg(db, "activity_log"):
+            try:
+                tzname = "America/Santiago"
+                actual_rows = db.execute(
+                    text(
+                        f"""
+                        WITH conf AS (
+                          SELECT entity_id::bigint AS id_lead,
+                                 MAX(created_at AT TIME ZONE :tz) AS confirmed_local
+                          FROM public.activity_log
+                          WHERE entity_type='lead'
+                            AND action IN ('EVENT_CONFIRMED_AGENDED')
+                            AND entity_id IS NOT NULL
+                          GROUP BY entity_id
+                        )
+                        SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                        FROM conf c
+                        JOIN leads l ON l.id_lead = c.id_lead
+                        WHERE c.confirmed_local::date BETWEEN :ms AND :me
+                        {marca_sql}
+                        GROUP BY l.id_marca
+                        """
+                    ),
+                    {**params, "ms": month_start, "me": month_end, "tz": tzname},
+                ).mappings().all()
+            except Exception:
+                actual_rows = []
+
+        if not actual_rows:
+            actual_rows = db.execute(
+                text(
+                    f"""
+                    SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    WHERE {conf_where}
+                      AND l.updated_at::date BETWEEN :ms AND :me
+                      {marca_sql}
+                    GROUP BY l.id_marca
+                    """
+                ),
+                {**conf_params, "ms": month_start, "me": month_end},
+            ).mappings().all()
+    actual_map = {}
+    for r in actual_rows:
+        mid = r.get("id_marca")
+        name = brand_map.get(int(mid)) if mid is not None else None
+        if name:
+            actual_map[name] = float(r.get("monto") or 0)
+
+    sales_compare = []
+    for b in baseline_rows:
+        name = b.get("marca")
+        base = float(b.get("monto") or 0)
+        target = round(base * 1.12, 2)
+        actual = float(actual_map.get(name, 0))
+        vs_base = (actual / base * 100) if base else 0
+        vs_target = (actual / target * 100) if target else 0
+        sales_compare.append({
+            "marca": name,
+            "base": base,
+            "target": target,
+            "actual": actual,
+            "vs_base": round(vs_base, 2),
+            "vs_target": round(vs_target, 2),
+            "empresa": int(b.get("empresa") or 0),
+            "particular": int(b.get("particular") or 0),
+        })
+
+    # =====================
+    # Comisiones por marca (admin)
+    # =====================
+    commissions = []
+    if _is_admin(role):
+        com_rows = db.execute(
+            text("SELECT marca, porcentaje FROM comisiones WHERE is_active IS TRUE")
+        ).mappings().all()
+        com_map = {}
+        default_pct = 3.0
+        for r in com_rows:
+            m = (r.get("marca") or "").upper().strip()
+            pct = float(r.get("porcentaje") or 0)
+            if not m:
+                continue
+            if m in ("*", "TODAS"):
+                default_pct = pct or default_pct
+            else:
+                com_map[m] = pct
+
+        for b in baseline_rows:
+            name = b.get("marca")
+            if not name:
+                continue
+            actual = float(actual_map.get(name, 0))
+            pct = com_map.get(str(name).upper(), default_pct)
+            commissions.append({
+                "marca": name,
+                "porcentaje": round(pct, 2),
+                "venta": actual,
+                "comision": round(actual * (pct / 100.0), 2),
+            })
+
+    # Compat: si no tenemos ventas por activity_log, mostramos el fallback por fecha_evento.
+    if conf_where and not sales_daily:
+        rows = db.execute(
+            text(
+                f"""
+                SELECT l.fecha_evento::date AS dia,
+                       l.id_marca,
+                       COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                FROM leads l
+                WHERE {conf_where}
+                  AND l.fecha_evento BETWEEN :ws AND :we
+                  {marca_sql}
+                GROUP BY l.fecha_evento::date, l.id_marca
+                ORDER BY l.fecha_evento::date ASC
+                """
+            ),
+            conf_params,
+        ).mappings().all()
+        for r in rows:
+            mid = r.get("id_marca")
+            name = brand_map.get(int(mid)) if mid is not None else ""
+            if name:
+                sales_daily.append({"dia": str(r.get("dia")), "marca": str(name).upper(), "monto": float(r.get("monto") or 0)})
+
+    return {
+        "ok": True,
+        "week": {"start": str(week_start), "end": str(week_end), "number": week_num},
+        "week_days": week_days,
+        "pipeline": list(pipeline),
+        "pipeline_week": list(pipeline_week),
+        "pipeline_month": list(pipeline_month),
+        "tasks": {"preagenda": int(preagenda), "confirmados_sin_preagenda": int(conf_sin)},
+        "events": events,
+        "kpis": {
+            "venta_dia": float(venta_dia or 0),
+            "venta_semana": float(venta_semana or 0),
+            "cierre_pct": float(round(cierre_pct, 2)),
+            "total_semana": int(total_semana),
+            "confirmados_semana": int(confirmados_semana),
+            "leads_hoy": int(leads_hoy),
+        },
+        "sales_compare": sales_compare,
+        "commissions": commissions,
+        "sales_daily": sales_daily,
+        "month": month,
+    }
+
+
+@router.get("/dashboard/reportes")
+def dashboard_reportes(
+    fecha_inicio: Optional[str] = None,
+    fecha_termino: Optional[str] = None,
+    id_marca: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    role = (me.get("role") or me.get("rol") or "").upper()
+    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    only_own = not _is_admin(role)
+
+    if _col_exists(db, "leads", "fecha_evento"):
+        date_col = "fecha_evento"
+    elif _col_exists(db, "leads", "fecha_ingreso"):
+        date_col = "fecha_ingreso"
+    else:
+        date_col = "created_at"
+
+    where_parts = ["1=1"]
+    params: dict[str, Any] = {}
+    if fecha_inicio:
+        where_parts.append(f"DATE(l.{date_col}) >= :ini")
+        params["ini"] = fecha_inicio
+    if fecha_termino:
+        where_parts.append(f"DATE(l.{date_col}) <= :fin")
+        params["fin"] = fecha_termino
+
+    # Filtro explícito por marca (admin: cualquiera; no-admin: solo sus marcas)
+    if id_marca:
+        try:
+            mid = int(id_marca)
+        except Exception:
+            mid = 0
+        if mid > 0:
+            if only_own and marcas and (mid not in set(marcas)):
+                raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
+            where_parts.append("l.id_marca = :id_marca")
+            params["id_marca"] = mid
+    if only_own and marcas:
+        where_parts.append("l.id_marca = ANY(:marcas)")
+        params["marcas"] = marcas
+    where_sql = " AND ".join(where_parts)
+
+    confirmado_id = _estado_id(db, "CONFIRM")
+
+    q_funnel = f"""
+        SELECT COALESCE(e.nombre,'Sin estado') AS estado,
+               COUNT(*)::int AS cantidad,
+               COALESCE(SUM(l.monto_cotizado),0) AS monto
+        FROM leads l
+        LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+        WHERE {where_sql}
+        GROUP BY e.nombre
+        ORDER BY cantidad DESC
+    """
+    funnel = db.execute(text(q_funnel), params).mappings().all()
+
+    q_diarios = f"""
+        SELECT DATE(l.fecha_evento) AS dia,
+               COUNT(*)::int AS cantidad,
+               COALESCE(SUM(l.monto_cotizado),0) AS monto
+        FROM leads l
+        WHERE {where_sql}
+          AND l.fecha_evento IS NOT NULL
+          {"AND l.id_estado=:conf" if confirmado_id else ""}
+        GROUP BY DATE(l.fecha_evento)
+        ORDER BY dia ASC
+    """
+    diarios_params = dict(params)
+    if confirmado_id:
+        diarios_params["conf"] = confirmado_id
+    eventos_diarios = db.execute(text(q_diarios), diarios_params).mappings().all()
+
+    name_expr = _lead_name_expr(db)
+    q_clientes = f"""
+        SELECT {name_expr} AS cliente,
+               COUNT(*)::int AS cantidad,
+               COALESCE(SUM(l.monto_cotizado),0) AS monto
+        FROM leads l
+        WHERE {where_sql}
+          {"AND l.id_estado=:conf" if confirmado_id else ""}
+        GROUP BY {name_expr}
+        ORDER BY monto DESC
+        LIMIT 20
+    """
+    clientes = db.execute(text(q_clientes), diarios_params).mappings().all()
+
+    q_comunas = f"""
+        SELECT COALESCE(c.nombre,'—') AS comuna,
+               COUNT(*)::int AS cantidad,
+               COALESCE(SUM(l.monto_cotizado),0) AS monto
+        FROM leads l
+        LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+        WHERE {where_sql}
+          {"AND l.id_estado=:conf" if confirmado_id else ""}
+        GROUP BY c.nombre
+        ORDER BY monto DESC
+        LIMIT 20
+    """
+    comunas = db.execute(text(q_comunas), diarios_params).mappings().all()
+
+    top_productos: list[dict] = []
+    if _table_exists_pg(db, "cotizacion_items") and _table_exists_pg(db, "cotizaciones"):
+        cols_items = _cols_pg(db, "cotizacion_items")
+        cols_cot = _cols_pg(db, "cotizaciones")
+        prod_col = "producto" if "producto" in cols_items else ("nombre_producto" if "nombre_producto" in cols_items else None)
+        qty_col = "cantidad" if "cantidad" in cols_items else None
+        total_col = "total_linea" if "total_linea" in cols_items else ("subtotal" if "subtotal" in cols_items else None)
+        date_cot = "fecha" if "fecha" in cols_cot else ("created_at" if "created_at" in cols_cot else "updated_at")
+        if prod_col and qty_col and total_col:
+            q_prod = f"""
+                SELECT i.{prod_col} AS producto,
+                       COALESCE(i.marca, m.nombre, m.marca,'') AS marca,
+                       SUM(COALESCE(i.{qty_col},0))::float AS cantidad,
+                       SUM(COALESCE(i.{total_col},0))::float AS monto
+                FROM cotizacion_items i
+                JOIN cotizaciones c ON c.id_cotizacion=i.id_cotizacion
+                LEFT JOIN leads l ON l.id_lead=c.id_lead
+                LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                WHERE 1=1
+                  {("AND DATE(c."+date_cot+") >= :ini" if fecha_inicio else "")}
+                  {("AND DATE(c."+date_cot+") <= :fin" if fecha_termino else "")}
+                  {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
+                GROUP BY i.{prod_col}, COALESCE(i.marca, m.nombre, m.marca,'')
+                ORDER BY monto DESC
+                LIMIT 20
+            """
+            top_productos = db.execute(text(q_prod), params).mappings().all()
+    elif _table_exists_pg(db, "cotizaciones_detalle") and _table_exists_pg(db, "cotizaciones"):
+        cols_det = _cols_pg(db, "cotizaciones_detalle")
+        cols_cot = _cols_pg(db, "cotizaciones")
+        prod_col = "nombre_producto" if "nombre_producto" in cols_det else ("producto" if "producto" in cols_det else None)
+        qty_col = "cantidad" if "cantidad" in cols_det else None
+        total_col = "subtotal" if "subtotal" in cols_det else None
+        date_cot = "fecha" if "fecha" in cols_cot else ("created_at" if "created_at" in cols_cot else "updated_at")
+        if prod_col and qty_col and total_col:
+            q_prod = f"""
+                SELECT d.{prod_col} AS producto,
+                       COALESCE(m.nombre, m.marca,'') AS marca,
+                       SUM(COALESCE(d.{qty_col},0))::float AS cantidad,
+                       SUM(COALESCE(d.{total_col},0))::float AS monto
+                FROM cotizaciones_detalle d
+                JOIN cotizaciones c ON c.id_cotizacion=d.id_cotizacion
+                LEFT JOIN leads l ON l.id_lead=c.id_lead
+                LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                WHERE 1=1
+                  {("AND DATE(c."+date_cot+") >= :ini" if fecha_inicio else "")}
+                  {("AND DATE(c."+date_cot+") <= :fin" if fecha_termino else "")}
+                  {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
+                GROUP BY d.{prod_col}, COALESCE(m.nombre, m.marca,'')
+                ORDER BY monto DESC
+                LIMIT 20
+            """
+            top_productos = db.execute(text(q_prod), params).mappings().all()
+
+    return {
+        "ok": True,
+        "funnel": list(funnel),
+        "eventos_diarios": list(eventos_diarios),
+        "top_productos": list(top_productos),
+        "clientes": list(clientes),
+        "comunas": list(comunas),
+    }
+
+
+@router.get("/dashboard/sales_ids")
+def dashboard_sales_ids(
+    desde: str,
+    hasta: str,
+    id_marca: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Drill-down para KPIs de venta:
+    Retorna IDs de leads confirmados+agendados en el rango según activity_log.
+    """
+    role = (me.get("role") or me.get("rol") or "").upper()
+    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    only_own = not _is_admin(role)
+
+    try:
+        d1 = date.fromisoformat(str(desde)[:10])
+        d2 = date.fromisoformat(str(hasta)[:10])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Fechas inválidas (usa YYYY-MM-DD)")
+    if d2 < d1:
+        d1, d2 = d2, d1
+
+    if only_own and not marcas:
+        return {"ok": True, "ids": []}
+
+    marca_sql = ""
+    params: dict[str, Any] = {"d1": d1, "d2": d2, "tz": "America/Santiago"}
+    if only_own and marcas:
+        marca_sql = " AND l.id_marca = ANY(:marcas) "
+        params["marcas"] = marcas
+        if id_marca and int(id_marca) in set(marcas):
+            marca_sql += " AND l.id_marca = :id_marca "
+            params["id_marca"] = int(id_marca)
+        elif id_marca:
+            raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
+    elif id_marca:
+        try:
+            mid = int(id_marca)
+        except Exception:
+            mid = 0
+        if mid > 0:
+            marca_sql = " AND l.id_marca = :id_marca "
+            params["id_marca"] = mid
+
+    if not _table_exists_pg(db, "activity_log"):
+        return {"ok": True, "ids": []}
+
+    rows = db.execute(
+        text(
+            f"""
+            WITH conf AS (
+              SELECT entity_id::bigint AS id_lead,
+                     MAX(created_at AT TIME ZONE :tz) AS confirmed_local
+              FROM public.activity_log
+              WHERE entity_type='lead'
+                AND action IN ('EVENT_CONFIRMED_AGENDED')
+                AND entity_id IS NOT NULL
+              GROUP BY entity_id
+            )
+            SELECT l.id_lead::bigint AS id_lead
+            FROM conf c
+            JOIN leads l ON l.id_lead=c.id_lead
+            WHERE c.confirmed_local::date BETWEEN :d1 AND :d2
+            {marca_sql}
+            ORDER BY c.confirmed_local DESC NULLS LAST, l.id_lead DESC
+            LIMIT 2000
+            """
+        ),
+        params,
+    ).fetchall()
+    ids = [int(r[0]) for r in rows if r and str(r[0] or "").isdigit()]
+    return {"ok": True, "ids": ids}
+
+
+@router.get("/dashboard/events")
+def dashboard_events(
+    week_offset: int = 0,
+    id_marca: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    tz = ZoneInfo("America/Santiago")
+    now = datetime.now(tz)
+    today = now.date()
+    week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
+    week_end = week_start + timedelta(days=6)
+    week_num = week_start.isocalendar().week
+
+    role = (me.get("role") or me.get("rol") or "").upper()
+    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    only_own = not _is_admin(role)
+
+    if _col_exists(db, "leads", "fecha_ingreso"):
+        date_col = "fecha_ingreso"
+    elif _col_exists(db, "leads", "created_at"):
+        date_col = "created_at"
+    else:
+        date_col = "fecha_evento"
+    name_expr = _lead_name_expr(db)
+    pre_start_expr = _lead_col(db, "pre_start")
+    pre_end_expr = _lead_col(db, "pre_end")
+    pre_location_expr = _lead_col(db, "pre_location")
+    pre_title_expr = _lead_col(db, "pre_title")
+    cal_expr = _lead_col(db, "calendar_html_link")
+    confirmado_id = _estado_id(db, "CONFIRM")
+
+    params = {"ws": week_start, "we": week_end}
+    marca_sql = ""
+    if only_own and marcas:
+        marca_sql = " AND l.id_marca = ANY(:marcas) "
+        params["marcas"] = marcas
+        if id_marca and int(id_marca) in set(marcas):
+            marca_sql += " AND l.id_marca = :id_marca "
+            params["id_marca"] = int(id_marca)
+        elif id_marca:
+            raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
+    elif id_marca:
+        try:
+            mid = int(id_marca)
+        except Exception:
+            mid = 0
+        if mid > 0:
+            marca_sql = " AND l.id_marca = :id_marca "
+            params["id_marca"] = mid
+
+    conf_where = ""
+    if confirmado_id:
+        conf_where = "l.id_estado=:conf"
+        params["conf"] = confirmado_id
+    else:
+        conf_where = "EXISTS (SELECT 1 FROM estados_lead e WHERE e.id_estado=l.id_estado AND UPPER(e.nombre) LIKE :confname)"
+        params["confname"] = "%CONFIRM%"
+
+    q_ev = f"""
+        SELECT l.id_lead, {name_expr} AS cliente, l.fecha_evento,
+               {pre_start_expr} AS pre_start, {pre_end_expr} AS pre_end, {pre_location_expr} AS pre_location,
+               {cal_expr} AS calendar_html_link,
+               l.calendar_event_id,
+               {pre_title_expr} AS pre_title,
+               COALESCE(m.nombre,m.marca,'') AS marca,
+               COALESCE(c.nombre,'') AS comuna
+        FROM leads l
+        LEFT JOIN marcas m ON m.id_marca=l.id_marca
+        LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+        WHERE {conf_where}
+          AND l.fecha_evento BETWEEN :ws AND :we
+        {marca_sql}
+        ORDER BY l.fecha_evento ASC, l.id_lead DESC
+    """
+    rows = db.execute(text(q_ev), params).mappings().all()
+    def _n(s: str | None) -> str:
+        raw = (s or "").strip().lower()
+        raw = unicodedata.normalize("NFD", raw)
+        raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Mn")
+        return re.sub(r"[^a-z0-9]+", "", raw)
+    def _title_key(title: str | None, marca: str | None) -> str:
+        t = _n(title)
+        m = _n(marca)
+        if m and t:
+            t = t.replace(m, "")
+        return t
+    events_by_key: dict[tuple, dict] = {}
+    for r in rows:
+        title = r.get("pre_title") or r.get("cliente")
+        if re.search(r"\b(vacaciones|cumplea(?:n|ñ)os|feriado|holiday)\b", (title or "").lower()):
+            continue
+        key = (
+            str(r.get("fecha_evento") or ""),
+            _title_key(title, r.get("marca")),
+        )
+        score = (
+            1 if r.get("calendar_event_id") else 0,
+            1 if (r.get("calendar_html_link") or "") else 0,
+            1 if r.get("pre_title") else 0,
+        )
+        item = {
+            "id_lead": r.get("id_lead"),
+            "cliente": title,
+            "fecha_evento": str(r.get("fecha_evento")) if r.get("fecha_evento") else None,
+            "marca": r.get("marca"),
+            "comuna": r.get("comuna"),
+            "calendar_html_link": r.get("calendar_html_link") or "",
+            "calendar_event_id": r.get("calendar_event_id") or "",
+        }
+        prev = events_by_key.get(key)
+        if not prev:
+            events_by_key[key] = {**item, "_score": score}
+        else:
+            if score > prev["_score"]:
+                events_by_key[key] = {**item, "_score": score}
+    events = []
+    for v in events_by_key.values():
+        v.pop("_score", None)
+        events.append(v)
+    return {"ok": True, "week": {"start": str(week_start), "end": str(week_end), "number": week_num}, "events": events}
+
+
+# =========================
+# MICE & PLACE (Reporte Cocina/Compras)
+# =========================
+def _ensure_ops_recetas_tables(db: Session) -> None:
+    # tablas de recetas viven bajo /ops/recetas, pero aquí solo las leemos.
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS recetas (
+                  id_receta SERIAL PRIMARY KEY,
+                  producto TEXT NOT NULL,
+                  marca TEXT,
+                  rendimiento NUMERIC(10,2),
+                  merma_pct NUMERIC(5,2),
+                  costos_extra NUMERIC(12,2),
+                  unidad_base TEXT,
+                  es_sub_receta BOOLEAN NOT NULL DEFAULT FALSE,
+                  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                  created_at TIMESTAMP DEFAULT now(),
+                  updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS receta_items (
+                  id_item SERIAL PRIMARY KEY,
+                  id_receta INT NOT NULL REFERENCES recetas(id_receta) ON DELETE CASCADE,
+                  ingrediente TEXT NOT NULL,
+                  cantidad NUMERIC(12,4),
+                  unidad TEXT,
+                  costo_unitario NUMERIC(12,4),
+                  sub_receta_id INT,
+                  created_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _ensure_lead_mice_items_pg(db: Session) -> None:
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS lead_mice_items (
+                  id_item  SERIAL PRIMARY KEY,
+                  id_lead  INTEGER NOT NULL REFERENCES leads(id_lead) ON DELETE CASCADE,
+                  producto TEXT NOT NULL,
+                  cantidad NUMERIC(12,3) NOT NULL DEFAULT 0,
+                  service_date DATE,
+                  created_at TIMESTAMP DEFAULT now(),
+                  created_by TEXT
+                )
+                """
+            )
+        )
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_lead_mice_items_lead_day ON lead_mice_items(id_lead, service_date)"))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _mice_manual_by_day(db: Session, id_lead: int) -> List[Dict[str, Any]]:
+    _ensure_lead_mice_items_pg(db)
+    rows = db.execute(
+        text(
+            """
+            SELECT service_date, producto, SUM(cantidad)::float AS cantidad
+            FROM lead_mice_items
+            WHERE id_lead=:id
+            GROUP BY service_date, producto
+            ORDER BY service_date NULLS FIRST, producto
+            """
+        ),
+        {"id": id_lead},
+    ).mappings().all()
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        p = str(r.get("producto") or "").strip()
+        if not p:
+            continue
+        try:
+            qty = float(r.get("cantidad") or 0)
+        except Exception:
+            qty = 0.0
+        if qty <= 0:
+            continue
+        sd = r.get("service_date")
+        sd_s = str(sd)[:10] if sd else None
+        out.append({"service_date": sd_s, "producto": p, "cantidad": qty})
+    return out
+
+
+def _cot_items(db: Session, id_cot: int) -> List[Dict[str, Any]]:
+    if not _table_exists_pg(db, "cotizacion_items"):
+        return []
+    rows = db.execute(
+        text(
+            """
+            SELECT producto, SUM(cantidad)::float AS cantidad
+            FROM cotizacion_items
+            WHERE id_cotizacion=:id
+            GROUP BY producto
+            ORDER BY producto
+            """
+        ),
+        {"id": id_cot},
+    ).mappings().all()
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        p = str(r.get("producto") or "").strip()
+        if not p:
+            continue
+        out.append({"producto": p, "cantidad": float(r.get("cantidad") or 0)})
+    return out
+
+
+def _lead_best_cot_id(db: Session, lead_row: dict) -> Optional[int]:
+    cols = _cols_pg(db, "leads")
+    if "id_cotizacion_vigente" in cols and lead_row.get("id_cotizacion_vigente"):
+        try:
+            return int(lead_row.get("id_cotizacion_vigente"))
+        except Exception:
+            pass
+    if _table_exists_pg(db, "cotizaciones"):
+        cid = db.execute(
+            text("SELECT id_cotizacion FROM cotizaciones WHERE id_lead=:id ORDER BY id_cotizacion DESC LIMIT 1"),
+            {"id": int(lead_row.get("id_lead") or 0)},
+        ).scalar()
+        if cid is not None:
+            try:
+                return int(cid)
+            except Exception:
+                return None
+    return None
+
+
+def _load_receta(db: Session, producto: str, marca: str) -> Optional[Dict[str, Any]]:
+    _ensure_ops_recetas_tables(db)
+    row = db.execute(
+        text(
+            """
+            SELECT id_receta,
+                   COALESCE(rendimiento, 1)::float AS rendimiento,
+                   COALESCE(merma_pct, 0)::float AS merma_pct,
+                   COALESCE(unidad_base,'') AS unidad_base
+            FROM recetas
+            WHERE is_active = TRUE
+              AND UPPER(producto)=UPPER(:p)
+              AND UPPER(COALESCE(marca,''))=UPPER(:m)
+            ORDER BY id_receta DESC
+            LIMIT 1
+            """
+        ),
+        {"p": (producto or "").strip(), "m": (marca or "").strip()},
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+def _receta_items(db: Session, id_receta: int) -> List[Dict[str, Any]]:
+    _ensure_ops_recetas_tables(db)
+    rows = db.execute(
+        text(
+            """
+            SELECT ingrediente, COALESCE(cantidad,0)::float AS cantidad, COALESCE(unidad,'') AS unidad, sub_receta_id
+            FROM receta_items
+            WHERE id_receta=:id
+            ORDER BY ingrediente
+            """
+        ),
+        {"id": int(id_receta)},
+    ).mappings().all()
+    out = []
+    for r in rows:
+        ing = str(r.get("ingrediente") or "").strip()
+        if not ing:
+            continue
+        out.append(
+            {
+                "ingrediente": ing,
+                "cantidad": float(r.get("cantidad") or 0),
+                "unidad": str(r.get("unidad") or "").strip(),
+                "sub_receta_id": r.get("sub_receta_id"),
+            }
+        )
+    return out
+
+
+def _expand_ingredientes_for_producto(
+    db: Session,
+    producto: str,
+    marca: str,
+    unidades: float,
+    *,
+    _seen: Optional[set[int]] = None,
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """
+    Retorna (ingredientes, missing_reason).
+    ingredientes: [{ingrediente, unidad, cantidad}]
+    """
+    _seen = _seen or set()
+    rec = _load_receta(db, producto, marca)
+    if not rec:
+        return ([], "no_receta")
+    rid = int(rec.get("id_receta") or 0)
+    if rid in _seen:
+        return ([], "ciclo_subreceta")
+    _seen.add(rid)
+
+    rendimiento = float(rec.get("rendimiento") or 1.0) or 1.0
+    merma_pct = float(rec.get("merma_pct") or 0.0) or 0.0
+    if merma_pct < 0:
+        merma_pct = 0.0
+    if merma_pct > 95:
+        merma_pct = 95.0
+    effective_yield = rendimiento * (1.0 - (merma_pct / 100.0))
+    if effective_yield <= 0:
+        effective_yield = 1.0
+    factor = float(unidades or 0) / effective_yield
+
+    out: List[Dict[str, Any]] = []
+    for it in _receta_items(db, rid):
+        qty = float(it.get("cantidad") or 0.0) * factor
+        if qty <= 0:
+            continue
+        sub_id = it.get("sub_receta_id")
+        if sub_id:
+            try:
+                sub_id_i = int(sub_id)
+            except Exception:
+                sub_id_i = 0
+            if sub_id_i > 0:
+                sub_rec = db.execute(
+                    text("SELECT producto, COALESCE(marca,'') AS marca FROM recetas WHERE id_receta=:id"),
+                    {"id": sub_id_i},
+                ).mappings().first()
+                if sub_rec:
+                    sub_prod = str(sub_rec.get("producto") or "").strip()
+                    sub_marca = str(sub_rec.get("marca") or "").strip() or marca
+                    sub_items, _ = _expand_ingredientes_for_producto(db, sub_prod, sub_marca, qty, _seen=_seen)
+                    out.extend(sub_items)
+                    continue
+        out.append({"ingrediente": it["ingrediente"], "unidad": it.get("unidad") or "", "cantidad": qty})
+    return (out, None)
+
+
+@router.get("/mice/day")
+def mice_day_report(
+    day: str,
+    include_ingredients: int = 1,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Reporte por día para cocina/compras.
+    - Usa items manuales (lead_mice_items) por service_date si existen.
+    - Si no, cae a cotización (id_cotizacion_vigente o última).
+    """
+    role = (me.get("role") or me.get("rol") or "").upper()
+    if not _is_admin(role) and role not in ("JEFE DE OPERACIONES", "OPERACIONES", "COMPRAS", "MICE", "BODEGUERO"):
+        raise HTTPException(403, detail="No autorizado")
+
+    day_s = str(day or "").strip()[:10]
+    try:
+        day_d = date.fromisoformat(day_s)
+    except Exception:
+        raise HTTPException(400, detail="day debe ser YYYY-MM-DD")
+
+    inc_ing = True
+    try:
+        inc_ing = bool(int(include_ingredients))
+    except Exception:
+        inc_ing = True
+
+    confirmado_id = _estado_id(db, "CONFIRM")
+    name_expr = _lead_name_expr(db)
+
+    params: Dict[str, Any] = {"d": day_d}
+    if confirmado_id:
+        conf_where = "l.id_estado=:conf"
+        params["conf"] = confirmado_id
+    else:
+        conf_where = "EXISTS (SELECT 1 FROM estados_lead e WHERE e.id_estado=l.id_estado AND UPPER(e.nombre) LIKE :confname)"
+        params["confname"] = "%CONFIRM%"
+
+    cols_leads = _cols_pg(db, "leads")
+    cot_sel = "l.id_cotizacion_vigente" if "id_cotizacion_vigente" in cols_leads else "NULL::int AS id_cotizacion_vigente"
+
+    rows = db.execute(
+        text(
+            f"""
+            SELECT l.id_lead,
+                   {name_expr} AS cliente,
+                   l.fecha_evento,
+                   {cot_sel},
+                   COALESCE(m.nombre,m.marca,'') AS marca,
+                   COALESCE(c.nombre,'') AS comuna
+            FROM leads l
+            LEFT JOIN marcas m ON m.id_marca=l.id_marca
+            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+            WHERE {conf_where}
+              AND l.fecha_evento = :d
+            ORDER BY l.id_lead DESC
+            """
+        ),
+        params,
+    ).mappings().all()
+
+    leads_out: List[Dict[str, Any]] = []
+    totals: Dict[str, float] = {}
+    missing_recetas: List[Dict[str, Any]] = []
+    ing_totals: Dict[Tuple[str, str], float] = {}
+
+    for r in rows:
+        lead = dict(r)
+        id_lead = int(lead.get("id_lead") or 0)
+        marca = str(lead.get("marca") or "").strip()
+
+        manual = _mice_manual_by_day(db, id_lead)
+        items: List[Dict[str, Any]] = []
+        manual_days = {x.get("service_date") for x in manual if x.get("service_date")}
+        if manual_days:
+            items = [{"producto": x["producto"], "cantidad": float(x["cantidad"])} for x in manual if x.get("service_date") == day_s]
+            src = "manual"
+        else:
+            items = [{"producto": x["producto"], "cantidad": float(x["cantidad"])} for x in manual]
+            src = "manual" if items else ""
+
+        if not items:
+            cid = _lead_best_cot_id(db, lead)
+            if cid:
+                items = _cot_items(db, cid)
+                src = "cotizador"
+        if not items:
+            src = "none"
+
+        ing_ev: Dict[Tuple[str, str], float] = {}
+        miss_ev: List[Dict[str, Any]] = []
+        breakdown: List[Dict[str, Any]] = []
+
+        for it in items:
+            p = str(it.get("producto") or "").strip()
+            if not p:
+                continue
+            try:
+                qn = float(it.get("cantidad") or 0)
+            except Exception:
+                qn = 0.0
+            if qn <= 0:
+                continue
+            totals[p] = totals.get(p, 0.0) + qn
+
+            if inc_ing:
+                ing, miss = _expand_ingredientes_for_producto(db, p, marca, qn)
+                if miss:
+                    rec_miss = {"producto": p, "marca": marca, "reason": miss, "id_lead": id_lead}
+                    missing_recetas.append(rec_miss)
+                    miss_ev.append(rec_miss)
+                    # still include product breakdown (with empty ingredients) so UI can show "faltan receta"
+                    breakdown.append({"producto": p, "cantidad": qn, "ingredientes": []})
+                    continue
+                for ii in ing:
+                    key = (str(ii.get("ingrediente") or "").strip(), str(ii.get("unidad") or "").strip())
+                    try:
+                        ing_totals[key] = ing_totals.get(key, 0.0) + float(ii.get("cantidad") or 0)
+                        ing_ev[key] = ing_ev.get(key, 0.0) + float(ii.get("cantidad") or 0)
+                    except Exception:
+                        pass
+                breakdown.append(
+                    {
+                        "producto": p,
+                        "cantidad": qn,
+                        "ingredientes": [
+                            {
+                                "ingrediente": str(ii.get("ingrediente") or "").strip(),
+                                "unidad": str(ii.get("unidad") or "").strip(),
+                                "cantidad": float(ii.get("cantidad") or 0),
+                            }
+                            for ii in ing
+                            if str(ii.get("ingrediente") or "").strip()
+                        ],
+                    }
+                )
+            else:
+                breakdown.append({"producto": p, "cantidad": qn, "ingredientes": []})
+
+        leads_out.append(
+            {
+                "id_lead": id_lead,
+                "cliente": lead.get("cliente"),
+                "marca": marca,
+                "comuna": lead.get("comuna"),
+                "items_source": src,
+                "items": items,
+                "breakdown": breakdown,
+                "ingredients": [
+                    {"ingrediente": k[0], "unidad": k[1], "cantidad": float(v)}
+                    for k, v in sorted(ing_ev.items(), key=lambda x: (x[0][0].lower(), x[0][1].lower()))
+                    if v > 0
+                ]
+                if inc_ing
+                else [],
+                "missing_recetas": miss_ev if inc_ing else [],
+            }
+        )
+
+    products_total = [{"producto": k, "cantidad": float(v)} for k, v in sorted(totals.items(), key=lambda x: x[0].lower()) if v > 0]
+    ingredients_total: List[Dict[str, Any]] = []
+    if inc_ing:
+        ingredients_total = [
+            {"ingrediente": k[0], "unidad": k[1], "cantidad": float(v)}
+            for k, v in sorted(ing_totals.items(), key=lambda x: (x[0][0].lower(), x[0][1].lower()))
+            if v > 0
+        ]
+
+    return {
+        "ok": True,
+        "day": day_s,
+        "leads": leads_out,
+        "products_total": products_total,
+        "ingredients_total": ingredients_total,
+        "missing_recetas": missing_recetas if inc_ing else [],
+    }
+
+
+@router.get("/mice/week")
+def mice_week_report(
+    start: str,
+    include_ingredients: int = 1,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Reporte semanal (lunes→domingo) para cocina/compras.
+    Retorna grilla tipo Excel: filas=producto/ingrediente, columnas=días + total.
+    También incluye lista de leads con items para tooltips.
+    """
+    role = (me.get("role") or me.get("rol") or "").upper()
+    if not _is_admin(role) and role not in ("JEFE DE OPERACIONES", "OPERACIONES", "COMPRAS", "MICE", "BODEGUERO"):
+        raise HTTPException(403, detail="No autorizado")
+
+    start_s = str(start or "").strip()[:10]
+    try:
+        start_d = date.fromisoformat(start_s)
+    except Exception:
+        raise HTTPException(400, detail="start debe ser YYYY-MM-DD")
+
+    inc_ing = True
+    try:
+        inc_ing = bool(int(include_ingredients))
+    except Exception:
+        inc_ing = True
+
+    days = [(start_d + timedelta(days=i)).isoformat() for i in range(7)]
+    end_d = start_d + timedelta(days=6)
+
+    confirmado_id = _estado_id(db, "CONFIRM")
+    name_expr = _lead_name_expr(db)
+    cols_leads = _cols_pg(db, "leads")
+    cot_sel = "l.id_cotizacion_vigente" if "id_cotizacion_vigente" in cols_leads else "NULL::int AS id_cotizacion_vigente"
+
+    params: Dict[str, Any] = {"d1": start_d, "d2": end_d}
+    if confirmado_id:
+        conf_where = "l.id_estado=:conf"
+        params["conf"] = confirmado_id
+    else:
+        conf_where = "EXISTS (SELECT 1 FROM estados_lead e WHERE e.id_estado=l.id_estado AND UPPER(e.nombre) LIKE :confname)"
+        params["confname"] = "%CONFIRM%"
+
+    rows = db.execute(
+        text(
+            f"""
+            SELECT l.id_lead,
+                   {name_expr} AS cliente,
+                   l.fecha_evento,
+                   {cot_sel},
+                   COALESCE(m.nombre,m.marca,'') AS marca,
+                   COALESCE(c.nombre,'') AS comuna
+            FROM leads l
+            LEFT JOIN marcas m ON m.id_marca=l.id_marca
+            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+            WHERE {conf_where}
+              AND l.fecha_evento BETWEEN :d1 AND :d2
+            ORDER BY l.fecha_evento ASC, l.id_lead DESC
+            """
+        ),
+        params,
+    ).mappings().all()
+
+    # Totales por día
+    prod_by_day: Dict[Tuple[str, str], float] = {}  # (day, producto) -> qty
+    ing_by_day: Dict[Tuple[str, str, str], float] = {}  # (day, ingrediente, unidad) -> qty
+    missing_recetas: List[Dict[str, Any]] = []
+
+    leads_out: List[Dict[str, Any]] = []
+
+    for r in rows:
+        lead = dict(r)
+        id_lead = int(lead.get("id_lead") or 0)
+        marca = str(lead.get("marca") or "").strip()
+        day_ev = ""
+        try:
+            fev = lead.get("fecha_evento")
+            if isinstance(fev, date):
+                day_ev = fev.isoformat()
+            else:
+                day_ev = str(fev or "")[:10]
+        except Exception:
+            day_ev = str(lead.get("fecha_evento") or "")[:10]
+        if not day_ev:
+            continue
+
+        manual = _mice_manual_by_day(db, id_lead)
+        items: List[Dict[str, Any]] = []
+        manual_days = {x.get("service_date") for x in manual if x.get("service_date")}
+        if manual_days:
+            items = [{"producto": x["producto"], "cantidad": float(x["cantidad"])} for x in manual if x.get("service_date") == day_ev]
+            src = "manual"
+        else:
+            items = [{"producto": x["producto"], "cantidad": float(x["cantidad"])} for x in manual]
+            src = "manual" if items else ""
+
+        if not items:
+            cid = _lead_best_cot_id(db, lead)
+            if cid:
+                items = _cot_items(db, cid)
+                src = "cotizador"
+        if not items:
+            src = "none"
+
+        ing_ev: Dict[Tuple[str, str], float] = {}
+        miss_ev: List[Dict[str, Any]] = []
+        breakdown: List[Dict[str, Any]] = []
+
+        for it in items:
+            p = str(it.get("producto") or "").strip()
+            if not p:
+                continue
+            try:
+                qn = float(it.get("cantidad") or 0)
+            except Exception:
+                qn = 0.0
+            if qn <= 0:
+                continue
+            prod_by_day[(day_ev, p)] = prod_by_day.get((day_ev, p), 0.0) + qn
+
+            if inc_ing:
+                ing, miss = _expand_ingredientes_for_producto(db, p, marca, qn)
+                if miss:
+                    rec_miss = {"producto": p, "marca": marca, "reason": miss, "id_lead": id_lead, "day": day_ev}
+                    missing_recetas.append(rec_miss)
+                    miss_ev.append(rec_miss)
+                    breakdown.append({"producto": p, "cantidad": qn, "ingredientes": []})
+                    continue
+                for ii in ing:
+                    ing_name = str(ii.get("ingrediente") or "").strip()
+                    unit = str(ii.get("unidad") or "").strip()
+                    if not ing_name:
+                        continue
+                    try:
+                        ing_by_day[(day_ev, ing_name, unit)] = ing_by_day.get((day_ev, ing_name, unit), 0.0) + float(ii.get("cantidad") or 0)
+                        ing_ev[(ing_name, unit)] = ing_ev.get((ing_name, unit), 0.0) + float(ii.get("cantidad") or 0)
+                    except Exception:
+                        pass
+                breakdown.append(
+                    {
+                        "producto": p,
+                        "cantidad": qn,
+                        "ingredientes": [
+                            {
+                                "ingrediente": str(ii.get("ingrediente") or "").strip(),
+                                "unidad": str(ii.get("unidad") or "").strip(),
+                                "cantidad": float(ii.get("cantidad") or 0),
+                            }
+                            for ii in ing
+                            if str(ii.get("ingrediente") or "").strip()
+                        ],
+                    }
+                )
+            else:
+                breakdown.append({"producto": p, "cantidad": qn, "ingredientes": []})
+
+        leads_out.append(
+            {
+                "id_lead": id_lead,
+                "day": day_ev,
+                "cliente": lead.get("cliente"),
+                "marca": marca,
+                "comuna": lead.get("comuna"),
+                "items_source": src,
+                "items": items,
+                "breakdown": breakdown,
+                "ingredients": [
+                    {"ingrediente": k[0], "unidad": k[1], "cantidad": float(v)}
+                    for k, v in sorted(ing_ev.items(), key=lambda x: (x[0][0].lower(), x[0][1].lower()))
+                    if v > 0
+                ]
+                if inc_ing
+                else [],
+                "missing_recetas": miss_ev if inc_ing else [],
+            }
+        )
+
+    # Build products grid
+    products = sorted({p for (_d, p) in prod_by_day.keys()}, key=lambda x: x.lower())
+    products_grid: List[Dict[str, Any]] = []
+    for p in products:
+        row = {"producto": p, "total": 0.0}
+        for d in days:
+            q = float(prod_by_day.get((d, p), 0.0))
+            row[d] = q
+            row["total"] += q
+        if row["total"] > 0:
+            products_grid.append(row)
+
+    ingredients_grid: List[Dict[str, Any]] = []
+    if inc_ing:
+        ings = sorted({(i, u) for (_d, i, u) in ing_by_day.keys()}, key=lambda x: (x[0].lower(), x[1].lower()))
+        for ing_name, unit in ings:
+            row = {"ingrediente": ing_name, "unidad": unit, "total": 0.0}
+            for d in days:
+                q = float(ing_by_day.get((d, ing_name, unit), 0.0))
+                row[d] = q
+                row["total"] += q
+            if row["total"] > 0:
+                ingredients_grid.append(row)
+
+    return {
+        "ok": True,
+        "start": start_s,
+        "days": days,
+        "products_grid": products_grid,
+        "ingredients_grid": ingredients_grid,
+        "missing_recetas": missing_recetas if inc_ing else [],
+        "leads": leads_out,
+    }
+
+
+@router.put("/agenda/{id_lead}/approve")
+def approve_agenda(
+    id_lead: int,
+    x_user: str | None = Header(default=None, alias="X-USER"),
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    try:
+        # Asegura columnas necesarias para agenda/calendario (evita 500 por schema antiguo).
+        _ensure_lead_calendar_cols(db)
+
+        name_expr = _lead_name_expr(db)
+        row = (
+            db.execute(
+                text(
+                    f"""
+                    SELECT
+                        l.id_lead,
+                        l.pre_title,
+                        l.pre_start,
+                        l.pre_end,
+                        l.pre_location,
+                        l.pre_description,
+                        l.fecha_evento,
+                        {name_expr} AS lead_nombre
+                    FROM leads l
+                    WHERE l.id_lead=:id
+                    LIMIT 1
+                    """
+                ),
+                {"id": id_lead},
+            )
+            .mappings()
+            .first()
+        )
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Lead no existe")
+
+        # Si falta pre_start/pre_end, usamos fecha_evento con horario por defecto (10:00-12:00 CL).
+        if not row.get("pre_start") or not row.get("pre_end"):
+            fe = row.get("fecha_evento")
+            if not fe:
+                raise HTTPException(status_code=400, detail="No hay pre-agenda para aprobar")
+            fe_date = fe.date() if isinstance(fe, datetime) else fe
+            tz = ZoneInfo("America/Santiago")
+            start = datetime.combine(fe_date, time(10, 0), tzinfo=tz)
+            end = start + timedelta(hours=2)
+            db.execute(
+                text(
+                    """
+                    UPDATE leads
+                    SET pre_start = :ps,
+                        pre_end = :pe,
+                        pre_title = COALESCE(pre_title, :ptitle),
+                        pre_location = COALESCE(pre_location, ''),
+                        pre_description = COALESCE(pre_description, '')
+                    WHERE id_lead = :id
+                    """
+                ),
+                {
+                    "id": id_lead,
+                    "ps": start,
+                    "pe": end,
+                    "ptitle": row.get("pre_title") or row.get("lead_nombre") or f"Evento Lead {id_lead}",
+                },
+            )
+            db.commit()
+            row = {**row, "pre_start": start, "pre_end": end}
+
+        title = row.get("pre_title") or row.get("lead_nombre") or f"Evento Lead {id_lead}"
+        start = row["pre_start"]
+        end = row["pre_end"]
+        loc = row.get("pre_location") or ""
+        details = row.get("pre_description") or ""
+
+        link = _gcal_link(title, start, end, details=details, location=loc)
+        event_id = None
+        gcal_error = None
+        connected = False
+
+        # Si hay OAuth, crea/recupera evento real en Google Calendar.
+        svc = _gcal_service(db)
+        if svc:
+            connected = True
+            cal_id = os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+            try:
+                found = (
+                    svc.events()
+                    .list(
+                        calendarId=cal_id,
+                        privateExtendedProperty=f"lead_id={id_lead}",
+                        maxResults=1,
+                        singleEvents=True,
+                    )
+                    .execute()
+                )
+                items = found.get("items") or []
+                if items:
+                    event_id = items[0].get("id")
+                    link = items[0].get("htmlLink") or link
+                else:
+                    event = {
+                        "summary": title,
+                        "location": loc,
+                        "description": details or "",
+                        "start": {"dateTime": start.isoformat(), "timeZone": "America/Santiago"},
+                        "end": {"dateTime": end.isoformat(), "timeZone": "America/Santiago"},
+                        "extendedProperties": {"private": {"lead_id": str(id_lead)}},
+                    }
+                    created = svc.events().insert(calendarId=cal_id, body=event).execute()
+                    event_id = created.get("id")
+                    link = created.get("htmlLink") or link
+            except Exception as e:
+                # Fallback a link si falla creación; reportamos error al frontend para debug.
+                gcal_error = str(e)
+        else:
+            gcal_error = "Google Calendar no conectado"
+
+        db.execute(
+            text(
+                """
+                UPDATE leads
+                SET calendar_start=:s,
+                    calendar_end=:e,
+                    calendar_html_link=:lnk,
+                    calendar_event_id=:eid,
+                    agenda_approved_by=:by,
+                    agenda_approved_at=now(),
+                    pendiente_agendar=FALSE,
+                    updated_at=now()
+                WHERE id_lead=:id
+                """
+            ),
+            {
+                "s": start,
+                "e": end,
+                "lnk": link,
+                "eid": event_id,
+                "by": (x_user or me.get("name") or me.get("nombre") or "admin"),
+                "id": id_lead,
+            },
+        )
+
+        # Marca el último evento calendario pendiente como aprobado (si existe).
+        try:
+            if _table_exists_pg(db, "eventos_calendario"):
+                cols_ev = _cols_pg(db, "eventos_calendario")
+                if "id_evento" in cols_ev and "id_lead" in cols_ev and "estado" in cols_ev:
+                    aprobado_por_col = "aprobado_por" if "aprobado_por" in cols_ev else None
+                    updated_col = "updated_at" if "updated_at" in cols_ev else None
+                    sets = ["estado='aprobado'"]
+                    if aprobado_por_col:
+                        sets.append(f"{aprobado_por_col}=:by")
+                    if updated_col:
+                        sets.append(f"{updated_col}=now()")
+                    db.execute(
+                        text(
+                            f"""
+                            UPDATE eventos_calendario
+                            SET {", ".join(sets)}
+                            WHERE id_evento = (
+                                SELECT id_evento FROM eventos_calendario
+                                WHERE id_lead=:id AND estado='pendiente'
+                                ORDER BY id_evento DESC
+                                LIMIT 1
+                            )
+                            """
+                        ),
+                        {"id": id_lead, "by": (x_user or me.get("nombre") or "admin")},
+                    )
+        except Exception:
+            # No bloqueamos la aprobación por una tabla opcional.
+            pass
+
+        db.commit()
+        return {
+            "ok": True,
+            "connected": connected,
+            "calendar_html_link": link,
+            "calendar_event_id": event_id,
+            "gcal_error": gcal_error,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        # Fuerza JSON para que el frontend no muera con "Respuesta NO JSON"
+        return JSONResponse(status_code=500, content={"ok": False, "where": "tools.approve_agenda", "error": str(e)})

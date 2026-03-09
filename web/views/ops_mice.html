@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>ops_mice</title>
+</head>
+<body style="padding:18px">
+  <section class="card" style="max-width: 980px">
+    <h2 style="margin:0 0 8px 0">ops_mice</h2>
+    <p style="opacity:.85; margin:0">Módulo en construcción. Menú OK, UX OK. Luego enchufamos lógica y permisos por rol.</p>
+  </section>
+  <script>
+    window.addEventListener("message", (ev) => {
+      if (ev.data?.type === "theme"){
+        document.documentElement.classList.toggle("light", ev.data.mode === "light");
+      }
+    });
+  </script>
+</body>
+</html>

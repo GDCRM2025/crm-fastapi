@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RRHH · Nómina</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <style>
+    body{ margin:0; padding:18px; color:inherit; }
+    .card{ border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.12); background:rgba(7,12,16,.45); }
+    :root.light .card{ background:rgba(255,255,255,.75); border-color:rgba(0,0,0,.1); color:#0f172a; }
+    .title{ font-weight:1000; font-size:18px; }
+    .muted{ opacity:.7; font-size:12px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .inp{ height:36px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:transparent; color:inherit; padding:0 10px; font-weight:800; min-width:220px; }
+    .btn{ height:36px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:transparent; color:inherit; padding:0 12px; cursor:pointer; font-weight:900; }
+    .btn:hover{ background: rgba(255,255,255,.06); }
+    table{ width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+    th,td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; white-space:nowrap; }
+    th{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; opacity:.7; }
+    .table-wrap{ overflow:auto; max-height:70vh; border:1px solid rgba(255,255,255,.12); border-radius:12px; margin-top:10px; }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div>
+        <div class="title">Recursos Humanos</div>
+        <div class="muted">Nómina general · vista principal. Pago sueldos: día 30 de cada mes.</div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;">
+      <div class="row" style="justify-content:space-between;">
+        <div class="row">
+          <input class="inp" id="q" placeholder="Buscar colaborador..." />
+          <button class="btn" id="btnReload">Actualizar</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Colaborador</th>
+              <th>Centro Costo</th>
+              <th>Cargo</th>
+              <th>Sueldo Fijo</th>
+              <th>Faltas (mes)</th>
+              <th>Días trabajados</th>
+              <th>Vac. acumuladas</th>
+              <th>Vac. tomadas</th>
+              <th>Vac. disponibles</th>
+              <th>A pagar</th>
+              <th>Adelantos</th>
+              <th>Saldo</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="modal" id="advModal" style="display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);position:fixed;inset:0;z-index:30;">
+    <div class="card" style="width:min(840px,92vw);">
+      <div class="row" style="justify-content:space-between;">
+        <strong>Adelantos</strong>
+        <button class="btn" id="advClose">Cerrar</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="advName" placeholder="Colaborador" />
+        <input class="inp" id="advMonto" placeholder="Monto" />
+        <input class="inp" id="advFecha" type="date" />
+        <input class="inp" id="advMotivo" placeholder="Motivo (opcional)" style="flex:1;min-width:220px;" />
+        <button class="btn" id="advSave">Agregar</button>
+        <button class="btn" id="advReload">Actualizar</button>
+      </div>
+      <div class="table-wrap" style="max-height:50vh;margin-top:10px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Monto</th>
+              <th>Motivo</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="advRows">
+            <tr><td class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="absModal" style="display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);position:fixed;inset:0;z-index:30;">
+    <div class="card" style="width:min(840px,92vw);">
+      <div class="row" style="justify-content:space-between;">
+        <strong>Inasistencias</strong>
+        <button class="btn" id="absClose">Cerrar</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="absName" placeholder="Colaborador" />
+        <input class="inp" id="absNewFecha" type="date" />
+        <input class="inp" id="absNewDias" placeholder="Días" />
+        <input class="inp" id="absNewMotivo" placeholder="Motivo (opcional)" style="flex:1;min-width:220px;" />
+        <button class="btn" id="absNewSave">Agregar</button>
+        <button class="btn" id="absReload">Actualizar</button>
+      </div>
+      <div class="table-wrap" style="max-height:50vh;margin-top:10px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Días</th>
+              <th>Motivo</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="absRows">
+            <tr><td class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="actModal" style="display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);position:fixed;inset:0;z-index:30;">
+    <div class="card" style="width:min(480px,92vw);">
+      <div class="row" style="justify-content:space-between;">
+        <strong id="actName">Colaborador</strong>
+        <button class="btn" id="actClose">Cerrar</button>
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn" id="actAdv">Registrar adelanto</button>
+        <button class="btn" id="actAbs">Registrar ausencia</button>
+        <button class="btn" id="actVac">Registrar vacaciones</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="modal" id="vacModal" style="display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);position:fixed;inset:0;z-index:30;">
+    <div class="card" style="width:min(560px,92vw);">
+      <div class="row" style="justify-content:space-between;">
+        <strong>Registrar vacaciones</strong>
+        <button class="btn" id="vacClose">Cerrar</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="vacName" placeholder="Colaborador" />
+        <input class="inp" id="vacIni" type="date" />
+        <input class="inp" id="vacFin" type="date" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="vacDias" placeholder="Días (opcional)" />
+        <input class="inp" id="vacObs" placeholder="Observaciones" style="flex:1;min-width:240px;" />
+        <button class="btn" id="vacSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+    function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+
+    function applyThemeBootstrap(){
+      const mode = (localStorage.getItem("gd_theme") || "dark");
+      document.documentElement.classList.toggle("light", mode === "light");
+      window.addEventListener("message", (ev) => {
+        if (ev.data?.type === "theme"){
+          document.documentElement.classList.toggle("light", ev.data.mode === "light");
+        }
+      });
+    }
+    applyThemeBootstrap();
+
+    function fmt(n){
+      if (n == null || n === "") return "—";
+      const v = Number(n);
+      if (Number.isFinite(v)) return v.toLocaleString("es-CL");
+      return n;
+    }
+
+    async function load(){
+      const r = await fetch("/rrhh/nomina", { headers: headers() });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        qs("#rows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
+        return;
+      }
+      const data = await r.json();
+      if (data.ok === false){
+        qs("#rows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${data.detail || "Error"}</td></tr>`;
+        return;
+      }
+      let items = data.items || [];
+      const norm = (v) => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const q = norm(qs("#q").value || "");
+      if (q){
+        items = items.filter(i => norm(i.colaborador || "").includes(q));
+      }
+      qs("#rows").innerHTML = items.map(i => {
+        const adel = Number(i.adelantos_total || 0) || 0;
+        const base = Number(i.total_pagar ?? i.a_pagar_liquido ?? i.sueldo_fijo ?? 0) || 0;
+        const saldo = Number(i.saldo ?? 0) || 0;
+        return `
+        <tr>
+          <td><strong>${i.colaborador || "—"}</strong></td>
+          <td>${i.centro_costo || "—"}</td>
+          <td>${i.cargo || "—"}</td>
+          <td>${fmt(i.sueldo_fijo)}</td>
+          <td>${fmt(i.faltas_mes)}</td>
+          <td>${fmt(i.dias_trabajados)}</td>
+          <td>${fmt(i.vac_acumuladas)}</td>
+          <td>${fmt(i.vac_tomadas)}</td>
+          <td>${fmt(i.vac_disponibles)}</td>
+          <td>${base ? fmt(base) : "—"}</td>
+          <td>${fmt(adel)}</td>
+          <td>${base ? fmt(saldo) : "—"}</td>
+          <td>
+            <button class="btn" data-actions="${i.colaborador || ""}">Gestionar</button>
+          </td>
+        </tr>
+      `; }).join("") || `<tr><td class="muted">Sin datos.</td></tr>`;
+      qs("#rows").querySelectorAll("[data-actions]").forEach(b => {
+        b.addEventListener("click", () => {
+          const name = b.dataset.actions || "";
+          qs("#actName").textContent = name || "Colaborador";
+          qs("#actAdv").dataset.name = name;
+          qs("#actAbs").dataset.name = name;
+          qs("#actVac").dataset.name = name;
+          qs("#actModal").style.display = "flex";
+        });
+      });
+    }
+
+    qs("#btnReload").addEventListener("click", () => load());
+    qs("#q").addEventListener("input", () => load());
+    qs("#actClose").addEventListener("click", () => qs("#actModal").style.display = "none");
+    qs("#actAdv").addEventListener("click", (e) => {
+      const name = e.currentTarget.dataset.name || "";
+      qs("#advName").value = name;
+      qs("#advMonto").value = "";
+      qs("#advMotivo").value = "";
+      qs("#advFecha").value = new Date().toISOString().slice(0,10);
+      qs("#actModal").style.display = "none";
+      loadAdelantos(name);
+      qs("#advModal").style.display = "flex";
+    });
+    qs("#actAbs").addEventListener("click", (e) => {
+      const name = e.currentTarget.dataset.name || "";
+      qs("#absName").value = name;
+      qs("#absNewFecha").value = new Date().toISOString().slice(0,10);
+      qs("#absNewDias").value = "1";
+      qs("#absNewMotivo").value = "";
+      qs("#actModal").style.display = "none";
+      loadAbsences(name);
+      qs("#absModal").style.display = "flex";
+    });
+    qs("#actVac").addEventListener("click", (e) => {
+      const name = e.currentTarget.dataset.name || "";
+      qs("#vacName").value = name;
+      qs("#vacIni").value = new Date().toISOString().slice(0,10);
+      qs("#vacFin").value = new Date().toISOString().slice(0,10);
+      qs("#vacDias").value = "";
+      qs("#vacObs").value = "";
+      qs("#actModal").style.display = "none";
+      qs("#vacModal").style.display = "flex";
+    });
+
+    async function loadAdelantos(name){
+      const url = name ? `/rrhh/adelantos?colaborador=${encodeURIComponent(name)}` : "/rrhh/adelantos";
+      const r = await fetch(url, { headers: headers() });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        qs("#advRows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
+        return;
+      }
+      const data = await r.json();
+      if (data.ok === false){
+        qs("#advRows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${data.detail || "Error"}</td></tr>`;
+        return;
+      }
+      const items = data.items || [];
+      qs("#advRows").innerHTML = items.map(i => `
+        <tr>
+          <td><input class="inp" data-date="${i.id_adelanto}" value="${String(i.fecha || '').slice(0,10)}" type="date" /></td>
+          <td><input class="inp" data-monto="${i.id_adelanto}" value="${i.monto ?? ''}" style="min-width:120px;" /></td>
+          <td><input class="inp" data-motivo="${i.id_adelanto}" value="${i.motivo ?? ''}" style="min-width:220px;" /></td>
+          <td>
+            <button class="btn" data-save-adv="${i.id_adelanto}">Guardar</button>
+            <button class="btn" data-del-adv="${i.id_adelanto}">Eliminar</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td class="muted">Sin datos.</td></tr>`;
+
+      qs("#advRows").querySelectorAll("[data-save-adv]").forEach(b => {
+        const id = Number(b.dataset.saveAdv || 0);
+        b.addEventListener("click", async () => {
+          const fecha = qs(`#advRows [data-date="${id}"]`)?.value || null;
+          const monto = Number(qs(`#advRows [data-monto="${id}"]`)?.value || 0) || null;
+          const motivo = qs(`#advRows [data-motivo="${id}"]`)?.value || "";
+          const r = await fetch(`/rrhh/adelantos/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type":"application/json", ...headers() },
+            body: JSON.stringify({ fecha, monto, motivo })
+          });
+          if (!r.ok){
+            const t = await r.text().catch(()=> "");
+            toast("No se pudo guardar: " + (t || r.status));
+            return;
+          }
+          toast("Adelanto actualizado");
+          await load();
+        });
+      });
+      qs("#advRows").querySelectorAll("[data-del-adv]").forEach(b => {
+        const id = Number(b.dataset.delAdv || 0);
+        b.addEventListener("click", async () => {
+          if (!confirm("¿Eliminar adelanto?")) return;
+          const r = await fetch(`/rrhh/adelantos/${id}`, { method:"DELETE", headers: headers() });
+          if (!r.ok){
+            const t = await r.text().catch(()=> "");
+            toast("No se pudo eliminar: " + (t || r.status));
+            return;
+          }
+          toast("Adelanto eliminado");
+          await loadAdelantos(name);
+          await load();
+        });
+      });
+    }
+
+    qs("#advClose").addEventListener("click", () => qs("#advModal").style.display = "none");
+    qs("#advReload").addEventListener("click", () => loadAdelantos(qs("#advName").value));
+    qs("#advSave").addEventListener("click", async () => {
+      const payload = {
+        colaborador: qs("#advName").value,
+        monto: Number(qs("#advMonto").value || 0) || 0,
+        fecha: qs("#advFecha").value || null,
+        motivo: qs("#advMotivo").value || "",
+      };
+      if (!payload.colaborador){
+        alert("Colaborador requerido");
+        return;
+      }
+      if (!payload.monto){
+        alert("Monto requerido");
+        return;
+      }
+      const r = await fetch("/rrhh/adelantos", { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("No se pudo guardar: " + (t || r.status));
+        return;
+      }
+      await loadAdelantos(payload.colaborador);
+      await load();
+    });
+
+    async function loadAbsences(name){
+      const url = name ? `/rrhh/inasistencias?colaborador=${encodeURIComponent(name)}` : "/rrhh/inasistencias";
+      const r = await fetch(url, { headers: headers() });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        qs("#absRows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
+        return;
+      }
+      const data = await r.json();
+      if (data.ok === false){
+        qs("#absRows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${data.detail || "Error"}</td></tr>`;
+        return;
+      }
+      const items = data.items || [];
+      qs("#absRows").innerHTML = items.map(i => `
+        <tr>
+          <td><input class="inp" data-date="${i.id_inasistencia}" value="${String(i.fecha || '').slice(0,10)}" type="date" /></td>
+          <td><input class="inp" data-days="${i.id_inasistencia}" value="${i.dias ?? ''}" style="min-width:80px;" /></td>
+          <td><input class="inp" data-motivo="${i.id_inasistencia}" value="${i.motivo ?? ''}" style="min-width:220px;" /></td>
+          <td>
+            <button class="btn" data-save="${i.id_inasistencia}">Guardar</button>
+            <button class="btn" data-del="${i.id_inasistencia}">Eliminar</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td class="muted">Sin datos.</td></tr>`;
+
+      qs("#absRows").querySelectorAll("[data-save]").forEach(b => {
+        const id = Number(b.dataset.save || 0);
+        b.addEventListener("click", async () => {
+          const fecha = qs(`#absRows [data-date="${id}"]`)?.value || null;
+          const dias = Number(qs(`#absRows [data-days="${id}"]`)?.value || 0) || null;
+          const motivo = qs(`#absRows [data-motivo="${id}"]`)?.value || "";
+          const r = await fetch(`/rrhh/inasistencias/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type":"application/json", ...headers() },
+            body: JSON.stringify({ fecha, dias, motivo })
+          });
+          if (!r.ok){
+            const t = await r.text().catch(()=> "");
+            toast("No se pudo guardar: " + (t || r.status));
+            return;
+          }
+          toast("Inasistencia actualizada");
+          await load();
+        });
+      });
+      qs("#absRows").querySelectorAll("[data-del]").forEach(b => {
+        const id = Number(b.dataset.del || 0);
+        b.addEventListener("click", async () => {
+          if (!confirm("¿Eliminar inasistencia?")) return;
+          const r = await fetch(`/rrhh/inasistencias/${id}`, { method:"DELETE", headers: headers() });
+          if (!r.ok){
+            const t = await r.text().catch(()=> "");
+            toast("No se pudo eliminar: " + (t || r.status));
+            return;
+          }
+          toast("Inasistencia eliminada");
+          await loadAbsences(name);
+          await load();
+        });
+      });
+    }
+
+    qs("#absClose").addEventListener("click", () => qs("#absModal").style.display = "none");
+    qs("#absReload").addEventListener("click", () => loadAbsences(qs("#absName").value));
+    qs("#absNewSave").addEventListener("click", async () => {
+      const payload = {
+        colaborador: qs("#absName").value,
+        fecha: qs("#absNewFecha").value,
+        dias: Number(qs("#absNewDias").value || 1) || 1,
+        motivo: qs("#absNewMotivo").value || "",
+      };
+      if (!payload.colaborador || !payload.fecha){ alert("Colaborador y fecha requeridos"); return; }
+      const r = await fetch("/rrhh/inasistencias", { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      if (!r.ok){ alert("No se pudo guardar"); return; }
+      await loadAbsences(payload.colaborador);
+      await load();
+    });
+
+    qs("#vacClose").addEventListener("click", () => qs("#vacModal").style.display = "none");
+    qs("#vacSave").addEventListener("click", async () => {
+      const payload = {
+        colaborador: qs("#vacName").value,
+        fecha_inicio: qs("#vacIni").value,
+        fecha_fin: qs("#vacFin").value,
+        dias: Number(qs("#vacDias").value || 0) || null,
+        observaciones: qs("#vacObs").value || "",
+      };
+      if (!payload.colaborador || !payload.fecha_inicio || !payload.fecha_fin){ alert("Colaborador y fechas requeridas"); return; }
+      const r = await fetch("/rrhh/vacaciones", { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      if (!r.ok){ alert("No se pudo guardar"); return; }
+      qs("#vacModal").style.display = "none";
+      await load();
+    });
+
+    load();
+  </script>
+</body>
+</html>

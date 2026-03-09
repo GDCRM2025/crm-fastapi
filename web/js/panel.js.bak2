@@ -1,0 +1,229 @@
+const qs = (s, el=document) => el.querySelector(s);
+
+function getToken(){
+  return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+}
+function authHeaders(extra={}){
+  const t = getToken();
+  return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+}
+function requireAuth(){
+  if (!getToken()){
+    location.href = "/web/login.html";
+    return false;
+  }
+  return true;
+}
+
+/* ---------- THEME (GLOBAL + IFRAME) ---------- */
+function getTheme(){
+  return localStorage.getItem("gd_theme") || "dark";
+}
+function setTheme(mode){
+  localStorage.setItem("gd_theme", mode);
+  applyTheme(mode);
+}
+function applyTheme(mode){
+  const root = document.documentElement;
+  root.classList.toggle("light", mode === "light");
+
+  // botón
+  const btn = qs("#btnTheme");
+  if (btn) btn.textContent = mode === "light" ? "🌞" : "🌙";
+
+  // aplica a iframe aunque no “escuche”
+  applyThemeToIframe();
+
+  // por si algún view implementa listener
+  try{
+    qs("#mainFrame")?.contentWindow?.postMessage({ type:"theme", mode }, "*");
+  }catch(_){}
+}
+function applyThemeToIframe(){
+  const fr = qs("#mainFrame");
+  if (!fr) return;
+  try{
+    const doc = fr.contentDocument;
+    if (!doc) return;
+    doc.documentElement.classList.toggle("light", getTheme() === "light");
+  }catch(_){}
+}
+function toggleTheme(){
+  setTheme(getTheme() === "light" ? "dark" : "light");
+}
+
+/* ---------- CLOCK ---------- */
+function startClock(){
+  const el = qs("#clockBox");
+  const fmt = new Intl.DateTimeFormat("es-CL", {
+    year:"numeric", month:"2-digit", day:"2-digit",
+    hour:"2-digit", minute:"2-digit"
+  });
+  const tick = () => { if (el) el.textContent = fmt.format(new Date()); };
+  tick();
+  setInterval(tick, 30_000);
+}
+
+/* ---------- USER ---------- */
+async function fetchMe(){
+  try{
+    const r = await fetch("/me", { headers: authHeaders() });
+    if (!r.ok) throw new Error("me failed");
+    const me = await r.json();
+    qs("#userBox").textContent = `Usuario: ${me.username}`;
+  }catch(_){
+    qs("#userBox").textContent = "Usuario: —";
+  }
+}
+
+/* ---------- ROUTING ---------- */
+async function pickFirstExisting(urls){
+  for (const u of urls){
+    try{
+      const r = await fetch(u, { method:"HEAD" });
+      if (r.ok) return u;
+    }catch(_){}
+  }
+  return urls[0];
+}
+
+const MENU = [
+  // ✅ Esto es TU menú original (sin clima en menú y sin kanban)
+  { id:"leads",       label:"Leads",       views:["/web/views/leads.html"] },
+  { id:"cotizador",   label:"Cotizador",   views:["/web/views/historial_cotizaciones.html"] }, // solo historial
+  { id:"reportes",    label:"Reportes",    views:["/web/views/reportes.html"] },
+  { id:"operaciones", label:"Operaciones", views:["/web/views/preagenda.html"] },
+  { id:"tools",       label:"Tools",       views:["/web/views/tools.html"] },
+  { id:"conductores", label:"Conductores", views:["/web/views/conductores.html"] },
+  { id:"finanzas",    label:"Finanzas",    views:["/web/views/finanzas.html"] },
+];
+
+let ACTIVE = "";
+
+async function openView(id){
+  const item = MENU.find(x => x.id === id);
+  if (!item) return;
+
+  ACTIVE = id;
+  const frame = qs("#mainFrame");
+  frame.src = await pickFirstExisting(item.views);
+
+  // activo en topmenu
+  for (const a of document.querySelectorAll(".topmenu a")){
+    a.classList.toggle("active", a.dataset.id === id);
+  }
+  // activo en drawer
+  for (const b of document.querySelectorAll(".drawer-menu button")){
+    b.classList.toggle("active", b.dataset.id === id);
+  }
+
+  closeDrawer();
+}
+
+function buildTopMenu(){
+  const ul = qs("#topMenu");
+  ul.innerHTML = "";
+  for (const it of MENU){
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = "#";
+    a.dataset.id = it.id;
+    a.textContent = it.label;
+    a.onclick = (e) => { e.preventDefault(); openView(it.id); };
+    li.appendChild(a);
+    ul.appendChild(li);
+  }
+}
+
+function buildDrawerMenu(){
+  const ul = qs("#drawerMenu");
+  ul.innerHTML = "";
+  for (const it of MENU){
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "drawer-item";
+    b.dataset.id = it.id;
+    b.textContent = it.label;
+    b.onclick = () => openView(it.id);
+    li.appendChild(b);
+    ul.appendChild(li);
+  }
+}
+
+/* ---------- DRAWER ---------- */
+function openDrawer(){
+  qs("#drawer").classList.add("open");
+  qs("#drawerBg").classList.add("open");
+  qs("#drawer").setAttribute("aria-hidden","false");
+  qs("#drawerBg").setAttribute("aria-hidden","false");
+}
+function closeDrawer(){
+  qs("#drawer").classList.remove("open");
+  qs("#drawerBg").classList.remove("open");
+  qs("#drawer").setAttribute("aria-hidden","true");
+  qs("#drawerBg").setAttribute("aria-hidden","true");
+}
+
+/* ---------- WEATHER MODAL ---------- */
+function bindWeatherModal(){
+  qs("#wxPill").onclick = () => {
+    qs("#wxModal").classList.add("open");
+    qs("#wxModal").setAttribute("aria-hidden","false");
+  };
+  qs("#wxClose").onclick = () => {
+    qs("#wxModal").classList.remove("open");
+    qs("#wxModal").setAttribute("aria-hidden","true");
+  };
+  qs("#wxModalBg").onclick = () => {
+    qs("#wxModal").classList.remove("open");
+    qs("#wxModal").setAttribute("aria-hidden","true");
+  };
+}
+
+/* ---------- UI ---------- */
+function bindUI(){
+  qs("#btnTheme").onclick = toggleTheme;
+
+  qs("#btnLogout").onclick = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("nombre");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("nombre");
+    location.href = "/web/login.html";
+  };
+
+  qs("#btnSidebar").onclick = openDrawer;
+  qs("#drawerClose").onclick = closeDrawer;
+  qs("#drawerBg").onclick = closeDrawer;
+
+  qs("#drawerSettings").onclick = async () => {
+    ACTIVE = "settings";
+    qs("#mainFrame").src = await pickFirstExisting([
+      "/web/views/settings.html",
+      "/web/views/settings/index.html"
+    ]);
+    closeDrawer();
+  };
+
+  // cuando cargue el iframe, re-aplica tema
+  qs("#mainFrame").addEventListener("load", () => applyThemeToIframe());
+
+  bindWeatherModal();
+}
+
+(function init(){
+  if (!requireAuth()) return;
+
+  buildTopMenu();
+  buildDrawerMenu();
+  bindUI();
+
+  startClock();
+  fetchMe();
+
+  applyTheme(getTheme());
+
+  // Inicio: Leads (como debe ser)
+  openView("leads");
+})();

@@ -1,0 +1,183 @@
+const qs = (s, el=document) => el.querySelector(s);
+
+const DEFAULT = { name:"Las Condes", lat:-33.408, lon:-70.567 };
+
+function wcodeToEmoji(code){
+  // mapping simple
+  if (code === 0) return "☀️";
+  if ([1,2].includes(code)) return "🌤️";
+  if (code === 3) return "☁️";
+  if ([45,48].includes(code)) return "🌫️";
+  if ([51,53,55,61,63,65,80,81,82].includes(code)) return "🌧️";
+  if ([66,67].includes(code)) return "🌧️";
+  if ([71,73,75,77,85,86].includes(code)) return "❄️";
+  if ([95,96,99].includes(code)) return "⛈️";
+  return "⛅";
+}
+function wcodeToText(code){
+  if (code === 0) return "Soleado";
+  if (code === 1) return "Mayormente despejado";
+  if (code === 2) return "Parcialmente nublado";
+  if (code === 3) return "Nublado";
+  if ([45,48].includes(code)) return "Niebla";
+  if ([51,53,55].includes(code)) return "Llovizna";
+  if ([61,63,65].includes(code)) return "Lluvia";
+  if ([66,67].includes(code)) return "Lluvia helada";
+  if ([71,73,75,77].includes(code)) return "Nieve";
+  if ([80,81,82].includes(code)) return "Chubascos";
+  if ([85,86].includes(code)) return "Nevadas";
+  if ([95,96,99].includes(code)) return "Tormenta";
+  return "Clima variable";
+}
+
+async function getCoords(){
+  // cache
+  const c = localStorage.getItem("wx_city");
+  const lat = localStorage.getItem("wx_lat");
+  const lon = localStorage.getItem("wx_lon");
+  if (c && lat && lon) return { name:c, lat:+lat, lon:+lon };
+
+  // geoloc (si usuario permite)
+  const p = await new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy:false, timeout:2500, maximumAge: 10*60*1000 }
+    );
+  });
+
+  if (!p) return DEFAULT;
+
+  // no hacemos reverse geocode para evitar bloqueos; mantenemos "Mi ubicación"
+  return { name:"Mi ubicación", lat:p.lat, lon:p.lon };
+}
+
+function setPill({ico, temp, name}){
+  qs("#wxIco").textContent = ico;
+  qs("#wxTemp").textContent = `${Math.round(temp)}°`;
+  qs("#wxCity").textContent = name;
+}
+
+function setModal({name, temp, code, wind, summary}){
+  qs("#wxModalCity").textContent = name;
+  qs("#wxModalTemp").textContent = `${Math.round(temp)}°`;
+  qs("#wxModalIco").textContent = wcodeToEmoji(code);
+  qs("#wxModalNow").textContent = wcodeToText(code);
+  qs("#wxSummary").textContent = summary || (wind != null ? `Rachas de viento hasta ${Math.round(wind)} km/h.` : "—");
+}
+
+function renderHours(hourly){
+  const wrap = qs("#wxHours");
+  wrap.innerHTML = "";
+  for (const h of hourly){
+    const d = document.createElement("div");
+    d.className = "wx-hour";
+    d.innerHTML = `
+      <div class="t">${h.label}</div>
+      <div class="i">${h.ico}</div>
+      <div class="v">${Math.round(h.temp)}°</div>
+    `;
+    wrap.appendChild(d);
+  }
+}
+
+function renderDays(days){
+  const wrap = qs("#wxDays");
+  wrap.innerHTML = "";
+
+  const mins = days.map(d=>d.min);
+  const maxs = days.map(d=>d.max);
+  const gMin = Math.min(...mins);
+  const gMax = Math.max(...maxs);
+  const span = Math.max(1, gMax - gMin);
+
+  for (const d0 of days){
+    const left = ((d0.min - gMin) / span) * 100;
+    const width = ((d0.max - d0.min) / span) * 100;
+
+    const row = document.createElement("div");
+    row.className = "wx-day";
+    row.innerHTML = `
+      <div class="d">${d0.day}</div>
+      <div class="i">${d0.ico}</div>
+      <div class="min">${Math.round(d0.min)}°</div>
+      <div class="wx-bar"><span style="left:${left}%; width:${width}%;"></span></div>
+      <div class="max">${Math.round(d0.max)}°</div>
+    `;
+    wrap.appendChild(row);
+  }
+}
+
+async function loadWeather(){
+  try{
+    const c = await getCoords();
+
+    const url =
+      "https://api.open-meteo.com/v1/forecast"
+      + `?latitude=${encodeURIComponent(c.lat)}&longitude=${encodeURIComponent(c.lon)}`
+      + "&current_weather=true"
+      + "&hourly=temperature_2m,weathercode"
+      + "&daily=temperature_2m_max,temperature_2m_min,weathercode"
+      + "&timezone=auto";
+
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("weather failed");
+    const j = await r.json();
+
+    const nowTemp = j.current_weather?.temperature ?? j.hourly?.temperature_2m?.[0] ?? 0;
+    const nowCode = j.current_weather?.weathercode ?? j.hourly?.weathercode?.[0] ?? 2;
+    const wind = j.current_weather?.windspeed ?? null;
+
+    const name = c.name || DEFAULT.name;
+    setPill({ ico:wcodeToEmoji(nowCode), temp: nowTemp, name });
+    setModal({ name, temp: nowTemp, code: nowCode, wind });
+
+    // horas: ahora + próximas 5
+    const hours = [];
+    const times = j.hourly?.time || [];
+    const temps = j.hourly?.temperature_2m || [];
+    const codes = j.hourly?.weathercode || [];
+    const nowIso = j.current_weather?.time;
+
+    let idx = 0;
+    if (nowIso){
+      idx = Math.max(0, times.indexOf(nowIso));
+      if (idx === -1) idx = 0;
+    }
+
+    for (let k=0; k<6; k++){
+      const i = idx + k;
+      if (!times[i]) break;
+      const dt = new Date(times[i]);
+      const label = k === 0 ? "Ahora" : dt.toLocaleTimeString("es-CL",{hour:"numeric"});
+      hours.push({ label, temp: temps[i], ico: wcodeToEmoji(codes[i] ?? nowCode) });
+    }
+    renderHours(hours);
+
+    // días: 7 días
+    const dTimes = j.daily?.time || [];
+    const dMin = j.daily?.temperature_2m_min || [];
+    const dMax = j.daily?.temperature_2m_max || [];
+    const dCode = j.daily?.weathercode || [];
+
+    const days = [];
+    for (let i=0; i<Math.min(7, dTimes.length); i++){
+      const dt = new Date(dTimes[i]);
+      const day = i===0 ? "Hoy" : dt.toLocaleDateString("es-CL",{weekday:"short"}).replace(".","").toUpperCase();
+      days.push({ day, min:dMin[i], max:dMax[i], ico:wcodeToEmoji(dCode[i] ?? nowCode) });
+    }
+    renderDays(days);
+
+    // cache coords
+    localStorage.setItem("wx_city", name);
+    localStorage.setItem("wx_lat", String(c.lat));
+    localStorage.setItem("wx_lon", String(c.lon));
+  }catch(e){
+    // si falla, no rompemos la UI
+    qs("#wxCity").textContent = "Clima —";
+  }
+}
+
+loadWeather();
+setInterval(loadWeather, 15 * 60 * 1000);

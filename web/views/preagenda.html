@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Pre-agenda</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <style>
+    .swal2-container{ z-index: 30000 !important; }
+    .pa-shell { height: 100vh; display:flex; flex-direction:column; }
+    .pa-top {
+      padding: 14px 16px;
+      display:flex; align-items:center; justify-content:space-between; gap: 10px;
+      border-bottom: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      backdrop-filter: blur(14px);
+    }
+    .pa-title { font-weight: 850; letter-spacing:.02em; }
+    .pa-sub { font-size: 12px; color: var(--fg-soft); margin-top: 2px; }
+    .pa-actions { display:flex; gap: 8px; align-items:center; }
+    .btnx {
+      border: 1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--fg);
+      border-radius: 12px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 800;
+    }
+    .btnx.primary { border-color: rgba(34,197,94,.30); background: rgba(34,197,94,.12); }
+    .pa-main { flex:1; overflow:auto; padding: 14px; }
+
+    .pa-grid { display:grid; grid-template-columns: 1fr; gap: 12px; }
+    .col {
+      border-radius: 16px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: radial-gradient(circle at top left, var(--bg-card) 0%, var(--bg-card-soft) 60%);
+      box-shadow: var(--shadow-soft);
+      overflow: hidden;
+      min-height: 320px;
+    }
+    .col-h {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(148,163,184,.12);
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .col-h b { font-weight: 900; }
+    .pill { font-size: 12px; padding: 4px 8px; border-radius: 999px; border: 1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18); }
+    .list { padding: 10px; display:flex; flex-direction:column; gap: 10px; }
+    .card {
+      border: 1px solid rgba(148,163,184,.16);
+      background: rgba(2,6,23,.14);
+      border-radius: 14px;
+      padding: 10px 10px;
+      cursor:pointer;
+      transition: transform .08s ease, border-color .15s ease, background .15s ease;
+      text-align:left;
+    }
+    .card:hover { transform: translateY(-1px); border-color: rgba(14,165,233,.30); background: rgba(14,165,233,.07); }
+    .t { font-weight: 900; font-size: 13px; }
+    .m { margin-top: 3px; font-size: 12px; color: var(--fg-soft); }
+    .badge {
+      font-size: 11px; font-weight: 900;
+      padding: 4px 8px; border-radius: 999px;
+      border: 1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.20);
+    }
+    .badge.warn { border-color: rgba(245,158,11,.40); background: rgba(245,158,11,.12); }
+    .badge.danger { border-color: rgba(239,68,68,.40); background: rgba(239,68,68,.12); }
+    .muted { color: var(--fg-soft); }
+
+    /* Modal */
+    .md { position: fixed; inset: 0; display:none; align-items:center; justify-content:center;
+      background: rgba(2,6,23,.55); backdrop-filter: blur(10px); z-index:9999; padding: 18px; }
+    .md.show { display:flex; }
+    .md-card {
+      width: min(720px, 100%); border-radius: 18px; overflow:hidden;
+      border: 1px solid rgba(148,163,184,.22);
+      background: radial-gradient(circle at top left, var(--bg-card) 0%, var(--bg-card-soft) 65%);
+      box-shadow: var(--shadow-soft);
+    }
+    .md-top { padding: 12px 14px; display:flex; align-items:center; justify-content:space-between;
+      border-bottom: 1px solid rgba(148,163,184,.12); }
+    .md-top b { font-size: 14px; font-weight: 950; }
+    .md-close { border:none; width:36px; height:36px; border-radius:999px; cursor:pointer;
+      background: rgba(148,163,184,.15); color: var(--fg); }
+    .md-body { padding: 12px 14px; display:grid; gap: 10px; }
+    .row { display:flex; gap: 10px; justify-content:space-between; flex-wrap:wrap; }
+    .box { flex: 1; min-width: 240px; padding: 10px 12px; border-radius: 14px;
+      border: 1px solid rgba(148,163,184,.12); background: rgba(2,6,23,.14); }
+    .box .k { font-size: 12px; color: var(--fg-soft); }
+    .box .v { margin-top: 2px; font-weight: 900; }
+    .md-actions { padding: 12px 14px; border-top: 1px solid rgba(148,163,184,.12); display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
+    .btn { border: 1px solid rgba(148,163,184,.20); background: rgba(2,6,23,.18); color: var(--fg);
+      border-radius: 12px; padding: 10px 12px; cursor:pointer; font-weight: 900; }
+    .btn.primary { border-color: rgba(34,197,94,.30); background: rgba(34,197,94,.12); }
+  </style>
+</head>
+
+<body>
+  <div class="pa-shell">
+    <div class="pa-top">
+      <div>
+        <div class="pa-title">Agenda · Google Calendar</div>
+        <div class="pa-sub" id="wk">—</div>
+        <div class="pa-sub" id="statusMsg">Cargando…</div>
+      </div>
+      <div class="pa-actions">
+        <select id="calSelect" class="btnx" title="Calendario">
+          <option value="primary">Calendario: principal</option>
+        </select>
+        <button class="btnx" id="btnConnectGoogle">Conectar Google Calendar</button>
+        <button class="btnx" id="btnSyncGoogle">Sincronizar desde Calendar</button>
+        <button class="btnx" id="btnRefresh">Recargar</button>
+        <button class="btnx primary" id="btnOpenGoogle">Abrir Google Calendar</button>
+      </div>
+    </div>
+
+    <div class="pa-main">
+      <div class="col" style="margin-top:0;">
+        <div class="col-h">
+          <b>Google Calendar · Semana actual</b>
+          <span class="pill" id="gcalCount">—</span>
+        </div>
+        <div class="list" id="gcalWeek"></div>
+        <div style="padding:12px;">
+          <iframe id="gcalFrame" title="Google Calendar" style="width:100%;height:70vh;border:0;border-radius:12px;"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- (Pre‑agenda manual removida) -->
+
+  <script>
+    const $ = (q, c=document) => c.querySelector(q);
+
+    function getGD() {
+      try { return window.parent && window.parent.GD ? window.parent.GD : null; } catch { return null; }
+    }
+    function authHeaders(extra={}) {
+      const gd = getGD();
+      if (gd && typeof gd.authHeaders === 'function') return gd.authHeaders(extra);
+      return extra;
+    }
+
+    function leadTitle(r) {
+      const cliente = (r.nombre_cliente || '').toString().toUpperCase();
+      const marca = (r.marca || '').toString().toUpperCase();
+      if (cliente && marca) return `${cliente} — ${marca}`;
+      return cliente || marca || `LEAD #${r.id_lead}`;
+    }
+    function fmtWhen(start, end) {
+      const s = (start || '').replace('T',' ').slice(0,16);
+      const e = (end || '').replace('T',' ').slice(0,16);
+      if (s && e) return `${s} → ${e}`;
+      return s || e || '—';
+    }
+    function badgeHtml(txt) {
+      const t = (txt || '').toUpperCase();
+      if (!t) return '';
+      const cls = t.includes('CONFIRMADO') ? 'badge danger' : 'badge warn';
+      return `<span class="${cls}">${t}</span>`;
+    }
+
+    async function loadCalendars() {
+      try{
+        const r = await fetch('/tools/gcal/calendars', { headers: authHeaders() });
+        if (!r.ok) return;
+        const data = await r.json();
+        const items = data.items || [];
+        const sel = $('#calSelect');
+        if (!sel) return;
+        sel.innerHTML = items.map(i => {
+          const label = i.primary ? `${i.summary} (principal)` : i.summary;
+          return `<option value="${i.id}">${label}</option>`;
+        }).join("") || `<option value="primary">Calendario: principal</option>`;
+        const preferred = "simonurrutia.m@gmail.com";
+        const opt = Array.from(sel.options).find(o => o.value === preferred);
+        if (opt) sel.value = preferred;
+        sel.disabled = true;
+      }catch(_){}
+    }
+    async function fetchGcalStatus() {
+      const res = await fetch('/tools/gcal/status', { headers: authHeaders() });
+      if (!res.ok) return { connected: false };
+      return await res.json();
+    }
+    async function fetchGcalStats() {
+      const sel = $('#calSelect');
+      const calId = sel?.value || "primary";
+      const res = await fetch(`/tools/gcal/stats?calendar_id=${encodeURIComponent(calId)}&days=7`, { headers: authHeaders() });
+      if (!res.ok) throw new Error('No se pudo leer Google Calendar');
+      return await res.json();
+    }
+    function setCalendarIframe(calId){
+      const tz = "America/Santiago";
+      const src = `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(calId)}&ctz=${encodeURIComponent(tz)}`;
+      const frame = $('#gcalFrame');
+      if (frame) frame.src = src;
+    }
+
+    function renderGcalWeek(data){
+      const box = $('#gcalWeek');
+      const count = $('#gcalCount');
+      if (!box || !count) return;
+      const items = (data && data.items) ? data.items : [];
+      count.textContent = String(items.length || 0);
+      if (!items.length){
+        box.innerHTML = `<div class="muted">Sin eventos esta semana.</div>`;
+        return;
+      }
+      box.innerHTML = items.map(it => `
+        <div class="card">
+          <div class="t">${String(it.summary || 'Evento').toUpperCase()}</div>
+          <div class="m">${String(it.start || '').slice(0,16).replace('T',' ')}${it.location ? ' · ' + it.location : ''}</div>
+        </div>
+      `).join('');
+    }
+
+    async function render() {
+      try{
+        const stats = await fetchGcalStats();
+        renderGcalWeek(stats);
+        const sel = $('#calSelect');
+        setCalendarIframe(sel?.value || "primary");
+      }catch(e){
+        $('#gcalWeek').innerHTML = `<div class="muted">${e.message || 'No se pudo cargar Google Calendar'}</div>`;
+        $('#gcalCount').textContent = '—';
+      }
+      const gcal = await fetchGcalStatus().catch(() => ({ connected: false }));
+      const gcalTxt = gcal.connected ? 'Google: conectado' : 'Google: no conectado';
+      $('#statusMsg').textContent = `Agenda directa · ${gcalTxt}`;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // persist aprobador
+      $('#btnRefresh').addEventListener('click', () => render().catch(e => {
+        console.error(e);
+        Swal.fire({ icon:'error', title:'No se pudo cargar', text:'Revisa Google Calendar.' });
+      }));
+
+      $('#btnOpenGoogle').addEventListener('click', () => {
+        fetch('http://127.0.0.1:32123/tool/open?app=googlecal', { method:'POST' })
+          .catch(() => window.open('https://calendar.google.com/', '_blank', 'noopener'));
+      });
+      $('#btnConnectGoogle').addEventListener('click', async () => {
+        try{
+          const r = await fetch('/tools/gcal/start', { headers: authHeaders() });
+          const data = await r.json();
+          if (data?.auth_url){
+            const w = window.open(data.auth_url, '_blank', 'noopener');
+            if (!w){
+              Swal.fire({
+                icon:'info',
+                title:'Autorizar Google Calendar',
+                html:`<a href="${data.auth_url}" target="_blank" rel="noopener">Abrir enlace de autorización</a>`
+              });
+            }
+          } else {
+            Swal.fire({ icon:'error', title:'No se pudo iniciar OAuth', text:'Revisa /tools/gcal/start' });
+          }
+        } catch (e){
+          console.error(e);
+          Swal.fire({ icon:'error', title:'No se pudo iniciar OAuth', text:'Revisa consola' });
+        }
+      });
+      $('#btnSyncGoogle').addEventListener('click', async () => {
+        try{
+          const calId = ($('#calSelect')?.value || 'primary');
+          const r = await fetch(`/tools/gcal/sync?days=45&calendar_id=${encodeURIComponent(calId)}`, { method:'POST', headers: authHeaders() });
+          const data = await r.json().catch(()=>({}));
+          if (!r.ok){
+            Swal.fire({ icon:'error', title:'No se pudo sincronizar', text: (data.detail || data.message || 'Error') });
+            return;
+          }
+          Swal.fire({
+            icon:'success',
+            title:'Sincronización OK',
+            text:`Vinculados: ${data.linked || 0} · Creados: ${data.created || 0} · Omitidos: ${data.skipped || 0}`
+          });
+          await render();
+        }catch(e){
+          console.error(e);
+          Swal.fire({ icon:'error', title:'No se pudo sincronizar', text:'Revisa consola' });
+        }
+      });
+      $('#calSelect').addEventListener('change', () => {
+        const id = $('#calSelect')?.value || "primary";
+        setCalendarIframe(id);
+        fetchGcalStats().then(renderGcalWeek).catch(()=>{});
+      });
+
+      render().catch(e => {
+        console.error(e);
+        $('#gcalWeek').innerHTML = `<div class="muted">No se pudo cargar Google Calendar.</div>`;
+        Swal.fire({ icon:'error', title:'No se pudo cargar', text:'Revisa Google Calendar.' });
+      });
+      loadCalendars();
+
+      // auto‑sync al entrar (silencioso)
+      setTimeout(async () => {
+        try{
+          const calId = ($('#calSelect')?.value || 'primary');
+          const r = await fetch(`/tools/gcal/sync?days=45&calendar_id=${encodeURIComponent(calId)}`, { method:'POST', headers: authHeaders() });
+          const data = await r.json().catch(()=>({}));
+          if (r.ok){
+            $('#statusMsg').textContent = `Auto‑sync OK · Vinculados ${data.linked || 0} · Creados ${data.created || 0}`;
+            await render();
+          }
+        }catch(_){}
+      }, 1200);
+    });
+  </script>
+  <script src="/web/js/api.js"></script>
+</body>
+</html>

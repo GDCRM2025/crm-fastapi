@@ -1,0 +1,701 @@
+/* CRM 2025 — Panel Controller (sidebar + theme + header widgets)
+   - Menú lateral con submenús (según tu definición)
+   - Sidebar colapsa al perder foco dejando íconos visibles
+   - Toggle Día/Noche propagado a toda la página + iframe
+   - Clima: pill compacta + modal más chico (look premium)
+*/
+(() => {
+  "use strict";
+
+  // -----------------------
+  // Helpers
+  // -----------------------
+  const qs = (s, el = document) => el.querySelector(s);
+  const qsa = (s, el = document) => Array.from(el.querySelectorAll(s));
+
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  function safeJSONParse(s, fallback) {
+    try { return JSON.parse(s); } catch { return fallback; }
+  }
+
+  function injectStyleOnce() {
+    if (qs("#gd-panel-inline-style")) return;
+    const st = document.createElement("style");
+    st.id = "gd-panel-inline-style";
+    st.textContent = `
+/* === Panel.js injected fixes (NO depende de panel.css) === */
+
+/* Header compacto */
+.topbar{
+  height: 56px !important;
+  padding: 8px 12px !important;
+}
+.topbar .brand{
+  user-select:none;
+  cursor:pointer;
+}
+.iconbtn{
+  font-size: 13px !important;
+  padding: 7px 10px !important;
+  border-radius: 12px !important;
+}
+
+/* Toggle tema: soporta button o checkbox */
+.gd-theme-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+}
+:root.light .gd-theme-toggle{
+  border-color: rgba(0,0,0,.10);
+  background: rgba(255,255,255,.55);
+}
+.gd-theme-ico{ font-size: 14px; opacity:.9; }
+.gd-theme-ico.off{ opacity:.35; }
+
+/* Weather pill compacto */
+.wx-pill{
+  height: 32px !important;
+  padding: 0 10px !important;
+  gap: 6px !important;
+  font-size: 12px !important;
+  border-radius: 999px !important;
+}
+.wx-pill #wxIco{ font-size: 14px !important; }
+.wx-pill .wx-temp{ font-weight: 800 !important; font-size: 12px !important; }
+.wx-pill .wx-city{ max-width: 110px !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:.9; }
+
+/* Weather modal más chico y usable */
+.wx-modal-content{
+  width: min(760px, 92vw) !important;
+  max-height: 82vh !important;
+  overflow: auto !important;
+  padding: 16px !important;
+  border-radius: 22px !important;
+}
+.wx-header{
+  padding: 14px !important;
+  border-radius: 18px !important;
+}
+.wx-big-temp{ font-size: 44px !important; line-height: 1 !important; }
+.wx-big-ico{ font-size: 28px !important; }
+.wx-hours{ gap: 10px !important; }
+.wx-hour{
+  min-width: 86px !important;
+  padding: 10px 10px !important;
+  border-radius: 16px !important;
+}
+.wx-days{ gap: 10px !important; }
+.wx-day{
+  padding: 10px 12px !important;
+  border-radius: 16px !important;
+}
+
+/* Sidebar: rail de íconos cuando está colapsado */
+.sidebar{
+  transition: width .18s ease, transform .18s ease !important;
+}
+.sidebar.collapsed{
+  width: 64px !important;
+}
+.sidebar.collapsed .side-group-title .lbl,
+.sidebar.collapsed .side-item .lbl,
+.sidebar.collapsed .side-footer{
+  display:none !important;
+}
+.sidebar.collapsed .side-group-title,
+.sidebar.collapsed .side-item{
+  justify-content:center !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+.sidebar.collapsed .side-group-body{
+  display:none !important;
+}
+/* iconos centrados */
+.sidebar .ico{ width: 22px !important; text-align:center !important; }
+
+/* Evita viñetas (por si alguien dejó <ul> con estilo default) */
+.sidebar ul, .sidebar ol{ list-style:none !important; margin:0 !important; padding:0 !important; }
+`;
+    document.head.appendChild(st);
+  }
+
+  // -----------------------
+  // Auth + API headers
+  // -----------------------
+  function getToken() {
+    return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+  }
+  function authHeaders(extra = {}) {
+    const t = getToken();
+    return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+  }
+  function requireAuth() {
+    if (!getToken()) {
+      location.href = "/web/login.html";
+      return false;
+    }
+    return true;
+  }
+
+  // -----------------------
+  // Theme (Día/Noche)
+  // -----------------------
+  const THEME_KEY = "gd_theme"; // "dark" | "light"
+
+  function getTheme() {
+    return localStorage.getItem(THEME_KEY) || "dark";
+  }
+
+  function applyTheme(mode) {
+    const isLight = mode === "light";
+    document.documentElement.classList.toggle("light", isLight);
+
+    // Propaga al iframe (misma origin)
+    const fr = qs("#mainFrame");
+    try {
+      if (fr?.contentDocument?.documentElement) {
+        fr.contentDocument.documentElement.classList.toggle("light", isLight);
+      }
+      fr?.contentWindow?.postMessage({ type: "theme", mode }, "*");
+    } catch (_) { /* ignore */ }
+
+    // Si existe un toggle custom con iconos, lo actualiza
+    const wrap = qs("#gdThemeToggleWrap");
+    if (wrap) {
+      const sun = qs(".gd-theme-sun", wrap);
+      const moon = qs(".gd-theme-moon", wrap);
+      if (sun && moon) {
+        sun.classList.toggle("off", !isLight);
+        moon.classList.toggle("off", isLight);
+      }
+      const input = qs("input[type=checkbox]", wrap);
+      if (input) input.checked = isLight;
+    }
+
+    // Si existe un botón antiguo (emoji)
+    const btn = qs("#btnTheme");
+    if (btn && btn.tagName === "BUTTON") {
+      btn.textContent = isLight ? "🌞" : "🌙";
+      btn.title = isLight ? "Modo Día" : "Modo Noche";
+    }
+  }
+
+  function setTheme(mode) {
+    localStorage.setItem(THEME_KEY, mode);
+    applyTheme(mode);
+  }
+
+  function toggleTheme() {
+    setTheme(getTheme() === "light" ? "dark" : "light");
+  }
+
+  function ensureThemeToggleUI() {
+    // Si ya hay un checkbox tipo switch en el HTML, lo usamos.
+    const existingCheckbox =
+      qs("#themeToggle") ||
+      qs("#themeSwitch") ||
+      qs("input[type=checkbox][data-gd='theme']") ||
+      null;
+
+    if (existingCheckbox) {
+      existingCheckbox.checked = (getTheme() === "light");
+      existingCheckbox.addEventListener("change", () => {
+        setTheme(existingCheckbox.checked ? "light" : "dark");
+      });
+      return;
+    }
+
+    // Si existe btnTheme (botón emoji), lo bindeamos y listo.
+    const btnTheme = qs("#btnTheme");
+    if (btnTheme && btnTheme.tagName === "BUTTON") {
+      btnTheme.addEventListener("click", toggleTheme);
+      return;
+    }
+
+    // Si no existe nada: creamos un toggle visual (sol/luna) al lado del clockBox si existe.
+    const clockBox = qs("#clockBox");
+    const topbar = qs(".topbar");
+    if (!topbar) return;
+
+    const wrap = document.createElement("div");
+    wrap.id = "gdThemeToggleWrap";
+    wrap.className = "gd-theme-toggle";
+    wrap.innerHTML = `
+      <span class="gd-theme-ico gd-theme-sun">☀️</span>
+      <input type="checkbox" aria-label="Día / Noche" style="transform:scale(1.05)" />
+      <span class="gd-theme-ico gd-theme-moon">🌙</span>
+    `;
+
+    // Inserta antes de userBox si existe, si no al final
+    const userBox = qs("#userBox");
+    if (userBox && userBox.parentElement === topbar) {
+      topbar.insertBefore(wrap, userBox);
+    } else if (clockBox && clockBox.parentElement === topbar) {
+      topbar.insertBefore(wrap, clockBox.nextSibling);
+    } else {
+      topbar.appendChild(wrap);
+    }
+
+    const input = qs("input", wrap);
+    input.checked = (getTheme() === "light");
+    input.addEventListener("change", () => setTheme(input.checked ? "light" : "dark"));
+  }
+
+  // -----------------------
+  // Header: Clock + user
+  // -----------------------
+  function startClock() {
+    const el = qs("#clockBox");
+    if (!el) return;
+
+    const fmt = new Intl.DateTimeFormat("es-CL", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit"
+    });
+
+    const tick = () => { el.textContent = fmt.format(new Date()); };
+    tick();
+    setInterval(tick, 30_000);
+  }
+
+  async function fetchMe() {
+    const box = qs("#userBox");
+    if (!box) return;
+    try {
+      const r = await fetch("/me", { headers: authHeaders() });
+      if (!r.ok) throw new Error("me failed");
+      const me = await r.json();
+      box.textContent = `Usuario: ${me.username}`;
+    } catch (_) {
+      box.textContent = "Usuario: —";
+    }
+  }
+
+  // -----------------------
+  // Weather modal (solo UI hooks; datos los maneja weather.js)
+  // -----------------------
+  function bindWeatherModal() {
+    const pill = qs("#wxPill");
+    const modal = qs("#wxModal");
+    const close = qs("#wxClose");
+    const bg = qs("#wxModalBg");
+
+    if (!pill || !modal) return;
+
+    const open = () => {
+      modal.classList.add("open");
+      modal.setAttribute("aria-hidden", "false");
+    };
+    const hide = () => {
+      modal.classList.remove("open");
+      modal.setAttribute("aria-hidden", "true");
+    };
+
+    pill.addEventListener("click", open);
+    close?.addEventListener("click", hide);
+    bg?.addEventListener("click", hide);
+
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) hide();
+    });
+
+    // ESC cierra
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modal.classList.contains("open")) hide();
+    });
+  }
+
+  // -----------------------
+  // Menu structure (TU menú final)
+  // -----------------------
+  const MENU = [
+    {
+      id: "leads", label: "Leads", ico: "📌",
+      children: [
+        { id: "leads_ver", label: "Ver Leads", ico: "🗂️", url: "/web/views/leads.html" },
+        { id: "leads_filtrar", label: "Filtrar Leads", ico: "🔎", url: "/web/views/leads_filter.html" },
+      ]
+    },
+    {
+      id: "cotizador", label: "Cotizador", ico: "🧾",
+      children: [
+        { id: "cot_hist", label: "Historial", ico: "🕘", url: "/web/views/historial_cotizaciones.html" },
+      ]
+    },
+    {
+      id: "reportes", label: "Reportes", ico: "📊",
+      children: [
+        { id: "rep_funnel", label: "Funnel de ventas", ico: "📈", url: "/web/views/reportes.html#funnel" },
+        { id: "rep_cierre", label: "% de cierre", ico: "✅", url: "/web/views/reportes.html#cierre" },
+        { id: "rep_total", label: "Total venta", ico: "💰", url: "/web/views/reportes.html#total" },
+        { id: "rep_sep1", label: "—", sep: true },
+        { id: "rep_comunas", label: "Comunas más vendidas", ico: "📍", url: "/web/views/reportes.html#comunas" },
+        { id: "rep_productos", label: "Productos más vendidos", ico: "🏆", url: "/web/views/reportes.html#productos" },
+        { id: "rep_clientes", label: "Clientes más frecuentes", ico: "👥", url: "/web/views/reportes.html#clientes" },
+        { id: "rep_sep2", label: "—", sep: true },
+        { id: "rep_leads_hoy", label: "Leads creados hoy", ico: "🆕", url: "/web/views/reportes.html#leads_hoy" },
+        { id: "rep_venta_diaria", label: "Venta diaria", ico: "📅", url: "/web/views/reportes.html#venta_diaria" },
+      ]
+    },
+    {
+      id: "operaciones", label: "Operaciones", ico: "🛠️",
+      children: [
+        { id: "op_mice", label: "Mice and Place", ico: "🐭", url: "/web/views/operaciones.html#mice" },
+        { id: "op_recetas", label: "Recetas", ico: "🧑‍🍳", url: "/web/views/operaciones.html#recetas" },
+        { id: "op_costeo", label: "Costeo", ico: "🧮", url: "/web/views/operaciones.html#costeo" },
+        { id: "op_sep1", label: "—", sep: true },
+        { id: "op_inv_merc", label: "Inventario Mercancía", ico: "📦", url: "/web/views/operaciones.html#inv_merc" },
+        { id: "op_inv_car", label: "Inventario Carritos", ico: "🛒", url: "/web/views/operaciones.html#inv_car" },
+        { id: "op_sep2", label: "—", sep: true },
+        { id: "op_ruta", label: "Ruta", ico: "🗺️", url: "/web/views/operaciones.html#ruta" },
+      ]
+    },
+    {
+      id: "tools", label: "Tools", ico: "🧰",
+      children: [
+        { id: "tool_ext", label: "Extensión", ico: "🧩", url: "/web/views/tools.html#extension" },
+        { id: "tool_correo", label: "Correo", ico: "✉️", url: "/web/views/tools.html#correo" },
+        { id: "tool_ig", label: "Instagram", ico: "📷", url: "/web/views/tools.html#instagram" },
+        { id: "tool_wa", label: "Whatsapp", ico: "💬", url: "/web/views/tools.html#whatsapp" },
+        { id: "tool_sep1", label: "—", sep: true },
+        { id: "tool_preagenda", label: "Pre agenda", ico: "🗓️", url: "/web/views/preagenda.html" },
+        { id: "tool_calendar", label: "Calendario", ico: "📆", url: "/web/views/calendar.html" },
+        { id: "tool_sep2", label: "—", sep: true },
+        { id: "tool_calc", label: "Calculadora", ico: "🧾", url: "/web/views/calculadora.html" },
+      ]
+    },
+    {
+      id: "conductores", label: "Conductores", ico: "🚚",
+      children: [
+        { id: "drv_gps", label: "Conectar GPS", ico: "📡", url: "/web/views/conductores.html#gps" },
+        { id: "drv_ruta", label: "Ver Ruta", ico: "🧭", url: "/web/views/conductores.html#ruta" },
+      ]
+    },
+    {
+      id: "finanzas", label: "Finanzas", ico: "💵",
+      children: [
+        { id: "fin_pl", label: "P&L", ico: "📑", url: "/web/views/finanzas.html#pl" },
+        { id: "fin_gastos", label: "Cargar Gastos", ico: "🧾", url: "/web/views/finanzas.html#gastos" },
+        { id: "fin_evento", label: "Registrar Evento", ico: "📝", url: "/web/views/finanzas.html#evento" },
+      ]
+    },
+    {
+      id: "settings", label: "Settings", ico: "⚙️",
+      children: [
+        { id: "set_usuarios", label: "Usuarios", ico: "👤", url: "/web/views/settings.html?entity=usuarios" },
+        { id: "set_marcas", label: "Marcas", ico: "🏷️", url: "/web/views/settings.html?entity=marcas" },
+        { id: "set_productos", label: "Productos", ico: "🍔", url: "/web/views/settings.html?entity=productos" },
+        { id: "set_comunas", label: "Comunas", ico: "📍", url: "/web/views/settings.html?entity=comunas" },
+        { id: "set_tipocliente", label: "Tipos Cliente", ico: "🧑‍🤝‍🧑", url: "/web/views/settings.html?entity=tipos_cliente" },
+        { id: "set_estadoslead", label: "Estados Lead", ico: "🎨", url: "/web/views/settings.html?entity=estados_lead" },
+        { id: "set_roles", label: "Roles", ico: "🛡️", url: "/web/views/settings.html?entity=roles" },
+      ]
+    },
+  ];
+
+  // -----------------------
+  // Sidebar building + behavior
+  // -----------------------
+  const SIDEBAR_KEY = "gd_sidebar_collapsed";
+  const GROUPS_OPEN_KEY = "gd_groups_open";
+
+  function getSidebarCollapsed() {
+    return localStorage.getItem(SIDEBAR_KEY) === "1";
+  }
+  function setSidebarCollapsed(v) {
+    localStorage.setItem(SIDEBAR_KEY, v ? "1" : "0");
+  }
+  function getOpenGroups() {
+    return safeJSONParse(localStorage.getItem(GROUPS_OPEN_KEY) || "{}", {});
+  }
+  function setOpenGroups(obj) {
+    localStorage.setItem(GROUPS_OPEN_KEY, JSON.stringify(obj || {}));
+  }
+
+  let activeLeafId = "";
+
+  function ensureSidebarDOM() {
+    const sidebar = qs("#sidebar");
+    if (!sidebar) return null;
+
+    let menuRoot = qs("#sideMenu", sidebar);
+    if (!menuRoot) {
+      // crea un contenedor si el HTML no lo tiene
+      menuRoot = document.createElement("div");
+      menuRoot.id = "sideMenu";
+      sidebar.appendChild(menuRoot);
+    }
+    return { sidebar, menuRoot };
+  }
+
+  function setActiveLeaf(id) {
+    activeLeafId = id;
+    qsa("[data-leaf='1']").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.id === id);
+    });
+  }
+
+  function openURL(url) {
+    const frame = qs("#mainFrame");
+    if (!frame) return;
+
+    frame.src = url;
+
+    // Re-aplica tema al cargar
+    frame.addEventListener("load", () => {
+      applyTheme(getTheme());
+      // también envía por postMessage para páginas que lo escuchan
+      try {
+        frame.contentWindow?.postMessage({ type: "theme", mode: getTheme() }, "*");
+      } catch (_) {}
+    }, { once: true });
+  }
+
+  function buildSidebar() {
+    const dom = ensureSidebarDOM();
+    if (!dom) return;
+
+    const { sidebar, menuRoot } = dom;
+    const openGroups = getOpenGroups();
+
+    // Limpia
+    menuRoot.innerHTML = "";
+
+    // Contenedor real de botones (evita viñetas)
+    const wrap = document.createElement("div");
+    wrap.className = "gd-side-wrap";
+    menuRoot.appendChild(wrap);
+
+    for (const group of MENU) {
+      // Header group
+      const g = document.createElement("div");
+      g.className = "side-group";
+      g.dataset.gid = group.id;
+
+      const title = document.createElement("button");
+      title.type = "button";
+      title.className = "side-group-title";
+      title.innerHTML = `
+        <span class="ico">${group.ico}</span>
+        <span class="lbl">${group.label}</span>
+        <span class="chev" style="margin-left:auto; opacity:.6">▾</span>
+      `;
+      g.appendChild(title);
+
+      // Body group
+      const body = document.createElement("div");
+      body.className = "side-group-body";
+
+      for (const leaf of group.children || []) {
+        if (leaf.sep) {
+          const hr = document.createElement("div");
+          hr.className = "side-sep";
+          hr.style.cssText = "height:1px; margin:8px 10px; background: rgba(255,255,255,.10);";
+          body.appendChild(hr);
+          continue;
+        }
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "side-item";
+        btn.dataset.leaf = "1";
+        btn.dataset.id = leaf.id;
+        btn.dataset.url = leaf.url;
+        btn.innerHTML = `<span class="ico">${leaf.ico}</span><span class="lbl">${leaf.label}</span>`;
+
+        btn.addEventListener("click", () => {
+          // Si está colapsado, primero expande (para que el usuario vea qué hizo)
+          if (sidebar.classList.contains("collapsed")) {
+            sidebar.classList.remove("collapsed");
+            setSidebarCollapsed(false);
+          }
+          setActiveLeaf(leaf.id);
+          openURL(leaf.url);
+        });
+
+        body.appendChild(btn);
+      }
+
+      g.appendChild(body);
+      wrap.appendChild(g);
+
+      // Estado abierto/cerrado del grupo
+      const isOpen = openGroups[group.id] ?? (group.id === "leads"); // default abierto Leads
+      body.style.display = isOpen ? "block" : "none";
+      title.querySelector(".chev")?.setAttribute("data-open", isOpen ? "1" : "0");
+
+      title.addEventListener("click", () => {
+        // si sidebar colapsado: expande y abre
+        if (sidebar.classList.contains("collapsed")) {
+          sidebar.classList.remove("collapsed");
+          setSidebarCollapsed(false);
+        }
+        const nowOpen = body.style.display === "none";
+        body.style.display = nowOpen ? "block" : "none";
+        title.querySelector(".chev")?.setAttribute("data-open", nowOpen ? "1" : "0");
+        const og = getOpenGroups();
+        og[group.id] = nowOpen;
+        setOpenGroups(og);
+      });
+    }
+  }
+
+  function bindSidebarBehavior() {
+    const dom = ensureSidebarDOM();
+    if (!dom) return;
+    const { sidebar } = dom;
+
+    // Estado inicial
+    const startCollapsed = getSidebarCollapsed();
+    sidebar.classList.toggle("collapsed", startCollapsed);
+
+    // Botón hamburguesa: alterna colapsado/expandido
+    const btnSidebar = qs("#btnSidebar") || qs("#btnMenu") || qs("[data-gd='sidebar']");
+    btnSidebar?.addEventListener("click", () => {
+      const next = !sidebar.classList.contains("collapsed");
+      sidebar.classList.toggle("collapsed", next);
+      setSidebarCollapsed(next);
+    });
+
+    // Auto-expand en hover (cuando está colapsado)
+    let hoverExpand = false;
+    sidebar.addEventListener("mouseenter", () => {
+      if (sidebar.classList.contains("collapsed")) {
+        hoverExpand = true;
+        sidebar.classList.remove("collapsed");
+      }
+    });
+    sidebar.addEventListener("mouseleave", () => {
+      if (hoverExpand) {
+        hoverExpand = false;
+        sidebar.classList.add("collapsed");
+      }
+    });
+
+    // Auto-collapse al perder foco (click fuera del sidebar)
+    document.addEventListener("mousedown", (e) => {
+      const isInside = sidebar.contains(e.target);
+      if (!isInside) {
+        // colapsa dejando íconos visibles
+        if (!sidebar.classList.contains("collapsed")) {
+          sidebar.classList.add("collapsed");
+          setSidebarCollapsed(true);
+        }
+      }
+    });
+
+    // En pantallas chicas: que el sidebar no se quede abierto estorbando
+    window.addEventListener("resize", () => {
+      if (window.innerWidth < 920) {
+        sidebar.classList.add("collapsed");
+        setSidebarCollapsed(true);
+      }
+    });
+  }
+
+  // -----------------------
+  // Logout confirm (SweetAlert2)
+  // -----------------------
+  function bindLogout() {
+    const btn = qs("#btnLogout") || qs("[data-gd='logout']");
+    if (!btn) return;
+
+    btn.addEventListener("click", async () => {
+      // SweetAlert2 si existe
+      if (window.Swal) {
+        const res = await window.Swal.fire({
+          title: "¿Cerrar sesión?",
+          text: "Vas a salir del CRM.",
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "Sí, salir",
+          cancelButtonText: "Cancelar",
+          confirmButtonColor: "#22c55e",
+        });
+        if (!res.isConfirmed) return;
+      } else {
+        if (!confirm("¿Cerrar sesión?")) return;
+      }
+
+      localStorage.removeItem("token");
+      localStorage.removeItem("nombre");
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("nombre");
+      location.href = "/web/login.html";
+    });
+  }
+
+  // -----------------------
+  // Brand click = Dashboard (NO login)
+  // -----------------------
+  function bindBrand() {
+    const brand = qs(".brand");
+    if (!brand) return;
+
+    brand.addEventListener("click", (e) => {
+      e.preventDefault?.();
+      // Abre dashboard si existe, si no abre Ver Leads
+      const candidates = [
+        "/web/views/dashboard.html",
+        "/web/views/home.html",
+        "/web/views/reportes.html",
+        "/web/views/leads.html",
+      ];
+      openURL(candidates[0]);
+      // No marcamos leaf activa, porque dashboard no está como ítem
+      setActiveLeaf(activeLeafId || "leads_ver");
+    });
+  }
+
+  // -----------------------
+  // Init
+  // -----------------------
+  async function init() {
+    injectStyleOnce();
+    if (!requireAuth()) return;
+
+    // Menú
+    buildSidebar();
+    bindSidebarBehavior();
+
+    // Header
+    ensureThemeToggleUI();
+    applyTheme(getTheme());
+    startClock();
+    fetchMe();
+    bindLogout();
+    bindWeatherModal();
+    bindBrand();
+
+    // Arranque: Ver Leads
+    // (si tu /web/views/leads.html existe, es el default correcto)
+    setActiveLeaf("leads_ver");
+    openURL("/web/views/leads.html");
+
+    // Si el iframe carga login por error (token caído), lo llevamos a login
+    const fr = qs("#mainFrame");
+    if (fr) {
+      fr.addEventListener("load", async () => {
+        // re-aplica tema siempre
+        applyTheme(getTheme());
+
+        // Heurística: si por alguna razón abrió login.html dentro del iframe, es porque algo redirigió mal.
+        try {
+          const href = fr.contentWindow?.location?.href || "";
+          if (href.includes("/web/login.html")) {
+            location.href = "/web/login.html";
+          }
+        } catch (_) { /* cross-origin no debería pasar */ }
+      });
+    }
+  }
+
+  init();
+})();

@@ -1,0 +1,370 @@
+/* ========= Panel layout ========= */
+.topbar{
+  height: 56px;
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  padding: 0 14px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(7, 16, 28, .65);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+
+:root.light .topbar{
+  background: rgba(255,255,255,.65);
+  border-bottom: 1px solid rgba(0,0,0,.08);
+}
+
+.brand{
+  font-weight: 900;
+  letter-spacing: .6px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+}
+
+:root.light .brand{
+  background: rgba(255,255,255,.65);
+  border: 1px solid rgba(0,0,0,.08);
+}
+
+.iconbtn{
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  color: inherit;
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.iconbtn:hover{ border-color: rgba(255,255,255,.22); }
+
+:root.light .iconbtn{
+  background: rgba(255,255,255,.65);
+  border-color: rgba(0,0,0,.10);
+}
+:root.light .iconbtn:hover{ border-color: rgba(0,0,0,.18); }
+
+.topspacer{ flex:1; }
+
+.main{
+  height: calc(100vh - 56px);
+  padding: 12px;
+}
+
+.frame{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(255,255,255,.04);
+  box-shadow: 0 18px 55px rgba(0,0,0,.35);
+}
+
+/* ========= TOP MENU (desktop) ========= */
+.topmenu{
+  list-style:none;
+  display:flex;
+  gap: 8px;
+  margin: 0 8px;
+  padding: 0;
+  align-items:center;
+}
+
+.topmenu a{
+  display:flex;
+  align-items:center;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  text-decoration:none;
+  color: inherit;
+  opacity: .86;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.topmenu a:hover{
+  opacity: 1;
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.12);
+}
+.topmenu a.active{
+  opacity: 1;
+  background: rgba(34,197,94,.16);
+  border-color: rgba(34,197,94,.35);
+}
+
+/* en móvil se esconde topmenu y se usa drawer */
+@media (max-width: 980px){
+  .topmenu{ display:none; }
+}
+
+/* ========= Drawer móvil ========= */
+.drawer-bg{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: .18s ease;
+  z-index: 80;
+}
+.drawer-bg.open{
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drawer{
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 290px;
+  transform: translateX(-105%);
+  transition: .2s ease;
+  z-index: 90;
+  background: rgba(7, 16, 28, .85);
+  backdrop-filter: blur(16px);
+  border-right: 1px solid rgba(255,255,255,.12);
+  padding: 12px;
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+.drawer.open{ transform: translateX(0); }
+
+:root.light .drawer{
+  background: rgba(255,255,255,.82);
+  border-right: 1px solid rgba(0,0,0,.10);
+}
+
+.drawer-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+}
+.drawer-title{
+  font-weight: 900;
+  font-size: 16px;
+}
+
+.drawer-menu{
+  list-style:none;
+  padding: 0;
+  margin: 0;
+  display:flex;
+  flex-direction:column;
+  gap: 8px;
+}
+
+.drawer-item{
+  width: 100%;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  color: inherit;
+  text-align:left;
+  padding: 0 12px;
+  cursor: pointer;
+  font-weight: 700;
+  opacity: .92;
+}
+.drawer-item:hover{ border-color: rgba(255,255,255,.22); }
+.drawer-item.active{
+  background: rgba(34,197,94,.16);
+  border-color: rgba(34,197,94,.35);
+}
+:root.light .drawer-item{
+  background: rgba(255,255,255,.65);
+  border-color: rgba(0,0,0,.10);
+}
+:root.light .drawer-item:hover{ border-color: rgba(0,0,0,.18); }
+
+.drawer-footer{
+  margin-top:auto;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.10);
+}
+:root.light .drawer-footer{ border-top: 1px solid rgba(0,0,0,.08); }
+
+/* ========= Weather pill + modal (iOS-ish) ========= */
+.wx-pill{
+  height: 36px;
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+  color: inherit;
+  cursor: pointer;
+}
+.wx-pill:hover{ border-color: rgba(255,255,255,.24); }
+.wx-temp{ font-weight: 900; }
+.wx-city{ opacity: .86; font-weight: 800; max-width: 140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+:root.light .wx-pill{
+  background: rgba(255,255,255,.72);
+  border-color: rgba(0,0,0,.10);
+}
+:root.light .wx-pill:hover{ border-color: rgba(0,0,0,.18); }
+
+.wx-modal{
+  position: fixed;
+  inset: 0;
+  display:none;
+  z-index: 120;
+}
+.wx-modal.open{ display:block; }
+.wx-modal-bg{
+  position:absolute; inset:0;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(4px);
+}
+.wx-modal-content{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%,-50%);
+  width: min(520px, 94vw);
+  max-height: 88vh;
+  overflow:auto;
+  border-radius: 26px;
+  padding: 18px;
+  background:
+    radial-gradient(1200px 520px at 20% -10%, rgba(255,255,255,.16), transparent 60%),
+    radial-gradient(900px 520px at 90% 10%, rgba(34,197,94,.14), transparent 55%),
+    rgba(10, 20, 36, .92);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 30px 90px rgba(0,0,0,.55);
+}
+:root.light .wx-modal-content{
+  background:
+    radial-gradient(1200px 520px at 20% -10%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(900px 520px at 90% 10%, rgba(34,197,94,.10), transparent 55%),
+    rgba(255,255,255,.92);
+  border-color: rgba(0,0,0,.08);
+  box-shadow: 0 30px 90px rgba(0,0,0,.25);
+}
+
+.wx-close{
+  position: sticky;
+  top: 0;
+  margin-left: auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height: 36px;
+  width: 36px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.14);
+  cursor:pointer;
+}
+:root.light .wx-close{
+  background: rgba(0,0,0,.04);
+  border-color: rgba(0,0,0,.10);
+}
+
+.wx-header{
+  text-align:center;
+  padding: 6px 6px 12px;
+}
+.wx-loc{ font-size: 18px; font-weight: 900; opacity: .95; }
+.wx-big{ display:flex; align-items:baseline; justify-content:center; gap: 10px; margin-top: 8px; }
+.wx-big-temp{ font-size: 78px; line-height: 1; font-weight: 300; letter-spacing: -2px; }
+.wx-big-ico{ font-size: 34px; }
+.wx-cond{ font-weight: 900; opacity: .90; margin-top: 4px; }
+.wx-summary{ opacity: .85; margin-top: 6px; font-weight: 700; }
+
+.wx-card{
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 20px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12);
+}
+:root.light .wx-card{
+  background: rgba(255,255,255,.70);
+  border-color: rgba(0,0,0,.08);
+}
+.wx-card-title{
+  font-weight: 900;
+  letter-spacing: .8px;
+  opacity: .8;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.wx-hours{
+  display:flex;
+  gap: 10px;
+  overflow:auto;
+  padding-bottom: 6px;
+}
+.wx-hour{
+  min-width: 88px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+  text-align:center;
+}
+:root.light .wx-hour{
+  background: rgba(255,255,255,.65);
+  border-color: rgba(0,0,0,.08);
+}
+.wx-hour .t{ font-weight: 900; opacity:.9; }
+.wx-hour .i{ font-size: 20px; margin: 6px 0; }
+.wx-hour .v{ font-weight: 900; }
+
+.wx-days{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+.wx-day{
+  display:grid;
+  grid-template-columns: 70px 30px 42px 1fr 42px;
+  align-items:center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+}
+:root.light .wx-day{
+  background: rgba(255,255,255,.65);
+  border-color: rgba(0,0,0,.08);
+}
+.wx-day .d{ font-weight:900; opacity:.95; }
+.wx-day .i{ font-size: 18px; text-align:center; }
+.wx-day .min{ opacity:.78; font-weight:900; text-align:right; }
+.wx-day .max{ font-weight:900; text-align:right; }
+
+.wx-bar{
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  overflow:hidden;
+  position:relative;
+}
+:root.light .wx-bar{ background: rgba(0,0,0,.10); }
+.wx-bar > span{
+  position:absolute; top:0; bottom:0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,215,0,.95), rgba(255,165,0,.95));
+}

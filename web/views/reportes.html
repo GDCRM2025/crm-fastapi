@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Reportes</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <style>
+    body{ margin:0; padding:14px; font-family:inherit; color:inherit; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+    .card{ border:1px solid var(--border, rgba(255,255,255,.12)); border-radius:14px; padding:12px; }
+    .ttl{ font-weight:950; font-size:16px; }
+    .muted{ opacity:.75; font-size:12px; }
+    .f{ display:flex; flex-direction:column; gap:6px; min-width:180px; }
+    .lbl{ font-size:12px; opacity:.8; font-weight:900; }
+    .inp{ height:36px; border-radius:10px; border:1px solid var(--border, rgba(255,255,255,.12)); background:transparent; color:inherit; padding:0 10px; font-weight:800; }
+    .btn{ height:36px; border-radius:10px; border:1px solid var(--border, rgba(255,255,255,.12)); background:transparent; color:inherit; padding:0 12px; cursor:pointer; font-weight:950; }
+    .btn:hover{ background: rgba(255,255,255,.06); }
+    :root.light .btn:hover{ background: rgba(0,0,0,.06); }
+    pre{ white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px; opacity:.9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="ttl">Reportes</div>
+    <div class="muted">Si el backend devuelve datos, aquí se ven (sin humo).</div>
+
+    <div class="row" style="margin-top:12px">
+      <div class="f">
+        <div class="lbl">Inicio</div>
+        <input class="inp" id="ini" type="date" />
+      </div>
+      <div class="f">
+        <div class="lbl">Término</div>
+        <input class="inp" id="fin" type="date" />
+      </div>
+      <button class="btn" id="go" type="button">Cargar</button>
+    </div>
+
+    <div class="muted" id="st" style="margin-top:10px">—</div>
+    <div class="card" style="margin-top:10px">
+      <pre id="out">{}</pre>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+
+    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+    function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+
+    function applyThemeBootstrap(){
+      const mode = (localStorage.getItem("gd_theme") || "dark");
+      document.documentElement.classList.toggle("light", mode === "light");
+      window.addEventListener("message", (ev) => {
+        if (ev.data?.type === "theme"){
+          document.documentElement.classList.toggle("light", ev.data.mode === "light");
+        }
+      });
+    }
+
+    function fmt(d){
+      const pad = (n) => String(n).padStart(2,"0");
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    }
+
+    async function api(url){
+      const r = await fetch(url, { headers: headers() });
+      if (!r.ok) throw new Error(await r.text().catch(()=> ""));
+      return r.json();
+    }
+
+    async function load(){
+      const ini = qs("#ini").value;
+      const fin = qs("#fin").value;
+      qs("#st").textContent = "Cargando…";
+      const d = await api(`/dashboard/reportes?fecha_inicio=${encodeURIComponent(ini)}&fecha_termino=${encodeURIComponent(fin)}`);
+      qs("#out").textContent = JSON.stringify(d, null, 2);
+      qs("#st").textContent = "OK";
+    }
+
+    applyThemeBootstrap();
+    const now = new Date();
+    const start = new Date(now.getTime() - 1000*60*60*24*30);
+    qs("#ini").value = fmt(start);
+    qs("#fin").value = fmt(now);
+
+    qs("#go").onclick = () => load().catch(e => {
+      qs("#st").textContent = "No se pudo cargar (endpoint /dashboard/reportes).";
+      Swal.fire("Error", String(e.message||e), "error");
+    });
+
+    // auto load
+    qs("#go").click();
+  </script>
+</body>
+</html>

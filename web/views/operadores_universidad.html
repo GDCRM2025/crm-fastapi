@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Universidad GD</title>
+  <link rel="stylesheet" href="/web/styles.css?v=20260216-1" />
+  <style>
+    body{ background:#0b0e10; color:#e9ffee; }
+    .wrap{ max-width:1100px; margin:0 auto; padding:24px; }
+    h1{ margin:0 0 12px 0; }
+    .grid{ display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
+    .card{ border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:12px; background:rgba(15,20,23,.9); }
+    video, img{ width:100%; border-radius:10px; }
+    .muted{ opacity:.7; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Universidad GD</h1>
+    <div class="muted">Capacitaciones y recursos para operadores y conductores.</div>
+    <div class="grid" style="margin-top:16px;">
+      <div class="card">
+        <video controls src="/videos/IMG_1275.MOV"></video>
+        <div style="margin-top:8px;">Capacitación 1</div>
+      </div>
+      <div class="card">
+        <video controls src="/videos/IMG_1276.MOV"></video>
+        <div style="margin-top:8px;">Capacitación 2</div>
+      </div>
+      <div class="card">
+        <video controls src="/videos/LOGIN.mp4"></video>
+        <div style="margin-top:8px;">Guía de Login</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

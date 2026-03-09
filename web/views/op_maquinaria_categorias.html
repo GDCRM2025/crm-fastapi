@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Operaciones · Categorías Maquinaria</title>
+  <link rel="stylesheet" href="../styles.css?v=20260304-opcat2" />
+  <script src="../js/iframe-theme.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:12px; overflow:auto;}
+    .wrap{max-width: 1280px; margin:0 auto; display:flex; flex-direction:column; gap:12px;}
+    .card{
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      overflow:hidden;
+      box-shadow: 0 22px 70px rgba(0,0,0,.28);
+    }
+    :root.light .card{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .top{
+      padding: 12px;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap: 12px;
+      flex-wrap:wrap;
+      border-bottom: 1px solid rgba(148,163,184,.16);
+    }
+    .ttl{font-weight: 1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .sub{opacity:.72; font-weight:900; font-size:12px; margin-top:4px; max-width: 720px;}
+    .row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+    .inp{
+      height: 36px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding: 0 12px;
+      font-weight: 950;
+      outline:none;
+      min-width: 260px;
+    }
+    :root.light .inp{background: rgba(255,255,255,.70); color: rgba(0,0,0,.88);}
+    .btn{
+      height: 36px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding: 0 14px;
+      font-weight: 1100;
+      cursor:pointer;
+    }
+    .btn.primary{
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    }
+    .btn.danger{
+      border-color: rgba(239,68,68,.35);
+      background: rgba(239,68,68,.08);
+    }
+    .btn:hover{filter:brightness(1.06);}
+
+    .tblWrap{overflow:auto; max-height: calc(100vh - 170px);}
+    table{width:100%; border-collapse:separate; border-spacing:0; font-size:13px; min-width: 920px;}
+    th{
+      text-align:left;
+      padding: 10px 12px;
+      font-size: 11px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      opacity: .74;
+      border-bottom: 1px solid rgba(148,163,184,.16);
+      position: sticky;
+      top: 0;
+      background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40));
+      backdrop-filter: blur(10px);
+      z-index: 2;
+      white-space:nowrap;
+    }
+    :root.light th{background: rgba(255,255,255,.90);}
+    td{padding: 10px 12px; border-bottom: 1px solid rgba(148,163,184,.10); vertical-align:middle;}
+    .muted{opacity:.72; font-weight: 900;}
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.14);
+      font-weight: 1100;
+      font-size: 12px;
+      white-space:nowrap;
+    }
+    :root.light .pill{background: rgba(255,255,255,.65);}
+    .dot{width:10px; height:10px; border-radius:999px; background: rgba(148,163,184,.55);}
+    .act{display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;}
+    .mini{height:30px; padding:0 12px; border-radius: 999px; font-size: 12px;}
+    .thumb{
+      width: 40px; height: 40px;
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.16);
+      display:block;
+      object-fit: cover;
+    }
+    :root.light .thumb{background: rgba(255,255,255,.75);}
+
+    @media (max-width: 820px){
+      .inp{min-width: 180px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div class="top">
+        <div>
+          <div class="ttl">Categorías Maquinaria (Catálogo)</div>
+          <div class="sub">
+            Esto es el <b>catálogo de tipos</b> (COD_TIPO + nombre + foto). El inventario por unidad se crea en <b>Inventario Maquinaria</b>,
+            y genera SKUs automáticos tipo <b>CarCla01</b>, <b>CarCla02</b>…
+          </div>
+        </div>
+        <div class="row">
+          <input id="q" class="inp" placeholder="Buscar por nombre o COD_TIPO…" />
+          <button id="btnReload" class="btn" type="button">Recargar</button>
+          <button id="btnNew" class="btn primary" type="button">+ Nueva</button>
+        </div>
+      </div>
+
+      <div class="tblWrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:88px">ID</th>
+              <th style="width:130px">COD_TIPO</th>
+              <th>Tipo Máquina</th>
+              <th style="width:190px">Grupo</th>
+              <th style="width:90px">Foto</th>
+              <th style="width:120px">Activo</th>
+              <th style="width:200px; text-align:right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tb"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+    const norm = (s) => (s || "").toString().trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+
+    const SwalX = (() => {
+      try{ return window.parent?.Swal || window.Swal || null; }catch(_){ return window.Swal || null; }
+    })();
+
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const apiURL = (u) => {
+      const s = String(u || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    };
+    const token = () => localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    const authHeaders = (h={}) => token() ? ({...h, Authorization:"Bearer " + token()}) : h;
+
+    async function jget(url){
+      const r = await fetch(apiURL(url), { headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+    async function jpost(url, body){
+      const r = await fetch(apiURL(url), { method:"POST", headers: authHeaders({"Content-Type":"application/json"}), body: JSON.stringify(body || {}) });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+    async function jput(url, body){
+      const r = await fetch(apiURL(url), { method:"PUT", headers: authHeaders({"Content-Type":"application/json"}), body: JSON.stringify(body || {}) });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    let ROWS = [];
+
+    function dotFor(active){
+      return active ? "#22c55e" : "#ef4444";
+    }
+
+    function render(){
+      const q = norm(qs("#q")?.value || "");
+      const tb = qs("#tb");
+      const items = (ROWS || []).filter(r => {
+        if (!q) return true;
+        const a = norm(r?.nombre || "");
+        const b = norm(r?.code_prefix || "");
+        return a.includes(q) || b.includes(q);
+      });
+      tb.innerHTML = items.length ? items.map(r => {
+        const isActive = !!r.is_active;
+        const foto = (r.foto_url || "").trim();
+        const grupo = String(r.grupo || "").trim() || "—";
+        return `
+          <tr>
+            <td class="muted">${esc(r.id_category)}</td>
+            <td><span class="pill"><span class="dot" style="background:${dotFor(true)}"></span>${esc(r.code_prefix || "")}</span></td>
+            <td><b>${esc(r.nombre || "")}</b></td>
+            <td class="muted">${esc(grupo)}</td>
+            <td>${foto ? `<img class="thumb" src="${esc(foto)}" alt="foto" />` : `<span class="muted">—</span>`}</td>
+            <td><span class="pill"><span class="dot" style="background:${dotFor(isActive)}"></span>${isActive ? "ACTIVO" : "INACTIVO"}</span></td>
+            <td style="text-align:right">
+              <div class="act">
+                <button class="btn mini" data-edit="${esc(r.id_category)}" type="button">Editar</button>
+                ${isActive
+                  ? `<button class="btn mini danger" data-toggle="${esc(r.id_category)}" data-active="0" type="button">Desactivar</button>`
+                  : `<button class="btn mini" data-toggle="${esc(r.id_category)}" data-active="1" type="button">Activar</button>`
+                }
+                <button class="btn mini danger" data-del="${esc(r.id_category)}" type="button">Eliminar</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("") : `<tr><td colspan="6" class="muted">Sin categorías.</td></tr>`;
+
+      tb.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => editRow(Number(b.dataset.edit || 0))));
+      tb.querySelectorAll("[data-toggle]").forEach(b => b.addEventListener("click", () => toggleRow(Number(b.dataset.toggle || 0), String(b.dataset.active || "0") === "1")));
+      tb.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => deleteRow(Number(b.dataset.del || 0))));
+    }
+
+    async function load(){
+      const j = await jget("/assets/categories?tipo=MAQUINARIA&all=1");
+      ROWS = Array.isArray(j.items) ? j.items : [];
+      // orden: activos arriba, luego por nombre
+      ROWS.sort((a,b) => {
+        const ax = a?.is_active ? 0 : 1;
+        const bx = b?.is_active ? 0 : 1;
+        if (ax !== bx) return ax - bx;
+        return String(a?.nombre || "").localeCompare(String(b?.nombre || ""), "es");
+      });
+      render();
+    }
+
+    async function openModal(mode, row){
+      const title = mode === "new" ? "Nueva categoría" : "Editar categoría";
+      const defNombre = row?.nombre || "";
+      const defCod = row?.code_prefix || "";
+      const defFoto = row?.foto_url || "";
+
+      if (!SwalX?.fire){
+        const nombre = prompt("Tipo máquina", defNombre) || "";
+        if (!nombre.trim()) return null;
+        const cod = prompt("COD_TIPO (opcional, vacío = auto)", defCod) || "";
+        const grupo = prompt("Grupo (CARROS/ELECTRODOMESTICO/MUEBLES/UTENSILIOS/OTRO)", row?.grupo || "") || "";
+        const foto = prompt("Foto URL (opcional)", defFoto) || "";
+        return { nombre: nombre.trim(), code_prefix: cod.trim(), grupo: grupo.trim(), foto_url: foto.trim() };
+      }
+
+      const res = await SwalX.fire({
+        title,
+        customClass: { popup: "gd-swal gd-swal--form gd-swal--wide gd-swal--noicon" },
+        width: 980,
+        html: `
+          <div class="gd-swal-form">
+            <div class="gd-swal-lede">Catálogo de tipos. COD_TIPO se usa para generar SKUs automáticos en el inventario por unidad.</div>
+            <div class="gd-swal-grid">
+              <div class="gd-swal-field gd-span-2">
+                <div class="gd-swal-label">Tipo Máquina</div>
+                <input id="mNombre" class="swal2-input" placeholder="Ej: Carrito Clásico" value="${esc(defNombre)}"/>
+              </div>
+              <div class="gd-swal-field">
+                <div class="gd-swal-label">COD_TIPO (opcional)</div>
+                <input id="mCod" class="swal2-input" placeholder="Ej: CarCla (vacío = auto)" value="${esc(defCod)}"/>
+              </div>
+              <div class="gd-swal-field">
+                <div class="gd-swal-label">Grupo (opcional)</div>
+                <select id="mGrupo" class="swal2-select">
+                  ${["","MAQUINARIA","CARROS","ELECTRODOMESTICO","MUEBLES","UTENSILIOS","VEHICULO","OTRO"].map(g => {
+                    const sel = (String(row?.grupo || "").trim().toUpperCase() === g) ? "selected" : "";
+                    const lbl = g ? g : "(sin grupo)";
+                    return `<option value="${esc(g)}" ${sel}>${esc(lbl)}</option>`;
+                  }).join("")}
+                </select>
+              </div>
+              <div class="gd-swal-field">
+                <div class="gd-swal-label">Foto URL (opcional)</div>
+                <input id="mFoto" class="swal2-input" placeholder="https://..." value="${esc(defFoto)}"/>
+              </div>
+            </div>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: mode === "new" ? "Crear" : "Guardar",
+        cancelButtonText: "Cancelar",
+        preConfirm: () => {
+          const nombre = (qs("#mNombre", SwalX.getPopup())?.value || "").trim();
+          const cod = (qs("#mCod", SwalX.getPopup())?.value || "").trim();
+          const grupo = (qs("#mGrupo", SwalX.getPopup())?.value || "").trim();
+          const foto = (qs("#mFoto", SwalX.getPopup())?.value || "").trim();
+          if (!nombre) {
+            SwalX.showValidationMessage("Tipo máquina requerido");
+            return null;
+          }
+          return { nombre, code_prefix: cod, grupo, foto_url: foto };
+        }
+      });
+      if (!res?.isConfirmed) return null;
+      return res.value || null;
+    }
+
+    async function createRow(){
+      const v = await openModal("new", null);
+      if (!v) return;
+      await jpost("/assets/categories", {
+        tipo: "MAQUINARIA",
+        tipo_maquina: v.nombre,
+        cod_tipo: v.code_prefix || null,
+        grupo: v.grupo || null,
+        foto_url: v.foto_url || null,
+      });
+      await load();
+    }
+
+    async function editRow(id){
+      const row = (ROWS || []).find(x => Number(x?.id_category || 0) === Number(id));
+      if (!row) return;
+      const v = await openModal("edit", row);
+      if (!v) return;
+      await jput(`/assets/categories/${id}`, {
+        tipo: "MAQUINARIA",
+        tipo_maquina: v.nombre,
+        cod_tipo: v.code_prefix || null,
+        grupo: v.grupo || null,
+        foto_url: v.foto_url || null,
+      });
+      await load();
+    }
+
+    async function toggleRow(id, active){
+      const row = (ROWS || []).find(x => Number(x?.id_category || 0) === Number(id));
+      if (!row) return;
+      const msg = active ? "¿Activar esta categoría?" : "¿Desactivar esta categoría? (no se podrá asignar nuevo inventario a este tipo)";
+      let ok = true;
+      if (SwalX?.fire){
+        const r = await SwalX.fire({ title: "Confirmar", text: msg, icon: "warning", showCancelButton:true, confirmButtonText:"Sí", cancelButtonText:"Cancelar" });
+        ok = !!r.isConfirmed;
+      }else{
+        ok = confirm(msg);
+      }
+      if (!ok) return;
+      await jput(`/assets/categories/${id}`, { is_active: !!active });
+      await load();
+    }
+
+    async function deleteRow(id){
+      if (!id) return;
+      let hard = false;
+      if (SwalX?.fire){
+        const r = await SwalX.fire({
+          title: "Eliminar categoría",
+          html: `<div style="text-align:left;opacity:.85;font-weight:900">Recomendado: <b>Desactivar</b> (mantiene historial).<br>“Borrar” solo funciona si no hay unidades creadas.</div>`,
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "Desactivar",
+          cancelButtonText: "Cancelar",
+          showDenyButton: true,
+          denyButtonText: "Borrar (hard)",
+        });
+        if (r.isDenied) hard = true;
+        else if (!r.isConfirmed) return;
+      }else{
+        hard = confirm("OK = borrar hard (solo si no hay unidades). Cancel = desactivar") ? true : false;
+      }
+      const r = await fetch(apiURL(`/assets/categories/${id}?hard=${hard?1:0}`), { method:"DELETE", headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      await load();
+    }
+
+    qs("#btnReload")?.addEventListener("click", load);
+    qs("#btnNew")?.addEventListener("click", createRow);
+    qs("#q")?.addEventListener("input", render);
+
+    load().catch(err => {
+      console.error(err);
+      const tb = qs("#tb");
+      if (tb) tb.innerHTML = `<tr><td colspan="6" class="muted">Error cargando categorías.</td></tr>`;
+    });
+  </script>
+</body>
+</html>

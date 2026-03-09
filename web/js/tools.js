@@ -1,0 +1,372 @@
+// web/js/tools.js
+(() => {
+  "use strict";
+
+  const $ = (q, c = document) => c.querySelector(q);
+  const $$ = (q, c = document) => Array.from(c.querySelectorAll(q));
+
+  function getGD() {
+    try {
+      return window.parent && window.parent.GD ? window.parent.GD : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function authHeaders(extra = {}) {
+    const gd = getGD();
+    if (gd && typeof gd.authHeaders === "function") return gd.authHeaders(extra);
+    return extra;
+  }
+
+  // -------------------- TABS (POR HASH) --------------------
+  const TAB_KEYS = ["correo","instagram","whatsapp","calendario","calculadora"];
+
+  function tabFromHash() {
+    const h = (location.hash || "").replace("#", "").trim().toLowerCase();
+    if (!h) return "correo";
+    // aliases
+    if (h === "ig") return "instagram";
+    if (h === "wa") return "whatsapp";
+    if (TAB_KEYS.includes(h)) return h;
+    return "correo";
+  }
+
+  function setActiveTab(name) {
+    $$(".tab-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.tool === name);
+    });
+    $$(".tools-panel").forEach(p => {
+      p.classList.toggle("active", p.id === "panel-" + name);
+    });
+
+    // cargas automáticas
+    if (name === "calendario") loadAgenda();
+    // preagenda eliminada
+  }
+
+  function gotoTab(name) {
+    const n = TAB_KEYS.includes(name) ? name : "correo";
+    location.hash = "#" + n;
+  }
+
+  // -------------------- POPUP "PANTALLA DIVIDIDA" --------------------
+  function openLeftPopup(url) {
+    const w = Math.max(480, Math.floor(window.screen.availWidth * 0.45));
+    const h = Math.max(700, Math.floor(window.screen.availHeight * 0.92));
+    const left = 0;
+    const top = 0;
+    const feat = `popup=yes,width=${w},height=${h},left=${left},top=${top},noopener=yes,noreferrer=yes`;
+    const win = window.open(url, "_blank", feat);
+    if (!win) {
+      Swal.fire({ icon: "warning", title: "POPUP BLOQUEADO", text: "HABILITA POPUPS PARA EL CRM." });
+      return;
+    }
+    try { win.focus(); } catch {}
+  }
+
+  // -------------------- AGENDA / PREAGENDA (API) --------------------
+  async function fetchAgenda() {
+    const res = await fetch("/tools/agenda", { headers: authHeaders() });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.json();
+  }
+
+  function fmtWhen(start, end) {
+    const s = (start || "").replace("T", " ").slice(0, 16);
+    const e = (end || "").replace("T", " ").slice(0, 16);
+    if (!s && !e) return "—";
+    if (s && e) return `${s} → ${e}`;
+    return s || e;
+  }
+
+  function leadTitle(r) {
+    const cliente = (r.nombre_cliente || "").toString().toUpperCase();
+    const marca = (r.marca || "").toString().toUpperCase();
+    if (cliente && marca) return `${cliente} — ${marca}`;
+    return cliente || marca || `LEAD #${r.id_lead}`;
+  }
+
+  function badgeHtml(txt) {
+    const t = (txt || "").toUpperCase();
+    if (!t) return "";
+    const cls =
+      t.includes("CONFIRMADO") ? "badge danger" :
+      t.includes("PRE") ? "badge warn" :
+      "badge";
+    return `<span class="${cls}">${t}</span>`;
+  }
+
+  function renderList(container, items) {
+    if (!container) return;
+    if (!items || !items.length) {
+      container.innerHTML = `<div class="muted">SIN ITEMS</div>`;
+      return;
+    }
+
+    container.innerHTML = "";
+    items.forEach(r => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "event-card";
+      card.innerHTML = `
+        <div class="event-card-top">
+          <div class="event-title">${leadTitle(r)}</div>
+          ${badgeHtml(r.__badge)}
+        </div>
+        <div class="event-sub">
+          <span>${fmtWhen(r.pre_start || r.calendar_start || r.fecha_evento, r.pre_end || r.calendar_end || "")}</span>
+          ${r.comuna ? ` · <span>${String(r.comuna).toUpperCase()}</span>` : ""}
+        </div>
+        <div class="event-mini">
+          <span>${(r.pre_location || r.comuna || "").toString().toUpperCase()}</span>
+        </div>
+      `;
+
+      card.addEventListener("click", () => openEventModal(r));
+      container.appendChild(card);
+    });
+  }
+
+  function setInfoText(data) {
+    const el = $("#boxInfo");
+    if (!el) return;
+    const wk = data.week ? `${data.week.start} → ${data.week.end}` : "—";
+    el.innerHTML = `
+      <div class="muted">SEMANA: <b>${wk}</b></div>
+      <div class="muted">POR AGENDAR: <b>${data.counts?.por_agendar ?? 0}</b></div>
+      <div class="muted">AGENDADOS (NO CONF): <b>${data.counts?.agendados_no_confirmados ?? 0}</b></div>
+      <div class="muted">SEMANA ACTUAL: <b>${data.counts?.semana_actual ?? 0}</b></div>
+    `;
+  }
+
+  async function loadAgenda() {
+    const boxAgNoConf = $("#boxAgNoConf");
+    const boxSemana = $("#boxSemana");
+    if (boxAgNoConf) boxAgNoConf.innerHTML = `<div class="muted">CARGANDO…</div>`;
+    if (boxSemana) boxSemana.innerHTML = `<div class="muted">CARGANDO…</div>`;
+
+    try {
+      const data = await fetchAgenda();
+      renderList(boxAgNoConf, data.agendados_no_confirmados || []);
+      renderList(boxSemana, data.semana_actual || []);
+      setInfoText(data);
+    } catch (e) {
+      console.error(e);
+      if (boxAgNoConf) boxAgNoConf.innerHTML = `<div class="error-text">ERROR CARGANDO</div>`;
+      if (boxSemana) boxSemana.innerHTML = `<div class="error-text">ERROR CARGANDO</div>`;
+    }
+  }
+
+  async function loadPreagenda() {
+    const box = $("#boxPorAgendar");
+    if (box) box.innerHTML = `<div class="muted">CARGANDO…</div>`;
+    try {
+      const data = await fetchAgenda();
+      renderList(box, data.por_agendar || []);
+    } catch (e) {
+      console.error(e);
+      if (box) box.innerHTML = `<div class="error-text">ERROR CARGANDO</div>`;
+    }
+  }
+
+  // -------------------- MODAL (GOOGLE CALENDAR LOOK) --------------------
+  let CURRENT = null;
+
+  function openEventModal(r) {
+    CURRENT = r;
+
+    $("#mTitle").textContent = leadTitle(r);
+    $("#mWhen").textContent = fmtWhen(r.pre_start || r.calendar_start || "", r.pre_end || r.calendar_end || "");
+    $("#mMeta").textContent = (r.__badge || r.estado || "").toString().toUpperCase();
+
+    $("#mLoc").textContent = (r.pre_location || r.comuna || "—").toString().toUpperCase();
+    $("#mAddr").textContent = (r.pre_direccion || r.direccion || "—").toString().toUpperCase();
+
+    $("#mProducts").textContent = (r.pre_products_text || "—").toString().toUpperCase();
+    $("#mMontaje").textContent = `MONTAJE: ${(r.pre_montaje_text || "—").toString().toUpperCase()}`;
+    $("#mOps").textContent = `OPS: ${Number(r.pre_ops || 0) || "—"}`;
+
+    $("#mTel").textContent = (r.pre_telefono || r.telefono || "—").toString().toUpperCase();
+    const by = (r.agenda_approved_by || "").toString().toUpperCase();
+    const at = (r.agenda_approved_at || "").toString();
+    $("#mCreated").textContent = by ? `APROBADO POR: ${by}${at ? " · " + at : ""}` : "SIN APROBACIÓN";
+
+    const modal = $("#eventModal");
+    modal.classList.add("show");
+    modal.setAttribute("aria-hidden", "false");
+
+    // botones
+    $("#mOpenGoogle").onclick = () => openGoogleForCurrent();
+    $("#mApprove").onclick = () => approveCurrent();
+  }
+
+  function closeModal() {
+    const modal = $("#eventModal");
+    modal.classList.remove("show");
+    modal.setAttribute("aria-hidden", "true");
+    CURRENT = null;
+  }
+
+  async function openGoogleForCurrent() {
+    if (!CURRENT) return;
+
+    // Si ya existe link aprobado, usamos ese
+    const link = (CURRENT.calendar_html_link || "").toString().trim();
+    if (link) {
+      window.open(link, "_blank", "noopener");
+      return;
+    }
+
+    // Si no hay link, generamos uno con /calendar/events (manual_link)
+    const payload = {
+      title: (CURRENT.pre_title || leadTitle(CURRENT)).toString().toUpperCase(),
+      start: (CURRENT.pre_start || "").toString(),
+      end: (CURRENT.pre_end || "").toString(),
+      location: (CURRENT.pre_location || "").toString().toUpperCase(),
+      description: (CURRENT.pre_description || "").toString().toUpperCase(),
+    };
+
+    if (!payload.start || !payload.end) {
+      Swal.fire({ icon: "warning", title: "FALTA FECHA", text: "ESTE LEAD NO TIENE PRE START / PRE END." });
+      return;
+    }
+
+    const res = await fetch("/calendar/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      Swal.fire({ icon: "error", title: "ERROR", text: "NO SE PUDO GENERAR EL LINK." });
+      return;
+    }
+    const data = await res.json();
+    if (data?.htmlLink) window.open(data.htmlLink, "_blank", "noopener");
+  }
+
+  async function approveCurrent() {
+    if (!CURRENT) return;
+
+    const approverSel = $("#approverSel");
+    const who = (approverSel ? approverSel.value : "OSCAR").toString().toUpperCase();
+
+    // Solo permite SIMON/OSCAR/ADMIN
+    if (!["SIMON","OSCAR","ADMIN"].includes(who)) {
+      Swal.fire({ icon: "warning", title: "APROBADOR INVÁLIDO" });
+      return;
+    }
+
+    // Confirm
+    const ok = await Swal.fire({
+      title: "APROBAR PRE AGENDA?",
+      text: `APROBADOR: ${who}`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "SÍ, APROBAR",
+    });
+    if (!ok.isConfirmed) return;
+
+    const res = await fetch(`/tools/agenda/${CURRENT.id_lead}/approve`, {
+      method: "PUT",
+      headers: { ...authHeaders(), "X-User": who },
+    });
+
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      Swal.fire({ icon: "error", title: "NO SE PUDO APROBAR", text: t || `HTTP ${res.status}` });
+      return;
+    }
+
+    const data = await res.json().catch(() => ({}));
+    if (data?.htmlLink) {
+      // abrir el editor para que el usuario presione Guardar en Google Calendar
+      window.open(data.htmlLink, "_blank", "noopener");
+    }
+
+    closeModal();
+    // recargar listas
+    await loadPreagenda();
+    await loadAgenda();
+  }
+
+  // -------------------- CALCULADORA --------------------
+  function setupCalculator() {
+    const input = $("#calcExpression");
+    const btn = $("#btnCalc");
+    const out = $("#calcResult");
+    if (!input || !btn || !out) return;
+
+    function calc() {
+      const expr = (input.value || "").trim();
+      if (!expr) {
+        out.textContent = "RESULTADO: —";
+        return;
+      }
+      try {
+        if (!/^[0-9+\-*/().\s]*$/.test(expr)) throw new Error("INVALID");
+        // eslint-disable-next-line no-eval
+        const val = eval(expr);
+        if (val == null || Number.isNaN(val)) out.textContent = "RESULTADO: —";
+        else out.textContent = "RESULTADO: " + String(val);
+      } catch {
+        out.textContent = "ERROR EN LA EXPRESIÓN";
+      }
+    }
+
+    btn.addEventListener("click", calc);
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); calc(); }
+    });
+  }
+
+  // -------------------- BOOT --------------------
+  document.addEventListener("DOMContentLoaded", () => {
+    // tab clicks
+    $$(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const t = btn.dataset.tool;
+        if (!t) return;
+        gotoTab(t);
+      });
+    });
+
+    // hashchange
+    window.addEventListener("hashchange", () => setActiveTab(tabFromHash()));
+
+    // set initial tab
+    setActiveTab(tabFromHash());
+
+    // POPUPS
+    $("#btnOpenGmailSplit")?.addEventListener("click", () => openLeftPopup("https://mail.google.com/"));
+    $("#btnOpenGmailNew")?.addEventListener("click", () => window.open("https://mail.google.com/", "_blank", "noopener"));
+
+    $("#btnOpenIgSplit")?.addEventListener("click", () => openLeftPopup("https://www.instagram.com/direct/inbox/"));
+    $("#btnOpenIgNew")?.addEventListener("click", () => window.open("https://www.instagram.com/direct/inbox/", "_blank", "noopener"));
+
+    $("#btnOpenWaSplit")?.addEventListener("click", () => openLeftPopup("https://web.whatsapp.com/"));
+    $("#btnOpenWaNew")?.addEventListener("click", () => window.open("https://web.whatsapp.com/", "_blank", "noopener"));
+
+    $("#btnOpenGoogleCalendar")?.addEventListener("click", () => window.open("https://calendar.google.com/", "_blank", "noopener"));
+    $("#btnReloadAgenda")?.addEventListener("click", loadAgenda);
+    $("#btnReloadPreagenda")?.addEventListener("click", loadPreagenda);
+
+    // approver persist
+    const sel = $("#approverSel");
+    if (sel) {
+      sel.value = localStorage.getItem("gd_approver") || "OSCAR";
+      sel.addEventListener("change", () => localStorage.setItem("gd_approver", sel.value));
+    }
+
+    // modal close
+    $("#mClose")?.addEventListener("click", closeModal);
+    $("#eventModal")?.addEventListener("click", (ev) => {
+      if (ev.target && ev.target.id === "eventModal") closeModal();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") closeModal();
+    });
+
+    setupCalculator();
+  });
+})();

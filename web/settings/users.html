@@ -1,0 +1,24 @@
+<!doctype html><html lang="es" data-theme="night"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Usuarios</title><link rel="stylesheet" href="../styles.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script></head>
+<body class="content">
+<h2 style="margin:6px 0; text-align:center">Usuarios</h2>
+<input id="q" class="input" placeholder="Buscar por nombre, email, usuario..." style="width:360px">
+<div class="view"><table class="table"><thead><tr>
+<th>ID</th><th>Nombre</th><th>Email</th><th>Usuario</th><th>Teléfono</th><th>Cargo</th><th>Rol</th><th>Activo</th>
+</tr></thead><tbody id="tbody"></tbody></table></div>
+<script>
+const $=(q,c=document)=>c.querySelector(q);
+const API_BASE=(()=>{try{const h=String(location.hostname||'').toLowerCase();return (h==='localhost'||h==='127.0.0.1')?'':'/crm'}catch(_){return ''}})();
+const apiURL=(p)=>{const s=String(p||'');if(!s)return s;if(s.startsWith('http'))return s;if(!API_BASE)return s.startsWith('/crm/')?s.slice(4):s;if(s.startsWith('/crm/'))return s;return s.startsWith('/')?API_BASE+s:API_BASE+'/'+s;};
+const TOKEN=localStorage.getItem('token')||sessionStorage.getItem('token');
+const AUTH=TOKEN?{'Authorization':'Bearer '+TOKEN}:{};
+let rows=[]; function render(){ const t=($('#q').value||'').toLowerCase(); const tb=$('#tbody'); tb.innerHTML='';
+rows.filter(u=>(`${u.nombre} ${u.email} ${u.username}`.toLowerCase().includes(t))).forEach(u=>{
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td>${u.id_usuario}</td><td>${u.nombre||''}</td><td>${u.email||''}</td><td>${u.username||''}</td><td>${u.telefono||''}</td><td>${u.cargo||''}</td><td>${u.rol||''}</td><td>${u.is_active?'Sí':'No'}</td>`;
+  tb.appendChild(tr);
+});}
+(async()=>{ const r=await fetch(apiURL('/users'),{headers:AUTH}); rows=await r.json(); render(); $('#q').addEventListener('input',render);})();
+</script></body></html>

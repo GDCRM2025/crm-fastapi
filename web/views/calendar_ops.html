@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calendario · Operaciones</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{
+      background: transparent;
+      padding:12px;
+    }
+    .shell{
+      height:calc(100vh - 24px);
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.35);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      min-height:0;
+    }
+    :root.light .shell{background: rgba(255,255,255,.78); border-color: rgba(0,0,0,.10);}
+
+    .top{
+      padding:10px 12px;
+      border-bottom:1px solid rgba(148,163,184,.16);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .ttl{font-weight:1100;letter-spacing:.12em;text-transform:uppercase;font-size:12px;}
+    .muted{opacity:.72;font-weight:850;font-size:12px;}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .btn{
+      height:34px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 12px;
+      font-weight:1000;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    :root.light .btn{background: rgba(255,255,255,.70); color: rgba(0,0,0,.88);}
+    .btn.primary{background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn.active{outline:2px solid color-mix(in srgb, var(--accent) 55%, transparent);}
+    select, input{
+      height:34px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 12px;
+      font-weight:900;
+      outline:none;
+    }
+    :root.light select,:root.light input{background: rgba(255,255,255,.70); color: rgba(0,0,0,.88);}
+
+    .main{flex:1; min-height:0; overflow:auto; padding:12px;}
+
+    /* Week grid (horizontal scroll) */
+    .weekWrap{overflow:auto; -webkit-overflow-scrolling:touch;}
+    .week{
+      min-width: 980px;
+      display:grid;
+      grid-template-columns: repeat(7, minmax(240px, 1fr));
+      gap:12px;
+      align-items:start;
+    }
+    .dayCol{
+      border:1px solid rgba(148,163,184,.14);
+      border-radius:16px;
+      overflow:hidden;
+      background: rgba(2,6,23,.18);
+      min-height: 160px;
+    }
+    :root.light .dayCol{background: rgba(255,255,255,.70);}
+    .dayHead{
+      padding:10px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background: rgba(2,6,23,.35);
+      border-bottom:1px solid rgba(148,163,184,.12);
+      position:sticky;
+      top:0;
+      z-index:2;
+      backdrop-filter: blur(10px);
+    }
+    :root.light .dayHead{background: rgba(255,255,255,.92);}
+    .dayName{font-weight:1100;}
+    .badge{font-size:11px;font-weight:1000;opacity:.85;}
+    .cards{padding:10px; display:grid; gap:10px;}
+    .card{
+      border-radius:14px;
+      border:1px solid rgba(148,163,184,.14);
+      background: rgba(255,255,255,.03);
+      padding:10px;
+      cursor:pointer;
+    }
+    :root.light .card{background: rgba(255,255,255,.85);}
+    .card:hover{filter:brightness(1.06);}
+    .cardTitle{font-weight:1100; line-height:1.2;}
+    .cardMeta{margin-top:6px; opacity:.82; font-weight:850; font-size:12px; display:flex; gap:10px; flex-wrap:wrap;}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;border:1px solid rgba(148,163,184,.16);background: rgba(2,6,23,.16); font-weight:1000; font-size:11px;}
+    :root.light .pill{background: rgba(255,255,255,.78);}
+
+    /* List mode */
+    .list{display:grid; gap:10px;}
+    .list .card{padding:12px;}
+    .empty{opacity:.72;font-weight:850;text-align:center;padding:18px;}
+
+    @media (max-width: 720px){
+      body{padding:8px;}
+      .main{padding:10px;}
+      .week{min-width: 860px; grid-template-columns: repeat(7, minmax(200px, 1fr));}
+    }
+
+    /* Embed mode: portal necesita calendario full-screen (sin doble marco) */
+    body[data-embed="1"]{ padding:0; }
+    body[data-embed="1"] .shell{
+      height:100vh;
+      border-radius:0;
+      border:0;
+      box-shadow:none;
+    }
+    body[data-embed="1"] .top{ display:none; }
+    body[data-embed="1"] .main{ padding:10px; }
+    @media (max-width: 920px) and (orientation: landscape){
+      body[data-embed="1"] .main{ padding:6px; }
+    }
+
+    /* Modal simple (sin depender de SweetAlert) */
+    .dlgBg{
+      position:fixed; inset:0; z-index:9999;
+      display:none;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(6px);
+      align-items:center;
+      justify-content:center;
+      padding: 12px;
+    }
+    .dlgBg.open{ display:flex; }
+    .dlg{
+      width: min(860px, 96vw);
+      max-height: min(82vh, 820px);
+      overflow:auto;
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,.22);
+      background: rgba(8,16,24,.98);
+      color: var(--text);
+      box-shadow: 0 22px 70px rgba(0,0,0,.55);
+      padding: 12px;
+    }
+    :root.light .dlg{
+      background: rgba(255,255,255,.98);
+      color: rgba(0,0,0,.88);
+      border-color: rgba(15,23,42,.18);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+    }
+    .dlgTop{display:flex; align-items:flex-start; justify-content:space-between; gap:10px;}
+    .dlgTtl{font-weight:1100; font-size:16px; line-height:1.15;}
+    .dlgClose{
+      height:32px; border-radius: 10px; padding:0 10px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.22);
+      color: var(--text);
+      font-weight:1100;
+      cursor:pointer;
+    }
+    :root.light .dlgClose{ background: rgba(2,6,23,.04); color: rgba(0,0,0,.88); }
+    .grid{display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;}
+    @media (max-width: 720px){ .grid{ grid-template-columns: 1fr; } }
+    .kv{
+      border:1px solid rgba(148,163,184,.14);
+      border-radius: 14px;
+      padding:10px;
+      background: rgba(255,255,255,.03);
+    }
+    :root.light .kv{ background: rgba(2,6,23,.03); border-color: rgba(15,23,42,.12); }
+    .k{opacity:.72; font-weight:950; font-size:11px; letter-spacing:.12em; text-transform:uppercase;}
+    .v{font-weight:950; margin-top:4px; white-space:pre-wrap; word-break:break-word;}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="top">
+      <div>
+        <div class="ttl">Calendario · Operaciones</div>
+        <div class="muted">Vista interna del CRM (no depende de Google). Tap/click para abrir el lead.</div>
+      </div>
+      <div class="row">
+        <select id="selMarca" title="Marca" style="max-width: 220px">
+          <option value="">Todas las marcas</option>
+        </select>
+        <button class="btn active" id="btnWeek" type="button">Semana</button>
+        <button class="btn" id="btnList" type="button">Lista</button>
+        <select id="selRange" title="Rango">
+          <option value="7">7 días</option>
+          <option value="14" selected>14 días</option>
+          <option value="30">30 días</option>
+        </select>
+        <button class="btn primary" id="btnReload" type="button">Recargar</button>
+      </div>
+    </div>
+    <div class="main">
+      <div id="out"></div>
+    </div>
+  </div>
+
+  <div class="dlgBg" id="dlgBg" aria-hidden="true">
+    <div class="dlg" role="dialog" aria-modal="true" aria-label="Detalle evento">
+      <div class="dlgTop">
+        <div class="dlgTtl" id="dlgTtl">Evento</div>
+        <button class="dlgClose" id="dlgClose" type="button">Cerrar</button>
+      </div>
+      <div class="grid" id="dlgGrid"></div>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const apiURL = (p) => (p.startsWith("http") ? p : (API_BASE + (p.startsWith("/") ? p : ("/"+p))));
+    const token = () => localStorage.getItem("token") || localStorage.getItem("gd_token") || "";
+    const authHeaders = (h={}) => ({...h, ...(token()?{Authorization:"Bearer "+token()}:{})});
+
+    const fmtDay = (d) => {
+      try{
+        return new Intl.DateTimeFormat("es-CL", {weekday:"short", day:"2-digit", month:"2-digit"}).format(d);
+      }catch(_){ return d.toISOString().slice(0,10); }
+    };
+    const fmtHM = (s) => {
+      const m = String(s||"").match(/T(\\d\\d):(\\d\\d)/);
+      if (m) return `${m[1]}:${m[2]}`;
+      const m2 = String(s||"").match(/\\b(\\d\\d):(\\d\\d)\\b/);
+      return m2 ? `${m2[1]}:${m2[2]}` : "";
+    };
+    const ymd = (d) => d.toISOString().slice(0,10);
+    const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+
+    let MODE = "week";
+    let EVENTS = [];
+    let MARCAS = [];
+    let MARCA_FILTER = "";
+
+    // embed mode (portal) + marca preseleccionada
+    try{
+      const sp = new URLSearchParams(location.search || "");
+      if (sp.get("embed") === "1") document.body.dataset.embed = "1";
+      const m = (sp.get("marca") || "").trim();
+      if (m) MARCA_FILTER = m.toUpperCase();
+    }catch(_){}
+
+    async function apiJson(path){
+      const r = await fetch(apiURL(path), {headers: authHeaders()});
+      const t = await r.text();
+      if (!r.ok) throw new Error(t || ("HTTP "+r.status));
+      return t ? JSON.parse(t) : {};
+    }
+
+    async function loadMarcas(){
+      try{
+        const r = await fetch(apiURL("/catalogos"));
+        const j = await r.json().catch(()=>null);
+        const arr = (j && (j.marcas || j.items || j)) || [];
+        const names = [];
+        for (const it of (arr || [])){
+          const v = String(it?.marca || it?.nombre || it || "").trim();
+          if (v) names.push(v.toUpperCase());
+        }
+        MARCAS = Array.from(new Set(names)).sort((a,b)=>a.localeCompare(b,"es"));
+      }catch(_){
+        MARCAS = [];
+      }
+      const sel = qs("#selMarca");
+      if (!sel) return;
+      const cur = (MARCA_FILTER || "").toUpperCase();
+      const opts = [`<option value="">Todas las marcas</option>`]
+        .concat((MARCAS||[]).map(m => `<option value="${m}">${m}</option>`))
+        .join("");
+      sel.innerHTML = opts;
+      if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+    }
+
+    function showDlg(title, items){
+      const bg = qs("#dlgBg");
+      const ttl = qs("#dlgTtl");
+      const grid = qs("#dlgGrid");
+      if (!bg || !ttl || !grid) return;
+      ttl.textContent = title || "Evento";
+      grid.innerHTML = (items || []).map(({k,v}) => `
+        <div class="kv">
+          <div class="k">${String(k||"").replace(/</g,"&lt;")}</div>
+          <div class="v">${(v == null ? "" : String(v)).replace(/</g,"&lt;") || "—"}</div>
+        </div>
+      `).join("");
+      bg.classList.add("open");
+      bg.setAttribute("aria-hidden","false");
+    }
+    function closeDlg(){
+      const bg = qs("#dlgBg");
+      if (!bg) return;
+      bg.classList.remove("open");
+      bg.setAttribute("aria-hidden","true");
+    }
+    qs("#dlgClose")?.addEventListener("click", closeDlg);
+    qs("#dlgBg")?.addEventListener("click", (e) => { if (e.target && e.target.id === "dlgBg") closeDlg(); });
+    window.addEventListener("keydown", (e)=>{ if (e.key === "Escape") closeDlg(); });
+
+    async function openLead(id){
+      // Operaciones/Chofer/Operador: en general no tienen permisos de Leads.
+      // Mostramos modal con info del evento y dirección (lo crítico para terreno).
+      if (!id) return;
+      try{
+        const j = await apiJson(`/calendar/lead_info?id_lead=${encodeURIComponent(id)}`);
+        const it = j?.lead || {};
+        showDlg(`${String(it.cliente || it.title || "Evento")} (#${id})`, [
+          {k:"Marca", v: it.marca},
+          {k:"Fecha evento", v: it.fecha_evento},
+          {k:"Horario", v: it.horario},
+          {k:"Horas", v: it.duracion_horas},
+          {k:"Comuna", v: it.comuna},
+          {k:"Dirección", v: it.direccion || it.location},
+          {k:"Teléfono", v: it.telefono},
+          {k:"Estado", v: it.estado},
+          {k:"Notas", v: it.notas},
+        ]);
+      }catch(err){
+        showDlg(`Evento (#${id})`, [{k:"Error", v: (err && err.message) ? err.message : "No pude cargar detalle"}]);
+      }
+    }
+
+    function render(){
+      const out = qs("#out");
+      const range = Number(qs("#selRange")?.value || 14) || 14;
+      const wantMarca = String(qs("#selMarca")?.value || MARCA_FILTER || "").trim().toUpperCase();
+      const base = new Date();
+      base.setHours(0,0,0,0);
+
+      const days = [];
+      for (let i=0;i<Math.min(range, 60);i++){
+        days.push(addDays(base, i));
+      }
+
+      const byDay = new Map(days.map(d => [ymd(d), []]));
+      for (const ev of (EVENTS||[])){
+        if (wantMarca){
+          const m = String(ev.marca || "").trim().toUpperCase();
+          if (m !== wantMarca) continue;
+        }
+        const key = String(ev.start || "").slice(0,10);
+        if (!byDay.has(key)) continue;
+        byDay.get(key).push(ev);
+      }
+      for (const [k, arr] of byDay){
+        arr.sort((a,b)=> String(a.start||"").localeCompare(String(b.start||"")));
+      }
+
+      if (MODE === "list"){
+        const list = [];
+        for (const d of days){
+          const key = ymd(d);
+          for (const ev of (byDay.get(key) || [])){
+            list.push({d, ev});
+          }
+        }
+        out.innerHTML = list.length ? `
+          <div class="list">
+            ${list.map(({d, ev})=>{
+              const hm1 = fmtHM(ev.start), hm2 = fmtHM(ev.end);
+              const when = hm1 && hm2 ? `${hm1}–${hm2}` : (hm1 || "HR TBD");
+              const loc = (ev.location || "").trim();
+              const ops = Number(ev.ops||0) || 0;
+              const estado = (ev.estado || "").trim();
+              return `
+                <div class="card" data-lead="${String(ev.id_lead||"")}">
+                  <div class="cardTitle">${String(ev.title||"").replace(/</g,"&lt;")}</div>
+                  <div class="cardMeta">
+                    <span class="pill">${fmtDay(d)}</span>
+                    <span class="pill">${when}</span>
+                    ${loc ? `<span class="pill">${loc.replace(/</g,"&lt;")}</span>` : ``}
+                    ${ops ? `<span class="pill">OPS ${ops}</span>` : ``}
+                    ${estado ? `<span class="pill">${estado.replace(/</g,"&lt;")}</span>` : ``}
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        ` : `<div class="empty">Sin eventos en el rango.</div>`;
+      out.querySelectorAll("[data-lead]").forEach(el => el.addEventListener("click", ()=>openLead(el.dataset.lead)));
+      return;
+    }
+
+      // week-like grid: mostramos siempre 7 columnas (primeros 7 días)
+      const cols = days.slice(0, 7);
+      out.innerHTML = `
+        <div class="weekWrap">
+          <div class="week">
+            ${cols.map(d=>{
+              const key = ymd(d);
+              const arr = byDay.get(key) || [];
+              return `
+                <div class="dayCol">
+                  <div class="dayHead">
+                    <div class="dayName">${fmtDay(d)}</div>
+                    <div class="badge">${arr.length ? (arr.length+" evento(s)") : "—"}</div>
+                  </div>
+                  <div class="cards">
+                    ${arr.length ? arr.map(ev=>{
+                      const hm1 = fmtHM(ev.start), hm2 = fmtHM(ev.end);
+                      const when = hm1 && hm2 ? `${hm1}–${hm2}` : (hm1 || "HR TBD");
+                      const loc = (ev.location || "").trim();
+                      const ops = Number(ev.ops||0) || 0;
+                      return `
+                        <div class="card" data-lead="${String(ev.id_lead||"")}">
+                          <div class="cardTitle">${String(ev.title||"").replace(/</g,"&lt;")}</div>
+                          <div class="cardMeta">
+                            <span class="pill">${when}</span>
+                            ${loc ? `<span class="pill">${loc.replace(/</g,"&lt;")}</span>` : ``}
+                            ${ops ? `<span class="pill">OPS ${ops}</span>` : ``}
+                          </div>
+                        </div>
+                      `;
+                    }).join("") : `<div class="muted" style="padding:8px 2px">Sin eventos</div>`}
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      `;
+      out.querySelectorAll("[data-lead]").forEach(el => el.addEventListener("click", ()=>openLead(el.dataset.lead)));
+    }
+
+    async function load(){
+      const range = Number(qs("#selRange")?.value || 14) || 14;
+      const from = new Date(); from.setHours(0,0,0,0);
+      const to = addDays(from, range);
+      const j = await apiJson(`/calendar/events?from_date=${encodeURIComponent(ymd(from))}&to_date=${encodeURIComponent(ymd(to))}&limit=5000`);
+      EVENTS = j.items || [];
+      render();
+    }
+
+    qs("#btnWeek")?.addEventListener("click", ()=>{ MODE="week"; qs("#btnWeek").classList.add("active"); qs("#btnList").classList.remove("active"); render(); });
+    qs("#btnList")?.addEventListener("click", ()=>{ MODE="list"; qs("#btnList").classList.add("active"); qs("#btnWeek").classList.remove("active"); render(); });
+    qs("#btnReload")?.addEventListener("click", ()=>load().catch(e=>{ qs("#out").innerHTML = `<div class="empty">${String(e).slice(0,400)}</div>`; }));
+    qs("#selRange")?.addEventListener("change", ()=>load().catch(()=>{}));
+    qs("#selMarca")?.addEventListener("change", ()=>render());
+
+    // Standalone view: populate selector. (Embed mode uses brand pills in portal + ?marca=)
+    loadMarcas().catch(()=>{});
+    load().catch(e=>{
+      qs("#out").innerHTML = `<div class="empty">${String(e).slice(0,400)}</div>`;
+    });
+  </script>
+</body>
+</html>

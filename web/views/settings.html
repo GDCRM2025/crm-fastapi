@@ -1,0 +1,1709 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Settings</title>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    .swal2-container{ z-index: 20000 !important; }
+    :root{
+      --bg:#07131F; --surface:#0C1B2B; --surface2:#102235; --border:#22384F;
+      --text:#EAF2FF; --muted:#A9BBD2; --accent:#19C37D; --shadow:0 10px 30px rgba(0,0,0,.35);
+      --r:16px;
+    }
+    :root.light{
+      --bg:#F6F9FF; --surface:#FFFFFF; --surface2:#F2F6FF; --border:#D5E1F3;
+      --text:#0A1B2B; --muted:#56708D; --shadow:0 10px 30px rgba(10,27,43,.10);
+    }
+    html,body{height:100%; background:transparent; color:var(--text); font-family: ui-sans-serif, system-ui;}
+    *{box-sizing:border-box;}
+    .wrap{height:100%; padding:16px;}
+    .panel{
+      height:100%;
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:var(--r);
+      padding:14px;
+      box-shadow:var(--shadow);
+      overflow:auto;
+    }
+    .head{
+      display:flex; align-items:center; gap:10px;
+      padding-bottom:10px; border-bottom:1px solid var(--border);
+    }
+    .title{font-weight:1000;}
+    .muted{color:var(--muted); font-weight:800;}
+    .search{
+      margin-left:auto;
+      display:flex; align-items:center; gap:8px;
+      border:1px solid var(--border);
+      background:var(--surface2);
+      padding:8px 12px;
+      border-radius:999px;
+      min-width:260px;
+    }
+    .search input{flex:1;border:0;outline:none;background:transparent;color:var(--text);font-weight:800;}
+    .btn{
+      border:1px solid var(--border);
+      background:var(--surface2);
+      color:var(--text);
+      padding:9px 12px;
+      border-radius:12px;
+      font-weight:900;
+      cursor:pointer;
+      display:inline-flex; align-items:center; gap:8px;
+    }
+    .btn.primary{background:rgba(25,195,125,.12); border-color:rgba(25,195,125,.45);}
+    table{width:100%; border-collapse:separate; border-spacing:0; font-size:13px; margin-top:12px;}
+    thead th{
+      position:sticky; top:0;
+      background:var(--surface);
+      border-bottom:1px solid var(--border);
+      color:var(--muted);
+      text-align:left;
+      padding:10px;
+      font-weight:900;
+      white-space:nowrap;
+    }
+    tbody td{
+      padding:10px;
+      border-bottom:1px solid rgba(34,56,79,.35);
+      font-weight:800;
+      vertical-align:top;
+    }
+    tbody tr:hover{background:rgba(25,195,125,.06); cursor:pointer;}
+    .actions{white-space:nowrap;}
+    .tag{display:inline-flex; border:1px solid var(--border); background:var(--surface2); padding:3px 8px; border-radius:999px; color:var(--muted); font-weight:900; font-size:12px;}
+    .gd-pager{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; flex-direction:column; text-align:center; }
+    .gd-pages{ display:flex; align-items:center; gap:8px; }
+    .gd-page-btn{
+      display:flex; align-items:center; justify-content:center;
+      width:44px; height:44px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.06); color:var(--text);
+      cursor:pointer; transition:transform .08s ease, background .2s ease, color .2s ease;
+    }
+    .gd-page-btn:hover{ background:rgba(255,255,255,.12); }
+    .gd-page-btn.active{ background:#22c55e; color:#062315; border-color:transparent; }
+    .gd-page-btn:disabled{ opacity:.5; cursor:default; }
+    .gd-page-select{ padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.25); color:inherit; }
+
+    /* Modal */
+    .mask{position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; padding:18px; z-index:9999;}
+    .mask.show{display:flex;}
+    .modal{width:min(920px,96vw); max-height:92vh; overflow:auto; background:var(--surface); border:1px solid var(--border); border-radius:18px; box-shadow:var(--shadow); padding:16px;}
+    .modalHead{display:flex; align-items:center; gap:10px; padding-bottom:10px; border-bottom:1px solid var(--border);}
+    .modalTitle{font-weight:1000;}
+    .close{margin-left:auto; width:34px;height:34px;border-radius:12px; border:1px solid var(--border); background:var(--surface2); cursor:pointer; font-weight:1000; color:var(--muted);}
+    .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;}
+    .gridUsers{
+      display:grid;
+      grid-template-columns: 1.15fr 1.15fr .9fr;
+      gap:10px;
+      margin-top:12px;
+      align-items:start;
+    }
+    .field{border:1px solid var(--border); background:var(--surface2); border-radius:14px; padding:10px;}
+    .label{font-weight:900; font-size:12px; color:var(--muted); margin-bottom:6px;}
+    input,select,textarea{width:100%; border:0; outline:none; background:transparent; color:var(--text); font-weight:800;}
+    textarea{min-height:90px; resize:vertical;}
+    .rowBtns{display:flex; gap:10px; justify-content:flex-end; margin-top:12px;}
+    .hint{color:var(--muted); font-weight:800; font-size:12px; margin-top:6px;}
+
+    /* Toggle */
+    .toggleRow{display:flex; align-items:center; gap:10px;}
+    .toggle{
+      width:48px; height:28px; border-radius:999px;
+      border:1px solid var(--border); background:var(--surface);
+      position:relative; cursor:pointer;
+    }
+    .toggle i{
+      position:absolute; top:3px; left:3px;
+      width:22px;height:22px; border-radius:999px;
+      background:var(--muted);
+      transition:.18s ease;
+    }
+    .toggle.on{border-color:rgba(25,195,125,.45); background:rgba(25,195,125,.08);}
+    .toggle.on i{left:23px; background:var(--accent);}
+
+    /* Color picker */
+    .colorRow{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+    .ink{
+      width:32px;height:32px;border-radius:12px;
+      border:1px solid var(--border); background:var(--surface);
+      display:inline-flex;align-items:center;justify-content:center;
+      cursor:pointer;
+    }
+    .sw{width:22px;height:22px;border-radius:999px;border:1px solid var(--border); cursor:pointer;}
+    .sw.sel{outline:3px solid rgba(25,195,125,.35);}
+    /* Avatars */
+    .avatar-grid{display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:8px;}
+    .avatar-item{
+      border:1px solid var(--border); background:var(--surface); border-radius:12px;
+      padding:6px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+      transition:.12s ease;
+    }
+    .avatar-item:hover{transform:translateY(-1px); border-color:rgba(25,195,125,.45);}
+    .avatar-item.active{outline:3px solid rgba(25,195,125,.35); border-color:rgba(25,195,125,.45);}
+    .avatar-grid{ display:grid; grid-template-columns:repeat(6, 1fr); gap:8px; }
+    .avatar-item{ width:44px; height:44px; border-radius:14px; }
+    .avatar-item img{width:30px;height:30px;border-radius:12px; display:block;}
+    .avcell{width:28px;height:28px;border-radius:999px; display:block; border:1px solid var(--border);}
+
+    .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      border:1px solid var(--border); border-radius:999px;
+      padding:6px 10px; background:var(--surface); font-weight:900;
+      color:var(--text); min-height:34px;
+    }
+    .cred-box{
+      border:1px solid var(--border);
+      background:linear-gradient(180deg, rgba(25,195,125,.08), rgba(15,23,42,.0));
+      border-radius:14px; padding:10px;
+    }
+    .cred-box input{
+      border:1px solid var(--border);
+      background:var(--surface);
+      padding:8px 10px;
+      border-radius:10px;
+    }
+    .brand-grid{display:flex; gap:10px; flex-wrap:wrap;}
+    .brand-item{
+      display:flex; align-items:center; gap:8px;
+      border:1px solid var(--border); background:var(--surface);
+      padding:6px 10px; border-radius:999px; font-weight:900;
+      cursor:pointer;
+    }
+    .brand-item input{width:auto; margin:0;}
+    .truncate{max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="head">
+      <div class="title" id="title">Settings</div>
+      <span class="muted" id="subtitle"></span>
+
+      <div class="search">
+        🔎 <input id="q" placeholder="Buscar..." />
+      </div>
+
+      <button class="btn primary" id="btnAdd">+ Crear</button>
+      <button class="btn" id="btnReload">Recargar</button>
+      <button class="btn" id="btnPwdReq" style="display:none;">Solicitudes clave</button>
+      <button class="btn" id="btnPwdAdmin" style="display:none;">Cambiar clave (Admin)</button>
+      <button class="btn" id="btnMore" style="display:none">Cargar más</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr id="th"></tr>
+      </thead>
+      <tbody id="body"></tbody>
+    </table>
+
+    <div id="pager" style="margin-top:12px;"></div>
+    <div class="muted" id="empty" style="margin-top:12px; font-weight:900;"></div>
+  </div>
+</div>
+
+<div class="mask" id="mask">
+  <div class="modal">
+    <div class="modalHead">
+      <div class="modalTitle" id="mTitle"></div>
+      <button class="close" id="mClose">✕</button>
+    </div>
+    <div id="mBody"></div>
+  </div>
+</div>
+
+<script>
+  window.addEventListener("message", (ev) => {
+    if (ev.data?.type === "theme") {
+      document.documentElement.classList.toggle("light", ev.data.mode === "light");
+    }
+  });
+
+  // El CRM corre bajo /crm (Passenger). En prod hay vistas que pueden abrirse como /web/...
+  // Así que NO dependemos de pathname, sino del hostname.
+  const API = (() => {
+    try{
+      const h = String(location.hostname || "").toLowerCase();
+      const isLocal = (h === "localhost" || h === "127.0.0.1");
+      return isLocal ? "" : "/crm";
+    }catch(_){
+      return "";
+    }
+  })();
+  let token = "";
+  try{
+    token = window.parent?.GD?.getToken?.()
+      || window.top?.GD?.getToken?.()
+      || window.top?.localStorage?.getItem("token")
+      || window.top?.sessionStorage?.getItem("token")
+      || window.top?.localStorage?.getItem("gd_token")
+      || window.top?.sessionStorage?.getItem("gd_token")
+      || localStorage.getItem("token")
+      || sessionStorage.getItem("token")
+      || localStorage.getItem("gd_token")
+      || sessionStorage.getItem("gd_token")
+      || "";
+  }catch(_){
+    token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+  }
+  if (!token){
+    Swal.fire({
+      icon: "warning",
+      title: "Sesión requerida",
+      text: "Tu sesión expiró. Vuelve a iniciar sesión.",
+      confirmButtonText: "Ir a login"
+    }).then(() => {
+      const loginURL = (API || "") + "/web/login.html";
+      try{ window.top.location.href = loginURL; }
+      catch(_){ location.href = loginURL; }
+    });
+  }
+  const qs = (s, el=document)=>el.querySelector(s);
+
+  async function copyText(text){
+    const t = String(text || "");
+    if (!t) return false;
+    try{
+      await navigator.clipboard.writeText(t);
+      return true;
+    }catch(_){}
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return !!ok;
+    }catch(_){}
+    return false;
+  }
+
+  async function api(path, opts={}){
+    const r = await fetch(API + path, {
+      ...opts,
+      headers: {
+        "Content-Type":"application/json",
+        ...(opts.headers||{}),
+        ...(token ? {"Authorization":"Bearer " + token} : {}),
+      }
+    });
+    let data=null;
+    try{ data = await r.json(); }catch(e){}
+    if(!r.ok){
+      const msg = (data && (data.detail || data.message)) ? (data.detail || data.message) : ("HTTP " + r.status);
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  function openModal(title, html){
+    qs("#mTitle").textContent = title;
+    qs("#mBody").innerHTML = html;
+    qs("#mask").classList.add("show");
+  }
+  function closeModal(){
+    qs("#mask").classList.remove("show");
+    qs("#mBody").innerHTML = "";
+  }
+  qs("#mClose").onclick = closeModal;
+  qs("#mask").addEventListener("click", (ev)=>{ if(ev.target.id==="mask") closeModal(); });
+
+  const params = new URLSearchParams(location.search);
+  const entity = (params.get("entity") || "usuarios").trim();
+  let meUser = null;
+
+  const state = {
+    meta:null,
+    items:[],
+    q:"",
+    filterMarca:"",
+    offset:0,
+    page:1,
+    pageSize:25,
+    total:null,
+    activeOnly:true
+  };
+
+  let cachedMarcas = null;
+  // Avatares por rol (más "semánticos") + fallback a set genérico.
+  const ROLE_AVATAR = {
+    "ADMIN": "/web/images/avatars/role-admin.svg",
+    "SUPERADMIN": "/web/images/avatars/role-admin.svg",
+    "EJECUTIVO DE VENTAS": "/web/images/avatars/role-ventas.svg",
+    "JEFE DE OPERACIONES": "/web/images/avatars/role-ops.svg",
+    "OPERACIONES": "/web/images/avatars/role-ops.svg",
+    "BODEGUERO": "/web/images/avatars/role-bodega.svg",
+    "COMPRAS": "/web/images/avatars/role-compras.svg",
+    "CONDUCTOR": "/web/images/avatars/role-conductor.svg",
+    "CHOFER": "/web/images/avatars/role-conductor.svg",
+    "OPERADOR": "/web/images/avatars/role-operador.svg",
+    "MICE": "/web/images/avatars/role-mice.svg",
+  };
+  const AVATAR_CHOICES_GENERIC = Array.from({length:12}, (_,i)=>`/web/images/avatars/avatar-${String(i+1).padStart(2,"0")}.svg`);
+  const AVATAR_CHOICES = [
+    ...Object.values(ROLE_AVATAR),
+    ...AVATAR_CHOICES_GENERIC,
+  ].filter((v,i,a)=>v && a.indexOf(v)===i);
+
+  function prettyLabel(name){
+    if (!name) return "";
+    const words = name.replace(/_/g, " ").split(" ");
+    return words.map(w => w ? (w[0].toUpperCase() + w.slice(1).toLowerCase()) : "").join(" ");
+  }
+  function colLabel(col){
+    return col.label || prettyLabel(col.column_name);
+  }
+
+  function orderColumns(cols){
+    if (entity !== "usuarios") return cols;
+    // ID primero, luego nombre. (Activo se maneja en el formulario, no en la tabla)
+    const preferred = ["id_usuario","nombre","avatar_url","email","username","telefono","rol","cargo"];
+    const map = new Map(cols.map(c => [c.column_name, c]));
+    const out = [];
+    for (const p of preferred){
+      if (map.has(p)){
+        out.push(map.get(p));
+        map.delete(p);
+      }
+    }
+    for (const c of cols){
+      if (map.has(c.column_name)) out.push(c);
+    }
+    return out;
+  }
+
+  async function getMarcas(){
+    if (cachedMarcas) return cachedMarcas;
+    try{
+      const r = await api("/catalogos");
+      cachedMarcas = r.marcas || r.catalogos?.marcas || [];
+    }catch(_){
+      cachedMarcas = [];
+    }
+    return cachedMarcas;
+  }
+
+  function canonMarcaCode(s){
+    const v = String(s || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
+    if (!v) return "";
+    if (v.includes("camaleon")) return "CAMALEON";
+    if (v.includes("delsabor")) return "DEL SABOR";
+    if (v.includes("gourmet")) return "GOURMET";
+    if (v.includes("express")) return "EXPRESS";
+    if (v.includes("brontos")) return "BRONTOS";
+    return "";
+  }
+
+  function isPrivilegedRole(role){
+    const r = (role || "").toUpperCase();
+    return (
+      r.includes("ADMIN") ||
+      r.includes("OPERACIONES") ||
+      r.includes("JEFE DE OPERACIONES") ||
+      r.includes("COMPRAS") ||
+      r.includes("BODEGUERO") ||
+      r.includes("MICE")
+    );
+  }
+
+  async function getAllowedMarcaCodes(){
+    // Admin/roles privilegiados: todas
+    const all = ["GOURMET","CAMALEON","DEL SABOR","EXPRESS","BRONTOS"];
+    if (!meUser) return all;
+    if (isPrivilegedRole(meUser.role || meUser.rol)) return all;
+
+    const ids = Array.isArray(meUser.marcas) ? meUser.marcas.map(Number).filter(n=>Number.isFinite(n)) : [];
+    if (!ids.length) return [];
+
+    // Usa /settings/marcas (trae id_marca + nombre) para mapear ids -> nombres
+    try{
+      const r = await api("/settings/marcas?limit=300&offset=0&active_only=true");
+      const items = r.items || [];
+      const idToName = new Map(items.map(m => [Number(m.id_marca), String(m.nombre || m.marca || "")]));
+      const out = [];
+      for (const id of ids){
+        const code = canonMarcaCode(idToName.get(id) || "");
+        if (code) out.push(code);
+      }
+      return Array.from(new Set(out));
+    }catch(_){
+      return [];
+    }
+  }
+
+  function roleCode(role){
+    const r = (role || "").toUpperCase();
+    const map = {
+      "ADMIN": "adm",
+      "SUPERADMIN": "adm",
+      "EJECUTIVO DE VENTAS": "ejv",
+      "VENDEDOR": "ven",
+      "JEFE DE OPERACIONES": "ops",
+      "BODEGUERO": "bod",
+      "COMPRAS": "cmp",
+      "CONDUCTOR": "cond",
+      "OPERADOR": "op",
+      "MICE": "mice",
+    };
+    return map[r] || "usr";
+  }
+
+  function slugify(s){
+    return (s || "")
+      .toString()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "")
+      .toLowerCase();
+  }
+
+  let pwdReq = [];
+
+  // Para la tabla (lista) ocultamos columnas que ensucian.
+  function isHiddenList(col){
+    if (entity === "usuarios" && col === "is_active") return true;
+    return false;
+  }
+  // Para el formulario (crear/editar) podemos seguir mostrando más cosas si hace falta.
+  function isHiddenForm(col){
+    return false;
+  }
+
+  function fmtMoney(v){
+    try{
+      return new Intl.NumberFormat("es-CL", {style:"currency", currency:"CLP", maximumFractionDigits:0}).format(Number(v||0));
+    }catch(e){ return v; }
+  }
+
+  function normStr(v){
+    return String(v || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function render(){
+    const th = qs("#th");
+    const body = qs("#body");
+    const q = normStr(state.q || "");
+    const cols = orderColumns((state.meta?.columns || []).filter(c=>!isHiddenList(c.column_name)));
+
+    th.innerHTML = cols.map(c=>`<th>${colLabel(c)}</th>`).join("") + `<th>Acciones</th>`;
+    body.innerHTML = "";
+
+    let items = q ? state.items.filter(r=>{
+      const s = normStr(JSON.stringify(r));
+      return s.includes(q);
+    }) : state.items;
+
+    if (entity === "productos" && state.filterMarca){
+      const sel = String(state.filterMarca || "");
+      const selNorm = normStr(sel);
+      items = items.filter(r => {
+        const idm = r.id_marca ?? r.marca_id ?? "";
+        if (String(idm) === sel) return true;
+        const nm = r.marca || r.nombre_marca || (state.marcasMap ? state.marcasMap.get(String(idm)) : "") || "";
+        return normStr(nm).includes(selNorm);
+      });
+    }
+
+    for(const row of items){
+      const tr = document.createElement("tr");
+      tr.innerHTML = cols.map(c=>{
+        const name = c.column_name;
+        let v = row[name];
+        let cls = "";
+        if(entity==="productos" && (name==="costo" || name==="monto_costo")) v = fmtMoney(v);
+        if(entity==="comunas" && (name==="neto" || name==="bruto")) v = fmtMoney(v);
+        if(entity==="productos" && name==="descripcion") cls = "class=\"truncate\"";
+        if(entity==="usuarios" && name==="avatar_url" && v){
+          return `<td><img class="avcell" src="${String(v)}" alt="avatar"></td>`;
+        }
+        if(entity==="estados_lead" && name==="color" && v){
+          return `<td><span class="tag" style="border-color:${v}; color:${v}">${v}</span></td>`;
+        }
+        return `<td ${cls}>${(v===null||v===undefined) ? "" : String(v)}</td>`;
+      }).join("") + `
+        <td class="actions">
+          <span class="tag" data-act="edit">Editar</span>
+          <span class="tag" data-act="del">Eliminar</span>
+        </td>
+      `;
+
+      tr.addEventListener("click", (ev)=>{
+        const act = ev.target.closest("[data-act]")?.dataset?.act;
+        if(act==="edit") return openEdit(row);
+        if(act==="del") return doDelete(row);
+        openEdit(row);
+      });
+
+      body.appendChild(tr);
+    }
+
+    qs("#empty").textContent = items.length ? "" : "No hay registros.";
+    renderPager();
+  }
+
+  function renderPager(){
+    const holder = qs("#pager");
+    if (!holder) return;
+    const total = state.total ?? state.items.length;
+    const totalPages = Math.max(1, Math.ceil((total || 0) / state.pageSize));
+    if (total <= state.pageSize && state.page <= 1){
+      holder.innerHTML = "";
+      return;
+    }
+    holder.innerHTML = `
+      <div class="gd-pager">
+        <div class="muted">Página ${state.page} / ${totalPages}</div>
+        <div class="gd-pages">
+          <button class="gd-page-btn" id="prevPage">‹</button>
+          <button class="gd-page-btn" id="nextPage">›</button>
+          <select id="pageSize" class="gd-page-select">
+            ${[10,25,50,100].map(n => `<option value="${n}" ${n===state.pageSize?"selected":""}>${n}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+    `;
+    qs("#prevPage")?.addEventListener("click", () => {
+      if (state.page > 1){ state.page--; load(false); }
+    });
+    qs("#nextPage")?.addEventListener("click", () => {
+      if (state.page < totalPages){ state.page++; load(false); }
+    });
+    qs("#pageSize")?.addEventListener("change", (e) => {
+      state.pageSize = Number(e.target.value || 25);
+      state.page = 1;
+      load(false);
+    });
+  }
+
+  function _normText(s){
+    return (s || "")
+      .toString()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  }
+
+  async function fetchAll({ limit, qParam }){
+    const all = [];
+    let offset = 0;
+    const maxItems = 5000;
+    while (true){
+      const res = await api(`/settings/${entity}?limit=${limit}&offset=${offset}&active_only=${state.activeOnly ? "true":"false"}${qParam}`);
+      const items = res.items || [];
+      all.push(...items);
+      if (items.length < limit) break;
+      offset += limit;
+      if (offset >= maxItems) break;
+    }
+    return all;
+  }
+
+  async function load(reset=true){
+    state.meta = await api(`/settings/meta/${entity}`);
+    qs("#title").textContent = `Settings · ${entity}`;
+    qs("#subtitle").textContent = `Tabla: ${state.meta.table}`;
+
+    const hasActive = (state.meta?.columns || []).some(c=>c.column_name==="is_active");
+    state.activeOnly = hasActive ? true : false;
+
+    if (reset){
+      state.items = [];
+      state.offset = 0;
+      state.page = 1;
+    }
+    const isSearch = !!(state.q && state.q.trim());
+    const isFilterMarca = !!(state.filterMarca && String(state.filterMarca).trim());
+    const limit = 200;
+    state.offset = (state.page - 1) * state.pageSize;
+    const qParam = isSearch ? `&q=${encodeURIComponent(state.q.trim())}` : "";
+    let items = [];
+    if (isSearch || isFilterMarca){
+      // En Usuarios, al buscar queremos incluir inactivos para evitar choques "duplicate email" invisibles.
+      if (entity === "usuarios") state.activeOnly = false;
+      items = await fetchAll({ limit, qParam });
+      if (entity === "usuarios") state.activeOnly = true;
+    } else {
+      const res = await api(`/settings/${entity}?limit=${Math.min(limit, state.pageSize || 25)}&offset=${state.offset}&active_only=${state.activeOnly ? "true":"false"}`);
+      items = res.items || [];
+      state.total = res.total ?? state.total;
+    }
+    if (entity === "productos" && isFilterMarca){
+      const fmName = String(state.filterMarca || "").trim();
+      const fmNorm = _normText(fmName);
+      items = items.filter(it => {
+        const nm = it.marca || it.nombre_marca || it.brand || "";
+        return _normText(nm).includes(fmNorm);
+      });
+    }
+    state.items = items;
+    if (isSearch || isFilterMarca){
+      state.total = items.length;
+      state.page = 1;
+    }
+    render();
+    const more = qs("#btnMore");
+    if (more) more.style.display = "none";
+
+    if (entity === "usuarios"){
+      try{
+        const r = await api(`/auth/password-requests`);
+        pwdReq = r.items || [];
+        const btn = qs("#btnPwdReq");
+        if (btn){
+          btn.style.display = "";
+          btn.textContent = `Solicitudes clave (${pwdReq.length})`;
+        }
+        const btnAdmin = qs("#btnPwdAdmin");
+        if (btnAdmin){
+          btnAdmin.style.display = "";
+        }
+      }catch(_){}
+    }
+  }
+
+  function buildField(col, row, mode){
+    const name = col.column_name;
+    const type = col.data_type;
+    const ui = col.ui || {};
+    const palette = ui.palette || ["#3b82f6","#06b6d4","#a855f7","#22c55e","#ef4444","#f59e0b","#64748b","#0f172a"];
+    const label = col.label || prettyLabel(name);
+
+    const val = (row && row[name] !== undefined && row[name] !== null) ? row[name] : "";
+
+    if (entity === "usuarios" && name === "cargo"){
+      return `
+        <div class="field">
+          <div class="label">${label}</div>
+          <div class="pill" id="cargo_display">—</div>
+          <input type="hidden" id="f_${name}" value="${String(val).replaceAll('"','&quot;')}" />
+        </div>
+      `;
+    }
+
+    if (entity === "usuarios" && name === "avatar_url"){
+      const current = String(val || "");
+      return `
+        <div class="field" style="grid-column:3/4">
+          <div class="label">Avatar</div>
+          <div class="avatar-grid" id="avatarGrid"></div>
+          <input type="hidden" id="f_avatar_url" value="${current.replaceAll('"','&quot;')}" />
+          <div class="hint">Selecciona un avatar o deja el default por rol.</div>
+        </div>
+      `;
+    }
+
+    // is_active -> toggle (oculta campo)
+    if(name === "is_active"){
+      const on = (val === true || val === "true" || val === 1 || val === "1");
+      return `
+        <div class="field">
+          <div class="label">${label}</div>
+          <div class="toggleRow">
+            <div class="toggle ${on?"on":""}" id="t_is_active"><i></i></div>
+            <div class="muted">${on ? "Activo" : "Inactivo"}</div>
+          </div>
+          <input type="hidden" id="f_${name}" value="${on ? "true":"false"}" />
+        </div>
+      `;
+    }
+
+    // color -> picker con tintero + paleta
+    if(ui.widget === "color" || name === "color"){
+      const current = val || "#22384F";
+      const sw = palette.map(c=>`<div class="sw ${c===current?"sel":""}" data-color="${c}" style="background:${c}"></div>`).join("");
+      return `
+        <div class="field" style="grid-column:1/3">
+          <div class="label">Color del estado</div>
+          <div class="colorRow">
+            <input type="color" id="f_${name}_picker" value="${current}" style="width:48px;height:32px;border:0;background:transparent;cursor:pointer;" />
+            <input id="f_${name}_text" value="${current}" style="max-width:160px;border:1px solid var(--border);border-radius:10px;padding:6px 8px;background:var(--surface);" />
+            <span class="tag" id="colorPreview" style="border-color:${current}; color:${current}">${current}</span>
+          </div>
+          <div class="colorRow" style="margin-top:10px">${sw}</div>
+          <input type="hidden" id="f_${name}" value="${current}"/>
+        </div>
+      `;
+    }
+
+    // select fields
+    if(ui.widget === "select" && ui.source){
+      const source = ui.source;
+      const choices = (state.meta?.choices || {})[source] || [];
+      const labelField = ui.labelField || "nombre";
+      const valueField = ui.valueField || "id";
+      const opts = choices.map(o=>`<option value="${o[valueField]}">${o[labelField]}</option>`).join("");
+      return `
+        <div class="field">
+          <div class="label">${label}</div>
+          <select id="f_${name}" data-field="${name}">
+            <option value="">—</option>
+            ${opts}
+          </select>
+        </div>
+      `;
+    }
+
+    // Productos: marca seleccionable (según usuario)
+    if (entity === "productos" && name === "marca"){
+      const current = String(val || "");
+      // placeholder, luego lo llenamos al abrir modal (async)
+      return `
+        <div class="field">
+          <div class="label">${label}</div>
+          <select id="f_${name}" data-field="${name}">
+            <option value="">Cargando...</option>
+          </select>
+          <div class="hint">Marca limitada por tu usuario (Admin ve todas).</div>
+          <input type="hidden" id="f_${name}_cur" value="${current.replaceAll('"','&quot;')}"/>
+        </div>
+      `;
+    }
+
+    // textarea for big text
+    if(entity === "productos" && name === "descripcion"){
+      return `
+        <div class="field" style="grid-column:1/3">
+          <div class="label">${label}</div>
+          <textarea id="f_${name}" placeholder="Descripción del producto">${String(val).replaceAll("<","&lt;")}</textarea>
+        </div>
+      `;
+    }
+
+    // Productos: el costo normalmente se calcula desde Recetas, así que no lo forzamos visualmente.
+    if (entity === "productos" && (name === "costo" || name === "monto_costo")){
+      const show = (String(val) === "0" || String(val) === "0.0") ? "" : String(val || "");
+      return `
+        <div class="field">
+          <div class="label">${label}</div>
+          <input id="f_${name}" value="${show.replaceAll('"','&quot;')}" placeholder="(opcional) se calcula por recetas" />
+          <div class="hint">Si lo dejas vacío, el sistema lo actualizará cuando exista receta.</div>
+        </div>
+      `;
+    }
+    if(type === "text" && String(val).length > 120){
+      return `
+        <div class="field" style="grid-column:1/3">
+          <div class="label">${label}</div>
+          <textarea id="f_${name}">${String(val).replaceAll("<","&lt;")}</textarea>
+        </div>
+      `;
+    }
+
+    // default input
+    return `
+      <div class="field">
+        <div class="label">${label}</div>
+        <input id="f_${name}" value="${String(val).replaceAll('"','&quot;')}" />
+      </div>
+    `;
+  }
+
+  function collectForm(cols){
+    const data = {};
+    for(const c of cols){
+      const name = c.column_name;
+      if(isHiddenForm(name)) continue;
+      const el = qs("#f_" + name);
+      if(!el) continue;
+      let v = el.value;
+
+      // bool
+      if(name==="is_active"){
+        v = (v==="true");
+      }
+      // numeric
+      if(["integer","numeric","double precision","real","bigint","smallint"].includes(c.data_type)){
+        if(v === "") v = (name === "orden" ? 0 : null);
+        else v = Number(v);
+      }
+      data[name] = v;
+    }
+    return data;
+  }
+
+  function validateRequired(cols, data){
+    const required = cols.filter(c => c.is_nullable === "NO" && !c.column_default && c.column_name !== state.meta.pk);
+    for (const c of required){
+      const v = data[c.column_name];
+      if (v === null || v === undefined || v === ""){
+        return c.column_name;
+      }
+    }
+    return null;
+  }
+
+  function isExecRole(role){
+    const r = (role || "").toUpperCase();
+    // cubre "EJECUTIVO", "EJECUTIVA", "EJECUTIVO DE VENTAS", etc.
+    if (r.includes("EJECUTIV")) return true;
+    if (r.includes("VENTAS") && !r.includes("ADMIN")) return true;
+    return false;
+  }
+
+  function getSelectedBrands(){
+    return Array.from(document.querySelectorAll("#brandsBox input[type='checkbox']:checked"))
+      .map(el => Number(el.value))
+      .filter(n => Number.isFinite(n));
+  }
+
+  function setSelectedBrands(ids){
+    const set = new Set((ids || []).map(n => Number(n)));
+    document.querySelectorAll("#brandsBox input[type='checkbox']").forEach(el => {
+      el.checked = set.has(Number(el.value));
+    });
+  }
+
+  async function setupUserForm(mode, row){
+    const roleSel = qs("#f_rol");
+    const nameInput = qs("#f_nombre");
+    const userInput = qs("#f_username");
+    const cargoInput = qs("#f_cargo");
+    const cargoDisplay = qs("#cargo_display");
+    const rowId = row ? row[state.meta.pk] : null;
+    const avatarInput = qs("#f_avatar_url");
+
+    if (userInput && userInput.value){
+      userInput.dataset.manual = "1";
+    }
+    if (userInput){
+      userInput.addEventListener("input", () => {
+        userInput.dataset.manual = "1";
+      });
+    }
+
+    // Brands selector
+    const marcas = await getMarcas();
+    let brandsBox = qs("#brandsBox");
+    if (!brandsBox){
+      brandsBox = document.createElement("div");
+      brandsBox.className = "field";
+      brandsBox.style.gridColumn = "1/3";
+      brandsBox.id = "brandsBox";
+      brandsBox.innerHTML = `
+        <div class="label">Marcas asignadas</div>
+        <div class="brand-grid" id="brandsGrid"></div>
+        <div class="hint">Selecciona las marcas que verá el ejecutivo.</div>
+      `;
+      const roleField = roleSel?.closest(".field");
+      if (roleField && roleField.parentElement){
+        roleField.parentElement.insertBefore(brandsBox, roleField.nextSibling);
+      }else{
+        qs("#mBody")?.appendChild(brandsBox);
+      }
+    }
+    const grid = qs("#brandsGrid", brandsBox);
+    grid.innerHTML = "";
+    for (const m of marcas){
+      const mid = m.id_marca || m.id || m.value;
+      const label = m.nombre || m.marca || m.label || mid;
+      const item = document.createElement("label");
+      item.className = "brand-item";
+      item.innerHTML = `<input type="checkbox" value="${mid}"><span>${label}</span>`;
+      grid.appendChild(item);
+    }
+
+    if (mode === "edit" && rowId){
+      try{
+        const r = await api(`/settings/usuarios/${rowId}/brands`);
+        setSelectedBrands(r.marcas || []);
+      }catch(e){
+        // No rompemos el formulario, pero avisamos (si falla, el ejecutivo puede quedar sin leads).
+        if (window.Swal) Swal.fire("Aviso", "No pude cargar las marcas asignadas de este usuario. " + (e?.message||""), "warning");
+      }
+    }
+
+    // Avatar selector
+    const gridAvatar = qs("#avatarGrid");
+    if (gridAvatar && avatarInput){
+      gridAvatar.innerHTML = "";
+      const selectAvatar = (url) => {
+        avatarInput.value = url || "";
+        Array.from(gridAvatar.querySelectorAll(".avatar-item")).forEach(btn => {
+          btn.classList.toggle("active", btn.dataset.avatar === url);
+        });
+      };
+      AVATAR_CHOICES.forEach(url => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "avatar-item";
+        btn.dataset.avatar = url;
+        btn.innerHTML = `<img src="${url}" alt="avatar">`;
+        btn.addEventListener("click", () => {
+          avatarInput.dataset.manual = "1";
+          selectAvatar(url);
+        });
+        gridAvatar.appendChild(btn);
+      });
+      if (avatarInput.value){
+        selectAvatar(avatarInput.value);
+      }
+    }
+
+    function updateAuto(){
+      const roleVal = roleSel?.value || "";
+      const nameVal = nameInput?.value || "";
+      if (cargoInput) cargoInput.value = roleVal;
+      if (cargoDisplay) cargoDisplay.textContent = roleVal || "—";
+
+      if (userInput && userInput.dataset.manual !== "1"){
+        const base = slugify(nameVal).slice(0, 10) || "user";
+        userInput.value = `${roleCode(roleVal)}_${base}`;
+      }
+
+      const showBrands = isExecRole(roleVal);
+      if (brandsBox){
+        brandsBox.style.display = showBrands ? "" : "none";
+      }
+
+      // default avatar by role (if not manual)
+      if (avatarInput && avatarInput.dataset.manual !== "1"){
+        const key = (roleVal || "").toUpperCase();
+        const url = ROLE_AVATAR[key] || AVATAR_CHOICES[0];
+        avatarInput.value = url;
+        const gridAvatar = qs("#avatarGrid");
+        if (gridAvatar){
+          Array.from(gridAvatar.querySelectorAll(".avatar-item")).forEach(btn => {
+            btn.classList.toggle("active", btn.dataset.avatar === url);
+          });
+        }
+      }
+    }
+
+    roleSel?.addEventListener("change", updateAuto);
+    nameInput?.addEventListener("input", updateAuto);
+    updateAuto();
+  }
+
+  async function setupProductosForm(){
+    if (entity !== "productos") return;
+    const sel = qs("#f_marca");
+    if (!sel) return;
+    const allowed = await getAllowedMarcaCodes();
+    const curRaw = qs("#f_marca_cur")?.value || "";
+    const curCode = canonMarcaCode(curRaw) || String(curRaw || "").trim().toUpperCase();
+
+    sel.innerHTML = "";
+    if (!allowed.length){
+      sel.innerHTML = `<option value="">(sin marcas)</option>`;
+      sel.disabled = true;
+      return;
+    }
+    for (const c of allowed){
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = c;
+      sel.appendChild(opt);
+    }
+    // Set current
+    if (allowed.includes(curCode)) sel.value = curCode;
+    else sel.value = allowed[0];
+
+    // Si solo hay 1 marca, bloquea (ejecutivo de una marca)
+    sel.disabled = (allowed.length === 1);
+  }
+
+  async function openEdit(row){
+    const cols = orderColumns(state.meta.columns);
+    const pk = state.meta.pk;
+
+    const body = `
+      <div class="grid2">
+        ${cols.filter(c=>c.column_name!==pk).filter(c=>!isHiddenForm(c.column_name)).map(c=>buildField(c,row,"edit")).join("")}
+      </div>
+      <div class="rowBtns">
+        <button class="btn" id="btnCancel">Cancelar</button>
+        <button class="btn primary" id="btnSave">Guardar</button>
+      </div>
+    `;
+    openModal(`Editar · ${entity}`, body);
+
+    if (entity==="marcas"){
+      const grid = qs("#mBody .grid2");
+      if (grid){
+        const box = document.createElement("div");
+        box.className = "field";
+        box.style.gridColumn = "1/-1";
+        box.innerHTML = `
+          <div class="label">Logo / PDF (rápido)</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" type="button" data-brand="EXPRESS">Express</button>
+            <button class="btn" type="button" data-brand="CAMALEON">Camaleón</button>
+            <button class="btn" type="button" data-brand="DEL SABOR">Del Sabor</button>
+            <button class="btn" type="button" data-brand="GOURMET">Gourmet</button>
+            <button class="btn" type="button" data-brand="BRONTOS">Brontos</button>
+          </div>
+        `;
+        grid.appendChild(box);
+      }
+      const brandAssets = {
+        "CAMALEON": {
+          logo_url:"https://drive.google.com/uc?export=download&id=139ccxgZPybBgssm5tNxd5bDPDhq_sZ-H",
+          pdf_portada_url:"https://drive.google.com/uc?export=download&id=1WgMm282yL6NLq8eufe2_AeOBZXQRzgoc",
+          pdf_cotizacion_url:"https://drive.google.com/uc?export=download&id=1OqgCE2rjHCQQzIYU7aWREQwZooykvF6L",
+          pdf_terminos_url:"https://drive.google.com/uc?export=download&id=1AzzAlgHPqJBRmP1DvMGuSjRl5NZgvMh6",
+          pdf_banco_url:"https://drive.google.com/uc?export=download&id=19G4xnzuWH3XP5VBCbT4nQl_OjdjQzhcS",
+        },
+        "DEL SABOR": {
+          logo_url:"https://drive.google.com/uc?export=download&id=1Z8Ix8vbT6vtxxbvjoH2uryREtJmG_qKt",
+          pdf_portada_url:"https://drive.google.com/uc?export=download&id=1e39CHNFeaSp2xjFevFYvtiL_seEcJI0g",
+          pdf_cotizacion_url:"https://drive.google.com/uc?export=download&id=1els9ffNLkeJ9AsEx5X1LKnz8IJ2G_P8_",
+          pdf_terminos_url:"https://drive.google.com/uc?export=download&id=1DmEJptGE0MDThtT135y7neEaW_5QLtmS",
+          pdf_banco_url:"https://drive.google.com/uc?export=download&id=1PGtV-l5ELNLLfflCRF596G4OZDE9GreI",
+        },
+        "EXPRESS": {
+          logo_url:"https://drive.google.com/uc?export=download&id=1O1rreV4XwSG0FSzWKodUBR5VtDwBExR3",
+          pdf_portada_url:"https://drive.google.com/uc?export=download&id=11veDhBcHD7oNOrcai3sjSMuSQAmqy-qq",
+          pdf_cotizacion_url:"https://drive.google.com/uc?export=download&id=1u1k2I9e5BoCpMNhO-y17uhdCAHxvv1wM",
+          pdf_terminos_url:"https://drive.google.com/uc?export=download&id=1kZ1mC0j0clMiDatNKmSmhPIzMzHR_onu",
+          pdf_banco_url:"https://drive.google.com/uc?export=download&id=12nl4sr4KGm9TlftQj6Gb2LqTVRf_j_9U",
+        },
+        "GOURMET": {
+          logo_url:"https://drive.google.com/uc?export=download&id=1CW8cV-QyUEFDCS73uUbOKxAWQL4xLNxD",
+          pdf_portada_url:"https://drive.google.com/uc?export=download&id=1cvPro2Cp2eKjD6oQ-1FsQTkZOE2PBnwJ",
+          pdf_cotizacion_url:"https://drive.google.com/uc?export=download&id=10nZXlW9D125D2oBy4egNchPRlO1h16Li",
+          pdf_terminos_url:"https://drive.google.com/uc?export=download&id=15b1Ud3NSeRrXYP6_RgVbUUq-fqJyyXNA",
+          pdf_banco_url:"https://drive.google.com/uc?export=download&id=1KkN0CSKU0p6Add_EUPfM89r_ZbFEJqCD",
+        },
+        "BRONTOS": {
+          pdf_portada_url:"https://drive.google.com/uc?export=download&id=1LujCB7nQ2_EGSIotXQEw2ImklOroHEbJ",
+          pdf_cotizacion_url:"https://drive.google.com/uc?export=download&id=1MBF-DLJWbfJDiruntEbKDza0h1mJfniw",
+          pdf_terminos_url:"https://drive.google.com/uc?export=download&id=1iVdqgC4V3kbv7Jbv3Ioar39SZ65BRiLF",
+          pdf_banco_url:"https://drive.google.com/uc?export=download&id=1FjAep8s4McXubZTNcf9hD93ss7KFhZA8",
+        },
+      };
+      document.querySelectorAll("[data-brand]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const b = btn.getAttribute("data-brand");
+          const a = brandAssets[b] || {};
+          const set = (id, val)=>{ const el=document.getElementById(id); if(el && val) el.value=val; };
+          set("f_logo_url", a.logo_url);
+          set("f_pdf_portada_url", a.pdf_portada_url);
+          set("f_pdf_cotizacion_url", a.pdf_cotizacion_url);
+          set("f_pdf_terminos_url", a.pdf_terminos_url);
+          set("f_pdf_banco_url", a.pdf_banco_url);
+        });
+      });
+    }
+
+    // apply select default values
+    for(const el of Array.from(document.querySelectorAll("select[data-field]"))){
+      const k = el.getAttribute("data-field");
+      if(k) el.value = row[k] ?? "";
+    }
+
+    await setupProductosForm();
+
+    if (entity==="usuarios"){
+      await setupUserForm("edit", row);
+    }
+
+    // wire toggle
+    const tog = qs("#t_is_active");
+    if(tog){
+      tog.onclick = ()=>{
+        tog.classList.toggle("on");
+        qs("#f_is_active").value = tog.classList.contains("on") ? "true":"false";
+      };
+    }
+
+    // wire color palette
+    const swatches = Array.from(document.querySelectorAll("[data-color]"));
+    for(const sw of swatches){
+      sw.onclick = ()=>{
+        swatches.forEach(x=>x.classList.remove("sel"));
+        sw.classList.add("sel");
+        const c = sw.dataset.color;
+        qs("#f_color").value = c;
+        qs("#colorPreview").textContent = c;
+        qs("#colorPreview").style.borderColor = c;
+        qs("#colorPreview").style.color = c;
+      };
+    }
+    const colorPicker = qs("#f_color_picker");
+    const colorText = qs("#f_color_text");
+    if(colorPicker && colorText){
+      colorPicker.oninput = ()=>{
+        const c = colorPicker.value;
+        qs("#f_color").value = c;
+        colorText.value = c;
+        qs("#colorPreview").textContent = c;
+        qs("#colorPreview").style.borderColor = c;
+        qs("#colorPreview").style.color = c;
+      };
+      colorText.oninput = ()=>{
+        const c = colorText.value.trim();
+        if(/^#([0-9a-fA-F]{6})$/.test(c)){
+          qs("#f_color").value = c;
+          colorPicker.value = c;
+          qs("#colorPreview").textContent = c;
+          qs("#colorPreview").style.borderColor = c;
+          qs("#colorPreview").style.color = c;
+        }
+      };
+    }
+
+    qs("#btnCancel").onclick = closeModal;
+    qs("#btnSave").onclick = async ()=>{
+      const data = collectForm(cols);
+      if (entity==="usuarios"){
+        const roleVal = qs("#f_rol")?.value || "";
+        const brands = getSelectedBrands();
+        if (isExecRole(roleVal) && brands.length === 0){
+          if (window.Swal) Swal.fire("Falta dato", "Selecciona al menos una marca para el Ejecutivo.", "warning");
+          return;
+        }
+      }
+      const missing = validateRequired(cols, data);
+      if (missing){
+        if (window.Swal) Swal.fire("Falta dato", `El campo "${missing}" es obligatorio.`, "warning");
+        else alert(`Falta dato: ${missing}`);
+        return;
+      }
+      try{
+        await api(`/settings/${entity}/${row[pk]}`, {method:"PUT", body:JSON.stringify({data})});
+        if (entity==="usuarios"){
+          const roleVal = qs("#f_rol")?.value || "";
+          const brands = getSelectedBrands();
+          // Siempre persistimos marcas:
+          // - si es ejecutivo: guarda selección
+          // - si NO es ejecutivo: limpiamos marcas para que no herede permisos por error
+          const toSave = isExecRole(roleVal) ? brands : [];
+          try{
+              await api(`/settings/usuarios/${row[pk]}/brands`, {method:"PUT", body:JSON.stringify({marcas: toSave})});
+          }catch(e){
+            if (window.Swal) Swal.fire("Error", "Guardé el usuario, pero NO pude guardar sus marcas. " + (e?.message||""), "error");
+            else alert("Guardé el usuario, pero NO pude guardar sus marcas.");
+            return; // no cerramos modal
+          }
+        }
+        closeModal();
+        await load();
+        if (window.Swal) Swal.fire({icon:"success",title:"Guardado",timer:900,showConfirmButton:false});
+      }catch(e){
+        if (window.Swal) Swal.fire("Error", "No pude guardar: " + e.message, "error");
+        else alert("Error guardando: " + e.message);
+      }
+    };
+  }
+
+  async function openCreate(){
+    const cols = orderColumns(state.meta.columns);
+    const pk = state.meta.pk;
+    const gridClass = (entity === "usuarios") ? "gridUsers" : "grid2";
+
+    const extraPwd = (entity==="usuarios") ? `
+      <div class="field" style="grid-column:3/4">
+        <div class="label">Credenciales</div>
+        <div class="cred-box">
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="pwd_value" type="password" placeholder="Nueva clave" />
+            <button class="btn" id="pwd_toggle" type="button">Ver</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+            <input id="pwd_value2" type="password" placeholder="Confirmar clave" />
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn" id="pwd_gen" type="button">Generar</button>
+            <button class="btn" id="pwd_copy" type="button">Copiar</button>
+          </div>
+          <div class="hint">Mínimo 4 caracteres.</div>
+          <div class="hint" style="margin-top:8px">Al crear el usuario, el sistema enviará automáticamente estas credenciales al correo del usuario.</div>
+        </div>
+      </div>
+    ` : "";
+
+    const body = `
+      <div class="${gridClass}">
+        ${cols.filter(c=>c.column_name!==pk).filter(c=>!isHiddenForm(c.column_name)).map(c=>buildField(c,{}, "create")).join("")}
+        ${extraPwd}
+      </div>
+      <div class="rowBtns">
+        <button class="btn" id="btnCancel">Cancelar</button>
+        <button class="btn primary" id="btnSave">Crear</button>
+      </div>
+    `;
+    openModal(`Crear · ${entity}`, body);
+
+    await setupProductosForm();
+
+    if (entity==="usuarios"){
+      await setupUserForm("create", null);
+    }
+
+    if (entity==="marcas"){
+      const grid = qs("#mBody .grid2");
+      if (grid){
+        const box = document.createElement("div");
+        box.className = "field";
+        box.style.gridColumn = "1/-1";
+        box.innerHTML = `
+          <div class="label">Logo (rápido)</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" type="button" data-logo="https://drive.google.com/uc?export=download&id=1O1rreV4XwSG0FSzWKodUBR5VtDwBExR3">Express</button>
+            <button class="btn" type="button" data-logo="https://drive.google.com/uc?export=download&id=139ccxgZPybBgssm5tNxd5bDPDhq_sZ-H">Camaleón</button>
+            <button class="btn" type="button" data-logo="https://drive.google.com/uc?export=download&id=1Z8Ix8vbT6vtxxbvjoH2uryREtJmG_qKt">Del Sabor</button>
+            <button class="btn" type="button" data-logo="https://drive.google.com/uc?export=download&id=1CW8cV-QyUEFDCS73uUbOKxAWQL4xLNxD">Gourmet</button>
+          </div>
+        `;
+        grid.appendChild(box);
+      }
+      document.querySelectorAll("[data-logo]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const url = btn.getAttribute("data-logo");
+          const input = document.getElementById("f_logo_path");
+          if (input && url) input.value = url;
+        });
+      });
+    }
+
+    // toggle default true if exists
+    const tog = qs("#t_is_active");
+    if(tog){
+      tog.classList.add("on");
+      qs("#f_is_active").value = "true";
+      tog.onclick = ()=>{
+        tog.classList.toggle("on");
+        qs("#f_is_active").value = tog.classList.contains("on") ? "true":"false";
+      };
+    }
+
+    // wire color palette
+    const swatches = Array.from(document.querySelectorAll("[data-color]"));
+    for(const sw of swatches){
+      sw.onclick = ()=>{
+        swatches.forEach(x=>x.classList.remove("sel"));
+        sw.classList.add("sel");
+        const c = sw.dataset.color;
+        qs("#f_color").value = c;
+        qs("#colorPreview").textContent = c;
+        qs("#colorPreview").style.borderColor = c;
+        qs("#colorPreview").style.color = c;
+      };
+    }
+    const colorPicker = qs("#f_color_picker");
+    const colorText = qs("#f_color_text");
+    if(colorPicker && colorText){
+      colorPicker.oninput = ()=>{
+        const c = colorPicker.value;
+        qs("#f_color").value = c;
+        colorText.value = c;
+        qs("#colorPreview").textContent = c;
+        qs("#colorPreview").style.borderColor = c;
+        qs("#colorPreview").style.color = c;
+      };
+      colorText.oninput = ()=>{
+        const c = colorText.value.trim();
+        if(/^#([0-9a-fA-F]{6})$/.test(c)){
+          qs("#f_color").value = c;
+          colorPicker.value = c;
+          qs("#colorPreview").textContent = c;
+          qs("#colorPreview").style.borderColor = c;
+          qs("#colorPreview").style.color = c;
+        }
+      };
+    }
+
+    qs("#btnCancel").onclick = closeModal;
+    qs("#btnSave").onclick = async ()=>{
+      const data = collectForm(cols);
+      if (entity==="usuarios"){
+        const p1 = (qs("#pwd_value")?.value || "").trim();
+        const p2 = (qs("#pwd_value2")?.value || "").trim();
+        if (p1.length < 4){
+          if (window.Swal) Swal.fire("Clave inválida", "Debe tener al menos 4 caracteres.", "warning");
+          return;
+        }
+        if (p1 !== p2){
+          if (window.Swal) Swal.fire("Clave inválida", "Las contraseñas no coinciden.", "warning");
+          return;
+        }
+        data.password = p1;
+      }
+      if (entity==="usuarios"){
+        const roleVal = qs("#f_rol")?.value || "";
+        const brands = getSelectedBrands();
+        if (isExecRole(roleVal) && brands.length === 0){
+          if (window.Swal) Swal.fire("Falta dato", "Selecciona al menos una marca para el Ejecutivo.", "warning");
+          return;
+        }
+      }
+      const missing = validateRequired(cols, data);
+      if (missing){
+        if (window.Swal) Swal.fire("Falta dato", `El campo "${missing}" es obligatorio.`, "warning");
+        else alert(`Falta dato: ${missing}`);
+        return;
+      }
+      try{
+        const password = data.password;
+        const resp = await api(`/settings/${entity}`, {method:"POST", body:JSON.stringify({data})});
+        if (entity==="usuarios" && password){
+          const id = resp?.id;
+          const roleVal = qs("#f_rol")?.value || "";
+          const brands = getSelectedBrands();
+          const toSave = isExecRole(roleVal) ? brands : [];
+          if (id){
+            try{
+              await api(`/settings/usuarios/${id}/brands`, {method:"PUT", body:JSON.stringify({marcas: toSave})});
+            }catch(e){
+              if (window.Swal) Swal.fire("Error", "Creé el usuario, pero NO pude guardar sus marcas. " + (e?.message||""), "error");
+              else alert("Creé el usuario, pero NO pude guardar sus marcas.");
+              return; // no cerramos modal
+            }
+          }
+        }
+        closeModal();
+        await load();
+        if (window.Swal){
+          const emailSent = !!resp?.email_sent;
+          const emailErr = resp?.email_error ? String(resp.email_error) : "";
+          const msg = emailSent ? "Credenciales enviadas por correo." : (emailErr ? ("Creado, pero sin envío de correo: " + emailErr) : "Creado.");
+          Swal.fire({ icon: emailSent ? "success" : "info", title:"Usuario creado", text: msg, timer: 2200, showConfirmButton:false });
+        }
+      }catch(e){
+        if (window.Swal) Swal.fire("Error", "No pude crear: " + e.message, "error");
+        else alert("Error creando: " + e.message);
+      }
+    };
+
+    if (entity==="usuarios"){
+      const pwdInput = qs("#pwd_value");
+      const pwdInput2 = qs("#pwd_value2");
+      const btnToggle = qs("#pwd_toggle");
+      const btnGen = qs("#pwd_gen");
+      const btnCopy = qs("#pwd_copy");
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#$%";
+      btnToggle.onclick = ()=>{
+        pwdInput.type = pwdInput.type === "password" ? "text" : "password";
+        btnToggle.textContent = pwdInput.type === "password" ? "Ver" : "Ocultar";
+      };
+      btnGen.onclick = ()=>{
+        let out = "";
+        for(let i=0;i<10;i++) out += chars[Math.floor(Math.random()*chars.length)];
+        pwdInput.value = out;
+        if (pwdInput2) pwdInput2.value = out;
+      };
+      btnCopy.onclick = async ()=>{
+        const ok = await copyText(pwdInput.value||"");
+        if (window.Swal && !ok) Swal.fire("Copiar", "No pude copiar la clave. Selecciónala manualmente.", "info");
+      };
+
+      // Clave por defecto al abrir: evita "crear usuario" sin credenciales.
+      btnGen.click();
+      // Mantener confirmación sincronizada si el admin edita manualmente.
+      pwdInput?.addEventListener("input", ()=>{ if (pwdInput2) pwdInput2.value = pwdInput.value; });
+    }
+  }
+
+  async function doDelete(row){
+    const pk = state.meta.pk;
+    if (window.Swal){
+      const res = await Swal.fire({
+        icon:"warning",
+        title:"¿Eliminar este registro?",
+        text:"Si hay relaciones, se desactivará si aplica.",
+        showCancelButton:true,
+        confirmButtonText:"Sí, eliminar",
+        cancelButtonText:"Cancelar"
+      });
+      if (!res.isConfirmed) return;
+    } else {
+      if(!confirm("¿Eliminar este registro? Si hay relaciones, se desactivará si aplica.")) return;
+    }
+    try{
+      await api(`/settings/${entity}/${row[pk]}`, {method:"DELETE"});
+      await load();
+    }catch(e){
+      if (window.Swal) Swal.fire("Error", "No pude eliminar: " + e.message, "error");
+      else alert("Error eliminando: " + e.message);
+    }
+  }
+
+  async function openResetPwd(row){
+    const id = row[state.meta.pk];
+    const displayName = row.nombre || row.username || row.usuario || row.email || `#${id}`;
+    const html = `
+      <div class="grid2">
+        <div class="field">
+          <div class="label">Nueva clave</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="pwd_value" type="password" placeholder="Nueva clave" />
+            <button class="btn" id="pwd_toggle" type="button">Ver</button>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn" id="pwd_gen" type="button">Generar</button>
+            <button class="btn" id="pwd_copy" type="button">Copiar</button>
+          </div>
+          <div class="hint">Mínimo 4 caracteres.</div>
+        </div>
+        <div class="field">
+          <div class="label">Notificar usuario</div>
+          <label class="toggleRow"><input id="pwd_email" type="checkbox" checked> Enviar por correo</label>
+          <div class="hint" id="pwd_hint"></div>
+        </div>
+      </div>
+      <div class="rowBtns">
+        <button class="btn" id="pwd_cancel">Cancelar</button>
+        <button class="btn primary" id="pwd_save">Guardar</button>
+      </div>
+    `;
+    openModal(`Cambiar clave: ${displayName}`, html);
+
+    const pwdInput = qs("#pwd_value");
+    const hint = qs("#pwd_hint");
+    const btnToggle = qs("#pwd_toggle");
+    const btnGen = qs("#pwd_gen");
+    const btnCopy = qs("#pwd_copy");
+    const chkEmail = qs("#pwd_email");
+    qs("#pwd_cancel").onclick = closeModal;
+
+    function genPwd(){
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#$%";
+      let out = "";
+      for(let i=0;i<10;i++) out += chars[Math.floor(Math.random()*chars.length)];
+      return out;
+    }
+
+    btnToggle.onclick = ()=>{
+      pwdInput.type = pwdInput.type === "password" ? "text" : "password";
+      btnToggle.textContent = pwdInput.type === "password" ? "Ver" : "Ocultar";
+    };
+    btnGen.onclick = ()=>{ pwdInput.value = genPwd(); };
+    btnCopy.onclick = async ()=>{
+      const ok = await copyText(pwdInput.value||"");
+      if (window.Swal && !ok) Swal.fire("Copiar", "No pude copiar la clave. Selecciónala manualmente.", "info");
+    };
+
+    qs("#pwd_save").onclick = async ()=>{
+      const p = (pwdInput.value || "").trim();
+      if (p.length < 4){
+        if (window.Swal) Swal.fire("Clave inválida", "Debe tener al menos 4 caracteres.", "warning");
+        return;
+      }
+      const sendEmail = chkEmail.checked;
+      try{
+        const resp = await api(`/settings/usuarios/${id}/reset_password?new_password=${encodeURIComponent(p)}&send_email=${sendEmail ? "true" : "false"}`, {method:"POST"});
+        closeModal();
+
+        const usr = resp?.usuario || {};
+        const email = (usr.email || row.email || "").trim();
+        const tel = (usr.telefono || row.telefono || row.phone || row.celular || "").toString();
+
+        let showed = false;
+        if (sendEmail && !email){
+          if (window.Swal) Swal.fire("OK", "Clave reseteada, pero el usuario no tiene correo.", "info");
+          showed = true;
+        } else if (resp?.email_sent){
+          if (window.Swal) Swal.fire("OK", "Clave reseteada y enviada por correo.", "success");
+          showed = true;
+        } else if (sendEmail){
+          const msg = resp?.email_error ? `Clave reseteada, pero sin envío de correo. (${resp.email_error})` : "Clave reseteada. (Sin envío de correo)";
+          if (window.Swal) Swal.fire("OK", msg, "info");
+          showed = true;
+        }
+
+        if (!showed){
+          if (window.Swal) Swal.fire("OK", "Clave reseteada.", "success");
+        }
+      }catch(e){
+        if (window.Swal) Swal.fire("Error", "No pude resetear: " + e.message, "error");
+        else alert("Error reseteando: " + e.message);
+      }
+    };
+  }
+
+  qs("#btnReload").onclick = ()=>load(true).catch(e=>window.Swal ? Swal.fire("Error", e.message, "error") : alert(e.message));
+  qs("#btnMore").onclick = ()=>{};
+  qs("#btnAdd").onclick = ()=>openCreate().catch(e=>window.Swal ? Swal.fire("Error", e.message, "error") : alert(e.message));
+
+  async function findUsuarios(q){
+    const qq = (q || "").trim();
+    const res = await api(`/settings/usuarios?limit=50&offset=0&active_only=false${qq ? `&q=${encodeURIComponent(qq)}` : ""}`);
+    return res.items || [];
+  }
+
+  async function resetPwdForUserRow(row){
+    if (!row) return;
+    await openResetPwd(row);
+  }
+
+  qs("#btnPwdAdmin").onclick = async ()=>{
+    if (entity !== "usuarios"){
+      if (window.Swal) Swal.fire("Usuarios", "Esta acción solo aplica en Usuarios.", "info");
+      return;
+    }
+    if (!window.Swal){
+      alert("SweetAlert no disponible");
+      return;
+    }
+    const r1 = await Swal.fire({
+      title: "Cambiar clave (Admin)",
+      text: "Busca por nombre, email o username.",
+      input: "text",
+      inputPlaceholder: "Ej: juan@empresa.cl",
+      showCancelButton: true,
+      confirmButtonText: "Buscar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!r1.isConfirmed) return;
+    const q = (r1.value || "").trim();
+    if (!q){
+      Swal.fire("Falta dato", "Ingresa un criterio de búsqueda.", "warning");
+      return;
+    }
+    const items = await findUsuarios(q);
+    if (!items.length){
+      Swal.fire("Sin resultados", "No encontré usuarios con ese criterio.", "info");
+      return;
+    }
+    let chosen = items[0];
+    if (items.length > 1){
+      const options = items.slice(0, 12).map(u=>{
+        const id = u.id_usuario ?? u.id ?? "";
+        const label = `${u.nombre || u.username || u.email || "Usuario"} — ${u.email || u.username || ""}`.trim();
+        return `<option value="${id}">${label}</option>`;
+      }).join("");
+      const r2 = await Swal.fire({
+        title: "Selecciona usuario",
+        html: `<select id="pickUser" class="swal2-select" style="width:100%">${options}</select>`,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: "Continuar",
+        preConfirm: ()=>{
+          const id = Number(Swal.getPopup().querySelector("#pickUser")?.value || 0);
+          const u = items.find(x => Number(x.id_usuario ?? x.id) === id);
+          if (!u) Swal.showValidationMessage("Selecciona un usuario válido");
+          return u;
+        }
+      });
+      if (!r2.isConfirmed) return;
+      chosen = r2.value;
+    }
+    await resetPwdForUserRow(chosen);
+  };
+
+  qs("#btnPwdReq").onclick = async ()=>{
+    if (!pwdReq.length){
+      if (window.Swal) Swal.fire("Sin solicitudes", "No hay solicitudes pendientes.", "info");
+      return;
+    }
+    if (!window.Swal){
+      alert("SweetAlert no disponible");
+      return;
+    }
+    const html = `
+      <div style="text-align:left;max-height:360px;overflow:auto;">
+        ${pwdReq.map((r, idx)=>`
+          <div style="padding:10px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;background:rgba(255,255,255,.04)">
+            <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+              <div>
+                <div style="font-weight:1000">${r.email || "sin email"}</div>
+                <div class="muted" style="font-size:12px">${r.username || ""}</div>
+                <div class="muted" style="font-size:12px">${(r.created_at||"")}</div>
+              </div>
+              <button class="btn primary" type="button" data-resolve="${idx}">Resolver</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    const modal = await Swal.fire({title:"Solicitudes de clave", html, width:620, showConfirmButton:false, showCloseButton:true});
+    // Wire buttons (SweetAlert usa el DOM interno)
+    const popup = Swal.getPopup();
+    popup.querySelectorAll("[data-resolve]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const idx = Number(btn.getAttribute("data-resolve") || "0");
+        const req = pwdReq[idx];
+        const email = (req?.email || "").trim();
+        if (!email){
+          Swal.fire("Error", "La solicitud no tiene email.", "error");
+          return;
+        }
+        try{
+          const users = await findUsuarios(email);
+          const u = users.find(x => String(x.email || "").toLowerCase() === email.toLowerCase()) || users[0];
+          if (!u){
+            Swal.fire("Sin usuario", "No encontré un usuario asociado a ese email.", "info");
+            return;
+          }
+          Swal.close();
+          await resetPwdForUserRow(u);
+        }catch(e){
+          Swal.fire("Error", "No pude procesar: " + (e?.message || e), "error");
+        }
+      });
+    });
+  };
+  let qTimer = null;
+  qs("#q").addEventListener("input", (ev)=>{
+    state.q = ev.target.value;
+    clearTimeout(qTimer);
+    qTimer = setTimeout(()=>load(true), 250);
+  });
+
+  // filtro marca para productos
+  async function ensureMarcaFilter(){
+    if (entity !== "productos") return;
+    const head = qs(".head");
+    if (!head || qs("#marcaFilter")) return;
+    try{
+      const r = await api("/settings/marcas?limit=200&offset=0&active_only=true");
+      const marcas = r.items || [];
+      state.marcasMap = new Map(
+        marcas.map(m => [String(m.nombre || m.marca || ""), (m.nombre || m.marca || "")])
+      );
+      const wrap = document.createElement("div");
+      wrap.style.display = "flex";
+      wrap.style.alignItems = "center";
+      wrap.style.gap = "8px";
+      wrap.innerHTML = `
+        <select id="marcaFilter" class="gd-page-select" style="min-width:180px">
+          <option value="">Todas las marcas</option>
+          ${marcas.map(m => {
+            const val = (m.nombre || m.marca || "");
+            const label = (m.nombre || m.marca || "");
+            return `<option value="${val}">${label}</option>`;
+          }).join("")}
+        </select>
+      `;
+      head.insertBefore(wrap, head.querySelector(".search"));
+      const sel = wrap.querySelector("#marcaFilter");
+      sel.addEventListener("change", (e)=>{
+        const opt = e.target.selectedOptions?.[0];
+        const name = opt?.value || "";
+        state.filterMarca = name || "";
+        load(true);
+      });
+    }catch(_){}
+  }
+
+  (async ()=>{
+    try{ meUser = await api("/me"); }catch(_){ meUser = null; }
+    try{
+      await load();
+      await ensureMarcaFilter();
+    }catch(e){
+      if (window.Swal) Swal.fire("Error", "Settings error: " + e.message, "error");
+      else alert("Settings error: " + e.message);
+    }
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    :root{
+      --dash-bg: rgba(7,12,16,.44);
+      --dash-border: rgba(255,255,255,.12);
+      --dash-soft: rgba(255,255,255,.06);
+      --dash-ink: rgba(255,255,255,.92);
+      --dash-muted: rgba(255,255,255,.70);
+      --dash-accent: rgba(39,228,139,.95);
+      --dash-accent-2: rgba(56,189,248,.95);
+      --dash-warn: rgba(250,204,21,.95);
+      --dash-danger: rgba(248,113,113,.95);
+    }
+
+    html,body{height:100%; margin:0;}
+    body{
+      padding:18px;
+      background:transparent;
+      color:var(--dash-ink);
+      overflow:auto;
+    }
+
+    .topbar{
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:14px;
+      padding:14px 16px;
+      border-radius:18px;
+      border:1px solid rgba(39,228,139,.18);
+      background:linear-gradient(120deg, rgba(18,44,32,.72), rgba(10,16,22,.40));
+      box-shadow:0 20px 60px rgba(0,0,0,.35);
+    }
+    .topbar h1{margin:0; font-size:22px; font-weight:1100; letter-spacing:.2px;}
+    .topbar .sub{margin-top:4px; font-weight:850; opacity:.75; font-size:12px;}
+
+    .filters{
+      display:flex; align-items:center; justify-content:flex-end;
+      gap:8px; flex-wrap:wrap;
+    }
+    .ctrl{
+      display:flex; align-items:center; gap:8px;
+      padding:9px 10px;
+      border-radius:14px;
+      border:1px solid var(--dash-border);
+      background:rgba(0,0,0,.18);
+      backdrop-filter: blur(10px);
+    }
+    .ctrl label{
+      font-size:11px; opacity:.7; font-weight:1000;
+      letter-spacing:.12em; text-transform:uppercase;
+    }
+    .ctrl select, .ctrl input{
+      appearance:none;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(0,0,0,.18);
+      color:inherit;
+      border-radius:10px;
+      padding:6px 8px;
+      font-weight:900;
+      outline:none;
+    }
+    .ctrl input[type="date"]{ padding:5px 8px; }
+
+    .btn{
+      cursor:pointer;
+      border:1px solid rgba(39,228,139,.30);
+      background:linear-gradient(90deg, rgba(39,228,139,.22), rgba(56,189,248,.15));
+      color:inherit;
+      border-radius:12px;
+      padding:9px 12px;
+      font-weight:1000;
+      letter-spacing:.02em;
+    }
+    .btn:active{transform:translateY(1px);}
+
+    .layout{
+      display:grid;
+      grid-template-columns:repeat(12, minmax(0, 1fr));
+      gap:14px;
+      margin-top:14px;
+    }
+    @media (max-width:1200px){ .layout{grid-template-columns:repeat(6, minmax(0, 1fr));} }
+    @media (max-width:820px){ .layout{grid-template-columns:1fr;} }
+
+    .card{
+      border-radius:18px;
+      padding:14px;
+      border:1px solid var(--dash-border);
+      background:var(--dash-bg);
+      backdrop-filter: blur(10px);
+      box-shadow:0 12px 30px rgba(0,0,0,.25);
+    }
+    :root.light .card{
+      background:rgba(255,255,255,.78);
+      border-color:rgba(0,0,0,.10);
+      color:rgba(0,0,0,.86);
+    }
+    .card h3{
+      margin:0 0 10px 0;
+      font-size:13px;
+      font-weight:1100;
+      text-transform:uppercase;
+      letter-spacing:.14em;
+      opacity:.9;
+    }
+    .muted{opacity:.72}
+
+    .kpis{
+      display:grid;
+      grid-template-columns:repeat(6, minmax(0,1fr));
+      gap:12px;
+    }
+    @media (max-width:1200px){ .kpis{grid-template-columns:repeat(3, minmax(0,1fr));} }
+    @media (max-width:820px){ .kpis{grid-template-columns:1fr;} }
+
+    .kpi{
+      padding:14px;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.18);
+      cursor:pointer;
+    }
+    .kpi:hover{border-color:rgba(255,255,255,.18)}
+    .kpi:active{transform:translateY(1px)}
+    .kpi .label{font-weight:1000; opacity:.7; font-size:11px; letter-spacing:.12em; text-transform:uppercase;}
+    .kpi .value{font-weight:1200; font-size:22px; margin-top:6px;}
+    .kpi .hint{font-size:11px; opacity:.65; margin-top:6px;}
+    .kpi[data-tone="good"]{border-color:rgba(39,228,139,.20)}
+    .kpi[data-tone="warn"]{border-color:rgba(250,204,21,.22)}
+    .kpi[data-tone="cold"]{border-color:rgba(56,189,248,.18)}
+
+    .split{
+      display:grid;
+      grid-template-columns:repeat(12, minmax(0, 1fr));
+      gap:12px;
+    }
+    @media (max-width:1200px){ .split{grid-template-columns:1fr;} }
+
+    .pipe-wrap{display:flex; flex-direction:column; gap:10px;}
+    .pipe-bar{
+      display:flex; height:12px; border-radius:999px;
+      overflow:hidden; background:rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.10);
+    }
+    .pipe-bar > span{display:block; height:100%;}
+
+    .pipe-table{width:100%; border-collapse:collapse; font-size:12px;}
+    .pipe-table th,.pipe-table td{
+      padding:9px 10px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      text-align:left;
+    }
+    .right{text-align:right;}
+
+    .rowlink{cursor:pointer;}
+    .rowlink:hover{background:rgba(255,255,255,.03);}
+
+    .badge{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:4px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.18);
+      font-weight:1000;
+    }
+    .dot{width:10px; height:10px; border-radius:999px; background:#7ee7b0; flex:0 0 auto;}
+
+    .events-grid{
+      display:grid; grid-template-columns:repeat(7, minmax(0,1fr));
+      gap:12px;
+    }
+    @media (max-width:1200px){ .events-grid{grid-template-columns:repeat(4, minmax(0,1fr));} }
+    @media (max-width:900px){ .events-grid{grid-template-columns:repeat(2, minmax(0,1fr));} }
+    @media (max-width:820px){ .events-grid{grid-template-columns:1fr;} }
+
+    .event-day{
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:16px;
+      background:rgba(0,0,0,.18);
+      padding:10px;
+      min-height:110px;
+    }
+    .event-day-head{
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      border-bottom:1px dashed rgba(255,255,255,.10);
+      padding-bottom:8px;
+      margin-bottom:10px;
+    }
+    .event-day-title{font-weight:1000; opacity:.92;}
+    .event-day-date{font-weight:1000; opacity:.65; font-size:12px;}
+
+    .event-row{
+      display:flex; align-items:center; gap:10px;
+      padding:8px 10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.08);
+      background:rgba(0,0,0,.16);
+      cursor:pointer;
+      margin-bottom:8px;
+    }
+    .event-row:hover{border-color:rgba(255,255,255,.14);}
+
+    .event-more{
+      cursor:pointer;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.16);
+      color:inherit;
+      border-radius:999px;
+      padding:6px 10px;
+      font-weight:1000;
+      font-size:12px;
+    }
+
+    .mini-grid{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px;}
+    @media (max-width:1200px){ .mini-grid{grid-template-columns:1fr;} }
+
+    .mini{
+      border-radius:16px; padding:12px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.16);
+      overflow:auto;
+    }
+    .mini h4{
+      margin:0 0 8px 0;
+      font-size:11px;
+      font-weight:1100;
+      letter-spacing:.14em;
+      text-transform:uppercase;
+      opacity:.85;
+    }
+
+    .table-mini{width:100%; border-collapse:collapse; font-size:12px;}
+    .table-mini th,.table-mini td{padding:7px 8px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left;}
+
+    .modal{
+      position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.55); z-index:50;
+    }
+    .modal.open{display:flex;}
+    .modal-card{
+      width:min(560px, 92vw);
+      max-height:80vh;
+      overflow:auto;
+      border-radius:18px;
+      padding:14px;
+      border:1px solid rgba(255,255,255,.16);
+      background:rgba(10,16,22,.96);
+      box-shadow:0 20px 60px rgba(0,0,0,.45);
+    }
+    .modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;}
+    .modal-title{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px; opacity:.9;}
+    .modal-close{cursor:pointer; border:1px solid rgba(255,255,255,.18); background:transparent; color:inherit; border-radius:10px; padding:6px 10px; font-weight:1000;}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Dashboard · Macro → Micro</h1>
+      <div class="sub" id="dashSub">Cargando…</div>
+    </div>
+    <div class="filters">
+      <div class="ctrl">
+        <label>Marca</label>
+        <select id="brandSel"><option value="">Todas</option></select>
+      </div>
+      <div class="ctrl">
+        <label>Rango</label>
+        <select id="rangeSel">
+          <option value="week">Semana</option>
+          <option value="month">Mes</option>
+          <option value="last7">Últimos 7 días</option>
+          <option value="custom">Personalizado</option>
+        </select>
+      </div>
+      <div class="ctrl" id="customDates" style="display:none;">
+        <label>Desde</label>
+        <input type="date" id="dFrom" />
+        <label>Hasta</label>
+        <input type="date" id="dTo" />
+      </div>
+      <div class="ctrl">
+        <label>Semana</label>
+        <button class="iconbtn" id="btnWeekPrev" title="Semana anterior">‹</button>
+        <button class="iconbtn" id="btnWeekNow" title="Semana actual">⟲</button>
+        <button class="iconbtn" id="btnWeekNext" title="Siguiente semana">›</button>
+      </div>
+      <button class="btn" id="btnApply">Aplicar</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="card" style="grid-column: span 12;">
+      <h3>KPIs</h3>
+      <div class="kpis">
+        <div class="kpi" data-tone="good" id="kpi1">
+          <div class="label">Venta día</div>
+          <div class="value" id="kpiVentaDia">$ 0</div>
+          <div class="hint">Click: confirmados de hoy</div>
+        </div>
+        <div class="kpi" data-tone="cold" id="kpi2">
+          <div class="label">Venta semana</div>
+          <div class="value" id="kpiVentaSemana">$ 0</div>
+          <div class="hint">Click: confirmados en semana</div>
+        </div>
+        <div class="kpi" data-tone="cold" id="kpi3">
+          <div class="label">Venta mes</div>
+          <div class="value" id="kpiVentaMes">$ 0</div>
+          <div class="hint">Click: confirmados en mes</div>
+        </div>
+        <div class="kpi" data-tone="warn" id="kpi5">
+          <div class="label">Leads hoy</div>
+          <div class="value" id="kpiLeadsHoy">0</div>
+          <div class="hint">Click: abrir filtro “hoy”</div>
+        </div>
+        <div class="kpi" data-tone="good" id="kpi6">
+          <div class="label">% cierre (semana)</div>
+          <div class="value" id="kpiCierre">0%</div>
+          <div class="hint">Confirmados / creados (semana)</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" style="grid-column: span 12;">
+      <h3>Pipeline</h3>
+      <div class="split">
+        <div style="grid-column: span 6;">
+          <div class="muted" style="font-weight:1000; margin-bottom:8px;">Total (todo el tiempo)</div>
+          <div class="pipe-wrap" id="pipelineTotal"></div>
+        </div>
+        <div style="grid-column: span 6;">
+          <div class="muted" style="font-weight:1000; margin-bottom:8px;">Semana / Mes (según rango)</div>
+          <div class="pipe-wrap" id="pipelineRange"></div>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en un estado para ir al filtro de leads.</div>
+    </section>
+
+    <section class="card" style="grid-column: span 12;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <h3 style="margin:0">Eventos confirmados (semana)</h3>
+        <div class="muted" id="weekLabel">—</div>
+      </div>
+      <div id="eventsWeek" style="margin-top:10px"></div>
+    </section>
+
+    <section class="card" style="grid-column: span 12;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0">Reportes</h3>
+          <div class="muted" style="margin-top:6px">Los insights (top productos/comunas/clientes) viven en la secci&oacute;n Reportes.</div>
+        </div>
+        <button class="btn" id="btnGoReportes" type="button">Ir a Reportes</button>
+      </div>
+    </section>
+
+    <section class="card" style="grid-column: span 12;">
+      <h3>Venta diaria por marca (semana)</h3>
+      <div id="salesDaily"></div>
+    </section>
+  </div>
+
+  <div id="dayModal" class="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title" id="dayModalTitle">Día</div>
+        <button class="modal-close" id="dayModalClose">Cerrar</button>
+      </div>
+      <div id="dayModalList"></div>
+    </div>
+  </div>
+
+  <div id="eventModal" class="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title" id="eventModalTitle">Evento</div>
+        <button class="modal-close" id="eventModalClose">Cerrar</button>
+      </div>
+      <div id="eventModalBody"></div>
+      <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+        <button class="modal-close" id="eventModalOpen">Abrir en Calendar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    const fmt = new Intl.NumberFormat("es-CL");
+    const daysEs = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+    const brandColors = {
+      "CAMALEON":"#22c55e",
+      "GOURMET":"#a855f7",
+      "EXPRESS":"#06b6d4",
+      "DEL SABOR":"#f59e0b"
+    };
+
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    function openFilter(params){
+      const q = new URLSearchParams(params || {}).toString();
+      const url = "/web/views/filtro_leads.html" + (q ? "?" + q : "");
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*");
+      }catch(_){
+        location.href = url;
+      }
+    }
+
+    async function openConfirmedSales(desde, hasta, idMarcaOverride=""){
+      // Ventas = leads confirmados/agendados en ese rango (activity_log).
+      try{
+        const qs = new URLSearchParams();
+        if (desde) qs.set("desde", String(desde));
+        if (hasta) qs.set("hasta", String(hasta));
+        const mid = String(idMarcaOverride || state.idMarca || "").trim();
+        if (mid) qs.set("id_marca", mid);
+        const r = await fetch(`/tools/dashboard/sales_ids?${qs.toString()}`, { headers: authHeaders() });
+        if (!r.ok) throw new Error("No se pudo cargar ventas");
+        const j = await r.json();
+        const ids = Array.isArray(j?.ids) ? j.ids : [];
+        if (!ids.length){
+          alert("No hay ventas/confirmaciones en ese rango.");
+          return;
+        }
+        const url = "/web/views/leads.html?stale_ids=" + encodeURIComponent(ids.join(","));
+        window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*");
+      }catch(e){
+        alert(String(e?.message || e));
+      }
+    }
+
+    const state = {
+      idMarca: "",
+      range: "week",
+      from: "",
+      to: "",
+      weekOffset: 0,
+      me: null,
+      marcasMap: {},
+      lastWeek: null,
+    };
+
+    // Fechas en TZ negocio (America/Santiago) para que "hoy" calce con backend.
+    const fmtSCL = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Santiago",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    function isoSCL(d=new Date()){
+      return fmtSCL.format(d);
+    }
+    function partsSCL(){
+      const [y,m,d] = isoSCL().split("-").map(Number);
+      return { y, m, d };
+    }
+    function pad2(n){ return String(n).padStart(2,"0"); }
+
+    function monthRange(){
+      const { y, m } = partsSCL(); // m: 1..12
+      const endDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // día 0 = último del mes m
+      return { from: `${y}-${pad2(m)}-01`, to: `${y}-${pad2(m)}-${pad2(endDay)}` };
+    }
+
+    function last7Range(){
+      const end = new Date();
+      const start = new Date(Date.now() - 6*86400000);
+      return { from: isoSCL(start), to: isoSCL(end) };
+    }
+
+    function applyRangeDefaults(week){
+      if (state.range === "custom") return;
+      if (state.range === "month"){
+        const r = monthRange();
+        state.from = r.from; state.to = r.to;
+        return;
+      }
+      if (state.range === "last7"){
+        const r = last7Range();
+        state.from = r.from; state.to = r.to;
+        return;
+      }
+      if (week?.start && week?.end){
+        state.from = week.start;
+        state.to = week.end;
+      }
+    }
+
+    function syncCustomVisibility(){
+      const box = $("#customDates");
+      if (!box) return;
+      box.style.display = (state.range === "custom") ? "flex" : "none";
+    }
+
+    function syncDateInputs(){
+      const a = $("#dFrom"), b = $("#dTo");
+      if (a) a.value = state.from || "";
+      if (b) b.value = state.to || "";
+    }
+
+    function buildMarcaLabel(){
+      if (!state.idMarca) return "Todas";
+      return state.marcasMap[state.idMarca] || ("#" + state.idMarca);
+    }
+
+    function kpiBindClicks(){
+      // Re-bind idempotente (replace onclick)
+      $("#kpi1").onclick = () => {
+        const d = isoSCL();
+        openConfirmedSales(d, d);
+      };
+      $("#kpi2").onclick = () => openConfirmedSales(state.lastWeek?.start || state.from, state.lastWeek?.end || state.to);
+      $("#kpi3").onclick = () => {
+        const r = monthRange();
+        openConfirmedSales(r.from, r.to);
+      };
+      $("#kpi5").onclick = () => {
+        const d = isoSCL();
+        openFilter({ campo:"ingreso", desde:d, hasta:d, ...(state.idMarca ? {marca: state.idMarca} : {}) });
+      };
+      $("#kpi6").onclick = () => openFilter({ ...(state.idMarca ? {marca: state.idMarca} : {}), desde: state.from, hasta: state.to });
+    }
+
+    function renderPipe(arr, rootSel, rangeType){
+      const root = $(rootSel);
+      if (!root) return;
+      const pipe = (arr || []).map(p => ({
+        estado: (p.estado || "SIN ESTADO").toString().trim() || "SIN ESTADO",
+        cantidad: Number(p.cantidad || 0),
+        monto: Number(p.monto || 0),
+        color: p.color || "#64748b",
+      }));
+      const total = pipe.reduce((a,b)=> a + b.monto, 0) || 1;
+      const bar = `<div class="pipe-bar">` + pipe.map(p => {
+        const w = Math.max(0.5, (p.monto / total) * 100);
+        return `<span style="width:${w}%; background:${p.color};"></span>`;
+      }).join("") + `</div>`;
+
+      let html = bar;
+      html += `<table class="pipe-table"><thead><tr><th>Estado</th><th class="right">Leads</th><th class="right">Monto</th><th class="right">%</th></tr></thead><tbody>`;
+      html += pipe.map(p => {
+        const pct = Math.round((p.monto / total) * 100);
+        return `<tr class="rowlink" data-estado="${encodeURIComponent(p.estado)}" data-range="${rangeType}">
+          <td><span class="badge"><span class="dot" style="background:${p.color}"></span>${p.estado}</span></td>
+          <td class="right"><strong>${p.cantidad}</strong></td>
+          <td class="right">$ ${fmt.format(p.monto)}</td>
+          <td class="right">${pct}%</td>
+        </tr>`;
+      }).join("");
+      html += `</tbody></table>`;
+
+      root.innerHTML = pipe.length ? html : `<div class="muted">Sin datos.</div>`;
+      root.querySelectorAll(".rowlink").forEach(tr => {
+        tr.addEventListener("click", () => {
+          const estado = decodeURIComponent(tr.dataset.estado || "") || "";
+          const params = { estado };
+          if (state.idMarca) params.marca = state.idMarca;
+          if (rangeType !== "total"){
+            params.desde = state.from || "";
+            params.hasta = state.to || "";
+          }
+          openFilter(params);
+        });
+      });
+    }
+
+    async function loadDashboard(){
+      const qs = new URLSearchParams();
+      if (state.idMarca) qs.set("id_marca", state.idMarca);
+      const r = await fetch("/tools/dashboard" + (qs.toString() ? ("?"+qs.toString()) : ""), { headers: authHeaders() });
+      if (!r.ok){
+        $("#dashSub").textContent = "No se pudo cargar dashboard.";
+        return null;
+      }
+      const j = await r.json();
+      state.lastWeek = j.week || null;
+      applyRangeDefaults(j.week);
+      syncDateInputs();
+      $("#dashSub").textContent = `Marca: ${buildMarcaLabel()} · Rango: ${state.from || "—"} → ${state.to || "—"} · Actualizado: ${new Date().toLocaleString("es-CL")}`;
+      if (j.week){
+        $("#weekLabel").textContent = `Semana ${j.week.number} · ${j.week.start} → ${j.week.end}`;
+      }
+
+      $("#kpiVentaDia").textContent = `$ ${fmt.format(j.kpis?.venta_dia || 0)}`;
+      $("#kpiVentaSemana").textContent = `$ ${fmt.format(j.kpis?.venta_semana || 0)}`;
+      $("#kpiLeadsHoy").textContent = `${j.kpis?.leads_hoy || 0}`;
+      $("#kpiCierre").textContent = `${(j.kpis?.cierre_pct || 0).toFixed(2)}%`;
+
+      const ventaMes = (j.sales_compare || []).reduce((a,b)=> a + Number(b.actual || 0), 0);
+      $("#kpiVentaMes").textContent = `$ ${fmt.format(ventaMes || 0)}`;
+
+      renderPipe(j.pipeline, "#pipelineTotal", "total");
+      const rangePipe = (state.range === "month") ? j.pipeline_month : j.pipeline_week;
+      renderPipe(rangePipe, "#pipelineRange", state.range);
+
+      // Venta diaria por marca (semana) + drilldown (double click)
+      const daily = j.sales_daily || [];
+      const brandSet = [...new Set(daily.map(d => d.marca))];
+      const daySet = (j.week_days || []);
+      if (daily.length){
+        let table = `<table class="table-mini"><thead><tr><th>Marca</th>`;
+        daySet.forEach(d => table += `<th class="right">${d.slice(8,10)}/${d.slice(5,7)}</th>`);
+        table += `</tr></thead><tbody>`;
+        brandSet.forEach(b => {
+          table += `<tr><td><strong>${b}</strong></td>`;
+          daySet.forEach(d => {
+            const row = daily.find(x => x.marca===b && x.dia===d);
+            const mid = row?.id_marca ?? "";
+            const monto = Number(row?.monto || 0);
+            table += `<td class="right cell-sale" data-day="${d}" data-mid="${mid}">$ ${fmt.format(monto)}</td>`;
+          });
+          table += `</tr>`;
+        });
+        table += `</tbody></table>`;
+        $("#salesDaily").innerHTML = table;
+        $("#salesDaily").querySelectorAll(".cell-sale").forEach(td => {
+          td.addEventListener("dblclick", async () => {
+            const day = td.getAttribute("data-day") || "";
+            const mid = td.getAttribute("data-mid") || "";
+            if (!day || !mid) return;
+            await openConfirmedSales(day, day, mid);
+          });
+          td.title = "Doble click para ver los leads vendidos/confirmados ese día.";
+        });
+      }else{
+        $("#salesDaily").innerHTML = `<div class="muted">Sin ventas confirmadas en la semana.</div>`;
+      }
+
+      kpiBindClicks();
+      return j;
+    }
+
+    // Insights viven en /web/views/reportes.html (no en dashboard).
+
+    async function loadEvents(offset=0){
+      const qs = new URLSearchParams({ week_offset: String(offset) });
+      if (state.idMarca) qs.set("id_marca", state.idMarca);
+      const r = await fetch(`/tools/dashboard/events?${qs.toString()}`, { headers: authHeaders() });
+      if (!r.ok){
+        $("#eventsWeek").innerHTML = `<div class="muted">No se pudo cargar eventos.</div>`;
+        return;
+      }
+      const j = await r.json();
+      const events = Array.isArray(j.events) ? j.events : [];
+      if (!events.length){
+        $("#eventsWeek").innerHTML = `<div class="muted">Sin eventos confirmados en la semana.</div>`;
+        return;
+      }
+
+      const html = `
+        <div class="muted" style="font-weight:900;font-size:12px;margin-bottom:8px">
+          Click en una fila para ver detalle / abrir calendario.
+        </div>
+        <table class="table-mini">
+          <thead>
+            <tr>
+              <th style="width:130px">Día</th>
+              <th>Cliente</th>
+              <th style="width:150px">Marca</th>
+              <th style="width:170px">Comuna</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${events.map(ev => {
+              const date = (ev.fecha_evento || "").slice(0,10);
+              const marca = (ev.marca || "").toString().trim();
+              const dot = brandColors[marca.toUpperCase()] || "#7ee7b0";
+              return `
+                <tr class="rowlink" data-evt='${encodeURIComponent(JSON.stringify(ev))}'>
+                  <td><span class="dot" style="background:${dot}"></span> ${date ? `${date.slice(8,10)}/${date.slice(5,7)}` : "—"}</td>
+                  <td><strong>${(ev.cliente || "").toString().trim() || "—"}</strong></td>
+                  <td>${marca || "—"}</td>
+                  <td>${(ev.comuna || "").toString().trim() || "—"}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+      $("#eventsWeek").innerHTML = html;
+
+      $("#eventsWeek").querySelectorAll("tr.rowlink[data-evt]").forEach(row => {
+        row.addEventListener("click", () => {
+          const raw = row.getAttribute("data-evt");
+          if (!raw) return;
+          try{ openEventModal(JSON.parse(decodeURIComponent(raw))); }catch(_){ }
+        });
+      });
+    }
+
+    function openDayModal(day){
+      const modal = $("#dayModal");
+      const title = $("#dayModalTitle");
+      const list = $("#dayModalList");
+      if (!modal || !title || !list) return;
+      const dayNum = day.date ? day.date.slice(8,10) : "";
+      title.textContent = `${day.label} ${dayNum}`;
+      const nrm = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+      list.innerHTML = (day.items || []).map(ev => {
+        const cliente = (ev.cliente || "Cliente").trim();
+        const marca = (ev.marca || "").trim();
+        const label = marca && !nrm(cliente).includes(nrm(marca)) ? `${cliente} - ${marca}` : cliente;
+        const dot = brandColors[(ev.marca || "").toUpperCase()] || "#7ee7b0";
+        return `<div class="event-row" data-evt='${encodeURIComponent(JSON.stringify(ev))}' style="border:1px solid rgba(255,255,255,.12);">
+          <span class="dot" style="background:${dot}"></span>
+          <div style="font-weight:1000">${label}</div>
+        </div>`;
+      }).join("") || `<div class="muted">Sin eventos.</div>`;
+
+      list.querySelectorAll(".event-row").forEach(row => {
+        row.addEventListener("click", () => {
+          const raw = row.getAttribute("data-evt");
+          if (!raw) return;
+          try{ openEventModal(JSON.parse(decodeURIComponent(raw))); }catch(_){ }
+        });
+      });
+
+      modal.classList.add("open");
+    }
+
+    function openEventModal(ev){
+      const modal = $("#eventModal");
+      const title = $("#eventModalTitle");
+      const body = $("#eventModalBody");
+      if (!modal || !title || !body) return;
+      const nrm = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const cliente = (ev.cliente || "Cliente").trim();
+      const marca = (ev.marca || "").trim();
+      const label = marca && !nrm(cliente).includes(nrm(marca)) ? `${cliente} - ${marca}` : cliente;
+
+      title.textContent = label;
+      body.innerHTML = `
+        <div class="event-row" style="border:1px solid rgba(255,255,255,.12);">
+          <span class="dot" style="background:${brandColors[(ev.marca || "").toUpperCase()] || "#7ee7b0"}"></span>
+          <div>
+            <div style="font-weight:1100">${label}</div>
+            <div class="muted" style="font-size:12px; margin-top:2px;">${ev.fecha_evento || "—"} · ${ev.comuna || "—"}</div>
+          </div>
+        </div>
+      `;
+
+      $("#eventModalOpen").onclick = () => {
+        if (ev.calendar_html_link) window.open(ev.calendar_html_link, "_blank", "noopener");
+      };
+
+      modal.classList.add("open");
+    }
+
+    $("#dayModalClose")?.addEventListener("click", () => $("#dayModal")?.classList.remove("open"));
+    $("#dayModal")?.addEventListener("click", (e) => { if (e.target?.id === "dayModal") $("#dayModal")?.classList.remove("open"); });
+    $("#eventModalClose")?.addEventListener("click", () => $("#eventModal")?.classList.remove("open"));
+    $("#eventModal")?.addEventListener("click", (e) => { if (e.target?.id === "eventModal") $("#eventModal")?.classList.remove("open"); });
+
+    async function initFilters(){
+      try{
+        const meR = await fetch("/me", { headers: authHeaders() });
+        state.me = meR.ok ? await meR.json() : null;
+      }catch(_){ state.me = null; }
+
+      try{
+        const mR = await fetch("/marcas?solo_activas=1", { headers: authHeaders() });
+        const list = mR.ok ? await mR.json() : [];
+        const map = {};
+        (Array.isArray(list) ? list : (list.items || [])).forEach(m => {
+          const id = String(m.id_marca ?? "");
+          const name = (m.marca || m.nombre || "").toString().trim();
+          if (id && name) map[id] = name.toUpperCase();
+        });
+        state.marcasMap = map;
+      }catch(_){ state.marcasMap = {}; }
+
+      const allowed = new Set(((state.me?.marcas || [])).map(String));
+      const isAdmin = String(state.me?.role || state.me?.rol || "").toUpperCase() === "ADMIN";
+
+      const sel = $("#brandSel");
+      if (sel){
+        sel.innerHTML = "";
+        const optAll = document.createElement("option");
+        optAll.value = "";
+        optAll.textContent = "Todas";
+        sel.appendChild(optAll);
+
+        const ids = Object.keys(state.marcasMap).sort((a,b) => (state.marcasMap[a]||"").localeCompare(state.marcasMap[b]||""));
+        ids.forEach(id => {
+          if (!isAdmin && allowed.size && !allowed.has(id)) return;
+          const o = document.createElement("option");
+          o.value = id;
+          o.textContent = state.marcasMap[id] || ("#" + id);
+          sel.appendChild(o);
+        });
+      }
+
+      const params = new URLSearchParams(location.search);
+      const qMarca = params.get("id_marca") || params.get("marca") || "";
+      if (qMarca){
+        state.idMarca = qMarca;
+        if (sel) sel.value = qMarca;
+      }
+
+      // initial range defaults
+      syncCustomVisibility();
+    }
+
+    async function refreshAll(){
+      await loadDashboard();
+      await loadEvents(state.weekOffset || 0);
+    }
+
+    $("#rangeSel")?.addEventListener("change", (e) => {
+      state.range = String(e.target?.value || "week");
+      syncCustomVisibility();
+      if (state.range !== "custom"){
+        applyRangeDefaults(state.lastWeek);
+        syncDateInputs();
+      }
+    });
+
+    $("#brandSel")?.addEventListener("change", (e) => { state.idMarca = String(e.target?.value || ""); });
+    $("#dFrom")?.addEventListener("change", (e) => { state.from = String(e.target?.value || ""); });
+    $("#dTo")?.addEventListener("change", (e) => { state.to = String(e.target?.value || ""); });
+
+    $("#btnWeekPrev")?.addEventListener("click", () => { state.weekOffset = (state.weekOffset || 0) - 1; refreshAll(); });
+    $("#btnWeekNow")?.addEventListener("click", () => { state.weekOffset = 0; refreshAll(); });
+    $("#btnWeekNext")?.addEventListener("click", () => { state.weekOffset = (state.weekOffset || 0) + 1; refreshAll(); });
+
+    $("#btnApply")?.addEventListener("click", () => refreshAll());
+
+    $("#btnGoReportes")?.addEventListener("click", () => {
+      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html#total" }, "*");
+    });
+
+    (async () => {
+      await initFilters();
+      await refreshAll();
+      setInterval(refreshAll, 15000);
+    })();
+  </script>
+</body>
+</html>

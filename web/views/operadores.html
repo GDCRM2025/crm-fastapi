@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Operadores – Green Diamond Group</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: dark; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: #010b05;
+      color: #fff;
+      overflow-x: hidden;
+    }
+    a { color: inherit; }
+
+    /* Fondo de estrellas */
+    #stars { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; z-index: -1; pointer-events: none; }
+    .star { position: absolute; border-radius: 50%; animation: starTwinkle linear infinite; }
+    .star.flare {
+      background: radial-gradient(circle at center, rgba(255,255,255,0.9) 0%, rgba(12,217,12,0.5) 60%, rgba(12,217,12,0) 100%);
+      box-shadow: 0 0 12px 4px rgba(12,217,12,0.6), 0 0 20px 10px rgba(12,217,12,0.3);
+    }
+    @keyframes starTwinkle { from { transform: translateY(0) scale(1); opacity: 1; } to { transform: translateY(-150vh) scale(0.4); opacity: 0; } }
+
+    /* Secciones base */
+    section {
+      position: relative;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(8px);
+      border-radius: 16px;
+      padding: 3rem 2rem;
+      margin: 3rem 1rem;
+    }
+    /* Top bar (solo top bar; sin menú lateral). */
+    body{ padding-top: 64px; }
+    header{
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      z-index: 600;
+      padding: 10px 10px;
+      margin: 0;
+      background: rgba(0,0,0,.70);
+      border-bottom: 1px solid rgba(255,255,255,.12);
+      backdrop-filter: blur(10px);
+    }
+    header nav{
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    header .who{
+      font-weight: 900;
+      font-size: 12px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.85);
+      white-space:nowrap;
+      max-width: 220px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      display:none;
+    }
+    header nav ul{
+      list-style: none;
+      display:flex;
+      gap:10px;
+      margin: 0;
+      padding: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      white-space: nowrap;
+      flex: 1;
+    }
+    header nav ul li{ flex: 0 0 auto; }
+    header nav a{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      height: 38px;
+      padding: 0 12px;
+      border-radius: 999px;
+      text-decoration:none;
+      font-weight: 900;
+      letter-spacing: .02em;
+      border: 1px solid rgba(12,217,12,.35);
+      background: rgba(255,255,255,.06);
+      color: #0cd90c;
+      transition: filter .2s, transform .2s, background .2s;
+    }
+    header nav a:hover{ filter:brightness(1.12); transform: translateY(-1px); }
+    header nav a.primary{ background:#0cd90c; color:#000; }
+    header nav a.soon{
+      border-color: rgba(255,255,255,.18);
+      color: rgba(255,255,255,.75);
+      background: rgba(255,255,255,.05);
+      cursor: default;
+      pointer-events:none;
+    }
+    header nav a.danger{ border-color: rgba(239,68,68,.40); color:#fff; background: rgba(239,68,68,.10); }
+    header nav a.menu-camaleon{ background:rgba(67,181,22,.25); border-color:rgba(67,181,22,.65); color:#eaffea; }
+    header nav a.menu-gourmet{ background:rgba(251,181,49,.18); border-color:rgba(251,181,49,.65); color:#fff6e6; }
+    header nav a.menu-delsabor{ background:rgba(242,140,26,.18); border-color:rgba(242,140,26,.65); color:#fff0e6; }
+    header nav a.menu-express{ background:rgba(232,81,76,.18); border-color:rgba(232,81,76,.65); color:#ffecec; }
+    header nav a.menu-brontos{ background:rgba(148,163,184,.12); border-color:rgba(148,163,184,.45); color:#fff; }
+
+    @media (max-width: 980px){
+      header .who{ display:none; }
+      body{ padding-top: 62px; }
+      header{ padding: 8px 8px; }
+      header nav a{ height: 36px; padding: 0 10px; font-size: .95rem; }
+    }
+
+    /* Hero */
+    .hero{
+      height:100vh; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;
+      position:relative; padding:6rem 1rem 6rem; margin:0; background:url('../images/bg.jpg') center/cover no-repeat; overflow:hidden;
+    }
+    .hero::before{ content:''; position:absolute; inset:0; background:rgba(0,0,0,.4); z-index:0; }
+    .hero h1{
+      font-size:3.2rem; margin-bottom:6rem; text-transform:uppercase; color:#fff; text-shadow:0 0 10px rgba(12,217,12,.7); z-index:1;
+    }
+    .hero p{ display:none; }
+
+    section:not(.hero){ padding:4rem 2rem; max-width:1200px; margin:0 auto; }
+    section.dark{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); border-radius:10px; backdrop-filter: blur(6px); }
+
+    .sub-block{
+      background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:2rem; margin-bottom:2rem; backdrop-filter: blur(8px);
+    }
+    .sub-block:last-child{ margin-bottom:0; }
+    section h2{ text-align:center; margin-bottom:1.5rem; font-size:2rem; text-transform:uppercase; }
+
+    /* Showcase marcas */
+    .brands-showcase{ display:flex; flex-wrap:wrap; justify-content:center; gap:2rem; margin-top:6rem; }
+    .brands-showcase figure{ display:flex; flex-direction:column; align-items:center; color:#fff; }
+    .brands-showcase img{ width:80px; height:80px; filter:brightness(0) invert(1); transition: transform .3s, box-shadow .3s; }
+    .brands-showcase img:hover{ transform:scale(1.15); box-shadow:0 0 8px #0cd90c, 0 0 16px #0cd90c; }
+    .brands-showcase figcaption{ margin-top:.5rem; font-size:.85rem; }
+
+    /* Menú lateral */
+    .side-nav{
+      position:fixed; top:0; right:0; height:100vh; width:60px; background:rgba(0,0,0,.65); backdrop-filter:blur(8px);
+      z-index:300; transition:width .3s ease; display:flex; flex-direction:column; align-items:center; padding-top:4rem;
+    }
+    .side-nav.open, .side-nav:hover{ width:260px; }
+    .side-nav .side-toggle{
+      position:absolute; top:1rem; left:-44px; width:40px; height:40px; border-radius:50%; background:rgba(12,217,12,.8);
+      color:#000; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 0 8px rgba(12,217,12,.6);
+    }
+    .side-nav ul{ list-style:none; padding:0; margin:0; width:100%; }
+    .side-nav li{ margin:.25rem 0; }
+    .side-nav a{
+      display:flex; align-items:center; gap:.6rem; padding:.6rem 1rem; margin:0 .5rem; border-radius:10px; color:#fff; text-decoration:none; font-weight:bold;
+      transition: background .3s, color .3s;
+    }
+    .side-nav a:hover{ opacity:.9; }
+    .side-sep{ height:10px; margin:4px 12px; border-bottom:1px solid rgba(255,255,255,.15); }
+    .menu-camaleon{ background:rgba(67,181,22,.8); } .menu-gourmet{ background:rgba(251,181,49,.8); }
+    .menu-delsabor{ background:rgba(242,140,26,.8); } .menu-express{ background:rgba(232,81,76,.8); }
+
+    /* Tarjetas de contacto */
+    .contactos-grid{ display:grid; gap:1.5rem; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); }
+    .contact-card{ background:rgba(255,255,255,.05); padding:1rem; border-radius:8px; transition: box-shadow .3s, transform .3s; }
+    .contact-card:hover{ box-shadow:0 0 10px rgba(12,217,12,.5), 0 0 20px rgba(12,217,12,.3); transform: translateY(-4px); }
+    .contact-card h3{ margin:0 0 .4rem; color:#0cd90c; }
+    .contact-card p{ margin:.2rem 0; }
+    .contact-links{ margin-top:.5rem; display:flex; gap:.6rem; justify-content:center; }
+    .contact-links a{
+      display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%;
+      background:rgba(12,217,12,.2); color:#0cd90c; transition: background .3s, transform .3s;
+    }
+    .contact-links a:hover{ background:#0cd90c; color:#000; transform:scale(1.1); box-shadow:0 0 8px #0cd90c, 0 0 16px #0cd90c; }
+    .contact-links a svg{ width:16px; height:16px; fill:currentColor; }
+
+    /* Recetas: chips + fichas */
+    .category-chips{ display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
+    .category-chip,
+    .recipe-card{
+      padding:.5rem .9rem; border-radius:20px;
+      background:rgba(255,255,255,.08); border:1px solid rgba(12,217,12,.4);
+      color:#0cd90c; cursor:pointer; transition: background .25s, color .25s, box-shadow .25s, transform .2s;
+      backdrop-filter: blur(6px);
+    }
+    .category-chip:hover,
+    .recipe-card:hover{ background:rgba(12,217,12,.2); color:#000; box-shadow:0 0 8px #0cd90c; transform: translateY(-2px); }
+    .category-chip.active{ background:#0cd90c; color:#000; box-shadow:0 0 10px #0cd90c, 0 0 20px #0cd90c; }
+    .recipe-cards{ display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:12px; }
+    .recipe-card{ display:flex; gap:.8rem; align-items:flex-start; text-align:left; white-space:normal; }
+    .recipe-card .icon{ width:28px; height:28px; flex:0 0 28px; }
+    .recipe-card .meta{ display:flex; flex-direction:column; gap:.25rem; }
+    .recipe-card .title{ font-weight:700; color:#fff; }
+    .recipe-card .ing{ font-size:.9rem; opacity:.9; }
+
+    .brand-recipes{ margin-bottom:2rem; background:rgba(0,0,0,.4); border-radius:12px; padding:1.2rem; transition: box-shadow .3s, transform .3s; }
+    .brand-recipes:hover{ box-shadow:0 0 10px rgba(12,217,12,.5), 0 0 20px rgba(12,217,12,.3); transform: translateY(-4px); }
+    .brand-recipes h3{ margin:0 0 .8rem; color:#0cd90c; font-size:1.4rem; }
+    .brand-recipes .recipe-search{
+      width:100%; padding:.6rem 1rem; margin-bottom:1rem; border-radius:24px; border:1px solid rgba(12,217,12,.4);
+      background:rgba(255,255,255,.08); color:#fff; outline:none; transition: box-shadow .3s, border .3s; backdrop-filter: blur(6px);
+    }
+    .brand-recipes .recipe-search:focus{ box-shadow:0 0 10px #0cd90c; border-color:#0cd90c; }
+
+    .image-modal{ position:fixed; inset:0; background:rgba(0,0,0,.8); display:flex; justify-content:center; align-items:center; z-index:200; }
+    .image-modal-content{ position:relative; max-width:90%; max-height:90%; }
+    .image-modal-content img{ width:100%; height:auto; display:block; border-radius:8px; }
+    .close-modal{ position:absolute; top:-40px; right:0; font-size:2rem; color:#fff; cursor:pointer; }
+
+    .pagination{ display:flex; justify-content:center; gap:1rem; margin-top:1rem; }
+    .pagination button{
+      background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.3); color:#fff;
+      padding:.4rem .8rem; border-radius:20px; cursor:pointer; transition: background .3s, color .3s;
+    }
+    .pagination button:hover{ background:#0cd90c; color:#000; }
+    .pagination button:disabled{ opacity:.5; cursor:default; }
+
+    /* Calendario/Videos */
+    .videos-list{ display:flex; flex-wrap:wrap; gap:1.5rem; justify-content:center; }
+    .video-card{ flex:1 1 300px; background:rgba(255,255,255,.05); border-radius:8px; padding:1rem; }
+    .video-card iframe{ width:100%; height:200px; border:none; border-radius:8px; }
+    .video-card h4{ margin-top:.5rem; font-size:1.1rem; }
+    .calendar-container{ display:flex; flex-direction:column; gap:1rem; }
+    /* Calendario es el módulo principal: que use pantalla (sobre todo en landscape). */
+    .calendar-embed{
+      width:100%;
+      height: min(920px, calc(100vh - 220px));
+      min-height: 560px;
+      border:none;
+      border-radius:10px;
+      box-shadow:0 0 10px rgba(0,0,0,.4);
+    }
+    .calbar .btn{ border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.35); color:#fff; padding:10px 12px; border-radius:12px; font-weight:950; cursor:pointer; }
+    .calbar .btn.active{ background:#0cd90c; color:#000; border-color:rgba(12,217,12,.55); }
+
+    .iframe-wrap{ border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.35); }
+    .iframe-wrap iframe{ width:100%; height:560px; border:0; display:block; }
+    .muted{ opacity:.8; font-size:.95rem; text-align:center; }
+
+    @media (max-width:768px){
+      .hero h1{ font-size:2rem; }
+      section{ padding:3rem 1rem; }
+      .iframe-wrap iframe{ height:460px; }
+      .calendar-embed{ height: calc(100vh - 210px); min-height:420px; }
+      .calbar{ position: sticky; top: 8px; z-index: 50; }
+    }
+    @media (max-width: 920px) and (orientation: landscape){
+      .calendar-embed{ height: calc(100vh - 170px); min-height: 0; }
+    }
+
+    /* Embebido (portal terreno): ocultamos el top bar para no duplicar navegación. */
+    body.embedded{ padding-top: 0 !important; }
+    body.embedded header{ display:none !important; }
+    body.embedded .hero{ height:auto; padding:3rem 1rem 2rem; margin-top:0; }
+    body.embedded section:not(.hero){ padding:2rem 1rem; }
+
+    /* Modo "solo módulo": muestra SOLO una sección (pero NO escondemos header en standalone). */
+    body.only-mode .hero{ display:none !important; }
+    body.only-mode section:not(.hero){
+      max-width: none !important;
+      margin: 0 !important;
+      border-radius: 0 !important;
+    }
+
+    /* Solo calendario: ocupa todo el ancho/alto posible. */
+    body.only-cal #ruta-futura{ display:none !important; }
+    body.only-cal #operadores{
+      border: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+    }
+    body.only-cal #operadores > .sub-block:not(#calendario){ display:none !important; }
+    body.only-cal #calendario.sub-block{
+      margin: 0 !important;
+      border-radius: 0 !important;
+      border: 0 !important;
+      background: transparent !important;
+      padding: 10px 10px 14px !important;
+    }
+    body.only-cal .calendar-embed{ height: calc(100vh - 140px) !important; min-height: 0 !important; }
+    @media (max-width: 920px) and (orientation: landscape){
+      body.only-cal .calendar-embed{ height: calc(100vh - 112px) !important; }
+    }
+
+    /* Banner rotación (no podemos forzar orientación en web). */
+    #rotateHint{
+      display:none;
+      position: sticky;
+      top: 58px;
+      z-index: 999;
+      margin: 6px 10px 0;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(10px);
+      font-weight: 950;
+      text-align:center;
+    }
+    #rotateHint b{ color:#0cd90c; }
+    @media (orientation: portrait) and (max-width: 900px){
+      body.only-cal #rotateHint{ display:block; }
+    }
+
+    /* Header: en móvil agrupamos menús de marca en un selector. */
+    .brandSelect{ display:none; }
+    .brandLink{ display:list-item; }
+    .brandSelect select{
+      height: 38px;
+      border-radius: 999px;
+      border: 1px solid rgba(12,217,12,.35);
+      background: rgba(255,255,255,.06);
+      color: #0cd90c;
+      font-weight: 1000;
+      padding: 0 12px;
+      outline:none;
+    }
+    @media (max-width: 980px){
+      .brandLink{ display:none; }
+      .brandSelect{ display:block; }
+    }
+  </style>
+</head>
+<body>
+<div id="stars"></div>
+
+<header>
+  <nav>
+    <div class="who" id="topWho">Operadores</div>
+    <ul>
+      <li><a class="primary" href="#calendario">Calendario</a></li>
+      <li class="driver-only"><a href="#gps">Conectar GPS</a></li>
+      <li class="driver-only"><a href="#ruta">Ver Ruta</a></li>
+      <li class="brandSelect">
+        <select id="brandSel" aria-label="Menú por marca">
+          <option value="">Menú (marca)…</option>
+          <option value="CAMALEON">Camaleón</option>
+          <option value="GOURMET">Gourmet</option>
+          <option value="EXPRESS">Express</option>
+          <option value="DEL SABOR">Del Sabor</option>
+          <option value="BRONTOS">Brontos</option>
+        </select>
+      </li>
+      <li class="brandLink"><a class="menu-camaleon" href="#menu-carritos-camaleon">Menu Camaleón</a></li>
+      <li class="brandLink"><a class="menu-gourmet" href="#menu-carritos-gourmet">Menu Gourmet</a></li>
+      <li class="brandLink"><a class="menu-express" href="#menu-carritos-express">Menu Express</a></li>
+      <li class="brandLink"><a class="menu-delsabor" href="#menu-carritos-del-sabor">Menu Del Sabor</a></li>
+      <li class="brandLink"><a class="menu-brontos" href="#menu-brontos">Menu Brontos</a></li>
+      <li><a href="#videos">Universidad GD</a></li>
+      <li><a class="soon" href="#ruta-futura" aria-disabled="true">Ver Ruta (próx.)</a></li>
+      <li><a class="danger" href="#" id="logoutLink">Salir</a></li>
+    </ul>
+  </nav>
+</header>
+
+<section class="hero" id="inicio">
+  <h1 id="bienvenida-title">Bienvenidos, Operadores</h1>
+  <div class="brands-showcase">
+    <figure><img src="../icons/chameleon.svg" alt="Carritos Camaleón"><figcaption>Camaleón</figcaption></figure>
+    <figure><img src="../icons/chef-hat.svg" alt="Carritos Gourmet"><figcaption>Gourmet</figcaption></figure>
+    <figure><img src="../icons/hot-dog.svg" alt="Carritos del Sabor"><figcaption>Del&nbsp;Sabor</figcaption></figure>
+    <figure><img src="../icons/food-truck.svg" alt="Carritos Express"><figcaption>Express</figcaption></figure>
+  </div>
+</section>
+
+<section id="operadores" class="section dark">
+  <div id="rotateHint">Para terreno: <b>gira el teléfono</b> (horizontal) para ver el calendario completo.</div>
+  <div id="compromiso" class="sub-block">
+    <h2>Nuestro compromiso</h2>
+    <p style="text-align:center; max-width:800px; margin:0 auto 2rem;">
+      Tú eres la chispa que hace brillar nuestros eventos. Cada preparación es una oportunidad
+      para sorprender y superar expectativas. ¡Sigue brillando con pasión y dedicación!
+    </p>
+  </div>
+
+  <div id="contactos-operaciones" class="sub-block">
+    <h2>Contactos del Equipo de Operaciones</h2>
+    <div class="contactos-grid">
+      <div class="contact-card">
+        <h3>Mauricio&nbsp;Zambrano</h3>
+        <p>Jefe de Operaciones</p>
+        <p><strong>Teléfono:</strong> +56&nbsp;9&nbsp;7451&nbsp;6185</p>
+        <div class="contact-links">
+          <a href="tel:+56974516185" title="Llamar">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.6 17.6 0 0 0 4.168 6.608 17.6 17.6 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.68.68 0 0 0-.58-.122l-2.19.547a1.75 1.75 0 0 1-1.657-.459L5.482 8.062a1.75 1.75 0 0 1-.46-1.657l.548-2.19a.68.68 0 0 0-.122-.58z"/></svg>
+          </a>
+          <a href="https://wa.me/56974516185" title="WhatsApp">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0 7.858 7.858 0 0 0 .064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.601 2.326zm-5.607 12.195a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232"/></svg>
+          </a>
+        </div>
+      </div>
+      <div class="contact-card">
+        <h3>Andrés&nbsp;Landerer</h3>
+        <p>Carritos Camaleón</p>
+        <p><strong>Teléfono:</strong> +56&nbsp;9&nbsp;6608&nbsp;3245</p>
+        <div class="contact-links">
+          <a href="tel:+56966083245" title="Llamar">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.6 17.6 0 0 0 4.168 6.608 17.6 17.6 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.68.68 0 0 0-.58-.122l-2.19.547a1.75 1.75 0 0 1-1.657-.459L5.482 8.062a1.75 1.75 0 0 1-.46-1.657l.548-2.19a.68.68 0 0 0-.122-.58z"/></svg>
+          </a>
+          <a href="https://wa.me/56966083245" title="WhatsApp">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0 7.858 7.858 0 0 0 .064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.601 2.326zm-5.607 12.195a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592"/></svg>
+          </a>
+        </div>
+      </div>
+      <div class="contact-card">
+        <h3>Constanza&nbsp;Franco</h3>
+        <p>Carritos Gourmet</p>
+        <p><strong>Teléfono:</strong> +56&nbsp;9&nbsp;3520&nbsp;9292</p>
+        <div class="contact-links">
+          <a href="tel:+56935209292" title="Llamar">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.6 17.6 0 0 0 4.168 6.608 17.6 17.6 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.68.68 0 0 0-.58-.122l-2.19.547a1.75 1.75 0 0 1-1.657-.459L5.482 8.062a1.75 1.75 0 0 1-.46-1.657l.548-2.19a.68.68 0 0 0-.122-.58z"/></svg>
+          </a>
+          <a href="https://wa.me/56935209292" title="WhatsApp">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0 7.858 7.858 0 0 0 .064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.601 2.326z"/></svg>
+          </a>
+        </div>
+      </div>
+      <div class="contact-card">
+        <h3>Daniel&nbsp;Toledo</h3>
+        <p>Carritos Express / Brontos Eventos</p>
+        <p><strong>Teléfono:</strong> +56&nbsp;9&nbsp;7451&nbsp;6185</p>
+        <div class="contact-links">
+          <a href="tel:+56974516185" title="Llamar">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.6 17.6 0 0 0 4.168 6.608 17.6 17.6 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.68.68 0 0 0-.58-.122l-2.19.547a1.75 1.75 0 0 1-1.657-.459L5.482 8.062a1.75 1.75 0 0 1-.46-1.657l.548-2.19a.68.68 0 0 0-.122-.58z"/></svg>
+          </a>
+          <a href="https://wa.me/56974516185" title="WhatsApp">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0 7.858 7.858 0 0 0 .064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.601 2.326z"/></svg>
+          </a>
+        </div>
+      </div>
+      <div class="contact-card">
+        <h3>Walter&nbsp;Canales</h3>
+        <p>Carritos del Sabor</p>
+        <p><strong>Teléfono:</strong> +56&nbsp;9&nbsp;3187&nbsp;9807</p>
+        <div class="contact-links">
+          <a href="tel:+56931879807" title="Llamar">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.6 17.6 0 0 0 4.168 6.608 17.6 17.6 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.68.68 0 0 0-.58-.122l-2.19.547a1.75 1.75 0 0 1-1.657-.459L5.482 8.062a1.75 1.75 0 0 1-.46-1.657l.548-2.19a.68.68 0 0 0-.122-.58z"/></svg>
+          </a>
+          <a href="https://wa.me/56931879807" title="WhatsApp">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0 7.858 7.858 0 0 0 .064 7.926"/></svg>
+          </a>
+        </div>
+      </div>
+      <div class="contact-card">
+        <h3>Equipo Brontos &amp; Smashvill</h3>
+        <p>&nbsp;</p>
+        <p><strong>Teléfono:</strong> +56&nbsp;9&nbsp;6898&nbsp;3346</p>
+        <div class="contact-links">
+          <a href="tel:+56968983346" title="Llamar">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77"/></svg>
+          </a>
+          <a href="https://wa.me/56968983346" title="WhatsApp">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+	  <div id="gps" class="sub-block driver-only">
+	    <h2>Conectar GPS</h2>
+	    <p class="muted">Disponible para conductores.</p>
+	    <div class="iframe-wrap">
+	      <iframe src="conductores_gps.html"></iframe>
+	    </div>
+	  </div>
+
+	  <div id="ruta" class="sub-block driver-only">
+	    <h2>Ver Ruta (actual)</h2>
+	    <p class="muted">Disponible para conductores.</p>
+	    <div class="iframe-wrap">
+	      <iframe src="conductores_ruta.html"></iframe>
+	    </div>
+	  </div>
+
+  <div id="recetas" class="sub-block">
+    <h2>Menú</h2>
+    <div id="recipes-container"></div>
+  </div>
+
+  <div id="videos" class="sub-block">
+    <h2>Universidad GD</h2>
+    <p style="text-align:center; max-width:800px; margin:0 auto 2rem;">Accede a tutoriales y capacitaciones en nuestro canal de YouTube Universidad GD.</p>
+    <div class="videos-list">
+      <div class="video-card"><iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" allowfullscreen></iframe><h4>Cómo operar un carrito de comida</h4></div>
+      <div class="video-card"><iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" allowfullscreen></iframe><h4>Mantenimiento básico del equipo</h4></div>
+      <div class="video-card"><iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" allowfullscreen></iframe><h4>Preparación de producto estrella</h4></div>
+    </div>
+  </div>
+
+  <div id="calendario" class="sub-block">
+    <h2>Calendario de Eventos</h2>
+    <p style="text-align:center; max-width:800px; margin:0 auto 1rem;">Consulta los eventos programados.</p>
+    <div class="calendar-container">
+      <div class="calbar" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:0 auto 10px;">
+        <button class="btn" type="button" data-cal-mode="AGENDA">Agenda</button>
+        <button class="btn" type="button" data-cal-mode="WEEK">Semana</button>
+        <button class="btn" type="button" data-cal-mode="MONTH">Mes</button>
+        <button class="btn" type="button" id="btnCalOpen">Abrir</button>
+      </div>
+      <iframe
+        id="gcalOps"
+        class="calendar-embed"
+        src="https://calendar.google.com/calendar/embed?wkst=2&ctz=America%2FSantiago&showPrint=0&showTz=0&showCalendars=0&src=simonurrutia.m%40gmail.com"
+        frameborder="0"
+        scrolling="no"
+        referrerpolicy="no-referrer-when-downgrade"
+        title="Google Calendar"
+      ></iframe>
+    </div>
+  </div>
+
+  <div id="ruta-futura" class="sub-block">
+    <h2>Ver Ruta (próximo)</h2>
+    <p class="muted">Este módulo queda preparado para el generador de ruta que me vas a explicar.</p>
+  </div>
+</section>
+
+<script>
+  const API_BASE = (() => {
+    try{
+      const h = String(location.hostname || "").toLowerCase();
+      const isLocal = (h === "localhost" || h === "127.0.0.1");
+      return isLocal ? "" : "/crm";
+    }catch(_){ return ""; }
+  })();
+  const apiURL = (p) => {
+    const s = String(p || "");
+    if (!s) return s;
+    if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+    if (s.startsWith("/crm/")) return s;
+    return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+  };
+  const token = localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+  if (!token){ location.href = apiURL("/web/login.html"); }
+
+  function createStars(){
+    const container = document.getElementById('stars'); const total = 120;
+    for(let i=0;i<total;i++){
+      const star = document.createElement('div'); star.classList.add('star');
+      const flare = Math.random()<.1;
+      if(flare){ star.classList.add('flare'); const s=Math.random()*6+6; star.style.width=`${s}px`; star.style.height=`${s}px`; star.style.animationDuration=`${Math.random()*20+20}s`; }
+      else{ const s=Math.random()*2+1; star.style.width=`${s}px`; star.style.height=`${s}px`; star.style.background='rgba(255,255,255,.8)'; star.style.animationDuration=`${Math.random()*20+40}s`; }
+      star.style.left=`${Math.random()*100}%`; star.style.top=`${Math.random()*100}%`; container.appendChild(star);
+    }
+  }
+
+  const brandIcons = {
+    'Carritos Camaleón': apiURL('/web/icons/chameleon.svg'),
+    'Carritos Gourmet':  apiURL('/web/icons/chef-hat.svg'),
+    'Carritos Express':  apiURL('/web/icons/food-truck.svg'),
+    'Carritos del Sabor': apiURL('/web/icons/hot-dog.svg')
+  };
+  const getIconForBrand = b => brandIcons[b] || apiURL('/web/icons/burger.svg');
+
+  function enlargeImage(src, alt){
+    const modal=document.createElement('div'); modal.classList.add('image-modal');
+    modal.innerHTML = `<div class="image-modal-content"><img src="${src}" alt="${alt}"><span class="close-modal">&times;</span></div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('.close-modal').addEventListener('click',()=>document.body.removeChild(modal));
+    modal.addEventListener('click',e=>{ if(e.target===modal) document.body.removeChild(modal); });
+  }
+
+  const categoriesByBrand = {
+    'Carritos Camaleón': ['Hotdog','AS','Hamburguesa','Churrasco','Lomito','Mechada','Wrap','Mini','Appetizer','Dulces','Refrescante','Extras'],
+    'Carritos del Sabor': ['Hotdog','AS','Hamburguesa','Churrasco','Lomito','Mechada','Wrap','Mini','Masas','Frito','Dulce','Fría','Extras'],
+    'Carritos Express': ['Hotdog','AS','Hamburguesa','Churrasco','Lomito','Mechada','Wrap','Mini','Pizzas / Pizzetas','Appetizer','Dulces','Dulces Premium','Dulces Fríos'],
+    'Carritos Gourmet': ['Hotdog','AS','Hamburguesa','Churrasco','Lomito','Mechada','Wrap','Mini','Appetizer','Dulces','Extras','Granizados']
+  };
+
+  function getRecipeCategory(name){
+    const n = name.toLowerCase();
+    if (n.includes('mini')) return 'Mini';
+    if (n.includes('wrap')) return 'Wrap';
+    if (n.includes('burger') || n.includes('hamburg')) return 'Hamburguesa';
+    if (n.includes('hotdog') || n.includes('hot dog')) return 'Hotdog';
+    if (n.includes('churrasco')) return 'Churrasco';
+    if (n.includes('lomito')) return 'Lomito';
+    if (n.includes('mechada')) return 'Mechada';
+    if (n.startsWith('as ') || n.includes(' as ')) return 'AS';
+    if (n.includes('pizza')) return 'Pizzas / Pizzetas';
+    if (n.includes('pizzeta')) return 'Pizzas / Pizzetas';
+    if (n.includes('empanad')) return 'Appetizer';
+    if (n.includes('nugget') || n.includes('papas')) return 'Appetizer';
+    if (n.includes('algodón') || n.includes('popcorn') || n.includes('cabritas')) return 'Dulces';
+    if (n.includes('donut') || n.includes('muffin') || n.includes('waffle') || n.includes('medialuna')) return 'Dulces';
+    if (n.includes('granizado') || n.includes('slushi') || n.includes('helado')) return 'Fría';
+    if (n.includes('extra')) return 'Extras';
+    return '';
+  }
+
+  function slugBrand(brand){
+    return brand.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
+  }
+
+  function brandAnchorId(brand){
+    const b = String(brand || "").toLowerCase();
+    if (b.includes("camale")) return "menu-carritos-camaleon";
+    if (b.includes("gourmet")) return "menu-carritos-gourmet";
+    if (b.includes("express")) return "menu-carritos-express";
+    if (b.includes("sabor")) return "menu-carritos-del-sabor";
+    return `menu-${slugBrand(brand)}`;
+  }
+
+  function loadRecipes(){
+    const data = JSON.parse(document.getElementById('recipes-data').textContent);
+    const container = document.getElementById('recipes-container');
+
+    for(const brand in data){
+      const list = data[brand].map(r => ({...r, category: r.categoria || getRecipeCategory(r.nombre)}));
+      const block = document.createElement('div'); block.classList.add('brand-recipes');
+      block.id = brandAnchorId(brand);
+      const title = document.createElement('h3'); title.textContent = brand; block.appendChild(title);
+
+      const search = document.createElement('input'); search.className='recipe-search'; search.placeholder='Buscar producto…'; block.appendChild(search);
+
+      const chips = document.createElement('div'); chips.className='category-chips';
+      let selected = null;
+      (categoriesByBrand[brand] || []).forEach(cat=>{
+        const chip = document.createElement('button'); chip.type='button'; chip.className='category-chip'; chip.textContent=cat;
+        chip.addEventListener('click', ()=>{
+          if(selected===cat){ selected=null; chip.classList.remove('active'); }
+          else{
+            chips.querySelectorAll('.category-chip').forEach(c=>c.classList.remove('active'));
+            selected=cat; chip.classList.add('active');
+          }
+          filter();
+        });
+        chips.appendChild(chip);
+      });
+      block.appendChild(chips);
+
+      const grid = document.createElement('div'); grid.className='recipe-cards'; block.appendChild(grid);
+
+      const pager = document.createElement('div'); pager.className='pagination';
+      const prev = document.createElement('button'); prev.textContent='Anterior';
+      const next = document.createElement('button'); next.textContent='Siguiente';
+      pager.appendChild(prev); pager.appendChild(next); block.appendChild(pager);
+
+      let filtered = list.slice(); let page=1; const perPage=12;
+
+      function render(){
+        grid.innerHTML='';
+        const start = (page-1)*perPage, end = start+perPage;
+        filtered.slice(start,end).forEach(item=>{
+          const card = document.createElement('div'); card.className='recipe-card'; card.title='Ver icono';
+          const img = document.createElement('img'); img.src=getIconForBrand(brand); img.alt=brand; img.className='icon';
+          img.addEventListener('click',()=>enlargeImage(img.src,item.nombre));
+          const meta = document.createElement('div'); meta.className='meta';
+          const t = document.createElement('div'); t.className='title'; t.textContent=item.nombre;
+          const i = document.createElement('div'); i.className='ing'; i.textContent=item.ingredientes.join(', ');
+          meta.appendChild(t); meta.appendChild(i); card.appendChild(img); card.appendChild(meta); grid.appendChild(card);
+        });
+        const total = Math.max(1, Math.ceil(filtered.length/perPage));
+        prev.disabled = page<=1; next.disabled = page>=total;
+      }
+      function filter(){
+        const term = search.value.trim().toLowerCase();
+        filtered = list.filter(r=>{
+          const s = r.nombre.toLowerCase().includes(term) || r.ingredientes.join(', ').toLowerCase().includes(term);
+          const c = !selected || r.category===selected;
+          return s && c;
+        });
+        page=1; render();
+      }
+
+      prev.addEventListener('click', ()=>{ if(page>1){ page--; render(); }});
+      next.addEventListener('click', ()=>{ const total=Math.ceil(filtered.length/perPage)||1; if(page<total){ page++; render(); }});
+      search.addEventListener('input', filter);
+
+      container.appendChild(block);
+      render();
+    }
+
+    // Brontos queda definido como menú (aún sin recetas cargadas aquí).
+    if (!document.getElementById("menu-brontos")){
+      const b = document.createElement("div");
+      b.className = "brand-recipes";
+      b.id = "menu-brontos";
+      b.innerHTML = `
+        <h3>Brontos</h3>
+        <div class="muted" style="text-align:left;max-width:900px">
+          Menú Brontos queda por definir. Cuando tengamos los productos/recetas, se cargan acá.
+        </div>
+      `;
+      container.appendChild(b);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', async ()=>{
+    const sp = new URLSearchParams(location.search || "");
+    const only = String(sp.get("only") || "").trim().toLowerCase();
+    const embed = (sp.get("embed") === "1") || (window.self !== window.top);
+    if (embed){
+      document.body.classList.add('embedded');
+    }
+    if (only){
+      document.body.classList.add("only-mode");
+    }
+    if (only === "cal") document.body.classList.add("only-cal");
+    createStars();
+    loadRecipes();
+
+    const logoutLink=document.getElementById('logoutLink');
+    const doLogout = async (e)=>{
+      if(e) e.preventDefault();
+      try{
+        await fetch(apiURL('/auth/logout'), {
+          method:'POST',
+          headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' },
+          body: JSON.stringify({ reason:'manual' })
+        });
+      }catch(_){}
+      try{
+        localStorage.removeItem('token'); localStorage.removeItem('gd_token');
+        sessionStorage.removeItem('token'); sessionStorage.removeItem('gd_token');
+      }catch(_){}
+      location.href = apiURL('/web/login.html');
+    };
+    if(logoutLink){ logoutLink.addEventListener('click', doLogout); }
+
+    try{
+      const me = await fetch(apiURL('/me'), { headers:{ Authorization: 'Bearer ' + token } }).then(r=>r.json());
+      const role = String(me.role || me.rol || '').toUpperCase();
+      const name = me.nombre || me.name || me.username || 'Operador';
+      document.getElementById('bienvenida-title').textContent = `Bienvenido, ${name}`;
+      const topWho = document.getElementById('topWho');
+      if (topWho) topWho.textContent = name;
+      const opsRoles = ['OPERADOR','CHOP','CHOFER','CONDUCTOR','CONDUCTOR (CHOP)','OPERACIONES','JEFE DE OPERACIONES','COMPRAS','BODEGA','ADMIN','SUPERADMIN'];
+      if (!opsRoles.includes(role)){
+        location.href = apiURL('/web/index.html');
+        return;
+      }
+      const driverRoles = ['CHOP','CHOFER','CONDUCTOR','CONDUCTOR (CHOP)'];
+      if (!driverRoles.includes(role)){
+        document.querySelectorAll('.driver-only').forEach(el => el.style.display = 'none');
+      }
+    }catch(_){
+      // si falla /me, forzamos login
+      location.href = apiURL('/web/login.html');
+    }
+
+    // Default: abrir en calendario (principal módulo en terreno).
+    try{
+      if (!location.hash) location.hash = '#calendario';
+    }catch(_){}
+
+    // Modo "solo módulo" (usado por Portal Terreno):
+    // - cal: solo calendario
+    // - menu: solo sección menú; opcional brand=...
+    // - contactos: solo contactos
+    // - uni: solo universidad
+    if (only){
+      const hideAll = () => {
+        document.querySelectorAll("#operadores > .sub-block").forEach(el => { el.style.display = "none"; });
+      };
+      if (only === "menu"){
+        hideAll();
+        const sec = document.getElementById("recetas");
+        if (sec) sec.style.display = "";
+        const want = String(sp.get("brand") || "").trim().toUpperCase();
+        if (want){
+          const map = {
+            "CAMALEON": "menu-carritos-camaleon",
+            "GOURMET": "menu-carritos-gourmet",
+            "EXPRESS": "menu-carritos-express",
+            "DEL SABOR": "menu-carritos-del-sabor",
+            "BRONTOS": "menu-brontos",
+          };
+          const id = map[want] || "";
+          if (id){
+            document.querySelectorAll("#recipes-container .brand-recipes").forEach(el => {
+              el.style.display = (String(el.id) === id) ? "" : "none";
+            });
+          }
+        }
+        try{ location.hash = "#recetas"; }catch(_){}
+      } else if (only === "contactos"){
+        hideAll();
+        const sec = document.getElementById("contactos-operaciones");
+        if (sec) sec.style.display = "";
+        try{ location.hash = "#contactos-operaciones"; }catch(_){}
+      } else if (only === "uni"){
+        hideAll();
+        const sec = document.getElementById("videos");
+        if (sec) sec.style.display = "";
+        try{ location.hash = "#videos"; }catch(_){}
+      } else if (only === "cal"){
+        hideAll();
+        const sec = document.getElementById("calendario");
+        if (sec) sec.style.display = "";
+        try{ location.hash = "#calendario"; }catch(_){}
+      }
+    }
+
+    // Selector Menú (móvil): abre página dedicada por marca.
+    try{
+      const sel = document.getElementById("brandSel");
+      sel?.addEventListener("change", () => {
+        const v = String(sel.value || "").trim().toUpperCase();
+        if (!v) return;
+        location.href = `operadores.html?only=menu&brand=${encodeURIComponent(v)}&v=${Date.now()}#recetas`;
+      });
+    }catch(_){}
+
+    // Calendario: en móvil usamos "AGENDA" por defecto (mucho más legible).
+    try{
+      const cal = document.getElementById("gcalOps");
+      const openBtn = document.getElementById("btnCalOpen");
+      const modeBtns = Array.from(document.querySelectorAll("[data-cal-mode]"));
+      if (cal){
+        const base = String(cal.getAttribute("src") || "").split("&mode=")[0];
+        const isMobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+        const setMode = (mode)=>{
+          const m = String(mode||"").toUpperCase();
+          const url = base + "&mode=" + encodeURIComponent(m) + "&v=" + Date.now();
+          cal.setAttribute("src", url);
+          for (const b of modeBtns){
+            b.classList.toggle("active", String(b.getAttribute("data-cal-mode")||"").toUpperCase() === m);
+          }
+        };
+        for (const b of modeBtns){
+          b.addEventListener("click", ()=>setMode(b.getAttribute("data-cal-mode")));
+        }
+        openBtn?.addEventListener("click", ()=>{
+          const u = cal.getAttribute("src") || base;
+          window.open(u, "_blank", "noopener");
+        });
+        setMode(isMobile ? "AGENDA" : "MONTH");
+      }
+    }catch(_){}
+  });
+</script>
+
+<script id="recipes-data" type="application/json">
+{
+  "Carritos Camaleón": [
+    {"nombre":"Hotdog Camaleón","ingredientes":["Pan lengua 19 cm","Salchicha vienesa","Palta 100% hass","Tomates frescos","Cebolla caramelizada","Papas hilo"]},
+    {"nombre":"As Camaleón","ingredientes":["Pan lengua 19 cm","Carne de vacuno","Palta 100% hass","Tomates frescos","Cebolla caramelizada"]},
+    {"nombre":"Hotdog Italiano","ingredientes":["Pan lengua 19 cm","Salchicha vienesa","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"As Italiano","ingredientes":["Pan lengua 19 cm","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Opción Veggie (Mr. Veggie)","ingredientes":["Disponible para hotdogs"]},
+    {"nombre":"Tejana Camaleón","ingredientes":["Pan Brioche","Hamburguesa 100 gr","Queso mantecoso o cheddar","Palta 100% hass","Salsa BBQ"]},
+    {"nombre":"Italiana Camaleón","ingredientes":["Pan Brioche","Hamburguesa 100 gr","Queso mantecoso o cheddar","Palta 100% hass","Tomates frescos","Cebolla caramelizada"]},
+    {"nombre":"Hamburguesa Clásica","ingredientes":["Pan Brioche","Hamburguesa 100 gr","Queso mantecoso o cheddar","Lechuga","Tomates frescos","Pepinillos dulces"]},
+    {"nombre":"Hamburguesa Italiana","ingredientes":["Pan Brioche","Hamburguesa 100 gr","Queso mantecoso o cheddar","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Opción Veggie (Not-Burger)","ingredientes":["Disponible para hamburguesas"]},
+    {"nombre":"Churrasco Camaleón","ingredientes":["Pan Brioche","Lomo de cerdo","Queso mantecoso o cheddar","Palta 100% hass","Tomates frescos","Cebolla caramelizada"]},
+    {"nombre":"Lomito Camaleón","ingredientes":["Pan Brioche","Lomo de cerdo","Queso mantecoso o cheddar","Palta 100% hass","Tomates frescos","Cebolla caramelizada"]},
+    {"nombre":"Churrasco Italiano","ingredientes":["Pan Brioche","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Lomito Italiano","ingredientes":["Pan Brioche","Lomo de cerdo","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mechada Camaleón","ingredientes":["Pan Brioche","Mechada de vacuno","Queso mantecoso o cheddar","Palta 100% hass","Tomates frescos","Cebolla caramelizada"]},
+    {"nombre":"Mechada Italiana","ingredientes":["Pan Brioche","Mechada de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Wrap Mechada Clásico","ingredientes":["Tortilla XL","Mechada de vacuno","Mix de lechugas","Queso granulado","Crema ácida"]},
+    {"nombre":"Wrap Vacuno Clásico","ingredientes":["Tortilla XL","Carne de vacuno","Mix de lechugas","Queso granulado","Crema ácida"]},
+    {"nombre":"Wrap Mixto Clásico","ingredientes":["Tortilla XL","Pechuga de pollo","Carne de vacuno","Mix de lechugas","Queso granulado","Crema ácida"]},
+    {"nombre":"Wrap Pollo Clásico","ingredientes":["Tortilla XL","Pechuga de pollo","Mix de lechugas","Queso granulado","Crema ácida"]},
+    {"nombre":"Wrap Mechada Camaleón","ingredientes":["Tortilla XL","Mechada de vacuno","Mix de lechugas","Queso granulado","Crema ácida","Cebolla caramelizada","Porotos negros"]},
+    {"nombre":"Wrap Vacuno Camaleón","ingredientes":["Tortilla XL","Carne de vacuno","Mix de lechugas","Queso granulado","Crema ácida","Cebolla caramelizada","Porotos negros"]},
+    {"nombre":"Wrap Mixto Camaleón","ingredientes":["Tortilla XL","Pechuga de pollo","Carne de vacuno","Mix de lechugas","Queso granulado","Crema ácida","Cebolla caramelizada","Porotos negros"]},
+    {"nombre":"Wrap Pollo Camaleón","ingredientes":["Tortilla XL","Pechuga de pollo","Mix de lechugas","Queso granulado","Crema ácida","Cebolla caramelizada","Porotos negros"]},
+    {"nombre":"Mini Cheese Burger","ingredientes":["Pan amasado mini","Hamburguesa 80 gr","Queso mantecoso o cheddar","Salsa BBQ","Cebolla caramelizada"]},
+    {"nombre":"Mini Clásica Burger","ingredientes":["Pan amasado mini","Hamburguesa 80 gr","Queso mantecoso o cheddar","Tomates frescos","Lechuga"]},
+    {"nombre":"Mini Italiana Burger","ingredientes":["Pan amasado mini","Hamburguesa 80 gr","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Lomito Italiana","ingredientes":["Pan amasado mini","Lomo de cerdo","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Churrasco Italiana","ingredientes":["Pan amasado mini","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Mechada Italiana","ingredientes":["Pan amasado mini","Mechada de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini AS Italiano","ingredientes":["Pan mini baguette 9 cm","Churrasco vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Hotdog Italiano","ingredientes":["Pan mini hotdog 9 cm","Salchicha vienesa","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini AS Queso","ingredientes":["Pan mini amasado 9 cm","Churrasco de vacuno","Queso mantecoso o cheddar"]},
+    {"nombre":"Empanadas (Appetizer)","ingredientes":["Porción 3 unidades","Rellenas con queso"]},
+    {"nombre":"Papas Fritas (Appetizer)","ingredientes":["Porción 150 grs"]},
+    {"nombre":"Papas Smile (Appetizer)","ingredientes":["Porción 8 unidades"]},
+    {"nombre":"Nuggets (Appetizer)","ingredientes":["Porción 5 unidades"]},
+    {"nombre":"Pizzetas (Appetizer)","ingredientes":["2 pizzetas 10 cm","Jamón","Queso","Pepperoni","Veggie"]},
+    {"nombre":"Pizza (Appetizer)","ingredientes":["Mini pizza","Jamón","Queso","Pepperoni","Veggie"]},
+    {"nombre":"Popcorn (Dulces)","ingredientes":["Palomitas de maíz"]},
+    {"nombre":"Algodón de azúcar (Dulces)","ingredientes":["Algodón de azúcar"]},
+    {"nombre":"Brochetas (Dulces)","ingredientes":["Plátano","Frutilla","Marshmallow","Chocolate"]},
+    {"nombre":"Churros Españoles (Dulces)","ingredientes":["Churro tradicional","Azúcar","2 unidades"]},
+    {"nombre":"Churros Rellenos (Dulces)","ingredientes":["Churro tradicional","Manjar"]},
+    {"nombre":"Medialuna (Dulces)","ingredientes":["1 unidad"]},
+    {"nombre":"Waffles (Dulces)","ingredientes":["Plátano","Nutella","Salsa de chocolate"]},
+    {"nombre":"Donuts (Dulces)","ingredientes":["1 donut","Chips de chocolate o cobertura"]},
+    {"nombre":"Muffin (Dulces)","ingredientes":["1 muffin","Chips de chocolate o arándanos"]},
+    {"nombre":"Slushies (Estación Refrescante)","ingredientes":["Hielo frapé","Variedad de sabores"]},
+    {"nombre":"Helados Sundae (Estación Refrescante)","ingredientes":["Helado soft","Salsa","Marshmallows","Toppings"]},
+    {"nombre":"Helados Barquillo (Estación Refrescante)","ingredientes":["Helado soft en cono barquillo"]},
+    {"nombre":"Ingredientes extras","ingredientes":["Lechuga","Poroto verde","Salsa americana","Cebolla morada","Pimentón","Champiñón","Queso cheddar","Queso mantecoso","Tocino","Salsa verde","Palta","Cebolla caramelizada","Cebolla crispy","Pepinillos dulces"]}
+  ],
+  "Carritos del Sabor": [
+    {"nombre":"Hotdog Italiano","ingredientes":["Pan frica grande","Palta","Salchicha premium o veggie","Tomate"]},
+    {"nombre":"Hotdog del Sabor","ingredientes":["Pan frica grande","Palta","Salchicha premium o veggie","Tomate","Cebolla caramelizada"]},
+    {"nombre":"Burger Italiana","ingredientes":["Pan brioche","Hamburguesa 100 gr","Palta","Tomate"]},
+    {"nombre":"Burger Clásica","ingredientes":["Pan brioche","Hamburguesa 100 gr","Lechuga","Tomate","Cebolla morada","Pepinillo"]},
+    {"nombre":"Burger del Sabor","ingredientes":["Pan brioche","Hamburguesa 100 gr","Queso mantecoso","Lechuga","Tomate","Pepinillo","Palta"]},
+    {"nombre":"Mechada Italiana","ingredientes":["Pan brioche","Mechada de vacuno","Palta","Tomate"]},
+    {"nombre":"Mechada Clásica","ingredientes":["Pan brioche","Mechada de vacuno","Lechuga","Cebolla morada","Pepinillo"]},
+    {"nombre":"Mechada del Sabor","ingredientes":["Pan brioche","Mechada de vacuno","Queso mantecoso","Lechuga","Tomate","Pepinillo","Palta"]},
+    {"nombre":"Churrasco Italiano","ingredientes":["Pan brioche","Carne de vacuno","Palta","Tomate"]},
+    {"nombre":"Churrasco Clásico","ingredientes":["Pan brioche","Carne de vacuno","Lechuga","Cebolla morada","Pepinillo"]},
+    {"nombre":"Churrasco del Sabor","ingredientes":["Pan brioche","Carne de vacuno","Queso mantecoso","Lechuga","Tomate","Pepinillo","Palta"]},
+    {"nombre":"Lomito Italiano","ingredientes":["Pan brioche","Lomo de cerdo","Palta","Tomate"]},
+    {"nombre":"Lomito Clásico","ingredientes":["Pan brioche","Lomo de cerdo","Lechuga","Cebolla morada","Pepinillo"]},
+    {"nombre":"Lomito del Sabor","ingredientes":["Pan brioche","Lomo de cerdo","Queso mantecoso","Lechuga","Tomate","Pepinillo","Palta"]},
+    {"nombre":"As Italiano","ingredientes":["Pan lengua","Palta","Carne de vacuno","Tomate"]},
+    {"nombre":"As del Sabor","ingredientes":["Pan lengua","Carne de vacuno","Queso mantecoso","Lechuga","Tomate","Pepinillo","Palta"]},
+    {"nombre":"Wraps de Pollo","ingredientes":["Tortilla XL","Pechuga de pollo","Lechuga","Cebolla caramelizada","Crema ácida"]},
+    {"nombre":"Wraps de Vacuno","ingredientes":["Tortilla XL","Carne de vacuno","Lechuga","Cebolla caramelizada","Crema ácida"]},
+    {"nombre":"Wraps de Mechada","ingredientes":["Tortilla XL","Mechada de vacuno","Lechuga","Cebolla caramelizada","Crema ácida","Poroto negro"]},
+    {"nombre":"Wraps Mixto","ingredientes":["Tortilla XL","Pechuga de pollo","Carne de vacuno","Lechuga","Cebolla caramelizada","Crema ácida","Poroto negro"]},
+    {"nombre":"Mini Churrasco Italiano","ingredientes":["Pan amasado mini","Palta","Carne de vacuno","Tomate"]},
+    {"nombre":"Mini Churrasco Especial","ingredientes":["Pan amasado mini","Carne de vacuno","Queso mantecoso","Salsa BBQ"]},
+    {"nombre":"Mini Hotdog Italiano","ingredientes":["Pan mini baguette","Palta","Salchicha premium o veggie","Tomate"]},
+    {"nombre":"Mini As Italiano","ingredientes":["Pan mini baguette","Palta","Carne de vacuno","Tomate"]},
+    {"nombre":"Mini Mechada Italiana","ingredientes":["Pan amasado mini","Palta","Mechada de vacuno","Tomate"]},
+    {"nombre":"Mini Mechada Especial","ingredientes":["Pan amasado mini","Mechada de vacuno","Queso mantecoso","Salsa BBQ"]},
+    {"nombre":"Mini Lomito Italiano","ingredientes":["Pan amasado mini","Palta","Lomo de cerdo","Tomate"]},
+    {"nombre":"Mini Lomito Especial","ingredientes":["Pan amasado mini","Lomo de cerdo","Queso mantecoso","Salsa BBQ"]},
+    {"nombre":"Mini Burger Italiana","ingredientes":["Pan amasado mini","Palta","Hamburguesa 80 gr","Tomate"]},
+    {"nombre":"Mini Burger Especial","ingredientes":["Pan amasado mini","Hamburguesa 80 gr","Queso mantecoso","Lechuga","Salsa BBQ"]},
+    {"nombre":"Pizza (Estación de Masas)","ingredientes":["Jamón","Queso","Pepperoni","Veggie","Queso-Aceitunas"]},
+    {"nombre":"Pizzetas (Estación de Masas)","ingredientes":["2 pizzetas","Jamón","Queso","Pepperoni","Veggie"]},
+    {"nombre":"Nuggets (Frito)","ingredientes":["5 unidades"]},
+    {"nombre":"Empanadas (Frito)","ingredientes":["3 empanaditas de queso"]},
+    {"nombre":"Papas Fritas (Frito)","ingredientes":["Porción 150 grs"]},
+    {"nombre":"Brochetas de Frutas (Dulce)","ingredientes":["Uvas","Melón","Frutilla","Marshmallow","Chocolate"]},
+    {"nombre":"Algodón de azúcar (Dulce)","ingredientes":["Algodón de azúcar"]},
+    {"nombre":"Cabritas (Dulce)","ingredientes":["Palomitas de maíz"]},
+    {"nombre":"Churros Españoles (Dulce)","ingredientes":["4 unidades","Azúcar"]},
+    {"nombre":"Churros Rellenos (Dulce)","ingredientes":["2 unidades","Manjar"]},
+    {"nombre":"Waffles (Dulce)","ingredientes":["Waffle","Plátano","Salsa de chocolate"]},
+    {"nombre":"Helado Soft (Fría)","ingredientes":["Chocolate o vainilla","Salsa chocolate/manjar/frutilla"]},
+    {"nombre":"Helado Sundae (Fría)","ingredientes":["Helado soft","Salsa","Marshmallow","Frutas secas"]},
+    {"nombre":"Ingredientes extras","ingredientes":["Lechuga","Poroto verde","Salsa americana","Cebolla morada","Pimentón","Champiñón","Queso cheddar","Queso mantecoso","Tocino","Salsa verde","Palta","Cebolla caramelizada","Cebolla crispy","Pepinillos dulces"]}
+  ],
+  "Carritos Express": [
+    {"nombre":"Hotdog Italiano","ingredientes":["Pan lengua","Salchicha sureña","Palta 100% Hass","Tomates frescos"]},
+    {"nombre":"Hotdog Dinámico","ingredientes":["Pan lengua","Salchicha sureña","Tomate fresco","Americana","Chucrut"]},
+    {"nombre":"Hotdog Completo","ingredientes":["Pan lengua","Salchicha sureña","Tomate fresco","Salsa verde","Ají verde"]},
+    {"nombre":"Churrasco Italiano","ingredientes":["Pan brioche","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Churrasco Luco","ingredientes":["Pan brioche","Carne de vacuno","Queso mantecoso o cheddar"]},
+    {"nombre":"Lomito Italiano","ingredientes":["Pan brioche","Carne de cerdo","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Lomito Luco","ingredientes":["Pan brioche","Carne de cerdo","Queso mantecoso o cheddar"]},
+    {"nombre":"Burger Italiana","ingredientes":["Pan brioche","Hamburguesa 100 gr","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Burger Clásica","ingredientes":["Pan brioche","Hamburguesa 100 gr","Tomates frescos","Lechuga","Queso mantecoso o cheddar"]},
+    {"nombre":"Mechada Italiana","ingredientes":["Pan brioche","Mechada de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mechada Luco","ingredientes":["Pan brioche","Mechada de vacuno","Queso mantecoso o cheddar"]},
+    {"nombre":"Wraps Pollo","ingredientes":["Tortilla XL","Guacamole","Mix lechuga","Queso granulado","Salsa ácida"]},
+    {"nombre":"Wraps Vacuno","ingredientes":["Tortilla XL","Guacamole","Mix lechuga","Queso granulado","Salsa ácida"]},
+    {"nombre":"Wraps Mechada","ingredientes":["Tortilla XL","Guacamole","Mix lechuga","Queso granulado","Salsa ácida"]},
+    {"nombre":"As Italiano","ingredientes":["Pan lengua","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"As Luco","ingredientes":["Pan lengua","Carne de vacuno","Queso mantecoso o cheddar"]},
+    {"nombre":"Mini Burger Italiana","ingredientes":["Pan amasado mini","Hamburguesa casera 60gr","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Cheese Burger","ingredientes":["Pan amasado mini","Hamburguesa casera 60gr","Queso mantecoso o cheddar"]},
+    {"nombre":"Mini Mechada Italiana","ingredientes":["Pan amasado mini","Mechada de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Churrasco Italiano","ingredientes":["Pan amasado mini","Churrasco de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Lomito Italiano","ingredientes":["Pan brioche","Carne de cerdo","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Hotdog Italiano","ingredientes":["Pan lengua","Salchicha sureña","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini As Italiano","ingredientes":["Pan lengua","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini As Luco","ingredientes":["Pan lengua","Carne de vacuno","Queso mantecoso o cheddar"]},
+    {"nombre":"Pizzas","ingredientes":["Jamón queso","Pepperoni","Veggie (elige sabor)"]},
+    {"nombre":"Pizzetas","ingredientes":["2 unidades de pizzetas","Jamón queso","Pepperoni","Veggie"]},
+    {"nombre":"Papas Fritas (Appetizer)","ingredientes":["Porción 150 grs"]},
+    {"nombre":"Papas Smile (Appetizer)","ingredientes":["Porción 6 unidades"]},
+    {"nombre":"Empanadas de Queso (Appetizer)","ingredientes":["Porción 3 unidades"]},
+    {"nombre":"Popcorn (Dulces)","ingredientes":["Palomitas de maíz en cono/envase"]},
+    {"nombre":"Algodón (Dulces)","ingredientes":["Algodón de azúcar en palito"]},
+    {"nombre":"Brochetas de Frutas (Dulces)","ingredientes":["Plátano","Frutillas","Marshmallow","Salsa chocolate"]},
+    {"nombre":"Medialuna (Dulces Premium)","ingredientes":["1 unidad"]},
+    {"nombre":"Donuts (Dulces Premium)","ingredientes":["1 donut con chocolate"]},
+    {"nombre":"Muffin (Dulces Premium)","ingredientes":["1 muffin tradicional","(+ $400 salsa)"]},
+    {"nombre":"Waffles (Dulces Premium)","ingredientes":["Frutillas y plátanos","Salsa de chocolate"]},
+    {"nombre":"Churros Españoles (Dulces Premium)","ingredientes":["2 churros","(+ $400 salsa)"]},
+    {"nombre":"Churros Rellenos (Dulces Premium)","ingredientes":["1 churro relleno"]},
+    {"nombre":"Granizados (Dulces Fríos)","ingredientes":["Hielo frappé","Sabores"]},
+    {"nombre":"Helados Sundae (Dulces Fríos)","ingredientes":["Vainilla","Chocolate","Mixto"]},
+    {"nombre":"Helados en Cono (Dulces Fríos)","ingredientes":["Vainilla","Chocolate","Mixto"]}
+  ],
+  "Carritos Gourmet": [
+    {"nombre":"Smash Clásica","ingredientes":["Pan brioche","Burger Smash 100 grs","Tomates frescos","Lechuga","Queso mantecoso o cheddar"]},
+    {"nombre":"Smash Italiana","ingredientes":["Pan brioche","Burger Smash 100 grs","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Smash Gourmet","ingredientes":["Pan brioche","Burger Smash 100 grs","Queso mantecoso o cheddar","Champiñones","Salsa BBQ","Cebolla caramelizada"]},
+    {"nombre":"Churrasco Luco","ingredientes":["Pan brioche","Carne de vacuno","Queso cheddar o mantecoso"]},
+    {"nombre":"Churrasco Italiano","ingredientes":["Pan brioche","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Churrasco Gourmet","ingredientes":["Pan brioche","Carne de vacuno","Queso mantecoso o cheddar","Tomates frescos","Cebolla caramelizada","Salsa americana"]},
+    {"nombre":"Lomito Luco","ingredientes":["Pan brioche","Lomo de cerdo","Queso mantecoso o cheddar"]},
+    {"nombre":"Lomito Italiano","ingredientes":["Pan brioche","Lomo de cerdo","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Lomito Gourmet","ingredientes":["Pan brioche","Lomo de cerdo","Queso mantecoso o cheddar","Champiñones","Salsa BBQ","Cebolla caramelizada"]},
+    {"nombre":"Hot Dog Dinámico (Estándar)","ingredientes":["Pan lengua","Salchicha sureña","Americana","Salsa verde","Tomates frescos"]},
+    {"nombre":"Hot Dog Italiano (Estándar)","ingredientes":["Pan lengua","Salchicha sureña","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Hot Dog Gourmet (Estándar)","ingredientes":["Pan lengua","Salchicha sureña","Queso mantecoso o cheddar","Champiñones","Cebolla caramelizada"]},
+    {"nombre":"Hot Dog Dinámico XL","ingredientes":["Pan lengua XL","Salchicha sureña","Americana","Salsa verde","Tomates frescos"]},
+    {"nombre":"Hot Dog Italiano XL","ingredientes":["Pan lengua XL","Salchicha sureña","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Hot Dog Gourmet XL","ingredientes":["Pan lengua XL","Salchicha sureña","Queso mantecoso o cheddar","Champiñones","Salsa BBQ","Cebolla caramelizada"]},
+    {"nombre":"As Luco (Estándar)","ingredientes":["Pan lengua","Carne de vacuno","Queso cheddar o mantecoso"]},
+    {"nombre":"As Italiano (Estándar)","ingredientes":["Pan lengua","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"As Gourmet (Estándar)","ingredientes":["Pan lengua","Carne de vacuno","Queso mantecoso o cheddar","Champiñones","Salsa BBQ","Cebolla caramelizada"]},
+    {"nombre":"As Luco XL","ingredientes":["Pan lengua XL","Carne de vacuno","Queso cheddar o mantecoso"]},
+    {"nombre":"As Italiano XL","ingredientes":["Pan lengua XL","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"As Gourmet XL","ingredientes":["Pan lengua XL","Carne de vacuno","Queso mantecoso o cheddar","Champiñones","Salsa BBQ","Cebolla caramelizada"]},
+    {"nombre":"Mechada Clásica","ingredientes":["Pan brioche","Mechada de vacuno","Queso mantecoso o cheddar","Lechuga","Tomates frescos"]},
+    {"nombre":"Mechada Italiana","ingredientes":["Pan brioche","Mechada de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mechada Gourmet","ingredientes":["Pan brioche","Mechada de vacuno","Queso mantecoso o cheddar","Tomates frescos","Cebolla caramelizada","Salsa americana"]},
+    {"nombre":"Wrap Clásico de Pollo","ingredientes":["Tortilla XL","Pechuga de pollo","Guacamole","Queso granulado","Poroto negro","Crema ácida"]},
+    {"nombre":"Wrap Clásico de Vacuno","ingredientes":["Tortilla XL","Carne de vacuno","Guacamole","Queso granulado","Poroto negro","Crema ácida"]},
+    {"nombre":"Wrap Gourmet","ingredientes":["Tortilla XL","Pulled pork","Guacamole","Queso granulado","Poroto negro","Salsa BBQ","Porotos negros","Cebolla caramelizada"]},
+    {"nombre":"Mini Cheese Smash","ingredientes":["Pan amasado mini","Burger Smash Mini","Queso mantecoso o cheddar","Cebolla caramelizada"]},
+    {"nombre":"Mini Italiana Smash","ingredientes":["Pan amasado mini","Burger Smash Mini","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Clásica Smash","ingredientes":["Pan amasado mini","Burger Smash Mini","Queso mantecoso o cheddar","Lechuga","Tomates frescos"]},
+    {"nombre":"Mini Lomito Italiano","ingredientes":["Pan amasado mini","Lomo de cerdo","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Churrasco Italiano","ingredientes":["Pan amasado mini","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Mechada Italiano","ingredientes":["Pan amasado mini","Mechada de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini Hotdog Italiano","ingredientes":["Pan amasado mini","Salchicha sureña","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Mini As Luco","ingredientes":["Pan amasado mini","Carne de vacuno","Queso mantecoso o cheddar","Tomates frescos"]},
+    {"nombre":"Mini As Italiano","ingredientes":["Pan amasado mini","Carne de vacuno","Palta 100% hass","Tomates frescos"]},
+    {"nombre":"Ingredientes extras","ingredientes":["Lechuga","Poroto verde","Salsa americana","Cebolla morada","Pimentón","Champiñón","Queso cheddar","Queso mantecoso","Tocino","Salsa verde","Palta","Cebolla crispy","Pepinillos dulces","Cebolla caramelizada"]},
+    {"nombre":"Media Luna (Dulces)","ingredientes":["1 medialuna"]},
+    {"nombre":"Churros Españoles (Dulces)","ingredientes":["2 churros","Azúcar flor"]},
+    {"nombre":"Churros Rellenos (Dulces)","ingredientes":["1 churro relleno","Azúcar flor"]},
+    {"nombre":"Granizados","ingredientes":["Hielo frappé","Variedad de sabores","Vaso plástico"]},
+    {"nombre":"Helados Soft","ingredientes":["Chocolate","Vainilla"]},
+    {"nombre":"Helados Sundae","ingredientes":["Chocolate","Vainilla","Salsa frutilla o chocolate","Vaso plástico"]},
+    {"nombre":"Algodón de Azúcar","ingredientes":["Algodón de azúcar"]},
+    {"nombre":"Popcorn","ingredientes":["Palomitas de maíz"]},
+    {"nombre":"Brochetas de Frutas","ingredientes":["Marshmallow","Cobertura de chocolate"]},
+    {"nombre":"Waffles","ingredientes":["Waffles","Plátano","Salsa de chocolate"]},
+    {"nombre":"Donuts","ingredientes":["1 donut tradicional"]},
+    {"nombre":"Muffin","ingredientes":["1 muffin tradicional"]},
+    {"nombre":"Empanadas de Cóctel (Appetizer)","ingredientes":["Porción 2 unidades"]},
+    {"nombre":"Pizzetas (Appetizer)","ingredientes":["2 unidades","Jamón queso","Pepperoni","Veggie"]},
+    {"nombre":"Pizzas (Appetizer)","ingredientes":["1 unidad","Jamón queso","Pepperoni","Veggie"]},
+    {"nombre":"Nuggets (Appetizer)","ingredientes":["Porción 3 unidades"]},
+    {"nombre":"Papas Smile (Appetizer)","ingredientes":["Porción 6 unidades"]},
+    {"nombre":"Papas Fritas (Appetizer)","ingredientes":["Porción 150 grs"]}
+  ]
+}
+</script>
+</body>
+</html>

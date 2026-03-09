@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>CRM 2025 • Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:#f6f7f9;color:#111;margin:0}
+      header{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:14px 18px;background:#fff;border-bottom:1px solid #ececec}
+      main{max-width:1000px;margin:24px auto;padding:0 18px}
+      .btn{height:36px;padding:0 12px;border-radius:9px;border:1px solid #d0d5dd;background:#fff;cursor:pointer}
+      .btn.primary{background:#111;color:#fff;border-color:#111}
+      .card{background:#fff;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.06);padding:20px;margin-bottom:14px}
+      .muted{color:#667085}
+      a{color:#0a66c2;text-decoration:none}
+    </style>
+  </head>
+  <body>
+    <header>
+      <div><strong>CRM 2025</strong></div>
+      <div>
+        <a class="btn" href="crear-usuario.html">Crear usuario</a>
+        <button class="btn" onclick="location.href='dashboard.html'">Dashboard</button>
+        <button class="btn primary" onclick="logout()">Salir</button>
+      </div>
+    </header>
+    <main>
+      <div class="card">
+        <h2>Bienvenido</h2>
+        <p id="yo" class="muted">Cargando…</p>
+      </div>
+    </main>
+
+    <script>
+      function getToken(){
+        return localStorage.getItem("token");
+      }
+      function logout(){
+        localStorage.removeItem("token");
+        location.href = "login.html";
+      }
+      async function loadMe(){
+        const t = getToken();
+        if(!t){ location.href = "login.html"; return; }
+        try{
+          const res = await fetch("/auth/me", { headers: { Authorization: "Bearer "+t }});
+          if(!res.ok){ throw new Error("No autorizado"); }
+          const me = await res.json();
+          document.getElementById("yo").textContent = `${me.email} (id: ${me.id})`;
+        }catch(e){
+          logout();
+        }
+      }
+      loadMe();
+    </script>
+  </body>
+</html>

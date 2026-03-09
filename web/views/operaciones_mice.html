@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Operaciones • Mice and Place</title>
+  <link rel="stylesheet" href="../styles.css"/>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{padding:18px;}
+    .topbar{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;}
+    .filters{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;}
+    .filters select,.filters input{background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px;}
+    .week-grid{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; margin-top:10px;}
+    @media (max-width:1200px){ .week-grid{grid-template-columns:repeat(4,minmax(0,1fr));} }
+    @media (max-width:900px){ .week-grid{grid-template-columns:repeat(2,minmax(0,1fr));} }
+    @media (max-width:720px){ .week-grid{grid-template-columns:1fr;} }
+    .day-card{border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:8px; background:rgba(0,0,0,.16);}
+    .day-head{display:flex; align-items:center; gap:8px; border-bottom:1px dashed rgba(255,255,255,.1); padding-bottom:5px; margin-bottom:7px;}
+    .day-num{width:28px; height:28px; border-radius:50%; background:rgba(34,197,94,.2); border:1px solid rgba(34,197,94,.35); display:flex; align-items:center; justify-content:center; font-weight:900;}
+    .day-name{font-size:11px; letter-spacing:.12em; text-transform:uppercase; opacity:.8; font-weight:900;}
+
+    /* Eventos confirmados: compacto (≈70% más chico visualmente) + tooltip */
+    .event{display:flex; gap:7px; padding:3px 6px; border-radius:10px; border:1px solid rgba(255,255,255,.08); background:rgba(0,0,0,.10); cursor:default;}
+    .event strong{font-size:12px; line-height:1.15;}
+    .event:hover{border-color: rgba(126,231,176,.28); background: rgba(18,64,44,.20);}
+    .dot{width:6px; height:6px; border-radius:50%; margin-top:6px;}
+    .meta{opacity:.7; font-size:10px; line-height:1.2;}
+    .event-more{margin-top:6px; font-size:12px; font-weight:900; cursor:pointer; color:#7ee7b0; display:inline-flex; align-items:center; gap:6px; border:1px solid rgba(126,231,176,.35); padding:4px 8px; border-radius:999px; background:rgba(18,64,44,.35);}
+    .day-actions{display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:10px;}
+    .mini-btn{font-size:12px; padding:6px 10px; border-radius:999px; border:1px solid rgba(148,163,184,.18); background:rgba(2,6,23,.14); color:inherit; font-weight:1000; cursor:pointer;}
+    .mini-btn:hover{filter:brightness(1.06);}
+
+    /* Resumen semanal (tipo Excel) */
+    .summary{margin-top:14px; border-top:1px solid rgba(255,255,255,.10); padding-top:12px; display:grid; gap:12px;}
+    .summary-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+    .summary-title{font-weight:1100; margin:0;}
+    .summary-sub{opacity:.75; font-size:12px; font-weight:900;}
+    .summary-grid{display:grid; grid-template-columns: 1fr 1fr; gap:12px;}
+    @media (max-width: 1000px){ .summary-grid{grid-template-columns:1fr;} }
+    .summary-box{border:1px solid rgba(148,163,184,.14); background:rgba(0,0,0,.14); border-radius:16px; padding:10px;}
+    .summary-box h4{margin:0 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.9;}
+    .summary-actions{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+    .tblWrap{max-height: 460px; overflow:auto; border-radius: 12px; border:1px solid rgba(148,163,184,.10);}
+    .tblWrap table{margin:0;}
+    .tblWrap thead th{
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: rgba(2,6,23,.92);
+      backdrop-filter: blur(10px);
+    }
+    /* sticky primera columna tipo Excel */
+    .tblWrap tbody td:first-child,
+    .tblWrap thead th:first-child{
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      background: rgba(2,6,23,.92);
+    }
+    .tblWrap tbody td:first-child{ z-index: 1; background: rgba(2,6,23,.72); }
+
+    /* Tooltip */
+    .tt{
+      position:fixed;
+      display:none;
+      z-index:999999;
+      width:min(420px, calc(100vw - 24px));
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.82);
+      backdrop-filter: blur(12px);
+      border-radius: 14px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.45);
+      padding: 10px;
+      color: var(--text);
+    }
+    .tt h4{margin:0 0 6px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.9;}
+    .tt .muted{opacity:.72; font-weight:900; font-size:12px;}
+    .tt ul{margin:6px 0 0 0; padding-left: 16px;}
+    .tt li{margin:2px 0; font-size:12px; font-weight:900;}
+
+    /* modal */
+    .modal{position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:99999;}
+    .modal.open{display:flex;}
+    .backdrop{position:absolute; inset:0; background:rgba(0,0,0,.55);}
+    .sheet{
+      position:relative;
+      width:min(980px, calc(100vw - 28px));
+      max-height:min(84vh, 820px);
+      overflow:auto;
+      border:1px solid rgba(148,163,184,.18);
+      border-radius:18px;
+      background: rgba(2,6,23,.72);
+      box-shadow: 0 22px 70px rgba(0,0,0,.45);
+      padding:14px;
+    }
+    .sheet-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; border-bottom:1px solid rgba(148,163,184,.14); padding-bottom:10px; margin-bottom:10px;}
+    .sheet h3{margin:0 0 4px 0;}
+    .grid2{display:grid; grid-template-columns: 1fr 1fr; gap:12px;}
+    @media (max-width: 900px){ .grid2{grid-template-columns:1fr;} }
+    .box{border:1px solid rgba(148,163,184,.14); background:rgba(0,0,0,.14); border-radius:16px; padding:10px;}
+    .box h4{margin:0 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.9;}
+    table{width:100%; border-collapse:collapse; font-size:13px;}
+    th,td{padding:8px 8px; border-bottom:1px solid rgba(148,163,184,.12); text-align:left; vertical-align:top;}
+    th{font-size:11px; letter-spacing:.14em; text-transform:uppercase; opacity:.85;}
+    .right{text-align:right;}
+    .pill{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; border:1px solid rgba(148,163,184,.18); background:rgba(2,6,23,.18); font-weight:1000; font-size:12px;}
+
+    /* Detalle semanal tipo "Google Sheet" */
+    .detailWrap{
+      margin-top:12px;
+      border:1px solid rgba(148,163,184,.14);
+      border-radius: 16px;
+      overflow:hidden;
+      background: rgba(255,255,255,.92);
+      color: #0b1220;
+    }
+    .detailTop{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      padding:10px 12px;
+      background: #0b1220;
+      color: #fff;
+    }
+    .detailTop .muted{opacity:.75;}
+    .detailBody{max-height: 720px; overflow:auto; padding:12px;}
+    .dayBlock{margin-bottom:14px;}
+    .dayLabel{
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      background: #facc15;
+      color:#0b1220;
+      font-weight:1100;
+      padding:6px 10px;
+      border-radius: 999px;
+      border:1px solid rgba(0,0,0,.18);
+      margin-bottom:8px;
+    }
+    .leadSheet{
+      border:1px solid rgba(15,23,42,.18);
+      border-radius: 12px;
+      overflow:hidden;
+      margin-bottom:10px;
+      background:#fff;
+    }
+    .leadSheet .hdr{
+      background:#1d4ed8;
+      color:#fff;
+      font-weight:1100;
+      padding:8px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .leadSheet .hdr .tag{opacity:.9; font-weight:1000; font-size:12px;}
+    .leadSheet .tblWrap{max-height:none; overflow:auto; border:none; border-radius:0;}
+    .leadSheet table{width:max(980px, 100%); font-size:12px;}
+    .leadSheet thead th{
+      position: sticky;
+      top: 0;
+      background:#1d4ed8;
+      color:#fff;
+      z-index:2;
+      text-transform:uppercase;
+      letter-spacing:.12em;
+      font-size:10px;
+    }
+    .leadSheet tbody td{border-bottom:1px solid rgba(15,23,42,.10); padding:6px 8px;}
+    .leadSheet tbody tr:nth-child(even){background:#f8fafc;}
+    .leadSheet td.right, .leadSheet th.right{text-align:right;}
+    .leadSheet td.muted{color:#475569; font-weight:900;}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <div class="topbar">
+      <div>
+        <h2 style="margin:0 0 4px 0">Mice and Place</h2>
+        <div class="muted" id="weekLabel">Semana —</div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="btn secondary" id="btnPrev">Semana anterior</button>
+        <button class="btn secondary" id="btnNow">Semana actual</button>
+        <button class="btn secondary" id="btnNext">Siguiente semana</button>
+      </div>
+    </div>
+
+    <div class="filters">
+      <select id="brandFilter">
+        <option value="">Todas las marcas</option>
+      </select>
+      <input id="q" placeholder="Buscar cliente..." />
+      <button class="btn" id="btnReload">Actualizar</button>
+    </div>
+
+    <div id="weekGrid" class="week-grid"></div>
+
+    <div class="detailWrap" id="weekDetail" style="display:none">
+      <div class="detailTop">
+        <div>
+          <div style="font-weight:1100">Detalle semanal (Cliente · Producto · Ingredientes)</div>
+          <div class="muted" id="detSub">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn secondary" id="btnDetPrint">Imprimir</button>
+          <button class="btn" id="btnDetClose">Cerrar detalle</button>
+        </div>
+      </div>
+      <div class="detailBody" id="detBody"></div>
+    </div>
+
+    <div class="summary" id="weekSummary">
+      <div class="summary-head">
+        <div>
+          <h3 class="summary-title">Resumen semanal</h3>
+          <div class="summary-sub" id="sumSub">—</div>
+        </div>
+        <div class="summary-actions">
+          <button class="btn secondary" id="btnSumPrint">Imprimir resumen</button>
+          <button class="btn" id="btnOpenDetail">Ver detalle</button>
+        </div>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-box">
+          <h4>Productos (Semana)</h4>
+          <div id="sumProducts"><div class="muted">Cargando…</div></div>
+        </div>
+        <div class="summary-box">
+          <h4>Ingredientes (Semana)</h4>
+          <div id="sumIngs"><div class="muted">Cargando…</div></div>
+        </div>
+        <div class="summary-box" id="sumMissingBox" style="grid-column:1/-1; display:none">
+          <h4>Faltan Recetas</h4>
+          <div id="sumMissing"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="tt" id="tt" role="tooltip"></div>
+
+  <div class="modal" id="repModal" aria-hidden="true">
+    <div class="backdrop" id="repBg"></div>
+    <div class="sheet">
+      <div class="sheet-head">
+        <div>
+          <h3 id="repTitle">Reporte</h3>
+          <div class="muted" id="repSub">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn secondary" id="btnPrint">Imprimir</button>
+          <button class="btn" id="btnClose">Cerrar</button>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="box">
+          <h4>Productos (Total Día)</h4>
+          <div id="repProducts"></div>
+        </div>
+        <div class="box">
+          <h4>Ingredientes (Total Día)</h4>
+          <div id="repIngs"></div>
+        </div>
+        <div class="box" style="grid-column:1/-1">
+          <h4>Eventos</h4>
+          <div id="repLeads"></div>
+        </div>
+        <div class="box" id="repMissingBox" style="grid-column:1/-1; display:none">
+          <h4>Faltan Recetas</h4>
+          <div id="repMissing"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    const daysEs = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+    const brandColors = { "CAMALEON":"#22c55e","GOURMET":"#a855f7","EXPRESS":"#06b6d4","DEL SABOR":"#f59e0b","BRONTOS":"#f97316" };
+
+    let weekOffset = 0;
+    let allEvents = [];
+    let currentWeek = null;
+
+    let weekReport = null;
+    let weekReportPromise = null;
+    const leadItemsById = new Map();
+
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    function apiBase(){
+      try{
+        const host = String(location.hostname||"").toLowerCase();
+        const isLocal = (host==="127.0.0.1" || host==="localhost");
+        return isLocal ? "" : "/crm";
+      }catch(_){
+        return "";
+      }
+    }
+
+    function fmt2(n){
+      const x = Number(n||0);
+      if (!isFinite(x)) return "0";
+      const v = Math.round(x*100)/100;
+      return (v % 1 === 0) ? String(Math.round(v)) : String(v);
+    }
+
+    function tableFor(items, cols){
+      const arr = Array.isArray(items) ? items : [];
+      if (!arr.length) return `<div class="muted">—</div>`;
+      const head = cols.map(c => `<th class="${c.right?'right':''}">${c.label}</th>`).join("");
+      const body = arr.map(r => `<tr>` + cols.map(c => `<td class="${c.right?'right':''}">${c.f(r)}</td>`).join("") + `</tr>`).join("");
+      return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    function weekGridTable(rows, days, kind){
+      const arr = Array.isArray(rows) ? rows : [];
+      if (!arr.length) return `<div class="muted">—</div>`;
+      const head = [
+        `<th>${kind==="prod" ? "Producto" : "Ingrediente"}</th>`,
+        kind==="ing" ? `<th>Unidad</th>` : ``,
+        ...days.map((d,i)=> `<th class="right">${daysEs[i].slice(0,3).toUpperCase()}</th>`),
+        `<th class="right">Total</th>`
+      ].join("");
+      const body = arr.map(r=>{
+        const first = kind==="prod" ? (r.producto||"") : (r.ingrediente||"");
+        const unit = kind==="ing" ? (r.unidad||"") : "";
+        const cols = days.map(d => `<td class="right">${fmt2(r[d]||0)}</td>`).join("");
+        return `<tr><td>${first}</td>${kind==="ing"?`<td class="muted">${unit}</td>`:""}${cols}<td class="right"><b>${fmt2(r.total||0)}</b></td></tr>`;
+      }).join("");
+      return `<div class="tblWrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }
+
+    // Tooltip
+    const tt = $("#tt");
+    let _ttHideTimer = null;
+    function ttHide(){ if (tt) tt.style.display = "none"; }
+    function ttShowAt(x,y,html){
+      if (!tt) return;
+      if (_ttHideTimer){ clearTimeout(_ttHideTimer); _ttHideTimer=null; }
+      tt.innerHTML = html;
+      tt.style.display = "block";
+      const pad = 10;
+      const w = tt.offsetWidth || 360;
+      const h = tt.offsetHeight || 120;
+      let nx = Math.min(window.innerWidth - w - pad, x + 14);
+      let ny = Math.min(window.innerHeight - h - pad, y + 14);
+      nx = Math.max(pad, nx);
+      ny = Math.max(pad, ny);
+      tt.style.left = nx + "px";
+      tt.style.top = ny + "px";
+    }
+
+    async function loadWeekReport(week){
+      if (!week?.start) return null;
+      if (weekReport && weekReport.start === week.start) return weekReport;
+      if (weekReportPromise) return weekReportPromise;
+
+      $("#sumSub").textContent = `Cargando semana ${week.number}…`;
+      $("#sumProducts").innerHTML = `<div class="muted">Cargando…</div>`;
+      $("#sumIngs").innerHTML = `<div class="muted">Cargando…</div>`;
+      $("#sumMissingBox").style.display = "none";
+      leadItemsById.clear();
+
+      weekReportPromise = (async()=>{
+        const r = await fetch(`${apiBase()}/tools/mice/week?start=${encodeURIComponent(week.start)}&include_ingredients=1`, { headers: authHeaders() });
+        const txt = await r.text();
+        let j = null;
+        try{ j = JSON.parse(txt); }catch(_){ j = { raw: txt }; }
+        if (!r.ok) throw new Error(j?.detail || j?.error || j?.raw || ("HTTP "+r.status));
+
+        weekReport = j;
+        for (const l of (j.leads || [])){
+          if (l && l.id_lead != null) leadItemsById.set(Number(l.id_lead), l);
+        }
+
+        const days = j.days || [];
+        $("#sumSub").textContent = `Semana ${week.number} · ${week.start} → ${week.end} · Eventos: ${(j.leads||[]).length}`;
+        $("#sumProducts").innerHTML = weekGridTable(j.products_grid || [], days, "prod");
+        $("#sumIngs").innerHTML = weekGridTable(j.ingredients_grid || [], days, "ing");
+
+        const missing = j.missing_recetas || [];
+        if (missing.length){
+          $("#sumMissingBox").style.display = "block";
+          $("#sumMissing").innerHTML = tableFor(missing, [
+            { label:"Día", f:(r)=> (r.day||"") },
+            { label:"Producto", f:(r)=> (r.producto||"") },
+            { label:"Marca", f:(r)=> (r.marca||"") },
+            { label:"Motivo", f:(r)=> (r.reason||"") },
+            { label:"Lead", right:true, f:(r)=> String(r.id_lead||"") },
+          ]);
+        }
+        return j;
+      })().finally(()=>{ weekReportPromise = null; });
+
+      return weekReportPromise;
+    }
+
+    async function openReport(day){
+      const modal = $("#repModal");
+      $("#repTitle").textContent = `Reporte MICE · ${day}`;
+      $("#repSub").textContent = "Cargando…";
+      $("#repProducts").innerHTML = "";
+      $("#repIngs").innerHTML = "";
+      $("#repLeads").innerHTML = "";
+      $("#repMissingBox").style.display = "none";
+      modal.classList.add("open");
+      modal.setAttribute("aria-hidden","false");
+
+      try{
+        const r = await fetch(`${apiBase()}/tools/mice/day?day=${encodeURIComponent(day)}&include_ingredients=1`, { headers: authHeaders() });
+        const txt = await r.text();
+        let j = null;
+        try{ j = JSON.parse(txt); }catch(_){ j = { raw: txt }; }
+        if (!r.ok) throw new Error(j?.detail || j?.error || j?.raw || ("HTTP "+r.status));
+
+        const products = j.products_total || [];
+        const ings = j.ingredients_total || [];
+        const leads = j.leads || [];
+        const missing = j.missing_recetas || [];
+
+        $("#repSub").textContent = `Eventos: ${leads.length} · Productos: ${products.length} · Ingredientes: ${ings.length}`;
+
+        $("#repProducts").innerHTML = tableFor(products, [
+          { label:"Producto", f:(r)=> (r.producto||"") },
+          { label:"Cantidad", right:true, f:(r)=> fmt2(r.cantidad) },
+        ]);
+
+        $("#repIngs").innerHTML = tableFor(ings, [
+          { label:"Ingrediente", f:(r)=> (r.ingrediente||"") },
+          { label:"Unidad", f:(r)=> (r.unidad||"") },
+          { label:"Cantidad", right:true, f:(r)=> fmt2(r.cantidad) },
+        ]);
+
+        $("#repLeads").innerHTML = leads.length ? leads.map(l=>{
+          const src = l.items_source === "manual" ? "Manual" : (l.items_source === "cotizador" ? "Cotizador" : "Sin items");
+          const items = Array.isArray(l.items) ? l.items : [];
+          const lines = items.map(it => `• ${fmt2(it.cantidad)} ${it.producto}`).join("<br>");
+          return `
+            <div style="border:1px solid rgba(148,163,184,.12); background:rgba(0,0,0,.10); border-radius:14px; padding:10px; margin-bottom:8px">
+              <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                <div><b>${l.cliente || "Cliente"}</b> <span class="muted">· ${l.marca || ""} · ${l.comuna || ""}</span></div>
+                <span class="pill">${src}</span>
+              </div>
+              <div style="margin-top:8px; font-size:13px">${lines || '<span class="muted">—</span>'}</div>
+            </div>
+          `;
+        }).join("") : `<div class="muted">—</div>`;
+
+        if (missing.length){
+          $("#repMissingBox").style.display = "block";
+          $("#repMissing").innerHTML = tableFor(missing, [
+            { label:"Producto", f:(r)=> (r.producto||"") },
+            { label:"Marca", f:(r)=> (r.marca||"") },
+            { label:"Motivo", f:(r)=> (r.reason||"") },
+            { label:"Lead", right:true, f:(r)=> String(r.id_lead||"") },
+          ]);
+        }
+      }catch(err){
+        $("#repSub").textContent = "Error";
+        $("#repProducts").innerHTML = `<div class="muted">${String(err?.message||err)}</div>`;
+      }
+    }
+
+    function closeReport(){
+      const modal = $("#repModal");
+      modal.classList.remove("open");
+      modal.setAttribute("aria-hidden","true");
+    }
+    $("#repBg").onclick = closeReport;
+    $("#btnClose").onclick = closeReport;
+
+    $("#btnPrint").onclick = ()=>{
+      const title = $("#repTitle").textContent || "Reporte";
+      const sub = $("#repSub").textContent || "";
+      const p = $("#repProducts").innerHTML || "";
+      const i = $("#repIngs").innerHTML || "";
+      const l = $("#repLeads").innerHTML || "";
+      const m = ($("#repMissingBox").style.display !== "none") ? $("#repMissing").innerHTML : "";
+      const w = window.open("", "_blank", "noopener");
+      if (!w) return;
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+        <style>
+          body{font-family: ui-sans-serif, system-ui; padding:18px; color:#0b1320;}
+          h2{margin:0 0 4px 0} .muted{color:#475569}
+          h3{margin:18px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155}
+          table{width:100%; border-collapse:collapse; font-size:13px;}
+          th,td{padding:8px 8px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top;}
+          th{text-transform:uppercase; font-size:11px; letter-spacing:.12em;}
+          .right{text-align:right;}
+        </style></head><body>
+        <h2>${title}</h2><div class="muted">${sub}</div>
+        <h3>Productos</h3>${p}
+        <h3>Ingredientes</h3>${i}
+        <h3>Eventos</h3>${l}
+        ${m ? `<h3>Faltan Recetas</h3>${m}` : ``}
+        </body></html>`);
+      w.document.close();
+      w.focus();
+      setTimeout(()=>{ try{ w.print(); }catch(_){ } }, 250);
+    };
+
+    function render(events, week){
+      const brand = $("#brandFilter").value;
+      const q = ($("#q").value || "").toLowerCase();
+      const filtered = (events || []).filter(e => {
+        if (brand && (e.marca || "") !== brand) return false;
+        if (q && !(e.cliente || "").toLowerCase().includes(q)) return false;
+        return true;
+      });
+
+      if (week){
+        $("#weekLabel").textContent = `Semana ${week.number} · ${week.start} → ${week.end}`;
+      }
+
+      const cols = [];
+      if (week?.start){
+        const base = new Date(week.start + "T00:00:00");
+        for (let i=0;i<7;i++){
+          const d = new Date(base.getTime() + i*86400000);
+          const dayStr = d.toISOString().slice(0,10);
+          cols.push({ label: daysEs[i], date: dayStr, items: filtered.filter(e => e.fecha_evento === dayStr) });
+        }
+      }
+
+      const grid = $("#weekGrid");
+      let html = "";
+      cols.forEach(c => {
+        const items = c.items || [];
+        const max = 5;
+        const show = items.slice(0, max);
+        const dayNum = c.date ? c.date.slice(8,10) : "";
+        html += `
+          <div class="day-card">
+            <div class="day-head">
+              <div class="day-num">${dayNum}</div>
+              <div class="day-name">${c.label}</div>
+            </div>
+            <div>
+              ${show.length ? show.map(ev => {
+                const dot = brandColors[ev.marca] || "#7ee7b0";
+                return `
+                  <div class="event" data-lead="${ev.id_lead||""}" data-day="${c.date||""}">
+                    <span class="dot" style="background:${dot}"></span>
+                    <div>
+                      <strong>${ev.cliente || "Cliente"}</strong>
+                      <div class="meta">${ev.marca || ""} · ${ev.comuna || ""}</div>
+                    </div>
+                  </div>
+                `;
+              }).join("") : `<div class="muted">—</div>`}
+              ${items.length > max ? `<div class="event-more">${items.length - max} más</div>` : ``}
+            </div>
+            <div class="day-actions">
+              <span class="muted" style="font-size:12px;font-weight:900">MICE</span>
+              <button class="mini-btn" data-report="${c.date}">Reporte</button>
+            </div>
+          </div>
+        `;
+      });
+      grid.innerHTML = html || `<div class="muted">Sin eventos confirmados.</div>`;
+
+      grid.querySelectorAll("[data-report]").forEach(btn=>{
+        btn.addEventListener("click", (ev)=>{
+          ev.stopPropagation();
+          const d = btn.getAttribute("data-report");
+          if (d) openReport(d);
+        });
+      });
+
+      // Tooltip per event: usa data ya cargada en /tools/mice/week (sin requests por hover)
+      grid.querySelectorAll(".event[data-lead]").forEach(el=>{
+        const leadId = Number(el.getAttribute("data-lead") || 0);
+        if (!leadId) return;
+
+        const show = (ev)=>{
+          const l = leadItemsById.get(leadId);
+          const items = Array.isArray(l?.items) ? l.items : [];
+          const ings = Array.isArray(l?.ingredients) ? l.ingredients : [];
+          const src = l?.items_source === "manual" ? "Manual" : (l?.items_source === "cotizador" ? "Cotizador" : "Sin items");
+          const day = String(el.getAttribute("data-day") || "").slice(0,10);
+          const lines = items.length
+            ? `<ul>${items.slice(0,12).map(it=>`<li>${fmt2(it.cantidad)} ${String(it.producto||"")}</li>`).join("")}${items.length>12?`<li>… ${items.length-12} más</li>`:""}</ul>`
+            : `<div class="muted">Sin productos detectados.</div>`;
+
+          const ingLines = ings.length
+            ? `<div style="margin-top:10px"><h4 style="margin-top:8px">Receta / MICE (ingredientes)</h4>` +
+              `<ul>${ings.slice(0,10).map(ii=>`<li>${fmt2(ii.cantidad)} ${String(ii.unidad||"")} ${String(ii.ingrediente||"")}</li>`).join("")}${ings.length>10?`<li>… ${ings.length-10} más</li>`:""}</ul></div>`
+            : `<div style="margin-top:10px" class="muted">Sin receta/ingredientes (falta receta o include_ingredients=0).</div>`;
+
+          ttShowAt(
+            ev.clientX,
+            ev.clientY,
+            `<h4>Evento confirmado</h4><div class="muted">${src}${day ? ` · ${day}` : ""}</div>` +
+            `<h4 style="margin-top:10px">Productos</h4>${lines}` +
+            `${ingLines}`
+          );
+        };
+
+        el.addEventListener("mouseenter", show);
+        el.addEventListener("mousemove", (ev)=>{ if (tt && tt.style.display === "block") show(ev); });
+        el.addEventListener("mouseleave", ()=>{ _ttHideTimer = setTimeout(ttHide, 140); });
+      });
+    }
+
+    function renderWeekDetail(week, rep){
+      const wrap = $("#weekDetail");
+      const body = $("#detBody");
+      if (!wrap || !body) return;
+      if (!rep || !Array.isArray(rep.leads)){
+        body.innerHTML = `<div class="muted">No hay datos.</div>`;
+        return;
+      }
+      const brand = $("#brandFilter").value;
+      const q = ($("#q").value || "").toLowerCase();
+      const leads = rep.leads.filter(l=>{
+        if (brand && String(l.marca||"") !== brand) return false;
+        if (q && !String(l.cliente||"").toLowerCase().includes(q)) return false;
+        return true;
+      });
+
+      $("#detSub").textContent = week?.start ? `Semana ${week.number} · ${week.start} → ${week.end} · Eventos: ${leads.length}` : `Eventos: ${leads.length}`;
+
+      // Group by day then lead
+      const byDay = new Map();
+      for (const l of leads){
+        const day = String(l.day || l.fecha_evento || "").slice(0,10) || "—";
+        if (!byDay.has(day)) byDay.set(day, []);
+        byDay.get(day).push(l);
+      }
+      const days = (rep.days || []).slice();
+      const order = days.length ? days : Array.from(byDay.keys()).sort();
+
+      const esc2 = (s)=> String(s??"").replace(/[&<>"']/g, (m)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
+      const fmt = (n)=>{ const x=Number(n||0); if(!isFinite(x)) return ""; const v=Math.round(x*100)/100; return (v%1===0)?String(Math.round(v)):String(v); };
+
+      let html = "";
+      for (const day of order){
+        const arr = byDay.get(day) || [];
+        if (!arr.length) continue;
+        const dObj = new Date(day + "T00:00:00");
+        const dayName = isFinite(dObj.getTime()) ? daysEs[(dObj.getDay()+6)%7] : day;
+        html += `<div class="dayBlock">
+          <div class="dayLabel">${esc2(dayName)} · ${esc2(day)}</div>
+        `;
+        for (const l of arr){
+          const br = String(l.marca || "").trim();
+          const cliente = String(l.cliente || "").trim() || "Cliente";
+          const comuna = String(l.comuna || "").trim();
+          const breakdown = Array.isArray(l.breakdown) ? l.breakdown : [];
+          // Ingredients columns = union of ingredients across all items for this lead
+          const ingNames = [];
+          const seen = new Set();
+          for (const row of breakdown){
+            const ings = Array.isArray(row.ingredientes) ? row.ingredientes : [];
+            for (const ii of ings){
+              const name = String(ii.ingrediente||"").trim();
+              if (!name || seen.has(name)) continue;
+              seen.add(name);
+              ingNames.push(name);
+            }
+          }
+          const head = `
+            <th>Marca</th>
+            <th>Dia</th>
+            <th>Cliente</th>
+            <th>Producto</th>
+            <th class="right">Cantidad</th>
+            ${ingNames.length ? `<th colspan="${ingNames.length}" class="right" style="text-align:center">Ingredientes</th>` : `<th class="right">Ingredientes</th>`}
+          `;
+          const head2 = `
+            <th></th><th></th><th></th><th></th><th></th>
+            ${ingNames.map(n=>`<th class="right">${esc2(n)}</th>`).join("")}
+          `;
+          const rows = breakdown.map(row=>{
+            const prod = String(row.producto||"").trim();
+            const qty = Number(row.cantidad||0);
+            const ings = Array.isArray(row.ingredientes) ? row.ingredientes : [];
+            const map = {};
+            for (const ii of ings){
+              const name = String(ii.ingrediente||"").trim();
+              if (!name) continue;
+              map[name] = fmt(ii.cantidad) + (ii.unidad ? ` ${esc2(ii.unidad)}` : "");
+            }
+            return `<tr>
+              <td class="muted">${esc2(br)}</td>
+              <td class="muted">${esc2(dayName)}</td>
+              <td><b>${esc2(cliente)}</b>${comuna?`<div class="muted">${esc2(comuna)}</div>`:""}</td>
+              <td>${esc2(prod)}</td>
+              <td class="right"><b>${fmt(qty)}</b></td>
+              ${ingNames.map(n=>`<td class="right">${map[n]||""}</td>`).join("")}
+            </tr>`;
+          }).join("");
+
+          html += `
+            <div class="leadSheet">
+              <div class="hdr">
+                <div>${esc2(cliente)} <span class="tag">· ${esc2(br)}</span></div>
+                <div class="tag">Lead #${esc2(l.id_lead||"")}</div>
+              </div>
+              <div class="tblWrap">
+                <table>
+                  <thead>
+                    <tr>${head}</tr>
+                    ${ingNames.length ? `<tr>${head2}</tr>` : ``}
+                  </thead>
+                  <tbody>${rows || `<tr><td colspan="12" class="muted">Sin productos</td></tr>`}</tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        }
+        html += `</div>`;
+      }
+
+      body.innerHTML = html || `<div class="muted">Sin eventos confirmados.</div>`;
+    }
+
+    async function load(){
+      const r = await fetch(`${apiBase()}/tools/dashboard/events?week_offset=${weekOffset}`, { headers: authHeaders() });
+      if (!r.ok){
+        $("#weekGrid").innerHTML = `<div class="muted">No se pudo cargar.</div>`;
+        $("#sumSub").textContent = "No se pudo cargar el resumen semanal.";
+        $("#sumProducts").innerHTML = `<div class="muted">—</div>`;
+        $("#sumIngs").innerHTML = `<div class="muted">—</div>`;
+        return;
+      }
+      const j = await r.json();
+      allEvents = j.events || [];
+      currentWeek = j.week || null;
+      const marcas = Array.from(new Set(allEvents.map(e => e.marca).filter(Boolean)));
+      $("#brandFilter").innerHTML = `<option value="">Todas las marcas</option>` + marcas.map(m => `<option value="${m}">${m}</option>`).join("");
+      render(allEvents, j.week);
+      try{
+        const rep = await loadWeekReport(j.week);
+        renderWeekDetail(j.week, rep);
+      }catch(_){
+        $("#sumSub").textContent = "No pude cargar el resumen semanal.";
+        $("#sumProducts").innerHTML = `<div class="muted">—</div>`;
+        $("#sumIngs").innerHTML = `<div class="muted">—</div>`;
+      }
+    }
+
+    $("#btnPrev").onclick = () => { weekOffset -= 1; load(); };
+    $("#btnNow").onclick = () => { weekOffset = 0; load(); };
+    $("#btnNext").onclick = () => { weekOffset += 1; load(); };
+    $("#btnReload").onclick = load;
+    $("#brandFilter").onchange = () => { render(allEvents, null); try{ renderWeekDetail(currentWeek, weekReport); }catch(_){} };
+    $("#q").oninput = () => { render(allEvents, null); try{ renderWeekDetail(currentWeek, weekReport); }catch(_){} };
+
+    $("#btnOpenDetail").onclick = async ()=>{
+      $("#weekDetail").style.display = "block";
+      try{
+        if (!weekReport && currentWeek) await loadWeekReport(currentWeek);
+      }catch(_){}
+      try{ renderWeekDetail(currentWeek, weekReport); }catch(_){}
+      $("#weekDetail").scrollIntoView({ behavior:"smooth", block:"start" });
+    };
+    $("#btnDetClose").onclick = ()=>{ $("#weekDetail").style.display = "none"; };
+    $("#btnDetPrint").onclick = ()=>{
+      const title = ($("#detSub").textContent || "Detalle semanal");
+      const html = $("#detBody").innerHTML || "";
+      const w = window.open("", "_blank", "noopener");
+      if (!w) return;
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+        <style>
+          body{font-family: ui-sans-serif, system-ui; padding:18px; color:#0b1220;}
+          .dayLabel{background:#facc15;display:inline-block;padding:6px 10px;border-radius:999px;font-weight:900;border:1px solid rgba(0,0,0,.18);}
+          .leadSheet{border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;margin:10px 0;}
+          .hdr{background:#1d4ed8;color:#fff;padding:8px 10px;font-weight:900;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+          table{width:100%;border-collapse:collapse;font-size:12px;}
+          th,td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top;}
+          thead th{background:#1d4ed8;color:#fff;position:sticky;top:0}
+          tr:nth-child(even) td{background:#f8fafc;}
+          .right{text-align:right;}
+          .muted{color:#475569;font-weight:800;}
+        </style></head><body>
+        <h2 style="margin:0 0 4px 0">${title}</h2>
+        ${html}
+      </body></html>`);
+      w.document.close();
+      w.focus();
+      setTimeout(()=>{ try{ w.print(); }catch(_){ } }, 250);
+    };
+
+    $("#btnSumPrint").onclick = ()=>{
+      const title = (weekReport?.start ? `Resumen semanal · ${weekReport.start}` : "Resumen semanal");
+      const sub = $("#sumSub").textContent || "";
+      const p = $("#sumProducts").innerHTML || "";
+      const i = $("#sumIngs").innerHTML || "";
+      const m = ($("#sumMissingBox").style.display !== "none") ? $("#sumMissing").innerHTML : "";
+      const w = window.open("", "_blank", "noopener");
+      if (!w) return;
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+        <style>
+          body{font-family: ui-sans-serif, system-ui; padding:18px; color:#0b1320;}
+          h2{margin:0 0 4px 0} .muted{color:#475569}
+          h3{margin:18px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155}
+          table{width:100%; border-collapse:collapse; font-size:12px;}
+          th,td{padding:7px 7px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top;}
+          th{text-transform:uppercase; font-size:11px; letter-spacing:.12em;}
+          .right{text-align:right;}
+        </style></head><body>
+        <h2>${title}</h2><div class="muted">${sub}</div>
+        <h3>Productos</h3>${p}
+        <h3>Ingredientes</h3>${i}
+        ${m ? `<h3>Faltan Recetas</h3>${m}` : ``}
+        </body></html>`);
+      w.document.close();
+      w.focus();
+      setTimeout(()=>{ try{ w.print(); }catch(_){ } }, 250);
+    };
+
+    window.addEventListener("scroll", ttHide, { passive:true });
+    window.addEventListener("pointerdown", (ev)=>{
+      const t = ev.target;
+      if (t && (t.closest?.(".event") || t.closest?.("#tt"))) return;
+      ttHide();
+    }, { capture:true });
+
+    load();
+  </script>
+</body>
+</html>

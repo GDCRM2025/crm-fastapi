@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Portal · Operadores / Conductores</title>
+  <!-- P0: Portal directo a calendario (Google embed) sin overlays ni mezclas -->
+  <meta http-equiv="refresh" content="0; url=operadores.html?only=cal&v=20260305-opsredir2" />
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:16px;}
+    a{color:#2563eb;}
+  </style>
+</head>
+<body>
+  <script>
+    // Redirección robusta considerando que en producción corre bajo /crm
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const apiURL = (p) => {
+      const s = String(p || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    };
+    try{
+      location.replace(apiURL("/web/views/operadores.html?only=cal&v=20260305-opsredir2"));
+    }catch(_){}
+  </script>
+
+  Si no redirige autom&aacute;ticamente: <a href="operadores.html?only=cal&v=20260305-opsredir2">Abrir calendario</a>.
+</body>
+</html>

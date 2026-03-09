@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Settings</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <style>
+    .se-wrap{ padding:16px; }
+    .se-head{ display:flex; gap:12px; align-items:end; justify-content:space-between; flex-wrap:wrap; }
+    .se-title{ margin:0; font-size:22px; font-weight:900; letter-spacing:.2px; }
+    .se-sub{ margin:2px 0 0 0; opacity:.8; }
+    .se-actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .se-actions input{
+      height:36px; border-radius:12px; padding:0 12px;
+      border:1px solid var(--gd-border, rgba(255,255,255,.12));
+      background:rgba(255,255,255,.06); color:inherit;
+      outline:none;
+    }
+    :root.light .se-actions input{ background:rgba(255,255,255,.75); }
+    .se-btn{
+      height:36px; padding:0 12px; border-radius:12px;
+      border:1px solid var(--gd-border, rgba(255,255,255,.14));
+      background:rgba(255,255,255,.06); color:inherit; font-weight:800;
+      cursor:pointer;
+    }
+    .se-btn.primary{ background: rgba(34,197,94,.16); border-color: rgba(34,197,94,.35); }
+    .se-table{ margin-top:12px; overflow:auto; border-radius:16px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.18); }
+    :root.light .se-table{ background:rgba(255,255,255,.55); }
+    table{ width:100%; border-collapse:collapse; font-size:13px; }
+    th,td{ padding:10px 10px; border-bottom:1px solid rgba(255,255,255,.08); white-space:nowrap; }
+    th{ text-align:left; opacity:.8; font-weight:900; font-size:12px; letter-spacing:.4px; text-transform:uppercase; }
+    tr.sel{ outline:2px solid rgba(34,197,94,.45); outline-offset:-2px; }
+    .swatch{
+      width:14px; height:14px; border-radius:4px; display:inline-block; vertical-align:middle;
+      border:1px solid rgba(255,255,255,.25); margin-right:8px;
+    }
+    .muted{ opacity:.75; }
+  </style>
+</head>
+
+<body>
+  <div class="se-wrap">
+    <div class="se-head">
+      <div>
+        <h1 class="se-title" id="seTitle">Settings</h1>
+        <p class="se-sub" id="seSub">CRUD real (crear/editar/eliminar/buscar/ver más).</p>
+      </div>
+
+      <div class="se-actions">
+        <input id="seQ" placeholder="Buscar (cliente, nombre, etc.)" />
+        <button class="se-btn primary" id="btnCreate">Crear</button>
+        <button class="se-btn" id="btnEdit">Editar</button>
+        <button class="se-btn" id="btnDelete">Eliminar</button>
+        <button class="se-btn" id="btnMore">Ver más</button>
+        <button class="se-btn" id="btnReload">Recargar</button>
+      </div>
+    </div>
+
+    <div class="se-table">
+      <table>
+        <thead><tr id="seTh"></tr></thead>
+        <tbody id="seTb"></tbody>
+      </table>
+    </div>
+
+    <p class="muted" id="seMsg" style="margin-top:10px"></p>
+  </div>
+
+  <script type="module" src="/web/js/settings_entity.js"></script>
+</body>
+</html>

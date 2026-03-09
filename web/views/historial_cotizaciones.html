@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Historial Cotizaciones</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    :root{
+      --app-bg:#07131F; --surface:#0C1B2B; --surface2:#102235; --border:#22384F;
+      --text:#EAF2FF; --muted:#A9BBD2; --accent:#19C37D; --shadow:0 12px 30px rgba(0,0,0,.35);
+    }
+    :root.light{
+      --app-bg:#f6f8ff; --surface:#fff; --surface2:#f2f5ff; --border:#d9e2f2;
+      --text:#0b1220; --muted:#4b5f7a; --shadow:0 10px 24px rgba(0,0,0,.10);
+    }
+    *{ box-sizing:border-box; }
+    html,body{height:100%;}
+    body{ margin:0; background:var(--app-bg); color:var(--text); font-family: ui-sans-serif, system-ui; }
+    .wrap{ padding:12px; height:100%; display:flex; flex-direction:column; gap:12px; }
+    .bar{
+      display:flex; gap:10px; align-items:center;
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:18px;
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+    .search{
+      flex:1; display:flex; align-items:center; gap:10px;
+      background:var(--surface2);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding: 10px 12px;
+    }
+    .search input{
+      width:100%; border:0; outline:0; background:transparent; color:var(--text); font-size:13px;
+    }
+    .pill{
+      font-size:12px; font-weight:900; color:var(--muted);
+      border:1px solid var(--border);
+      background:var(--surface2);
+      padding:6px 10px; border-radius:999px;
+      white-space:nowrap;
+    }
+    .btn{
+      border:1px solid rgba(25,195,125,.30);
+      background: rgba(25,195,125,.16);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-weight: 900;
+      cursor:pointer;
+      white-space: nowrap;
+    }
+    .btn.primary{ background:var(--accent); color:#052016; border-color: rgba(0,0,0,.15); }
+
+    .table-wrap{
+      flex: 1;
+      min-height: 0;
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:18px;
+      overflow:hidden;
+      box-shadow: var(--shadow);
+    }
+    .table-scroll{ height:100%; overflow:auto; }
+    table{ width:100%; border-collapse:collapse; }
+    thead th{
+      background:var(--surface2);
+      color:var(--muted);
+      font-weight:950;
+      font-size:12px;
+      text-align:left;
+      padding:12px 10px;
+      border-bottom:1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    tbody td{
+      padding:10px 10px;
+      border-bottom:1px solid var(--border);
+      font-size:13px;
+      color:var(--text);
+    }
+    tbody tr:hover{ background: rgba(255,255,255,.03); }
+
+    .act{ display:flex; gap:8px; }
+    .mini{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color:var(--text);
+      padding:6px 10px;
+      border-radius:10px;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .mini:hover{ filter:brightness(1.10); }
+
+    .tooltip{
+      position: fixed;
+      z-index: 9999;
+      background: var(--surface);
+      border:1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: 14px;
+      padding: 10px 12px;
+      min-width: 260px;
+      max-width: 420px;
+      display:none;
+    }
+    .tooltip .t{ font-weight: 950; margin-bottom:6px; }
+    .tooltip ul{ margin:0; padding-left:18px; color:var(--muted); font-weight:800; font-size:12px; }
+    .tooltip li{ margin:4px 0; }
+
+    .toast{
+      position: fixed; bottom:18px; right:18px; z-index:9999;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:14px; box-shadow: var(--shadow);
+      padding:12px 14px; min-width:240px; display:none;
+    }
+    .toast.show{ display:block; }
+    .toast .t{ font-weight:950; }
+    .toast .s{ font-size:12px; color:var(--muted); margin-top:4px; }
+
+    .pager{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+      padding:10px 12px;
+      border-top:1px solid var(--border);
+      background:var(--surface2);
+    }
+    .pager .meta{ color:var(--muted); font-weight:900; font-size:12px; }
+    .pager .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div style="font-weight:1000;font-size:18px;margin:6px 4px 10px;">Historial de Cotizaciones</div>
+    <div class="bar">
+      <div class="search">
+        <span style="opacity:.85">⌕</span>
+        <input id="q" placeholder="Buscar por cliente, marca o código..." />
+      </div>
+      <div class="pill" id="cnt">0</div>
+      <button class="btn" id="btnReload" type="button">Recargar</button>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:90px">N°</th>
+              <th style="width:170px">Fecha</th>
+              <th>Cliente</th>
+              <th style="width:160px">Marca</th>
+              <th style="width:120px">Neto</th>
+              <th style="width:120px">IVA</th>
+              <th style="width:120px">Traslado</th>
+              <th style="width:140px">Total</th>
+              <th style="width:200px">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tb"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <div class="meta" id="pgMeta">—</div>
+        <div class="row">
+          <label class="meta">Página</label>
+          <button class="btn" id="btnPrev" type="button">‹</button>
+          <button class="btn" id="btnNext" type="button">›</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tip"></div>
+  <div class="toast" id="toast">
+    <div class="t" id="tt">OK</div>
+    <div class="s" id="ts">—</div>
+  </div>
+
+  <script type="module">
+    const qs=(s,el=document)=>el.querySelector(s);
+
+    function getToken(){ return localStorage.getItem("token")||sessionStorage.getItem("token")||""; }
+    function authHeaders(extra={}){ const t=getToken(); return t?{...extra,Authorization:`Bearer ${t}`} : extra; }
+
+    const API_BASE = (() => {
+      try{
+        const host = String(location.hostname||"").toLowerCase();
+        const isLocal = (host==="127.0.0.1" || host==="localhost");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(u){
+      const s = String(u||"");
+      if (!s) return s;
+      if (s.startsWith("/crm/")) return s;
+      if (s.startsWith("/")) return API_BASE + s;
+      return API_BASE + "/" + s;
+    }
+
+    window.addEventListener("message",(ev)=>{
+      if(ev.data?.type==="theme") document.documentElement.classList.toggle("light", ev.data.mode==="light");
+    });
+
+    const Toast = Swal.mixin({
+      toast:true,
+      position:"top-end",
+      showConfirmButton:false,
+      timer:2600,
+      timerProgressBar:true
+    });
+    function toast(a,b,icon="info"){
+      Toast.fire({title:a||"OK", text:b||"", icon});
+    }
+
+    function money(n){
+      const v=Number(n||0);
+      try{ return v.toLocaleString("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}); }
+      catch(_){ return "$"+Math.round(v); }
+    }
+
+    const params = new URLSearchParams(location.search);
+    const leadId = params.get("id_lead");
+
+    const STATE = { limit: 50, offset: 0, hasMore: false };
+
+    async function getHistory(){
+      const q=(qs("#q").value||"").trim();
+      let url = apiURL(`/quotes/history?limit=${STATE.limit}&offset=${STATE.offset}`);
+      if (leadId) url += `&id_lead=${encodeURIComponent(leadId)}`;
+      if (q) url += `&q=${encodeURIComponent(q)}`;
+      const r=await fetch(url,{headers:authHeaders()});
+      if(!r.ok) throw new Error(await r.text());
+      const j=await r.json();
+      const items = Array.isArray(j) ? j : (j.items||[]);
+      // sin total aún: inferimos “siguiente página” por cantidad
+      STATE.hasMore = items.length >= STATE.limit;
+      return items;
+    }
+
+    const cacheItems = new Map();
+
+    async function getItems(id){
+      if(cacheItems.has(id)) return cacheItems.get(id);
+      const r=await fetch(apiURL(`/quotes/${id}/items`),{headers:authHeaders()});
+      if(!r.ok) return [];
+      const j=await r.json();
+      const items = j.items || [];
+      cacheItems.set(id, items);
+      return items;
+    }
+
+    const tip = qs("#tip");
+    function showTip(x,y,html){
+      tip.innerHTML=html;
+      tip.style.left=(x+12)+"px";
+      tip.style.top=(y+12)+"px";
+      tip.style.display="block";
+    }
+    function hideTip(){ tip.style.display="none"; }
+
+    function updatePager(count){
+      const from = STATE.offset + 1;
+      const to = STATE.offset + count;
+      const page = Math.floor(STATE.offset / STATE.limit) + 1;
+      qs("#pgMeta").textContent = count ? `Mostrando ${from}–${to} · Página ${page}` : `Sin resultados`;
+      qs("#btnPrev").disabled = STATE.offset <= 0;
+      qs("#btnNext").disabled = !STATE.hasMore;
+    }
+
+    async function render(){
+      try{
+        const rows = await getHistory();
+        qs("#cnt").textContent = `${rows.length} cotizaciones`;
+        const tb=qs("#tb");
+        tb.innerHTML="";
+        updatePager(rows.length);
+
+        for(const r of rows){
+          const tr=document.createElement("tr");
+          const fecha = r.fecha_evento ? String(r.fecha_evento).slice(0,10)
+            : (r.fecha ? String(r.fecha).replace("T"," ").slice(0,16)
+            : (r.created_at ? String(r.created_at).replace("T"," ").slice(0,16)
+            : "—"));
+          const rev = (r.revision != null) ? Number(r.revision) : Number(r.version || 0);
+          tr.innerHTML=`
+            <td>${r.numero || r.id_cotizacion}${(rev > 0) ? ` (${rev})` : ""}</td>
+            <td>${fecha}</td>
+            <td>${(r.nombre_cliente||"")}</td>
+            <td>${(r.marca||"")}</td>
+            <td>${money(r.subtotal)}</td>
+            <td>${money(r.iva)}</td>
+            <td>${money(r.traslado)}</td>
+            <td>${money(r.total)}</td>
+	            <td>
+	              <div class="act">
+	                <button class="mini" title="Ver PDF" data-act="view" data-id="${r.id_cotizacion}">👁</button>
+	                <button class="mini" title="Descargar PDF" data-act="download" data-id="${r.id_cotizacion}">⬇</button>
+	              </div>
+	            </td>
+	          `;
+
+          tr.addEventListener("mouseenter", async (ev)=>{
+            const id=r.id_cotizacion;
+            const items = await getItems(id);
+            const li = items.map(it=>`<li>${it.producto} × ${it.cantidad}</li>`).join("");
+            const html = `
+              <div class="t">Productos (${items.length})</div>
+              <ul>${li||"<li>Sin items</li>"}</ul>
+              <div class="t" style="margin-top:8px">Totales</div>
+              <ul>
+                <li>Neto: ${money(r.subtotal)}</li>
+                <li>IVA: ${money(r.iva)}</li>
+                <li>Traslado: ${money(r.traslado)}</li>
+                <li>Total: ${money(r.total)}</li>
+              </ul>
+            `;
+            showTip(ev.clientX, ev.clientY, html);
+          });
+          tr.addEventListener("mouseleave", hideTip);
+
+          tr.addEventListener("click", async (ev)=>{
+            const btn = ev.target?.closest?.("button");
+            if(!btn) return;
+            const act = btn.dataset.act;
+            const id = btn.dataset.id;
+	            if(act==="view"){
+	              // Usar <a target="_blank"> (menos bloqueos que window.open)
+	              // No forzar refresh por defecto: si no, regeneramos y se vuelve lento.
+	              const pdf = apiURL(`/quotes/${id}/pdf`);
+                const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Abriendo PDF…")}`);
+                window.open(wait, "_blank", "noopener,noreferrer");
+	              return;
+	            }
+	            if(act==="download"){
+	              // Descarga directa
+	              const pdf = apiURL(`/quotes/${id}/pdf?download=1`);
+                const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Descargando PDF…")}`);
+                window.open(wait, "_blank", "noopener,noreferrer");
+	              return;
+	            }
+	          });
+
+          tb.appendChild(tr);
+        }
+      }catch(e){
+        toast("Error cargando", "Historial no disponible. Revisa /quotes/history.", "error");
+      }
+    }
+
+    qs("#btnReload").onclick = () => { STATE.offset = 0; render(); };
+    qs("#btnPrev").onclick = () => {
+      STATE.offset = Math.max(0, STATE.offset - STATE.limit);
+      render();
+    };
+    qs("#btnNext").onclick = () => {
+      if (!STATE.hasMore) return;
+      STATE.offset = STATE.offset + STATE.limit;
+      render();
+    };
+
+    // Buscador (debounced)
+    let _t=null;
+    qs("#q").addEventListener("input", ()=>{
+      clearTimeout(_t);
+      _t = setTimeout(()=>{
+        STATE.offset = 0;
+        render();
+      }, 260);
+    });
+    document.addEventListener("mousemove",(e)=>{
+      if(tip.style.display==="block"){
+        tip.style.left=(e.clientX+12)+"px";
+        tip.style.top=(e.clientY+12)+"px";
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>

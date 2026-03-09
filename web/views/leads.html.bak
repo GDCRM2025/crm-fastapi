@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ver Leads</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    body{ padding:18px; }
+    .bar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+    .seg{
+      display:flex; gap:6px; padding:6px;
+      border-radius:999px; border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+    }
+    :root.light .seg{ border-color:rgba(0,0,0,.10); background:rgba(255,255,255,.70); }
+    .seg button{
+      border:0; cursor:pointer;
+      border-radius:999px; padding:8px 12px;
+      background:transparent; color:inherit; font-weight:900;
+      opacity:.8;
+    }
+    .seg button.active{ background:rgba(34,197,94,.18); opacity:1; }
+    .inp{
+      padding:10px 12px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color:inherit;
+      min-width: 240px;
+    }
+    :root.light .inp{ border-color:rgba(0,0,0,.10); background:rgba(255,255,255,.70); }
+    .btn{
+      border-radius:12px; border:1px solid rgba(255,255,255,.12);
+      background: rgba(34,197,94,.18);
+      padding:10px 12px; cursor:pointer; font-weight:950;
+      color:inherit;
+    }
+    .wrap{ display:none; }
+    .wrap.on{ display:block; }
+    .kanban{ display:flex; gap:12px; overflow:auto; padding-bottom:10px; }
+    .col{
+      min-width: 320px;
+      border-radius:18px; border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      padding:10px;
+    }
+    :root.light .col{ border-color:rgba(0,0,0,.10); background:rgba(255,255,255,.70); }
+    .col h3{ margin:0 0 10px 0; display:flex; align-items:center; justify-content:space-between; }
+    .badge{ font-size:12px; opacity:.8; font-weight:900; }
+    .card{
+      border-radius:16px; border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.14);
+      padding:10px; margin-bottom:10px;
+      cursor:pointer;
+    }
+    :root.light .card{ background:rgba(255,255,255,.86); border-color:rgba(0,0,0,.08); }
+    .t1{ font-weight:950; }
+    .t2{ opacity:.8; font-size:13px; margin-top:2px; }
+    .t3{ opacity:.75; font-size:12px; margin-top:6px; display:flex; gap:10px; flex-wrap:wrap; }
+    table{ width:100%; border-collapse:collapse; }
+    th,td{ text-align:left; padding:10px 8px; border-bottom:1px solid rgba(255,255,255,.10); font-size:13px; }
+    :root.light th,:root.light td{ border-bottom:1px solid rgba(0,0,0,.08); }
+    tr{ cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="seg">
+      <button id="btnKanban" class="active">Kanban</button>
+      <button id="btnTabla">Tabla</button>
+    </div>
+
+    <input id="q" class="inp" placeholder="Buscar por nombre / teléfono / comuna..." />
+
+    <button id="btnNew" class="btn">+ Crear Lead</button>
+    <div style="opacity:.75; font-weight:900" id="count">—</div>
+  </div>
+
+  <div id="wrapKanban" class="wrap on">
+    <div id="board" class="kanban"></div>
+  </div>
+
+  <div id="wrapTabla" class="wrap">
+    <div style="overflow:auto; border-radius:16px">
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th><th>Fecha</th><th>Comuna</th><th>Marca</th><th>Estado</th><th>Monto</th>
+          </tr>
+        </thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script type="module" src="/web/js/leads_app.js"></script>
+  <script>
+    window.addEventListener("message", (ev) => {
+      if (ev.data?.type === "theme"){
+        document.documentElement.classList.toggle("light", ev.data.mode === "light");
+      }
+    });
+  </script>
+</body>
+</html>

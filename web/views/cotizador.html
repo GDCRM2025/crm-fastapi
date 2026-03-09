@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>Cotizador</title>
+  <link rel="stylesheet" href="/web/styles.css"/>
+  <link rel="stylesheet" href="/web/panel.css"/>
+  <link rel="stylesheet" href="/web/ui_overrides.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    .grid { display:grid; gap:12px; }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .right { text-align:right; }
+    .muted { opacity:.75; }
+    table.items { width:100%; border-collapse: collapse; }
+    table.items th, table.items td { border-bottom:1px solid #eee; padding:8px; }
+    .totales { max-width:520px; margin-left:auto; }
+    .ivaLegend { font-size:12px; opacity:.75; margin-top:6px; text-align:right; }
+    .badge { padding:2px 8px; border:1px solid #ddd; border-radius:12px; font-size:.8rem;}
+    #logoMarca{
+      max-height: 76px;
+      transform: translateX(-5cm) scale(2.4);
+      transform-origin: right center;
+    }
+    .controls { display:flex; gap:8px; }
+    .btn { padding:8px 12px; border:1px solid #ddd; border-radius:8px; cursor:pointer; background:#fff; }
+    .btn.primary { border-color:#0a7; }
+    .btn.danger { border-color:#e33; }
+    input[type=number] { text-align:right; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h2>Cotizador</h2>
+
+    <section id="encabezado" class="grid grid-3">
+      <div>
+        <label class="muted">Cotización seleccionada</label>
+        <select id="selCotizacion"></select>
+        <div class="muted" style="margin-top:6px;">N° Cotización: <b id="nroCot">—</b></div>
+      </div>
+      <div>
+        <label class="muted">Fecha de cotización</label>
+        <input id="fechaCot" type="date"/>
+      </div>
+      <div class="right">
+        <img id="logoMarca" alt="logo" style="max-height:48px;"/>
+      </div>
+
+      <div>
+        <label class="muted">Cliente</label>
+        <input id="cliente" type="text"/>
+      </div>
+      <div>
+        <label class="muted">Email</label>
+        <input id="email" type="email"/>
+      </div>
+      <div>
+        <label class="muted">Teléfono</label>
+        <input id="telefono" type="text"/>
+      </div>
+
+      <div>
+        <label class="muted">Comuna</label>
+        <input id="comuna" type="text" list="dlComunas"/>
+        <datalist id="dlComunas"></datalist>
+      </div>
+      <div>
+        <label class="muted">Dirección</label>
+        <input id="direccion" type="text"/>
+      </div>
+      <div>
+        <label class="muted">Fecha de evento</label>
+        <input id="fechaEvento" type="date"/>
+      </div>
+    </section>
+
+    <hr/>
+
+    <section id="productos">
+      <div class="controls">
+        <input id="txtProducto" list="dlProductos" placeholder="Buscar producto"/>
+        <datalist id="dlProductos"></datalist>
+        <input id="cant" type="number" min="1" step="1" value="1" placeholder="Cantidad"/>
+        <input id="precio" type="number" min="0" step="1" value="0" placeholder="Valor unitario"/>
+        <button class="btn primary" id="btnAddItem">Agregar</button>
+      </div>
+      <table class="items" id="tblItems">
+        <thead>
+          <tr>
+            <th style="width:50%">Producto</th>
+            <th class="right">Cantidad</th>
+            <th class="right">Valor unitario</th>
+            <th class="right">Total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="totales" class="totales">
+      <div class="grid grid-2">
+        <div class="muted">Total productos</div>
+        <div class="right" id="tProductos">$0</div>
+
+        <div class="muted">Traslado</div>
+        <div class="right"><input id="traslado" type="number" step="1" min="0" value="0"/></div>
+
+        <div class="muted">Descuento</div>
+        <div class="right">
+          <div class="controls" style="justify-content:end">
+            <select id="tipoDesc">
+              <option value="$">$</option>
+              <option value="%">%</option>
+            </select>
+            <input id="descuento" type="number" step="1" min="0" value="0"/>
+          </div>
+        </div>
+
+        <div class="muted">Total neto</div>
+        <div class="right" id="tNeto">$0</div>
+
+        <div class="muted">IVA</div>
+        <div class="right" id="tIva">$0</div>
+
+        <div><b>Total cotización</b></div>
+        <div class="right" id="tTotal"><b>$0</b></div>
+        <div class="ivaLegend" id="ivaLegend">Esta cotización ha generado $0 de IVA.</div>
+      </div>
+    </section>
+
+    <hr/>
+
+    <section class="controls" style="justify-content:flex-end">
+      <button class="btn" id="btnGuardar">Guardar cotización</button>
+      <button class="btn" id="btnPreview">Previsualizar</button>
+      <button class="btn" id="btnEnviar">Enviar</button>
+      <button class="btn danger" id="btnCerrar">Cerrar</button>
+    </section>
+  </main>
+
+  <script src="/web/js/cotizador.js?v=20260227-01"></script>
+</body>
+</html>
