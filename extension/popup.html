@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>LeadSuite GD</title>
+  <style>
+    body{ margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto; width: 360px; background:#0b0e10; color:#e9ffee; }
+    .card{ margin:10px; padding:12px; border:1px solid rgba(255,255,255,.08); border-radius:14px; background:#0f1417; }
+    .row{ display:grid; gap:6px; margin: 10px 0; }
+    label{ font-size:12px; color: rgba(233,255,238,.65); font-weight:800; letter-spacing:.04em; }
+    input, textarea, select {
+      width:100%; box-sizing:border-box;
+      padding:10px 10px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);
+      background:#0e1316; color:#e9ffee; outline:none;
+    }
+    textarea{ min-height: 74px; resize: vertical; }
+    .btn{ width:100%; border:none; border-radius:12px; padding:10px 12px; background:#27e48b; color:#06110b; font-weight:900; cursor:pointer; }
+    .muted{ font-size:11px; color: rgba(233,255,238,.55); }
+    .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .pill{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.04); font-size:11px; color: rgba(233,255,238,.7); }
+    .topbar{ display:flex; gap:8px; align-items:center; justify-content:space-between; }
+    .iconbar{ display:flex; gap:8px; align-items:center; }
+    .iconbtn{
+      width:36px; height:36px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color:#e9ffee;
+      display:grid; place-items:center;
+      cursor:pointer;
+      font-weight:900;
+    }
+    .iconbtn:hover{ background: rgba(255,255,255,.10); }
+    .iconbtn:disabled{ opacity:.45; cursor:default; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="topbar">
+      <div class="muted">CRM: <span class="pill" id="crmBasePill">—</span></div>
+      <div class="iconbar">
+        <button class="iconbtn" id="btnClear" title="Limpiar">✕</button>
+        <button class="iconbtn" id="btnOpenLeads" title="Ir a Leads">↗</button>
+      </div>
+    </div>
+    <div class="muted" style="margin-top:6px">Crea un lead rápido. La marca queda por defecto según tu usuario (excepto Admin).</div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <label>Nombre cliente</label>
+      <input id="nombre" placeholder="NOMBRE CLIENTE" />
+    </div>
+    <div class="grid2">
+      <div class="row">
+        <label>Email</label>
+        <input id="email" placeholder="EMAIL@DOMINIO.CL" />
+      </div>
+      <div class="row">
+        <label>Teléfono</label>
+        <input id="telefono" placeholder="+56 9 XXXX XXXX" />
+      </div>
+    </div>
+
+    <div class="row">
+      <label>Comuna</label>
+      <select id="id_comuna"><option value="">(cargando…)</option></select>
+    </div>
+
+    <div class="grid2">
+      <div class="row">
+        <label>Fecha evento (opcional)</label>
+        <input id="fecha_evento" type="date" />
+      </div>
+      <div class="row">
+        <label>Tipo cliente</label>
+        <select id="id_tipo_cliente"><option value="">(cargando…)</option></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>Notas</label>
+      <textarea id="notas" placeholder="Detalles, link, último mensaje..."></textarea>
+    </div>
+
+    <div class="row">
+      <label>Marca</label>
+      <select id="id_marca"><option value="">(cargando…)</option></select>
+    </div>
+
+    <button class="btn" id="btnCreate">Crear lead</button>
+
+    <div class="muted" id="status" style="margin-top:10px;">—</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

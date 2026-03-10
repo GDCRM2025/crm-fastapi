@@ -1,0 +1,587 @@
+from __future__ import annotations
+
+import argparse
+import sqlite3
+from pathlib import Path
+from typing import Any, Iterable
+
+from sqlalchemy import text
+
+from backend.core.database import engine
+from backend.db_schema import bootstrap
+from backend.core.auth import hash_password
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]  # .../CRM 2025
+
+
+def _tables(cur: sqlite3.Cursor) -> set[str]:
+    rows = cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    return {r[0] for r in rows}
+
+
+def _cols(cur: sqlite3.Cursor, table: str) -> list[str]:
+    return [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
+
+
+def _has_table(tables: set[str], name: str) -> bool:
+    return name in tables
+
+
+def _first_table(tables: set[str], candidates: list[str]) -> str | None:
+    for c in candidates:
+        if c in tables:
+            return c
+    return None
+
+
+def _row_get(row: sqlite3.Row, key: str, default: Any = None) -> Any:
+    try:
+        if key in row.keys():
+            return row[key]
+    except Exception:
+        pass
+    return default
+
+
+def _as_bool(v: Any, default: bool = True) -> bool:
+    if v is None:
+        return default
+    try:
+        if isinstance(v, (int, float)):
+            return bool(int(v))
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s in ("1", "true", "t", "yes", "y", "si", "sí", "on"):
+                return True
+            if s in ("0", "false", "f", "no", "n", "off"):
+                return False
+    except Exception:
+        pass
+    return bool(v)
+
+
+def _as_int(v: Any, default: int = 0) -> int:
+    if v is None or v == "":
+        return default
+    try:
+        return int(float(v))
+    except Exception:
+        return default
+
+
+def _as_float(v: Any, default: float = 0.0) -> float:
+    if v is None or v == "":
+        return default
+    try:
+        return float(v)
+    except Exception:
+        return default
+
+
+def _to_iso_ts(v: Any) -> str | None:
+    """
+    SQLite suele guardar timestamps como 'YYYY-MM-DD HH:MM:SS'.
+    Postgres acepta 'YYYY-MM-DDTHH:MM:SS' con cast.
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    return s.replace(" ", "T")
+
+
+def _set_sequences(pg) -> None:
+    """
+    Ajusta secuencias para evitar choques al insertar nuevo.
+    """
+    seqs = [
+        ("roles", "id_rol"),
+        ("marcas", "id_marca"),
+        ("comunas", "id_comuna"),
+        ("tipocliente", "id_tipo_cliente"),
+        ("estados_lead", "id_estado"),
+        ("usuarios", "id_usuario"),
+        ("productos", "id_producto"),
+        ("leads", "id_lead"),
+        ("cotizaciones", "id_cotizacion"),
+        ("cotizaciones_detalle", "id_detalle"),
+        ("eventos_calendario", "id_evento"),
+    ]
+    for table, col in seqs:
+        pg.execute(
+            text(
+                f"""
+                SELECT setval(
+                  pg_get_serial_sequence('{table}','{col}'),
+                  COALESCE((SELECT MAX({col}) FROM {table}), 1),
+                  true
+                );
+                """
+            )
+        )
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--sqlite", default=str(PROJECT_ROOT / "backend" / "crm.db"))
+    ap.add_argument("--wipe", action="store_true")
+    args = ap.parse_args()
+
+    sqlite_path = Path(args.sqlite)
+    if not sqlite_path.exists():
+        raise SystemExit(f"No existe SQLite: {sqlite_path}")
+
+    # Asegura schema PG + seed mínimo
+    bootstrap(engine)
+
+    con = sqlite3.connect(str(sqlite_path))
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    tables = _tables(cur)
+
+    print(f"SQLite: {sqlite_path}")
+    print(f"Tablas SQLite: {sorted(list(tables))}")
+
+    with engine.begin() as pg:
+        if args.wipe:
+            print("WIPING Postgres (TRUNCATE CASCADE)...")
+            pg.execute(text("TRUNCATE cotizaciones_detalle RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE cotizaciones RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE eventos_calendario RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE leads RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE productos RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE usuarios RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE estados_lead RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE tipocliente RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE comunas RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE marcas RESTART IDENTITY CASCADE"))
+            pg.execute(text("TRUNCATE roles RESTART IDENTITY CASCADE"))
+
+        # -------------------------
+        # roles
+        # -------------------------
+        roles_map: dict[int, str] = {}
+        if _has_table(tables, "roles"):
+            print("Migrando roles...")
+            for r in cur.execute("SELECT * FROM roles"):
+                id_rol = _as_int(_row_get(r, "id_rol", 0))
+                nombre = str(_row_get(r, "nombre", "") or "").strip()
+                if not nombre:
+                    continue
+                roles_map[id_rol] = nombre
+                pg.execute(
+                    text("INSERT INTO roles(id_rol,nombre) VALUES (:i,:n) ON CONFLICT DO NOTHING"),
+                    {"i": id_rol, "n": nombre},
+                )
+
+        # -------------------------
+        # marcas (tabla SQLite: marca)
+        # -------------------------
+        if _has_table(tables, "marca"):
+            print("Migrando marcas (marca -> marcas)...")
+            marca_cols = _cols(cur, "marca")
+            if "id_marca" in marca_cols and "nombre" in marca_cols:
+                q = "SELECT id_marca, nombre" + (", is_active" if "is_active" in marca_cols else "") + " FROM marca"
+                for r in cur.execute(q):
+                    id_marca = _as_int(_row_get(r, "id_marca", 0))
+                    nombre = str(_row_get(r, "nombre", "") or "").strip()
+                    if not nombre:
+                        continue
+                    is_active = _as_bool(_row_get(r, "is_active", None), default=True)
+                    pg.execute(
+                        text("INSERT INTO marcas(id_marca,nombre,is_active) VALUES (:i,:n,:a) ON CONFLICT DO NOTHING"),
+                        {"i": id_marca, "n": nombre, "a": is_active},
+                    )
+            else:
+                print("WARN: tabla 'marca' no tiene columnas mínimas id_marca/nombre. Se omite.")
+
+        # -------------------------
+        # comunas
+        # -------------------------
+        if _has_table(tables, "comunas"):
+            print("Migrando comunas...")
+            ccols = _cols(cur, "comunas")
+            q = "SELECT * FROM comunas"
+            for r in cur.execute(q):
+                id_comuna = _as_int(_row_get(r, "id_comuna", 0))
+                nombre = str(_row_get(r, "nombre", "") or "").strip()
+                if not nombre:
+                    continue
+                neto = _as_float(_row_get(r, "neto", 0), 0)
+                bruto = _as_float(_row_get(r, "bruto", 0), 0)
+                is_active = _as_bool(_row_get(r, "is_active", None), default=True) if "is_active" in ccols else True
+                pg.execute(
+                    text("""
+                        INSERT INTO comunas(id_comuna,nombre,neto,bruto,is_active)
+                        VALUES (:i,:n,:neto,:bruto,:a)
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {"i": id_comuna, "n": nombre, "neto": neto, "bruto": bruto, "a": is_active},
+                )
+
+        # -------------------------
+        # tipocliente
+        # -------------------------
+        if _has_table(tables, "tipocliente"):
+            print("Migrando tipocliente...")
+            tcols = _cols(cur, "tipocliente")
+            for r in cur.execute("SELECT * FROM tipocliente"):
+                id_tipo = _as_int(_row_get(r, "id_tipo_cliente", 0))
+                nombre = str(_row_get(r, "nombre", "") or "").strip()
+                if not nombre:
+                    continue
+                is_active = _as_bool(_row_get(r, "is_active", None), default=True) if "is_active" in tcols else True
+                pg.execute(
+                    text("""
+                        INSERT INTO tipocliente(id_tipo_cliente,nombre,is_active)
+                        VALUES (:i,:n,:a)
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {"i": id_tipo, "n": nombre, "a": is_active},
+                )
+
+        # -------------------------
+        # estados_lead
+        # -------------------------
+        if _has_table(tables, "estados_lead"):
+            print("Migrando estados_lead...")
+            ecols = _cols(cur, "estados_lead")
+            for r in cur.execute("SELECT * FROM estados_lead"):
+                id_estado = _as_int(_row_get(r, "id_estado", 0))
+                nombre = str(_row_get(r, "nombre", "") or "").strip()
+                if not nombre:
+                    continue
+                color = _row_get(r, "color", None) if "color" in ecols else None
+                orden = _as_int(_row_get(r, "orden", 0)) if "orden" in ecols else 0
+                is_active = _as_bool(_row_get(r, "is_active", None), default=True) if "is_active" in ecols else True
+
+                pg.execute(
+                    text("""
+                        INSERT INTO estados_lead(id_estado,nombre,color,orden,is_active)
+                        VALUES (:i,:n,:c,:o,:a)
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {"i": id_estado, "n": nombre, "c": color, "o": orden, "a": is_active},
+                )
+
+        # -------------------------
+        # usuarios
+        # -------------------------
+        if _has_table(tables, "usuarios"):
+            print("Migrando usuarios...")
+            ucols = _cols(cur, "usuarios")
+
+            # posibles nombres de password en SQLite
+            pwd_fields = ["hashed_password", "password", "clave", "contrasena", "contrasena_hash", "pass"]
+            pwd_field = next((f for f in pwd_fields if f in ucols), None)
+
+            has_id_rol = "id_rol" in ucols
+            has_rol_txt = "rol" in ucols
+            has_is_active = "is_active" in ucols
+
+            for r in cur.execute("SELECT * FROM usuarios"):
+                id_usuario = _as_int(_row_get(r, "id_usuario", 0))
+                nombre = str(_row_get(r, "nombre", "") or "").strip()
+                username = str(_row_get(r, "username", "") or "").strip()
+                email = _row_get(r, "email", None)
+                telefono = _row_get(r, "telefono", "") or ""
+                cargo = _row_get(r, "cargo", "") or ""
+
+                # rol
+                rol = "User"
+                if has_rol_txt:
+                    rol = str(_row_get(r, "rol", "User") or "User")
+                elif has_id_rol:
+                    rid = _as_int(_row_get(r, "id_rol", 0), 0)
+                    rol = roles_map.get(rid, "User")
+
+                is_active = _as_bool(_row_get(r, "is_active", None), default=True) if has_is_active else True
+
+                # password
+                raw_pwd = ""
+                if pwd_field:
+                    raw_pwd = str(_row_get(r, pwd_field, "") or "")
+                if raw_pwd and not raw_pwd.startswith("$"):
+                    raw_pwd = hash_password(raw_pwd)
+                if not raw_pwd:
+                    raw_pwd = hash_password("1234")
+
+                if not username:
+                    # si no hay username, usa email o id
+                    username = (str(email).split("@")[0] if email else f"user{id_usuario}")
+
+                if not nombre:
+                    nombre = username
+
+                pg.execute(
+                    text("""
+                        INSERT INTO usuarios(id_usuario,nombre,email,username,telefono,cargo,rol,is_active,hashed_password)
+                        VALUES (:id,:n,:e,:u,:t,:c,:rol,:a,:hp)
+                        ON CONFLICT (id_usuario) DO NOTHING
+                    """),
+                    {
+                        "id": id_usuario,
+                        "n": nombre,
+                        "e": email,
+                        "u": username,
+                        "t": telefono,
+                        "c": cargo,
+                        "rol": rol,
+                        "a": is_active,
+                        "hp": raw_pwd,
+                    },
+                )
+
+        # -------------------------
+        # productos
+        # -------------------------
+        if _has_table(tables, "productos"):
+            print("Migrando productos...")
+            pcols = _cols(cur, "productos")
+            for r in cur.execute("SELECT * FROM productos"):
+                id_producto = _as_int(_row_get(r, "id_producto", 0))
+                producto = str(_row_get(r, "producto", "") or "").strip()
+                if not producto:
+                    continue
+                ingredientes = _row_get(r, "ingredientes", None) if "ingredientes" in pcols else None
+                marca = str(_row_get(r, "marca", "") or "").strip() if "marca" in pcols else ""
+                costo = _as_float(_row_get(r, "costo", 0), 0)
+                is_active = _as_bool(_row_get(r, "is_active", None), default=True) if "is_active" in pcols else True
+
+                pg.execute(
+                    text("""
+                        INSERT INTO productos(id_producto,producto,ingredientes,marca,costo,is_active)
+                        VALUES (:id,:p,:ing,:m,:c,:a)
+                        ON CONFLICT (id_producto) DO NOTHING
+                    """),
+                    {"id": id_producto, "p": producto, "ing": ingredientes, "m": marca, "c": costo, "a": is_active},
+                )
+
+        # -------------------------
+        # leads (SQLite puede ser lead o leads)
+        # -------------------------
+        lead_table = _first_table(tables, ["lead", "leads"])
+        if lead_table:
+            print(f"Migrando leads desde '{lead_table}'...")
+            lcols = _cols(cur, lead_table)
+
+            for r in cur.execute(f"SELECT * FROM {lead_table}"):
+                id_lead = _as_int(_row_get(r, "id_lead", 0))
+                nombre_cliente = str(_row_get(r, "nombre_cliente", "") or "").strip()
+                if not nombre_cliente:
+                    continue
+
+                email = _row_get(r, "email", None)
+                telefono = _row_get(r, "telefono", None)
+
+                id_marca = _as_int(_row_get(r, "id_marca", None), 0) if "id_marca" in lcols else None
+                id_estado = _as_int(_row_get(r, "id_estado", None), 0) if "id_estado" in lcols else None
+                fecha_evento = _row_get(r, "fecha_evento", "") if "fecha_evento" in lcols else ""
+                monto_cotizado = _as_float(_row_get(r, "monto_cotizado", 0), 0)
+                codigo_cliente = _row_get(r, "codigo_cliente", None) if "codigo_cliente" in lcols else None
+                fecha_ingreso = _row_get(r, "fecha_ingreso", "") if "fecha_ingreso" in lcols else ""
+
+                id_tipo_cliente = _as_int(_row_get(r, "id_tipo_cliente", None), 0) if "id_tipo_cliente" in lcols else None
+                plataforma = _row_get(r, "plataforma", None) if "plataforma" in lcols else None
+
+                id_comuna = _as_int(_row_get(r, "id_comuna", None), 0) if "id_comuna" in lcols else None
+                direccion = _row_get(r, "direccion", None) if "direccion" in lcols else None
+                notas = _row_get(r, "notas", None) if "notas" in lcols else None
+                num_cotizacion = _row_get(r, "num_cotizacion", None) if "num_cotizacion" in lcols else None
+
+                pendiente_agendar = _as_bool(_row_get(r, "pendiente_agendar", None), default=False) if "pendiente_agendar" in lcols else False
+
+                pre_title = _row_get(r, "pre_title", None) if "pre_title" in lcols else None
+                pre_start = _to_iso_ts(_row_get(r, "pre_start", None)) if "pre_start" in lcols else None
+                pre_end = _to_iso_ts(_row_get(r, "pre_end", None)) if "pre_end" in lcols else None
+                pre_location = _row_get(r, "pre_location", None) if "pre_location" in lcols else None
+                pre_telefono = _row_get(r, "pre_telefono", None) if "pre_telefono" in lcols else None
+                pre_direccion = _row_get(r, "pre_direccion", None) if "pre_direccion" in lcols else None
+                pre_products_text = _row_get(r, "pre_products_text", None) if "pre_products_text" in lcols else None
+                pre_montaje_text = _row_get(r, "pre_montaje_text", None) if "pre_montaje_text" in lcols else None
+                pre_ops = _as_int(_row_get(r, "pre_ops", 0), 0) if "pre_ops" in lcols else 0
+                pre_description = _row_get(r, "pre_description", None) if "pre_description" in lcols else None
+
+                calendar_start = _to_iso_ts(_row_get(r, "calendar_start", None)) if "calendar_start" in lcols else None
+                calendar_end = _to_iso_ts(_row_get(r, "calendar_end", None)) if "calendar_end" in lcols else None
+                calendar_html_link = _row_get(r, "calendar_html_link", None) if "calendar_html_link" in lcols else None
+
+                agenda_approved_by = _row_get(r, "agenda_approved_by", None) if "agenda_approved_by" in lcols else None
+                agenda_approved_at = _row_get(r, "agenda_approved_at", "") if "agenda_approved_at" in lcols else ""
+
+                pg.execute(
+                    text("""
+                        INSERT INTO leads(
+                          id_lead,nombre_cliente,email,telefono,id_marca,id_estado,fecha_evento,monto_cotizado,codigo_cliente,
+                          fecha_ingreso,id_tipo_cliente,plataforma,id_comuna,direccion,notas,num_cotizacion,
+                          pendiente_agendar,
+                          pre_title,pre_start,pre_end,pre_location,pre_telefono,pre_direccion,pre_products_text,pre_montaje_text,pre_ops,pre_description,
+                          calendar_start,calendar_end,calendar_html_link,
+                          agenda_approved_by,agenda_approved_at
+                        )
+                        VALUES(
+                          :id,:nc,:em,:tel,:idm,:ide,
+                          NULLIF(:fe,'')::date,
+                          :m,:cc,
+                          NULLIF(:fi,'')::date,
+                          :itc,:plat,:ic,:dir,:notas,:numc,
+                          :pend,
+                          :pt, NULLIF(:ps,'')::timestamp, NULLIF(:pe,'')::timestamp, :pl, :ptel, :pdir, :pp, :pm, :ops, :pdesc,
+                          NULLIF(:cs,'')::timestamp, NULLIF(:ce,'')::timestamp, :chl,
+                          :a_by, NULLIF(:a_at,'')::timestamptz
+                        )
+                        ON CONFLICT (id_lead) DO NOTHING
+                    """),
+                    {
+                        "id": id_lead,
+                        "nc": nombre_cliente,
+                        "em": email,
+                        "tel": telefono,
+                        "idm": id_marca,
+                        "ide": id_estado,
+                        "fe": str(fecha_evento or ""),
+                        "m": monto_cotizado,
+                        "cc": codigo_cliente,
+                        "fi": str(fecha_ingreso or ""),
+                        "itc": id_tipo_cliente,
+                        "plat": plataforma,
+                        "ic": id_comuna,
+                        "dir": direccion,
+                        "notas": notas,
+                        "numc": num_cotizacion,
+                        "pend": pendiente_agendar,
+                        "pt": pre_title,
+                        "ps": pre_start or "",
+                        "pe": pre_end or "",
+                        "pl": pre_location,
+                        "ptel": pre_telefono,
+                        "pdir": pre_direccion,
+                        "pp": pre_products_text,
+                        "pm": pre_montaje_text,
+                        "ops": pre_ops,
+                        "pdesc": pre_description,
+                        "cs": calendar_start or "",
+                        "ce": calendar_end or "",
+                        "chl": calendar_html_link,
+                        "a_by": agenda_approved_by,
+                        "a_at": str(agenda_approved_at or ""),
+                    },
+                )
+
+        # -------------------------
+        # cotizaciones
+        # -------------------------
+        if _has_table(tables, "cotizaciones"):
+            print("Migrando cotizaciones...")
+            ccols = _cols(cur, "cotizaciones")
+
+            for r in cur.execute("SELECT * FROM cotizaciones"):
+                pg.execute(
+                    text("""
+                        INSERT INTO cotizaciones(
+                          id_cotizacion,id_lead,numero,fecha,direccion,traslado,descuento_raw,descuento_valor,descuento_tipo,
+                          subtotal_productos,iva,total,version,condicion_pago,extra,tipo_cliente,tiene_descuento,status_evento,
+                          fecha_evento,nombre_cliente,marca,pdf_path
+                        )
+                        VALUES(
+                          :idc,:idl,:num, NULLIF(:f,'')::timestamptz, :dir,:tr,:dr,:dv,:dt,
+                          :sub,:iva,:tot,:ver,:cp,:ex,:tc,:td,:se,
+                          NULLIF(:fe,'')::date, :nc,:m,:pp
+                        )
+                        ON CONFLICT (id_cotizacion) DO NOTHING
+                    """),
+                    {
+                        "idc": _as_int(_row_get(r, "id_cotizacion", 0)),
+                        "idl": _as_int(_row_get(r, "id_lead", 0)),
+                        "num": _as_int(_row_get(r, "numero", 0)),
+                        "f": _to_iso_ts(_row_get(r, "fecha", "")) or "",
+                        "dir": _row_get(r, "direccion", None),
+                        "tr": _as_float(_row_get(r, "traslado", 0), 0),
+                        "dr": _row_get(r, "descuento_raw", "") if "descuento_raw" in ccols else "",
+                        "dv": _as_float(_row_get(r, "descuento_valor", 0), 0),
+                        "dt": _row_get(r, "descuento_tipo", "monto") if "descuento_tipo" in ccols else "monto",
+                        "sub": _as_float(_row_get(r, "subtotal_productos", 0), 0),
+                        "iva": _as_float(_row_get(r, "iva", 0), 0),
+                        "tot": _as_float(_row_get(r, "total", 0), 0),
+                        "ver": _row_get(r, "version", None) if "version" in ccols else None,
+                        "cp": _row_get(r, "condicion_pago", None) if "condicion_pago" in ccols else None,
+                        "ex": _as_float(_row_get(r, "extra", 0), 0),
+                        "tc": _row_get(r, "tipo_cliente", None) if "tipo_cliente" in ccols else None,
+                        "td": _as_bool(_row_get(r, "tiene_descuento", None), default=False) if "tiene_descuento" in ccols else False,
+                        "se": _row_get(r, "status_evento", None) if "status_evento" in ccols else None,
+                        "fe": str(_row_get(r, "fecha_evento", "") or "") if "fecha_evento" in ccols else "",
+                        "nc": _row_get(r, "nombre_cliente", None) if "nombre_cliente" in ccols else None,
+                        "m": _row_get(r, "marca", None) if "marca" in ccols else None,
+                        "pp": _row_get(r, "pdf_path", None) if "pdf_path" in ccols else None,
+                    },
+                )
+
+        # -------------------------
+        # cotizaciones_detalle
+        # -------------------------
+        if _has_table(tables, "cotizaciones_detalle"):
+            print("Migrando cotizaciones_detalle...")
+            for r in cur.execute("SELECT * FROM cotizaciones_detalle"):
+                pg.execute(
+                    text("""
+                        INSERT INTO cotizaciones_detalle(
+                          id_detalle,id_cotizacion,id_producto,nombre_producto,cantidad,precio_unitario,subtotal
+                        )
+                        VALUES(:id,:idc,:idp,:np,:c,:pu,:st)
+                        ON CONFLICT (id_detalle) DO NOTHING
+                    """),
+                    {
+                        "id": _as_int(_row_get(r, "id_detalle", 0)),
+                        "idc": _as_int(_row_get(r, "id_cotizacion", 0)),
+                        "idp": _row_get(r, "id_producto", None),
+                        "np": _row_get(r, "nombre_producto", "") or "",
+                        "c": _as_float(_row_get(r, "cantidad", 0), 0),
+                        "pu": _as_float(_row_get(r, "precio_unitario", 0), 0),
+                        "st": _as_float(_row_get(r, "subtotal", 0), 0),
+                    },
+                )
+
+        # -------------------------
+        # eventos_calendario (preagenda)
+        # -------------------------
+        if _has_table(tables, "eventos_calendario"):
+            print("Migrando eventos_calendario...")
+            ecols = _cols(cur, "eventos_calendario")
+            for r in cur.execute("SELECT * FROM eventos_calendario"):
+                pg.execute(
+                    text("""
+                        INSERT INTO eventos_calendario(
+                          id_evento,id_lead,titulo,fecha_inicio,fecha_termino,telefono,direccion,descripcion,montaje,estado,creado_por,aprobado_por
+                        )
+                        VALUES(
+                          :id,:idl,:t, NULLIF(:fi,'')::timestamp, NULLIF(:ft,'')::timestamp,
+                          :tel,:dir,:desc,:mon,:est,:cp,:ap
+                        )
+                        ON CONFLICT (id_evento) DO NOTHING
+                    """),
+                    {
+                        "id": _as_int(_row_get(r, "id_evento", 0)),
+                        "idl": _as_int(_row_get(r, "id_lead", 0)),
+                        "t": _row_get(r, "titulo", "") or "",
+                        "fi": _to_iso_ts(_row_get(r, "fecha_inicio", "")) or "",
+                        "ft": _to_iso_ts(_row_get(r, "fecha_termino", "")) or "",
+                        "tel": _row_get(r, "telefono", None) if "telefono" in ecols else None,
+                        "dir": _row_get(r, "direccion", None) if "direccion" in ecols else None,
+                        "desc": _row_get(r, "descripcion", None) if "descripcion" in ecols else None,
+                        "mon": _row_get(r, "montaje", None) if "montaje" in ecols else None,
+                        "est": _row_get(r, "estado", "pendiente") if "estado" in ecols else "pendiente",
+                        "cp": _row_get(r, "creado_por", None) if "creado_por" in ecols else None,
+                        "ap": _row_get(r, "aprobado_por", None) if "aprobado_por" in ecols else None,
+                    },
+                )
+
+        # Ajusta secuencias
+        _set_sequences(pg)
+
+    print("OK: migración completada -> PostgreSQL (BDGD)")
+
+
+if __name__ == "__main__":
+    main()

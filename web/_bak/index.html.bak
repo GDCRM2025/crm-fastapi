@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CRM 2025</title>
+
+  <!-- Base UI -->
+  <link rel="stylesheet" href="/web/styles.css" />
+  <!-- Overrides (sidebar behavior + topbar sizing + weather look) -->
+  <link rel="stylesheet" href="/web/panel.css" />
+
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+
+<body>
+  <!-- Topbar (NO hay menú horizontal arriba) -->
+  <nav class="topbar">
+    <button class="iconbtn" id="btnNav" aria-label="Menú" title="Menú">☰</button>
+
+    <!-- “GreenDiamond” desaparece: queda un botón minimal para Dashboard -->
+    <button class="brandbtn" id="btnHome" title="Dashboard" aria-label="Dashboard">◆</button>
+
+    <div class="topspacer"></div>
+
+    <!-- Weather pill (chico) -->
+    <button class="wx-pill" id="wxPill" type="button" title="Clima">
+      <span id="wxIco">☀️</span>
+      <span class="wx-temp" id="wxTemp">—°</span>
+      <span class="wx-city" id="wxCity">—</span>
+    </button>
+
+    <div class="chip" id="clockBox" title="Fecha y hora">—</div>
+
+    <!-- Toggle día/noche (switch real) -->
+    <label class="theme-toggle" title="Día / Noche">
+      <input type="checkbox" id="themeToggle" />
+      <span class="track"></span>
+      <span class="thumb"></span>
+      <span class="sun">🌞</span>
+      <span class="moon">🌙</span>
+    </label>
+
+    <div class="chip userchip" id="userBox" title="Usuario">—</div>
+    <button class="iconbtn" id="btnLogout" title="Cerrar sesión" aria-label="Cerrar sesión">⎋</button>
+  </nav>
+
+  <div class="layout">
+    <!-- Sidebar (iconos siempre visibles; se expande con foco/hover; se contrae al perder foco) -->
+    <aside class="sidebar" id="sidebar" aria-label="Navegación">
+      <div class="nav" id="nav"></div>
+      <div class="side-footer">
+        <div class="hint">Tip: hover para expandir • click ☰ para “pin”</div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <iframe id="mainFrame" class="frame" title="Contenido" src="/web/views/dashboard.html"></iframe>
+    </main>
+  </div>
+
+  <!-- Weather modal -->
+  <div class="wx-modal" id="wxModal" aria-hidden="true">
+    <div class="wx-modal-bg" id="wxModalBg"></div>
+    <div class="wx-modal-content" role="dialog" aria-modal="true" aria-label="Clima">
+      <button class="wx-close" id="wxClose" aria-label="Cerrar">✕</button>
+
+      <header class="wx-header">
+        <div class="wx-loc" id="wxModalCity">—</div>
+        <div class="wx-big">
+          <div class="wx-big-temp" id="wxModalTemp">—°</div>
+          <div class="wx-big-ico" id="wxModalIco">☀️</div>
+        </div>
+        <div class="wx-cond" id="wxModalNow">—</div>
+        <div class="wx-summary" id="wxSummary">—</div>
+      </header>
+
+      <section class="wx-card">
+        <div class="wx-card-title">AHORA</div>
+        <div class="wx-hours" id="wxHours"></div>
+      </section>
+
+      <section class="wx-card">
+        <div class="wx-card-title">PREVISIÓN (7 DÍAS)</div>
+        <div class="wx-days" id="wxDays"></div>
+      </section>
+    </div>
+  </div>
+
+  <script type="module" src="/web/js/panel.js"></script>
+  <script type="module" src="/web/js/weather.js"></script>
+  <script type="module" src="/web/js/calc_modal.js"></script>
+</body>
+</html>

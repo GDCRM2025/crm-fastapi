@@ -1,0 +1,14 @@
+{
+  "id_cotizacion": 3,
+  "marca": "EXPRESS",
+  "marca_key": "EXPRESS",
+  "assets": {
+    "portada": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/EXPRESS/portada.png",
+    "cotizacion": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/EXPRESS/cotizacion.png",
+    "terminos": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/EXPRESS/terminos.png",
+    "banco": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/EXPRESS/banco.png",
+    "logo": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/EXPRESS/logo.png"
+  },
+  "missing_assets": [],
+  "pdf_path": "/Users/oscarmendoza/Desktop/CRM 2025/data/quotes/DEL SABOR/2026-02/cotizacion_4569.pdf"
+}

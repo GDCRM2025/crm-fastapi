@@ -1,0 +1,53 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Local DB
+*.db
+*.sqlite
+*.sqlite3
+*.bd
+
+# Secrets
+.env
+.env.*
+keys/
+data/
+backend/credentials/
+
+# Generated quote artifacts
+backend/cotizaciones/
+
+# Backups / junk
+web/_bak/
+*.bak
+*.bad
+
+# Media / heavy / disposable
+VIDEOS/
+IMAGENES/
+*.zip
+*.mov
+*.mp4
+*.avi
+*.mkv
+*.rpm
+
+# Node
+node_modules/
+
+# Build / temp
+tmp/
+dist/
+build/

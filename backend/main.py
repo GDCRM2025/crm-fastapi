@@ -69,6 +69,7 @@ app.add_middleware(
 # Routers (ajusta SOLO si tu estructura difiere)
 # =========================
 # IMPORTANT: esto es lo que te falta hoy; por eso todo está 404.
+include_router_safe(app, "backend.routers.greeni_instagram")
 include_router_safe(app, "backend.routers.auth")
 include_router_safe(app, "backend.routers.leads")
 include_router_safe(app, "backend.routers.catalogos")

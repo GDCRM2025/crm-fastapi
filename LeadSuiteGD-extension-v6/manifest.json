@@ -1,0 +1,19 @@
+{
+  "name": "LeadSuite GD",
+  "version": "0.6.0",
+  "manifest_version": 3,
+  "description": "Captura datos desde Gmail/Instagram/WhatsApp y crea Leads en Green Diamond CRM.",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "scripting",
+    "activeTab",
+    "tabs",
+    "windows"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*"
+  ],
+  "background": { "service_worker": "sw.js" },
+  "action": { "default_title": "LeadSuite GD" }
+}

@@ -1,15 +1,47 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any, Dict
 from sqlalchemy import text
+from pathlib import Path
+from datetime import date
+import shutil
+import time
+import re
+import uuid
+import json
+import mimetypes
 
 from backend.core.db import get_connection
 from backend.routers.auth import get_current_user
 
 router = APIRouter(prefix="/ops/inventario", tags=["inventario"])
 
+BASE_DIR = Path(__file__).resolve().parents[2]
+TRUCK_DOCS_DIR = BASE_DIR / "web" / "uploads" / "camiones"
+MAX_DOC_BYTES = 10 * 1024 * 1024
+
+DOC_TYPES = {
+    "permiso_circulacion": "Permiso circulación",
+    "revision_tecnica": "Revisión técnica",
+    "soap": "SOAP",
+    "seguro": "Seguro",
+    "padron": "Padrón",
+    "otro": "Otro",
+}
+DOC_ORDER = [
+    "permiso_circulacion",
+    "revision_tecnica",
+    "soap",
+    "seguro",
+    "padron",
+    "otro",
+]
+ALLOWED_DOC_EXTS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".doc", ".docx"}
+
+
 def _norm_expr(expr: str) -> str:
     return f"translate(lower({expr}), 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN')"
+
 
 def _norm_param(param: str) -> str:
     return f"translate(lower({param}), 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN')"
@@ -102,8 +134,8 @@ def _ensure_tables(conn):
             CREATE TABLE IF NOT EXISTS inv_movimientos (
                 id_movimiento SERIAL PRIMARY KEY,
                 id_producto INT REFERENCES inv_productos(id_producto),
-                tipo TEXT NOT NULL, -- ingreso/salida/ajuste
-                subtipo TEXT, -- cocina/eventos/delivery/compra/merma
+                tipo TEXT NOT NULL,
+                subtipo TEXT,
                 cantidad NUMERIC(12,3) NOT NULL,
                 unidad TEXT,
                 fecha DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -118,7 +150,6 @@ def _ensure_tables(conn):
         )
     )
     conn.execute(text("ALTER TABLE inv_movimientos ADD COLUMN IF NOT EXISTS marca TEXT"))
-
     conn.execute(
         text(
             """
@@ -182,7 +213,36 @@ def _ensure_tables(conn):
             """
         )
     )
-    # seed centros de costo
+
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS inv_camion_documentos (
+                id_documento SERIAL PRIMARY KEY,
+                id_asset INT NOT NULL,
+                tipo_doc TEXT NOT NULL,
+                nombre_original TEXT,
+                nombre_archivo TEXT NOT NULL,
+                file_url TEXT NOT NULL,
+                file_path TEXT,
+                vencimiento DATE,
+                uploaded_by INT,
+                uploaded_by_name TEXT,
+                created_at TIMESTAMP DEFAULT now(),
+                updated_at TIMESTAMP DEFAULT now(),
+                UNIQUE (id_asset, tipo_doc)
+            )
+            """
+        )
+    )
+    conn.execute(text("ALTER TABLE inv_camion_documentos ADD COLUMN IF NOT EXISTS nombre_original TEXT"))
+    conn.execute(text("ALTER TABLE inv_camion_documentos ADD COLUMN IF NOT EXISTS file_path TEXT"))
+    conn.execute(text("ALTER TABLE inv_camion_documentos ADD COLUMN IF NOT EXISTS vencimiento DATE"))
+    conn.execute(text("ALTER TABLE inv_camion_documentos ADD COLUMN IF NOT EXISTS uploaded_by INT"))
+    conn.execute(text("ALTER TABLE inv_camion_documentos ADD COLUMN IF NOT EXISTS uploaded_by_name TEXT"))
+    conn.execute(text("ALTER TABLE inv_camion_documentos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT now()"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_inv_camion_documentos_asset ON inv_camion_documentos(id_asset)"))
+
     conn.execute(
         text(
             """
@@ -207,6 +267,66 @@ def _ensure_role(me):
         "MICE",
     ):
         raise HTTPException(status_code=403, detail="No autorizado")
+
+
+def _asset_exists(conn, id_asset: int) -> bool:
+    try:
+        row = conn.execute(
+            text("SELECT 1 FROM assets WHERE id_asset=:id LIMIT 1"),
+            {"id": id_asset},
+        ).first()
+        return bool(row)
+    except Exception:
+        return True
+
+
+def _normalize_doc_type(value: str) -> str:
+    s = (value or "").strip().lower()
+    s = s.replace(" ", "_").replace("-", "_")
+    s = s.translate(str.maketrans("áéíóúüñ", "aeiouun"))
+    s = re.sub(r"[^a-z0-9_]+", "", s)
+    if s not in DOC_TYPES:
+        raise HTTPException(status_code=400, detail="tipo_doc inválido")
+    return s
+
+
+def _normalize_date(value: Optional[str]) -> Optional[str]:
+    s = str(value or "").strip()
+    if not s:
+        return None
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        raise HTTPException(status_code=400, detail="vencimiento inválido, usa YYYY-MM-DD")
+    return s
+
+
+def _safe_unlink(path_str: Optional[str]) -> None:
+    try:
+        if path_str:
+            Path(path_str).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _doc_ext(filename: str, content_type: Optional[str]) -> str:
+    ext = Path(filename or "").suffix.lower().strip()
+    if ext in ALLOWED_DOC_EXTS:
+        return ext
+    guess = mimetypes.guess_extension(content_type or "") or ""
+    guess = guess.lower().strip()
+    if guess == ".jpe":
+        guess = ".jpg"
+    if guess in ALLOWED_DOC_EXTS:
+        return guess
+    raise HTTPException(
+        status_code=400,
+        detail="Formato no permitido. Usa PDF, PNG, JPG, WEBP, DOC o DOCX.",
+    )
+
+
+def _doc_row_to_dict(row) -> dict:
+    d = dict(row)
+    d["tipo_label"] = DOC_TYPES.get(d.get("tipo_doc") or "", d.get("tipo_doc") or "")
+    return d
 
 
 class CategoriaIn(BaseModel):
@@ -305,7 +425,6 @@ def catalogos(me=Depends(get_current_user)):
             )
         ).mappings().all()
         centros = conn.execute(text("SELECT nombre FROM inv_centros_costo ORDER BY nombre")).mappings().all()
-        # marcas desde tabla marcas (si existe) + BRONTOS
         marcas = []
         try:
             marcas = conn.execute(text("SELECT DISTINCT COALESCE(nombre, marca) AS nombre FROM marcas ORDER BY 1")).mappings().all()
@@ -332,7 +451,10 @@ def list_categorias(q: str = Query("", max_length=120), me=Depends(get_current_u
         _ensure_tables(conn)
         if q:
             rows = conn.execute(
-                text(f"SELECT id_categoria, nombre FROM inv_categorias WHERE {_norm_expr('nombre')} LIKE {_norm_param(':q')} ORDER BY nombre"),
+                text(
+                    f"SELECT id_categoria, nombre FROM inv_categorias "
+                    f"WHERE {_norm_expr('nombre')} LIKE {_norm_param(':q')} ORDER BY nombre"
+                ),
                 {"q": f"%{q}%"},
             ).mappings().all()
         else:
@@ -389,7 +511,12 @@ def list_unidades(q: str = Query("", max_length=120), me=Depends(get_current_use
         _ensure_tables(conn)
         if q:
             rows = conn.execute(
-                text(f"SELECT id_unidad, nombre, abreviatura FROM inv_unidades WHERE {_norm_expr('nombre')} LIKE {_norm_param(':q')} OR {_norm_expr('abreviatura')} LIKE {_norm_param(':q')} ORDER BY nombre"),
+                text(
+                    f"SELECT id_unidad, nombre, abreviatura FROM inv_unidades "
+                    f"WHERE {_norm_expr('nombre')} LIKE {_norm_param(':q')} "
+                    f"OR {_norm_expr('abreviatura')} LIKE {_norm_param(':q')} "
+                    f"ORDER BY nombre"
+                ),
                 {"q": f"%{q}%"},
             ).mappings().all()
         else:
@@ -438,9 +565,7 @@ def update_unidad(id_unidad: int, body: UnidadIn, me=Depends(get_current_user)):
     with get_connection() as conn:
         _ensure_tables(conn)
         conn.execute(
-            text(
-                "UPDATE inv_unidades SET nombre=:n, abreviatura=:a WHERE id_unidad=:id"
-            ),
+            text("UPDATE inv_unidades SET nombre=:n, abreviatura=:a WHERE id_unidad=:id"),
             {"n": body.nombre.strip(), "a": (body.abreviatura or None), "id": id_unidad},
         )
         conn.commit()
@@ -565,10 +690,15 @@ def list_productos(
         base_where = []
         params = {}
         if q:
-            base_where.append(f"({_norm_expr('p.sku')} LIKE {_norm_param(':q')} OR {_norm_expr('p.nombre')} LIKE {_norm_param(':q')})")
+            base_where.append(
+                f"({_norm_expr('p.sku')} LIKE {_norm_param(':q')} "
+                f"OR {_norm_expr('p.nombre')} LIKE {_norm_param(':q')})"
+            )
             params["q"] = f"%{q}%"
         if marca:
-            base_where.append("EXISTS (SELECT 1 FROM inv_producto_marcas pm WHERE pm.id_producto=p.id_producto AND pm.marca=:marca)")
+            base_where.append(
+                "EXISTS (SELECT 1 FROM inv_producto_marcas pm WHERE pm.id_producto=p.id_producto AND pm.marca=:marca)"
+            )
             params["marca"] = marca
         where_sql = ("WHERE " + " AND ".join(base_where)) if base_where else ""
         q_sql = f"""
@@ -667,8 +797,7 @@ def list_stock(q: str = Query("", max_length=120), me=Depends(get_current_user))
             text(
                 f"""
                 SELECT p.id_producto, p.sku, p.nombre, p.precio, p.pack_cantidad,
-                       c.nombre AS categoria, u.nombre AS unidad,
-                       pr.nombre AS proveedor,
+                       c.nombre AS categoria, u.nombre AS unidad, pr.nombre AS proveedor,
                        p.id_categoria, p.id_unidad, p.id_proveedor,
                        s.stock_inicial, s.stock_bodega, s.stock_delivery, s.stock_cocina,
                        COALESCE(s.stock_total, s.stock_actual, 0) AS stock_total,
@@ -700,12 +829,10 @@ def ajustar_stock(body: StockIn, me=Depends(get_current_user)):
         target = body.stock_total if body.stock_total is not None else body.stock_actual
         if target is None:
             target = 0
-        # ensure stock row
         conn.execute(
             text("INSERT INTO inv_stock(id_producto, stock_actual) VALUES (:id, 0) ON CONFLICT (id_producto) DO NOTHING"),
             {"id": body.id_producto},
         )
-        # update stock
         conn.execute(
             text(
                 """
@@ -718,7 +845,6 @@ def ajustar_stock(body: StockIn, me=Depends(get_current_user)):
             ),
             {"id": body.id_producto, "s": body.stock_actual, "st": target},
         )
-        # log movimiento
         conn.execute(
             text(
                 """
@@ -794,7 +920,6 @@ def bulk_stock(body: StockBulkIn, me=Depends(get_current_user)):
         created_by_name = me.get("name") or me.get("nombre") or me.get("username") or ""
         id_toma = None
 
-        # Si el usuario vuelve a subir el CSV para "modificar", reemplazamos su última toma pendiente.
         if body.replace_pending and created_by is not None:
             prev = conn.execute(
                 text(
@@ -1004,7 +1129,6 @@ def create_movimiento(body: MovimientoIn, me=Depends(get_current_user)):
                 "n": body.nota,
             },
         )
-        # update stock
         conn.execute(
             text("INSERT INTO inv_stock(id_producto, stock_actual) VALUES (:id, 0) ON CONFLICT (id_producto) DO NOTHING"),
             {"id": body.id_producto},
@@ -1012,7 +1136,11 @@ def create_movimiento(body: MovimientoIn, me=Depends(get_current_user)):
         sign = 1 if tipo == "ingreso" else -1
         conn.execute(
             text(
-                "UPDATE inv_stock SET stock_actual = COALESCE(stock_actual,0) + (:delta), stock_total = COALESCE(stock_total, stock_actual, 0) + (:delta), updated_at=now() WHERE id_producto=:id"
+                "UPDATE inv_stock "
+                "SET stock_actual = COALESCE(stock_actual,0) + (:delta), "
+                "    stock_total = COALESCE(stock_total, stock_actual, 0) + (:delta), "
+                "    updated_at=now() "
+                "WHERE id_producto=:id"
             ),
             {"delta": qty * sign, "id": body.id_producto},
         )
@@ -1069,3 +1197,643 @@ def update_producto(id_producto: int, body: ProductoIn, me=Depends(get_current_u
         )
         conn.commit()
     return {"ok": True}
+
+
+@router.get("/camiones/{id_asset}/documentos")
+def list_camion_documentos(id_asset: int, me=Depends(get_current_user)):
+    _ensure_role(me)
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        if not _asset_exists(conn, id_asset):
+            raise HTTPException(status_code=404, detail="Camión no existe")
+        rows = conn.execute(
+            text(
+                """
+                SELECT id_documento,
+                       id_asset,
+                       tipo_doc,
+                       COALESCE(nombre_original, nombre_archivo) AS nombre_archivo,
+                       file_url,
+                       file_path,
+                       vencimiento,
+                       uploaded_by_name,
+                       created_at,
+                       updated_at
+                FROM inv_camion_documentos
+                WHERE id_asset=:id
+                ORDER BY CASE tipo_doc
+                    WHEN 'permiso_circulacion' THEN 1
+                    WHEN 'revision_tecnica' THEN 2
+                    WHEN 'soap' THEN 3
+                    WHEN 'seguro' THEN 4
+                    WHEN 'padron' THEN 5
+                    ELSE 99
+                END, id_documento
+                """
+            ),
+            {"id": id_asset},
+        ).mappings().all()
+    return {"ok": True, "items": [_doc_row_to_dict(r) for r in rows]}
+
+
+@router.post("/camiones/{id_asset}/documentos")
+async def upload_camion_documento(
+    id_asset: int,
+    tipo_doc: str = Form(...),
+    vencimiento: Optional[str] = Form(None),
+    archivo: UploadFile = File(...),
+    me=Depends(get_current_user),
+):
+    _ensure_role(me)
+    tipo = _normalize_doc_type(tipo_doc)
+    venc = _normalize_date(vencimiento)
+
+    if not archivo or not (archivo.filename or "").strip():
+        raise HTTPException(status_code=400, detail="archivo requerido")
+
+    ext = _doc_ext(archivo.filename or "", getattr(archivo, "content_type", None))
+    data = await archivo.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="archivo vacío")
+    if len(data) > MAX_DOC_BYTES:
+        raise HTTPException(status_code=400, detail="archivo supera 10 MB")
+
+    save_dir = TRUCK_DOCS_DIR / str(id_asset)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{tipo}_{uuid.uuid4().hex[:12]}{ext}"
+    abs_path = save_dir / stored_name
+    old_path = None
+
+    try:
+        abs_path.write_bytes(data)
+        file_url = f"/web/uploads/camiones/{id_asset}/{stored_name}"
+
+        with get_connection() as conn:
+            _ensure_tables(conn)
+            if not _asset_exists(conn, id_asset):
+                raise HTTPException(status_code=404, detail="Camión no existe")
+
+            prev = conn.execute(
+                text(
+                    """
+                    SELECT file_path
+                    FROM inv_camion_documentos
+                    WHERE id_asset=:id AND tipo_doc=:t
+                    """
+                ),
+                {"id": id_asset, "t": tipo},
+            ).mappings().first()
+            if prev:
+                old_path = prev.get("file_path")
+
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO inv_camion_documentos(
+                        id_asset, tipo_doc, nombre_original, nombre_archivo, file_url, file_path,
+                        vencimiento, uploaded_by, uploaded_by_name
+                    )
+                    VALUES (
+                        :id_asset, :tipo_doc, :nombre_original, :nombre_archivo, :file_url, :file_path,
+                        :vencimiento, :uploaded_by, :uploaded_by_name
+                    )
+                    ON CONFLICT (id_asset, tipo_doc)
+                    DO UPDATE SET
+                        nombre_original = EXCLUDED.nombre_original,
+                        nombre_archivo = EXCLUDED.nombre_archivo,
+                        file_url = EXCLUDED.file_url,
+                        file_path = EXCLUDED.file_path,
+                        vencimiento = EXCLUDED.vencimiento,
+                        uploaded_by = EXCLUDED.uploaded_by,
+                        uploaded_by_name = EXCLUDED.uploaded_by_name,
+                        updated_at = now()
+                    RETURNING id_documento,
+                              id_asset,
+                              tipo_doc,
+                              COALESCE(nombre_original, nombre_archivo) AS nombre_archivo,
+                              file_url,
+                              file_path,
+                              vencimiento,
+                              uploaded_by_name,
+                              created_at,
+                              updated_at
+                    """
+                ),
+                {
+                    "id_asset": id_asset,
+                    "tipo_doc": tipo,
+                    "nombre_original": (archivo.filename or "").strip(),
+                    "nombre_archivo": stored_name,
+                    "file_url": file_url,
+                    "file_path": str(abs_path),
+                    "vencimiento": venc,
+                    "uploaded_by": me.get("id") if str(me.get("id", "")).isdigit() else None,
+                    "uploaded_by_name": me.get("name") or me.get("nombre") or me.get("username") or "",
+                },
+            ).mappings().one()
+            conn.commit()
+
+        if old_path and old_path != str(abs_path):
+            _safe_unlink(old_path)
+
+        return {"ok": True, "item": _doc_row_to_dict(row)}
+    except HTTPException:
+        _safe_unlink(str(abs_path))
+        raise
+    except Exception:
+        _safe_unlink(str(abs_path))
+        raise HTTPException(status_code=500, detail="No se pudo guardar el documento")
+
+
+@router.delete("/camiones/{id_asset}/documentos/{id_documento}")
+def delete_camion_documento(id_asset: int, id_documento: int, me=Depends(get_current_user)):
+    _ensure_role(me)
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        row = conn.execute(
+            text(
+                """
+                SELECT id_documento, file_path
+                FROM inv_camion_documentos
+                WHERE id_documento=:doc AND id_asset=:asset
+                """
+            ),
+            {"doc": id_documento, "asset": id_asset},
+        ).mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Documento no existe")
+        conn.execute(
+            text("DELETE FROM inv_camion_documentos WHERE id_documento=:doc"),
+            {"doc": id_documento},
+        )
+        conn.commit()
+    _safe_unlink(row.get("file_path"))
+    return {"ok": True}
+
+
+    
+
+    # =========================
+# CAMIONES · DOCUMENTOS / CHECKLISTS / CONDUCTORES
+# =========================
+
+TRUCK_DOC_ROOT = Path(__file__).resolve().parents[2] / "web" / "uploads" / "camiones"
+TRUCK_DOC_TYPES = {
+    "permiso_circulacion": "Permiso de circulación",
+    "revision_tecnica": "Revisión técnica",
+    "soap": "SOAP",
+    "seguro": "Seguro",
+}
+
+
+class CamionChecklistIn(BaseModel):
+    id_asset: int
+    tipo: str
+    fecha: str
+    conductor: str
+    payload: Dict[str, Any] = {}
+
+
+def _truck_table_exists(conn, table: str) -> bool:
+    try:
+        return bool(conn.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}).scalar())
+    except Exception:
+        return False
+
+
+def _truck_cols_for(conn, table: str) -> set[str]:
+    try:
+        rows = conn.execute(
+            text(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=:t
+                """
+            ),
+            {"t": table},
+        ).fetchall()
+        return {r[0] for r in rows}
+    except Exception:
+        return set()
+
+
+def _truck_parse_date(raw: Optional[str]) -> Optional[date]:
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(str(raw)[:10])
+    except Exception:
+        raise HTTPException(status_code=400, detail="fecha inválida; usa YYYY-MM-DD")
+
+
+def _truck_safe_doc_type(tipo_doc: str) -> str:
+    key = str(tipo_doc or "").strip().lower()
+    if key not in TRUCK_DOC_TYPES:
+        raise HTTPException(status_code=400, detail="tipo_doc inválido")
+    return key
+
+
+def _truck_public_url(id_asset: int, filename: str) -> str:
+    return f"/web/uploads/camiones/{int(id_asset)}/{filename}"
+
+
+def _truck_ensure_extras(conn) -> None:
+    _ensure_tables(conn)
+
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS inv_camion_docs (
+                id_doc SERIAL PRIMARY KEY,
+                id_asset INT NOT NULL,
+                tipo_doc TEXT NOT NULL,
+                fecha_vencimiento DATE,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_url TEXT NOT NULL,
+                mime_type TEXT,
+                uploaded_at TIMESTAMP DEFAULT now(),
+                uploaded_by TEXT,
+                UNIQUE(id_asset, tipo_doc)
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS inv_camion_checklists (
+                id_checklist SERIAL PRIMARY KEY,
+                id_asset INT NOT NULL,
+                tipo TEXT NOT NULL,
+                fecha DATE NOT NULL,
+                conductor TEXT NOT NULL,
+                payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP DEFAULT now(),
+                created_by TEXT
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_inv_camion_checklists_asset_tipo_fecha ON inv_camion_checklists(id_asset, tipo, fecha)"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_inv_camion_checklists_conductor ON inv_camion_checklists(conductor)"
+        )
+    )
+    conn.commit()
+
+
+def _truck_conductores_activos(conn) -> list[str]:
+    nombres: set[str] = set()
+
+    # RRHH
+    if _truck_table_exists(conn, "rrhh_staff"):
+        cols = _truck_cols_for(conn, "rrhh_staff")
+        name_col = "colaborador" if "colaborador" in cols else ("nombre" if "nombre" in cols else None)
+        if name_col:
+            role_filters = []
+            for c in ("cargo", "rol", "puesto", "area"):
+                if c in cols:
+                    role_filters.append(f"UPPER(COALESCE({c},'')) LIKE '%CONDUCTOR%'")
+
+            if role_filters:
+                where = []
+                if "is_active" in cols:
+                    where.append("COALESCE(is_active, TRUE)=TRUE")
+                where.append("(" + " OR ".join(role_filters) + ")")
+                sql = f"""
+                    SELECT DISTINCT NULLIF(BTRIM({name_col}), '') AS nombre
+                    FROM rrhh_staff
+                    WHERE {' AND '.join(where)}
+                    ORDER BY 1
+                """
+                rows = conn.execute(text(sql)).fetchall()
+                for r in rows:
+                    if r and r[0]:
+                        nombres.add(str(r[0]).strip())
+
+    # Usuarios
+    if _truck_table_exists(conn, "usuarios"):
+        cols = _truck_cols_for(conn, "usuarios")
+        name_col = None
+        for c in ("nombre", "name", "username"):
+            if c in cols:
+                name_col = c
+                break
+        role_col = "rol" if "rol" in cols else ("role" if "role" in cols else None)
+        if name_col and role_col:
+            where = [f"UPPER(COALESCE({role_col},'')) LIKE '%CONDUCTOR%'"]
+            if "is_active" in cols:
+                where.insert(0, "COALESCE(is_active, TRUE)=TRUE")
+            sql = f"""
+                SELECT DISTINCT NULLIF(BTRIM({name_col}), '') AS nombre
+                FROM usuarios
+                WHERE {' AND '.join(where)}
+                ORDER BY 1
+            """
+            rows = conn.execute(text(sql)).fetchall()
+            for r in rows:
+                if r and r[0]:
+                    nombres.add(str(r[0]).strip())
+
+    return sorted(nombres, key=lambda x: x.upper())
+
+
+@router.get("/camiones/conductores/activos")
+def camion_conductores_activos(me=Depends(get_current_user)):
+    _ensure_role(me)
+    with get_connection() as conn:
+        _truck_ensure_extras(conn)
+        items = _truck_conductores_activos(conn)
+    return {"ok": True, "items": items}
+
+
+@router.get("/camiones/{id_asset}/conductores-entrega")
+def camion_conductores_entrega(
+    id_asset: int,
+    fecha: str = Query("", max_length=10),
+    me=Depends(get_current_user),
+):
+    _ensure_role(me)
+    with get_connection() as conn:
+        _truck_ensure_extras(conn)
+
+        params: Dict[str, Any] = {"id": int(id_asset)}
+        where = ["id_asset=:id", "UPPER(tipo)='ENTREGA'"]
+
+        if fecha:
+            d = _truck_parse_date(fecha)
+            where.append("fecha=:f")
+            params["f"] = d
+
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT DISTINCT conductor
+                FROM inv_camion_checklists
+                WHERE {' AND '.join(where)}
+                ORDER BY conductor
+                """
+            ),
+            params,
+        ).fetchall()
+
+        items = [str(r[0]).strip() for r in rows if r and r[0]]
+
+    return {"ok": True, "items": items}
+
+
+@router.get("/camiones/{id_asset}/documentos")
+def camion_documentos(id_asset: int, me=Depends(get_current_user)):
+    _ensure_role(me)
+    with get_connection() as conn:
+        _truck_ensure_extras(conn)
+        rows = conn.execute(
+            text(
+                """
+                SELECT id_doc, id_asset, tipo_doc, fecha_vencimiento, file_name, file_url, mime_type, uploaded_at, uploaded_by
+                FROM inv_camion_docs
+                WHERE id_asset=:id
+                ORDER BY tipo_doc
+                """
+            ),
+            {"id": int(id_asset)},
+        ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.post("/camiones/{id_asset}/documentos/upload")
+def camion_documento_upload(
+    id_asset: int,
+    tipo_doc: str = Form(...),
+    fecha_vencimiento: str = Form(...),
+    archivo: UploadFile = File(...),
+    me=Depends(get_current_user),
+):
+    _ensure_role(me)
+
+    tipo = _truck_safe_doc_type(tipo_doc)
+    fecha = _truck_parse_date(fecha_vencimiento)
+    if not fecha:
+        raise HTTPException(status_code=400, detail="Debes elegir la fecha de vencimiento")
+
+    if not archivo or not archivo.filename:
+        raise HTTPException(status_code=400, detail="Archivo requerido")
+
+    ext = Path(archivo.filename).suffix.lower().strip()
+    if ext not in {".pdf", ".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(status_code=400, detail="Formato no permitido. Usa PDF/JPG/PNG/WEBP")
+
+    safe_name = f"{tipo}_{int(time.time())}{ext}"
+    asset_dir = TRUCK_DOC_ROOT / str(int(id_asset))
+    asset_dir.mkdir(parents=True, exist_ok=True)
+
+    dest = asset_dir / safe_name
+    with dest.open("wb") as f:
+        shutil.copyfileobj(archivo.file, f)
+
+    file_url = _truck_public_url(id_asset, safe_name)
+    uploaded_by = (
+        me.get("name")
+        or me.get("nombre")
+        or me.get("username")
+        or me.get("email")
+        or "CRM"
+    )
+
+    with get_connection() as conn:
+        _truck_ensure_extras(conn)
+
+        prev = conn.execute(
+            text(
+                """
+                SELECT file_path
+                FROM inv_camion_docs
+                WHERE id_asset=:id AND tipo_doc=:t
+                """
+            ),
+            {"id": int(id_asset), "t": tipo},
+        ).scalar()
+
+        conn.execute(
+            text(
+                """
+                INSERT INTO inv_camion_docs(
+                    id_asset, tipo_doc, fecha_vencimiento, file_name, file_path, file_url, mime_type, uploaded_by
+                )
+                VALUES (:id, :t, :fv, :fn, :fp, :fu, :mt, :ub)
+                ON CONFLICT (id_asset, tipo_doc) DO UPDATE SET
+                    fecha_vencimiento=EXCLUDED.fecha_vencimiento,
+                    file_name=EXCLUDED.file_name,
+                    file_path=EXCLUDED.file_path,
+                    file_url=EXCLUDED.file_url,
+                    mime_type=EXCLUDED.mime_type,
+                    uploaded_at=now(),
+                    uploaded_by=EXCLUDED.uploaded_by
+                """
+            ),
+            {
+                "id": int(id_asset),
+                "t": tipo,
+                "fv": fecha,
+                "fn": safe_name,
+                "fp": str(dest),
+                "fu": file_url,
+                "mt": (archivo.content_type or None),
+                "ub": uploaded_by,
+            },
+        )
+        conn.commit()
+
+    try:
+        if prev and str(prev) != str(dest):
+            oldp = Path(str(prev))
+            if oldp.exists():
+                oldp.unlink()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "item": {
+            "id_asset": int(id_asset),
+            "tipo_doc": tipo,
+            "fecha_vencimiento": str(fecha),
+            "file_name": safe_name,
+            "file_url": file_url,
+        },
+    }
+
+
+@router.delete("/camiones/{id_asset}/documentos/{tipo_doc}")
+def camion_documento_delete(id_asset: int, tipo_doc: str, me=Depends(get_current_user)):
+    _ensure_role(me)
+    tipo = _truck_safe_doc_type(tipo_doc)
+
+    with get_connection() as conn:
+        _truck_ensure_extras(conn)
+
+        row = conn.execute(
+            text(
+                """
+                SELECT file_path
+                FROM inv_camion_docs
+                WHERE id_asset=:id AND tipo_doc=:t
+                """
+            ),
+            {"id": int(id_asset), "t": tipo},
+        ).first()
+
+        conn.execute(
+            text("DELETE FROM inv_camion_docs WHERE id_asset=:id AND tipo_doc=:t"),
+            {"id": int(id_asset), "t": tipo},
+        )
+        conn.commit()
+
+    try:
+        if row and row[0]:
+            p = Path(str(row[0]))
+            if p.exists():
+                p.unlink()
+    except Exception:
+        pass
+
+    return {"ok": True}
+
+
+@router.get("/camiones/checklists")
+def camion_checklists(
+    id_asset: int = Query(..., ge=1),
+    tipo: str = Query(..., max_length=20),
+    fecha: str = Query("", max_length=10),
+    conductor: str = Query("", max_length=120),
+    me=Depends(get_current_user),
+):
+    _ensure_role(me)
+    t = str(tipo or "").strip().upper()
+    if t not in {"ENTREGA", "DEVOLUCION"}:
+        raise HTTPException(status_code=400, detail="tipo inválido")
+
+    with get_connection() as conn:
+        _truck_ensure_extras(conn)
+
+        where = ["id_asset=:id", "UPPER(tipo)=:t"]
+        params: Dict[str, Any] = {"id": int(id_asset), "t": t}
+
+        if fecha:
+            params["f"] = _truck_parse_date(fecha)
+            where.append("fecha=:f")
+
+        if conductor.strip():
+            params["c"] = conductor.strip()
+            where.append("conductor=:c")
+
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT id_checklist, id_asset, tipo, fecha, conductor, payload, created_at, created_by
+                FROM inv_camion_checklists
+                WHERE {' AND '.join(where)}
+                ORDER BY fecha DESC, created_at DESC, id_checklist DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.post("/camiones/checklists")
+def camion_checklists_create(body: CamionChecklistIn, me=Depends(get_current_user)):
+    _ensure_role(me)
+
+    tipo = str(body.tipo or "").strip().upper()
+    if tipo not in {"ENTREGA", "DEVOLUCION"}:
+        raise HTTPException(status_code=400, detail="tipo inválido")
+
+    fecha = _truck_parse_date(body.fecha)
+    if not fecha:
+        raise HTTPException(status_code=400, detail="fecha requerida")
+
+    conductor = str(body.conductor or "").strip()
+    if not conductor:
+        raise HTTPException(status_code=400, detail="conductor requerido")
+
+    payload = body.payload or {}
+    created_by = (
+        me.get("name")
+        or me.get("nombre")
+        or me.get("username")
+        or me.get("email")
+        or "CRM"
+    )
+
+    with get_connection() as conn:
+        _truck_ensure_extras(conn)
+
+        row = conn.execute(
+            text(
+                """
+                INSERT INTO inv_camion_checklists(id_asset, tipo, fecha, conductor, payload, created_by)
+                VALUES (:id, :t, :f, :c, CAST(:p AS JSONB), :u)
+                RETURNING id_checklist
+                """
+            ),
+            {
+                "id": int(body.id_asset),
+                "t": tipo,
+                "f": fecha,
+                "c": conductor,
+                "p": json.dumps(payload, ensure_ascii=False),
+                "u": created_by,
+            },
+        ).first()
+        conn.commit()
+
+    return {"ok": True, "id_checklist": int(row[0]) if row else None}

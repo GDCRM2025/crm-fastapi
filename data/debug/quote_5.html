@@ -1,0 +1,76 @@
+
+    <html>
+    <head>
+      <meta charset="utf-8"/>
+      <style>
+        @page { size:A4; margin:0; }
+        body { font-family:Arial,sans-serif; margin:0; }
+        .page { page-break-after:always; position:relative; width:210mm; height:297mm; }
+        .bg, .content { position:absolute; top:0; right:0; bottom:0; left:0; }
+        .bg-img { display:block; width:100%; height:100%; }
+        .content { padding:18mm 16mm; z-index:2; color:#fff; }
+        .bg { z-index:1; }
+        .logo { height:29mm; transform: translateX(50mm); }
+        table { width:100%; border-collapse:collapse; font-size:11px; }
+        th,td { border-bottom:1px solid rgba(255,255,255,0.25); padding:4px 6px; }
+        .totals { margin-top:8mm; width:100%; font-size:12px; }
+        .totals td { border:none; padding:2px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="page">
+        <div class="bg"><img class="bg-img" src="file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/portada.png"/></div>
+      </div>
+      <div class="page">
+        <div class="bg"><img class="bg-img" src="file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/cotizacion.png"/></div>
+        <div class="content">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div><img class="logo" src="file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/logo.png"/></div>
+            <div style="text-align:right;font-size:12px;">
+              <div><b>N° 12876</b></div>
+              <div>Fecha evento: 2026-02-25</div>
+            </div>
+          </div>
+          <div style="margin-top:6mm;font-size:12px;">
+            <div><b>Cliente:</b> felipe nouvel</div>
+            <div><b>Comuna:</b> SANTIAGO</div>
+            <div><b>Dirección:</b> av francisco bilbao 7465</div>
+            <div><b>Teléfono:</b> +56956753045</div>
+          </div>
+          <table style="margin-top:6mm;">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Descripción</th>
+                <th style="text-align:right">Cant</th>
+                <th style="text-align:right">Precio</th>
+                <th style="text-align:right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+          <tr>
+            <td>Mechada Clásica</td>
+            <td>Pan brioche con mechada de vacuno, lechuga fresca, queso mantecoso, pepinillos y cebolla morada crujiente.</td>
+            <td style="text-align:right">100</td>
+            <td style="text-align:right">$2,900</td>
+            <td style="text-align:right">$290,000</td>
+          </tr>
+        </tbody>
+          </table>
+          <table class="totals">
+            <tr><td>Total productos</td><td style="text-align:right">$290,000</td></tr>
+            <tr><td>IVA</td><td style="text-align:right">$55,100</td></tr>
+            <tr><td>Traslado</td><td style="text-align:right">$35,000</td></tr>
+            <tr><td><b>Total</b></td><td style="text-align:right"><b>$380,100</b></td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="page">
+        <div class="bg"><img class="bg-img" src="file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/terminos.png"/></div>
+      </div>
+      <div class="page">
+        <div class="bg"><img class="bg-img" src="file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/banco.png"/></div>
+      </div>
+    </body>
+    </html>
+    

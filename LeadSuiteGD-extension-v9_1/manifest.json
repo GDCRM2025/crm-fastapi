@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "LeadSuite GD (v9.1)",
+  "version": "9.1.0",
+  "description": "Crear leads rápido con menú contextual + popup minimal (localhost dev).",
+  "action": {
+    "default_title": "GD",
+    "default_popup": "src/popup.html"
+  },
+  "icons": {
+    "16": "icons/gd16.png",
+    "32": "icons/gd32.png",
+    "48": "icons/gd48.png",
+    "128": "icons/gd128.png"
+  },
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "tabs",
+    "windows"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*"
+  ],
+  "background": {
+    "service_worker": "src/sw.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1:8000/*"
+      ],
+      "js": [
+        "src/content_token.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

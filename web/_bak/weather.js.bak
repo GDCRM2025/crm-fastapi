@@ -1,0 +1,156 @@
+const qs = (s, el=document) => el.querySelector(s);
+
+const CITY = "Las Condes";
+const LAT = -33.408;   // aprox
+const LON = -70.566;   // aprox
+const TZ  = "America/Santiago";
+
+function wicon(code){
+  // Open-Meteo weathercode mapping (simple)
+  if (code === 0) return "☀️";
+  if ([1,2].includes(code)) return "🌤️";
+  if (code === 3) return "☁️";
+  if ([45,48].includes(code)) return "🌫️";
+  if ([51,53,55,56,57].includes(code)) return "🌦️";
+  if ([61,63,65,66,67].includes(code)) return "🌧️";
+  if ([71,73,75,77].includes(code)) return "❄️";
+  if ([80,81,82].includes(code)) return "🌧️";
+  if ([95,96,99].includes(code)) return "⛈️";
+  return "☁️";
+}
+function wtext(code){
+  if (code === 0) return "Soleado";
+  if ([1,2].includes(code)) return "Parcialmente nublado";
+  if (code === 3) return "Nublado";
+  if ([45,48].includes(code)) return "Neblina";
+  if ([51,53,55,56,57].includes(code)) return "Llovizna";
+  if ([61,63,65,66,67].includes(code)) return "Lluvia";
+  if ([71,73,75,77].includes(code)) return "Nieve";
+  if ([80,81,82].includes(code)) return "Chubascos";
+  if ([95,96,99].includes(code)) return "Tormenta";
+  return "Clima variable";
+}
+function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
+
+async function fetchWeather(){
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.searchParams.set("latitude", String(LAT));
+  url.searchParams.set("longitude", String(LON));
+  url.searchParams.set("timezone", TZ);
+  url.searchParams.set("current", "temperature_2m,weather_code,wind_speed_10m");
+  url.searchParams.set("hourly", "temperature_2m,weather_code");
+  url.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,weather_code");
+  const r = await fetch(url.toString());
+  if (!r.ok) throw new Error("weather fetch failed");
+  return r.json();
+}
+
+function setTopPill(temp, code){
+  qs("#wxTemp").textContent = `${Math.round(temp)}°`;
+  qs("#wxCity").textContent = CITY;
+  qs("#wxIco").textContent = wicon(code);
+}
+
+function setModalHeader(temp, code, wind){
+  qs("#wxModalCity").textContent = CITY;
+  qs("#wxModalTemp").textContent = `${Math.round(temp)}°`;
+  qs("#wxModalIco").textContent = wicon(code);
+  qs("#wxModalNow").textContent = wtext(code);
+  qs("#wxSummary").textContent = `Viento ${Math.round(wind)} km/h`;
+}
+
+function buildHours(data){
+  const wrap = qs("#wxHours");
+  wrap.innerHTML = "";
+
+  const now = new Date();
+  const times = data.hourly.time;
+  const temps = data.hourly.temperature_2m;
+  const codes = data.hourly.weather_code;
+
+  // toma las próximas 8 horas desde "ahora"
+  let start = 0;
+  for (let i=0;i<times.length;i++){
+    const t = new Date(times[i]);
+    if (t >= now){ start = i; break; }
+  }
+  const end = Math.min(start + 8, times.length);
+
+  const fmt = new Intl.DateTimeFormat("es-CL", { hour:"2-digit", minute:"2-digit" });
+
+  for (let i=start;i<end;i++){
+    const t = new Date(times[i]);
+    const el = document.createElement("div");
+    el.className = "wx-hour";
+    el.innerHTML = `
+      <div class="t">${fmt.format(t)}</div>
+      <div class="i">${wicon(codes[i])}</div>
+      <div class="v">${Math.round(temps[i])}°</div>
+    `;
+    wrap.appendChild(el);
+  }
+}
+
+function buildDays(data){
+  const wrap = qs("#wxDays");
+  wrap.innerHTML = "";
+
+  const days = data.daily.time;
+  const tmin = data.daily.temperature_2m_min;
+  const tmax = data.daily.temperature_2m_max;
+  const code = data.daily.weather_code;
+
+  // rango global para la barra
+  let gmin = Math.min(...tmin);
+  let gmax = Math.max(...tmax);
+  if (!isFinite(gmin) || !isFinite(gmax) || gmin === gmax){ gmin = 0; gmax = 40; }
+
+  const fmt = new Intl.DateTimeFormat("es-CL", { weekday:"short" });
+
+  for (let i=0;i<Math.min(7, days.length);i++){
+    const d = new Date(days[i] + "T00:00:00");
+    const dayLabel = i===0 ? "Hoy" : fmt.format(d).replace(".","");
+
+    const left = clamp(((tmin[i]-gmin)/(gmax-gmin))*100, 0, 100);
+    const right = clamp(((tmax[i]-gmin)/(gmax-gmin))*100, 0, 100);
+    const width = Math.max(4, right-left);
+
+    const row = document.createElement("div");
+    row.className = "wx-day";
+    row.innerHTML = `
+      <div class="d">${dayLabel}</div>
+      <div class="i">${wicon(code[i])}</div>
+      <div class="min">${Math.round(tmin[i])}°</div>
+      <div class="wx-bar"><span style="left:${left}%; width:${width}%;"></span></div>
+      <div class="max">${Math.round(tmax[i])}°</div>
+    `;
+    wrap.appendChild(row);
+  }
+}
+
+async function init(){
+  try{
+    const data = await fetchWeather();
+    const cur = data.current;
+
+    setTopPill(cur.temperature_2m, cur.weather_code);
+    setModalHeader(cur.temperature_2m, cur.weather_code, cur.wind_speed_10m);
+
+    buildHours(data);
+    buildDays(data);
+  }catch(e){
+    // fallback sin romper UI
+    qs("#wxCity").textContent = CITY;
+    qs("#wxTemp").textContent = "—°";
+    qs("#wxIco").textContent = "☀️";
+    qs("#wxModalCity").textContent = CITY;
+    qs("#wxModalTemp").textContent = "—°";
+    qs("#wxModalIco").textContent = "☀️";
+    qs("#wxModalNow").textContent = "Sin datos";
+    qs("#wxSummary").textContent = "Revisa conexión";
+    qs("#wxHours").innerHTML = "";
+    qs("#wxDays").innerHTML = "";
+  }
+}
+
+init();

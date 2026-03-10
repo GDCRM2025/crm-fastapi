@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>LeadSuite GD</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body{ margin:0; font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Inter,Arial; width:340px; }
+    .wrap{ padding:12px; }
+    .card{ border:1px solid rgba(148,163,184,.25); border-radius:14px; padding:12px; }
+    .title{ font-weight:900; }
+    .sub{ opacity:.75; font-size:12px; margin-top:2px; }
+    .row{ display:flex; gap:10px; margin-top:12px; }
+    button{ border:none; border-radius:12px; padding:10px 12px; cursor:pointer; background:rgba(148,163,184,.18); font-weight:800; }
+    button.primary{ background: rgba(34,197,94,.22); }
+    .pill{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px;
+      border:1px solid rgba(148,163,184,.25); font-size:12px; margin-top:10px; }
+    .dot{ width:10px; height:10px; border-radius:999px; background: rgba(239,68,68,.8); }
+    .dot.on{ background: rgba(34,197,94,.8); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="title">LeadSuite GD</div>
+      <div class="sub">Selecciona texto → click derecho → LeadSuite GD → “Enviar a …”</div>
+      <div class="pill"><span class="dot" id="dot"></span><span id="st">CRM: sin token</span></div>
+      <div class="row">
+        <button class="primary" id="openForm">Crear lead</button>
+        <button id="clear">Limpiar</button>
+      </div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

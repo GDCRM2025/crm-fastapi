@@ -1,0 +1,11 @@
+{
+  "drive": {
+    "enabled": true,
+    "folder_id": "1172Bg2veIHkZblZkgcgbhMnv6UtHW58G",
+    "service_account_jsons": [
+      "data/drive_backup.json",
+      "data/drive.json"
+    ],
+    "keep_local": 1
+  }
+}

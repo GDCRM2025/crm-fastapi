@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Crear lead — LeadSuite GD</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body{ margin:0; font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Inter,Arial; }
+    .top{ position:sticky; top:0; padding:12px; display:flex; align-items:center; justify-content:space-between;
+      border-bottom:1px solid rgba(148,163,184,.18); background: rgba(15,23,42,.92); backdrop-filter: blur(10px); color:white; }
+    .title{ font-weight:900; letter-spacing:.02em; }
+    .hint{ font-size:11px; opacity:.7; margin-top:2px; }
+    .close{ border:none; width:34px; height:34px; border-radius:999px; cursor:pointer;
+      background: rgba(148,163,184,.16); color:white; font-weight:900; }
+    .wrap{ padding:12px; }
+    .card{ border:1px solid rgba(148,163,184,.20); border-radius:16px; padding:12px; background: rgba(2,6,23,.05); }
+    label{ display:block; margin:10px 0 6px; font-size:12px; font-weight:900; opacity:.75; }
+    input, select, textarea{
+      width:100%; box-sizing:border-box; padding:10px 12px; border-radius:14px;
+      border:1px solid rgba(148,163,184,.25); background: rgba(2,6,23,.08);
+      outline:none; font-size:14px;
+    }
+    textarea{ min-height:72px; resize:vertical; }
+    input:focus, select:focus, textarea:focus{ border-color: rgba(34,197,94,.55); box-shadow: 0 0 0 3px rgba(34,197,94,.12); }
+    .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .btnrow{ display:flex; gap:10px; margin-top:12px; }
+    button{ flex:1; border:none; border-radius:14px; padding:12px; cursor:pointer; font-weight:900; background: rgba(148,163,184,.16); }
+    button.primary{ background: rgba(34,197,94,.24); }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+    .tag{ display:inline-flex; align-items:center; gap:8px; padding:7px 10px; border-radius:999px;
+      border:1px solid rgba(148,163,184,.22); font-size:12px; margin-bottom:10px; }
+    .dot{ width:10px; height:10px; border-radius:999px; background: rgba(239,68,68,.8); }
+    .dot.on{ background: rgba(34,197,94,.8); }
+    .rel{ position:relative; }
+    .calbtn{
+      position:absolute; right:10px; top:50%; transform: translateY(-50%);
+      border:none; background: rgba(148,163,184,.16); color: inherit;
+      width:34px; height:34px; border-radius:12px; cursor:pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <div class="title">Crear lead</div>
+      <div class="hint">Minimal — se cierra al crear</div>
+    </div>
+    <button class="close" id="x" title="Cerrar">✕</button>
+  </div>
+
+  <div class="wrap">
+    <div class="tag"><span class="dot" id="dot"></span><span id="authTxt">No autenticado</span></div>
+
+    <div class="card">
+      <div class="grid2">
+        <div>
+          <label>Nombre cliente</label>
+          <input id="nombre_cliente" placeholder="Ej: Juan Pérez" autocomplete="off"/>
+        </div>
+        <div>
+          <label>Teléfono</label>
+          <input id="telefono" placeholder="+56 9 ..." autocomplete="off"/>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label>Email</label>
+          <input id="email" placeholder="correo@dominio.cl" autocomplete="off"/>
+        </div>
+        <div>
+          <label>Dirección</label>
+          <input id="direccion" placeholder="Calle / número" autocomplete="off"/>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label>Comuna</label>
+          <select id="id_comuna"><option value="">—</option></select>
+        </div>
+        <div>
+          <label>Tipo cliente</label>
+          <select id="id_tipo_cliente"><option value="">—</option></select>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label>Marca</label>
+          <select id="id_marca"><option value="">—</option></select>
+        </div>
+        <div>
+          <label>Plataforma</label>
+          <select id="plataforma"><option value="">—</option></select>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="rel">
+          <label>Fecha evento</label>
+          <input id="fecha_evento" type="date" />
+          <button class="calbtn" id="pick" title="Elegir fecha">📅</button>
+        </div>
+        <div>
+          <label>Código cliente (opcional)</label>
+          <input id="codigo_cliente" placeholder="(vacío = auto)" autocomplete="off"/>
+        </div>
+      </div>
+
+      <label>Notas</label>
+      <textarea id="notas" placeholder="Contexto: WhatsApp / Instagram / Gmail..."></textarea>
+
+      <div class="btnrow">
+        <button id="btnClear" type="button">Limpiar</button>
+        <button id="btnCreate" class="primary" type="button">Crear lead</button>
+      </div>
+    </div>
+
+    <div class="hint" style="margin-top:10px;">
+      Si sale “No autorizado”: abre el CRM (login) y vuelve a intentar. La extensión toma el token automáticamente.
+    </div>
+  </div>
+
+  <script type="module" src="form.js"></script>
+</body>
+</html>

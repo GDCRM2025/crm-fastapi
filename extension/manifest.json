@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "LeadSuite GD",
+  "version": "1.1.9",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "icons/gd16.png",
+    "32": "icons/gd32.png",
+    "48": "icons/gd48.png",
+    "128": "icons/gd128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "contextMenus",
+    "windows"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "https://greendiamond.cl/*",
+    "https://www.greendiamond.cl/*",
+    "https://mail.google.com/*",
+    "https://www.instagram.com/*",
+    "https://business.whatsapp.com/*",
+    "https://web.whatsapp.com/*"
+  ],
+  "background": {
+    "service_worker": "sw.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1:8000/*",
+        "https://greendiamond.cl/crm/*",
+        "https://www.greendiamond.cl/crm/*"
+      ],
+      "js": [
+        "content_token.js"
+      ]
+    },
+    {
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "content_instagram.js"
+      ]
+    },
+    {
+      "matches": [
+        "https://business.whatsapp.com/*",
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "content_whatsapp.js"
+      ]
+    },
+    {
+      "matches": [
+        "https://mail.google.com/*"
+      ],
+      "js": [
+        "content_gmail.js"
+      ]
+    }
+  ]
+}

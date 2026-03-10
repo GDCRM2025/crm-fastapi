@@ -7,39 +7,130 @@
   <link rel="stylesheet" href="/web/styles.css" />
   <style>
     body{ margin:0; padding:14px; font-family:inherit; color:inherit; }
+    .wrap{ display:grid; gap:14px; }
+    .hero{
+      border:1px solid var(--border, rgba(255,255,255,.12));
+      border-radius:16px;
+      padding:14px;
+      background:linear-gradient(135deg, rgba(8,18,28,.7), rgba(10,16,22,.4));
+    }
+    .hero h1{ margin:0; font-size:20px; font-weight:1000; }
+    .hero p{ margin:6px 0 0; opacity:.8; font-size:13px; }
+
     .grid{ display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
     .card{
       border:1px solid var(--border, rgba(255,255,255,.12));
-      border-radius:14px; padding:12px;
+      border-radius:14px;
+      padding:14px;
       background:linear-gradient(135deg, rgba(8,18,28,.7), rgba(10,16,22,.4));
     }
-    .ttl{ font-weight:950; font-size:16px; }
-    .muted{ opacity:.75; font-size:12px; margin-top:4px; }
-    .btn{ border:1px solid var(--border, rgba(255,255,255,.12)); background:rgba(0,0,0,.15); color:inherit; border-radius:10px; padding:10px 12px; cursor:pointer; font-weight:900; width:100%; text-align:left; }
+    .ttl{ font-weight:950; font-size:16px; display:flex; align-items:center; gap:8px; }
+    .muted{ opacity:.75; font-size:12px; margin-top:6px; line-height:1.35; }
+    .row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .btn{
+      border:1px solid var(--border, rgba(255,255,255,.12));
+      background:rgba(0,0,0,.15);
+      color:inherit;
+      border-radius:10px;
+      padding:10px 12px;
+      cursor:pointer;
+      font-weight:900;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
     .btn:hover{ background: rgba(255,255,255,.08); }
-    :root.light .btn:hover{ background: rgba(0,0,0,.06); }
+    .btn.primary{
+      background: color-mix(in srgb, var(--accent, #19c37d) 22%, transparent);
+      border-color: color-mix(in srgb, var(--accent, #19c37d) 50%, transparent);
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--border, rgba(255,255,255,.12));
+      font-size:12px;
+      font-weight:900;
+      margin-top:10px;
+    }
+    .okdot,.warndot{
+      width:8px;height:8px;border-radius:999px;display:inline-block;
+    }
+    .okdot{ background:#22c55e; }
+    .warndot{ background:#f59e0b; }
 
-    /* calc */
-    .calc{ display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-top:10px; }
-    .disp{ border:1px solid var(--border, rgba(255,255,255,.12)); border-radius:12px; padding:10px; font-weight:950; font-size:22px; text-align:right; }
-    .k{ height:44px; border-radius:12px; border:1px solid var(--border, rgba(255,255,255,.12)); background:transparent; color:inherit; font-weight:950; cursor:pointer; }
-    .k:hover{ background: rgba(255,255,255,.06); }
-    :root.light .k:hover{ background: rgba(0,0,0,.06); }
-    .k.wide{ grid-column: span 2; }
+    :root.light .btn:hover{ background: rgba(0,0,0,.06); }
   </style>
 </head>
 <body>
-  <div class="grid">
-    <div class="card">
-      <div class="ttl">Tools</div>
-      <div class="muted">
-        Esta sección no muestra descargables. Si necesitas instalar/extender algo, se gestiona por Admin.
-      </div>
-    </div>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Tools</h1>
+      <p>Hub operativo para GIA, correo, WhatsApp, extensión y backups.</p>
+    </section>
+
+    <section class="grid">
+      <article class="card" id="gia">
+        <div class="ttl">📲 Instagram · GIA</div>
+        <div class="badge"><span class="okdot"></span> Webhook validado</div>
+        <div class="muted">
+          El webhook ya quedó vivo. Lo pendiente es permisos Meta, conexión de la cuenta Gourmet y prueba de DM real.
+        </div>
+        <div class="row">
+          <a class="btn primary" href="https://developers.facebook.com/" target="_blank" rel="noopener">Abrir Meta Developers</a>
+          <a class="btn" href="https://business.facebook.com/" target="_blank" rel="noopener">Abrir Business Suite</a>
+        </div>
+      </article>
+
+      <article class="card" id="correo">
+        <div class="ttl">📧 Correo</div>
+        <div class="muted">
+          Hub para borradores, revisión y envío. La conexión real va después de cerrar Instagram.
+        </div>
+        <div class="row">
+          <a class="btn primary" href="https://mail.google.com/" target="_blank" rel="noopener">Abrir Gmail</a>
+          <a class="btn" href="https://greendiamond.cl/webmail" target="_blank" rel="noopener">Abrir Webmail</a>
+        </div>
+      </article>
+
+      <article class="card" id="wsp">
+        <div class="ttl">💬 WhatsApp Web</div>
+        <div class="muted">
+          Por ahora queda como launcher a WhatsApp Web. La automatización real viene cuando definan API oficial.
+        </div>
+        <div class="row">
+          <a class="btn primary" href="https://web.whatsapp.com/" target="_blank" rel="noopener">Abrir WhatsApp Web</a>
+        </div>
+      </article>
+
+      <article class="card" id="extension">
+        <div class="ttl">🧩 Extensión</div>
+        <div class="muted">
+          Espacio reservado para la extensión interna.
+        </div>
+        <div class="row">
+          <button class="btn primary" id="btnExt" type="button">Abrir extensión</button>
+        </div>
+      </article>
+
+      <article class="card" id="backup" style="display:none">
+        <div class="ttl">🗄️ Backup</div>
+        <div class="badge"><span class="warndot"></span> Solo administradores</div>
+        <div class="muted">
+          Gestión de respaldos del CRM.
+        </div>
+        <div class="row">
+          <a class="btn primary" href="/web/views/backups.html" target="_self">Abrir Backups</a>
+        </div>
+      </article>
+    </section>
   </div>
 
   <script>
-    const qs = (s, el=document) => el.querySelector(s);
+    const EXTENSION_URL = "";
 
     function applyThemeBootstrap(){
       const mode = (localStorage.getItem("gd_theme") || "dark");
@@ -51,8 +142,29 @@
       });
     }
 
-    applyThemeBootstrap();
+    function initRoleGate(){
+      const me = window.parent?.GD?.me || {};
+      const role = String(me.role || me.rol || "").toUpperCase();
+      const isAdmin = role === "ADMIN" || role === "SUPERADMIN";
+      const backup = document.getElementById("backup");
+      if (backup) backup.style.display = isAdmin ? "" : "none";
+    }
 
+    function initExtension(){
+      const btn = document.getElementById("btnExt");
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        if (!EXTENSION_URL){
+          alert("Falta definir la URL de la extensión.");
+          return;
+        }
+        window.open(EXTENSION_URL, "_blank", "noopener");
+      });
+    }
+
+    applyThemeBootstrap();
+    initRoleGate();
+    initExtension();
   </script>
 </body>
 </html>

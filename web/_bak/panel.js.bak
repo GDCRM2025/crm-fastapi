@@ -1,0 +1,366 @@
+const qs = (s, el=document) => el.querySelector(s);
+
+function getToken(){
+  return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+}
+function authHeaders(extra={}){
+  const t = getToken();
+  return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+}
+function requireAuth(){
+  if (!getToken()){
+    location.href = "/web/login.html";
+    return false;
+  }
+  return true;
+}
+
+/* ---------------- THEME (global) ----------------
+   Guardamos en THEME: 'day' | 'night' (simple y consistente)
+*/
+function getTheme(){
+  return localStorage.getItem("THEME") || "night";
+}
+function applyTheme(t){
+  const isDay = t === "day";
+  document.documentElement.classList.toggle("light", isDay);
+  localStorage.setItem("THEME", isDay ? "day" : "night");
+
+  // Propaga al iframe (si escucha)
+  const fr = qs("#mainFrame");
+  try{
+    fr?.contentWindow?.postMessage({ cmd:"apply-theme", theme: isDay ? "day" : "night" }, "*");
+    // compat: algunos iframes viejos escuchan {type:"theme"}
+    fr?.contentWindow?.postMessage({ type:"theme", mode: isDay ? "light" : "dark" }, "*");
+  }catch(_){}
+}
+
+function syncThemeToggle(){
+  const t = getTheme();
+  qs("#themeToggle").checked = (t === "day");
+}
+
+/* ---------------- CLOCK ---------------- */
+function startClock(){
+  const el = qs("#clockBox");
+  const fmt = new Intl.DateTimeFormat("es-CL", {
+    year:"numeric", month:"2-digit", day:"2-digit",
+    hour:"2-digit", minute:"2-digit"
+  });
+  const tick = () => { el.textContent = fmt.format(new Date()); };
+  tick();
+  setInterval(tick, 30_000);
+}
+
+/* ---------------- USER ---------------- */
+let ME = null;
+function isAdmin(){
+  return (ME?.rol || "").toLowerCase() === "admin";
+}
+async function fetchMe(){
+  try{
+    const r = await fetch("/me", { headers: authHeaders() });
+    if (!r.ok) throw new Error("me failed");
+    ME = await r.json();
+    qs("#userBox").textContent = ME?.nombre ? `${ME.nombre}` : (ME?.username || "Usuario");
+  }catch(_){
+    ME = null;
+    qs("#userBox").textContent = "—";
+  }
+}
+
+/* ---------------- NAV / MENU ---------------- */
+
+const MENU = [
+  {
+    id:"leads",
+    title:"Leads",
+    ico:"📌",
+    items:[
+      { id:"leads_ver",    label:"Ver leads",    ico:"🗂️", src:"/web/views/leads.html#kanban" },
+      { id:"leads_tabla",  label:"Tabla",       ico:"📋", src:"/web/views/leads.html#tabla"  },
+      { id:"leads_filtro", label:"Filtro leads",ico:"🔎", src:"/web/views/leads_filtro.html" },
+    ],
+  },
+  {
+    id:"cotizador",
+    title:"Cotizador",
+    ico:"🧾",
+    items:[
+      { id:"cot_hist", label:"Historial", ico:"🕘", src:"/web/views/historial_cotizaciones.html" },
+    ],
+  },
+  {
+    id:"reportes",
+    title:"Reportes",
+    ico:"📊",
+    items:[
+      { id:"rep_funnel",   label:"Funnel de ventas",         ico:"🧪", src:"/web/views/reportes.html#funnel" },
+      { id:"rep_cierre",   label:"% de cierre",              ico:"🎯", src:"/web/views/reportes.html#cierre" },
+      { id:"rep_total",    label:"Total venta",              ico:"💵", src:"/web/views/reportes.html#total" },
+      { sep:true },
+      { id:"rep_comunas",  label:"Comunas más vendidas",     ico:"🗺️", src:"/web/views/reportes.html#comunas" },
+      { id:"rep_prod",     label:"Productos más vendidos",   ico:"🏆", src:"/web/views/reportes.html#productos" },
+      { id:"rep_clientes", label:"Clientes más frecuentes",  ico:"👥", src:"/web/views/reportes.html#clientes" },
+      { sep:true },
+      { id:"rep_leads",    label:"Leads creados hoy",        ico:"⚡", src:"/web/views/reportes.html#leads-hoy" },
+      { id:"rep_diaria",   label:"Venta diaria",             ico:"📈", src:"/web/views/reportes.html#venta-diaria" },
+    ],
+  },
+  {
+    id:"operaciones",
+    title:"Operaciones",
+    ico:"🛠️",
+    items:[
+      { id:"op_mice",     label:"Mice and Place",        ico:"🍽️", src:"/web/views/operaciones_mice.html" },
+      { id:"op_recetas",  label:"Recetas",               ico:"📒", src:"/web/views/operaciones_recetas.html" },
+      { id:"op_costeo",   label:"Costeo",                ico:"🧮", src:"/web/views/operaciones_costeo.html" },
+      { sep:true },
+      { id:"op_inv_mer",  label:"Inventario Mercancía",  ico:"📦", src:"/web/views/inventario_mercancia.html" },
+      { id:"op_inv_car",  label:"Inventario Carritos",   ico:"🛒", src:"/web/views/inventario_carritos.html" },
+      { sep:true },
+      { id:"op_ruta",     label:"Ruta",                  ico:"🧭", src:"/web/views/ruta.html" },
+    ],
+  },
+  {
+    id:"tools",
+    title:"Tools",
+    ico:"🧰",
+    items:[
+      { id:"tools_ext",   label:"Extensión",  ico:"🧩", src:"/web/views/tools.html" },
+      { id:"tools_mail",  label:"Correo",     ico:"✉️", src:"/web/views/tools_mail.html" },
+      { id:"tools_ig",    label:"Instagram",  ico:"📷", src:"/web/views/tools_instagram.html" },
+      { id:"tools_wa",    label:"WhatsApp",   ico:"💬", src:"/web/views/tools_whatsapp.html" },
+      { sep:true },
+      { id:"tools_pre",   label:"Pre agenda", ico:"🗓️", src:"/web/views/preagenda.html" },
+      { id:"tools_cal",   label:"Calendario", ico:"📅", src:"/web/views/calendar.html" },
+      { sep:true },
+      { id:"tools_calc",  label:"Calculadora",ico:"🧮", action:"calc" },
+    ],
+  },
+  {
+    id:"conductores",
+    title:"Conductores",
+    ico:"🚚",
+    items:[
+      { id:"drv_gps",  label:"Conectar GPS", ico:"📡", src:"/web/views/conductores_gps.html" },
+      { id:"drv_ruta", label:"Ver Ruta",     ico:"🗺️", src:"/web/views/conductores_ruta.html" },
+    ],
+  },
+  {
+    id:"finanzas",
+    title:"Finanzas",
+    ico:"💰",
+    items:[
+      { id:"fin_pl",     label:"P&L",            ico:"📑", src:"/web/views/finanzas_pl.html" },
+      { id:"fin_gastos", label:"Cargar gastos",  ico:"🧾", src:"/web/views/finanzas_gastos.html" },
+      { id:"fin_evt",    label:"Registrar evento",ico:"🗓️", src:"/web/views/finanzas_evento.html" },
+    ],
+  },
+  {
+    id:"settings",
+    title:"Settings",
+    ico:"⚙️",
+    adminOnly:true,
+    items:[
+      { id:"set_users",   label:"Usuarios",      ico:"👤", src:"/web/views/settings.html#usuarios" },
+      { id:"set_marcas",  label:"Marcas",        ico:"🏷️", src:"/web/views/settings.html#marcas" },
+      { id:"set_prod",    label:"Productos",     ico:"🧺", src:"/web/views/settings.html#productos" },
+      { id:"set_comunas", label:"Comunas",       ico:"📍", src:"/web/views/settings.html#comunas" },
+      { id:"set_tcli",    label:"Tipos Cliente", ico:"🧩", src:"/web/views/settings.html#tipos-cliente" },
+      { id:"set_est",     label:"Estados Lead",  ico:"🚦", src:"/web/views/settings.html#estados-lead" },
+      { id:"set_roles",   label:"Roles",         ico:"🛡️", src:"/web/views/settings.html#roles" },
+    ],
+  },
+];
+
+let ACTIVE_ID = "";
+
+function setActive(id){
+  ACTIVE_ID = id;
+  document.querySelectorAll(".navitem").forEach(b=>{
+    b.classList.toggle("active", b.dataset.id === id);
+  });
+}
+
+function openMain(src, activeId){
+  const fr = qs("#mainFrame");
+  fr.src = src;
+  if (activeId) setActive(activeId);
+
+  // Re-aplica theme cuando carga
+  fr.addEventListener("load", () => {
+    try{
+      fr.contentWindow.postMessage({ cmd:"apply-theme", theme: getTheme() }, "*");
+      fr.contentWindow.postMessage({ type:"theme", mode: getTheme()==="day" ? "light" : "dark" }, "*");
+    }catch(_){}
+  }, { once:true });
+}
+
+function buildNav(){
+  const nav = qs("#nav");
+  nav.innerHTML = "";
+
+  MENU.forEach(group=>{
+    if (group.adminOnly && !isAdmin()) return;
+
+    const wrap = document.createElement("div");
+    wrap.className = "navgroup";
+    wrap.dataset.group = group.id;
+
+    const head = document.createElement("button");
+    head.type = "button";
+    head.className = "navhead";
+    head.innerHTML = `
+      <span class="navico">${group.ico}</span>
+      <span class="navtitle">${group.title}</span>
+      <span class="navchev">▾</span>
+    `;
+    head.onclick = () => {
+      // si está colapsado (icon-only), primero abre sidebar
+      if (!document.body.classList.contains("nav-open") && !document.body.classList.contains("nav-pinned")){
+        document.body.classList.add("nav-open");
+      }
+      // toggle del grupo
+      const isOpen = wrap.classList.contains("open");
+      document.querySelectorAll(".navgroup").forEach(g=>g.classList.remove("open"));
+      wrap.classList.toggle("open", !isOpen);
+    };
+
+    const items = document.createElement("div");
+    items.className = "navitems";
+
+    group.items.forEach(it=>{
+      if (it.sep){
+        const sep = document.createElement("div");
+        sep.className = "navsep";
+        items.appendChild(sep);
+        return;
+      }
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "navitem";
+      b.dataset.id = it.id;
+      b.innerHTML = `<span class="ico">${it.ico}</span><span class="lbl">${it.label}</span>`;
+      b.onclick = () => {
+        if (it.action === "calc"){
+          // calculadora en modal (ya existe en calc_modal.js)
+          if (window.GD?.openCalc) window.GD.openCalc();
+          setActive(it.id);
+          return;
+        }
+        openMain(it.src, it.id);
+        // al elegir, si no está pinned, cierra sidebar (icon-only)
+        if (!document.body.classList.contains("nav-pinned")){
+          document.body.classList.remove("nav-open");
+        }
+      };
+      items.appendChild(b);
+    });
+
+    wrap.appendChild(head);
+    wrap.appendChild(items);
+    nav.appendChild(wrap);
+  });
+}
+
+/* Sidebar behavior: iconos siempre, expande con hover/focus, se contrae al perder foco */
+function bindSidebarBehavior(){
+  const sidebar = qs("#sidebar");
+
+  sidebar.addEventListener("mouseenter", () => {
+    if (!document.body.classList.contains("nav-pinned")){
+      document.body.classList.add("nav-open");
+    }
+  });
+  sidebar.addEventListener("mouseleave", () => {
+    if (!document.body.classList.contains("nav-pinned")){
+      document.body.classList.remove("nav-open");
+      document.querySelectorAll(".navgroup").forEach(g=>g.classList.remove("open"));
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (document.body.classList.contains("nav-pinned")) return;
+    const inside = sidebar.contains(e.target);
+    if (!inside){
+      document.body.classList.remove("nav-open");
+      document.querySelectorAll(".navgroup").forEach(g=>g.classList.remove("open"));
+    }
+  });
+}
+
+function bindUI(){
+  // Pin toggle
+  qs("#btnNav").onclick = () => {
+    const pinned = document.body.classList.toggle("nav-pinned");
+    if (pinned) document.body.classList.add("nav-open");
+    else document.body.classList.remove("nav-open");
+    document.querySelectorAll(".navgroup").forEach(g=>g.classList.remove("open"));
+  };
+
+  // Home (Dashboard)
+  qs("#btnHome").onclick = () => {
+    openMain("/web/views/dashboard.html", "");
+    setActive("");
+    if (!document.body.classList.contains("nav-pinned")){
+      document.body.classList.remove("nav-open");
+    }
+  };
+
+  // Theme toggle
+  qs("#themeToggle").addEventListener("change", (e) => {
+    applyTheme(e.target.checked ? "day" : "night");
+  });
+
+  // Logout
+  qs("#btnLogout").onclick = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("nombre");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("nombre");
+    location.href = "/web/login.html";
+  };
+
+  // Weather modal open/close
+  qs("#wxPill").onclick = () => {
+    const m = qs("#wxModal");
+    m.classList.add("open");
+    m.setAttribute("aria-hidden","false");
+  };
+  qs("#wxClose").onclick = () => {
+    const m = qs("#wxModal");
+    m.classList.remove("open");
+    m.setAttribute("aria-hidden","true");
+  };
+  qs("#wxModalBg").onclick = () => {
+    const m = qs("#wxModal");
+    m.classList.remove("open");
+    m.setAttribute("aria-hidden","true");
+  };
+
+  // expose helpers for other modules
+  window.GD = window.GD || {};
+  window.GD.getToken = getToken;
+  window.GD.authHeaders = authHeaders;
+  window.GD.openMain = openMain;
+  window.GD.setTheme = applyTheme;
+}
+
+/* init */
+(async function init(){
+  if (!requireAuth()) return;
+
+  await fetchMe();
+  buildNav();
+  bindSidebarBehavior();
+  bindUI();
+  startClock();
+
+  // boot theme
+  applyTheme(getTheme());
+  syncThemeToggle();
+
+  // default: Ver leads (Kanban)
+  openMain("/web/views/leads.html#kanban", "leads_ver");
+})();

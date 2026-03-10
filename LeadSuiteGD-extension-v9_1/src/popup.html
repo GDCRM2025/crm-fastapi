@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GD</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="logo">
+        <span class="dot"></span>
+        <span class="txt">GD</span>
+      </div>
+      <div id="statusPill" class="pill">OFF</div>
+    </header>
+
+    <div class="card">
+      <div class="h1">Crear Lead</div>
+      <div class="sub">Popup minimal · 127.0.0.1:8000</div>
+
+      <div class="hint" id="hint">
+        Para auto-log: abre el CRM y logéate en <b>127.0.0.1:8000</b>. Luego vuelve acá.
+      </div>
+
+      <div class="grid">
+        <label class="full">
+          <span>Nombre</span>
+          <input id="nombre_cliente" placeholder="NOMBRE CLIENTE" />
+        </label>
+
+        <label>
+          <span>Teléfono</span>
+          <input id="telefono" placeholder="+569..." />
+        </label>
+
+        <label>
+          <span>Email</span>
+          <input id="email" placeholder="correo@..." />
+        </label>
+
+        <label class="full">
+          <span>Dirección</span>
+          <input id="direccion" placeholder="DIRECCIÓN" />
+        </label>
+
+        <label>
+          <span>Fecha evento</span>
+          <input id="fecha_evento" type="date" />
+        </label>
+
+        <label>
+          <span>Plataforma</span>
+          <select id="plataforma"></select>
+        </label>
+
+        <label>
+          <span>Marca</span>
+          <select id="id_marca"></select>
+        </label>
+
+        <label>
+          <span>Tipo cliente</span>
+          <select id="id_tipo_cliente"></select>
+        </label>
+
+        <label class="full">
+          <span>Comuna</span>
+          <select id="id_comuna"></select>
+        </label>
+
+        <label class="full">
+          <span>Notas</span>
+          <textarea id="notas" placeholder="NOTAS"></textarea>
+        </label>
+      </div>
+
+      <button id="btnCreate" class="btn">CREAR LEAD</button>
+
+      <div class="row">
+        <button id="btnOpenCRM" class="btn ghost">Abrir CRM</button>
+        <button id="btnClear" class="btn ghost">Limpiar</button>
+      </div>
+
+      <div id="toast" class="toast"></div>
+    </div>
+
+    <footer class="foot">
+      <span>Icono:</span> <b>GD</b> · <span>Estado:</span> <b id="tokenAt">—</b>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

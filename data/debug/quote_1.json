@@ -1,0 +1,14 @@
+{
+  "id_cotizacion": 1,
+  "marca": "CAMALEON",
+  "marca_key": "CAMALEON",
+  "assets": {
+    "portada": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/portada.png",
+    "cotizacion": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/cotizacion.png",
+    "terminos": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/terminos.png",
+    "banco": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/banco.png",
+    "logo": "file:///Users/oscarmendoza/Desktop/CRM%202025/web/images/quote_assets/CAMALEON/logo.png"
+  },
+  "missing_assets": [],
+  "pdf_path": "/Users/oscarmendoza/Desktop/CRM 2025/data/quotes/CAMALEON/2026-02/cotizacion_12877.pdf"
+}
