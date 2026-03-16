@@ -22,12 +22,16 @@ def _load_env_file():
 _load_env_file()
 
 def _get_dsn() -> str:
-    dsn = os.environ.get("DATABASE_URL")
+    import os
+    dsn = (os.getenv("DATABASE_URL") or "").strip()
     if not dsn:
-        raise RuntimeError(
-            'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
-        )
+        raise RuntimeError('DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"')
+    if dsn.startswith("postgres://"):
+        dsn = "postgresql://" + dsn[len("postgres://"):]
+    if dsn.startswith("postgresql://"):
+        dsn = dsn.replace("postgresql://", "postgresql+psycopg://", 1)
     return dsn
+
 
 _engine = None
 
