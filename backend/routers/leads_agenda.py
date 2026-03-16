@@ -889,7 +889,10 @@ def _build_event(
         start_day = base_day
         end_day = base_day
 
-    missing_time = bool(hr_tbd) or not start_time or not end_time
+        start_time = _safe_time_hhmm(start_time)
+    end_time = _safe_time_hhmm(end_time)
+    missing_time = bool(hr_tbd) or (start_time is None) or (end_time is None)
+
     missing_dir = _is_missing_dir(direccion)
 
     if missing_time:
@@ -1113,9 +1116,23 @@ def move_lead_and_maybe_agenda(
 
         telefono = str(payload.get("telefono") or lead.get("telefono") or "").strip()
         direccion = str(payload.get("direccion") or lead.get("direccion") or "").strip()
-        start_time = payload.get("start_time")
-        end_time = payload.get("end_time")
+        start_time = _safe_time_hhmm(payload.get("start_time"))
+        end_time = _safe_time_hhmm(payload.get("end_time"))
         hr_tbd = bool(payload.get("hr_tbd", False))
+        if not start_time or not end_time:
+            hr_tbd = True
+            start_time = None
+            end_time = None
+
+
+
+
+
+        if not start_time or not end_time:
+            hr_tbd = True
+            start_time = None
+            end_time = None
+
 
         if not start_time or not end_time:
             hr_tbd = True
