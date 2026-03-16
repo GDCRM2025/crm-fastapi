@@ -1,6 +1,5 @@
 import json
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from sqlalchemy import text
@@ -209,7 +208,11 @@ def _lead_mice_items_resumen_by_day(id_lead):
 @router.get("/{id_lead}/mice_items")
 def get_lead_mice_items(id_lead=Path(..., ge=1), user=Depends(get_current_user)):
     _require_auth(user)
-    return {"ok": True, "items": _lead_mice_items_resumen(id_lead), "by_day": _lead_mice_items_resumen_by_day(id_lead)}
+    return {
+        "ok": True,
+        "items": _lead_mice_items_resumen(id_lead),
+        "by_day": _lead_mice_items_resumen_by_day(id_lead),
+    }
 
 
 @router.put("/{id_lead}/mice_items")
@@ -516,6 +519,7 @@ def _cotizacion_detalle_resumen(id_cotizacion):
         return [{"producto": str(r["producto"]), "cantidad": float(r["cantidad"] or 0)} for r in rows]
 
     cols = set(_cols_for("cotizaciones_detalle"))
+
     prod_col = None
     for c in ("producto", "nombre_producto", "descripcion", "detalle", "producto_nombre", "nombre"):
         if c in cols:
@@ -609,9 +613,9 @@ def _calcular_montaje_single(items):
     cat_qty = {}
 
     def add_eq(eq, n):
-        if n <= 0:
-            return
-        montaje[eq] = montaje.get(eq, 0) + n
+      if n <= 0:
+          return
+      montaje[eq] = montaje.get(eq, 0) + n
 
     lines_prod = ["PRODUCTOS"]
     for it in items:
@@ -710,6 +714,7 @@ def _calcular_montaje_single(items):
         "Base",
         "Estación Entrega",
     ]
+
     for k in pref_order:
         if k in montaje:
             lines_m.append("%s x %s" % (montaje[k], k))
@@ -785,6 +790,7 @@ def _calcular_montaje(items):
         "Base",
         "Estación Entrega",
     ]
+
     lines_m = []
     for k in pref_order:
         if k in max_montaje:
@@ -885,6 +891,7 @@ def _build_event(
 
     cliente = lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)"
     marca_txt = marca or "Sin Marca"
+
     suffix = _title_suffix(missing_time, missing_dir)
     title = "%s - %s" % (cliente, marca_txt)
     if suffix:
@@ -991,12 +998,14 @@ def move_lead_and_maybe_agenda(
         if agendar is False:
             quote_source = str(payload.get("quote_source") or "").strip().lower()
             id_cot_tmp = payload.get("id_cotizacion") if quote_source != "manual" else None
+
             items = []
             if id_cot_tmp:
                 try:
                     items = _cotizacion_detalle_resumen(int(id_cot_tmp))
                 except Exception:
                     items = []
+
             if not items:
                 items = _lead_mice_items_resumen_by_day(id_lead)
 
@@ -1097,7 +1106,7 @@ def move_lead_and_maybe_agenda(
         if not items:
             raise HTTPException(400, detail="No hay productos para calcular montaje. Carga productos para MICE.")
 
-        montaje_map, ops, montaje_text, products_text = _calcular_montaje(items)
+        _, ops, montaje_text, products_text = _calcular_montaje(items)
 
         try:
             if payload.get("override_ops") is not None:
@@ -1272,7 +1281,7 @@ def move_lead_and_maybe_agenda(
                 else:
                     note = "[CONFIRMADO %s] Cotización confirmada: %s" % (stamp, id_cot)
 
-                with engine.connect() as cn:
+                with engine.begin() as cn:
                     cn.execute(
                         text(
                             """
@@ -1287,7 +1296,6 @@ def move_lead_and_maybe_agenda(
                         ),
                         {"n": note, "id": id_lead},
                     )
-                    cn.commit()
         except Exception:
             pass
 
@@ -1324,6 +1332,7 @@ def move_lead_and_maybe_agenda(
                 "BODEGUERO",
                 "COMPRAS",
             ]
+
             inserted_roles = _notify_roles_once(
                 "EVENT_AGENDADO",
                 roles,
@@ -1386,7 +1395,29 @@ def move_lead_and_maybe_agenda(
                 "products_text": ev["products_text"],
             },
         }
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(500, detail=str(e))
+
+def _safe_time_str(value):
+    try:
+        v = (value or "").strip()
+        if not v:
+            return None
+        if v in ("--:--", "-:-", "TBD", "tbd", "null", "None"):
+            return None
+        if len(v) >= 5 and v[2] == ":":
+            return v[:5]
+        return None
+    except Exception:
+        return None
+
+def _safe_int(value, default=0):
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except Exception:
+        return default
