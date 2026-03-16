@@ -79,11 +79,16 @@ async function _serverLogout(reason="manual"){
   try{
     const t = getToken();
     if (!t) return;
-    // No bloqueamos el logout del usuario si el servidor se demora (p.ej. email/digest PM).
+    // No bloqueamos el logout del usuario si el servidor se demora.
     const ctrl = new AbortController();
     const to = setTimeout(() => { try{ ctrl.abort(); }catch(_){} }, 2500);
     try{
-      await fetch(`${API_BASE}/auth/logout`, { method:"POST", headers: authHeaders({"Content-Type":"application/json"}), body: JSON.stringify({ reason }), signal: ctrl.signal });
+      await fetch(`${API_BASE}/auth/logout`, {
+        method:"POST",
+        headers: authHeaders({"Content-Type":"application/json"}),
+        body: JSON.stringify({ reason }),
+        signal: ctrl.signal
+      });
     }finally{
       clearTimeout(to);
     }
@@ -95,7 +100,6 @@ async function idleLogout(){
   location.href = `${API_BASE}/web/login.html?reason=idle`;
 }
 function setupIdleLogout(){
-  // Set inicial (por si viene vacío)
   if (!lastActivity()) markActivity();
 
   const evs = ["pointerdown","mousemove","keydown","scroll","touchstart","wheel"];
@@ -104,7 +108,6 @@ function setupIdleLogout(){
   window.addEventListener("focus", markActivity);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) markActivity(); });
 
-  // Bridge activity desde iframes (main + chat) para que moverse adentro cuente como actividad.
   const bridge = (sel) => {
     const fr = qs(sel);
     if (!fr) return;
@@ -199,10 +202,269 @@ function setupBackupJobWatch(){
   pollBackupJob();
 }
 
-// expone token para iframes (settings)
+// expone token para iframes
 window.GD = window.GD || {};
 window.GD.getToken = getToken;
 window.GD.authHeaders = authHeaders;
+
+const TOOLS_HUB_URL = "/web/views/tools.html?v=20260311-1";
+
+const QUICK_TOOLS = [
+  { id:"qt_instagram", label:"Instagram", icon:"📷", hash:"#instagram" },
+  { id:"qt_correo", label:"Correo", icon:"✉️", hash:"#correo" },
+  { id:"qt_whatsapp", label:"WhatsApp", icon:"💬", hash:"#whatsapp", external:"https://web.whatsapp.com/" },
+  { id:"qt_extension", label:"Extensión", icon:"🧩", hash:"#extension" },
+  { id:"qt_backup", label:"Backup", icon:"💾", hash:"#backup", adminOnly:true },
+];
+
+function isAdminRole(){
+  return CURRENT_ROLE_ID === 1;
+}
+
+function isOpsOnlyRole(){
+  return CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7;
+}
+
+function openToolsTarget(cfg){
+  if (!cfg) return;
+  if (cfg.external){
+    window.open(cfg.external, "_blank", "noopener");
+    return;
+  }
+  const frame = qs("#mainFrame");
+  if (!frame) return;
+  frame.src = viewURL(`${TOOLS_HUB_URL}${cfg.hash || ""}`);
+}
+
+function ensureQuickToolsStyles(){
+  if (qs("#gdQuickToolsStyles")) return;
+  const st = document.createElement("style");
+  st.id = "gdQuickToolsStyles";
+  st.textContent = `
+    .gd-quick-tools{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-left:14px;
+    }
+    .gd-quick-tool{
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(255,255,255,.04);
+      color:var(--text);
+      border-radius:999px;
+      padding:8px 10px;
+      font-size:12px;
+      font-weight:950;
+      display:inline-flex;
+      align-items:center;
+      gap:7px;
+      cursor:pointer;
+      backdrop-filter:blur(10px);
+    }
+    .gd-quick-tool:hover{
+      background:rgba(255,255,255,.09);
+    }
+    .gd-quick-tool .ico{
+      width:20px;
+      height:20px;
+      display:grid;
+      place-items:center;
+      border-radius:999px;
+      background:rgba(255,255,255,.06);
+      font-size:11px;
+    }
+    @media (max-width: 1180px){
+      .gd-quick-tools{
+        display:none;
+      }
+    }
+  `;
+  document.head.appendChild(st);
+}
+
+function renderTopTools(){
+  const topbar = qs(".topbar");
+  if (!topbar || isOpsOnlyRole()) return;
+
+  ensureQuickToolsStyles();
+
+  let host = qs("#gdQuickTools", topbar);
+  if (!host){
+    host = document.createElement("div");
+    host.id = "gdQuickTools";
+    host.className = "gd-quick-tools";
+
+    const ref =
+      qs("#clockBox", topbar) ||
+      qs("#btnNotifs", topbar) ||
+      qs("#btnUserMenu", topbar);
+
+    if (ref && ref.parentNode){
+      ref.parentNode.insertBefore(host, ref);
+    } else {
+      topbar.appendChild(host);
+    }
+  }
+
+  const visible = QUICK_TOOLS.filter(it => !it.adminOnly || isAdminRole());
+
+  host.innerHTML = visible.map(it => `
+    <button class="gd-quick-tool" type="button" data-qt="${it.id}" title="${it.label}">
+      <span class="ico">${it.icon}</span>
+      <span>${it.label}</span>
+    </button>
+  `).join("");
+
+  host.querySelectorAll("[data-qt]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const cfg = QUICK_TOOLS.find(x => x.id === btn.getAttribute("data-qt"));
+      openToolsTarget(cfg);
+    });
+  });
+}
+
+function refreshMainFrame(){
+  const frame = qs("#mainFrame");
+  try{
+    frame?.contentWindow?.location?.reload();
+  }catch(_){
+    if (frame) frame.src = frame.src;
+  }
+}
+
+async function performLogout(){
+  await _serverLogout("manual");
+  localStorage.removeItem("token");
+  localStorage.removeItem("nombre");
+  sessionStorage.removeItem("token");
+  sessionStorage.removeItem("nombre");
+  location.href = `${API_BASE}/web/login.html`;
+}
+
+function moveUserStatusToPerfil(menu){
+  const tabPerfil = qs('[data-um-tab="perfil"]', menu);
+  if (!tabPerfil) return;
+
+  const wrapSelectors = [
+    "#userStatusWrap",
+    "#statusWrap",
+    "#estadoWrap",
+    "#statusSection",
+    "#estadoSection",
+    "[data-user-status-wrap]",
+    "[data-estado-wrap]"
+  ];
+
+  let block = null;
+  for (const sel of wrapSelectors){
+    block = qs(sel, menu);
+    if (block) break;
+  }
+
+  if (!block){
+    const control = qs('#statusSelect, #estadoSelect, [name="status"], [name="estado"]', menu);
+    if (control){
+      block = control.closest(".field,.row,.section,.block,.menu-section,div") || control.parentElement;
+    }
+  }
+
+  if (block && !tabPerfil.contains(block)){
+    tabPerfil.appendChild(block);
+  }
+}
+
+function ensureSystemActionsInUserMenu(menu){
+  const tabSystem = qs('[data-um-tab="sistema"]', menu);
+  if (!tabSystem) return;
+
+  let wrap = qs("#gdUserSystemActions", tabSystem);
+  if (!wrap){
+    wrap = document.createElement("div");
+    wrap.id = "gdUserSystemActions";
+    wrap.style.display = "grid";
+    wrap.style.gap = "8px";
+    wrap.style.marginTop = "12px";
+
+    const mkBtn = (text, onClick) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn";
+      b.style.width = "100%";
+      b.style.textAlign = "left";
+      b.style.fontWeight = "900";
+      b.textContent = text;
+      b.addEventListener("click", onClick);
+      return b;
+    };
+
+    wrap.appendChild(mkBtn("Actualizar", async () => {
+      refreshMainFrame();
+      try{
+        const data = await fetchNotifications();
+        renderNotifications(data);
+      }catch(_){}
+    }));
+
+    wrap.appendChild(mkBtn("Cerrar sesión", async () => {
+      const ok = await Swal.fire({
+        title: "Cerrar sesión",
+        text: "¿Seguro que deseas cerrar sesión?",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Sí, salir",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#19C37D",
+      }).then(r => r.isConfirmed);
+
+      if (!ok) return;
+      await performLogout();
+    }));
+
+    tabSystem.appendChild(wrap);
+  }
+}
+
+function normalizeUserMenuLayout(menu){
+  if (!menu) return;
+
+  const tabPerfil = qs('[data-um-tab="perfil"]', menu);
+  const tabPersonal = qs('[data-um-tab="personalizacion"]', menu);
+  const tabSystem = qs('[data-um-tab="sistema"]', menu);
+  const prefSave = qs("#prefSave", menu);
+
+  if (prefSave && tabPersonal){
+    let saveWrap = qs("#gdPrefSaveWrap", tabPersonal);
+    if (!saveWrap){
+      saveWrap = document.createElement("div");
+      saveWrap.id = "gdPrefSaveWrap";
+      saveWrap.style.marginTop = "12px";
+      tabPersonal.appendChild(saveWrap);
+    }
+    saveWrap.appendChild(prefSave);
+  }
+
+  if (tabSystem){
+    tabSystem.querySelectorAll("[data-open]").forEach(el => el.remove());
+  }
+
+  moveUserStatusToPerfil(menu);
+  ensureSystemActionsInUserMenu(menu);
+
+  if (tabPerfil){
+    let title = qs("#gdPerfilStatusTitle", tabPerfil);
+    if (!title){
+      title = document.createElement("div");
+      title.id = "gdPerfilStatusTitle";
+      title.style.marginTop = "10px";
+      title.style.fontSize = "12px";
+      title.style.fontWeight = "900";
+      title.style.opacity = ".8";
+      title.textContent = "Estado";
+      tabPerfil.appendChild(title);
+    }
+  }
+}
 
 /* =========================
    CHAT WATCH (sonido + popups)
@@ -222,7 +484,6 @@ function setupChatWatch(){
   }, 5000);
   pollChatThreads();
 
-  // Launcher tipo Gmail (abajo-derecha). El chat interno NO debería depender del topbar.
   _ensureChatLauncher();
 }
 
@@ -282,7 +543,6 @@ function _ensureChatLauncher(){
    THEME
 ========================= */
 function getTheme(){
-  // Preferimos gd_theme. Si no existe, soportamos legacy THEME=day|night
   const v = (localStorage.getItem("gd_theme") || "").trim();
   if (v === "light" || v === "dark") return v;
   const legacy = (localStorage.getItem("THEME") || "").trim().toLowerCase();
@@ -292,7 +552,6 @@ function getTheme(){
 }
 function setTheme(mode){
   const m = (mode === "light") ? "light" : "dark";
-  // Persistimos en ambos formatos para que ninguna vista “se salga” del tema.
   localStorage.setItem("gd_theme", m);
   localStorage.setItem("THEME", m === "light" ? "day" : "night");
   try{
@@ -307,7 +566,6 @@ function applyTheme(mode){
   document.documentElement.classList.toggle("light", m === "light");
   document.documentElement.setAttribute("data-theme", m === "light" ? "day" : "night");
 
-  // Propaga a iframe (si el view escucha postMessage)
   const fr = qs("#mainFrame");
   try{
     fr?.contentWindow?.postMessage({ type:"theme", mode: m }, "*");
@@ -363,7 +621,6 @@ function applyPrefs(p){
     applyTheme(p.theme);
   }
 
-  // Propaga a iframe
   try{
     const fr = qs("#mainFrame");
     fr?.contentWindow?.postMessage({ type:"prefs", prefs: { ...p, font: fontVal } }, "*");
@@ -400,7 +657,6 @@ function initThemeToggle(){
   const p = getPrefs();
   const mode = (p.theme || getTheme());
   tgl.checked = (mode === "light");
-  // setTheme() alinea gd_theme + THEME + prefs.theme para evitar que “se cambie solo”
   setTheme(mode);
 
   tgl.addEventListener("change", () => {
@@ -408,13 +664,10 @@ function initThemeToggle(){
     setTheme(m);
   });
 
-  // al cargar cualquier view, re-propaga el tema
   qs("#mainFrame").addEventListener("load", () => {
     applyTheme(getTheme());
     applyPrefs(getPrefs());
 
-    // Importante: si el usuario solo interactúa dentro del iframe, el parent no recibe "click".
-    // Puenteamos gestos desde el iframe para habilitar audio ("Nuevo lead").
     try{
       const fr = qs("#mainFrame");
       const doc = fr?.contentDocument;
@@ -458,7 +711,6 @@ async function fetchNotifications(){
     if (!getToken()) return { ok:false, total:0, items:[] };
     const r = await fetch(`${API_BASE}/notifications`, { headers: authHeaders() });
     if (r.status === 401 || r.status === 403){
-      // Evita spam de errores cada 5s si se pierde el token.
       location.href = `${API_BASE}/web/login.html`;
       return { ok:false, total:0, items:[] };
     }
@@ -478,7 +730,6 @@ let lastSoundAt = 0;
 let seenNotifCount = Number(localStorage.getItem("gd_notif_seen") || "0");
 
 function enableSoundOnce(){
-  // Se llama cuando detectamos una "user gesture" (click/touch/teclado).
   if (canSound) return;
   canSound = true;
   try{
@@ -496,7 +747,6 @@ function playNotifSound(kind="default"){
   if (now - lastSoundAt < 1200) return;
   lastSoundAt = now;
 
-  // Voz "Nuevo lead" cuando sea posible
   if ((kind === "lead" || kind === "event") && "speechSynthesis" in window){
     try{
       const u = new SpeechSynthesisUtterance(kind === "event" ? "Nuevo evento" : "Nuevo lead");
@@ -509,7 +759,6 @@ function playNotifSound(kind="default"){
     }catch(_){}
   }
 
-  // fallback: beep más notorio
   try{
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
@@ -519,7 +768,6 @@ function playNotifSound(kind="default"){
     osc.connect(gain);
     gain.connect(ctx.destination);
     if (kind === "chat"){
-      // beep corto doble, más "mensaje"
       osc.frequency.value = 880;
       osc.start();
       setTimeout(() => { osc.frequency.value = 660; }, 90);
@@ -571,12 +819,12 @@ function _ensureChatDock(){
     }
     .chat-win{
       width:min(360px, calc(100vw - 34px));
-      height: min(520px, calc(100vh - 120px));
+      height:min(520px, calc(100vh - 120px));
       border:1px solid rgba(148,163,184,.22);
-      background: rgba(2,6,23,.84);
-      backdrop-filter: blur(14px);
-      border-radius: 14px;
-      box-shadow: 0 18px 70px rgba(0,0,0,.45);
+      background:rgba(2,6,23,.84);
+      backdrop-filter:blur(14px);
+      border-radius:14px;
+      box-shadow:0 18px 70px rgba(0,0,0,.45);
       overflow:hidden;
       pointer-events:auto;
       display:flex;
@@ -591,16 +839,16 @@ function _ensureChatDock(){
     .chat-win .hbtns{ display:flex; gap:6px; align-items:center; }
     .chat-win .hb{
       border:1px solid rgba(148,163,184,.22);
-      background: rgba(2,6,23,.22);
-      color: rgba(226,232,240,.9);
-      border-radius: 10px;
+      background:rgba(2,6,23,.22);
+      color:rgba(226,232,240,.9);
+      border-radius:10px;
       padding:4px 8px;
       font-weight:1100;
       cursor:pointer;
     }
     .chat-win .preview{ padding:10px; }
     .chat-win .msg{
-      color: rgba(226,232,240,.86);
+      color:rgba(226,232,240,.86);
       font-weight:900;
       font-size:13px;
       line-height:1.3;
@@ -617,16 +865,16 @@ function _ensureChatDock(){
     }
     .chat-win .btn{
       border:1px solid rgba(148,163,184,.22);
-      background: rgba(2,6,23,.22);
-      color: rgba(226,232,240,.92);
-      border-radius: 12px;
+      background:rgba(2,6,23,.22);
+      color:rgba(226,232,240,.92);
+      border-radius:12px;
       padding:8px 10px;
       font-weight:1100;
       cursor:pointer;
     }
     .chat-win .btn.primary{
-      background: color-mix(in srgb, var(--accent) 22%, transparent);
-      border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+      background:color-mix(in srgb, var(--accent) 22%, transparent);
+      border-color:color-mix(in srgb, var(--accent) 50%, transparent);
       color:#fff;
     }
     .chat-win iframe{
@@ -669,7 +917,6 @@ function openChatWindow(tid, title){
   el = document.createElement("div");
   el.className = "chat-win";
   el.dataset.tid = String(tid);
-  // iframe src se setea lazy (al abrir)
   el.innerHTML = `
     <div class="h">
       <div class="ttl"></div>
@@ -714,7 +961,6 @@ function openChatWindow(tid, title){
 }
 
 function showChatPopup(th){
-  const dock = _ensureChatDock();
   const tid = Number(th?.id_thread || 0);
   if (!tid) return;
   const title = String(th?.title || "Chat");
@@ -724,14 +970,11 @@ function showChatPopup(th){
   if (ttlEl) ttlEl.textContent = title;
   const msgEl = el.querySelector(".msg");
   if (msgEl) msgEl.textContent = msg || "(sin texto)";
-  // Set iframe lazy src (embed)
   const fr = el.querySelector("iframe");
   if (fr){
     const src = viewURL(`/web/views/chat.html?embed=1&thread=${encodeURIComponent(String(tid))}&v=${Date.now()}`);
     fr.dataset.src = src;
-    // Para experiencia tipo Gmail: abrimos la ventanita y cargamos el chat de una.
     if (!fr.getAttribute("src")) fr.setAttribute("src", src);
-    // Best-effort: enfocar el input dentro del iframe (same-origin).
     fr.addEventListener("load", () => {
       try{
         const w = fr.contentWindow;
@@ -741,7 +984,6 @@ function showChatPopup(th){
       }catch(_){}
     }, { once: true });
   }
-  // Si está cerrado/minimizado, lo abrimos y marcamos atención.
   if (!el.classList.contains("open")) el.classList.add("open");
   el.classList.remove("attn");
 }
@@ -758,7 +1000,6 @@ async function pollChatThreads(){
     const j = await r.json();
     const items = Array.isArray(j?.items) ? j.items : [];
 
-    // baseline: primera corrida no notifica
     if (!_chatInitSeen){
       for (const it of items){
         const tid = Number(it?.id_thread || 0);
@@ -885,9 +1126,6 @@ function renderNotifications(data){
     }
   }
 
-  // Sonidos:
-  // - Ejecutivos: leads/stale
-  // - Operaciones/Admin: eventos agendados (system_notifs)
   {
     const leadItem = (items || []).find(x => x.key === "leads_nuevos");
     const leadCount = Number(leadItem?.count || 0);
@@ -896,7 +1134,6 @@ function renderNotifications(data){
     const sysItem = (items || []).find(x => x.key === "system_notifs");
     const sysCount = Number(sysItem?.count || 0);
 
-    // Evento agendado: beep/voz para roles no-ventas.
     if (CURRENT_ROLE_ID !== 2){
       if (lastSystemCount !== null && sysCount > lastSystemCount){
         playNotifSound("event");
@@ -926,7 +1163,6 @@ function openLeadsFromLock(openId, ids){
   const params = new URLSearchParams();
   params.set("stale", "1");
   if (idList.length) params.set("stale_ids", idList.join(","));
-  // Importante: NO abrimos un lead automáticamente. Solo filtramos la vista.
   pendingLeadOpen = null;
   frame.src = viewURL(`/web/views/leads.html?${params.toString()}`);
 }
@@ -990,7 +1226,6 @@ function renderLeadLock(data){
       ) || `<div class="lead-lock-empty">Sin detalle disponible.</div>`;
       list.querySelectorAll("[data-lead]").forEach(el => {
         el.addEventListener("click", () => {
-          // Al click, vamos a la lista filtrada completa (sin auto abrir el 1er lead).
           openLeadsFromLock(null, allIds);
         });
       });
@@ -1034,7 +1269,6 @@ function bindNotifications(){
     renderNotifications(data);
     menu.classList.add("open");
     menu.setAttribute("aria-hidden", "false");
-    // mark as seen
     const total = Number(data?.total || 0);
     seenNotifCount = total;
     localStorage.setItem("gd_notif_seen", String(total));
@@ -1066,12 +1300,10 @@ function bindNotifications(){
     closeMenu();
   });
 
-  // habilitar sonido con cualquier gesto del usuario (no solo click)
   document.addEventListener("click", enableSoundOnce, { once:true, capture:true });
   document.addEventListener("pointerdown", enableSoundOnce, { once:true, capture:true });
   document.addEventListener("keydown", enableSoundOnce, { once:true, capture:true });
 
-  // refresh badge periodically (con backoff para evitar spam de errores si /notifications falla)
   let delay = 5000;
   const maxDelay = 120000;
   const tick = async () => {
@@ -1129,8 +1361,6 @@ async function fetchMe(){
       roleName.includes("CONDUCTOR") ||
       roleName.includes("CHOFER");
     if (isOpsOnly){
-      // Operadores/Conductores NO deben entrar al panel completo (sidebar).
-      // El portal es horizontal y muestra el calendario embebido a pantalla completa.
       try{
         const here = String(location.pathname || "");
         if (!here.includes("/web/views/portal_ops.html")){
@@ -1147,18 +1377,12 @@ async function fetchMe(){
       if (btnChat) btnChat.style.display = "none";
     }
     buildMenu();
-    // Tools fue removido del menú para mantener el CRM enfocado.
-    // Dejamos esta llamada como no-op para no romper despliegues antiguos.
-    try{ renderTopTools?.(); }catch(_){}
+    try{ renderTopTools(); }catch(_){}
   }catch(_){
     const userNameEl = qs("#userName");
     if (userNameEl) userNameEl.textContent = "Usuario";
   }
 }
-
-// (Tools removido) accesos rápidos y vista Tools se eliminan para mantener el CRM enfocado.
-// Mantenemos un no-op para compatibilidad por si algún HTML antiguo lo llama.
-function renderTopTools(){ /* no-op */ }
 
 function findItemById(itemId){
   for (const g of MENU){
@@ -1174,7 +1398,6 @@ function initUserMenu(){
   const menu = qs("#userMenu");
   if (!btn || !menu) return;
 
-  // Asegura que el menú quede por encima del iframe
   if (menu.parentElement !== document.body){
     document.body.appendChild(menu);
   }
@@ -1184,11 +1407,6 @@ function initUserMenu(){
 
   const me = window.GD?.me || {};
   const roleName = String(me.role || me.rol || "").toLowerCase();
-  const isAdmin = roleName === "admin" || CURRENT_ROLE_ID === (ROLE_IDS["ADMIN"] || 1);
-
-  // Gate "Backups" UI: admin only (dangerous).
-  const backupsBtn = qs('[data-open="set_bak"]', menu);
-  if (backupsBtn) backupsBtn.style.display = isAdmin ? "" : "none";
 
   const nameEl = qs("#prefName");
   const emailEl = qs("#prefEmail");
@@ -1269,7 +1487,6 @@ function initUserMenu(){
     avatarEl.style.backgroundPosition = "center";
   }
 
-  // photo modal
   const openPhoto = () => {
     if (!photoModal) return;
     if (photoPreview){
@@ -1348,7 +1565,6 @@ function initUserMenu(){
   });
 
   const openUserMenu = () => {
-    // Mantiene el toggle de tema sincronizado al abrir (se había perdido la propagación).
     try{
       const p0 = getPrefs();
       if (tgl) tgl.checked = ((p0.theme || getTheme()) === "light");
@@ -1383,12 +1599,10 @@ function initUserMenu(){
     closeUserMenu();
   });
 
-  // Si pierde foco (cambio de pestaña/ventana), cerramos automáticamente.
   window.addEventListener("blur", closeUserMenu);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) closeUserMenu();
   });
-  // Si el foco de teclado se va fuera del menú, también cerramos.
   document.addEventListener("focusin", (ev) => {
     if (!menu.classList.contains("open")) return;
     if (ev.target.closest("#userMenu") || ev.target.closest("#btnUserMenu")) return;
@@ -1398,7 +1612,6 @@ function initUserMenu(){
     if (ev.key === "Escape" && menu.classList.contains("open")) closeUserMenu();
   });
 
-  // Tabs (Perfil / Personalización / Sistema)
   const TAB_KEY = "gd_user_menu_tab";
   const tabBtns = Array.from(menu.querySelectorAll("[data-um-tab-btn]"));
   const tabSecs = Array.from(menu.querySelectorAll("[data-um-tab]"));
@@ -1422,11 +1635,11 @@ function initUserMenu(){
   window.GD = window.GD || {};
   window.GD.openUserMenu = openUserMenu;
   window.GD.closeUserMenu = closeUserMenu;
+  normalizeUserMenuLayout(menu);
 
   if (chatModal){
     const openChat = () => {
       enableSoundOnce();
-      // Recarga iframe para evitar cache/estado viejo (y para tomar la última versión de chat.html)
       try{
         const fr = qs("#chatFrame") || chatModal.querySelector("iframe");
         if (fr){
@@ -1506,8 +1719,8 @@ function initUserMenu(){
         savePrefs(next);
         applyPrefs(next);
         updatePreview();
-        const userNameEl = qs("#userName");
-        if (userNameEl && next.name) userNameEl.textContent = next.name;
+        const userNameEl2 = qs("#userName");
+        if (userNameEl2 && next.name) userNameEl2.textContent = next.name;
         const av = qs("#userAvatar");
         if (av && (next.photoData || next.photo)){
           av.textContent = "";
@@ -1524,8 +1737,6 @@ function initUserMenu(){
     }
   });
 
-  // Cambios se aplican en previsualización al guardar
-
   menu.addEventListener("click", (ev) => {
     const target = ev.target.closest("[data-open]");
     if (!target) return;
@@ -1536,7 +1747,7 @@ function initUserMenu(){
 }
 
 /* =========================
-   MENU (SIN HOME)
+   MENU
 ========================= */
 const MENU = [
   {
@@ -1544,72 +1755,67 @@ const MENU = [
     ico:"📌",
     title:"Leads",
     items:[
-      { id:"leads_ver",   label:"Ver Leads",    url:"/web/views/leads.html" },
-      { id:"leads_fil",   label:"Filtrar Leads",url:"/web/views/filtro_leads.html" },
+      { id:"leads_ver", label:"Ver Leads", url:"/web/views/leads.html" },
+      { id:"leads_fil", label:"Filtrar Leads", url:"/web/views/filtro_leads.html" },
     ]
-},
-{
-  id:"cotizador",
-  ico:"🧾",
-  title:"Cotizador",
-  items:[
-    { id:"historial", label:"Historial", url:"/web/views/historial_cotizaciones.html" },
-  ]
-},
-
+  },
+  {
+    id:"cotizador",
+    ico:"🧾",
+    title:"Cotizador",
+    items:[
+      { id:"historial", label:"Historial", url:"/web/views/historial_cotizaciones.html" },
+    ]
+  },
   {
     id:"reportes",
     ico:"📊",
     title:"Reportes",
     items:[
-      { id:"rep_funnel", label:"Funnel de ventas",        url:"/web/views/reportes.html#funnel" },
-      { id:"rep_cierre", label:"% de cierre",            url:"/web/views/reportes.html#cierre" },
-      { id:"rep_total",  label:"Total venta",            url:"/web/views/reportes.html#total" },
-
-      { id:"rep_sep1",   label:"—",                       url:null, sep:true },
-
-      { id:"rep_com",    label:"Comunas más vendidas",    url:"/web/views/reportes.html#comunas" },
-      { id:"rep_prod",   label:"Productos más vendidos",  url:"/web/views/reportes.html#productos" },
-      { id:"rep_cli",    label:"Clientes más frecuentes", url:"/web/views/reportes.html#clientes" },
-
-      { id:"rep_sep2",   label:"—",                       url:null, sep:true },
-
-      { id:"rep_hoy",    label:"Leads creados hoy",       url:"/web/views/reportes.html#leads_hoy" },
-      { id:"rep_dia",    label:"Venta diaria",            url:"/web/views/reportes.html#venta_diaria" },
+      { id:"rep_funnel", label:"Funnel de ventas", url:"/web/views/reportes.html#funnel" },
+      { id:"rep_cierre", label:"% de cierre", url:"/web/views/reportes.html#cierre" },
+      { id:"rep_total", label:"Total venta", url:"/web/views/reportes.html#total" },
+      { id:"rep_sep1", label:"—", url:null, sep:true },
+      { id:"rep_com", label:"Comunas más vendidas", url:"/web/views/reportes.html#comunas" },
+      { id:"rep_prod", label:"Productos más vendidos", url:"/web/views/reportes.html#productos" },
+      { id:"rep_cli", label:"Clientes más frecuentes", url:"/web/views/reportes.html#clientes" },
+      { id:"rep_sep2", label:"—", url:null, sep:true },
+      { id:"rep_hoy", label:"Leads creados hoy", url:"/web/views/reportes.html#leads_hoy" },
+      { id:"rep_dia", label:"Venta diaria", url:"/web/views/reportes.html#venta_diaria" },
     ]
   },
-	  {
-	    id:"operaciones",
-	    ico:"🛠️",
-	    title:"Operaciones",
-	    items:[
-	      { id:"op_rec",    label:"Recetas",              url:"/web/views/operaciones_recetas.html?v=20260304-1" },
-	      { id:"op_mice",   label:"Mice and Place",       url:"/web/views/operaciones_mice.html" },
-	      { id:"op_sep1",   label:"—",                    url:null, sep:true },
-	      { id:"op_ruta",   label:"Ruta",                 url:"/web/views/ruta.html" },
-	      { id:"op_sep2",   label:"—",                    url:null, sep:true },
-	      { id:"op_ma_cat", label:"Categorias Maquinaria", url:"/web/views/op_maquinaria_categorias.html?v=20260304-1" },
-	      { id:"op_ma_inv", label:"Inventario Maquinaria", url:"/web/views/op_maquinaria_inventario.html?v=20260304-1" },
-	      { id:"op_ma_ficha", label:"Ficha Maquinaria",    url:"/web/views/op_maquinaria_ficha.html?v=20260304-1" },
-	      { id:"op_sep3",   label:"—",                    url:null, sep:true },
-	      { id:"op_ca_ficha", label:"Ficha Camiones",     url:"/web/views/op_camiones_ficha.html?v=20260304-1" },
-	      { id:"op_ca_ent", label:"Entrega de Camiones",  url:"/web/views/op_camiones_entrega.html?v=20260304-1" },
-	      { id:"op_ca_dev", label:"Devolucion de Camiones", url:"/web/views/op_camiones_devolucion.html?v=20260304-1" },
-	    ]
-	  },
+  {
+    id:"operaciones",
+    ico:"🛠️",
+    title:"Operaciones",
+    items:[
+      { id:"op_rec", label:"Recetas", url:"/web/views/operaciones_recetas.html?v=20260304-1" },
+      { id:"op_mice", label:"Mice and Place", url:"/web/views/operaciones_mice.html" },
+      { id:"op_sep1", label:"—", url:null, sep:true },
+      { id:"op_ruta", label:"Ruta", url:"/web/views/ruta.html" },
+      { id:"op_sep2", label:"—", url:null, sep:true },
+      { id:"op_ma_cat", label:"Categorias Maquinaria", url:"/web/views/op_maquinaria_categorias.html?v=20260304-1" },
+      { id:"op_ma_inv", label:"Inventario Maquinaria", url:"/web/views/op_maquinaria_inventario.html?v=20260304-1" },
+      { id:"op_ma_ficha", label:"Ficha Maquinaria", url:"/web/views/op_maquinaria_ficha.html?v=20260304-1" },
+      { id:"op_sep3", label:"—", url:null, sep:true },
+      { id:"op_ca_ficha", label:"Ficha Camiones", url:"/web/views/op_camiones_ficha.html?v=20260304-1" },
+      { id:"op_ca_ent", label:"Entrega de Camiones", url:"/web/views/op_camiones_entrega.html?v=20260304-1" },
+      { id:"op_ca_dev", label:"Devolucion de Camiones", url:"/web/views/op_camiones_devolucion.html?v=20260304-1" },
+    ]
+  },
   {
     id:"inventario",
     ico:"📦",
     title:"Inventario",
     items:[
-      { id:"inv_tomar", label:"Tomar inventario",          url:"/web/views/inventario_mercancia.html#tomar" },
-      { id:"inv_sep1",  label:"—",                         url:null, sep:true },
-      { id:"inv_stock", label:"Stock ingredientes",        url:"/web/views/inventario_mercancia.html#stock" },
-      { id:"inv_cat",   label:"Categorías",                url:"/web/views/inventario_mercancia.html#categorias" },
-      { id:"inv_uni",   label:"Unidades",                  url:"/web/views/inventario_mercancia.html#unidades" },
-      { id:"inv_prov",  label:"Proveedores",               url:"/web/views/inventario_mercancia.html#proveedores" },
-      { id:"inv_sep2",  label:"—",                         url:null, sep:true },
-      { id:"inv_mov",   label:"Movimiento de Inventario",  url:"/web/views/inventario_mercancia.html#movimientos" },
+      { id:"inv_tomar", label:"Tomar inventario", url:"/web/views/inventario_mercancia.html#tomar" },
+      { id:"inv_sep1", label:"—", url:null, sep:true },
+      { id:"inv_stock", label:"Stock ingredientes", url:"/web/views/inventario_mercancia.html#stock" },
+      { id:"inv_cat", label:"Categorías", url:"/web/views/inventario_mercancia.html#categorias" },
+      { id:"inv_uni", label:"Unidades", url:"/web/views/inventario_mercancia.html#unidades" },
+      { id:"inv_prov", label:"Proveedores", url:"/web/views/inventario_mercancia.html#proveedores" },
+      { id:"inv_sep2", label:"—", url:null, sep:true },
+      { id:"inv_mov", label:"Movimiento de Inventario", url:"/web/views/inventario_mercancia.html#movimientos" },
     ]
   },
   {
@@ -1617,9 +1823,9 @@ const MENU = [
     ico:"💰",
     title:"Finanzas",
     items:[
-      { id:"pl",    label:"P&L",            url:"/web/views/finanzas_pl.html" },
-      { id:"gast",  label:"Cargar Gastos",  url:"/web/views/finanzas_gastos.html" },
-      { id:"evt",   label:"Registrar Evento",url:"/web/views/finanzas_evento.html" },
+      { id:"pl", label:"P&L", url:"/web/views/finanzas_pl.html" },
+      { id:"gast", label:"Cargar Gastos", url:"/web/views/finanzas_gastos.html" },
+      { id:"evt", label:"Registrar Evento", url:"/web/views/finanzas_evento.html" },
       { id:"plan_cuentas", label:"Plan de Cuentas", url:"/web/views/finanzas_pl.html#plan" },
     ]
   },
@@ -1628,20 +1834,19 @@ const MENU = [
     ico:"🧑‍🍳",
     title:"Operadores/CHOPS",
     items:[
-      { id:"op_gps",      label:"Conectar GPS",    url:"/web/views/conductores_gps.html", driverOnly:true },
-      { id:"op_vruta",    label:"Ver ruta (actual)", url:"/web/views/conductores_ruta.html", driverOnly:true },
-      { id:"op_sep0",     label:"—",               url:null, sep:true },
-      // Operaciones: usar Google Calendar embebido (el calendario interno confundía y no mostraba los detalles).
-      { id:"op_cal",      label:"Calendario",      url:"/web/views/calendar.html?v=20260305-gcal1" },
-      { id:"op_sep1",     label:"—",               url:null, sep:true },
-      { id:"op_menu_cam", label:"Menu Camaleón",   url:"/web/views/operadores.html?only=menu&brand=CAMALEON&v=20260305-m1#recetas" },
-      { id:"op_menu_gou", label:"Menu Gourmet",    url:"/web/views/operadores.html?only=menu&brand=GOURMET&v=20260305-m1#recetas" },
-      { id:"op_menu_exp", label:"Menu Express",    url:"/web/views/operadores.html?only=menu&brand=EXPRESS&v=20260305-m1#recetas" },
-      { id:"op_menu_del", label:"Menu Del Sabor",  url:"/web/views/operadores.html?only=menu&brand=DEL%20SABOR&v=20260305-m1#recetas" },
-      { id:"op_sep2",     label:"—",               url:null, sep:true },
-      { id:"op_uni",      label:"Universidad GD",  url:"/web/views/operadores.html?only=uni&v=20260305-m1#videos" },
-      { id:"op_sep3",     label:"—",               url:null, sep:true },
-      { id:"op_vruta2",   label:"Ver Ruta (próx.)", url:"/web/views/operadores_ruta_futura.html" },
+      { id:"op_gps", label:"Conectar GPS", url:"/web/views/conductores_gps.html", driverOnly:true },
+      { id:"op_vruta", label:"Ver ruta (actual)", url:"/web/views/conductores_ruta.html", driverOnly:true },
+      { id:"op_sep0", label:"—", url:null, sep:true },
+      { id:"op_cal", label:"Calendario", url:"/web/views/calendar.html?v=20260305-gcal1" },
+      { id:"op_sep1", label:"—", url:null, sep:true },
+      { id:"op_menu_cam", label:"Menu Camaleón", url:"/web/views/operadores.html?only=menu&brand=CAMALEON&v=20260305-m1#recetas" },
+      { id:"op_menu_gou", label:"Menu Gourmet", url:"/web/views/operadores.html?only=menu&brand=GOURMET&v=20260305-m1#recetas" },
+      { id:"op_menu_exp", label:"Menu Express", url:"/web/views/operadores.html?only=menu&brand=EXPRESS&v=20260305-m1#recetas" },
+      { id:"op_menu_del", label:"Menu Del Sabor", url:"/web/views/operadores.html?only=menu&brand=DEL%20SABOR&v=20260305-m1#recetas" },
+      { id:"op_sep2", label:"—", url:null, sep:true },
+      { id:"op_uni", label:"Universidad GD", url:"/web/views/operadores.html?only=uni&v=20260305-m1#videos" },
+      { id:"op_sep3", label:"—", url:null, sep:true },
+      { id:"op_vruta2", label:"Ver Ruta (próx.)", url:"/web/views/operadores_ruta_futura.html" },
     ]
   },
   {
@@ -1654,25 +1859,31 @@ const MENU = [
       { id:"rrhh_solicitudes", label:"Solicitudes", url:"/web/views/rrhh_solicitudes.html" },
     ]
   },
-	  {
-	    id:"settings",
-	    ico:"⚙️",
-	    title:"Settings",
-	    items:[
-      { id:"set_users",  label:"Usuarios",       url:"/web/views/settings.html?entity=usuarios&v=20260218-6" },
-      { id:"set_marcas", label:"Marcas",         url:"/web/views/settings.html?entity=marcas&v=20260218-6" },
-      { id:"set_prod",   label:"Productos (venta)",      url:"/web/views/settings.html?entity=productos&v=20260218-6" },
-      { id:"set_comi",   label:"Comisiones",     url:"/web/views/settings.html?entity=comisiones&v=20260218-6" },
-      { id:"set_com",    label:"Comunas",        url:"/web/views/settings.html?entity=comunas&v=20260218-6" },
-      { id:"set_tc",     label:"Tipos Cliente",  url:"/web/views/settings.html?entity=tipos_cliente&v=20260218-6" },
-      { id:"set_el",     label:"Estados Lead",   url:"/web/views/settings.html?entity=estados_lead&v=20260218-6" },
-      { id:"set_roles",  label:"Roles",          url:"/web/views/settings.html?entity=roles&v=20260218-6" },
-	      // Backups es "peligroso": lo mostramos desde el menú de Usuario → Sistema, no en la sidebar.
-	      { id:"set_bak",    label:"Backups",        url:"/web/views/backups.html", noSidebar:true },
-      // (Tools removido) La extensión se descarga desde Usuario → Sistema.
-	    ]
-	  },
-	];
+  {
+    id:"tools",
+    ico:"🧰",
+    title:"Tools",
+    items:[
+      { id:"tools_hub", label:"Centro de herramientas", url:"/web/views/tools.html?v=20260311-1" },
+    ]
+  },
+  {
+    id:"settings",
+    ico:"⚙️",
+    title:"Settings",
+    items:[
+      { id:"set_users", label:"Usuarios", url:"/web/views/settings.html?entity=usuarios&v=20260218-6" },
+      { id:"set_marcas", label:"Marcas", url:"/web/views/settings.html?entity=marcas&v=20260218-6" },
+      { id:"set_prod", label:"Productos (venta)", url:"/web/views/settings.html?entity=productos&v=20260218-6" },
+      { id:"set_comi", label:"Comisiones", url:"/web/views/settings.html?entity=comisiones&v=20260218-6" },
+      { id:"set_com", label:"Comunas", url:"/web/views/settings.html?entity=comunas&v=20260218-6" },
+      { id:"set_tc", label:"Tipos Cliente", url:"/web/views/settings.html?entity=tipos_cliente&v=20260218-6" },
+      { id:"set_el", label:"Estados Lead", url:"/web/views/settings.html?entity=estados_lead&v=20260218-6" },
+      { id:"set_roles", label:"Roles", url:"/web/views/settings.html?entity=roles&v=20260218-6" },
+      { id:"set_bak", label:"Backups", url:"/web/views/backups.html", noSidebar:true },
+    ]
+  },
+];
 
 let ACTIVE_ITEM_ID = null;
 let CURRENT_ROLE_ID = null;
@@ -1706,6 +1917,7 @@ const PERMISSIONS = {
     "op_ca_ficha","op_ca_ent","op_ca_dev",
     "inv_tomar","inv_stock","inv_prod","inv_cat","inv_uni","inv_prov","inv_mov",
     "tool_gmail","tool_wapp","tool_ig","tool_cal","tool_calc",
+    "tools_hub",
     "gps","vruta",
     "pl","gast","evt","plan_cuentas",
     "rrhh_nomina","rrhh_staff","rrhh_solicitudes",
@@ -1717,6 +1929,7 @@ const PERMISSIONS = {
     "leads_ver","leads_fil","historial",
     "rep_funnel","rep_cierre","rep_total","rep_com","rep_prod","rep_cli","rep_hoy","rep_dia",
     "tool_gmail","tool_wapp","tool_ig","tool_cal","tool_calc",
+    "tools_hub",
     "vruta",
     "set_prod","set_com","set_el",
   ]),
@@ -1728,6 +1941,7 @@ const PERMISSIONS = {
     "op_ca_ficha","op_ca_ent","op_ca_dev",
     "inv_tomar","inv_stock","inv_prod","inv_cat","inv_uni","inv_prov","inv_mov",
     "tool_gmail","tool_wapp","tool_ig","tool_cal","tool_calc",
+    "tools_hub",
     "gps","vruta",
     "set_marcas","set_prod","set_com",
     "rrhh_staff","rrhh_solicitudes",
@@ -1737,6 +1951,7 @@ const PERMISSIONS = {
     "rep_prod",
     "inv_tomar","inv_stock","inv_prod","inv_cat","inv_uni","inv_prov","inv_mov",
     "tool_gmail","tool_wapp","tool_ig","tool_cal","tool_calc",
+    "tools_hub",
     "vruta",
     "set_prod",
   ]),
@@ -1748,6 +1963,7 @@ const PERMISSIONS = {
     "op_ca_ficha","op_ca_ent","op_ca_dev",
     "inv_tomar","inv_stock","inv_prod","inv_cat","inv_uni","inv_prov","inv_mov",
     "tool_gmail","tool_wapp","tool_ig","tool_cal","tool_calc",
+    "tools_hub",
     "vruta",
     "gast",
     "set_prod",
@@ -1767,6 +1983,7 @@ const PERMISSIONS = {
     "op_rec","op_mice","op_ruta",
     "inv_tomar","inv_stock","inv_prod","inv_cat","inv_uni","inv_prov","inv_mov",
     "tool_gmail","tool_wapp","tool_ig","tool_cal","tool_calc",
+    "tools_hub",
   ]),
 };
 
@@ -1784,7 +2001,7 @@ function buildMenu(){
       ? g.items.filter(it => !it.sep && !it.noSidebar && allowed.has(it.id) && (!it.driverOnly || isDriver))
       : g.items.filter(it => !it.sep && !it.noSidebar && (!it.driverOnly || isDriver));
     if (!visibleItems.length) continue;
-    if (lastGroupId === "operadores" && (g.id === "rrhh" || g.id === "settings")){
+    if (lastGroupId === "operadores" && (g.id === "rrhh" || g.id === "tools" || g.id === "settings")){
       const divider = document.createElement("div");
       divider.className = "menu-sep";
       nav.appendChild(divider);
@@ -1796,7 +2013,7 @@ function buildMenu(){
     const head = document.createElement("button");
     head.type = "button";
     head.className = "menu-group-head";
-    head.title = g.title; // en collapsed ayuda
+    head.title = g.title;
     head.innerHTML = `
       <span class="menu-ico">${g.ico}</span>
       <span class="menu-title">${g.title}</span>
@@ -1821,14 +2038,13 @@ function buildMenu(){
       b.type = "button";
       b.className = "menu-item";
       b.dataset.item = it.id;
-      b.title = it.label; // tooltip en collapsed
+      b.title = it.label;
       b.innerHTML = `<span class="dot"></span><span class="lbl">${it.label}</span>`;
       b.addEventListener("click", () => openItem(it));
       items.appendChild(b);
     }
 
     head.addEventListener("click", () => {
-      // toggle group
       const isOpen = group.classList.contains("open");
       closeAllGroups();
       if (!isOpen) group.classList.add("open");
@@ -1853,8 +2069,6 @@ async function openItem(it){
 
   ACTIVE_ITEM_ID = it.id;
 
-  // Mobile UX: en pantallas chicas la vista "Leads" tradicional se vuelve impracticable.
-  // Abrimos una lista móvil (acciones rápidas) y dejamos "Vista completa" dentro de esa vista.
   try{
     const isNarrow = window.matchMedia && window.matchMedia("(max-width: 860px)").matches;
     if (isNarrow && (it.id === "leads_ver" || it.id === "leads_fil")){
@@ -1867,9 +2081,7 @@ async function openItem(it){
     return;
   }
 
-  // set iframe
   const frame = qs("#mainFrame");
-  const isDash = it.id === "dash_home" || (it.url || "").includes("dashboard.html");
   const cacheBust = !it.external;
   if (cacheBust){
     if ((it.url || "").includes("#")){
@@ -1882,24 +2094,20 @@ async function openItem(it){
     frame.src = viewURL(it.url);
   }
 
-  // highlight
   for (const b of document.querySelectorAll(".menu-item")){
     b.classList.toggle("active", b.dataset.item === it.id);
   }
 
-  // abre el grupo padre
   const groupEl = findGroupByItemId(it.id);
   if (groupEl){
     closeAllGroups();
     groupEl.classList.add("open");
   }
 
-  // si sidebar no está pinned, colapsa al elegir
   if (!isSidebarPinned()){
     collapseSidebarSoon();
   }
 
-  // Mobile overlay: cerrar al navegar
   try{
     if (document.body.classList.contains("sb-open")){
       qs("#sidebar")?.classList.remove("open-mobile");
@@ -1917,8 +2125,6 @@ function findGroupByItemId(itemId){
 
 /* =========================
    SIDEBAR UX
-   - pinned: botón ☰
-   - si no pinned: expand on hover, collapse on mouseleave
 ========================= */
 function isSidebarPinned(){
   return localStorage.getItem("gd_sidebar_pinned") === "1";
@@ -1942,19 +2148,16 @@ function bindSidebarBehavior(){
   const sb = qs("#sidebar");
   const isMobile = () => window.matchMedia && window.matchMedia("(max-width: 980px)").matches;
 
-  // initial
   if (isSidebarPinned()){
     sb.classList.remove("collapsed");
   }else{
     sb.classList.add("collapsed");
   }
 
-  // hover expand/collapse (cuando NO pinned)
   sb.addEventListener("mouseenter", () => {
     if (isMobile()) return;
     if (!isSidebarPinned()){
       sb.classList.remove("collapsed");
-      // abre grupo activo si existe
       const g = findGroupByItemId(ACTIVE_ITEM_ID);
       if (g) g.classList.add("open");
     }
@@ -1966,10 +2169,8 @@ function bindSidebarBehavior(){
     }
   });
 
-  // pin/unpin
   qs("#btnSidebar").addEventListener("click", () => {
     if (isMobile()){
-      // Mobile: sidebar como overlay (no tocamos pin)
       const open = sb.classList.toggle("open-mobile");
       document.body.classList.toggle("sb-open", open);
       if (open){
@@ -1992,7 +2193,6 @@ function bindSidebarBehavior(){
     }
   });
 
-  // Tap outside (backdrop) closes sidebar on mobile
   document.addEventListener("click", (ev) => {
     if (!isMobile()) return;
     if (!document.body.classList.contains("sb-open")) return;
@@ -2006,7 +2206,6 @@ function bindSidebarBehavior(){
    TOPBAR ACTIONS
 ========================= */
 function bindTopbar(){
-  // Brand click -> Dashboard
   qs("#brandHome")?.addEventListener("click", () => {
     if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")){
       openItem({ id:"dash_home", url:"/web/views/dashboard.html" });
@@ -2016,7 +2215,6 @@ function bindTopbar(){
     }
   });
 
-  // Weather open/close
   const openWx = () => {
     const m = qs("#wxModal");
     m.classList.add("open");
@@ -2031,7 +2229,6 @@ function bindTopbar(){
   qs("#wxClose")?.addEventListener("click", closeWx);
   qs("#wxModalBg")?.addEventListener("click", closeWx);
 
-  // Logout confirm
   qs("#btnLogout").addEventListener("click", async () => {
     const ok = await Swal.fire({
       title: "Cerrar sesión",
@@ -2044,31 +2241,17 @@ function bindTopbar(){
     }).then(r => r.isConfirmed);
 
     if (!ok) return;
-
-    await _serverLogout("manual");
-    localStorage.removeItem("token");
-    localStorage.removeItem("nombre");
-    sessionStorage.removeItem("token");
-    sessionStorage.removeItem("nombre");
-    location.href = `${API_BASE}/web/login.html`;
+    await performLogout();
   });
 
-  // Refresh
   qs("#btnRefresh")?.addEventListener("click", async () => {
-    const frame = qs("#mainFrame");
-    try{
-      frame?.contentWindow?.location?.reload();
-    }catch(_){
-      if (frame) frame.src = frame.src;
-    }
+    refreshMainFrame();
     try{
       const data = await fetchNotifications();
       renderNotifications(data);
     }catch(_){}
   });
 }
-
-// (Tools removido) accesos rápidos y vista Tools se eliminan para mantener el CRM enfocado.
 
 function initLetterGlitch(target, opts={}){
   if (!target) return;
@@ -2214,7 +2397,6 @@ function findFirstAllowedItem(){
 }
 
 function openDefault(){
-  // Roles Operador/Conductor: portal dedicado full-screen (sin sidebar).
   if (CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7){
     openItem({ id:"ops_portal", url:"/web/views/portal_ops.html?v=20260305-opsportal2" });
     return;
@@ -2243,11 +2425,9 @@ function openDefault(){
     initUserMenu();
     setupChatWatch();
     openDefault();
-    // Glitch en topbar y sidebar (solo visual, sin afectar UI)
     initLetterGlitch(document.querySelector(".topbar"), { glitchSpeed: 50 });
   });
 
-  // allow children to request navigation
   window.addEventListener("message", (ev) => {
     if (ev.data?.type === "openItem" && ev.data?.url && ev.data?.id){
       openItem({ id: ev.data.id, url: ev.data.url });

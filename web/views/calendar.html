@@ -4,8 +4,7 @@
   <meta charset="utf-8" />
   <title>Calendario</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- build: GD-CALENDAR-EMBED-2026-02-26-01 -->
-  <link rel="stylesheet" href="../styles.css?v=20260226-1" />
+  <link rel="stylesheet" href="../styles.css?v=20260312-1" />
   <script src="../js/iframe-theme.js"></script>
   <style>
     :root{
@@ -80,14 +79,11 @@
       .top{ flex-direction:column; align-items:stretch; }
       .top .right{ display:flex; gap:8px; justify-content:space-between; }
     }
-    /* Móvil horizontal: maximizar el calendario */
     @media (max-width: 920px) and (orientation: landscape){
       body{ padding:0; }
       .shell{ height:100vh; border-radius:0; border:0; }
       .top{ display:none; }
     }
-
-    /* Embed mode: cuando se abre dentro del Portal (topbar ya existe) */
     body[data-embed="1"]{ padding:0; background: transparent; }
     body[data-embed="1"] .shell{
       height:100vh;
@@ -105,7 +101,7 @@
     <div class="top">
       <div>
         <div class="title">Calendario (Google)</div>
-        <div class="muted">Vista embebida: puedes ver descripción y detalles tal cual Google Calendar.</div>
+        <div class="muted">Vista embebida del calendario operativo.</div>
       </div>
       <div class="right" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn" id="btnOpen" type="button">Abrir en Google</button>
@@ -113,7 +109,6 @@
       </div>
     </div>
     <div class="main">
-      <!-- Embed multiple calendars (wkst=2 => lunes) -->
       <iframe
         id="gcal"
         referrerpolicy="no-referrer-when-downgrade"
@@ -129,31 +124,23 @@
     const openBtn = document.getElementById("btnOpen");
     const reloadBtn = document.getElementById("btnReload");
 
-    // URL pública (fallback)
     const PUBLIC_URL = "https://calendar.google.com/calendar/embed?src=simonurrutia.m%40gmail.com&ctz=America%2FSantiago";
 
-    // Importante: NO forzamos "AGENDA" en móvil, porque Operaciones necesita
-    // la vista completa de Google Calendar (con sus detalles y comportamiento).
-    function tuneEmbed(){ /* noop */ }
-
-    // embed=1 => lo abre Portal Ops (horizontal), quitamos doble marco
     try{
       const sp = new URLSearchParams(location.search || "");
       if (sp.get("embed") === "1") document.body.dataset.embed = "1";
     }catch(_){}
 
     openBtn?.addEventListener("click", ()=>{
-      // Abrimos la misma url del iframe para que el usuario tenga controles completos.
       const u = (gcal && gcal.src) ? gcal.src : PUBLIC_URL;
       window.open(u, "_blank", "noopener");
     });
+
     reloadBtn?.addEventListener("click", ()=>{
       if (!gcal) return;
       const u = gcal.src.split("#")[0];
       gcal.src = u + (u.includes("?") ? "&" : "?") + "v=" + Date.now();
     });
-
-    tuneEmbed();
   </script>
 </body>
 </html>

@@ -6,165 +6,342 @@
   <title>Tools</title>
   <link rel="stylesheet" href="/web/styles.css" />
   <style>
-    body{ margin:0; padding:14px; font-family:inherit; color:inherit; }
-    .wrap{ display:grid; gap:14px; }
-    .hero{
-      border:1px solid var(--border, rgba(255,255,255,.12));
-      border-radius:16px;
-      padding:14px;
-      background:linear-gradient(135deg, rgba(8,18,28,.7), rgba(10,16,22,.4));
+    :root{
+      --card-bg: linear-gradient(135deg, rgba(8,18,28,.78), rgba(10,16,22,.46));
+      --card-bd: rgba(148,163,184,.18);
+      --muted: rgba(148,163,184,.88);
     }
-    .hero h1{ margin:0; font-size:20px; font-weight:1000; }
-    .hero p{ margin:6px 0 0; opacity:.8; font-size:13px; }
-
-    .grid{ display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-    .card{
-      border:1px solid var(--border, rgba(255,255,255,.12));
-      border-radius:14px;
-      padding:14px;
-      background:linear-gradient(135deg, rgba(8,18,28,.7), rgba(10,16,22,.4));
-    }
-    .ttl{ font-weight:950; font-size:16px; display:flex; align-items:center; gap:8px; }
-    .muted{ opacity:.75; font-size:12px; margin-top:6px; line-height:1.35; }
-    .row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
-    .btn{
-      border:1px solid var(--border, rgba(255,255,255,.12));
-      background:rgba(0,0,0,.15);
+    body{
+      margin:0;
+      padding:16px;
+      font-family:inherit;
       color:inherit;
-      border-radius:10px;
-      padding:10px 12px;
-      cursor:pointer;
+      background:transparent;
+    }
+    .wrap{
+      display:grid;
+      gap:14px;
+    }
+    .hero{
+      border:1px solid var(--card-bd);
+      border-radius:18px;
+      padding:16px;
+      background:var(--card-bg);
+      box-shadow:0 20px 40px rgba(0,0,0,.18);
+    }
+    .hero h1{
+      margin:0;
+      font-size:22px;
+      font-weight:1000;
+      letter-spacing:.02em;
+    }
+    .hero p{
+      margin:8px 0 0;
+      font-size:13px;
+      opacity:.85;
+      line-height:1.45;
+    }
+    .grid{
+      display:grid;
+      gap:14px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .card{
+      border:1px solid var(--card-bd);
+      border-radius:18px;
+      padding:14px;
+      background:var(--card-bg);
+      display:grid;
+      gap:10px;
+      min-height:180px;
+    }
+    .card-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .icon{
+      width:42px;
+      height:42px;
+      border-radius:14px;
+      display:grid;
+      place-items:center;
+      font-size:20px;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(148,163,184,.18);
+    }
+    .ttl{
+      font-size:16px;
+      font-weight:1000;
+      line-height:1.1;
+    }
+    .tag{
+      font-size:11px;
       font-weight:900;
-      text-decoration:none;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-    }
-    .btn:hover{ background: rgba(255,255,255,.08); }
-    .btn.primary{
-      background: color-mix(in srgb, var(--accent, #19c37d) 22%, transparent);
-      border-color: color-mix(in srgb, var(--accent, #19c37d) 50%, transparent);
-    }
-    .badge{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      padding:6px 10px;
+      padding:6px 8px;
       border-radius:999px;
-      border:1px solid var(--border, rgba(255,255,255,.12));
+      border:1px solid rgba(148,163,184,.18);
+      white-space:nowrap;
+    }
+    .tag.ok{
+      background:rgba(25,195,125,.10);
+      border-color:rgba(25,195,125,.35);
+    }
+    .tag.warn{
+      background:rgba(245,158,11,.10);
+      border-color:rgba(245,158,11,.35);
+    }
+    .tag.admin{
+      background:rgba(99,102,241,.10);
+      border-color:rgba(99,102,241,.35);
+    }
+    .muted{
       font-size:12px;
+      color:var(--muted);
+      line-height:1.45;
+      min-height:50px;
+    }
+    .actions{
+      display:grid;
+      gap:8px;
+      margin-top:auto;
+    }
+    .btn{
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(255,255,255,.04);
+      color:inherit;
+      border-radius:12px;
+      padding:10px 12px;
       font-weight:900;
-      margin-top:10px;
+      cursor:pointer;
+      text-align:left;
     }
-    .okdot,.warndot{
-      width:8px;height:8px;border-radius:999px;display:inline-block;
+    .btn:hover{
+      background:rgba(255,255,255,.08);
     }
-    .okdot{ background:#22c55e; }
-    .warndot{ background:#f59e0b; }
-
-    :root.light .btn:hover{ background: rgba(0,0,0,.06); }
+    .btn.primary{
+      background:color-mix(in srgb, var(--accent, #19c37d) 18%, transparent);
+      border-color:color-mix(in srgb, var(--accent, #19c37d) 40%, transparent);
+    }
+    .hidden{
+      display:none !important;
+    }
+    .anchor{
+      scroll-margin-top:24px;
+    }
+    :root.light .btn:hover{
+      background:rgba(0,0,0,.06);
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <section class="hero">
-      <h1>Tools</h1>
-      <p>Hub operativo para GIA, correo, WhatsApp, extensión y backups.</p>
+      <h1>TOOLS</h1>
+      <p>
+        Centro de herramientas operativas. Desde aquí quedan ordenadas las integraciones,
+        accesos directos y tareas sensibles del sistema.
+      </p>
     </section>
 
     <section class="grid">
-      <article class="card" id="gia">
-        <div class="ttl">📲 Instagram · GIA</div>
-        <div class="badge"><span class="okdot"></span> Webhook validado</div>
-        <div class="muted">
-          El webhook ya quedó vivo. Lo pendiente es permisos Meta, conexión de la cuenta Gourmet y prueba de DM real.
+      <article class="card anchor" id="instagram">
+        <div class="card-head">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div class="icon">📷</div>
+            <div class="ttl">Instagram (GIA)</div>
+          </div>
+          <div class="tag warn">PAUSADO</div>
         </div>
-        <div class="row">
-          <a class="btn primary" href="https://developers.facebook.com/" target="_blank" rel="noopener">Abrir Meta Developers</a>
-          <a class="btn" href="https://business.facebook.com/" target="_blank" rel="noopener">Abrir Business Suite</a>
+        <div class="muted">
+          La integración comercial queda en pausa. Dejamos el acceso operativo al panel de Meta
+          para retomarlo después sin volver a perder tiempo.
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="btnMetaApp">Abrir Meta Developers</button>
+          <button class="btn" id="btnMetaBusiness">Abrir Meta Business Suite</button>
         </div>
       </article>
 
-      <article class="card" id="correo">
-        <div class="ttl">📧 Correo</div>
-        <div class="muted">
-          Hub para borradores, revisión y envío. La conexión real va después de cerrar Instagram.
+      <article class="card anchor" id="correo">
+        <div class="card-head">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div class="icon">✉️</div>
+            <div class="ttl">Correo</div>
+          </div>
+          <div class="tag ok">ACTIVO</div>
         </div>
-        <div class="row">
-          <a class="btn primary" href="https://mail.google.com/" target="_blank" rel="noopener">Abrir Gmail</a>
-          <a class="btn" href="https://greendiamond.cl/webmail" target="_blank" rel="noopener">Abrir Webmail</a>
+        <div class="muted">
+          Acceso directo a correo para la operación diaria. La integración automática se ve después;
+          por ahora dejamos el acceso rápido bien centralizado.
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="btnMailGmail">Abrir Gmail</button>
+          <button class="btn" id="btnMailOutlook">Abrir Outlook</button>
         </div>
       </article>
 
-      <article class="card" id="wsp">
-        <div class="ttl">💬 WhatsApp Web</div>
-        <div class="muted">
-          Por ahora queda como launcher a WhatsApp Web. La automatización real viene cuando definan API oficial.
+      <article class="card anchor" id="whatsapp">
+        <div class="card-head">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div class="icon">💬</div>
+            <div class="ttl">WhatsApp</div>
+          </div>
+          <div class="tag ok">WEB</div>
         </div>
-        <div class="row">
-          <a class="btn primary" href="https://web.whatsapp.com/" target="_blank" rel="noopener">Abrir WhatsApp Web</a>
+        <div class="muted">
+          Por ahora WhatsApp abre directo en versión web. Flujo simple, usable y sin humo mientras
+          cerramos lo demás.
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="btnWhatsAppWeb">Abrir WhatsApp Web</button>
         </div>
       </article>
 
-      <article class="card" id="extension">
-        <div class="ttl">🧩 Extensión</div>
-        <div class="muted">
-          Espacio reservado para la extensión interna.
+      <article class="card anchor" id="extension">
+        <div class="card-head">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div class="icon">🧩</div>
+            <div class="ttl">Extensión</div>
+          </div>
+          <div class="tag warn">PENDIENTE</div>
         </div>
-        <div class="row">
-          <button class="btn primary" id="btnExt" type="button">Abrir extensión</button>
+        <div class="muted">
+          Punto reservado para descarga, instalación o documentación de la extensión.
+        </div>
+        <div class="actions">
+          <button class="btn" id="btnExtensionDocs">Ver instrucciones</button>
         </div>
       </article>
 
-      <article class="card" id="backup" style="display:none">
-        <div class="ttl">🗄️ Backup</div>
-        <div class="badge"><span class="warndot"></span> Solo administradores</div>
-        <div class="muted">
-          Gestión de respaldos del CRM.
+      <article class="card anchor" id="backup">
+        <div class="card-head">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div class="icon">💾</div>
+            <div class="ttl">Backup</div>
+          </div>
+          <div class="tag admin">ADMIN</div>
         </div>
-        <div class="row">
-          <a class="btn primary" href="/web/views/backups.html" target="_self">Abrir Backups</a>
+        <div class="muted">
+          Acceso restringido. Esta sección se deja visible solo para administradores.
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="btnBackupOpen">Abrir Backups</button>
         </div>
       </article>
     </section>
   </div>
 
   <script>
-    const EXTENSION_URL = "";
+    (() => {
+      const qs = (s, el=document) => el.querySelector(s);
 
-    function applyThemeBootstrap(){
-      const mode = (localStorage.getItem("gd_theme") || "dark");
-      document.documentElement.classList.toggle("light", mode === "light");
-      window.addEventListener("message", (ev) => {
-        if (ev.data?.type === "theme"){
-          document.documentElement.classList.toggle("light", ev.data.mode === "light");
+      const API_BASE = (() => {
+        try{
+          const h = String(location.hostname || "").toLowerCase();
+          const isLocal = (h === "localhost" || h === "127.0.0.1");
+          return isLocal ? "" : "/crm";
+        }catch(_){
+          return "";
         }
-      });
-    }
+      })();
 
-    function initRoleGate(){
-      const me = window.parent?.GD?.me || {};
-      const role = String(me.role || me.rol || "").toUpperCase();
-      const isAdmin = role === "ADMIN" || role === "SUPERADMIN";
-      const backup = document.getElementById("backup");
-      if (backup) backup.style.display = isAdmin ? "" : "none";
-    }
+      function viewURL(u){
+        const s = String(u || "");
+        if (!s) return s;
+        if (/^https?:\/\//i.test(s)) return s;
+        if (s.startsWith(API_BASE + "/")) return s;
+        if (API_BASE && s.startsWith("/web/")) return API_BASE + s;
+        return s;
+      }
 
-    function initExtension(){
-      const btn = document.getElementById("btnExt");
-      if (!btn) return;
-      btn.addEventListener("click", () => {
-        if (!EXTENSION_URL){
-          alert("Falta definir la URL de la extensión.");
-          return;
+      function applyThemeBootstrap(){
+        const mode = (localStorage.getItem("gd_theme") || "dark");
+        document.documentElement.classList.toggle("light", mode === "light");
+        window.addEventListener("message", (ev) => {
+          if (ev.data?.type === "theme"){
+            document.documentElement.classList.toggle("light", ev.data.mode === "light");
+          }
+          if (ev.data?.type === "prefs"){
+            const p = ev.data.prefs || {};
+            if (p.accent) document.documentElement.style.setProperty("--accent", p.accent);
+            if (p.text) document.documentElement.style.setProperty("--text", p.text);
+            if (p.font) document.documentElement.style.setProperty("--font", p.font);
+          }
+        });
+      }
+
+      function getParentMe(){
+        try{
+          return (window.parent && window.parent.GD && window.parent.GD.me) ? window.parent.GD.me : {};
+        }catch(_){
+          return {};
         }
-        window.open(EXTENSION_URL, "_blank", "noopener");
-      });
-    }
+      }
 
-    applyThemeBootstrap();
-    initRoleGate();
-    initExtension();
+      function isAdmin(){
+        const me = getParentMe();
+        const role = String(me.role || me.rol || "").toUpperCase();
+        return role === "ADMIN" || role === "SUPERADMIN";
+      }
+
+      function openInFrame(url){
+        try{
+          const frame = window.parent && window.parent.document
+            ? window.parent.document.querySelector("#mainFrame")
+            : null;
+          if (frame){
+            frame.src = url;
+            return;
+          }
+        }catch(_){}
+        location.href = url;
+      }
+
+      function bind(){
+        qs("#btnMetaApp")?.addEventListener("click", () => {
+          window.open("https://developers.facebook.com/apps/", "_blank", "noopener");
+        });
+
+        qs("#btnMetaBusiness")?.addEventListener("click", () => {
+          window.open("https://business.facebook.com/latest/home", "_blank", "noopener");
+        });
+
+        qs("#btnMailGmail")?.addEventListener("click", () => {
+          window.open("https://mail.google.com/", "_blank", "noopener");
+        });
+
+        qs("#btnMailOutlook")?.addEventListener("click", () => {
+          window.open("https://outlook.office.com/mail/", "_blank", "noopener");
+        });
+
+        qs("#btnWhatsAppWeb")?.addEventListener("click", () => {
+          window.open("https://web.whatsapp.com/", "_blank", "noopener");
+        });
+
+        qs("#btnExtensionDocs")?.addEventListener("click", () => {
+          alert("Pendiente conectar descarga o instructivo de la extensión.");
+        });
+
+        qs("#btnBackupOpen")?.addEventListener("click", () => {
+          openInFrame(viewURL(`/web/views/backups.html?v=${Date.now()}`));
+        });
+
+        if (!isAdmin()){
+          qs("#backup")?.classList.add("hidden");
+        }
+
+        const hash = String(location.hash || "").replace(/^#/, "");
+        if (hash){
+          const el = document.getElementById(hash);
+          if (el) el.scrollIntoView({ behavior:"smooth", block:"start" });
+        }
+      }
+
+      applyThemeBootstrap();
+      bind();
+    })();
   </script>
 </body>
 </html>

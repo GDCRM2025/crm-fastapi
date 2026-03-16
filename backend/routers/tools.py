@@ -16,10 +16,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
+
 try:
     from backend.routers.auth import get_current_user  # type: ignore
 except Exception:
-    # fallback simple
     def get_current_user():  # type: ignore
         return {"nombre": "admin", "role": "ADMIN", "marcas": []}
 
@@ -41,15 +41,12 @@ GCAL_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 GCAL_REDIRECT = "http://127.0.0.1:8000/tools/gcal/callback"
 GCAL_DEFAULT_CAL = "simonurrutia.m@gmail.com"
 
+
 def _gcal_client_file() -> str:
-    # En producción (Passenger) no existe el path local de macOS.
-    # Usamos:
-    # 1) GCAL_OAUTH_FILE si está seteado
-    # 2) keys/gcal_oauth.json relativo al repo del servidor
     env = os.getenv("GCAL_OAUTH_FILE")
     if env:
         return env
-    base = Path(__file__).resolve().parents[2]  # .../crm
+    base = Path(__file__).resolve().parents[2]
     return str(base / "keys" / "gcal_oauth.json")
 
 
@@ -60,7 +57,6 @@ def _gcal_redirect_uri() -> str:
     app = (os.getenv("APP_URL") or "").rstrip("/")
     if app:
         return f"{app}/crm/tools/gcal/callback"
-    # try to read from client file
     try:
         with open(_gcal_client_file(), "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -74,8 +70,6 @@ def _gcal_redirect_uri() -> str:
 
 
 def _ensure_lead_calendar_cols(db: Session):
-    # Importante: en algunos hosting las columnas existen pero con tipos distintos o valores "sucios".
-    # Si una conversión falla, NO debemos hacer rollback de los ADD COLUMN ya ejecutados.
     try:
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS calendar_event_id TEXT"))
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS calendar_html_link TEXT"))
@@ -93,8 +87,6 @@ def _ensure_lead_calendar_cols(db: Session):
     except Exception:
         db.rollback()
 
-    # Compatibilidad: si venían como TEXT en tablas viejas, intenta migrar a TIMESTAMP.
-    # Cada ALTER se intenta por separado para no romper el resto.
     for col in ("calendar_start", "calendar_end", "pre_start", "pre_end", "agenda_approved_at"):
         try:
             db.execute(
@@ -166,6 +158,7 @@ def _cols_pg(db: Session, table: str) -> set[str]:
     ).fetchall()
     return {r[0] for r in rows}
 
+
 def _ensure_gcal_tables(db: Session):
     db.execute(
         text(
@@ -181,7 +174,8 @@ def _ensure_gcal_tables(db: Session):
     )
     db.commit()
 
-def _load_gcal_creds(db: Session) -> Optional["Credentials"]:
+
+def _load_gcal_creds(db: Session) -> Optional[Any]:
     if Credentials is None:
         return None
     _ensure_gcal_tables(db)
@@ -198,7 +192,8 @@ def _load_gcal_creds(db: Session) -> Optional["Credentials"]:
     except Exception:
         return None
 
-def _save_gcal_creds(db: Session, creds: "Credentials"):
+
+def _save_gcal_creds(db: Session, creds: Any):
     _ensure_gcal_tables(db)
     data = {
         "token": creds.token,
@@ -214,11 +209,13 @@ def _save_gcal_creds(db: Session, creds: "Credentials"):
     )
     db.commit()
 
+
 def _gcal_service(db: Session):
     creds = _load_gcal_creds(db)
     if not creds or not build:
         return None
     return build("calendar", "v3", credentials=creds)
+
 
 BASELINE_SALES = [
     {"mes": 1, "marca": "CAMALEON", "monto": 13338700, "empresa": 6, "particular": 22},
@@ -280,7 +277,6 @@ BASELINE_SALES = [
 
 
 def _gcal_link(title: str, start: datetime, end: datetime, details: str = "", location: str = "") -> str:
-    # Google Calendar template (sin Z para que lo trate como hora local)
     def fmt(dt: datetime) -> str:
         return dt.strftime("%Y%m%dT%H%M%S")
 
@@ -373,6 +369,7 @@ def gcal_status(db: Session = Depends(get_db)):
     creds = _load_gcal_creds(db)
     return {"ok": True, "connected": bool(creds)}
 
+
 @router.get("/gcal/calendars")
 def gcal_calendars(db: Session = Depends(get_db), me=Depends(get_current_user)):
     if build is None:
@@ -439,17 +436,13 @@ def gcal_stats(
 
 @router.get("/gcal/events")
 def gcal_events(
-    from_date: str | None = None,  # YYYY-MM-DD
-    to_date: str | None = None,    # YYYY-MM-DD
+    from_date: str | None = None,
+    to_date: str | None = None,
     calendar_id: str | None = None,
     limit: int = 2500,
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
-    """
-    Devuelve eventos DIRECTO desde Google Calendar (mismo calendario de Simon).
-    Esto permite que Operadores vean el calendario real sin depender de que los leads estén "aprobados".
-    """
     if build is None:
         raise HTTPException(status_code=500, detail="Google API no disponible")
     svc = _gcal_service(db)
@@ -458,7 +451,6 @@ def gcal_events(
 
     tz = ZoneInfo("America/Santiago")
     now = datetime.now(tz)
-    # rango por defecto: mes actual +/- 45 días
     if from_date:
         time_min = datetime.fromisoformat(from_date + "T00:00:00").replace(tzinfo=tz).isoformat()
     else:
@@ -491,7 +483,6 @@ def gcal_events(
         start = ev.get("start") or {}
         end = ev.get("end") or {}
 
-        # all-day events come with "date" (end date is exclusive)
         all_day = bool(start.get("date")) and not bool(start.get("dateTime"))
         if all_day:
             start_s = start.get("date")
@@ -594,8 +585,10 @@ def gcal_sync(
     skipped = 0
     name_expr = _lead_name_expr(db)
     pre_title_expr = _lead_col(db, "pre_title")
+
     def _norm(s: str) -> str:
         return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
     def _score(a: str, b: str) -> float:
         a = _norm(a)
         b = _norm(b)
@@ -603,9 +596,8 @@ def gcal_sync(
             return 0.0
         if a == b:
             return 1.0
-        # overlap score
-        aset = set([a[i:i+4] for i in range(max(1, len(a)-3))])
-        bset = set([b[i:i+4] for i in range(max(1, len(b)-3))])
+        aset = set([a[i:i+4] for i in range(max(1, len(a) - 3))])
+        bset = set([b[i:i+4] for i in range(max(1, len(b) - 3))])
         if not aset or not bset:
             return 0.0
         return len(aset & bset) / max(len(aset), len(bset))
@@ -636,9 +628,6 @@ def gcal_sync(
             {"eid": event_id},
         ).first()
         if exists:
-            # Asegura que el lead ya vinculado tenga datos mínimos de agenda
-            # Usa cast seguro porque algunas instalaciones antiguas guardaron
-            # estas columnas como TEXT con valores no parseables.
             cal_start = "CASE WHEN calendar_start IS NULL THEN NULL WHEN calendar_start::text ~ '^[0-9]{4}-' THEN calendar_start::timestamp ELSE NULL END"
             cal_end = "CASE WHEN calendar_end IS NULL THEN NULL WHEN calendar_end::text ~ '^[0-9]{4}-' THEN calendar_end::timestamp ELSE NULL END"
             pre_start = "CASE WHEN pre_start IS NULL THEN NULL WHEN pre_start::text ~ '^[0-9]{4}-' THEN pre_start::timestamp ELSE NULL END"
@@ -684,7 +673,6 @@ def gcal_sync(
             skipped += 1
             continue
 
-        # Si no hay event_id pero ya existe el htmlLink en un lead, lo amarramos
         html_link = ev.get("htmlLink") or ""
         if html_link:
             row = db.execute(
@@ -735,7 +723,6 @@ def gcal_sync(
         if not id_marca:
             nota += " | Marca no detectada"
 
-        # Intento 1: vincular a lead existente (misma fecha + nombre parecido)
         lead_id = None
         if start_date:
             params = {"fecha": start_date, "conf": confirmado_id}
@@ -805,7 +792,7 @@ def gcal_sync(
             linked += 1
             continue
 
-        row = db.execute(
+        db.execute(
             text(
                 """
                 INSERT INTO public.leads(
@@ -819,7 +806,6 @@ def gcal_sync(
                   :eid,:link,:cs,:ce,
                   :ps,:pe,:ploc,:ptitle,:pdesc, now(), FALSE
                 )
-                RETURNING id_lead
                 """
             ),
             {
@@ -838,22 +824,19 @@ def gcal_sync(
                 "ptitle": summary,
                 "pdesc": desc,
             },
-        ).scalar_one()
+        )
         created += 1
     db.commit()
 
-    # Fallback: vincula confirmados sin calendario por fecha (y marca si existe)
     if parsed_events:
-        # index eventos por fecha y marca inferida
         ev_by_date_brand: dict[tuple, list[dict]] = {}
         for evd in parsed_events:
             if not evd.get("start_date"):
                 continue
-            id_m, marca_name = _infer_marca_from_text(db, f"{evd.get('summary','')} {evd.get('description','')} {evd.get('location','')}")
+            id_m, _ = _infer_marca_from_text(db, f"{evd.get('summary','')} {evd.get('description','')} {evd.get('location','')}")
             key = (str(evd["start_date"]), id_m or 0)
             ev_by_date_brand.setdefault(key, []).append({**evd, "id_marca": id_m})
 
-        # busca leads confirmados sin calendar_event_id ni link
         rows = db.execute(
             text(
                 """
@@ -871,7 +854,6 @@ def gcal_sync(
         for l in rows:
             fecha = str(l.get("fecha_evento"))
             id_marca = l.get("id_marca") or 0
-            # si hay un solo evento ese día para la marca, lo vinculamos
             candidates = ev_by_date_brand.get((fecha, id_marca)) or []
             if not candidates and id_marca:
                 candidates = ev_by_date_brand.get((fecha, 0)) or []
@@ -1037,8 +1019,8 @@ def dashboard(
     tz = ZoneInfo("America/Santiago")
     now = datetime.now(tz)
     today = now.date()
-    week_start = today - timedelta(days=today.weekday())  # lunes
-    week_end = week_start + timedelta(days=6)            # domingo
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
     week_num = week_start.isocalendar().week
     week_days = [(week_start + timedelta(days=i)).isoformat() for i in range(7)]
 
@@ -1076,22 +1058,18 @@ def dashboard(
     if only_own and marcas:
         marca_sql = " AND l.id_marca = ANY(:marcas) "
         params["marcas"] = marcas
-        # Si el usuario pidió filtrar por marca, debe ser una de sus marcas.
         if id_marca and int(id_marca) in set(marcas):
             marca_sql += " AND l.id_marca = :id_marca "
             params["id_marca"] = int(id_marca)
     elif id_marca:
-        # Admin/roles privilegiados pueden filtrar por marca explícita.
         marca_sql = " AND l.id_marca = :id_marca "
         params["id_marca"] = int(id_marca)
 
-    # Mapa de marcas (para tablas/resúmenes)
     brand_rows = db.execute(
         text("SELECT id_marca, COALESCE(nombre, marca) AS nombre FROM marcas")
     ).mappings().all()
     brand_map = {int(r["id_marca"]): r["nombre"] for r in brand_rows if r.get("id_marca")}
 
-    # Pipeline (total, por estado)
     q_pipe = f"""
         SELECT COALESCE(e.nombre,'') AS estado,
                COALESCE(e.color,'#64748b') AS color,
@@ -1106,7 +1084,6 @@ def dashboard(
     """
     pipeline = db.execute(text(q_pipe), params).mappings().all()
 
-    # Pipeline semanal
     q_pipe_week = f"""
         SELECT COALESCE(e.nombre,'') AS estado,
                COALESCE(e.color,'#64748b') AS color,
@@ -1121,7 +1098,6 @@ def dashboard(
     """
     pipeline_week = db.execute(text(q_pipe_week), params).mappings().all()
 
-    # Pipeline mensual (mes actual)
     month_start = date(today.year, today.month, 1)
     month_end = date(today.year, today.month, 28) + timedelta(days=4)
     month_end = month_end.replace(day=1) - timedelta(days=1)
@@ -1142,7 +1118,6 @@ def dashboard(
         {**params, "ms": month_start, "me": month_end},
     ).mappings().all()
 
-    # Tareas
     q_pre = f"""
         SELECT COUNT(*)::int AS n
         FROM leads l
@@ -1178,7 +1153,6 @@ def dashboard(
             q_conf = q_conf.replace("WHERE", "WHERE (l.calendar_html_link IS NULL OR l.calendar_html_link='') AND")
         conf_sin = db.execute(text(q_conf), conf_params).scalar_one()
 
-    # Eventos confirmados de la semana
     events = []
     if conf_where:
         pre_title_expr = _lead_col(db, "pre_title")
@@ -1200,8 +1174,10 @@ def dashboard(
         """
         rows = db.execute(text(q_ev), conf_params).mappings().all()
         seen = set()
+
         def _n(s: str | None) -> str:
             return re.sub(r"[^a-z0-9]+", "", (s or "").strip().lower())
+
         for r in rows:
             key = r.get("calendar_event_id") or ""
             if key:
@@ -1239,7 +1215,6 @@ def dashboard(
                 "calendar_html_link": link,
             })
 
-    # KPIs semanales / diarios
     total_semana = db.execute(
         text(f"SELECT COUNT(*)::int FROM leads l WHERE l.{date_col}::date BETWEEN :ws AND :we {marca_sql}"),
         params,
@@ -1253,8 +1228,6 @@ def dashboard(
     confirmados_semana = 0
     venta_semana = 0
     venta_dia = 0
-    # Venta diaria por marca (semana actual): negocio la define como "confirmado/vendido ese día"
-    # (no por fecha_evento). Usamos activity_log como fuente de "fecha de venta".
     sales_daily: list[dict] = []
     if conf_where:
         confirmados_semana = db.execute(
@@ -1312,8 +1285,6 @@ def dashboard(
             except Exception:
                 sales_daily = []
 
-        # Fallback si aún no hay activity_log/confirmaciones registradas:
-        # usamos updated_at (fecha en que se movió/confirmó), NO fecha_evento.
         if not sales_daily:
             try:
                 rows = db.execute(
@@ -1346,7 +1317,6 @@ def dashboard(
                 venta_semana = float(sum([float(x.get("monto") or 0) for x in sales_daily]) or 0)
                 venta_dia = float(sum([float(x.get("monto") or 0) for x in sales_daily if x.get("dia") == str(today)]) or 0)
             except Exception:
-                # último fallback: suma simple por rango
                 venta_semana = db.execute(
                     text(f"""
                         SELECT COALESCE(SUM(l.monto_cotizado),0)::float
@@ -1368,9 +1338,6 @@ def dashboard(
 
     cierre_pct = (confirmados_semana / total_semana * 100) if total_semana else 0
 
-    # =====================
-    # Comparativo mensual (baseline +12%)
-    # =====================
     _ensure_baseline(db)
     month = today.month
 
@@ -1387,7 +1354,6 @@ def dashboard(
 
     actual_rows = []
     if conf_where:
-        # Preferimos "fecha de venta" (confirmación) via activity_log; si no, updated_at.
         if _table_exists_pg(db, "activity_log"):
             try:
                 tzname = "America/Santiago"
@@ -1456,9 +1422,6 @@ def dashboard(
             "particular": int(b.get("particular") or 0),
         })
 
-    # =====================
-    # Comisiones por marca (admin)
-    # =====================
     commissions = []
     if _is_admin(role):
         com_rows = db.execute(
@@ -1489,7 +1452,6 @@ def dashboard(
                 "comision": round(actual * (pct / 100.0), 2),
             })
 
-    # Compat: si no tenemos ventas por activity_log, mostramos el fallback por fecha_evento.
     if conf_where and not sales_daily:
         rows = db.execute(
             text(
@@ -1565,7 +1527,6 @@ def dashboard_reportes(
         where_parts.append(f"DATE(l.{date_col}) <= :fin")
         params["fin"] = fecha_termino
 
-    # Filtro explícito por marca (admin: cualquiera; no-admin: solo sus marcas)
     if id_marca:
         try:
             mid = int(id_marca)
@@ -1658,8 +1619,8 @@ def dashboard_reportes(
                 LEFT JOIN leads l ON l.id_lead=c.id_lead
                 LEFT JOIN marcas m ON m.id_marca=l.id_marca
                 WHERE 1=1
-                  {("AND DATE(c."+date_cot+") >= :ini" if fecha_inicio else "")}
-                  {("AND DATE(c."+date_cot+") <= :fin" if fecha_termino else "")}
+                  {("AND DATE(c." + date_cot + ") >= :ini" if fecha_inicio else "")}
+                  {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
                   {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
                 GROUP BY i.{prod_col}, COALESCE(i.marca, m.nombre, m.marca,'')
                 ORDER BY monto DESC
@@ -1684,8 +1645,8 @@ def dashboard_reportes(
                 LEFT JOIN leads l ON l.id_lead=c.id_lead
                 LEFT JOIN marcas m ON m.id_marca=l.id_marca
                 WHERE 1=1
-                  {("AND DATE(c."+date_cot+") >= :ini" if fecha_inicio else "")}
-                  {("AND DATE(c."+date_cot+") <= :fin" if fecha_termino else "")}
+                  {("AND DATE(c." + date_cot + ") >= :ini" if fecha_inicio else "")}
+                  {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
                   {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
                 GROUP BY d.{prod_col}, COALESCE(m.nombre, m.marca,'')
                 ORDER BY monto DESC
@@ -1711,10 +1672,6 @@ def dashboard_sales_ids(
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
-    """
-    Drill-down para KPIs de venta:
-    Retorna IDs de leads confirmados+agendados en el rango según activity_log.
-    """
     role = (me.get("role") or me.get("rol") or "").upper()
     marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
     only_own = not _is_admin(role)
@@ -1855,17 +1812,20 @@ def dashboard_events(
         ORDER BY l.fecha_evento ASC, l.id_lead DESC
     """
     rows = db.execute(text(q_ev), params).mappings().all()
+
     def _n(s: str | None) -> str:
         raw = (s or "").strip().lower()
         raw = unicodedata.normalize("NFD", raw)
         raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Mn")
         return re.sub(r"[^a-z0-9]+", "", raw)
+
     def _title_key(title: str | None, marca: str | None) -> str:
         t = _n(title)
         m = _n(marca)
         if m and t:
             t = t.replace(m, "")
         return t
+
     events_by_key: dict[tuple, dict] = {}
     for r in rows:
         title = r.get("pre_title") or r.get("cliente")
@@ -1906,7 +1866,6 @@ def dashboard_events(
 # MICE & PLACE (Reporte Cocina/Compras)
 # =========================
 def _ensure_ops_recetas_tables(db: Session) -> None:
-    # tablas de recetas viven bajo /ops/recetas, pero aquí solo las leemos.
     try:
         db.execute(
             text(
@@ -2105,10 +2064,6 @@ def _expand_ingredientes_for_producto(
     *,
     _seen: Optional[set[int]] = None,
 ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    """
-    Retorna (ingredientes, missing_reason).
-    ingredientes: [{ingrediente, unidad, cantidad}]
-    """
     _seen = _seen or set()
     rec = _load_receta(db, producto, marca)
     if not rec:
@@ -2162,11 +2117,6 @@ def mice_day_report(
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
-    """
-    Reporte por día para cocina/compras.
-    - Usa items manuales (lead_mice_items) por service_date si existen.
-    - Si no, cae a cotización (id_cotizacion_vigente o última).
-    """
     role = (me.get("role") or me.get("rol") or "").upper()
     if not _is_admin(role) and role not in ("JEFE DE OPERACIONES", "OPERACIONES", "COMPRAS", "MICE", "BODEGUERO"):
         raise HTTPException(403, detail="No autorizado")
@@ -2267,7 +2217,6 @@ def mice_day_report(
                     rec_miss = {"producto": p, "marca": marca, "reason": miss, "id_lead": id_lead}
                     missing_recetas.append(rec_miss)
                     miss_ev.append(rec_miss)
-                    # still include product breakdown (with empty ingredients) so UI can show "faltan receta"
                     breakdown.append({"producto": p, "cantidad": qn, "ingredientes": []})
                     continue
                 for ii in ing:
@@ -2341,11 +2290,6 @@ def mice_week_report(
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
-    """
-    Reporte semanal (lunes→domingo) para cocina/compras.
-    Retorna grilla tipo Excel: filas=producto/ingrediente, columnas=días + total.
-    También incluye lista de leads con items para tooltips.
-    """
     role = (me.get("role") or me.get("rol") or "").upper()
     if not _is_admin(role) and role not in ("JEFE DE OPERACIONES", "OPERACIONES", "COMPRAS", "MICE", "BODEGUERO"):
         raise HTTPException(403, detail="No autorizado")
@@ -2398,9 +2342,8 @@ def mice_week_report(
         params,
     ).mappings().all()
 
-    # Totales por día
-    prod_by_day: Dict[Tuple[str, str], float] = {}  # (day, producto) -> qty
-    ing_by_day: Dict[Tuple[str, str, str], float] = {}  # (day, ingrediente, unidad) -> qty
+    prod_by_day: Dict[Tuple[str, str], float] = {}
+    ing_by_day: Dict[Tuple[str, str, str], float] = {}
     missing_recetas: List[Dict[str, Any]] = []
 
     leads_out: List[Dict[str, Any]] = []
@@ -2512,7 +2455,6 @@ def mice_week_report(
             }
         )
 
-    # Build products grid
     products = sorted({p for (_d, p) in prod_by_day.keys()}, key=lambda x: x.lower())
     products_grid: List[Dict[str, Any]] = []
     for p in products:
@@ -2555,7 +2497,6 @@ def approve_agenda(
     me=Depends(get_current_user),
 ):
     try:
-        # Asegura columnas necesarias para agenda/calendario (evita 500 por schema antiguo).
         _ensure_lead_calendar_cols(db)
 
         name_expr = _lead_name_expr(db)
@@ -2586,7 +2527,6 @@ def approve_agenda(
         if not row:
             raise HTTPException(status_code=404, detail="Lead no existe")
 
-        # Si falta pre_start/pre_end, usamos fecha_evento con horario por defecto (10:00-12:00 CL).
         if not row.get("pre_start") or not row.get("pre_end"):
             fe = row.get("fecha_evento")
             if not fe:
@@ -2628,7 +2568,6 @@ def approve_agenda(
         gcal_error = None
         connected = False
 
-        # Si hay OAuth, crea/recupera evento real en Google Calendar.
         svc = _gcal_service(db)
         if svc:
             connected = True
@@ -2661,7 +2600,6 @@ def approve_agenda(
                     event_id = created.get("id")
                     link = created.get("htmlLink") or link
             except Exception as e:
-                # Fallback a link si falla creación; reportamos error al frontend para debug.
                 gcal_error = str(e)
         else:
             gcal_error = "Google Calendar no conectado"
@@ -2691,7 +2629,6 @@ def approve_agenda(
             },
         )
 
-        # Marca el último evento calendario pendiente como aprobado (si existe).
         try:
             if _table_exists_pg(db, "eventos_calendario"):
                 cols_ev = _cols_pg(db, "eventos_calendario")
@@ -2719,7 +2656,6 @@ def approve_agenda(
                         {"id": id_lead, "by": (x_user or me.get("nombre") or "admin")},
                     )
         except Exception:
-            # No bloqueamos la aprobación por una tabla opcional.
             pass
 
         db.commit()
@@ -2737,5 +2673,4 @@ def approve_agenda(
             db.rollback()
         except Exception:
             pass
-        # Fuerza JSON para que el frontend no muera con "Respuesta NO JSON"
         return JSONResponse(status_code=500, content={"ok": False, "where": "tools.approve_agenda", "error": str(e)})
