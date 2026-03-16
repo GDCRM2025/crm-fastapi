@@ -228,8 +228,9 @@ def _lead_mice_items_resumen_by_day(id_lead):
 
 
 @router.get("/{id_lead}/mice_items")
-def get_lead_mice_items(id_lead=Path(..., ge=1), user=Depends(get_current_user)):
-    _require_auth(user)
+@router.get("/{id_lead}/mice_items")
+def get_lead_mice_items(id_lead: int = Path(..., ge=1), user=Depends(get_current_user)):
+
     return {
         "ok": True,
         "items": _lead_mice_items_resumen(id_lead),
@@ -238,8 +239,9 @@ def get_lead_mice_items(id_lead=Path(..., ge=1), user=Depends(get_current_user))
 
 
 @router.put("/{id_lead}/mice_items")
-def put_lead_mice_items(id_lead=Path(..., ge=1), payload=Body(default_factory=dict), user=Depends(get_current_user)):
-    _require_auth(user)
+@router.put("/{id_lead}/mice_items")
+def put_lead_mice_items(id_lead: int = Path(..., ge=1), payload=Body(default_factory=dict), user=Depends(get_current_user)):
+
     items_in = payload.get("items") or []
     if not isinstance(items_in, list):
         raise HTTPException(400, detail="items debe ser una lista")
@@ -969,11 +971,13 @@ def _build_event(
 
 
 @router.post("/{id_lead}/move")
+@router.post("/{id_lead}/move")
 def move_lead_and_maybe_agenda(
-    id_lead=Path(..., ge=1),
+    id_lead: int = Path(..., ge=1),
     payload=Body(default_factory=dict),
     user=Depends(get_current_user),
 ):
+
     _require_auth(user)
 
     try:
@@ -1428,7 +1432,17 @@ def move_lead_and_maybe_agenda(
     except HTTPException:
         raise
     except Exception as e:
-        msg = str(e) if str(e) else e.__class__.__name__
-        raise HTTPException(500, detail=f"move_failed: {e.__class__.__name__}: {msg}")
+        import traceback
+        raise HTTPException(
+            500,
+            detail={
+                "where": "move_lead_and_maybe_agenda",
+                "type": e.__class__.__name__,
+                "msg": str(e),
+                "trace": traceback.format_exc().splitlines()[-8:],
+            },
+        )
+
+
 
 

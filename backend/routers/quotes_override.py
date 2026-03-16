@@ -1009,10 +1009,12 @@ def pdf_placeholder(
             </thead>
             <tbody>{rows_html}</tbody>
           </table>
-                    <table class="totals">
+          <table class="totals">
             {''.join(totals_rows)}
+            <tr><td>IVA</td><td style="text-align:right">${int(iva_val):,}</td></tr>
+            <tr><td>Traslado</td><td style="text-align:right">${int(traslado_val):,}</td></tr>
+            <tr><td><b>Total</b></td><td style="text-align:right"><b>${int(total_val):,}</b></td></tr>
           </table>
-
         </div>
       </div>
       <div class="page">

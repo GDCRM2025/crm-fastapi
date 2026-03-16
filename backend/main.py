@@ -53,8 +53,16 @@ async def rid_middleware(request: Request, call_next):
         resp.headers["X-RID"] = rid
         return resp
     except Exception:
+        import traceback
         log.exception("RID=%s %s %s", rid, request.method, request.url.path)
-        return JSONResponse({"detail": f"Internal Server Error. RID={rid}"}, status_code=500, headers={"X-RID": rid})
+        print(traceback.format_exc())
+        return JSONResponse(
+            {"detail": f"Internal Server Error. RID={rid}"},
+            status_code=500,
+            headers={"X-RID": rid},
+        )
+
+
 
 # CORS (local dev)
 app.add_middleware(
