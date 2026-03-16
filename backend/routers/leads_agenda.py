@@ -889,9 +889,11 @@ def _build_event(
         start_day = base_day
         end_day = base_day
 
-        start_time = _safe_time_hhmm(start_time)
+    start_time = _safe_time_hhmm(start_time)
     end_time = _safe_time_hhmm(end_time)
     missing_time = bool(hr_tbd) or (start_time is None) or (end_time is None)
+
+
 
     missing_dir = _is_missing_dir(direccion)
 
@@ -1124,18 +1126,6 @@ def move_lead_and_maybe_agenda(
             start_time = None
             end_time = None
 
-
-
-
-
-        if not start_time or not end_time:
-            hr_tbd = True
-            start_time = None
-            end_time = None
-
-
-        if not start_time or not end_time:
-            hr_tbd = True
 
         items = []
         if id_cot and quote_source != "manual":
@@ -1438,25 +1428,7 @@ def move_lead_and_maybe_agenda(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, detail=str(e))
+        msg = str(e) if str(e) else e.__class__.__name__
+        raise HTTPException(500, detail=f"move_failed: {e.__class__.__name__}: {msg}")
 
-def _safe_time_str(value):
-    try:
-        v = (value or "").strip()
-        if not v:
-            return None
-        if v in ("--:--", "-:-", "TBD", "tbd", "null", "None"):
-            return None
-        if len(v) >= 5 and v[2] == ":":
-            return v[:5]
-        return None
-    except Exception:
-        return None
 
-def _safe_int(value, default=0):
-    try:
-        if value is None or value == "":
-            return default
-        return int(float(value))
-    except Exception:
-        return default
