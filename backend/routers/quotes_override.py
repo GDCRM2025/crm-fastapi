@@ -1701,7 +1701,7 @@ def pdf_placeholder(
                     labels.append(("NETO", neto_print))
                 labels.extend([("IVA", iva_print), ("TRASLADO", traslado_print), ("TOTAL", total_print)])
                 ry = gy
-                for idx, (lab, val) in enumerate(labels):
+                for lab, val in labels:
                     is_total = (lab == "TOTAL")
                     h = 30 if not is_total else 34
                     if is_total:
