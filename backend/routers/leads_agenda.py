@@ -1,6 +1,28 @@
 import json
 from datetime import date, datetime, timedelta
 
+
+def _safe_time_hhmm(value):
+    try:
+        if value is None:
+            return None
+        v = str(value).strip()
+        if not v or v in ("--:--", "-:-", "TBD", "tbd", "null", "None"):
+            return None
+        if len(v) >= 5 and v[2] == ":":
+            return v[:5]
+        return None
+    except Exception:
+        return None
+
+def _safe_int(value, default=0):
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except Exception:
+        return default
+
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from sqlalchemy import text
 
