@@ -869,14 +869,50 @@ def pdf_placeholder(
     # En modo refresh, forzamos regeneración (para que tome los assets nuevos de Drive).
 
     # HTML
-    subtotal_val = cot.get("subtotal_productos") or cot.get("subtotal") or 0
+    subtotal_val = float(cot.get("subtotal_productos") or cot.get("subtotal") or 0)
+    traslado_val = float(cot.get("traslado") or 0)
+    descuento_valor = float(cot.get("descuento_valor") or 0)
+    descuento_tipo = str(cot.get("descuento_tipo") or "").strip()
+
+    items_bruto = 0.0
+    for it in (items or []):
+        q = float(it.get("cantidad") or 0)
+        pu = float(it.get("precio_unitario") or 0)
+        tl = float(it.get("total_linea") or 0)
+        items_bruto += (tl if tl > 0 else (q * pu))
+
+    subtotal_bruto = items_bruto if items_bruto > 0 else (subtotal_val + max(0.0, descuento_valor))
+    if descuento_tipo == "%" and descuento_valor > 0:
+        descuento_abs = (subtotal_bruto * descuento_valor) / 100.0
+    elif descuento_valor > 0:
+        descuento_abs = descuento_valor
+    else:
+        descuento_abs = 0.0
+
+    neto_val = max(0.0, subtotal_bruto - descuento_abs)
     traslado_val = cot.get("traslado") or 0
     # Regla negocio: IVA solo aplica si tipo_cliente es EMPRESA.
     tipo_cli = str(cot.get("tipo_cliente") or "").strip().upper()
     is_empresa = ("EMP" in tipo_cli)
     iva_val = (cot.get("iva") or 0) if is_empresa else 0
+
+    show_desc = descuento_abs > 0.005
+    desc_label = f"Descuento ({descuento_valor:.0f}%)" if (descuento_tipo == "%" and descuento_valor > 0) else "Descuento"
+    totals_rows = [f"<tr><td>Subtotal productos</td><td style='text-align:right'>${int(subtotal_bruto):,}</td></tr>"]
+    if show_desc:
+        totals_rows.append(f"<tr><td>{desc_label}</td><td style='text-align:right'>-$ {int(descuento_abs):,}</td></tr>")
+    totals_rows.append(f"<tr><td>Neto</td><td style='text-align:right'>${int(neto_val):,}</td></tr>")
+    if traslado_val > 0:
+        totals_rows.append(f"<tr><td>Traslado</td><td style='text-align:right'>${int(traslado_val):,}</td></tr>")
+    if is_empresa and iva_val > 0:
+        totals_rows.append(f"<tr><td>IVA</td><td style='text-align:right'>${int(iva_val):,}</td></tr>")
+    totals_rows.append(f"<tr><td><b>Total</b></td><td style='text-align:right'><b>${int(total_val):,}</b></td></tr>")
+
     # Total: recalculamos para evitar arrastrar IVA "pegado" de cotizaciones antiguas.
-    total_val = (cot.get("total") or 0) if is_empresa else (float(subtotal_val or 0) + float(traslado_val or 0))
+    if is_empresa:
+        total_val = float(cot.get("total") or (neto_val + traslado_val + iva_val))
+    else:
+        total_val = float(cot.get("total") or (neto_val + traslado_val))
 
     rows_html = ""
     for it in items:
@@ -977,7 +1013,7 @@ def pdf_placeholder(
             <tbody>{rows_html}</tbody>
           </table>
           <table class="totals">
-            <tr><td>Total productos</td><td style="text-align:right">${int(subtotal_val):,}</td></tr>
+            {''.join(totals_rows)}
             <tr><td>IVA</td><td style="text-align:right">${int(iva_val):,}</td></tr>
             <tr><td>Traslado</td><td style="text-align:right">${int(traslado_val):,}</td></tr>
             <tr><td><b>Total</b></td><td style="text-align:right"><b>${int(total_val):,}</b></td></tr>
