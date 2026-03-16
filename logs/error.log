@@ -729,3 +729,1010 @@ Traceback (most recent call last):
     )
 RuntimeError: DATABASE_URL no está seteada. Ej:
 export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:35:22 ERROR crm :: RID=d5fc45e8 GET /leads/1364
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 382, in get_lead
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:40:19 ERROR crm :: RID=4fcebe4f PUT /leads/786
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 853, in update_lead
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:44:53 ERROR crm :: RID=9afb6da3 GET /leads
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 327, in list_leads
+    lead_cols = _cols_for("leads")
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 28, in _cols_for
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:44:53 ERROR crm :: RID=40995993 GET /leads/786
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 383, in get_lead
+    marca_cols = _cols_for("marcas")
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 28, in _cols_for
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:46:22 ERROR crm :: RID=03f5e3bf GET /leads
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 327, in list_leads
+    lead_cols = _cols_for("leads")
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 28, in _cols_for
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:46:22 ERROR crm :: RID=71af0c33 GET /leads/786
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 383, in get_lead
+    marca_cols = _cols_for("marcas")
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 28, in _cols_for
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:49:12 ERROR crm :: RID=867c633b GET /leads
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 327, in list_leads
+    lead_cols = _cols_for("leads")
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 28, in _cols_for
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:49:12 ERROR crm :: RID=b6671621 GET /leads/786
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 383, in get_lead
+    marca_cols = _cols_for("marcas") if _table_exists("marcas") else set()
+                                        ~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 37, in _table_exists
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:50:12 ERROR crm :: RID=4582cf99 GET /leads/786
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 383, in get_lead
+    marca_cols = _cols_for("marcas") if _table_exists("marcas") else set()
+                                        ~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 37, in _table_exists
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:50:12 ERROR crm :: RID=191c7670 GET /leads
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 327, in list_leads
+    lead_cols = _cols_for("leads")
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 28, in _cols_for
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 37, in get_engine
+    dsn = _get_dsn()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 27, in _get_dsn
+    raise RuntimeError(
+        'DATABASE_URL no está seteada. Ej:\nexport DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"'
+    )
+RuntimeError: DATABASE_URL no está seteada. Ej:
+export DATABASE_URL="postgresql://BDGD:***@localhost:5432/BDGD"
+2026-03-16 18:50:48 ERROR crm :: RID=06a51cd2 GET /leads
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 327, in list_leads
+    lead_cols = _cols_for("leads")
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 28, in _cols_for
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 44, in get_engine
+    _engine = create_engine(
+        dsn,
+    ...<2 lines>...
+        connect_args=connect_args,
+    )
+  File "<string>", line 2, in create_engine
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/create.py", line 617, in create_engine
+    dbapi = dbapi_meth(**dbapi_args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/psycopg2.py", line 696, in import_dbapi
+    import psycopg2
+ModuleNotFoundError: No module named 'psycopg2'
+2026-03-16 18:50:48 ERROR crm :: RID=37af1e64 GET /leads/786
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/main.py", line 52, in rid_middleware
+    resp = await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 124, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 110, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 390, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 291, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 38, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 383, in get_lead
+    marca_cols = _cols_for("marcas") if _table_exists("marcas") else set()
+                                        ~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/routers/leads.py", line 37, in _table_exists
+    with get_connection() as conn:
+         ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 54, in get_connection
+    eng = get_engine()
+  File "/Users/oscarmendoza/Desktop/CRM 2025/backend/core/db.py", line 44, in get_engine
+    _engine = create_engine(
+        dsn,
+    ...<2 lines>...
+        connect_args=connect_args,
+    )
+  File "<string>", line 2, in create_engine
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/create.py", line 617, in create_engine
+    dbapi = dbapi_meth(**dbapi_args)
+  File "/Users/oscarmendoza/Desktop/CRM 2025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/psycopg2.py", line 696, in import_dbapi
+    import psycopg2
+ModuleNotFoundError: No module named 'psycopg2'

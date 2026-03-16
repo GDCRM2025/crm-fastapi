@@ -320,14 +320,18 @@ def list_leads(
     role = _role(user)
     if not _can_access_leads(role):
         raise HTTPException(403, "Sin permiso para Leads")
-    # Importante: si el token se emitió antes de asignar marcas, payload.marcas puede venir vacío.
-    # Hacemos fallback a DB para que el ejecutivo no quede "sin leads" hasta re-login.
+
     marcas = _user_marcas(user)
     only_own = _restrict_leads_to_user_marcas(role)
+
     lead_cols = _cols_for("leads")
+    marca_cols = _cols_for("marcas") if _table_exists("marcas") else set()
+    comuna_cols = _cols_for("comunas") if _table_exists("comunas") else set()
+
+    marca_name_expr = "m.marca" if "marca" in marca_cols else ("m.nombre" if "nombre" in marca_cols else "NULL")
+    comuna_name_expr = "c.nombre" if "nombre" in comuna_cols else ("c.comuna" if "comuna" in comuna_cols else "NULL")
+
     extra_cols = []
-    # Compat: algunos ambientes tienen fecha_ingreso como "fecha de llegada del lead"
-    # y puede venir distinto a created_at. Lo exponemos para filtros/reportes.
     if "fecha_ingreso" in lead_cols:
         extra_cols.append("l.fecha_ingreso")
     for col in ("id_cotizacion_vigente", "calendar_html_link", "calendar_event_id", "agenda_approved_at", "agenda_approved_by"):
@@ -343,28 +347,23 @@ def list_leads(
                 return {"total": 0, "items": []}
             where_parts.append("l.id_marca = ANY(:marcas)")
             params["marcas"] = marcas
-        where_sql = "WHERE " + " AND ".join(where_parts) if where_parts else ""
+
+        where_sql = "WHERE " + " AND ".join(where_parts)
         total = conn.execute(text(f"SELECT COUNT(*) FROM public.leads l {where_sql}"), params).scalar_one()
 
-        rows = conn.execute(text(f"""
+        q = f"""
             SELECT
               l.id_lead, l.cliente, l.cliente AS nombre_cliente, l.email, l.telefono, l.direccion,
               l.id_marca, l.id_estado, l.id_comuna, l.id_tipo_cliente,
               l.fecha_evento, l.monto_cotizado, l.plataforma, l.notas, l.num_cotizacion, l.cotizacion_pdf_url,
               l.created_at, l.updated_at{extra_sql},
-
-              COALESCE(m.marca,'Sin Marca') AS marca,
-
+              COALESCE({marca_name_expr},'Sin Marca') AS marca,
               COALESCE(e.nombre,'') AS estado_nombre,
               COALESCE(e.color,'#64748b') AS estado_color,
-
-              COALESCE(c.nombre,'Sin Comuna') AS comuna,
-
-              -- aliases extra por compat de front viejo
+              COALESCE({comuna_name_expr},'Sin Comuna') AS comuna,
               COALESCE(e.nombre,'') AS estado,
               COALESCE(e.color,'#64748b') AS color,
-              COALESCE(c.nombre,'Sin Comuna') AS comuna_nombre
-
+              COALESCE({comuna_name_expr},'Sin Comuna') AS comuna_nombre
             FROM public.leads l
             LEFT JOIN public.marcas m ON m.id_marca = l.id_marca
             LEFT JOIN public.estados_lead e ON e.id_estado = l.id_estado
@@ -372,32 +371,49 @@ def list_leads(
             {where_sql}
             ORDER BY l.id_lead DESC
             LIMIT :limit OFFSET :offset
-        """), params).mappings().all()
-
+        """
+        rows = conn.execute(text(q), params).mappings().all()
         return {"total": int(total), "items": list(rows)}
+
 
 @router.get("/leads/{id_lead}")
 def get_lead(id_lead: int, user: dict = Depends(get_current_user)):
     _ensure_leads_delete_cols()
+
+    marca_cols = _cols_for("marcas") if _table_exists("marcas") else set()
+    comuna_cols = _cols_for("comunas") if _table_exists("comunas") else set()
+
+    marca_expr = "COALESCE(m.marca,'')"
+    if "nombre" in marca_cols:
+        marca_expr = "COALESCE(m.marca, m.nombre, '')"
+
+    comuna_expr = "COALESCE(c.nombre,'')"
+    if "nombre" not in comuna_cols and "comuna" in comuna_cols:
+        comuna_expr = "COALESCE(c.comuna,'')"
+    elif "nombre" not in comuna_cols and "comuna" not in comuna_cols:
+        comuna_expr = "''"
+
+    q = f"""
+        SELECT
+          l.*,
+          l.cliente AS nombre_cliente,
+          {marca_expr} AS marca_nombre,
+          COALESCE(m.logo_path,'') AS logo_url,
+          {comuna_expr} AS comuna_nombre,
+          COALESCE(c.neto,0) AS comuna_neto,
+          COALESCE(e.nombre,'') AS estado_nombre,
+          COALESCE(e.color,'#64748b') AS estado_color,
+          COALESCE(tc.tipo,'') AS tipo_cliente_nombre
+        FROM public.leads l
+        LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
+        LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
+        LEFT JOIN public.estados_lead e ON e.id_estado=l.id_estado
+        LEFT JOIN public.tipos_cliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente
+        WHERE l.id_lead=:id AND COALESCE(l.is_deleted,false)=false
+    """
+
     with get_connection() as conn:
-        row = conn.execute(text("""
-            SELECT
-              l.*,
-              l.cliente AS nombre_cliente,
-              COALESCE(m.marca, m.nombre, '') AS marca_nombre,
-              COALESCE(m.logo_path,'') AS logo_url,
-              COALESCE(c.nombre,'') AS comuna_nombre,
-              COALESCE(c.neto,0) AS comuna_neto,
-              COALESCE(e.nombre,'') AS estado_nombre,
-              COALESCE(e.color,'#64748b') AS estado_color,
-              COALESCE(tc.tipo,'') AS tipo_cliente_nombre
-            FROM public.leads l
-            LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
-            LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
-            LEFT JOIN public.estados_lead e ON e.id_estado=l.id_estado
-            LEFT JOIN public.tipos_cliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente
-            WHERE l.id_lead=:id AND COALESCE(l.is_deleted,false)=false
-        """), {"id": id_lead}).mappings().first()
+        row = conn.execute(text(q), {"id": id_lead}).mappings().first()
         if not row:
             raise HTTPException(404, "Lead no existe")
         data = dict(row)
