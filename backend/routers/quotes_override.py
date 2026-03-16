@@ -896,12 +896,6 @@ def pdf_placeholder(
     is_empresa = ("EMP" in tipo_cli)
     iva_val = (cot.get("iva") or 0) if is_empresa else 0
 
-    # Total: recalculamos para evitar arrastrar IVA "pegado" de cotizaciones antiguas.
-    if is_empresa:
-        total_val = float(cot.get("total") or (neto_val + traslado_val + iva_val))
-    else:
-        total_val = float(cot.get("total") or (neto_val + traslado_val))
-
     show_desc = descuento_abs > 0.005
     desc_label = f"Descuento ({descuento_valor:.0f}%)" if (descuento_tipo == "%" and descuento_valor > 0) else "Descuento"
     totals_rows = [f"<tr><td>Subtotal productos</td><td style='text-align:right'>${int(subtotal_bruto):,}</td></tr>"]
@@ -913,6 +907,12 @@ def pdf_placeholder(
     if is_empresa and iva_val > 0:
         totals_rows.append(f"<tr><td>IVA</td><td style='text-align:right'>${int(iva_val):,}</td></tr>")
     totals_rows.append(f"<tr><td><b>Total</b></td><td style='text-align:right'><b>${int(total_val):,}</b></td></tr>")
+
+    # Total: recalculamos para evitar arrastrar IVA "pegado" de cotizaciones antiguas.
+    if is_empresa:
+        total_val = float(cot.get("total") or (neto_val + traslado_val + iva_val))
+    else:
+        total_val = float(cot.get("total") or (neto_val + traslado_val))
 
     rows_html = ""
     for it in items:
@@ -1014,6 +1014,9 @@ def pdf_placeholder(
           </table>
           <table class="totals">
             {''.join(totals_rows)}
+            <tr><td>IVA</td><td style="text-align:right">${int(iva_val):,}</td></tr>
+            <tr><td>Traslado</td><td style="text-align:right">${int(traslado_val):,}</td></tr>
+            <tr><td><b>Total</b></td><td style="text-align:right"><b>${int(total_val):,}</b></td></tr>
           </table>
         </div>
       </div>
@@ -1259,6 +1262,13 @@ def pdf_placeholder(
 
             def _money(v: int) -> str:
                 return f"${int(v):,}".replace(",", ".")
+
+            subtotal_print = int(subtotal_bruto)
+            descuento_print = int(descuento_abs) if show_desc else 0
+            neto_print = int(neto_val)
+            traslado_print = int(traslado_val)
+            iva_print = int(iva_val)
+            total_print = int(total_val)
 
             def _clip(text: str, max_w: int, font) -> str:
                 t = (text or "").strip()
@@ -1661,15 +1671,20 @@ def pdf_placeholder(
                 gx = x + content_w - grid_w - int(5 * mm)
                 gy = totals_y
                 draw.rectangle((gx, gy, gx + grid_w, gy + grid_h), outline=line, width=2, fill=(250, 250, 250))
-                labels = [("SUBTOTAL", subtotal_val), ("IVA", iva_val), ("TRASLADO", traslado_val), ("TOTAL", total_val)]
+                labels = [("SUBTOTAL", subtotal_print)]
+                if show_desc:
+                    labels.append(("DESCUENTO", -descuento_print))
+                    labels.append(("NETO", neto_print))
+                labels.extend([("IVA", iva_print), ("TRASLADO", traslado_print), ("TOTAL", total_print)])
                 ry = gy
                 for idx, (lab, val) in enumerate(labels):
-                    h = 34 if idx < 3 else 36
-                    if idx == 3:
+                    is_total = (lab == "TOTAL")
+                    h = 30 if not is_total else 34
+                    if is_total:
                         draw.rectangle((gx, ry, gx + grid_w, ry + h), fill=(245, 245, 245))
                     draw.line((gx, ry + h, gx + grid_w, ry + h), fill=(210, 210, 210), width=1)
-                    draw.text((gx + 14, ry + 9), lab, font=f12b if idx == 3 else f12, fill=txt)
-                    draw.text((gx + grid_w - 14, ry + 9), _money(val), font=f12b if idx == 3 else f12, fill=txt, anchor="ra")
+                    draw.text((gx + 14, ry + 7), lab, font=f12b if is_total else f12, fill=txt)
+                    draw.text((gx + grid_w - 14, ry + 7), _money(val), font=f12b if is_total else f12, fill=txt, anchor="ra")
                     ry += h
 
             # Guardar multipage PDF
