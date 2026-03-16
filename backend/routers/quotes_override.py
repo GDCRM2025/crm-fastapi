@@ -1508,10 +1508,18 @@ def pdf_placeholder(
                 bx = x + content_w - totals_w - int(5 * mm)
                 by = totals_y
                 draw.rounded_rectangle((bx, by, bx + totals_w, by + totals_h), radius=12, outline=primary2, width=2, fill=(248, 252, 248))
-                draw.text((bx + 18, by + 18), f"SUBTOTAL: {_money(subtotal_val)}", font=f12, fill=txt)
-                draw.text((bx + 18, by + 48), f"IVA: {_money(iva_val)}", font=f12, fill=txt)
-                draw.text((bx + 18, by + 78), f"TRASLADO: {_money(traslado_val)}", font=f12, fill=txt)
-                draw.text((bx + 18, by + 110), f"TOTAL: {_money(total_val)}", font=f14b, fill=primary2)
+                y0 = by + 14
+                draw.text((bx + 18, y0 + 0), f"SUBTOTAL: {_money(subtotal_print)}", font=f12, fill=txt)
+                if show_desc:
+                    draw.text((bx + 18, y0 + 24), f"DESCUENTO: -{_money(descuento_print)}", font=f12, fill=txt)
+                    draw.text((bx + 18, y0 + 48), f"NETO: {_money(neto_print)}", font=f12, fill=txt)
+                    draw.text((bx + 18, y0 + 72), f"TRASLADO: {_money(traslado_print)}", font=f12, fill=txt)
+                    draw.text((bx + 18, y0 + 96), f"IVA: {_money(iva_print)}", font=f12, fill=txt)
+                    draw.text((bx + 18, y0 + 120), f"TOTAL: {_money(total_print)}", font=f14b, fill=primary2)
+                else:
+                    draw.text((bx + 18, y0 + 24), f"IVA: {_money(iva_print)}", font=f12, fill=txt)
+                    draw.text((bx + 18, y0 + 48), f"TRASLADO: {_money(traslado_print)}", font=f12, fill=txt)
+                    draw.text((bx + 18, y0 + 80), f"TOTAL: {_money(total_print)}", font=f14b, fill=primary2)
 
             elif is_sabor:
                 # DEL SABOR: clean paper + olive/green accents; NO unit price
@@ -1559,10 +1567,18 @@ def pdf_placeholder(
                 # Totals: lines (no big box)
                 by = totals_y + 6
                 txr = x + content_w - int(5 * mm)
-                draw.text((txr, by), f"SUBTOTAL  {_money(subtotal_val)}", font=f12b, fill=txt, anchor="ra")
-                draw.text((txr, by + 26), f"IVA  {_money(iva_val)}", font=f12b, fill=txt, anchor="ra")
-                draw.text((txr, by + 52), f"TRASLADO  {_money(traslado_val)}", font=f12b, fill=txt, anchor="ra")
-                draw.text((txr, by + 84), f"TOTAL  {_money(total_val)}", font=f16b, fill=primary2, anchor="ra")
+                y0 = by
+                draw.text((txr, y0), f"SUBTOTAL  {_money(subtotal_print)}", font=f12b, fill=txt, anchor="ra")
+                if show_desc:
+                    draw.text((txr, y0 + 22), f"DESCUENTO  -{_money(descuento_print)}", font=f12b, fill=txt, anchor="ra")
+                    draw.text((txr, y0 + 44), f"NETO  {_money(neto_print)}", font=f12b, fill=txt, anchor="ra")
+                    draw.text((txr, y0 + 66), f"TRASLADO  {_money(traslado_print)}", font=f12b, fill=txt, anchor="ra")
+                    draw.text((txr, y0 + 88), f"IVA  {_money(iva_print)}", font=f12b, fill=txt, anchor="ra")
+                    draw.text((txr, y0 + 112), f"TOTAL  {_money(total_print)}", font=f16b, fill=primary2, anchor="ra")
+                else:
+                    draw.text((txr, y0 + 26), f"IVA  {_money(iva_print)}", font=f12b, fill=txt, anchor="ra")
+                    draw.text((txr, y0 + 52), f"TRASLADO  {_money(traslado_print)}", font=f12b, fill=txt, anchor="ra")
+                    draw.text((txr, y0 + 84), f"TOTAL  {_money(total_print)}", font=f16b, fill=primary2, anchor="ra")
 
             elif is_gour:
                 # GOURMET: dark header + gold accents; remove discount/%imp (not shown)
@@ -1613,10 +1629,18 @@ def pdf_placeholder(
                 bx = x + content_w - totals_w - int(5 * mm)
                 by = totals_y
                 draw.rounded_rectangle((bx, by, bx + totals_w, by + totals_h), radius=12, outline=primary, width=2, fill=primary2)
-                draw.text((bx + 18, by + 18), f"SUBTOTAL: {_money(subtotal_val)}", font=f12, fill=(255, 255, 255))
-                draw.text((bx + 18, by + 48), f"IVA: {_money(iva_val)}", font=f12, fill=(255, 255, 255))
-                draw.text((bx + 18, by + 78), f"TRASLADO: {_money(traslado_val)}", font=f12, fill=(255, 255, 255))
-                draw.text((bx + 18, by + 112), f"TOTAL: {_money(total_val)}", font=f14b, fill=primary)
+                y0 = by + 14
+                draw.text((bx + 18, y0 + 0), f"SUBTOTAL: {_money(subtotal_print)}", font=f12, fill=(255, 255, 255))
+                if show_desc:
+                    draw.text((bx + 18, y0 + 24), f"DESCUENTO: -{_money(descuento_print)}", font=f12, fill=(255, 255, 255))
+                    draw.text((bx + 18, y0 + 48), f"NETO: {_money(neto_print)}", font=f12, fill=(255, 255, 255))
+                    draw.text((bx + 18, y0 + 72), f"TRASLADO: {_money(traslado_print)}", font=f12, fill=(255, 255, 255))
+                    draw.text((bx + 18, y0 + 96), f"IVA: {_money(iva_print)}", font=f12, fill=(255, 255, 255))
+                    draw.text((bx + 18, y0 + 120), f"TOTAL: {_money(total_print)}", font=f14b, fill=primary)
+                else:
+                    draw.text((bx + 18, y0 + 24), f"IVA: {_money(iva_print)}", font=f12, fill=(255, 255, 255))
+                    draw.text((bx + 18, y0 + 48), f"TRASLADO: {_money(traslado_print)}", font=f12, fill=(255, 255, 255))
+                    draw.text((bx + 18, y0 + 80), f"TOTAL: {_money(total_print)}", font=f14b, fill=primary)
 
             else:
                 # EXPRESS: classic grid quote; orange accents; totals in small grid
