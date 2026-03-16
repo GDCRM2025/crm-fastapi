@@ -291,6 +291,7 @@ def pdf_placeholder(
     download: int = Query(default=0, ge=0, le=1),
     refresh: int = Query(default=0, ge=0, le=1),
 ):
+    print("USING quotes_override.py PDF", id_cotizacion, flush=True)
     try:
         from weasyprint import HTML  # type: ignore
     except Exception:
