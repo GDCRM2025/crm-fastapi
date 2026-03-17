@@ -13,6 +13,44 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # .../CRM 2025
 load_dotenv(PROJECT_ROOT / ".env", override=False)
 
+def _patch_sqlalchemy_pg_version_bytes() -> None:
+    """
+    Hotfix: en algunos ambientes (cPanel/Passenger) el driver devuelve bytes para
+    `select pg_catalog.version()`, y SQLAlchemy intenta hacer `re.match()` con patrón str.
+    Resultado: `TypeError: cannot use a string pattern on a bytes-like object`.
+    """
+    try:
+        import re
+        from sqlalchemy.dialects.postgresql.base import PGDialect
+
+        if getattr(PGDialect, "_gd_patched_version_bytes", False):
+            return
+
+        def _get_server_version_info(self, connection):  # type: ignore[no-untyped-def]
+            v = connection.exec_driver_sql("select pg_catalog.version()").scalar()
+            if isinstance(v, (bytes, bytearray, memoryview)):
+                try:
+                    v = bytes(v).decode("utf-8", "ignore")
+                except Exception:
+                    v = str(v)
+            m = re.match(
+                r".*(?:PostgreSQL|EnterpriseDB) "
+                r"(\d+)\.?(\d+)?(?:\.(\d+))?(?:\.\d+)?(?:devel|beta)?",
+                v,
+            )
+            if not m:
+                raise AssertionError(
+                    "Could not determine version from string '%s'" % v
+                )
+            return tuple([int(x) for x in m.group(1, 2, 3) if x is not None])
+
+        PGDialect._get_server_version_info = _get_server_version_info  # type: ignore[assignment]
+        PGDialect._gd_patched_version_bytes = True  # type: ignore[attr-defined]
+    except Exception:
+        # Nunca romper el arranque por esto.
+        return
+
+
 def _has_module(name: str) -> bool:
     try:
         return importlib.util.find_spec(name) is not None
@@ -53,6 +91,7 @@ def _normalize_sqlalchemy_url(url: str) -> str:
 DATABASE_URL = _normalize_sqlalchemy_url(os.getenv("DATABASE_URL", "")) or "postgresql://BDGD:SpC18302020@127.0.0.1:5432/BDGD"
 DATABASE_URL = _normalize_sqlalchemy_url(DATABASE_URL)
 
+_patch_sqlalchemy_pg_version_bytes()
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
