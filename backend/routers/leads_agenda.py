@@ -971,7 +971,6 @@ def _build_event(
 
 
 @router.post("/{id_lead}/move")
-@router.post("/{id_lead}/move")
 def move_lead_and_maybe_agenda(
     id_lead: int = Path(..., ge=1),
     payload=Body(default_factory=dict),
@@ -1442,7 +1441,6 @@ def move_lead_and_maybe_agenda(
                 "trace": traceback.format_exc().splitlines()[-8:],
             },
         )
-
 
 
 

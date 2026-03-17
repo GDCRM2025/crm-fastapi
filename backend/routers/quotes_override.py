@@ -123,12 +123,36 @@ def history(
     if _has(cols, "traslado"):
         traslado_expr = "c.traslado"
 
-    total_expr = "0"
+    # Total: usar columna si existe (incluye descuento/IVA/traslado). Para compatibilidad legacy,
+    # si no existe, calculamos una aproximación.
+    total_expr = f"(COALESCE({subtotal_expr},0) + COALESCE({traslado_expr},0) + COALESCE({iva_expr},0))"
     if _has(cols, "total"):
-        if _has(cols, "tipo_cliente"):
-            total_expr = f"CASE WHEN UPPER(COALESCE(c.tipo_cliente,'')) LIKE '%EMP%' THEN COALESCE(c.total,0) ELSE (COALESCE({subtotal_expr},0) + COALESCE({traslado_expr},0)) END"
-        else:
-            total_expr = "COALESCE(c.total,0)"
+        total_expr = "COALESCE(c.total,0)"
+
+    descuento_valor_expr = "0"
+    if _has(cols, "descuento_valor"):
+        descuento_valor_expr = "COALESCE(c.descuento_valor,0)"
+
+    descuento_tipo_expr = "''"
+    if _has(cols, "descuento_tipo"):
+        descuento_tipo_expr = "COALESCE(c.descuento_tipo,'')"
+
+    # Para mostrar neto consistente en historial, preferimos derivarlo del total:
+    # neto = total - traslado - iva (iva real, no solo la regla visual).
+    iva_raw_expr = "0"
+    if _has(cols, "iva"):
+        iva_raw_expr = "COALESCE(c.iva,0)"
+    neto_calc_expr = f"GREATEST(0, COALESCE({total_expr},0) - COALESCE({traslado_expr},0) - COALESCE({iva_raw_expr},0))"
+
+    # Descuento absoluto: si es %, lo derivamos desde neto (evita depender de subtotal legacy).
+    descuento_abs_expr = f"""
+      CASE
+        WHEN {descuento_tipo_expr}='%' AND COALESCE({descuento_valor_expr},0) > 0 AND COALESCE({descuento_valor_expr},0) < 100
+          THEN ROUND(({neto_calc_expr} * COALESCE({descuento_valor_expr},0) / (100 - COALESCE({descuento_valor_expr},0))), 2)
+        ELSE ROUND(COALESCE({descuento_valor_expr},0), 2)
+      END
+    """
+    subtotal_bruto_calc_expr = f"GREATEST(0, ({neto_calc_expr} + COALESCE({descuento_abs_expr},0)))"
 
     version_expr = "0"
     if _has(cols, "version"):
@@ -186,6 +210,11 @@ def history(
           {nombre_expr} AS nombre_cliente,
           {marca_expr} AS marca,
           {subtotal_expr} AS subtotal,
+          {subtotal_bruto_calc_expr} AS subtotal_bruto,
+          {descuento_valor_expr} AS descuento_valor,
+          {descuento_tipo_expr} AS descuento_tipo,
+          {descuento_abs_expr} AS descuento_abs,
+          {neto_calc_expr} AS neto,
           {iva_expr} AS iva,
           {traslado_expr} AS traslado,
           {total_expr} AS total,
@@ -1267,6 +1296,21 @@ def pdf_placeholder(
             iva_print = int(iva_val)
             total_print = int(total_val)
 
+            def _pct_str(v: float) -> str:
+                try:
+                    if v is None:
+                        return ""
+                    fv = float(v)
+                    if abs(fv - round(fv)) < 1e-9:
+                        return str(int(round(fv)))
+                    return (f"{fv:.1f}").rstrip("0").rstrip(".")
+                except Exception:
+                    return ""
+
+            pct_txt = _pct_str(descuento_valor) if (descuento_tipo == "%" and (descuento_valor or 0) > 0) else ""
+            desc_line = "DESCUENTO" + (f" ({pct_txt}%)" if pct_txt else "")
+            desc_grid_label = ("DESC " + (f"{pct_txt}%" if pct_txt else "")) if pct_txt else "DESCUENTO"
+
             def _clip(text: str, max_w: int, font) -> str:
                 t = (text or "").strip()
                 if not t:
@@ -1508,7 +1552,7 @@ def pdf_placeholder(
                 y0 = by + 14
                 draw.text((bx + 18, y0 + 0), f"SUBTOTAL: {_money(subtotal_print)}", font=f12, fill=txt)
                 if show_desc:
-                    draw.text((bx + 18, y0 + 24), f"DESCUENTO: -{_money(descuento_print)}", font=f12, fill=txt)
+                    draw.text((bx + 18, y0 + 24), f"{desc_line}: -{_money(descuento_print)}", font=f12, fill=txt)
                     draw.text((bx + 18, y0 + 48), f"NETO: {_money(neto_print)}", font=f12, fill=txt)
                     draw.text((bx + 18, y0 + 72), f"TRASLADO: {_money(traslado_print)}", font=f12, fill=txt)
                     draw.text((bx + 18, y0 + 96), f"IVA: {_money(iva_print)}", font=f12, fill=txt)
@@ -1567,7 +1611,7 @@ def pdf_placeholder(
                 y0 = by
                 draw.text((txr, y0), f"SUBTOTAL  {_money(subtotal_print)}", font=f12b, fill=txt, anchor="ra")
                 if show_desc:
-                    draw.text((txr, y0 + 22), f"DESCUENTO  -{_money(descuento_print)}", font=f12b, fill=txt, anchor="ra")
+                    draw.text((txr, y0 + 22), f"{desc_line}  -{_money(descuento_print)}", font=f12b, fill=txt, anchor="ra")
                     draw.text((txr, y0 + 44), f"NETO  {_money(neto_print)}", font=f12b, fill=txt, anchor="ra")
                     draw.text((txr, y0 + 66), f"TRASLADO  {_money(traslado_print)}", font=f12b, fill=txt, anchor="ra")
                     draw.text((txr, y0 + 88), f"IVA  {_money(iva_print)}", font=f12b, fill=txt, anchor="ra")
@@ -1629,7 +1673,7 @@ def pdf_placeholder(
                 y0 = by + 14
                 draw.text((bx + 18, y0 + 0), f"SUBTOTAL: {_money(subtotal_print)}", font=f12, fill=(255, 255, 255))
                 if show_desc:
-                    draw.text((bx + 18, y0 + 24), f"DESCUENTO: -{_money(descuento_print)}", font=f12, fill=(255, 255, 255))
+                    draw.text((bx + 18, y0 + 24), f"{desc_line}: -{_money(descuento_print)}", font=f12, fill=(255, 255, 255))
                     draw.text((bx + 18, y0 + 48), f"NETO: {_money(neto_print)}", font=f12, fill=(255, 255, 255))
                     draw.text((bx + 18, y0 + 72), f"TRASLADO: {_money(traslado_print)}", font=f12, fill=(255, 255, 255))
                     draw.text((bx + 18, y0 + 96), f"IVA: {_money(iva_print)}", font=f12, fill=(255, 255, 255))
@@ -1694,7 +1738,7 @@ def pdf_placeholder(
                 draw.rectangle((gx, gy, gx + grid_w, gy + grid_h), outline=line, width=2, fill=(250, 250, 250))
                 labels = [("SUBTOTAL", subtotal_print)]
                 if show_desc:
-                    labels.append(("DESCUENTO", -descuento_print))
+                    labels.append((desc_grid_label, -descuento_print))
                     labels.append(("NETO", neto_print))
                 labels.extend([("IVA", iva_print), ("TRASLADO", traslado_print), ("TOTAL", total_print)])
                 ry = gy

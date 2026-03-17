@@ -160,6 +160,7 @@
               <th>Cliente</th>
               <th style="width:160px">Marca</th>
               <th style="width:120px">Neto</th>
+              <th style="width:120px">Desc.</th>
               <th style="width:120px">IVA</th>
               <th style="width:120px">Traslado</th>
               <th style="width:140px">Total</th>
@@ -292,12 +293,19 @@
             : (r.created_at ? String(r.created_at).replace("T"," ").slice(0,16)
             : "—"));
           const rev = (r.revision != null) ? Number(r.revision) : Number(r.version || 0);
+          const neto = (r.neto != null) ? Number(r.neto) : Number(r.subtotal || 0);
+          const descTipo = String(r.descuento_tipo || "").trim();
+          const descValor = Number(r.descuento_valor || 0);
+          const descAbs = Number(r.descuento_abs || 0);
+          const subtotalBruto = (r.subtotal_bruto != null) ? Number(r.subtotal_bruto) : Math.max(0, neto + Math.max(0, descAbs));
+          const descCell = (descAbs > 0) ? ("-" + money(descAbs)) : money(0);
           tr.innerHTML=`
             <td>${r.numero || r.id_cotizacion}${(rev > 0) ? ` (${rev})` : ""}</td>
             <td>${fecha}</td>
             <td>${(r.nombre_cliente||"")}</td>
             <td>${(r.marca||"")}</td>
-            <td>${money(r.subtotal)}</td>
+            <td>${money(neto)}</td>
+            <td>${descCell}</td>
             <td>${money(r.iva)}</td>
             <td>${money(r.traslado)}</td>
             <td>${money(r.total)}</td>
@@ -313,12 +321,15 @@
             const id=r.id_cotizacion;
             const items = await getItems(id);
             const li = items.map(it=>`<li>${it.producto} × ${it.cantidad}</li>`).join("");
+            const descLabel = (descValor > 0 && descTipo === "%") ? `Descuento (${descValor}%)` : "Descuento";
             const html = `
               <div class="t">Productos (${items.length})</div>
               <ul>${li||"<li>Sin items</li>"}</ul>
               <div class="t" style="margin-top:8px">Totales</div>
               <ul>
-                <li>Neto: ${money(r.subtotal)}</li>
+                <li>Subtotal productos: ${money(subtotalBruto)}</li>
+                <li>${descLabel}: ${descAbs > 0 ? ("-" + money(descAbs)) : money(0)}</li>
+                <li>Neto: ${money(neto)}</li>
                 <li>IVA: ${money(r.iva)}</li>
                 <li>Traslado: ${money(r.traslado)}</li>
                 <li>Total: ${money(r.total)}</li>
