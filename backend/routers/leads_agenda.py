@@ -2,6 +2,22 @@ import json
 from datetime import date, datetime, timedelta
 
 
+def _as_text(v):
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        b = bytes(v)
+        for enc in ("utf-8", "latin-1"):
+            try:
+                return b.decode(enc)
+            except Exception:
+                continue
+        return b.decode("utf-8", "ignore")
+    return str(v)
+
+
 def _safe_time_hhmm(value):
     try:
         if value is None:
@@ -356,7 +372,8 @@ def _cols_for(table):
         """
     )
     with engine.connect() as cn:
-        return [r[0] for r in cn.execute(q, {"t": table}).fetchall()]
+        rows = cn.execute(q, {"t": table}).fetchall()
+        return [_as_text(r[0]).strip() for r in rows if r and _as_text(r[0]).strip()]
 
 
 def _table_exists(table):
@@ -384,7 +401,7 @@ def _pk_for(table):
         r = cn.execute(q, {"t": table}).fetchone()
         if not r:
             raise HTTPException(500, detail="No PK para %s" % table)
-        return str(r[0])
+        return _as_text(r[0]).strip()
 
 
 def _require_auth(user):
@@ -392,7 +409,8 @@ def _require_auth(user):
 
 
 def _qident(name):
-    return '"' + name.replace('"', '""') + '"'
+    s = _as_text(name)
+    return '"' + s.replace('"', '""') + '"'
 
 
 def _filter_existing(table, data):
@@ -478,20 +496,20 @@ def _get_marca_nombre(id_marca):
     q = text("SELECT %s FROM marcas WHERE id_marca=:id LIMIT 1" % col)
     with engine.connect() as cn:
         r = cn.execute(q, {"id": id_marca}).fetchone()
-        return str(r[0]) if r else "Sin Marca"
+        return _as_text(r[0]).strip() if r and r[0] is not None else "Sin Marca"
 
 
 def _get_comuna_nombre(id_comuna):
     if not id_comuna:
-        return "Sin Comuna"
+        return ""
     cols = _cols_for("comunas")
     col = "nombre" if "nombre" in cols else ("comuna" if "comuna" in cols else None)
     if not col:
-        return "Sin Comuna"
+        return ""
     q = text("SELECT %s FROM comunas WHERE id_comuna=:id LIMIT 1" % col)
     with engine.connect() as cn:
         r = cn.execute(q, {"id": id_comuna}).fetchone()
-        return str(r[0]) if r else "Sin Comuna"
+        return _as_text(r[0]).strip() if r and r[0] is not None else ""
 
 
 def _list_cotizaciones_for_lead(lead):
@@ -540,7 +558,7 @@ def _cotizacion_detalle_resumen(id_cotizacion):
         )
         with engine.connect() as cn:
             rows = cn.execute(q, {"id": id_cotizacion}).mappings().all()
-        return [{"producto": str(r["producto"]), "cantidad": float(r["cantidad"] or 0)} for r in rows]
+        return [{"producto": _as_text(r["producto"]).strip(), "cantidad": float(r["cantidad"] or 0)} for r in rows]
 
     cols = set(_cols_for("cotizaciones_detalle"))
 
@@ -579,12 +597,12 @@ def _cotizacion_detalle_resumen(id_cotizacion):
 
     out = []
     for r in rows:
-        out.append({"producto": str(r["producto"]), "cantidad": float(r["cantidad"] or 0)})
+        out.append({"producto": _as_text(r["producto"]).strip(), "cantidad": float(r["cantidad"] or 0)})
     return out
 
 
 class _Reglas:
-    SALADO = ["burger", "churrasco", "hot dog", "hotdog", "hamburguesa", "wrap", "lomito", " as ", "as xl", "as italiano", "mechada", "mini", "notburger"]
+    SALADO = ["burger", "churrasco", "hot dog", "hotdog", "hamburguesa", "wrap", "lomito", " as ", "as xl", "as italiano", "as luco", "mechada", "mini", "notburger"]
     POP = ["pop corn", "cabritas"]
     ALG = ["algodón", "algodon"]
     BRO = ["brocheta", "waffle"]
@@ -598,7 +616,7 @@ class _Reglas:
 
 
 def _cat_for_producto(nombre):
-    p = (nombre or "").lower()
+    p = _as_text(nombre).lower()
     if any(w in p for w in _Reglas.SALADO):
         return "salado"
     if any(w in p for w in _Reglas.POP):
@@ -644,7 +662,7 @@ def _calcular_montaje_single(items):
     lines_prod = ["PRODUCTOS"]
     for it in items:
         qty = float(it.get("cantidad") or 0)
-        prod = str(it.get("producto") or "").strip()
+        prod = _as_text(it.get("producto") or "").strip()
         if not prod or qty <= 0:
             continue
         qty_str = str(int(qty)) if abs(qty - int(qty)) < 1e-9 else str(qty)
@@ -774,7 +792,7 @@ def _calcular_montaje(items):
         day_items = by_day.get(d) or []
         prod_sum = {}
         for it in day_items:
-            prod = str(it.get("producto") or "").strip()
+            prod = _as_text(it.get("producto") or "").strip()
             if not prod:
                 continue
             try:
@@ -842,7 +860,7 @@ def _parse_hhmm(s):
 
 
 def _is_missing_dir(value):
-    v = str(value or "").strip()
+    v = _as_text(value).strip()
     if not v:
         return True
     return v.upper() in ("POR CONFIRMAR", "DIR TBD", "DIRECCION TBD")
@@ -918,8 +936,8 @@ def _build_event(
 
         hr_label = "%s - %s" % (start_time, end_time)
 
-    cliente = lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)"
-    marca_txt = marca or "Sin Marca"
+    cliente = _as_text(lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)").strip() or "(Sin nombre)"
+    marca_txt = _as_text(marca).strip() if marca else "Sin Marca"
 
     suffix = _title_suffix(missing_time, missing_dir)
     title = "%s - %s" % (cliente, marca_txt)
@@ -928,7 +946,9 @@ def _build_event(
 
     # Regla: LOCATION debe ser SOLO la comuna (la dirección completa va en la descripción).
     # Si no hay comuna, dejamos marcador para que sea visible en calendario.
-    location = str(comuna or "").strip() or "COMUNA TBD"
+    location = _as_text(comuna).strip()
+    if not location or location.strip().lower() in ("sin comuna", "s/comuna", "scomuna"):
+        location = "COMUNA TBD"
 
     _, _, _, products_text = _calcular_montaje(items)
     prod_lines = [ln for ln in products_text.split("\n")[1:] if ln.strip()]
@@ -939,8 +959,8 @@ def _build_event(
     m_lines = [("• " + ln) if not ln.startswith("•") else ln for ln in m_lines_raw] or ["• —"]
 
     # Regla: la dirección completa va en la descripción (sin forzar comuna acá).
-    dir_label = "DIR TBD" if missing_dir else str(direccion).strip()
-    phone_label = str(telefono or "").strip() or "POR CONFIRMAR"
+    dir_label = "DIR TBD" if missing_dir else _as_text(direccion).strip()
+    phone_label = _as_text(telefono).strip() or "POR CONFIRMAR"
 
     desc_lines = [
         "🛒 PRODUCTOS:",
@@ -1442,4 +1462,3 @@ def move_lead_and_maybe_agenda(
                 "trace": traceback.format_exc().splitlines()[-8:],
             },
         )
-

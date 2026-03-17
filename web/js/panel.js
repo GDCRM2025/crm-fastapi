@@ -1748,7 +1748,10 @@ const MENU = [
     ico: "\u{1F9F0}",
     title: "Tools",
     items: [
-      { id: "tools_hub", label: "Centro de herramientas", url: "/web/views/tools.html?v=20260311-1" }
+      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools_correo.html?v=20260317-toolsmenu1" },
+      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools_instagram.html?v=20260317-toolsmenu1" },
+      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools_whatsapp.html?v=20260317-toolsmenu1" },
+      { id: "tool_calc", label: "Calculadora", url: "/web/views/calculadora.html?v=20260317-toolsmenu1", noSidebar: true }
     ]
   },
   {

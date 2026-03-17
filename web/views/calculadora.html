@@ -29,6 +29,31 @@
       border:1px solid rgba(255,255,255,.08);
     }
     .tax-row{ display:flex; justify-content:space-between; gap:10px; margin-top:8px; color:#cbd5e1; font-size:12px; }
+    .chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .chip{
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(255,255,255,.04);
+      color:#e2e8f0;
+      border-radius:999px;
+      padding:6px 10px;
+      font-size:12px;
+      font-weight:950;
+      cursor:pointer;
+    }
+    .chip.active{ border-color: rgba(255,159,10,.75); background: rgba(255,159,10,.16); color:#fff; }
+    .chip .sub{ opacity:.7; font-weight:800; font-size:11px; margin-left:6px; }
+    .minirow{ display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
+    .minirow label{ display:flex; align-items:center; gap:8px; font-size:12px; opacity:.85; }
+    .minirow input{
+      width:90px;
+      background:#0b0b0d;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:12px;
+      padding:8px 10px;
+      color:#fff;
+      font-weight:900;
+      outline:0;
+    }
     .keys{ display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-top:14px; }
     .k{
       height:56px; border-radius:999px; border:0; font-weight:900; cursor:pointer;
@@ -53,8 +78,23 @@
           <button class="k func small" id="btnClose">Cerrar</button>
         </div>
         <div class="disp" id="disp">0</div>
-        <div class="tax-row"><span id="taxLabel">IVA / Webpay</span><strong id="taxVal">—</strong></div>
-        <div class="tax-row"><span>Total</span><strong id="taxTotal">—</strong></div>
+
+        <div class="chips" id="chips">
+          <button type="button" class="chip" data-chip="iva_add">IVA<span class="sub">+19%</span></button>
+          <button type="button" class="chip" data-chip="iva_remove">IVA<span class="sub">neto</span></button>
+          <button type="button" class="chip" data-chip="webpay_add">Webpay<span class="sub">+fee</span></button>
+          <button type="button" class="chip" data-chip="webpay_gross">Webpay<span class="sub">recibir</span></button>
+          <button type="button" class="chip" data-chip="none">Normal</button>
+        </div>
+
+        <div class="minirow">
+          <label>IVA % <input id="ivaPct" inputmode="decimal" value="19" /></label>
+          <label>Webpay % <input id="wpPct" inputmode="decimal" value="3.49" /></label>
+          <label style="opacity:.9"><input id="wpIva" type="checkbox" checked /> Webpay + IVA</label>
+        </div>
+
+        <div class="tax-row"><span id="taxLabel">Detalle</span><strong id="taxVal">—</strong></div>
+        <div class="tax-row"><span id="taxLabel2">Total</span><strong id="taxTotal">—</strong></div>
         <div class="keys" id="keys"></div>
       </div>
     </div>
@@ -73,43 +113,87 @@
 
     const disp = document.getElementById("disp");
     const taxLabel = document.getElementById("taxLabel");
+    const taxLabel2 = document.getElementById("taxLabel2");
     const taxVal = document.getElementById("taxVal");
     const taxTotal = document.getElementById("taxTotal");
 
-    let current = "0"; // string de dígitos
+    const ivaPctEl = document.getElementById("ivaPct");
+    const wpPctEl  = document.getElementById("wpPct");
+    const wpIvaEl  = document.getElementById("wpIva");
+
+    let current = "0";
     let prev = null;
     let op = null;
     let waiting = false;
-    let taxMode = null; // "iva" | "webpay" | null
+    let mode = "none"; // none | iva_add | iva_remove | webpay_add | webpay_gross
 
-    const fmt = (n) => new Intl.NumberFormat("es-CL", { maximumFractionDigits:0 }).format(n || 0);
-    const fmtMoney = (n) => new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 }).format(n || 0);
+    const fmt = (n, maxFrac=0) => new Intl.NumberFormat("es-CL", { maximumFractionDigits:maxFrac }).format(Number.isFinite(n) ? n : 0);
+    const fmtMoney = (n) => new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 }).format(Number.isFinite(n) ? n : 0);
 
-    function value(){ return Number(current || 0) || 0; }
+    function toNum(s){
+      const v = Number(String(s || "0").replace(",", "."));
+      return Number.isFinite(v) ? v : 0;
+    }
+    function value(){ return toNum(current); }
+    function ivaRate(){ return Math.max(0, toNum(ivaPctEl?.value) / 100); }
+    function wpRate(){ return Math.max(0, toNum(wpPctEl?.value) / 100); }
 
-    function render(){
-      disp.textContent = fmt(value());
-      renderTax();
+    function setMode(m){
+      mode = m;
+      document.querySelectorAll(".chip[data-chip]").forEach(b => b.classList.toggle("active", b.getAttribute("data-chip") === m));
+      render();
     }
 
-    function renderTax(){
+    function render(){
+      const v = value();
+      // Display tipo iPhone: no separador de miles si estás escribiendo decimal
+      const showRaw = current.includes(".") && !waiting;
+      disp.textContent = showRaw ? current : fmt(v, 2).replace(/\.00$/, "");
+      renderExtras();
+    }
+
+    function renderExtras(){
       const n = value();
-      if (!taxMode){
-        taxLabel.textContent = "IVA / Webpay";
+      const iva = ivaRate();
+      const wp = wpRate();
+      const wpHasIva = !!wpIvaEl?.checked;
+
+      taxLabel.textContent = "Detalle";
+      taxLabel2.textContent = "Total";
+
+      if (!mode || mode === "none"){
         taxVal.textContent = "—";
         taxTotal.textContent = "—";
         return;
       }
-      if (taxMode === "iva"){
-        const iva = n * 0.19;
-        taxLabel.textContent = "IVA 19%";
-        taxVal.textContent = fmtMoney(iva);
-        taxTotal.textContent = fmtMoney(n + iva);
-      } else if (taxMode === "webpay"){
-        const web = n * 0.04;
-        taxLabel.textContent = "Webpay 4%";
-        taxVal.textContent = fmtMoney(web);
-        taxTotal.textContent = fmtMoney(n + web);
+
+      if (mode === "iva_add"){
+        const t = n * iva;
+        taxVal.textContent = `IVA (${fmt(iva*100,2)}%): ${fmtMoney(t)}`;
+        taxTotal.textContent = fmtMoney(n + t);
+        return;
+      }
+      if (mode === "iva_remove"){
+        const net = iva > 0 ? (n / (1 + iva)) : n;
+        const t = n - net;
+        taxVal.textContent = `Neto: ${fmtMoney(net)} · IVA incl.: ${fmtMoney(t)}`;
+        taxTotal.textContent = fmtMoney(n);
+        return;
+      }
+      if (mode === "webpay_add"){
+        const baseFee = n * wp;
+        const fee = wpHasIva ? baseFee * (1 + iva) : baseFee;
+        taxVal.textContent = `Fee (${fmt(wp*100,2)}%${wpHasIva ? " + IVA" : ""}): ${fmtMoney(fee)}`;
+        taxTotal.textContent = fmtMoney(n + fee);
+        return;
+      }
+      if (mode === "webpay_gross"){
+        // Cuánto debo cobrar para recibir neto = n, asumiendo fee sobre el cobro.
+        const eff = wpHasIva ? (wp * (1 + iva)) : wp;
+        const gross = (eff >= 1) ? 0 : (n / (1 - eff));
+        const fee = gross - n;
+        taxVal.textContent = `Cobrar: ${fmtMoney(gross)} · Fee: ${fmtMoney(fee)}`;
+        taxTotal.textContent = fmtMoney(gross);
       }
     }
 
@@ -119,18 +203,35 @@
       else current += d;
       render();
     }
+    function inputDot(){
+      if (waiting){ current = "0."; waiting = false; render(); return; }
+      if (!current.includes(".")) current += ".";
+      render();
+    }
+    function toggleSign(){
+      if (current === "0" || current === "0.") return;
+      current = current.startsWith("-") ? current.slice(1) : ("-" + current);
+      render();
+    }
+    function percent(){
+      const v = value() / 100;
+      current = String(v);
+      waiting = false;
+      render();
+    }
     function clearAll(){
       current = "0";
       prev = null;
       op = null;
       waiting = false;
-      taxMode = null;
+      setMode("none");
       render();
     }
     function back(){
       if (waiting){ current = "0"; waiting = false; render(); return; }
-      if (current.length <= 1) current = "0";
+      if (current.length <= 1 || (current.length === 2 && current.startsWith("-"))) current = "0";
       else current = current.slice(0,-1);
+      if (current.endsWith(".")) current = current.slice(0,-1);
       render();
     }
     function setOp(o){
@@ -148,20 +249,19 @@
       else if (op === "-") res = a - b;
       else if (op === "*") res = a * b;
       else if (op === "/") res = b === 0 ? 0 : a / b;
-      current = String(Math.round(res));
+      current = String(res);
       prev = null;
       op = null;
       waiting = true;
       render();
     }
-    function tax(mode){ taxMode = mode; render(); }
 
     const keys = [
-      ["AC","clear","func"], ["DEL","back","func"], ["IVA","iva","func"], ["Webpay","webpay","func"],
-      ["7","d","num"], ["8","d","num"], ["9","d","num"], ["÷","op","op"],
-      ["4","d","num"], ["5","d","num"], ["6","d","num"], ["×","op","op"],
-      ["1","d","num"], ["2","d","num"], ["3","d","num"], ["-","op","op"],
-      ["0","d","num","wide"], ["+","op","op"], ["=","eq","op"],
+      ["AC","clear","func"], ["±","sign","func"], ["%","pct","func"], ["÷","op","op"],
+      ["7","d","num"], ["8","d","num"], ["9","d","num"], ["×","op","op"],
+      ["4","d","num"], ["5","d","num"], ["6","d","num"], ["-","op","op"],
+      ["1","d","num"], ["2","d","num"], ["3","d","num"], ["+","op","op"],
+      ["0","d","num","wide"], [".","dot","num"], ["=","eq","op"],
     ];
 
     const root = document.getElementById("keys");
@@ -175,9 +275,9 @@
         else if (kind === "op") setOp(txt.replace("×","*").replace("÷","/"));
         else if (kind === "eq") compute();
         else if (kind === "clear") clearAll();
-        else if (kind === "back") back();
-        else if (kind === "iva") tax("iva");
-        else if (kind === "webpay") tax("webpay");
+        else if (kind === "dot") inputDot();
+        else if (kind === "sign") toggleSign();
+        else if (kind === "pct") percent();
       };
       root.appendChild(b);
     });
@@ -195,6 +295,17 @@
     };
 
     render();
+
+    // chips
+    document.getElementById("chips").addEventListener("click", (ev)=>{
+      const b = ev.target.closest(".chip[data-chip]");
+      if (!b) return;
+      setMode(b.getAttribute("data-chip") || "none");
+    });
+    [ivaPctEl, wpPctEl, wpIvaEl].forEach((el)=>{
+      el && el.addEventListener("input", render);
+      el && el.addEventListener("change", render);
+    });
   </script>
 </body>
 </html>

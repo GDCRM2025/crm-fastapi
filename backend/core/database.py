@@ -92,7 +92,16 @@ DATABASE_URL = _normalize_sqlalchemy_url(os.getenv("DATABASE_URL", "")) or "post
 DATABASE_URL = _normalize_sqlalchemy_url(DATABASE_URL)
 
 _patch_sqlalchemy_pg_version_bytes()
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
+
+connect_args = {}
+try:
+    if str(DATABASE_URL or "").startswith("postgresql"):
+        # Force UTF-8 at connect time to avoid bytes payloads / SQL_ASCII weirdness on some hostings.
+        connect_args = {"options": "-c client_encoding=UTF8"}
+except Exception:
+    connect_args = {}
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 
