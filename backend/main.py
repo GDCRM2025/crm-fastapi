@@ -47,6 +47,23 @@ log = logging.getLogger("crm")
 # Middleware: RID por request + respuesta JSON útil en 500s.
 @app.middleware("http")
 async def rid_middleware(request: Request, call_next):
+    # Some Passenger/cPanel deployments include the sub-URI (e.g. "/crm") in PATH_INFO.
+    # Make routing robust by stripping a leading "/crm" from the incoming path.
+    # This makes the app work for both:
+    # - external "/crm/..." (sub-URI)
+    # - internal "/..." (already stripped by the server)
+    try:
+        p0 = str(request.scope.get("path") or "")
+        if p0 == "/crm":
+            request.scope["path"] = "/"
+        elif p0.startswith("/crm/"):
+            request.scope["path"] = p0[len("/crm") :] or "/"
+            rp = str(request.scope.get("root_path") or "")
+            if not rp.endswith("/crm"):
+                request.scope["root_path"] = (rp + "/crm") if rp else "/crm"
+    except Exception:
+        pass
+
     rid = uuid.uuid4().hex[:8]
     request.state.rid = rid
     try:
