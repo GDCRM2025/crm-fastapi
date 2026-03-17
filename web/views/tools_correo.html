@@ -5,19 +5,218 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="/web/styles.css" />
   <link rel="stylesheet" href="/web/ui_overrides.css" />
-  <title>tools_correo</title>
+  <title>Tools · Correo</title>
+  <style>
+    :root{
+      --bd: rgba(148,163,184,.18);
+      --muted: rgba(148,163,184,.88);
+      --pane: rgba(8,18,28,.55);
+    }
+    html,body{height:100%;}
+    body{ margin:0; padding:14px; background:transparent; color:inherit; font-family:inherit; }
+    .layout{
+      height: calc(100% - 0px);
+      display:grid;
+      grid-template-columns: 220px 320px 1fr;
+      gap:12px;
+      min-height:0;
+    }
+    .pane{
+      border:1px solid var(--bd);
+      background: linear-gradient(135deg, rgba(8,18,28,.78), rgba(10,16,22,.46));
+      border-radius:18px;
+      box-shadow: 0 18px 40px rgba(0,0,0,.14);
+      overflow:hidden;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+    }
+    .head{
+      padding:12px 12px 10px;
+      border-bottom:1px solid rgba(148,163,184,.14);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .ttl{ font-weight:1000; font-size:14px; }
+    .muted{ color:var(--muted); font-size:12px; line-height:1.35; }
+    .btn{
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(255,255,255,.04);
+      color:inherit;
+      border-radius:12px;
+      padding:8px 10px;
+      font-weight:950;
+      cursor:pointer;
+      font-size:12px;
+      white-space:nowrap;
+    }
+    .btn:disabled{ opacity:.55; cursor:not-allowed; }
+    .btn.primary{
+      background:color-mix(in srgb, var(--accent, #19c37d) 16%, transparent);
+      border-color:color-mix(in srgb, var(--accent, #19c37d) 40%, transparent);
+    }
+    .list{ padding:10px; display:grid; gap:8px; overflow:auto; }
+    .item{
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.03);
+      border-radius:14px;
+      padding:10px 10px;
+      cursor:pointer;
+    }
+    .item:hover{ background:rgba(255,255,255,.06); }
+    .item.active{ border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent); background: color-mix(in srgb, var(--accent,#19c37d) 10%, transparent); }
+    .row1{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .from{ font-weight:1000; font-size:12px; }
+    .date{ font-size:11px; color:var(--muted); white-space:nowrap; }
+    .subj{ margin-top:4px; font-weight:950; font-size:12px; }
+    .prev{ margin-top:6px; font-size:12px; color:rgba(226,232,240,.85); opacity:.9; line-height:1.35; }
+    .viewer{ padding:12px; overflow:auto; }
+    .viewer h2{ margin:0; font-size:16px; font-weight:1000; }
+    .meta{ margin-top:6px; display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:12px; font-weight:850; }
+    .body{ margin-top:12px; padding:12px; border:1px solid rgba(148,163,184,.14); background:rgba(255,255,255,.03); border-radius:16px; white-space:pre-wrap; line-height:1.4; }
+    .reply{ margin-top:12px; display:grid; gap:10px; }
+    textarea{
+      width:100%;
+      min-height:130px;
+      resize:vertical;
+      border-radius:16px;
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(15,26,43,.55);
+      color:inherit;
+      padding:10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size:12px;
+      line-height:1.35;
+      outline:none;
+    }
+    @media (max-width: 1120px){
+      .layout{ grid-template-columns: 220px 1fr; grid-template-rows: 280px 1fr; }
+      .viewerPane{ grid-column: 1 / -1; }
+    }
+  </style>
 </head>
-<body style="padding:18px">
-  <section class="card" style="max-width: 980px">
-    <h2 style="margin:0 0 8px 0">tools_correo</h2>
-    <p style="opacity:.85; margin:0">Módulo en construcción. Menú OK, UX OK. Luego enchufamos lógica y permisos por rol.</p>
-  </section>
+<body>
+  <div class="layout">
+    <aside class="pane">
+      <div class="head">
+        <div>
+          <div class="ttl">Carpetas</div>
+          <div class="muted">Bandeja (placeholder)</div>
+        </div>
+      </div>
+      <div class="list" id="folders">
+        <div class="item active" data-folder="inbox">
+          <div class="subj">📥 Bandeja de entrada</div>
+          <div class="prev muted">Responder desde el panel</div>
+        </div>
+        <div class="item" data-folder="sent">
+          <div class="subj">📤 Enviados</div>
+          <div class="prev muted">Historial</div>
+        </div>
+        <div class="item" data-folder="drafts">
+          <div class="subj">📝 Borradores</div>
+          <div class="prev muted">Plantillas (pronto)</div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="pane">
+      <div class="head">
+        <div>
+          <div class="ttl">Bandeja</div>
+          <div class="muted">GIA aún no conecta IMAP/Gmail, UX lista.</div>
+        </div>
+        <button class="btn" id="btnReload" type="button">Recargar</button>
+      </div>
+      <div class="list" id="msgList"></div>
+    </section>
+
+    <section class="pane viewerPane">
+      <div class="head">
+        <div>
+          <div class="ttl">Mensaje</div>
+          <div class="muted">Lectura + respuesta en el mismo lugar.</div>
+        </div>
+        <button class="btn primary" id="btnSend" type="button" disabled>Enviar (pronto)</button>
+      </div>
+      <div class="viewer" id="viewer">
+        <div class="muted">Selecciona un mensaje de la lista para ver y responder.</div>
+      </div>
+    </section>
+  </div>
+
   <script>
     window.addEventListener("message", (ev) => {
       if (ev.data?.type === "theme"){
         document.documentElement.classList.toggle("light", ev.data.mode === "light");
       }
     });
+
+    const qs = (s, el=document)=> el.querySelector(s);
+
+    const SAMPLE = [
+      { id: 1, from: "Tamara Muñoz", email: "tamara@example.com", date:"2026-03-17 09:10", subj:"Cotización Camaleón", body:"Hola,\n¿Me puedes confirmar disponibilidad para el 31/03?\nGracias." },
+      { id: 2, from: "Nicolas Daza", email: "nicolas@example.com", date:"2026-03-17 09:25", subj:"Duda sobre traslado", body:"Hola,\n¿El traslado está incluido en el total?\nSaludos." },
+      { id: 3, from: "Carmen Moreno", email: "carmen@example.com", date:"2026-03-17 09:48", subj:"Confirmación de horario", body:"Hola,\nEl horario sería 18:00 a 22:00.\nQuedo atenta." },
+    ];
+
+    let activeId = null;
+
+    function esc(s){ return String(s||"").replace(/[&<>\"']/g, (c)=>({\"&\":\"&amp;\",\"<\":\"&lt;\",\">\":\"&gt;\",\"\\\"\":\"&quot;\",\"'\":\"&#39;\"}[c])); }
+
+    function renderList(){
+      const host = qs("#msgList");
+      host.innerHTML = SAMPLE.map(m => `
+        <div class="item ${m.id===activeId ? "active":""}" data-id="${m.id}">
+          <div class="row1">
+            <div class="from">${esc(m.from)}</div>
+            <div class="date">${esc(m.date)}</div>
+          </div>
+          <div class="subj">${esc(m.subj)}</div>
+          <div class="prev">${esc(m.body).slice(0,120)}${m.body.length>120?"…":""}</div>
+        </div>
+      `).join("");
+      host.querySelectorAll("[data-id]").forEach(el => {
+        el.addEventListener("click", ()=>{
+          activeId = Number(el.getAttribute("data-id"));
+          renderList();
+          renderViewer();
+        });
+      });
+    }
+
+    function renderViewer(){
+      const m = SAMPLE.find(x=>x.id===activeId);
+      const v = qs("#viewer");
+      if (!m){
+        v.innerHTML = `<div class="muted">Selecciona un mensaje de la lista para ver y responder.</div>`;
+        qs("#btnSend").disabled = true;
+        return;
+      }
+      v.innerHTML = `
+        <h2>${esc(m.subj)}</h2>
+        <div class="meta">
+          <div>De: ${esc(m.from)} &lt;${esc(m.email)}&gt;</div>
+          <div>${esc(m.date)}</div>
+        </div>
+        <div class="body">${esc(m.body)}</div>
+        <div class="reply">
+          <div class="muted">Respuesta (se enviará cuando GIA esté conectado):</div>
+          <textarea id="replyBox" placeholder="Escribe tu respuesta..."></textarea>
+        </div>
+      `;
+      qs("#btnSend").disabled = false;
+    }
+
+    qs("#btnReload").addEventListener("click", ()=>{ renderList(); renderViewer(); });
+    qs("#btnSend").addEventListener("click", ()=>{
+      alert("Envío pendiente: GIA aún no está conectado a correo. UX lista.");
+    });
+
+    renderList();
+    renderViewer();
   </script>
 </body>
 </html>

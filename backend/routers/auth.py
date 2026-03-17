@@ -204,6 +204,21 @@ def _role_id_for(conn, role_name: str) -> int:
             return int(rid)
     except Exception:
         pass
+    # Si el rol no existe, intentamos crearlo (idempotente).
+    # Esto facilita agregar roles nuevos (ej: FINANZAS) sin migraciones manuales.
+    try:
+        conn.execute(
+            text("INSERT INTO roles(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"),
+            {"n": role_name},
+        )
+        rid = conn.execute(
+            text("SELECT id_rol FROM roles WHERE UPPER(nombre)=UPPER(:n) LIMIT 1"),
+            {"n": role_name},
+        ).scalar()
+        if rid:
+            return int(rid)
+    except Exception:
+        pass
     # fallback "OPERADOR" or default 5
     try:
         rid = conn.execute(
@@ -485,6 +500,7 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Dict[s
         raise HTTPException(status_code=401, detail="Token inválido")
     user = {
         "id": int(payload.get("sub")) if str(payload.get("sub","")).isdigit() else payload.get("sub"),
+        "username": payload.get("sub"),
         "role": payload.get("role") or "User",
         "marcas": payload.get("marcas") or [],
         "name": payload.get("name") or "",
@@ -511,6 +527,9 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Dict[s
                     user["avatar_url"] = row.get("avatar_url")
                     if not user.get("name") and row.get("nombre"):
                         user["name"] = row.get("nombre")
+                    # username usable para logs / filtros (prefiere email).
+                    if row.get("email") or row.get("username"):
+                        user["username"] = row.get("email") or row.get("username")
     except Exception:
         pass
 
@@ -531,11 +550,12 @@ def logout(payload: dict = Body(default_factory=dict), user: dict = Depends(get_
     # Activity log (BD): LOGOUT (no escribe archivos)
     try:
         uid_raw = user.get("id")
+        uname = str(user.get("username") or user.get("name") or uid_raw or "").strip()
         uid_int = int(uid_raw) if str(uid_raw or "").isdigit() else None
         with get_connection() as c2:
             log_activity(
                 c2,
-                username=str(uid_raw or ""),
+                username=uname,
                 user_id=uid_int,
                 role=str(user.get("role") or ""),
                 action="LOGOUT",
@@ -571,7 +591,7 @@ def logout(payload: dict = Body(default_factory=dict), user: dict = Depends(get_
             import threading
 
             uid_raw = user.get("id")
-            who = str(uid_raw or "").strip()
+            who = str(user.get("username") or user.get("name") or uid_raw or "").strip()
 
             # No bloquear la respuesta HTTP del logout (UX). El correo se intenta en background.
             def _bg():

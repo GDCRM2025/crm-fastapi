@@ -212,12 +212,15 @@ def _ensure_brand_accounts(conn):
 
 def _ensure_role(me):
     role = (me.get("role") or me.get("rol") or "").upper()
-    if role not in ("ADMIN", "SUPERADMIN"):
+    if role not in ("ADMIN", "SUPERADMIN", "FINANZAS"):
         raise HTTPException(status_code=403, detail="No autorizado")
 
 
 def _ensure_roles(me, allowed):
     role = (me.get("role") or me.get("rol") or "").upper()
+    # FINANZAS tiene acceso completo al módulo finanzas.
+    if role == "FINANZAS":
+        return role
     if role not in allowed:
         raise HTTPException(status_code=403, detail="No autorizado")
     return role

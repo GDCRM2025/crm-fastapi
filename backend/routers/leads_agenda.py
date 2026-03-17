@@ -926,9 +926,9 @@ def _build_event(
     if suffix:
         title = "%s - %s" % (title, suffix)
 
-    location = "DIR TBD" if missing_dir else str(direccion).strip()
-    if not missing_dir and comuna:
-        location = "%s, %s" % (location, comuna)
+    # Regla: LOCATION debe ser SOLO la comuna (la dirección completa va en la descripción).
+    # Si no hay comuna, dejamos marcador para que sea visible en calendario.
+    location = str(comuna or "").strip() or "COMUNA TBD"
 
     _, _, _, products_text = _calcular_montaje(items)
     prod_lines = [ln for ln in products_text.split("\n")[1:] if ln.strip()]
@@ -938,7 +938,8 @@ def _build_event(
     m_lines_raw = [ln.strip() for ln in montaje_text.replace("Montaje sugerido", "").split("\n") if ln.strip()]
     m_lines = [("• " + ln) if not ln.startswith("•") else ln for ln in m_lines_raw] or ["• —"]
 
-    dir_label = "DIR TBD" if missing_dir else ("%s, %s" % (str(direccion).strip(), comuna) if comuna else str(direccion).strip())
+    # Regla: la dirección completa va en la descripción (sin forzar comuna acá).
+    dir_label = "DIR TBD" if missing_dir else str(direccion).strip()
     phone_label = str(telefono or "").strip() or "POR CONFIRMAR"
 
     desc_lines = [
@@ -1441,6 +1442,4 @@ def move_lead_and_maybe_agenda(
                 "trace": traceback.format_exc().splitlines()[-8:],
             },
         )
-
-
 

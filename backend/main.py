@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from backend.core.logging_setup import setup_logging
+from fastapi import HTTPException
 
 
 def include_router_safe(app: FastAPI, module_path: str, attr: str = "router") -> None:
@@ -49,6 +50,30 @@ async def rid_middleware(request: Request, call_next):
     rid = uuid.uuid4().hex[:8]
     request.state.rid = rid
     try:
+        # Guard: rol FINANZAS solo puede usar endpoints de finanzas (+ auth/me + web estático).
+        try:
+            auth = request.headers.get("authorization") or ""
+            if auth.lower().startswith("bearer "):
+                from backend.routers.auth import get_current_user as _get_user  # lazy import
+
+                u = _get_user(authorization=auth)
+                role = str((u or {}).get("role") or (u or {}).get("rol") or "").upper()
+                if "FINAN" in role:
+                    p = request.url.path or "/"
+                    allowed_prefixes = ("/finanzas", "/auth", "/login", "/logout", "/me", "/web")
+                    if not (p == "/" or p.startswith(allowed_prefixes)):
+                        return JSONResponse(
+                            {"detail": "Sin permiso"},
+                            status_code=403,
+                            headers={"X-RID": rid},
+                        )
+        except HTTPException:
+            # Token inválido / expirado: lo maneja el endpoint que corresponda
+            pass
+        except Exception:
+            # Nunca romper por el guard.
+            pass
+
         resp = await call_next(request)
         resp.headers["X-RID"] = rid
         return resp

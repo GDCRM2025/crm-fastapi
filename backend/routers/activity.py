@@ -68,6 +68,34 @@ def _recipients_from_db() -> List[str]:
     except Exception:
         return []
 
+def _suppress_recipients(addrs: List[str]) -> List[str]:
+    """
+    Temporal: suprime envíos a ciertos correos (ej: SIMON) hasta que el digest quede validado.
+    - Por defecto suprime simonurrutia.m@gmail.com
+    - Se puede re-habilitar con CRM_ALLOW_SIMON_DIGEST=1
+    - Se puede agregar lista extra con SUPPRESS_DIGEST_TO="a@b.com,c@d.com"
+    """
+    if not addrs:
+        return []
+    allow_simon = str(os.getenv("CRM_ALLOW_SIMON_DIGEST") or "").strip().lower() in ("1", "true", "yes")
+    suppressed = set()
+    if not allow_simon:
+        suppressed.add("simonurrutia.m@gmail.com")
+    extra = (os.getenv("SUPPRESS_DIGEST_TO") or "").strip()
+    if extra:
+        for x in extra.split(","):
+            e = x.strip().lower()
+            if "@" in e:
+                suppressed.add(e)
+    if not suppressed:
+        return addrs
+    out: List[str] = []
+    for a in addrs:
+        if (a or "").strip().lower() in suppressed:
+            continue
+        out.append(a)
+    return out
+
 
 def _send_digest_window(
     dt_from: datetime | None,
@@ -157,7 +185,7 @@ def _send_digest_window(
             lines.append(f"- {ts} · {u} ({role}) · {action} {et}:{eid}".strip())
 
     body = "\n".join(lines).strip() + "\n"
-    to = _parse_recipients() or _recipients_from_db()
+    to = _suppress_recipients(_parse_recipients() or _recipients_from_db())
     if not to:
         return {"ok": False, "sent": 0, "reason": "no_recipients"}
 
@@ -225,7 +253,7 @@ def activity_digest(
     body = "\n".join(lines).strip() + "\n"
 
     if int(send or 0) == 1:
-        to = _parse_recipients() or _recipients_from_db()
+        to = _suppress_recipients(_parse_recipients() or _recipients_from_db())
         if not to:
             raise HTTPException(400, "Faltan receptores (ADMIN_DIGEST_TO o admins en BD)")
         send_email_group(to, title, body)

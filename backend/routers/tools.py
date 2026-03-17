@@ -1201,29 +1201,18 @@ def dashboard(
             link = r.get("calendar_html_link") or ""
             if not link and has_pre_start and has_pre_end and r.get("pre_start") and r.get("pre_end"):
                 try:
-                    def _mk_loc(addr: str | None, comuna: str | None) -> str:
-                        a = (addr or "").strip()
-                        c = (comuna or "").strip()
-                        if not a and not c:
-                            return ""
-                        if not a:
-                            return c
-                        if not c:
-                            return a
-                        # evita duplicar comuna si ya viene incluida en dirección
-                        if c.lower() in a.lower():
-                            return a
-                        return f"{a}, {c}"
+                    def _mk_loc(comuna_pref: str | None, comuna: str | None) -> str:
+                        # Regla: LOCATION = comuna (la dirección va en descripción / pre_direccion).
+                        c1 = (comuna_pref or "").strip()
+                        c2 = (comuna or "").strip()
+                        return c1 or c2 or "COMUNA TBD"
 
                     link = _gcal_link(
                         f"Evento {r.get('nombre_cliente') or ''}",
                         r["pre_start"],
                         r["pre_end"],
                         details="Evento confirmado",
-                        location=_mk_loc(
-                            r.get("pre_location") or r.get("pre_direccion") or r.get("direccion") or "",
-                            r.get("comuna") or "",
-                        ),
+                        location=_mk_loc(r.get("pre_location") or "", r.get("comuna") or ""),
                     )
                 except Exception:
                     link = ""

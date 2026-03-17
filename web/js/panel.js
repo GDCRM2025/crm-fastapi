@@ -1821,7 +1821,8 @@ const ROLE_IDS = {
   "CONDUCTOR (CHOP)": 6,
   "CHOP": 6,
   "OPERADOR": 7,
-  "MICE": 8
+  "MICE": 8,
+  "FINANZAS": 9
 };
 const PERMISSIONS = {
   1: /* @__PURE__ */ new Set([
@@ -1964,6 +1965,12 @@ const PERMISSIONS = {
     "tools_hub",
     "vruta",
     "set_prod"
+  ]),
+  9: /* @__PURE__ */ new Set([
+    "pl",
+    "gast",
+    "evt",
+    "plan_cuentas"
   ]),
   5: /* @__PURE__ */ new Set([
     "dash_home",

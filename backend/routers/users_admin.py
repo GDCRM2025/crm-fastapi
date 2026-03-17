@@ -93,7 +93,7 @@ def create_user(body: CreateUserIn, me = Depends(get_current_user)):
     password = (body.password or "").strip()
     if not nombre or not email or not password:
         raise HTTPException(status_code=400, detail="Faltan datos")
-    if rol not in ("ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "OPERACIONES", "EJECUTIVO", "VENTAS", "OPERADOR", "CHOP", "CHOFER", "CONDUCTOR"):
+    if rol not in ("ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "OPERACIONES", "EJECUTIVO", "VENTAS", "FINANZAS", "OPERADOR", "CHOP", "CHOFER", "CONDUCTOR"):
         rol = "OPERADOR"
     with get_connection() as conn:
         exists = conn.execute(

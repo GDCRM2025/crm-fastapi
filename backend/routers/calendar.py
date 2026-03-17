@@ -123,7 +123,9 @@ def events(
         if loc_col:
             loc_expr = f"COALESCE(l.{loc_col}, '')"
         if join_comuna:
-            loc_expr = f"NULLIF(COALESCE({loc_expr}, ''),'') || CASE WHEN co.nombre IS NOT NULL AND co.nombre<>'' THEN ' — '||co.nombre ELSE '' END"
+            # Si usamos pre_location, ya corresponde a la comuna (no duplicar).
+            if loc_col != "pre_location":
+                loc_expr = f"NULLIF(COALESCE({loc_expr}, ''),'') || CASE WHEN co.nombre IS NOT NULL AND co.nombre<>'' THEN ' — '||co.nombre ELSE '' END"
         ops_expr = f"COALESCE(l.{ops_col}, 0)" if ops_col else "0"
         marca_expr = "''"
         if join_marca:
