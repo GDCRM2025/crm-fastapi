@@ -295,13 +295,13 @@ def _is_admin(role):
 
 
 class ProductoUpsert(BaseModel):
-    producto = Field(min_length=1)
-    ingredientes = None
-    marca = None
-    costo = None
-    descripcion = None
-    orden = None
-    is_active = True
+    producto: str = Field(..., min_length=1)
+    ingredientes: Optional[str] = None
+    marca: Optional[str] = None
+    costo: Optional[float] = None
+    descripcion: Optional[str] = None
+    orden: Optional[int] = None
+    is_active: bool = True
 
 
 @router.get("/productos")

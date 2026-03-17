@@ -1767,11 +1767,11 @@ const MENU = [
     ico: "\u{1F9F0}",
     title: "Tools",
     items: [
-      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools_correo.html?v=20260317-toolsmenu1" },
-      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools_instagram.html?v=20260317-toolsmenu1" },
-      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools_whatsapp.html?v=20260317-toolsmenu1" },
-      { id: "tool_calc", label: "Calculadora", url: "/web/views/calculadora.html?v=20260317-toolsmenu1" },
-      { id: "tool_wx", label: "Clima (7 días)", url: "/web/views/clima.html?v=20260317-wx1" }
+      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260317-tools2#correo" },
+      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260317-tools2#instagram" },
+      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260317-tools2#whatsapp" },
+      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260317-tools2#calc" },
+      { id: "tool_wx", label: "Clima (7 días)", url: "/web/views/tools.html?v=20260317-tools2#clima" }
     ]
   },
   {
