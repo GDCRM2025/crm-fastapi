@@ -1027,45 +1027,61 @@ def _fetch_choices(source: str) -> List[Dict[str, Any]]:
 
 @router.get("/meta/{entity}")
 def meta(entity: str, user: dict = Depends(get_current_user)):
-    _require_admin(user)
+    try:
+        _require_admin(user)
 
-    table = _resolve_table(entity)
-    if table == "usuarios":
-        _ensure_users_extra_cols()
-    cols = _cols_for(table)
-    pk = _pk_for(table)
+        table = _resolve_table(entity)
+        if table == "usuarios":
+            _ensure_users_extra_cols()
+        cols = _cols_for(table)
+        pk = _pk_for(table)
 
-    hidden = _hidden_for(table)
-    readonly = _readonly_for(table)
-    labels = _labels_for(table)
+        hidden = _hidden_for(table)
+        readonly = _readonly_for(table)
+        labels = _labels_for(table)
 
-    out_cols: List[Dict[str, Any]] = []
-    for c in cols:
-        name = c["column_name"]
-        if name in hidden:
-            continue
-        c2 = dict(c)
-        c2["label"] = labels.get(name, name.replace("_", " ").title())
-        c2["readonly"] = (name in readonly) or (name == pk)
-        c2["ui"] = _ui_hint(table, c)
-        out_cols.append(c2)
+        out_cols: List[Dict[str, Any]] = []
+        for c in cols:
+            name = c["column_name"]
+            if name in hidden:
+                continue
+            c2 = dict(c)
+            c2["label"] = labels.get(name, name.replace("_", " ").title())
+            c2["readonly"] = (name in readonly) or (name == pk)
+            c2["ui"] = _ui_hint(table, c)
+            out_cols.append(c2)
 
-    choices: Dict[str, List[Dict[str, Any]]] = {}
-    for c in out_cols:
-        ui = c.get("ui") or {}
-        if ui.get("widget") == "select":
-            src = ui.get("source")
-            if src and src not in choices:
-                choices[src] = _fetch_choices(src)
+        choices: Dict[str, List[Dict[str, Any]]] = {}
+        for c in out_cols:
+            ui = c.get("ui") or {}
+            if ui.get("widget") == "select":
+                src = ui.get("source")
+                if src and src not in choices:
+                    choices[src] = _fetch_choices(src)
 
-    return {
-        "ok": True,
-        "entity": entity,
-        "table": table,
-        "pk": pk,
-        "columns": out_cols,
-        "choices": choices,
-    }
+        return {
+            "ok": True,
+            "entity": entity,
+            "table": table,
+            "pk": pk,
+            "columns": out_cols,
+            "choices": choices,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+
+        raise HTTPException(
+            500,
+            detail={
+                "where": "settings.meta",
+                "entity": entity,
+                "type": e.__class__.__name__,
+                "msg": str(e),
+                "trace": traceback.format_exc().splitlines()[-25:],
+            },
+        )
 
 
 @router.get("/{entity}")
