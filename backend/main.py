@@ -160,5 +160,8 @@ else:
 
 # Root: manda al login
 @app.get("/", include_in_schema=False)
-def root():
-    return RedirectResponse(url="/web/login.html")
+def root(request: Request):
+    rp = str(request.scope.get("root_path") or "")
+    # En prod (Passenger sub-URI), el frontend vive bajo /crm/web/...
+    # Si redirigimos a /web/login.html sin root_path, Apache puede no rutearlo al app.
+    return RedirectResponse(url=(rp + "/web/login.html") if rp else "/web/login.html")
