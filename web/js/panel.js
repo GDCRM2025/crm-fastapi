@@ -205,82 +205,44 @@ function setupBackupJobWatch() {
 window.GD = window.GD || {};
 window.GD.getToken = getToken;
 window.GD.authHeaders = authHeaders;
-const TOOLS_HUB_URL = "/web/views/tools.html?v=20260311-1";
-const QUICK_TOOLS = [
-  { id: "qt_instagram", label: "Instagram", icon: "\u{1F4F7}", hash: "#instagram" },
-  { id: "qt_correo", label: "Correo", icon: "\u2709\uFE0F", hash: "#correo" },
-  { id: "qt_whatsapp", label: "WhatsApp", icon: "\u{1F4AC}", hash: "#whatsapp", external: "https://web.whatsapp.com/" },
-  { id: "qt_extension", label: "Extensi\xF3n", icon: "\u{1F9E9}", hash: "#extension" },
-  { id: "qt_backup", label: "Backup", icon: "\u{1F4BE}", hash: "#backup", adminOnly: true }
-];
-function isAdminRole() {
-  return CURRENT_ROLE_ID === 1;
-}
-function isOpsOnlyRole() {
-  return CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7;
-}
-function openToolsTarget(cfg) {
-  if (!cfg) return;
-  if (cfg.external) {
-    window.open(cfg.external, "_blank", "noopener");
-    return;
-  }
-  const frame = qs("#mainFrame");
-  if (!frame) return;
-  frame.src = viewURL(`${TOOLS_HUB_URL}${cfg.hash || ""}`);
-}
-function ensureQuickToolsStyles() {
-  if (qs("#gdQuickToolsStyles")) return;
-  const st = document.createElement("style");
-  st.id = "gdQuickToolsStyles";
-  st.textContent = `
-    .gd-quick-tools{
-      display:flex;
-      align-items:center;
-      gap:8px;
-      flex-wrap:wrap;
-      margin-left:14px;
-    }
-    .gd-quick-tool{
-      border:1px solid rgba(148,163,184,.18);
-      background:rgba(255,255,255,.04);
-      color:var(--text);
-      border-radius:999px;
-      padding:8px 10px;
-      font-size:12px;
-      font-weight:950;
-      display:inline-flex;
-      align-items:center;
-      gap:7px;
-      cursor:pointer;
-      backdrop-filter:blur(10px);
-    }
-    .gd-quick-tool:hover{
-      background:rgba(255,255,255,.09);
-    }
-    .gd-quick-tool .ico{
-      width:20px;
-      height:20px;
-      display:grid;
-      place-items:center;
-      border-radius:999px;
-      background:rgba(255,255,255,.06);
-      font-size:11px;
-    }
-    @media (max-width: 1180px){
-      .gd-quick-tools{
-        display:none;
-      }
-    }
-  `;
-  document.head.appendChild(st);
-}
 function renderTopTools() {
   // Pedido: no mostrar “quick tools” en el topbar (van dentro de Tools, embebidos por separado).
   try {
     const topbar = qs(".topbar");
-    const host = topbar ? qs("#gdQuickTools", topbar) : null;
+    if (!topbar) return;
+    const host = qs("#gdQuickTools", topbar);
     if (host) host.remove();
+
+    // Compat: si quedó algún botón viejo por cache (IG/Correo/WSP/Ext/Backup), lo removemos igual.
+    const legacyIds = [
+      "qt_instagram",
+      "qt_correo",
+      "qt_whatsapp",
+      "qt_extension",
+      "qt_backup",
+      "btnInstagram",
+      "btnCorreo",
+      "btnWhatsApp",
+      "btnExtension",
+      "btnBackup"
+    ];
+    legacyIds.forEach((id) => {
+      try {
+        const el = qs(`#${id}`, topbar);
+        if (el) el.remove();
+      } catch (_) {
+      }
+    });
+
+    // Último seguro: elimina cualquier botón/link del topbar cuyo texto sea alguno de estos atajos.
+    const killWords = ["instagram", "correo", "whatsapp", "extensi", "backup"];
+    topbar.querySelectorAll("a,button").forEach((el) => {
+      try {
+        const t = String(el.textContent || "").toLowerCase();
+        if (killWords.some((w) => t.includes(w))) el.remove();
+      } catch (_) {
+      }
+    });
   } catch (_) {
   }
 }
@@ -2418,7 +2380,7 @@ function openDefault() {
 (function init() {
   if (!requireAuth()) return;
   setupIdleLogout();
-  setupBackupJobWatch();
+  renderTopTools();
   buildMenu();
   bindSidebarBehavior();
   bindTopbar();
@@ -2427,6 +2389,12 @@ function openDefault() {
   fetchMe().finally(() => {
     initThemeToggle();
     initUserMenu();
+    // Solo Admin necesita el watcher de backups; y solo si hay job_id guardado.
+    try {
+      const jobId = localStorage.getItem("gd_backup_job_id") || "";
+      if (jobId && CURRENT_ROLE_ID === 1) setupBackupJobWatch();
+    } catch (_) {
+    }
     setupChatWatch();
     openDefault();
     initLetterGlitch(document.querySelector(".topbar"), { glitchSpeed: 50 });
