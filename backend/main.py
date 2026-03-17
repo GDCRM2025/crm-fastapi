@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi import Request
+from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -43,6 +44,53 @@ app = FastAPI(title="CRM BDGD")
 # Logging a archivo con rotación (urgente en prod para investigar 500s).
 setup_logging(BASE_DIR)
 log = logging.getLogger("crm")
+
+def _safe_web_path(rel: str) -> Path | None:
+    """
+    Resolve archivos bajo /web sin depender de StaticFiles (fallback para hostings).
+    Previene traversal (`..`) y permite servir index.html en carpetas.
+    """
+    try:
+        rel = (rel or "").lstrip("/")
+        if not rel:
+            rel = "index.html"
+        parts = Path(rel).parts
+        if any(p in ("..",) for p in parts):
+            return None
+
+        candidates = [
+            WEB_DIR,
+            BASE_DIR / "public" / "web",
+            Path(__file__).resolve().parent.parent / "web",
+        ]
+        for base in candidates:
+            try:
+                if not base.exists():
+                    continue
+                p = (base / rel).resolve()
+                # asegurar que sigue dentro del base (no traversal via symlinks)
+                if str(p).startswith(str(base.resolve())):
+                    if p.is_dir():
+                        p = p / "index.html"
+                    if p.exists() and p.is_file():
+                        return p
+            except Exception:
+                continue
+        return None
+    except Exception:
+        return None
+
+
+@app.get("/web/{path:path}", include_in_schema=False)
+def web_fallback(path: str):
+    """
+    Fallback manual para servir /web/* cuando StaticFiles no queda montado o falla por config de hosting.
+    """
+    p = _safe_web_path(path)
+    if not p:
+        raise HTTPException(status_code=404, detail="Not Found")
+    return FileResponse(p)
+
 
 # Middleware: RID por request + respuesta JSON útil en 500s.
 @app.middleware("http")
