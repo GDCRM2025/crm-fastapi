@@ -1156,9 +1156,13 @@ def dashboard(
     events = []
     if conf_where:
         pre_title_expr = _lead_col(db, "pre_title")
+        pre_direccion_expr = _lead_col(db, "pre_direccion")
+        direccion_expr = _lead_col(db, "direccion")
         q_ev = f"""
             SELECT l.id_lead, {name_expr} AS nombre_cliente, l.fecha_evento,
                    {pre_start_expr} AS pre_start, {pre_end_expr} AS pre_end, {pre_location_expr} AS pre_location,
+                   {pre_direccion_expr} AS pre_direccion,
+                   {direccion_expr} AS direccion,
                    {cal_expr} AS calendar_html_link,
                    l.calendar_event_id,
                    {pre_title_expr} AS pre_title,
@@ -1197,12 +1201,29 @@ def dashboard(
             link = r.get("calendar_html_link") or ""
             if not link and has_pre_start and has_pre_end and r.get("pre_start") and r.get("pre_end"):
                 try:
+                    def _mk_loc(addr: str | None, comuna: str | None) -> str:
+                        a = (addr or "").strip()
+                        c = (comuna or "").strip()
+                        if not a and not c:
+                            return ""
+                        if not a:
+                            return c
+                        if not c:
+                            return a
+                        # evita duplicar comuna si ya viene incluida en dirección
+                        if c.lower() in a.lower():
+                            return a
+                        return f"{a}, {c}"
+
                     link = _gcal_link(
                         f"Evento {r.get('nombre_cliente') or ''}",
                         r["pre_start"],
                         r["pre_end"],
                         details="Evento confirmado",
-                        location=r.get("pre_location") or r.get("comuna") or "",
+                        location=_mk_loc(
+                            r.get("pre_location") or r.get("pre_direccion") or r.get("direccion") or "",
+                            r.get("comuna") or "",
+                        ),
                     )
                 except Exception:
                     link = ""

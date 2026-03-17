@@ -276,34 +276,13 @@ function ensureQuickToolsStyles() {
   document.head.appendChild(st);
 }
 function renderTopTools() {
-  const topbar = qs(".topbar");
-  if (!topbar || isOpsOnlyRole()) return;
-  ensureQuickToolsStyles();
-  let host = qs("#gdQuickTools", topbar);
-  if (!host) {
-    host = document.createElement("div");
-    host.id = "gdQuickTools";
-    host.className = "gd-quick-tools";
-    const ref = qs("#clockBox", topbar) || qs("#btnNotifs", topbar) || qs("#btnUserMenu", topbar);
-    if (ref && ref.parentNode) {
-      ref.parentNode.insertBefore(host, ref);
-    } else {
-      topbar.appendChild(host);
-    }
+  // Pedido: no mostrar “quick tools” en el topbar (van dentro de Tools, embebidos por separado).
+  try {
+    const topbar = qs(".topbar");
+    const host = topbar ? qs("#gdQuickTools", topbar) : null;
+    if (host) host.remove();
+  } catch (_) {
   }
-  const visible = QUICK_TOOLS.filter((it) => !it.adminOnly || isAdminRole());
-  host.innerHTML = visible.map((it) => `
-    <button class="gd-quick-tool" type="button" data-qt="${it.id}" title="${it.label}">
-      <span class="ico">${it.icon}</span>
-      <span>${it.label}</span>
-    </button>
-  `).join("");
-  host.querySelectorAll("[data-qt]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const cfg = QUICK_TOOLS.find((x) => x.id === btn.getAttribute("data-qt"));
-      openToolsTarget(cfg);
-    });
-  });
 }
 function refreshMainFrame() {
   var _a, _b;
@@ -1327,10 +1306,6 @@ async function fetchMe() {
       if (btnChat) btnChat.style.display = "none";
     }
     buildMenu();
-    try {
-      renderTopTools();
-    } catch (_) {
-    }
   } catch (_) {
     const userNameEl = qs("#userName");
     if (userNameEl) userNameEl.textContent = "Usuario";

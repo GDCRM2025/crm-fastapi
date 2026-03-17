@@ -119,12 +119,44 @@
     if (title) document.getElementById("t").textContent = title;
     document.getElementById("u").textContent = url || "";
 
+    function isDownload(u){
+      try{
+        const uu = new URL(u, location.origin);
+        return uu.searchParams.get("download") === "1" || uu.searchParams.get("dl") === "1";
+      }catch(_){
+        return String(u || "").includes("download=1") || String(u || "").includes("dl=1");
+      }
+    }
+
     function go(){
       if (!url){
         document.getElementById("m").textContent = "Falta URL del PDF (parámetro ?u=...).";
         return;
       }
-      // Deja que el UI pinte el loader antes de navegar.
+      // Para descargas, NO navegamos (la pestaña queda “pegada”).
+      // Disparamos descarga con iframe y cerramos la pestaña automáticamente.
+      if (isDownload(url)){
+        document.getElementById("t").textContent = "Descargando PDF…";
+        document.getElementById("m").textContent = "La descarga ya comenzó. Esta ventana se cerrará sola.";
+        setTimeout(()=>{
+          try{
+            const fr = document.createElement("iframe");
+            fr.style.display = "none";
+            fr.src = url;
+            document.body.appendChild(fr);
+          }catch(_){}
+        }, 250);
+        setTimeout(()=>{
+          try{ window.close(); }catch(_){}
+          // fallback: si el navegador bloquea window.close()
+          try{
+            document.getElementById("m").textContent = "Descarga iniciada. Ya puedes cerrar esta ventana.";
+          }catch(_){}
+        }, 1400);
+        return;
+      }
+
+      // Vista normal: deja que el UI pinte el loader antes de navegar.
       setTimeout(()=>{ location.href = url; }, 250);
     }
     const base = (String(location.pathname||"").includes("/crm/")) ? "/crm" : "";

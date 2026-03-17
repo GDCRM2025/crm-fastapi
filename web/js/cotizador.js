@@ -433,6 +433,26 @@
       return;
     }
 
+    // Pre-abre pestaña para evitar bloqueos de popup (navegaremos al PDF tras guardar).
+    let pdfPopup = null;
+    try{
+      pdfPopup = window.open("", "_blank", "noopener,noreferrer");
+      if (pdfPopup && pdfPopup.document){
+        pdfPopup.document.write(`
+          <html><head><title>Guardando…</title></head>
+          <body style="font-family:system-ui; background:#0b1220; color:#e5e7eb; display:grid; place-items:center; height:100vh; margin:0;">
+            <div style="max-width:520px; padding:18px; border:1px solid rgba(255,255,255,.14); border-radius:16px; background:rgba(15,26,43,.82);">
+              <div style="font-weight:900; font-size:16px;">Guardando cotización…</div>
+              <div style="opacity:.75; margin-top:6px; font-size:13px;">En unos segundos se abrirá el PDF.</div>
+            </div>
+          </body></html>
+        `);
+        pdfPopup.document.close();
+      }
+    }catch(_){
+      pdfPopup = null;
+    }
+
     const subtotal = items.reduce((s, it) => s + (+it.subtotal || 0), 0);
     let desc = +descuento.value || 0;
     if (tipoDesc.value === "%") desc = Math.round((desc / 100) * subtotal);
@@ -494,6 +514,21 @@
         alert("Cotización guardada. " + msg);
       }
 
+      // Abrir PDF de inmediato (en la pestaña pre-abierta si existe).
+      if (currentQuoteId){
+        const pdf = apiURL(`/quotes/${currentQuoteId}/pdf?v=${Date.now()}`);
+        const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Abriendo PDF…")}`);
+        try{
+          if (pdfPopup && !pdfPopup.closed){
+            pdfPopup.location.href = wait;
+          } else {
+            window.open(wait, "_blank", "noopener,noreferrer");
+          }
+        }catch(_){}
+      } else {
+        try{ if (pdfPopup && !pdfPopup.closed) pdfPopup.close(); }catch(_){}
+      }
+
       location.href = apiURL(`/web/views/historial_cotizaciones.html?id_lead=${leadId}`);
     }catch(e){
       console.error(e);
@@ -504,6 +539,7 @@
         raw || "No pude guardar la cotización.";
       if (window.Swal) Swal.fire({ icon:"error", title:"No se pudo guardar", text: msg.slice(0, 300) });
       else alert("No se pudo guardar: " + msg);
+      try{ if (pdfPopup && !pdfPopup.closed) pdfPopup.close(); }catch(_){}
     }finally{
       btnGuardar.disabled = false;
       btnGuardar.textContent = oldTxt;
