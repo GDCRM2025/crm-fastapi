@@ -60,7 +60,8 @@ async def rid_middleware(request: Request, call_next):
                 role = str((u or {}).get("role") or (u or {}).get("rol") or "").upper()
                 if "FINAN" in role:
                     p = request.url.path or "/"
-                    allowed_prefixes = ("/finanzas", "/auth", "/login", "/logout", "/me", "/web")
+                    # Permitimos historial (quotes) para FINANZAS (requerimiento: FINANZAS ve finanzas + historial).
+                    allowed_prefixes = ("/finanzas", "/quotes", "/auth", "/login", "/logout", "/me", "/web")
                     if not (p == "/" or p.startswith(allowed_prefixes)):
                         return JSONResponse(
                             {"detail": "Sin permiso"},

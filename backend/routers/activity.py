@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from html import escape as _html_escape
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -97,17 +98,14 @@ def _suppress_recipients(addrs: List[str]) -> List[str]:
     return out
 
 
-def _send_digest_window(
+def _build_digest_window(
     dt_from: datetime | None,
     dt_to: datetime | None,
     subject_prefix: str = "CRM · Digest actividad",
     filter_username: str = "",
-) -> Dict[str, Any]:
+) -> tuple[str, str, str]:
     """
-    Envío best-effort de digest de activity_log, sin depender de auth.
-    Usado por:
-    - cron-safe endpoint (/activity/digest_cron)
-    - logout PM (requisito del cliente)
+    Construye contenido del digest (texto + HTML). No envía correos.
     """
     now = datetime.now(timezone.utc)
     dt_from = dt_from or (now - timedelta(hours=6))
@@ -161,20 +159,40 @@ def _send_digest_window(
     users_sorted = sorted(per_user.values(), key=lambda x: (-int(x.get("n", 0)), str(x.get("username", ""))))
 
     lines: List[str] = [title, ""]
+    # HTML (para que sea legible en celular).
+    html_rows: List[str] = []
     if not rows:
         lines.append("Sin actividad en el periodo.")
+        html_body = f"<p><b>{_html_escape(title)}</b></p><p>Sin actividad en el periodo.</p>"
     else:
         lines.append("RESUMEN POR USUARIO")
         lines.append("-------------------")
+        html_rows.append(
+            "<tr>"
+            "<th style='text-align:left;padding:6px 8px;border-bottom:1px solid #ddd'>Usuario</th>"
+            "<th style='text-align:left;padding:6px 8px;border-bottom:1px solid #ddd'>Rol</th>"
+            "<th style='text-align:right;padding:6px 8px;border-bottom:1px solid #ddd'>Acciones</th>"
+            "<th style='text-align:left;padding:6px 8px;border-bottom:1px solid #ddd'>Top</th>"
+            "</tr>"
+        )
         for u in users_sorted[:60]:
             acts = sorted((u.get("actions") or {}).items(), key=lambda t: (-int(t[1]), str(t[0])))[:3]
             acts_txt = ", ".join([f"{a}:{n}" for a, n in acts]) if acts else "-"
             role_txt = f" ({u.get('role')})" if u.get("role") else ""
             lines.append(f"- {u.get('username')}{role_txt}: {u.get('n')} acciones · {acts_txt}")
+            html_rows.append(
+                "<tr>"
+                f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{_html_escape(str(u.get('username') or ''))}</td>"
+                f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{_html_escape(str(u.get('role') or ''))}</td>"
+                f"<td style='padding:6px 8px;border-bottom:1px solid #eee;text-align:right'>{int(u.get('n') or 0)}</td>"
+                f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{_html_escape(acts_txt)}</td>"
+                "</tr>"
+            )
 
         lines.append("")
         lines.append("DETALLE (últimos movimientos)")
         lines.append("-----------------------------")
+        detail_lines: List[str] = []
         for r in rows[:800]:
             ts = r[0].strftime("%Y-%m-%d %H:%M")
             u = r[1] or "?"
@@ -182,16 +200,50 @@ def _send_digest_window(
             action = r[3] or ""
             et = r[4] or ""
             eid = r[5] or ""
-            lines.append(f"- {ts} · {u} ({role}) · {action} {et}:{eid}".strip())
+            ln = f"- {ts} · {u} ({role}) · {action} {et}:{eid}".strip()
+            lines.append(ln)
+            detail_lines.append(ln)
+
+        html_body = (
+            f"<p><b>{_html_escape(title)}</b></p>"
+            "<p style='margin:0 0 8px 0'><b>Resumen por usuario</b></p>"
+            "<table style='border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px'>"
+            + "".join(html_rows)
+            + "</table>"
+            "<p style='margin:14px 0 6px 0'><b>Detalle</b></p>"
+            "<pre style='white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;"
+            "background:#f7f7f7;border:1px solid #eee;border-radius:8px;padding:10px'>"
+            + _html_escape("\n".join(detail_lines[:250]))
+            + "</pre>"
+        )
 
     body = "\n".join(lines).strip() + "\n"
+    return title, body, html_body
+
+
+def _send_digest_window(
+    dt_from: datetime | None,
+    dt_to: datetime | None,
+    subject_prefix: str = "CRM · Digest actividad",
+    filter_username: str = "",
+) -> Dict[str, Any]:
+    """
+    Envío best-effort de digest de activity_log, sin depender de auth.
+    Usado por:
+    - cron-safe endpoint (/activity/digest_cron)
+    - logout PM (requisito del cliente)
+    """
+    title, body, html_body = _build_digest_window(
+        dt_from, dt_to, subject_prefix=subject_prefix, filter_username=filter_username
+    )
+
     to = _suppress_recipients(_parse_recipients() or _recipients_from_db())
     if not to:
         return {"ok": False, "sent": 0, "reason": "no_recipients"}
 
     # Enviamos en UN solo correo (To + Cc) para que quede un hilo común y reducir conexiones SMTP.
     try:
-        send_email_group(to, title, body)
+        send_email_group(to, title, body, html=html_body)
         return {"ok": True, "sent": len(to), "failed": 0, "errors": []}
     except Exception as e:
         # Fallback: intentamos individual (best-effort)
@@ -199,7 +251,7 @@ def _send_digest_window(
         errors: List[str] = [f"group: {type(e).__name__}: {e}"]
         for addr in to:
             try:
-                send_email(addr, title, body)
+                send_email(addr, title, body, html=html_body)
                 sent += 1
             except Exception as ee:
                 errors.append(f"{addr}: {type(ee).__name__}: {ee}")
@@ -221,44 +273,14 @@ def activity_digest(
     now = datetime.now(timezone.utc)
     dt_from = now - timedelta(hours=int(hours))
 
-    with get_connection() as conn:
-        ensure_activity_log(conn)
-        rows = conn.execute(
-            text(
-                """
-                SELECT created_at, username, role, action, entity_type, entity_id
-                FROM public.activity_log
-                WHERE created_at >= :a AND created_at <= :b
-                ORDER BY created_at DESC
-                LIMIT 2000
-                """
-            ),
-            {"a": dt_from, "b": now},
-        ).fetchall()
-
-    title = f"CRM · Digest actividad ({fmt_window_title(dt_from, now)})"
-    lines = [title, ""]
-    if not rows:
-        lines.append("Sin actividad en el periodo.")
-    else:
-        for r in rows[:400]:
-            ts = r[0].strftime("%Y-%m-%d %H:%M")
-            u = r[1] or "?"
-            role = r[2] or ""
-            action = r[3] or ""
-            et = r[4] or ""
-            eid = r[5] or ""
-            lines.append(f"- {ts} · {u} ({role}) · {action} {et}:{eid}".strip())
-
-    body = "\n".join(lines).strip() + "\n"
-
     if int(send or 0) == 1:
-        to = _suppress_recipients(_parse_recipients() or _recipients_from_db())
-        if not to:
-            raise HTTPException(400, "Faltan receptores (ADMIN_DIGEST_TO o admins en BD)")
-        send_email_group(to, title, body)
-        return {"ok": True, "sent": len(to), "hours": int(hours)}
+        # usa el mismo formateo que cron/logout
+        r = _send_digest_window(dt_from, now, subject_prefix="CRM · Digest actividad", filter_username="")
+        if not r.get("ok"):
+            raise HTTPException(400, f"No se pudo enviar digest: {r.get('reason') or r.get('error') or 'unknown'}")
+        return {"ok": True, "sent": int(r.get("sent") or 0), "hours": int(hours)}
 
+    title, body, _html = _build_digest_window(dt_from, now, subject_prefix="CRM · Digest actividad", filter_username="")
     return {"ok": True, "hours": int(hours), "preview": body[:8000]}
 
 

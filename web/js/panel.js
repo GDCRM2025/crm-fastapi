@@ -1970,7 +1970,8 @@ const PERMISSIONS = {
     "pl",
     "gast",
     "evt",
-    "plan_cuentas"
+    "plan_cuentas",
+    "historial"
   ]),
   5: /* @__PURE__ */ new Set([
     "dash_home",
