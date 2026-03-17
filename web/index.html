@@ -38,109 +38,12 @@
       </div>
       <button class="iconbtn" id="btnChatTop" title="Chat interno">💬</button>
 
-      <div class="user-wrap">
-        <button class="user-btn" id="btnUserMenu" aria-label="Usuario">
-          <span class="user-avatar" id="userAvatar">GD</span>
-          <span class="user-name" id="userName">Usuario</span>
-        </button>
-
-        <div class="user-menu" id="userMenu" aria-hidden="true">
-          <!-- Tabs -->
-          <div class="um-tabs" role="tablist" aria-label="Perfil">
-            <button class="um-tab active" data-um-tab-btn="perfil" role="tab" aria-selected="true">Perfil</button>
-            <button class="um-tab" data-um-tab-btn="personalizacion" role="tab" aria-selected="false">Personalización</button>
-            <button class="um-tab" data-um-tab-btn="sistema" role="tab" aria-selected="false">Sistema</button>
-          </div>
-
-          <div class="um-tab-panels">
-            <div class="um-sec um-tabsec active" data-um-tab="perfil" role="tabpanel">
-              <div class="um-title">Perfil</div>
-              <div class="um-row">
-                <label>Nombre</label>
-                <input id="prefName" placeholder="Nombre" />
-              </div>
-              <div class="um-row">
-                <label>Email</label>
-                <input id="prefEmail" placeholder="email@empresa.cl" />
-              </div>
-              <div class="um-row">
-                <label>Teléfono</label>
-                <input id="prefPhone" placeholder="+56..." />
-              </div>
-              <div class="um-row">
-                <label>Foto</label>
-                <button class="um-btn ghost" id="prefPhotoBtn">Cambiar foto</button>
-              </div>
-            </div>
-
-            <div class="um-sec um-tabsec" data-um-tab="personalizacion" role="tabpanel">
-              <div class="um-title">Personalización</div>
-              <div class="um-row">
-                <label>Tema</label>
-                <label class="theme-switch mini">
-                  <span class="ts-ico">☀️</span>
-                  <input id="themeToggle" type="checkbox" />
-                  <span class="ts-track"></span>
-                  <span class="ts-ico">🌙</span>
-                </label>
-              </div>
-              <div class="um-row">
-                <label>Fuente</label>
-                <select id="fontSelect">
-                  <option value="system" style="font-family:system-ui;">Sistema</option>
-                  <option value="rounded" style="font-family:'Rounded Mplus 1c','Nunito',system-ui;">Redondeada</option>
-                  <option value="manrope" style="font-family:'Manrope','Segoe UI',system-ui;">Manrope</option>
-                  <option value="sora" style="font-family:'Sora','Segoe UI',system-ui;">Sora</option>
-                  <option value="jakarta" style="font-family:'Plus Jakarta Sans','Segoe UI',system-ui;">Jakarta</option>
-                  <option value="rubik" style="font-family:'Rubik','Segoe UI',system-ui;">Rubik</option>
-                  <option value="dmsans" style="font-family:'DM Sans','Segoe UI',system-ui;">DM Sans</option>
-                  <option value="poppins" style="font-family:'Poppins','Segoe UI',system-ui;">Poppins</option>
-                  <option value="nunito" style="font-family:'Nunito','Segoe UI',system-ui;">Nunito</option>
-                  <option value="montserrat" style="font-family:'Montserrat','Segoe UI',system-ui;">Montserrat</option>
-                  <option value="urbanist" style="font-family:'Urbanist','Segoe UI',system-ui;">Urbanist</option>
-                  <option value="sourcesans" style="font-family:'Source Sans 3','Segoe UI',system-ui;">Source Sans</option>
-                  <option value="serif" style="font-family:'Fraunces','Times New Roman',serif;">Serif moderna</option>
-                  <option value="playfair" style="font-family:'Playfair Display','Times New Roman',serif;">Playfair</option>
-                  <option value="mono" style="font-family:'JetBrains Mono','Menlo',monospace;">Mono</option>
-                </select>
-              </div>
-              <div class="um-row">
-                <label>Tamaño</label>
-                <select id="fontSize">
-                  <option value="12">Pequeña</option>
-                  <option value="13" selected>Normal</option>
-                  <option value="14">Grande</option>
-                  <option value="15">Extra</option>
-                </select>
-              </div>
-              <div class="um-row">
-                <label>Color principal (botones y destacados)</label>
-                <input id="accentPick" type="color" value="#19c37d" />
-              </div>
-              <div class="um-row">
-                <label>Color de texto general</label>
-                <input id="textPick" type="color" value="#e2e8f0" />
-              </div>
-              <button class="um-btn ghost" data-open="set_el">Colores de estados</button>
-            </div>
-
-            <div class="um-sec um-tabsec" data-um-tab="sistema" role="tabpanel">
-              <div class="um-title">Sistema</div>
-              <div class="um-actions">
-                <button class="um-btn" id="prefSave">Guardar perfil</button>
-                <button class="um-btn" id="btnRefresh">⟳ Actualizar</button>
-                <!-- Backups se accede desde Tools/Settings (no en topbar). -->
-                <button class="um-btn danger" id="btnLogout">Cerrar sesión</button>
-              </div>
-            </div>
-          </div>
-
-            <div class="um-sec">
-              <div class="um-title">Notas</div>
-              <div class="um-help">
-                Esta secci&oacute;n se usa para acciones de sistema (backups, sesi&oacute;n, etc.).
-              </div>
-            </div>
+      <div class="sys-wrap">
+        <button class="sys-btn" id="btnSystemTop" aria-label="Sistema">Sistema ▾</button>
+        <div class="sys-menu" id="systemMenuTop" aria-hidden="true">
+          <button class="sys-item" id="sysBackup" style="display:none;">Backup</button>
+          <button class="sys-item" id="sysRefresh">Actualizar sistema</button>
+          <button class="sys-item danger" id="sysLogout">Cerrar sesión</button>
         </div>
       </div>
     </div>
@@ -148,11 +51,106 @@
 
   <!-- LAYOUT -->
   <div class="layout">
-    <aside class="sidebar collapsed" id="sidebar">
-      <div class="sidebar-inner">
-        <nav class="side-nav" id="sideMenu"></nav>
-      </div>
-    </aside>
+	    <aside class="sidebar collapsed" id="sidebar">
+	      <div class="sidebar-inner">
+	        <nav class="side-nav" id="sideMenu"></nav>
+
+	        <!-- Bottom: Sistema (perfil + personalización + avatar) -->
+	        <div class="sidebar-bottom">
+	          <button class="user-btn sidebar-user-btn" id="btnUserMenu" aria-label="Sistema">
+	            <span class="user-avatar" id="userAvatar">GD</span>
+	            <span class="sb-user-meta">
+	              <span class="sb-user-system">Sistema</span>
+	              <span class="user-name" id="userName">Usuario</span>
+	            </span>
+	          </button>
+
+	          <div class="user-menu" id="userMenu" aria-hidden="true">
+	            <!-- Tabs -->
+	            <div class="um-tabs" role="tablist" aria-label="Perfil">
+	              <button class="um-tab active" data-um-tab-btn="perfil" role="tab" aria-selected="true">Perfil</button>
+	              <button class="um-tab" data-um-tab-btn="personalizacion" role="tab" aria-selected="false">Personalización</button>
+	            </div>
+
+	            <div class="um-tab-panels">
+	              <div class="um-sec um-tabsec active" data-um-tab="perfil" role="tabpanel">
+	                <div class="um-title">Perfil</div>
+	                <div class="um-row">
+	                  <label>Nombre</label>
+	                  <input id="prefName" placeholder="Nombre" />
+	                </div>
+	                <div class="um-row">
+	                  <label>Email</label>
+	                  <input id="prefEmail" placeholder="email@empresa.cl" />
+	                </div>
+	                <div class="um-row">
+	                  <label>Teléfono</label>
+	                  <input id="prefPhone" placeholder="+56..." />
+	                </div>
+	                <div class="um-row">
+	                  <label>Foto</label>
+	                  <button class="um-btn ghost" id="prefPhotoBtn">Cambiar foto</button>
+	                </div>
+	                <div class="um-actions" style="margin-top:10px;">
+	                  <button class="um-btn" id="prefSave">Guardar perfil</button>
+	                </div>
+	              </div>
+
+	              <div class="um-sec um-tabsec" data-um-tab="personalizacion" role="tabpanel">
+	                <div class="um-title">Personalización</div>
+	                <div class="um-row">
+	                  <label>Tema</label>
+	                  <label class="theme-switch mini">
+	                    <span class="ts-ico">☀️</span>
+	                    <input id="themeToggle" type="checkbox" />
+	                    <span class="ts-track"></span>
+	                    <span class="ts-ico">🌙</span>
+	                  </label>
+	                </div>
+	                <div class="um-row">
+	                  <label>Fuente</label>
+	                  <select id="fontSelect">
+	                    <option value="system" style="font-family:system-ui;">Sistema</option>
+	                    <option value="rounded" style="font-family:'Rounded Mplus 1c','Nunito',system-ui;">Redondeada</option>
+	                    <option value="manrope" style="font-family:'Manrope','Segoe UI',system-ui;">Manrope</option>
+	                    <option value="sora" style="font-family:'Sora','Segoe UI',system-ui;">Sora</option>
+	                    <option value="jakarta" style="font-family:'Plus Jakarta Sans','Segoe UI',system-ui;">Jakarta</option>
+	                    <option value="rubik" style="font-family:'Rubik','Segoe UI',system-ui;">Rubik</option>
+	                    <option value="dmsans" style="font-family:'DM Sans','Segoe UI',system-ui;">DM Sans</option>
+	                    <option value="poppins" style="font-family:'Poppins','Segoe UI',system-ui;">Poppins</option>
+	                    <option value="nunito" style="font-family:'Nunito','Segoe UI',system-ui;">Nunito</option>
+	                    <option value="montserrat" style="font-family:'Montserrat','Segoe UI',system-ui;">Montserrat</option>
+	                    <option value="urbanist" style="font-family:'Urbanist','Segoe UI',system-ui;">Urbanist</option>
+	                    <option value="sourcesans" style="font-family:'Source Sans 3','Segoe UI',system-ui;">Source Sans</option>
+	                    <option value="serif" style="font-family:'Fraunces','Times New Roman',serif;">Serif moderna</option>
+	                    <option value="playfair" style="font-family:'Playfair Display','Times New Roman',serif;">Playfair</option>
+	                    <option value="mono" style="font-family:'JetBrains Mono','Menlo',monospace;">Mono</option>
+	                  </select>
+	                </div>
+	                <div class="um-row">
+	                  <label>Tamaño</label>
+	                  <select id="fontSize">
+	                    <option value="12">Pequeña</option>
+	                    <option value="13" selected>Normal</option>
+	                    <option value="14">Grande</option>
+	                    <option value="15">Extra</option>
+	                  </select>
+	                </div>
+	                <div class="um-row">
+	                  <label>Color principal (botones y destacados)</label>
+	                  <input id="accentPick" type="color" value="#19c37d" />
+	                </div>
+	                <div class="um-row">
+	                  <label>Color de texto general</label>
+	                  <input id="textPick" type="color" value="#e2e8f0" />
+	                </div>
+	                <button class="um-btn ghost" data-open="set_el">Colores de estados</button>
+	              </div>
+	            </div>
+	          </div>
+	        </div>
+	      </div>
+	    </aside>
 
     <main class="main">
       <iframe id="mainFrame" class="frame" title="Contenido" allow="geolocation"></iframe>
@@ -246,7 +244,7 @@
     </section>
   </div>
 
-  <script type="module" src="./js/panel.js?v=20260317-tools3"></script>
+  <script type="module" src="./js/panel.js?v=20260317-sistema1"></script>
   <script type="module" src="./js/weather.js?v=20260206-1"></script>
 </body>
 </html>

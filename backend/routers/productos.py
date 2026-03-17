@@ -253,6 +253,39 @@ def _invalidate_marca_code_map():
     _MARCA_CODE_TO_ID = None
 
 
+def _marca_id_from_db(marca_in):
+    """
+    Último fallback: intenta resolver id_marca buscando en tabla marcas por nombre/alias.
+    Útil cuando productos usa id_marca y el campo texto `marca` viene NULL.
+    """
+    try:
+        s = str(marca_in or "").strip()
+        if not s:
+            return None
+        if s.isdigit():
+            return int(s)
+        canon = _canon_code_py(s)
+        snippet = _code_like_snippet(canon) or _norm_key_py(s)
+        if not snippet:
+            return None
+        with get_connection() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id_marca
+                    FROM public.marcas
+                    WHERE {kexpr} LIKE :k
+                    ORDER BY id_marca
+                    LIMIT 1
+                    """.format(kexpr=_norm_key_sql("COALESCE(nombre,marca,'')"))
+                ),
+                {"k": "%%%s%%" % snippet},
+            ).first()
+            return int(row[0]) if row and row[0] is not None else None
+    except Exception:
+        return None
+
+
 def _role(user):
     return (user.get("role") or user.get("rol") or "").upper()
 
@@ -311,6 +344,8 @@ def list_productos(
 
     if marca:
         marca_id = _marca_to_id(marca) if has_id_marca else None
+        if has_id_marca and not marca_id:
+            marca_id = _marca_id_from_db(marca)
         canon = _canon_code_py(marca)
         snippet = _code_like_snippet(canon) or _norm_key_py(marca)
 
@@ -329,32 +364,35 @@ def list_productos(
 
     elif only_own:
         if not marcas_ids:
-            return {"items": []}
+            # Si el usuario no tiene marcas asignadas, no dejamos el cotizador inutilizable:
+            # devolvemos todo (respetando only_active si viene).
+            only_own = False
 
-        with get_connection() as conn:
-            rows = conn.execute(
-                text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
-                {"m": marcas_ids},
-            ).fetchall()
+        if only_own:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
+                    {"m": marcas_ids},
+                ).fetchall()
 
-        marcas = [r[0] or r[1] for r in rows if (r[0] or r[1])]
-        marcas_codes = [_canon_code_py(m) for m in marcas]
-        marcas_snips = [s for s in [_code_like_snippet(c) for c in marcas_codes] if s]
-        marcas_like = ["%%%s%%" % s for s in marcas_snips]
-        marca_expr = _norm_key_sql("COALESCE(marca,'')")
+            marcas = [r[0] or r[1] for r in rows if (r[0] or r[1])]
+            marcas_codes = [_canon_code_py(m) for m in marcas]
+            marcas_snips = [s for s in [_code_like_snippet(c) for c in marcas_codes] if s]
+            marcas_like = ["%%%s%%" % s for s in marcas_snips]
+            marca_expr = _norm_key_sql("COALESCE(marca,'')")
 
-        if has_id_marca and marcas_ids and marcas_like:
-            where.append("(id_marca = ANY(:marcas_ids) OR (id_marca IS NULL AND %s LIKE ANY(:marcas_like)))" % marca_expr)
-            params["marcas_ids"] = marcas_ids
-            params["marcas_like"] = marcas_like
-        elif has_id_marca and marcas_ids:
-            where.append("id_marca = ANY(:marcas_ids)")
-            params["marcas_ids"] = marcas_ids
-        elif marcas_like:
-            where.append("%s LIKE ANY(:marcas_like)" % marca_expr)
-            params["marcas_like"] = marcas_like
-        else:
-            return {"items": []}
+            if has_id_marca and marcas_ids and marcas_like:
+                where.append("(id_marca = ANY(:marcas_ids) OR (id_marca IS NULL AND %s LIKE ANY(:marcas_like)))" % marca_expr)
+                params["marcas_ids"] = marcas_ids
+                params["marcas_like"] = marcas_like
+            elif has_id_marca and marcas_ids:
+                where.append("id_marca = ANY(:marcas_ids)")
+                params["marcas_ids"] = marcas_ids
+            elif marcas_like:
+                where.append("%s LIKE ANY(:marcas_like)" % marca_expr)
+                params["marcas_like"] = marcas_like
+            else:
+                return {"items": []}
 
     if only_active:
         where.append("is_active IS TRUE")

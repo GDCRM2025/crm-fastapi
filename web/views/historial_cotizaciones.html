@@ -234,7 +234,7 @@
 
     const STATE = { limit: 50, offset: 0, hasMore: false };
 
-    async function getHistory(){
+	    async function getHistory(){
       const q=(qs("#q").value||"").trim();
       let url = apiURL(`/quotes/history?limit=${STATE.limit}&offset=${STATE.offset}`);
       if (leadId) url += `&id_lead=${encodeURIComponent(leadId)}`;
@@ -246,7 +246,39 @@
       // sin total aún: inferimos “siguiente página” por cantidad
       STATE.hasMore = items.length >= STATE.limit;
       return items;
-    }
+	    }
+
+	    async function downloadPdf(id){
+	      const url = apiURL(`/quotes/${id}/pdf?download=1&v=${Date.now()}`);
+	      toast("Descargando PDF…", `Cotización #${id}`, "info");
+	      const r = await fetch(url, { headers: authHeaders() });
+	      if (!r.ok){
+	        const txt = await r.text();
+	        throw new Error(txt || `HTTP ${r.status}`);
+	      }
+	      const blob = await r.blob();
+
+	      let filename = `cotizacion_${id}.pdf`;
+	      try{
+	        const disp = r.headers.get("content-disposition") || "";
+	        const m = disp.match(/filename\\*?=(?:UTF-8''|\\\")?([^\\\";]+)/i);
+	        if (m && m[1]){
+	          filename = decodeURIComponent(m[1].replace(/\"/g,"").trim());
+	        }
+	      }catch(_){}
+
+	      const a = document.createElement("a");
+	      const href = URL.createObjectURL(blob);
+	      a.href = href;
+	      a.download = filename;
+	      a.rel = "noopener";
+	      a.style.display = "none";
+	      document.body.appendChild(a);
+	      a.click();
+	      a.remove();
+	      setTimeout(()=>{ try{ URL.revokeObjectURL(href); }catch(_){} }, 60_000);
+	      toast("PDF descargado", filename, "success");
+	    }
 
     const cacheItems = new Map();
 
@@ -352,14 +384,15 @@
                 window.open(wait, "_blank", "noopener,noreferrer");
 	              return;
 	            }
-	            if(act==="download"){
-	              // Descarga directa
-	              const pdf = apiURL(`/quotes/${id}/pdf?download=1`);
-                const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Descargando PDF…")}`);
-                window.open(wait, "_blank", "noopener,noreferrer");
-	              return;
-	            }
-	          });
+		            if(act==="download"){
+		              try{
+		                await downloadPdf(id);
+		              }catch(e){
+		                toast("No se pudo descargar", String(e?.message||e).slice(0,200), "error");
+		              }
+		              return;
+		            }
+		          });
 
           tb.appendChild(tr);
         }

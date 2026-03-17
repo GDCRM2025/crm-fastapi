@@ -1,4 +1,5 @@
 import json
+import ast
 from datetime import date, datetime, timedelta
 
 
@@ -6,7 +7,20 @@ def _as_text(v):
     if v is None:
         return ""
     if isinstance(v, str):
-        return v
+        s = v
+        # En algunos deployments, valores bytes terminan persistidos como str("b'...'")
+        # (por ejemplo en title/productos). Intentamos “desenvolver” ese literal.
+        ss = s.strip()
+        if (ss.startswith("b'") and ss.endswith("'")) or (ss.startswith('b"') and ss.endswith('"')):
+            try:
+                lit = ast.literal_eval(ss)
+                if isinstance(lit, (bytes, bytearray, memoryview)):
+                    return _as_text(lit)
+                if isinstance(lit, str):
+                    return lit
+            except Exception:
+                pass
+        return s
     if isinstance(v, (bytes, bytearray, memoryview)):
         b = bytes(v)
         for enc in ("utf-8", "latin-1"):
@@ -510,6 +524,51 @@ def _get_comuna_nombre(id_comuna):
     with engine.connect() as cn:
         r = cn.execute(q, {"id": id_comuna}).fetchone()
         return _as_text(r[0]).strip() if r and r[0] is not None else ""
+
+
+def _infer_marca_from_cotizacion(id_cotizacion):
+    """
+    Si el lead no tiene marca, intentamos inferirla desde cotizaciones.
+    Soporta esquemas donde la PK no necesariamente se llama id_cotizacion.
+    """
+    if not id_cotizacion:
+        return None
+    try:
+        if not _table_exists("cotizaciones"):
+            return None
+    except Exception:
+        return None
+
+    cols = set(_cols_for("cotizaciones"))
+    pk = None
+    try:
+        pk = _pk_for("cotizaciones")
+    except Exception:
+        pk = "id_cotizacion" if "id_cotizacion" in cols else ("id" if "id" in cols else None)
+    if not pk:
+        return None
+
+    # Caso 1: FK a marcas
+    if "id_marca" in cols:
+        q = text(f"SELECT id_marca FROM cotizaciones WHERE {_qident(pk)}=:id LIMIT 1")
+        with engine.connect() as cn:
+            r = cn.execute(q, {"id": int(id_cotizacion)}).fetchone()
+            mid = r[0] if r else None
+        if mid:
+            m = _get_marca_nombre(mid)
+            return m if m and m != "Sin Marca" else None
+
+    # Caso 2: nombre de marca directo en cotizaciones
+    for col in ("marca", "nombre_marca", "brand", "brand_name"):
+        if col in cols:
+            q = text(f"SELECT {_qident(col)} FROM cotizaciones WHERE {_qident(pk)}=:id LIMIT 1")
+            with engine.connect() as cn:
+                r = cn.execute(q, {"id": int(id_cotizacion)}).fetchone()
+                if r and r[0] is not None:
+                    t = _as_text(r[0]).strip()
+                    return t or None
+
+    return None
 
 
 def _list_cotizaciones_for_lead(lead):
@@ -1179,6 +1238,10 @@ def move_lead_and_maybe_agenda(
 
         comuna = _get_comuna_nombre(lead.get("id_comuna"))
         marca = _get_marca_nombre(lead.get("id_marca"))
+        if (not marca or marca == "Sin Marca") and id_cot:
+            marca2 = _infer_marca_from_cotizacion(id_cot)
+            if marca2:
+                marca = marca2
 
         ev = _build_event(
             lead=lead,

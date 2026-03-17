@@ -338,6 +338,46 @@ body{
 .um-actions{ display:flex; gap:8px; }
 .um-actions .um-btn{ width:auto; flex:1; }
 
+/* Topbar: Sistema dropdown */
+.sys-wrap{ position:relative; z-index: 40000; }
+.sys-btn{
+  display:flex; align-items:center; gap:10px;
+  border:1px solid rgba(148,163,184,.2);
+  background: rgba(2,6,23,.35);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: var(--text);
+  cursor:pointer;
+  font-weight: 950;
+}
+.sys-menu{
+  position: fixed;
+  right:14px;
+  top: calc(var(--topbar-h) + 10px);
+  width: 240px;
+  background: var(--surface);
+  border:1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  display:none;
+  z-index: 120000;
+}
+.sys-menu.open{ display:block; }
+.sys-item{
+  width:100%;
+  padding: 10px 10px;
+  border-radius: 12px;
+  border:1px solid rgba(148,163,184,.2);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  color: var(--text);
+  font-weight: 950;
+  text-align:left;
+  cursor:pointer;
+}
+.sys-item:hover{ background: var(--hover-surface); border-color: var(--hover-border); }
+.sys-item.danger{ border-color: rgba(239,68,68,.35); color:#fecaca; }
+
 /* Tabs user menu */
 .um-tabs{
   display:flex;
@@ -616,12 +656,39 @@ body.ops-mode .main{
 
 .sidebar-inner{
   height:100%;
-  overflow:auto;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
   padding: 10px 10px;
 }
 
 /* menu */
-.side-nav{ display:flex; flex-direction:column; gap: 10px; }
+.side-nav{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  flex: 1;
+  overflow:auto;
+  padding-bottom: 10px;
+}
+
+.sidebar-bottom{
+  position: sticky;
+  bottom: 0;
+  padding-top: 10px;
+  background: linear-gradient(180deg, transparent 0%, rgba(2,6,23,.22) 35%, rgba(2,6,23,.40) 100%);
+  border-top: 1px solid rgba(148,163,184,.12);
+}
+.sidebar-user-btn{
+  width:100%;
+  border-radius: 16px;
+  padding: 10px 12px;
+  justify-content:flex-start;
+  gap: 10px;
+}
+.sb-user-meta{ display:flex; flex-direction:column; line-height: 1.05; }
+.sb-user-system{ font-weight: 1000; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.sidebar-user-btn .user-name{ max-width: 170px; }
 
 .menu-group{
   border: 1px solid var(--border);

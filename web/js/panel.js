@@ -235,10 +235,12 @@ function renderTopTools() {
     });
 
     // Último seguro: elimina cualquier botón/link del topbar cuyo texto sea alguno de estos atajos.
-    const killWords = ["instagram", "correo", "whatsapp", "extensi", "backup"];
+    // OJO: no borrar el Backup del menú Sistema (admin-only).
+    const killWords = ["instagram", "correo", "whatsapp", "extensi"];
     topbar.querySelectorAll("a,button").forEach((el) => {
       try {
         const t = String(el.textContent || "").toLowerCase();
+        if (el.id === "sysBackup" || el.closest("#systemMenuTop")) return;
         if (killWords.some((w) => t.includes(w))) el.remove();
       } catch (_) {
       }
@@ -1246,6 +1248,11 @@ async function fetchMe() {
     }
     const roleName = (me.role || me.rol || "").toString().toUpperCase();
     CURRENT_ROLE_ID = ROLE_IDS[roleName] || null;
+    try {
+      const sysBackup = qs("#sysBackup");
+      if (sysBackup) sysBackup.style.display = CURRENT_ROLE_ID === 1 ? "" : "none";
+    } catch (_) {
+    }
     const isOpsOnly = CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7 || roleName.includes("OPERADOR") || roleName.includes("CONDUCTOR") || roleName.includes("CHOFER");
     if (isOpsOnly) {
       try {
@@ -1451,10 +1458,21 @@ function initUserMenu() {
     }
     try {
       const rect = btn.getBoundingClientRect();
-      menu.style.top = rect.bottom + 8 + "px";
-      menu.style.right = "14px";
-      menu.style.left = "auto";
       menu.style.position = "fixed";
+      const inSidebar = !!btn.closest("#sidebar");
+      if (inSidebar) {
+        // Bottom sidebar: abrir hacia arriba, alineado al botón.
+        menu.style.top = "auto";
+        menu.style.right = "auto";
+        menu.style.left = Math.max(12, Math.round(rect.left)) + "px";
+        menu.style.bottom = Math.max(12, Math.round(window.innerHeight - rect.top + 8)) + "px";
+      } else {
+        // Topbar: dropdown clásico a la derecha
+        menu.style.bottom = "auto";
+        menu.style.top = rect.bottom + 8 + "px";
+        menu.style.right = "14px";
+        menu.style.left = "auto";
+      }
     } catch (_) {
     }
     menu.classList.add("open");
@@ -1516,7 +1534,8 @@ function initUserMenu() {
       return "perfil";
     }
   })();
-  setTab(initialTab);
+  const validTabs = new Set(tabBtns.map((b) => b.getAttribute("data-um-tab-btn") || ""));
+  setTab(validTabs.has(initialTab) ? initialTab : "perfil");
   tabBtns.forEach((b) => b.addEventListener("click", () => setTab(b.getAttribute("data-um-tab-btn") || "perfil")));
   window.GD = window.GD || {};
   window.GD.openUserMenu = openUserMenu;
@@ -1751,7 +1770,8 @@ const MENU = [
       { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools_correo.html?v=20260317-toolsmenu1" },
       { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools_instagram.html?v=20260317-toolsmenu1" },
       { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools_whatsapp.html?v=20260317-toolsmenu1" },
-      { id: "tool_calc", label: "Calculadora", url: "/web/views/calculadora.html?v=20260317-toolsmenu1", noSidebar: true }
+      { id: "tool_calc", label: "Calculadora", url: "/web/views/calculadora.html?v=20260317-toolsmenu1" },
+      { id: "tool_wx", label: "Clima (7 días)", url: "/web/views/clima.html?v=20260317-wx1" }
     ]
   },
   {
@@ -1833,6 +1853,7 @@ const PERMISSIONS = {
     "tool_ig",
     "tool_cal",
     "tool_calc",
+    "tool_wx",
     "tools_hub",
     "gps",
     "vruta",
@@ -1871,6 +1892,7 @@ const PERMISSIONS = {
     "tool_ig",
     "tool_cal",
     "tool_calc",
+    "tool_wx",
     "tools_hub",
     "vruta",
     "set_prod",
@@ -1903,6 +1925,7 @@ const PERMISSIONS = {
     "tool_ig",
     "tool_cal",
     "tool_calc",
+    "tool_wx",
     "tools_hub",
     "gps",
     "vruta",
@@ -1927,6 +1950,7 @@ const PERMISSIONS = {
     "tool_ig",
     "tool_cal",
     "tool_calc",
+    "tool_wx",
     "tools_hub",
     "vruta",
     "set_prod"
@@ -1962,6 +1986,7 @@ const PERMISSIONS = {
     "tool_ig",
     "tool_cal",
     "tool_calc",
+    "tool_wx",
     "tools_hub",
     "vruta",
     "gast",
@@ -2004,6 +2029,7 @@ const PERMISSIONS = {
     "tool_ig",
     "tool_cal",
     "tool_calc",
+    "tool_wx",
     "tools_hub"
   ])
 };
@@ -2194,7 +2220,7 @@ function bindSidebarBehavior() {
   }, { capture: true });
 }
 function bindTopbar() {
-  var _a, _b, _c, _d, _e;
+  var _a, _b, _c, _d;
   (_a = qs("#brandHome")) == null ? void 0 : _a.addEventListener("click", () => {
     if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {
       openItem({ id: "dash_home", url: "/web/views/dashboard.html" });
@@ -2203,40 +2229,89 @@ function bindTopbar() {
       if (first) openItem(first);
     }
   });
-  const openWx = () => {
-    const m = qs("#wxModal");
-    m.classList.add("open");
-    m.setAttribute("aria-hidden", "false");
-  };
+
+  // Weather modal (usado por la vista Tools → Clima; acá dejamos close handlers).
   const closeWx = () => {
-    const m = qs("#wxModal");
-    m.classList.remove("open");
-    m.setAttribute("aria-hidden", "true");
-  };
-  (_b = qs("#wxPill")) == null ? void 0 : _b.addEventListener("click", openWx);
-  (_c = qs("#wxClose")) == null ? void 0 : _c.addEventListener("click", closeWx);
-  (_d = qs("#wxModalBg")) == null ? void 0 : _d.addEventListener("click", closeWx);
-  qs("#btnLogout").addEventListener("click", async () => {
-    const ok = await Swal.fire({
-      title: "Cerrar sesi\xF3n",
-      text: "\xBFSeguro que deseas cerrar sesi\xF3n?",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonText: "S\xED, salir",
-      cancelButtonText: "Cancelar",
-      confirmButtonColor: "#19C37D"
-    }).then((r) => r.isConfirmed);
-    if (!ok) return;
-    await performLogout();
-  });
-  (_e = qs("#btnRefresh")) == null ? void 0 : _e.addEventListener("click", async () => {
-    refreshMainFrame();
     try {
-      const data = await fetchNotifications();
-      renderNotifications(data);
+      const m = qs("#wxModal");
+      m == null ? void 0 : m.classList.remove("open");
+      m == null ? void 0 : m.setAttribute("aria-hidden", "true");
     } catch (_) {
     }
-  });
+  };
+  (_b = qs("#wxClose")) == null ? void 0 : _b.addEventListener("click", closeWx);
+  (_c = qs("#wxModalBg")) == null ? void 0 : _c.addEventListener("click", closeWx);
+
+  // Topbar: Sistema dropdown (Backup/admin + actualizar + logout)
+  const sysBtn = qs("#btnSystemTop");
+  const sysMenu = qs("#systemMenuTop");
+  if (sysBtn && sysMenu) {
+    const openSys = () => {
+      try {
+        const rect = sysBtn.getBoundingClientRect();
+        sysMenu.style.position = "fixed";
+        sysMenu.style.top = rect.bottom + 8 + "px";
+        sysMenu.style.right = "14px";
+        sysMenu.style.left = "auto";
+      } catch (_) {
+      }
+      sysMenu.classList.add("open");
+      sysMenu.setAttribute("aria-hidden", "false");
+    };
+    const closeSys = () => {
+      sysMenu.classList.remove("open");
+      sysMenu.setAttribute("aria-hidden", "true");
+    };
+    sysBtn.addEventListener("click", (e) => {
+      var _a2;
+      (_a2 = e == null ? void 0 : e.stopPropagation) == null ? void 0 : _a2.call(e);
+      if (sysMenu.classList.contains("open")) closeSys();
+      else openSys();
+    });
+    document.addEventListener("click", (ev) => {
+      if (ev.target.closest("#systemMenuTop") || ev.target.closest("#btnSystemTop")) return;
+      closeSys();
+    });
+    window.addEventListener("blur", closeSys);
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && sysMenu.classList.contains("open")) closeSys();
+    });
+
+    (_d = qs("#sysRefresh")) == null ? void 0 : _d.addEventListener("click", async () => {
+      closeSys();
+      refreshMainFrame();
+      try {
+        const data = await fetchNotifications();
+        renderNotifications(data);
+      } catch (_) {
+      }
+    });
+    const sysLogout = qs("#sysLogout");
+    sysLogout == null ? void 0 : sysLogout.addEventListener("click", async () => {
+      closeSys();
+      const ok = await Swal.fire({
+        title: "Cerrar sesión",
+        text: "¿Seguro que deseas cerrar sesión?",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Sí, salir",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#19C37D"
+      }).then((r) => r.isConfirmed);
+      if (!ok) return;
+      await performLogout();
+    });
+    const sysBackup = qs("#sysBackup");
+    sysBackup == null ? void 0 : sysBackup.addEventListener("click", () => {
+      closeSys();
+      if (CURRENT_ROLE_ID !== 1) {
+        toast("Backup: solo Admin", { kind: "warn" });
+        return;
+      }
+      const frame = qs("#mainFrame");
+      if (frame) frame.src = viewURL(`/web/views/backups.html?v=${Date.now()}`);
+    });
+  }
 }
 function initLetterGlitch(target, opts = {}) {
   if (!target) return;
