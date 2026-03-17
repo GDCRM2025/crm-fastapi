@@ -23,6 +23,18 @@ except Exception:  # pragma: no cover
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
+def _as_text(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        try:
+            return bytes(v).decode("utf-8", "ignore")
+        except Exception:
+            return str(v)
+    return str(v)
+
 
 # -----------------------------
 # CONFIG
@@ -894,7 +906,7 @@ def _pk_for(table: str) -> str:
         r = cn.execute(q, {"t": table}).fetchone()
         if not r:
             raise HTTPException(500, detail=f"No PK para {table}")
-        return str(r._mapping["pk"])
+        return _as_text(r._mapping["pk"]).strip()
 
 
 def _cols_for(table: str) -> List[Dict[str, Any]]:
@@ -912,7 +924,20 @@ def _cols_for(table: str) -> List[Dict[str, Any]]:
     )
     with engine.connect() as cn:
         rows = cn.execute(q, {"t": table}).mappings().all()
-    return [dict(r) for r in rows]
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        d = dict(r)
+        # En algunos ambientes el driver devuelve bytes; normalizamos para no romper el CRUD.
+        if "column_name" in d:
+            d["column_name"] = _as_text(d.get("column_name")).strip()
+        if "data_type" in d:
+            d["data_type"] = _as_text(d.get("data_type")).strip()
+        if "is_nullable" in d:
+            d["is_nullable"] = _as_text(d.get("is_nullable")).strip()
+        if "column_default" in d and d.get("column_default") is not None:
+            d["column_default"] = _as_text(d.get("column_default"))
+        out.append(d)
+    return out
 
 
 def _has_col(cols: List[Dict[str, Any]], name: str) -> bool:
