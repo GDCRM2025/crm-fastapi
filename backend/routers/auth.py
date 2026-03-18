@@ -145,8 +145,10 @@ class RegisterIn(BaseModel):
     nombre: str
     email: str
     rut: str
-    # En registro de Operadores/CHOP la contraseña inicial viene desde teléfono (no se pide password).
-    # Mantiene compatibilidad: si llega password, se usa; si no, se usa teléfono.
+    # Registro Operadores/CHOP:
+    # - Usuario: RUT (sin puntos, con guion)
+    # - Contraseña inicial: RUT (mismo formato)
+    # Mantiene compatibilidad: si llega password explícita, se respeta; si no, se usa RUT.
     password: str | None = None
     telefono: str | None = None
     username: str | None = None
@@ -441,8 +443,8 @@ def register(data: RegisterIn):
         return s.lower()
 
     rut = _rut_norm(rut_in)
-    # Password inicial: teléfono (requerimiento). Si viene password explícita, se respeta por compat.
-    password = password_in or telefono_in
+    # Password inicial: RUT (requerimiento). Si viene password explícita, se respeta por compat.
+    password = password_in or rut
 
     # Username recomendado: RUT (sin puntos, con guion).
     username = (data.username or rut or email.split("@")[0]).strip().lower()
