@@ -292,7 +292,7 @@ body{
   padding: 12px;
   box-shadow: 0 20px 60px rgba(0,0,0,.45);
   display:none;
-  z-index: 120000;
+  z-index: 260000;
 }
 .user-menu.open{ display:block; }
 .um-sec{ padding:10px; border:1px solid rgba(148,163,184,.10); border-radius:12px; margin-bottom:10px; background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
@@ -358,7 +358,7 @@ body{
   padding: 10px;
   box-shadow: 0 20px 60px rgba(0,0,0,.45);
   display:none;
-  z-index: 120000;
+  z-index: 260000;
 }
 .sys-menu.open{ display:block; }
 .sys-item{
@@ -682,9 +682,9 @@ body.ops-mode .main{
 .sidebar-user-btn{
   width:100%;
   border-radius: 16px;
-  padding: 10px 12px;
-  justify-content:flex-start;
-  gap: 10px;
+  padding: 10px 10px;
+  justify-content:center;
+  gap: 0;
 }
 .sb-user-meta{ display:flex; flex-direction:column; line-height: 1.05; }
 .sb-user-system{ font-weight: 1000; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
@@ -790,6 +790,10 @@ body.ops-mode .main{
 }
 .sidebar.collapsed .menu-ico{
   width: 100%;
+}
+.sidebar.collapsed .sidebar-user-btn{
+  padding: 8px;
+  border-radius: 999px;
 }
 
 /* MAIN + IFRAME */

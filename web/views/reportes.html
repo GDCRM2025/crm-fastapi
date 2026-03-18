@@ -4,94 +4,570 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Reportes</title>
-  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="../js/iframe-theme.js"></script>
   <style>
-    body{ margin:0; padding:14px; font-family:inherit; color:inherit; }
-    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
-    .card{ border:1px solid var(--border, rgba(255,255,255,.12)); border-radius:14px; padding:12px; }
-    .ttl{ font-weight:950; font-size:16px; }
-    .muted{ opacity:.75; font-size:12px; }
-    .f{ display:flex; flex-direction:column; gap:6px; min-width:180px; }
-    .lbl{ font-size:12px; opacity:.8; font-weight:900; }
-    .inp{ height:36px; border-radius:10px; border:1px solid var(--border, rgba(255,255,255,.12)); background:transparent; color:inherit; padding:0 10px; font-weight:800; }
-    .btn{ height:36px; border-radius:10px; border:1px solid var(--border, rgba(255,255,255,.12)); background:transparent; color:inherit; padding:0 12px; cursor:pointer; font-weight:950; }
-    .btn:hover{ background: rgba(255,255,255,.06); }
-    :root.light .btn:hover{ background: rgba(0,0,0,.06); }
-    pre{ white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px; opacity:.9; }
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:14px;overflow:auto;}
+
+    .wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .head{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.25);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    :root.light .head{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .sub{opacity:.72;font-weight:850;font-size:12px;margin-top:4px;max-width:760px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .inp,.sel{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 12px;
+      font-weight:900;
+      outline:none;
+    }
+    .sel{ padding-right: 34px; }
+    :root.light .inp,:root.light .sel{background: rgba(255,255,255,.65); color: rgba(0,0,0,.85);}
+    .btn{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-weight:1000;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn:hover{filter:brightness(1.06);}
+
+    .grid{display:grid; grid-template-columns:repeat(12, minmax(0, 1fr)); gap:12px;}
+    @media (max-width: 1200px){ .grid{grid-template-columns:repeat(6, minmax(0, 1fr));} }
+    @media (max-width: 900px){ .grid{grid-template-columns:1fr;} }
+
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+      min-height:0;
+    }
+    :root.light .card{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
+    .muted{opacity:.72; font-weight:850; font-size:12px;}
+
+    .kpis{display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:10px;}
+    @media (max-width:1200px){ .kpis{grid-template-columns:repeat(3, minmax(0,1fr));} }
+    @media (max-width:900px){ .kpis{grid-template-columns:1fr;} }
+    .kpi{
+      border:1px solid rgba(148,163,184,.16);
+      border-radius:16px;
+      background: rgba(2,6,23,.16);
+      padding:12px;
+      cursor:pointer;
+    }
+    :root.light .kpi{background: rgba(255,255,255,.62);}
+    .kpi .l{font-weight:1000; font-size:11px; letter-spacing:.12em; text-transform:uppercase; opacity:.72;}
+    .kpi .v{font-weight:1200; font-size:20px; margin-top:6px;}
+    .kpi .s{font-weight:850; font-size:12px; opacity:.70; margin-top:6px;}
+
+    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:sticky; top:0; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
+    :root.light .tbl th{background: rgba(255,255,255,.92);}
+    .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
+    .right{text-align:right;}
+    .rowlink{cursor:pointer;}
+    .rowlink:hover{background: rgba(255,255,255,.04);}
+    :root.light .rowlink:hover{background: rgba(0,0,0,.04);}
+
+    .navchips{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+    .chip{
+      height:30px;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:0 10px;
+      border-radius:999px;
+      background: rgba(2,6,23,.18);
+      border: 1px solid rgba(148,163,184,.22);
+      color: var(--text);
+      cursor:pointer;
+      font-size:12px;
+      font-weight:900;
+      text-decoration:none;
+    }
+    .chip:hover{filter:brightness(1.06);}
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="ttl">Reportes</div>
-    <div class="muted">Si el backend devuelve datos, aquí se ven (sin humo).</div>
-
-    <div class="row" style="margin-top:12px">
-      <div class="f">
-        <div class="lbl">Inicio</div>
-        <input class="inp" id="ini" type="date" />
+  <div class="wrap">
+    <section class="head">
+      <div>
+        <div class="ttl">Reportes</div>
+        <div class="sub">Funnel + cierre + ventas + top productos/comunas/clientes. Todo sale del backend: `/tools/dashboard` y `/tools/dashboard/reportes`.</div>
+        <div class="navchips">
+          <a class="chip" href="#funnel">Funnel</a>
+          <a class="chip" href="#cierre">% cierre</a>
+          <a class="chip" href="#total">Total venta</a>
+          <a class="chip" href="#comunas">Comunas</a>
+          <a class="chip" href="#productos">Productos</a>
+          <a class="chip" href="#clientes">Clientes</a>
+          <a class="chip" href="#leads_hoy">Leads hoy</a>
+          <a class="chip" href="#venta_diaria">Venta diaria</a>
+        </div>
       </div>
-      <div class="f">
-        <div class="lbl">Término</div>
-        <input class="inp" id="fin" type="date" />
+      <div class="row">
+        <select id="marca" class="sel" title="Marca">
+          <option value="">Todas las marcas</option>
+        </select>
+        <input id="ini" class="inp" type="date" />
+        <input id="fin" class="inp" type="date" />
+        <button id="go" class="btn primary" type="button">Cargar</button>
+        <button id="openDash" class="btn" type="button">Abrir Dashboard</button>
       </div>
-      <button class="btn" id="go" type="button">Cargar</button>
-    </div>
+    </section>
 
-    <div class="muted" id="st" style="margin-top:10px">—</div>
-    <div class="card" style="margin-top:10px">
-      <pre id="out">{}</pre>
-    </div>
+    <div class="muted" id="st">—</div>
+
+    <section class="card">
+      <div class="h2">KPIs</div>
+      <div class="kpis" id="kpis"></div>
+    </section>
+
+    <section class="grid">
+      <section class="card" style="grid-column: span 6" id="funnel">
+        <div class="h2">Funnel</div>
+        <div class="muted">Click en una fila para abrir el filtro por estado.</div>
+        <div style="max-height:420px;overflow:auto;margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Estado</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
+            <tbody id="tbFunnel"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="cierre">
+        <div class="h2">% cierre</div>
+        <div class="muted">Calculado por backend (semana actual / marca seleccionada).</div>
+        <div id="boxCierre" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="productos">
+        <div class="h2">Top productos</div>
+        <div class="muted">Basado en items de cotizaciones en el rango.</div>
+        <div style="max-height:420px;overflow:auto;margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Producto</th><th>Marca</th><th class="right">Cantidad</th><th class="right">Monto</th></tr></thead>
+            <tbody id="tbProd"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="comunas">
+        <div class="h2">Comunas más vendidas</div>
+        <div class="muted">Confirmados por rango (si hay estado CONFIRM).</div>
+        <div style="max-height:420px;overflow:auto;margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Comuna</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
+            <tbody id="tbCom"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="clientes">
+        <div class="h2">Clientes</div>
+        <div class="muted">Top clientes por monto (confirmados si aplica).</div>
+        <div style="max-height:420px;overflow:auto;margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Cliente</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
+            <tbody id="tbCli"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="leads_hoy">
+        <div class="h2">Leads creados hoy</div>
+        <div class="muted">Click para abrir el filtro del día.</div>
+        <div id="boxLeadsHoy" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 12" id="total">
+        <div class="h2">Total venta</div>
+        <div class="muted">Comparativo mensual por marca (backend).</div>
+        <div id="boxTotal" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 12" id="venta_diaria">
+        <div class="h2">Venta diaria</div>
+        <div class="muted">Doble click en una celda para abrir los leads confirmados ese día (si hay activity_log).</div>
+        <div id="boxDaily" style="margin-top:10px; overflow:auto"></div>
+      </section>
+    </section>
   </div>
 
   <script>
     const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+    const money = (n) => {
+      const v = Number(n||0);
+      try{ return v.toLocaleString("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}); }
+      catch(_){ return "$"+Math.round(v); }
+    };
 
-    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
-    function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
-
-    function applyThemeBootstrap(){
-      const mode = (localStorage.getItem("gd_theme") || "dark");
-      document.documentElement.classList.toggle("light", mode === "light");
-      window.addEventListener("message", (ev) => {
-        if (ev.data?.type === "theme"){
-          document.documentElement.classList.toggle("light", ev.data.mode === "light");
-        }
-      });
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(u){
+      const s = String(u||"");
+      if (!s) return s;
+      if (s.startsWith("/crm/")) return s;
+      if (s.startsWith("/")) return API_BASE + s;
+      return API_BASE + "/" + s;
+    }
+    function token(){
+      return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    }
+    function authHeaders(extra={}){
+      const t = token();
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
     }
 
-    function fmt(d){
+    function fmtDate(d){
       const pad = (n) => String(n).padStart(2,"0");
       return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
     }
 
-    async function api(url){
-      const r = await fetch(url, { headers: headers() });
-      if (!r.ok) throw new Error(await r.text().catch(()=> ""));
-      return r.json();
+    function openInParent(url){
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"rep_total", url }, "*");
+      }catch(_){
+        location.href = apiURL(url);
+      }
+    }
+
+    function openFilter(params){
+      const usp = new URLSearchParams();
+      Object.entries(params||{}).forEach(([k,v]) => { if (v!=null && v!=="") usp.set(k, String(v)); });
+      const url = "/web/views/filtro_leads.html?" + usp.toString();
+      try{ window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*"); }catch(_){ location.href = apiURL(url); }
+    }
+
+    async function jget(url){
+      const r = await fetch(apiURL(url), { headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    async function loadMarcas(){
+      try{
+        const j = await jget("/marcas?solo_activas=1");
+        return j.items || j || [];
+      }catch(_){
+        try{
+          const c = await jget("/leads/catalogos");
+          return c.marcas || [];
+        }catch(__){
+          return [];
+        }
+      }
+    }
+
+    async function init(){
+      const now = new Date();
+      const start = new Date(now.getTime() - 1000*60*60*24*30);
+      qs("#ini").value = fmtDate(start);
+      qs("#fin").value = fmtDate(now);
+
+      const marcas = await loadMarcas();
+      const sel = qs("#marca");
+      if (sel){
+        sel.innerHTML = `<option value="">Todas las marcas</option>` + (marcas||[]).map(m => {
+          const id = m.id_marca ?? m.id ?? "";
+          const nombre = m.nombre ?? m.marca ?? "";
+          return `<option value="${esc(id)}">${esc(nombre)}</option>`;
+        }).join("");
+      }
+
+      qs("#openDash").onclick = () => openInParent("/web/views/dashboard.html");
+      qs("#go").onclick = () => load().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
+
+      // auto
+      qs("#go").click();
+
+      // hash scroll
+      setTimeout(() => {
+        const h = String(location.hash||"").replace("#","");
+        if (!h) return;
+        const el = document.getElementById(h);
+        if (el) el.scrollIntoView({ behavior:"smooth", block:"start" });
+      }, 250);
     }
 
     async function load(){
       const ini = qs("#ini").value;
       const fin = qs("#fin").value;
+      const mid = qs("#marca").value;
       qs("#st").textContent = "Cargando…";
-      const d = await api(`/dashboard/reportes?fecha_inicio=${encodeURIComponent(ini)}&fecha_termino=${encodeURIComponent(fin)}`);
-      qs("#out").textContent = JSON.stringify(d, null, 2);
-      qs("#st").textContent = "OK";
+
+      const dashQs = new URLSearchParams();
+      if (mid) dashQs.set("id_marca", mid);
+      const repQs = new URLSearchParams();
+      if (ini) repQs.set("fecha_inicio", ini);
+      if (fin) repQs.set("fecha_termino", fin);
+      if (mid) repQs.set("id_marca", mid);
+
+      const [dash, rep] = await Promise.all([
+        jget("/tools/dashboard" + (dashQs.toString() ? ("?"+dashQs.toString()) : "")),
+        jget("/tools/dashboard/reportes" + (repQs.toString() ? ("?"+repQs.toString()) : "")),
+      ]);
+
+      renderKPIs(dash, ini, fin, mid);
+      renderFunnel(rep);
+      renderTop(rep);
+      renderCierre(dash);
+      renderLeadsHoy(dash, mid);
+      renderTotal(dash);
+      renderDaily(dash, mid);
+
+      qs("#st").textContent = `OK · Rango: ${ini} → ${fin}${mid ? (" · Marca ID: " + mid) : ""}`;
     }
 
-    applyThemeBootstrap();
-    const now = new Date();
-    const start = new Date(now.getTime() - 1000*60*60*24*30);
-    qs("#ini").value = fmt(start);
-    qs("#fin").value = fmt(now);
+    function renderKPIs(dash, ini, fin, mid){
+      const k = dash?.kpis || {};
+      const el = qs("#kpis");
+      if (!el) return;
+      const blocks = [
+        { id:"k_leads_hoy", l:"Leads hoy", v:String(k.leads_hoy||0), s:"Click: filtro día", on: () => openFilter({ campo:"ingreso", desde: fmtDate(new Date()), hasta: fmtDate(new Date()), ...(mid?{marca:mid}:{}) }) },
+        { id:"k_venta_dia", l:"Venta día", v: money(k.venta_dia||0), s:"Click: confirmados hoy", on: () => openConfirmedSales(fmtDate(new Date()), fmtDate(new Date()), mid) },
+        { id:"k_venta_sem", l:"Venta semana", v: money(k.venta_semana||0), s:"Click: confirmados semana", on: () => openConfirmedSales(dash?.week?.start||ini, dash?.week?.end||fin, mid) },
+        { id:"k_cierre", l:"% cierre", v: `${Number(k.cierre_pct||0).toFixed(2)}%`, s:"Semanal", on: () => location.hash = "#cierre" },
+        { id:"k_total_sem", l:"Leads semana", v: String(k.total_semana||0), s:"Total", on: () => {} },
+        { id:"k_conf_sem", l:"Confirmados semana", v: String(k.confirmados_semana||0), s:"Total", on: () => {} },
+      ];
+      el.innerHTML = blocks.map(b => `
+        <div class="kpi" data-id="${esc(b.id)}">
+          <div class="l">${esc(b.l)}</div>
+          <div class="v">${esc(b.v)}</div>
+          <div class="s">${esc(b.s)}</div>
+        </div>
+      `).join("");
+      el.querySelectorAll(".kpi[data-id]").forEach(div => {
+        const id = div.getAttribute("data-id");
+        const b = blocks.find(x => x.id === id);
+        if (b?.on) div.addEventListener("click", b.on);
+      });
+    }
 
-    qs("#go").onclick = () => load().catch(e => {
-      qs("#st").textContent = "No se pudo cargar (endpoint /dashboard/reportes).";
-      Swal.fire("Error", String(e.message||e), "error");
-    });
+    function renderFunnel(rep){
+      const tb = qs("#tbFunnel");
+      const items = rep?.funnel || [];
+      if (!tb) return;
+      if (!items.length){
+        tb.innerHTML = `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = items.map(r => `
+        <tr class="rowlink" data-estado="${encodeURIComponent(r.estado||"")}">
+          <td><strong>${esc(r.estado||"—")}</strong></td>
+          <td class="right">${esc(r.cantidad||0)}</td>
+          <td class="right">${esc(money(r.monto||0))}</td>
+        </tr>
+      `).join("");
+      tb.querySelectorAll("tr.rowlink[data-estado]").forEach(tr => {
+        tr.addEventListener("click", () => {
+          const estado = decodeURIComponent(tr.getAttribute("data-estado") || "");
+          openFilter({ estado });
+        });
+      });
+    }
 
-    // auto load
-    qs("#go").click();
+    function renderTop(rep){
+      const tp = rep?.top_productos || [];
+      const com = rep?.comunas || [];
+      const cli = rep?.clientes || [];
+
+      const tbP = qs("#tbProd");
+      if (tbP){
+        tbP.innerHTML = tp.length ? tp.map(r => `
+          <tr>
+            <td><strong>${esc(r.producto||"—")}</strong></td>
+            <td class="muted">${esc(r.marca||"")}</td>
+            <td class="right">${esc(Math.round(Number(r.cantidad||0)))}</td>
+            <td class="right">${esc(money(r.monto||0))}</td>
+          </tr>
+        `).join("") : `<tr><td colspan="4" class="muted">Sin datos.</td></tr>`;
+      }
+
+      const tbC = qs("#tbCom");
+      if (tbC){
+        tbC.innerHTML = com.length ? com.map(r => `
+          <tr>
+            <td><strong>${esc(r.comuna||"—")}</strong></td>
+            <td class="right">${esc(r.cantidad||0)}</td>
+            <td class="right">${esc(money(r.monto||0))}</td>
+          </tr>
+        `).join("") : `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
+      }
+
+      const tbU = qs("#tbCli");
+      if (tbU){
+        tbU.innerHTML = cli.length ? cli.map(r => `
+          <tr>
+            <td><strong>${esc(r.cliente||"—")}</strong></td>
+            <td class="right">${esc(r.cantidad||0)}</td>
+            <td class="right">${esc(money(r.monto||0))}</td>
+          </tr>
+        `).join("") : `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
+      }
+    }
+
+    function renderCierre(dash){
+      const k = dash?.kpis || {};
+      const box = qs("#boxCierre");
+      if (!box) return;
+      box.innerHTML = `
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch">
+          <div class="kpi" style="flex:1;min-width:220px">
+            <div class="l">% cierre</div>
+            <div class="v">${esc((Number(k.cierre_pct||0)).toFixed(2))}%</div>
+            <div class="s">Semanal</div>
+          </div>
+          <div class="kpi" style="flex:1;min-width:220px">
+            <div class="l">Confirmados semana</div>
+            <div class="v">${esc(k.confirmados_semana||0)}</div>
+            <div class="s">Total semana</div>
+          </div>
+          <div class="kpi" style="flex:1;min-width:220px">
+            <div class="l">Leads semana</div>
+            <div class="v">${esc(k.total_semana||0)}</div>
+            <div class="s">Total semana</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderLeadsHoy(dash, mid){
+      const k = dash?.kpis || {};
+      const box = qs("#boxLeadsHoy");
+      if (!box) return;
+      const d = fmtDate(new Date());
+      box.innerHTML = `
+        <div class="kpi" id="openLeadsHoy">
+          <div class="l">Leads creados hoy</div>
+          <div class="v">${esc(k.leads_hoy||0)}</div>
+          <div class="s">${esc(d)} · abrir filtro</div>
+        </div>
+      `;
+      qs("#openLeadsHoy")?.addEventListener("click", () => openFilter({ campo:"ingreso", desde:d, hasta:d, ...(mid?{marca:mid}:{}) }));
+    }
+
+    function renderTotal(dash){
+      const box = qs("#boxTotal");
+      const items = dash?.sales_compare || [];
+      if (!box) return;
+      if (!items.length){
+        box.innerHTML = `<div class="muted">Sin datos.</div>`;
+        return;
+      }
+      box.innerHTML = `
+        <div style="max-height:420px;overflow:auto">
+          <table class="tbl">
+            <thead><tr><th>Marca</th><th class="right">Actual</th><th class="right">Baseline</th><th class="right">Δ</th></tr></thead>
+            <tbody>
+              ${items.map(r => {
+                const a = Number(r.actual||0);
+                const b = Number(r.baseline||0);
+                const d = a - b;
+                return `<tr>
+                  <td><strong>${esc(r.marca||"—")}</strong></td>
+                  <td class="right">${esc(money(a))}</td>
+                  <td class="right">${esc(money(b))}</td>
+                  <td class="right">${esc(money(d))}</td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    async function openConfirmedSales(desde, hasta, mid){
+      const qs2 = new URLSearchParams({ desde, hasta });
+      if (mid) qs2.set("id_marca", String(mid));
+      const j = await jget(`/tools/dashboard/sales_ids?${qs2.toString()}`);
+      const ids = j.ids || [];
+      if (!ids.length){
+        Swal.fire("Sin ventas", "No hay leads confirmados en ese rango.", "info");
+        return;
+      }
+      const url = "/web/views/leads.html?stale_ids=" + encodeURIComponent(ids.join(","));
+      try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+    }
+
+    function renderDaily(dash, mid){
+      const box = qs("#boxDaily");
+      const daily = dash?.sales_daily || [];
+      const days = dash?.week_days || [];
+      if (!box) return;
+      if (!daily.length || !days.length){
+        box.innerHTML = `<div class="muted">Sin datos diarios.</div>`;
+        return;
+      }
+      const brands = [...new Set(daily.map(x => x.marca))];
+      box.innerHTML = `
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Marca</th>
+              ${days.map(d => `<th class="right">${esc(d.slice(8,10)+"/"+d.slice(5,7))}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${brands.map(b => {
+              return `<tr>
+                <td><strong>${esc(b||"—")}</strong></td>
+                ${days.map(d => {
+                  const row = daily.find(x => x.marca===b && x.dia===d);
+                  const monto = Number(row?.monto||0);
+                  const mid2 = row?.id_marca ?? (mid||"");
+                  return `<td class="right rowlink" data-day="${esc(d)}" data-mid="${esc(mid2)}">${esc(money(monto))}</td>`;
+                }).join("")}
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+      box.querySelectorAll("td.rowlink[data-day]").forEach(td => {
+        td.title = "Doble click para abrir leads confirmados ese día";
+        td.addEventListener("dblclick", () => {
+          const day = td.getAttribute("data-day");
+          const mid3 = td.getAttribute("data-mid");
+          if (!day) return;
+          openConfirmedSales(day, day, mid3 || "");
+        });
+      });
+    }
+
+    init().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
   </script>
 </body>
 </html>

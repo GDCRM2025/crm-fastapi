@@ -234,18 +234,31 @@
           <div style="display:grid;gap:10px;text-align:left">
             <label><b>Nombre</b><br><input id="wNombre" class="swal2-input" placeholder="Ej: Camión 1" value="${esc(row?.nombre || "")}" /></label>
             <label><b>Patente</b><br><input id="wCode" class="swal2-input" placeholder="Ej: AB-CD-12" value="${esc(row?.code || "")}" /></label>
+            <label><b>Estado</b><br>
+              <select id="wStatus" class="swal2-select">
+                ${["OK","TALLER","BAJA"].map(x => `<option value="${x}" ${(String(row?.status||"OK").toUpperCase()===x)?"selected":""}>${x}</option>`).join("")}
+              </select>
+            </label>
+            <label><b>Ubicación</b><br><input id="wUb" class="swal2-input" placeholder="Ej: Patio / Bodega / Taller" value="${esc(row?.ubicacion || "")}" /></label>
+            <label><b>Notas</b><br><textarea id="wNotes" style="width:100%;min-height:90px;border-radius:14px;padding:10px;font-weight:900">${esc(row?.notas || "")}</textarea></label>
             <div class="muted">Formatos aceptados: <b>AB-CD-12</b> o <b>AB-1234</b>.</div>
           </div>
         `,
         preConfirm: () => {
           const nombre = (qs("#wNombre", SwalX.getHtmlContainer())?.value || "").trim();
           const codeRaw = (qs("#wCode", SwalX.getHtmlContainer())?.value || "").trim();
+          const status = (qs("#wStatus", SwalX.getHtmlContainer())?.value || "").trim().toUpperCase();
+          const ubicacion = (qs("#wUb", SwalX.getHtmlContainer())?.value || "").trim();
+          const notas = (qs("#wNotes", SwalX.getHtmlContainer())?.value || "").trim();
           if (!nombre) return SwalX.showValidationMessage("Nombre requerido");
           if (!codeRaw) return SwalX.showValidationMessage("Patente requerida");
           if (!isValidPlate(codeRaw)) return SwalX.showValidationMessage("Patente inválida");
           return {
             nombre,
             code: formatPlate(codeRaw),
+            status: status || "OK",
+            ubicacion: ubicacion || null,
+            notas: notas || null,
           };
         }
       });
@@ -260,9 +273,65 @@
         id_category,
         nombre: v.nombre,
         code: v.code,
+        status: v.status,
+        ubicacion: v.ubicacion,
+        notas: v.notas,
       });
       await loadAll();
       if (created && created.id_asset) await openAsset(Number(created.id_asset));
+    }
+
+    async function addMaintenanceFor(asset){
+      const a = asset || SELECTED || null;
+      if (!a?.id_asset) return;
+      const res = await SwalX.fire({
+        title: "Agregar mantención",
+        html: `
+          <div style="display:grid;gap:10px;text-align:left">
+            <label><b>Status</b><br><input id="st" class="swal2-input" placeholder="Ej: OK / TALLER / BAJA" value="${esc(String(a.status||"OK").toUpperCase())}" /></label>
+            <label><b>Detalle</b><br><textarea id="det" style="width:100%;min-height:90px;border-radius:14px;padding:10px;font-weight:900"></textarea></label>
+            <label><b>Realizado por</b><br><input id="by" class="swal2-input" placeholder="Nombre" /></label>
+          </div>
+        `,
+        showCancelButton:true,
+        confirmButtonText:"Guardar",
+        preConfirm: () => {
+          const status = (qs("#st", SwalX.getHtmlContainer())?.value || "").trim().toUpperCase();
+          const detalle = (qs("#det", SwalX.getHtmlContainer())?.value || "").trim();
+          const realizado_por = (qs("#by", SwalX.getHtmlContainer())?.value || "").trim();
+          if (!status) return SwalX.showValidationMessage("Falta status");
+          return { status, detalle: detalle || null, realizado_por: realizado_por || null };
+        }
+      });
+      if (!res.isConfirmed) return;
+      await jpost(`/assets/${encodeURIComponent(a.id_asset)}/maintenance`, res.value);
+      await openAsset(Number(a.id_asset));
+    }
+
+    async function bajaTruck(asset){
+      const a = asset || SELECTED || null;
+      if (!a?.id_asset) return;
+      const r = await SwalX.fire({
+        title: "Baja camión",
+        html: `<div style="text-align:left;opacity:.86;font-weight:900">
+          Esto marca el camión como <b>BAJA</b> (mantiene historial).<br>
+          Para borrar hard (solo si estás seguro), usa “Borrar (hard)”.
+        </div>`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Dar de baja",
+        cancelButtonText: "Cancelar",
+        showDenyButton: true,
+        denyButtonText: "Borrar (hard)",
+      });
+      if (r.isDenied){
+        await jdel(`/assets/${encodeURIComponent(a.id_asset)}?hard=1`);
+        await loadAll();
+        return;
+      }
+      if (!r.isConfirmed) return;
+      await jdel(`/assets/${encodeURIComponent(a.id_asset)}`);
+      await loadAll();
     }
 
     function renderDetail(hist, docs){
@@ -311,10 +380,13 @@
                 <tr><th>Patente</th><td>${esc(a.code || "—")}</td></tr>
                 <tr><th>Estado</th><td>${esc(a.status || "OK")}</td></tr>
                 <tr><th>Ubicación</th><td>${esc(a.ubicacion || "—")}</td></tr>
+                <tr><th>Notas</th><td>${esc(a.notas || "—")}</td></tr>
               </tbody>
             </table>
             <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
               <button class="btn" id="btnEditFicha" type="button">Editar ficha</button>
+              <button class="btn primary" id="btnAddMaint" type="button">Agregar mantención</button>
+              <button class="btn danger" id="btnBaja" type="button">Baja</button>
             </div>
           </div>
 
@@ -385,10 +457,15 @@
         await jput(`/assets/${encodeURIComponent(a.id_asset)}`, {
           nombre: v.nombre,
           code: v.code,
+          status: v.status,
+          ubicacion: v.ubicacion,
+          notas: v.notas,
         });
         await loadAll();
         await openAsset(Number(a.id_asset));
       });
+      qs("#btnAddMaint")?.addEventListener("click", () => addMaintenanceFor(a).catch(e => SwalX.fire("Error", String(e).slice(0,300), "error")));
+      qs("#btnBaja")?.addEventListener("click", () => bajaTruck(a).catch(e => SwalX.fire("Error", String(e).slice(0,300), "error")));
 
       qs("#content").querySelectorAll("[data-open-lead]").forEach(b => {
         b.addEventListener("click", () => {

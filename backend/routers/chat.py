@@ -9,12 +9,16 @@ Chat interno v2:
 Mantiene endpoints legacy (/chat/messages) para no romper nada viejo, pero el UI nuevo usa threads.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
+from pathlib import Path
+import re
+import secrets
+import time
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -132,6 +136,10 @@ def _ensure_tables(db: Session) -> None:
     db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS sender_email TEXT"))
     db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS message TEXT"))
     db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT now()"))
+    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS attachment_url TEXT"))
+    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS attachment_name TEXT"))
+    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS attachment_type TEXT"))
+    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS attachment_size BIGINT"))
     db.execute(
         text("CREATE INDEX IF NOT EXISTS chat_thread_messages_thread_id_idx ON chat_thread_messages(id_thread, id_message)")
     )
@@ -532,7 +540,9 @@ def thread_messages(id_thread: int, limit: int = 250, db: Session = Depends(get_
     rows = db.execute(
         text(
             """
-            SELECT id_message, id_thread, sender_id, sender_name, sender_email, message, created_at
+            SELECT id_message, id_thread, sender_id, sender_name, sender_email, message,
+                   attachment_url, attachment_name, attachment_type, attachment_size,
+                   created_at
             FROM chat_thread_messages
             WHERE id_thread=:t
             ORDER BY id_message DESC
@@ -551,7 +561,11 @@ def thread_send(id_thread: int, body: dict, db: Session = Depends(get_db), me=De
     _ensure_tables(db)
     uid = _user_id(me)
     msg = (body.get("message") or "").strip()
-    if not msg:
+    att_url = (body.get("attachment_url") or "").strip()
+    att_name = (body.get("attachment_name") or "").strip()
+    att_type = (body.get("attachment_type") or "").strip()
+    att_size = body.get("attachment_size")
+    if not msg and not att_url:
         raise HTTPException(400, "mensaje requerido")
     ok = db.execute(text("SELECT 1 FROM chat_thread_members WHERE id_thread=:t AND user_id=:u"), {"t": id_thread, "u": uid}).first()
     if not ok:
@@ -559,8 +573,11 @@ def thread_send(id_thread: int, body: dict, db: Session = Depends(get_db), me=De
     db.execute(
         text(
             """
-            INSERT INTO chat_thread_messages(id_thread,sender_id,sender_name,sender_email,message)
-            VALUES (:t,:id,:n,:e,:m)
+            INSERT INTO chat_thread_messages(
+              id_thread,sender_id,sender_name,sender_email,message,
+              attachment_url, attachment_name, attachment_type, attachment_size
+            )
+            VALUES (:t,:id,:n,:e,:m,:au,:an,:at,:as)
             """
         ),
         {
@@ -569,11 +586,95 @@ def thread_send(id_thread: int, body: dict, db: Session = Depends(get_db), me=De
             "n": me.get("name") or me.get("username") or "Usuario",
             "e": me.get("email") or "",
             "m": msg,
+            "au": att_url or None,
+            "an": att_name or None,
+            "at": att_type or None,
+            "as": int(att_size) if str(att_size or "").isdigit() else None,
         },
     )
     db.execute(text("UPDATE chat_threads SET updated_at=now() WHERE id_thread=:t"), {"t": id_thread})
     db.commit()
     return {"ok": True}
+
+
+@router.post("/threads/{id_thread}/upload")
+async def thread_upload(id_thread: int, archivo: UploadFile = File(...), db: Session = Depends(get_db), me=Depends(get_current_user)):
+    _require_chat_access(me)
+    _ensure_tables(db)
+    uid = _user_id(me)
+    ok = db.execute(text("SELECT 1 FROM chat_thread_members WHERE id_thread=:t AND user_id=:u"), {"t": id_thread, "u": uid}).first()
+    if not ok:
+        raise HTTPException(403, "Sin acceso a este chat")
+
+    if not archivo or not archivo.filename:
+        raise HTTPException(400, "archivo requerido")
+
+    # Allowlist simple (seguro por defecto).
+    max_bytes = 12 * 1024 * 1024  # 12MB
+    ct = (archivo.content_type or "").lower().strip()
+    allowed_ct = {
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "text/plain",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }
+    if ct and (ct not in allowed_ct) and (not ct.startswith("image/")):
+        raise HTTPException(400, f"Tipo no permitido: {ct}")
+
+    orig = str(archivo.filename)
+    orig = orig.split("/")[-1].split("\\")[-1]
+    orig = orig.strip()[:180] or "archivo"
+    # sanitize
+    safe_base = re.sub(r"[^a-zA-Z0-9._ -]+", "_", orig).strip().replace(" ", "_")
+    if not safe_base:
+        safe_base = "archivo"
+    ext = ""
+    if "." in safe_base:
+        ext = "." + safe_base.split(".")[-1].lower()[:8]
+        safe_base = safe_base.rsplit(".", 1)[0]
+    if ext and not re.fullmatch(r"\.[a-z0-9]{1,8}", ext):
+        ext = ""
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    tok = secrets.token_hex(6)
+    stored = f"{safe_base[:40]}_{stamp}_{tok}{ext}"
+
+    root = Path(__file__).resolve().parents[2]
+    out_dir = root / "web" / "uploads" / "chat" / str(int(id_thread))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / stored
+
+    # copy with size limit
+    total = 0
+    with open(out_path, "wb") as f:
+        while True:
+            chunk = await archivo.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                try:
+                    f.close()
+                except Exception:
+                    pass
+                try:
+                    out_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+                except Exception:
+                    pass
+                raise HTTPException(400, f"Archivo demasiado grande (máx {max_bytes//1024//1024}MB)")
+            f.write(chunk)
+
+    file_url = f"/web/uploads/chat/{int(id_thread)}/{stored}"
+    return {
+        "ok": True,
+        "url": file_url,
+        "name": orig,
+        "content_type": ct,
+        "size": total,
+    }
 
 
 @router.post("/heartbeat")

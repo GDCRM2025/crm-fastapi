@@ -73,12 +73,16 @@ def _suppress_recipients(addrs: List[str]) -> List[str]:
     """
     Temporal: suprime envíos a ciertos correos (ej: SIMON) hasta que el digest quede validado.
     - Por defecto suprime simonurrutia.m@gmail.com
-    - Se puede re-habilitar con CRM_ALLOW_SIMON_DIGEST=1
+    - Solo se re-habilita si *dos* flags están activas:
+      CRM_ALLOW_SIMON_DIGEST=1 y CRM_DIGEST_VALIDATED=1
     - Se puede agregar lista extra con SUPPRESS_DIGEST_TO="a@b.com,c@d.com"
     """
     if not addrs:
         return []
-    allow_simon = str(os.getenv("CRM_ALLOW_SIMON_DIGEST") or "").strip().lower() in ("1", "true", "yes")
+    allow_simon = (
+        str(os.getenv("CRM_ALLOW_SIMON_DIGEST") or "").strip().lower() in ("1", "true", "yes")
+        and str(os.getenv("CRM_DIGEST_VALIDATED") or "").strip().lower() in ("1", "true", "yes")
+    )
     suppressed = set()
     if not allow_simon:
         suppressed.add("simonurrutia.m@gmail.com")
@@ -204,18 +208,42 @@ def _build_digest_window(
             lines.append(ln)
             detail_lines.append(ln)
 
-        html_body = (
-            f"<p><b>{_html_escape(title)}</b></p>"
-            "<p style='margin:0 0 8px 0'><b>Resumen por usuario</b></p>"
-            "<table style='border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px'>"
-            + "".join(html_rows)
-            + "</table>"
-            "<p style='margin:14px 0 6px 0'><b>Detalle</b></p>"
-            "<pre style='white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;"
-            "background:#f7f7f7;border:1px solid #eee;border-radius:8px;padding:10px'>"
-            + _html_escape("\n".join(detail_lines[:250]))
-            + "</pre>"
-        )
+        html_body = f"""
+<div style="font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial; color:#0f172a">
+  <div style="max-width:920px;margin:0 auto;padding:12px 10px">
+    <div style="font-weight:900;font-size:16px;margin:0 0 8px 0">{_html_escape(title)}</div>
+    <div style="opacity:.75;font-weight:700;font-size:12px;margin-bottom:10px">
+      Resumen por usuario + detalle (últimos movimientos).
+    </div>
+
+    <div style="border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;background:#ffffff">
+      <div style="padding:10px 12px;background:#f8fafc;border-bottom:1px solid #e5e7eb;font-weight:900">
+        Resumen por usuario
+      </div>
+      <div style="padding:0">
+        <table style="border-collapse:collapse;width:100%;font-size:13px">
+          <thead style="background:#f8fafc">
+            {html_rows[0] if html_rows else ""}
+          </thead>
+          <tbody>
+            {''.join(html_rows[1:]) if len(html_rows) > 1 else ''}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="height:12px"></div>
+
+    <div style="border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;background:#ffffff">
+      <div style="padding:10px 12px;background:#f8fafc;border-bottom:1px solid #e5e7eb;font-weight:900">
+        Detalle (hasta 250)
+      </div>
+      <pre style="margin:0;white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;
+background:#fbfbfb;padding:10px 12px;line-height:1.35">{_html_escape('\n'.join(detail_lines[:250]))}</pre>
+    </div>
+  </div>
+</div>
+""".strip()
 
     body = "\n".join(lines).strip() + "\n"
     return title, body, html_body

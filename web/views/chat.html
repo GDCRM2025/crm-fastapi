@@ -186,6 +186,69 @@
       font-weight:900;
       outline:none;
     }
+    .composer .miniBtn{
+      width:42px;
+      height:42px;
+      border-radius:999px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:0;
+    }
+    .filepill{
+      display:none;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      font-weight:900;
+      font-size:12px;
+      max-width: 380px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .filepill.on{ display:flex; }
+    .filepill .x{ cursor:pointer; opacity:.8; font-weight:1100; }
+    .att{
+      margin-top:8px;
+      border:1px solid rgba(148,163,184,.16);
+      background: rgba(255,255,255,.02);
+      border-radius: 12px;
+      padding:8px;
+    }
+    .att a{ color: inherit; text-decoration:none; font-weight:1000; }
+    .att a:hover{ text-decoration:underline; }
+    .att img{ max-width: 320px; border-radius: 10px; display:block; }
+    .emojiBar{
+      display:none;
+      position:absolute;
+      right: 16px;
+      bottom: 70px;
+      width:min(320px, 92vw);
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.92);
+      border-radius: 16px;
+      padding:10px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.45);
+      z-index: 999999;
+    }
+    .emojiBar.on{ display:block; }
+    .emojiGrid{ display:grid; grid-template-columns: repeat(8, 1fr); gap:8px; }
+    .emo{
+      height:34px;
+      border-radius:12px;
+      border:1px solid rgba(148,163,184,.14);
+      background: rgba(255,255,255,.04);
+      cursor:pointer;
+      font-size:18px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .emo:hover{ background: rgba(255,255,255,.08); }
     .badge{
       font-size:11px;
       font-weight:1100;
@@ -240,10 +303,22 @@
         <div class="empty">Selecciona un chat (o crea uno nuevo).</div>
       </div>
       <div class="composer">
+        <button id="btnEmoji" class="btn miniBtn" title="Emojis" disabled>😊</button>
+        <button id="btnAttach" class="btn miniBtn" title="Adjuntar" disabled>📎</button>
+        <input id="file" type="file" style="display:none" accept="image/*,.pdf,.docx,.xlsx,.txt,text/plain" />
         <input id="msg" class="inp" placeholder="Escribe un mensaje…" disabled />
+        <div class="filepill" id="filePill" title="">
+          <span id="fileName">Archivo</span>
+          <span class="x" id="fileClear" title="Quitar">✕</span>
+        </div>
         <button id="send" class="btn primary" disabled>Enviar</button>
       </div>
     </section>
+  </div>
+
+  <div class="emojiBar" id="emojiBar" aria-hidden="true">
+    <div class="muted" style="margin-bottom:8px">Emojis</div>
+    <div class="emojiGrid" id="emojiGrid"></div>
   </div>
 
   <script>
@@ -372,6 +447,8 @@
     let USERS = [];
     let selectedThread = null;
     let meName = "";
+    let meId = null;
+    let pendingFile = null;
     const THREAD_WANT = (() => {
       try{
         const v = new URLSearchParams(location.search || "").get("thread") || "";
@@ -530,13 +607,33 @@
 
       box.innerHTML = items.length
         ? items.map((m) => {
-            const mine = meName && String(m.sender_name || "") === String(meName);
+            const mine = (meId != null) ? (Number(m.sender_id) === Number(meId)) : (meName && String(m.sender_name || "") === String(meName));
             const cls = mine ? "m me" : "m";
             const at = m.created_at ? String(m.created_at).slice(0, 16).replace("T", " ") : "";
+            const hasAtt = !!(m.attachment_url);
+            const attUrl = hasAtt ? apiURL(String(m.attachment_url || "")) : "";
+            const attName = String(m.attachment_name || "Archivo");
+            const attType = String(m.attachment_type || "");
+            const attSize = (m.attachment_size != null && String(m.attachment_size).match(/^\d+$/)) ? Number(m.attachment_size) : null;
+            const isImg = !!attType && attType.startsWith("image/");
+            const sizeHtml = attSize != null ? ` <span class="muted">(${esc(fmtBytes(attSize))})</span>` : "";
             return `
               <div class="${cls}">
                 <div class="meta">${esc(m.sender_name || "")}${at ? " · " + esc(at) : ""}</div>
                 <div class="txt">${esc(m.message || "")}</div>
+                ${
+                  hasAtt
+                    ? `
+                      <div class="att">
+                        ${
+                          isImg
+                            ? `<a href="${esc(attUrl)}" target="_blank" rel="noopener"><img src="${esc(attUrl)}" alt="${esc(attName)}" loading="lazy" /></a>`
+                            : `<a href="${esc(attUrl)}" target="_blank" rel="noopener">${esc(attName)}${sizeHtml}</a>`
+                        }
+                      </div>
+                    `
+                    : ""
+                }
               </div>
             `;
           }).join("")
@@ -547,13 +644,17 @@
 
     async function openThread(id) {
       selectedThread = id;
+      clearPendingFile({ skipSync:true });
+      hideEmoji();
       const t = (THREADS || []).find((x) => Number(x.id_thread) === Number(id));
       const tt = qs("#threadTitle");
       const ts = qs("#threadSub");
       if (tt) tt.textContent = t?.title || "Chat";
       if (ts) ts.textContent = t?.kind === "group" ? `${t.members || 0} miembros` : (t?.other_email || "");
       qs("#msg").disabled = false;
-      qs("#send").disabled = false;
+      qs("#btnEmoji").disabled = false;
+      qs("#btnAttach").disabled = false;
+      syncSendEnabled();
       renderLeft();
       await loadMessages();
     }
@@ -622,25 +723,162 @@
       await openThread(Number(out.id_thread));
     }
 
+    function fmtBytes(n){
+      const x = Number(n || 0);
+      if (!isFinite(x) || x <= 0) return "0B";
+      const u = ["B", "KB", "MB", "GB"];
+      let i = 0;
+      let v = x;
+      while (v >= 1024 && i < u.length - 1){ v /= 1024; i++; }
+      return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)}${u[i]}`;
+    }
+
+    function clearPendingFile(opts={}){
+      const skipSync = !!opts.skipSync;
+      pendingFile = null;
+      try{ qs("#file").value = ""; }catch(_){}
+      try{
+        qs("#filePill")?.classList.remove("on");
+        qs("#fileName").textContent = "Archivo";
+        qs("#filePill").title = "";
+      }catch(_){}
+      if (!skipSync) syncSendEnabled();
+    }
+
+    function setPendingFile(file){
+      pendingFile = file || null;
+      if (!pendingFile){
+        clearPendingFile();
+        return;
+      }
+      const max = 12 * 1024 * 1024;
+      if (pendingFile.size > max){
+        clearPendingFile();
+        Swal.fire("Archivo muy grande", `Máx 12MB. Este archivo pesa ${fmtBytes(pendingFile.size)}.`, "error");
+        return;
+      }
+      const label = `${pendingFile.name} · ${fmtBytes(pendingFile.size)}`;
+      qs("#fileName").textContent = label;
+      qs("#filePill").title = label;
+      qs("#filePill")?.classList.add("on");
+      syncSendEnabled();
+    }
+
+    function syncSendEnabled(){
+      const hasThread = !!selectedThread;
+      const text = (qs("#msg").value || "").trim();
+      const ok = hasThread && (!!text || !!pendingFile);
+      qs("#send").disabled = !ok;
+      qs("#msg").disabled = !hasThread;
+      qs("#btnEmoji").disabled = !hasThread;
+      qs("#btnAttach").disabled = !hasThread;
+      if (!hasThread){
+        clearPendingFile({ skipSync:true });
+        hideEmoji();
+      }
+    }
+
     async function send() {
       const text = (qs("#msg").value || "").trim();
-      if (!text || !selectedThread) return;
+      if (!selectedThread) return;
+      if (!text && !pendingFile) return;
       qs("#send").disabled = true;
+      qs("#btnAttach").disabled = true;
+      qs("#btnEmoji").disabled = true;
       try {
-        // Importante: el sonido debe dispararse dentro del "user gesture" para que el navegador lo permita.
         beep("send");
+        let att = null;
+        if (pendingFile){
+          const fd = new FormData();
+          fd.append("archivo", pendingFile, pendingFile.name);
+          const up = await api(`/chat/threads/${selectedThread}/upload`, { method:"POST", body: fd });
+          att = {
+            attachment_url: up?.url,
+            attachment_name: up?.name || pendingFile.name,
+            attachment_type: up?.content_type || pendingFile.type || "",
+            attachment_size: up?.size || pendingFile.size,
+          };
+        }
+
         await api(`/chat/threads/${selectedThread}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text }),
+          body: JSON.stringify({ message: text || "", ...(att || {}) }),
         });
+
         qs("#msg").value = "";
+        clearPendingFile();
         await loadThreads();
         await loadMessages();
         renderLeft();
+      } catch (e){
+        Swal.fire("Error", String(e?.message || e), "error");
       } finally {
-        qs("#send").disabled = false;
+        syncSendEnabled();
       }
+    }
+
+    function insertAtCursor(input, value){
+      try{
+        const el = input;
+        if (!el) return;
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? el.value.length;
+        const before = el.value.slice(0, start);
+        const after = el.value.slice(end);
+        el.value = before + value + after;
+        const pos = start + value.length;
+        el.setSelectionRange(pos, pos);
+        el.focus();
+      }catch(_){}
+      syncSendEnabled();
+    }
+
+    const EMOJIS = [
+      "😀","😁","😂","🤣","😊","😍","😘","😎",
+      "😅","😇","🙂","😉","😌","😮","😢","😭",
+      "😡","🤯","🤔","🙃","😴","🤝","🙏","💪",
+      "✅","⚠️","❌","📌","📎","📄","🗓️","📍",
+      "🎉","🔥","⭐","💡","🧾","💳","💰","📈",
+      "📦","🚚","🧰","🛠️","🧹","🧽","🍔","🌭",
+      "🍕","☕","🥤","🍦","🍩","🍪","🍫","🥗",
+      "🏁","⏰","📞","✉️","🧑‍💻","👥","🟢","🔴",
+    ];
+    let EMO_BUILT = false;
+
+    function buildEmoji(){
+      if (EMO_BUILT) return;
+      const grid = qs("#emojiGrid");
+      if (!grid) return;
+      grid.innerHTML = EMOJIS.map(e => `<button class="emo" type="button" data-emo="${esc(e)}">${esc(e)}</button>`).join("");
+      grid.querySelectorAll("[data-emo]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const emo = btn.getAttribute("data-emo") || "";
+          insertAtCursor(qs("#msg"), emo);
+          hideEmoji();
+        });
+      });
+      EMO_BUILT = true;
+    }
+
+    function showEmoji(){
+      buildEmoji();
+      const bar = qs("#emojiBar");
+      if (!bar) return;
+      bar.classList.add("on");
+      bar.setAttribute("aria-hidden", "false");
+    }
+    function hideEmoji(){
+      const bar = qs("#emojiBar");
+      if (!bar) return;
+      bar.classList.remove("on");
+      bar.setAttribute("aria-hidden", "true");
+    }
+    function toggleEmoji(){
+      const bar = qs("#emojiBar");
+      if (!bar) return;
+      const on = bar.classList.contains("on");
+      if (on) hideEmoji(); else showEmoji();
     }
 
     async function boot() {
@@ -648,6 +886,7 @@
         const r = await fetch(apiURL("/me"), { headers: headers() });
         if (r.ok) {
           const me = await r.json();
+          meId = me.id ?? me.user_id ?? me.id_usuario ?? null;
           meName = me.name || me.nombre || me.username || "";
           const sl = qs("#subLeft");
           if (sl) sl.textContent = meName ? `Conectado como ${meName}` : "Conectado";
@@ -701,6 +940,26 @@
     }
     qs("#send").addEventListener("click", send);
     qs("#msg").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+    qs("#msg").addEventListener("input", () => syncSendEnabled());
+    qs("#btnAttach").addEventListener("click", () => {
+      if (!selectedThread) return;
+      try{ qs("#file").click(); }catch(_){}
+    });
+    qs("#file").addEventListener("change", () => {
+      const f = qs("#file")?.files?.[0] || null;
+      if (f) setPendingFile(f);
+    });
+    qs("#fileClear").addEventListener("click", clearPendingFile);
+    qs("#btnEmoji").addEventListener("click", () => { if (selectedThread) toggleEmoji(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideEmoji(); });
+    document.addEventListener("pointerdown", (e) => {
+      const bar = qs("#emojiBar");
+      if (!bar || !bar.classList.contains("on")) return;
+      const t = e.target;
+      if (bar.contains(t)) return;
+      if (qs("#btnEmoji")?.contains(t)) return;
+      hideEmoji();
+    }, { capture:true, passive:true });
     if (!EMBED) qs("#q").addEventListener("input", () => renderLeft());
 
     boot().catch((e) => {
