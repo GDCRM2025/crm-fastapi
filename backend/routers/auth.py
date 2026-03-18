@@ -146,10 +146,9 @@ class RegisterIn(BaseModel):
     email: str
     rut: str
     # Registro Operadores/CHOP:
-    # - Usuario: RUT (sin puntos, con guion)
-    # - Contraseña inicial: RUT (mismo formato)
-    # Mantiene compatibilidad: si llega password explícita, se respeta; si no, se usa RUT.
-    password: str | None = None
+    # - Usuario: EMAIL
+    # - Contraseña: RUT (sin puntos, con guion) — definitiva.
+    password: str | None = None  # compat (ignorado)
     telefono: str | None = None
     username: str | None = None
 
@@ -433,7 +432,7 @@ def register(data: RegisterIn):
     email = data.email.strip().lower()
     rut_in = (data.rut or "").strip()
     telefono_in = (data.telefono or "").strip()
-    password_in = (data.password or "").strip() if data.password is not None else ""
+    # password/username entrantes se ignoran por regla negocio, se mantienen por compatibilidad
 
     # Normaliza RUT: sin puntos, con guion, y en lower para comparar.
     def _rut_norm(s: str) -> str:
@@ -443,13 +442,13 @@ def register(data: RegisterIn):
         return s.lower()
 
     rut = _rut_norm(rut_in)
-    # Password inicial: RUT (requerimiento). Si viene password explícita, se respeta por compat.
-    password = password_in or rut
+    # Password definitiva: RUT (sin puntos, con guion).
+    password = rut
 
-    # Username recomendado: RUT (sin puntos, con guion).
-    username = (data.username or rut or email.split("@")[0]).strip().lower()
+    # Username definitivo: EMAIL
+    username = email
 
-    if not nombre or not email or not rut or not password:
+    if not nombre or not email or not rut:
         raise HTTPException(status_code=400, detail="Faltan datos requeridos")
     with get_connection() as conn:
         _ensure_operadores_allowlist(conn)
