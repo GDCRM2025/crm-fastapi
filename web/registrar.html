@@ -26,11 +26,19 @@
     <section class="flex items-center justify-center p-6 lg:p-10">
       <div class="neumo w-full max-w-md p-6 lg:p-7">
         <h1 class="text-white/90 text-xl font-semibold mb-6">Operadores / CHOP — <span class="text-white/70 font-normal">Registro</span></h1>
+        <div class="text-xs text-white/65 mb-4 leading-relaxed">
+          <div class="mb-1"><b>Importante:</b> aquí <b>no</b> se crea una contraseña manual.</div>
+          <div>- <b>Usuario</b>: tu <b>RUT</b> (sin puntos y con guion).</div>
+          <div>- <b>Contraseña inicial</b>: tu <b>teléfono</b>.</div>
+        </div>
         <form id="frm" class="space-y-4">
-          <div><label class="text-sm text-white/70">Nombre completo</label><input id="nombre" class="input mt-1" /></div>
-          <div><label class="text-sm text-white/70">Email</label><input id="email" class="input mt-1" /></div>
-          <div><label class="text-sm text-white/70">RUT</label><input id="rut" class="input mt-1" /></div>
-          <div><label class="text-sm text-white/70">Contraseña</label><input id="pass" type="password" class="input mt-1" /></div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label class="text-sm text-white/70">Nombre</label><input id="nombre" class="input mt-1" autocomplete="given-name" /></div>
+            <div><label class="text-sm text-white/70">Apellido</label><input id="apellido" class="input mt-1" autocomplete="family-name" /></div>
+          </div>
+          <div><label class="text-sm text-white/70">Email</label><input id="email" class="input mt-1" inputmode="email" autocomplete="email" /></div>
+          <div><label class="text-sm text-white/70">RUT <span class="text-white/45">(sin puntos, con guion)</span></label><input id="rut" class="input mt-1" placeholder="Ej: 12345678-9" autocapitalize="none" /></div>
+          <div><label class="text-sm text-white/70">Teléfono <span class="text-white/45">(tu contraseña inicial)</span></label><input id="telefono" class="input mt-1" inputmode="tel" autocomplete="tel" placeholder="Ej: +56912345678" /></div>
           <button class="w-full bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-semibold rounded-lg py-2.5">Crear cuenta</button>
           <div class="text-center text-xs mt-3 text-white/60">¿Ya tienes cuenta? <a href="./login.html" class="text-emerald-400 hover:text-emerald-300">Volver al login</a></div>
         </form>
@@ -52,14 +60,20 @@
 
     $('#frm').addEventListener('submit', async (e)=>{
       e.preventDefault();
+      const rutRaw = $('#rut').value.trim();
+      const rut = rutRaw.replace(/\./g,'').replace(/\s+/g,'').replace(/[\u2010\u2011\u2012\u2013\u2014]/g,'-');
+      const tel = $('#telefono').value.trim();
       const payload = {
-        nombre: $('#nombre').value.trim(),
+        nombre: [$('#nombre').value.trim(), $('#apellido').value.trim()].filter(Boolean).join(' ').trim(),
         email: $('#email').value.trim(),
-        rut: $('#rut').value.trim(),
-        password: $('#pass').value.trim()
+        rut,
+        telefono: tel
       };
-      if (!payload.nombre || !payload.email || !payload.rut || !payload.password){
+      if (!payload.nombre || !payload.email || !payload.rut || !payload.telefono){
         Swal.fire('Error','Completa todos los campos','error'); return;
+      }
+      if (!/^\d{6,9}-[\dkK]$/.test(payload.rut)){
+        Swal.fire('Error','RUT inválido. Debe ir sin puntos y con guion (ej: 12345678-9)','error'); return;
       }
       try{
         const r = await fetch(`${API_BASE}/register`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });

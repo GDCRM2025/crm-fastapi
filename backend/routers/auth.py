@@ -145,7 +145,10 @@ class RegisterIn(BaseModel):
     nombre: str
     email: str
     rut: str
-    password: str
+    # En registro de Operadores/CHOP la contraseña inicial viene desde teléfono (no se pide password).
+    # Mantiene compatibilidad: si llega password, se usa; si no, se usa teléfono.
+    password: str | None = None
+    telefono: str | None = None
     username: str | None = None
 
 
@@ -426,23 +429,48 @@ def login(data: LoginIn):
 def register(data: RegisterIn):
     nombre = data.nombre.strip()
     email = data.email.strip().lower()
-    rut = data.rut.strip().lower()
-    password = data.password.strip()
-    username = (data.username or email.split("@")[0]).strip().lower()
+    rut_in = (data.rut or "").strip()
+    telefono_in = (data.telefono or "").strip()
+    password_in = (data.password or "").strip() if data.password is not None else ""
+
+    # Normaliza RUT: sin puntos, con guion, y en lower para comparar.
+    def _rut_norm(s: str) -> str:
+        s = (s or "").strip()
+        s = s.replace(".", "").replace(" ", "")
+        s = s.replace("‐", "-").replace("‑", "-").replace("–", "-").replace("—", "-")
+        return s.lower()
+
+    rut = _rut_norm(rut_in)
+    # Password inicial: teléfono (requerimiento). Si viene password explícita, se respeta por compat.
+    password = password_in or telefono_in
+
+    # Username recomendado: RUT (sin puntos, con guion).
+    username = (data.username or rut or email.split("@")[0]).strip().lower()
+
     if not nombre or not email or not rut or not password:
         raise HTTPException(status_code=400, detail="Faltan datos requeridos")
     with get_connection() as conn:
         _ensure_operadores_allowlist(conn)
+        # Asegura columnas (deploy idempotente)
+        try:
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rut TEXT"))
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS avatar_url TEXT"))
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         row = conn.execute(
             text(
                 """
                 SELECT nombre, email, rut, cargo, status
                 FROM operadores_allowlist
-                WHERE lower(email)=:e AND lower(rut)=:r
+                WHERE lower(rut)=:r
                 LIMIT 1
                 """
             ),
-            {"e": email, "r": rut},
+            {"r": rut},
         ).mappings().first()
         if not row:
             raise HTTPException(status_code=403, detail="No estás autorizado para registrarte")
@@ -460,11 +488,23 @@ def register(data: RegisterIn):
             raise HTTPException(status_code=400, detail="Usuario ya existe")
         role_id = _role_id_for(conn, cargo)
         hp = hash_password(password)
+        # avatar genérico (data URI SVG)
+        default_avatar = (
+            "data:image/svg+xml;utf8,"
+            "<svg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'>"
+            "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>"
+            "<stop offset='0' stop-color='%2319c37d'/><stop offset='1' stop-color='%230b0e10'/>"
+            "</linearGradient></defs>"
+            "<circle cx='128' cy='128' r='124' fill='url(%23g)'/>"
+            "<circle cx='128' cy='108' r='44' fill='rgba(255,255,255,0.92)'/>"
+            "<path d='M48 224c16-44 48-66 80-66s64 22 80 66' fill='rgba(255,255,255,0.92)'/>"
+            "</svg>"
+        )
         conn.execute(
             text(
                 """
-                INSERT INTO usuarios(nombre,email,username,hashed_password,telefono,cargo,id_rol,rol,is_active,created_at,updated_at)
-                VALUES (:n,:e,:u,:hp,NULL,:cargo,:rid,:rol,TRUE,now(),now())
+                INSERT INTO usuarios(nombre,email,username,hashed_password,telefono,rut,cargo,id_rol,rol,is_active,avatar_url,created_at,updated_at)
+                VALUES (:n,:e,:u,:hp,:tel,:rut,:cargo,:rid,:rol,TRUE,:av,now(),now())
                 """
             ),
             {
@@ -472,9 +512,12 @@ def register(data: RegisterIn):
                 "e": email,
                 "u": username,
                 "hp": hp,
+                "tel": telefono_in or None,
+                "rut": rut,
                 "cargo": cargo,
                 "rid": role_id,
                 "rol": cargo,
+                "av": default_avatar,
             },
         )
         conn.commit()
