@@ -1328,6 +1328,60 @@ def pdf_placeholder(
                     t = t[:-1]
                 return t
 
+            def _line_h(font) -> int:
+                try:
+                    bb = font.getbbox("Ag")  # type: ignore[attr-defined]
+                    return int((bb[3] - bb[1]) + 2)
+                except Exception:
+                    return 14
+
+            def _wrap_lines(text: str, max_w: int, font, max_lines: int = 2) -> list[str]:
+                """
+                Envuelve texto por palabras en `max_lines` líneas; si se trunca, agrega ellipsis.
+                """
+                raw = (text or "").strip()
+                if not raw:
+                    return []
+                try:
+                    words = [w for w in raw.split() if w]
+                except Exception:
+                    words = [raw]
+                lines: list[str] = []
+                cur = ""
+                used_words = 0
+
+                for w in words:
+                    cand = (cur + " " + w).strip() if cur else w
+                    if draw.textlength(cand, font=font) <= max_w:
+                        cur = cand
+                        used_words += 1
+                        continue
+                    if cur:
+                        lines.append(cur)
+                        cur = w
+                        used_words += 1
+                    else:
+                        # palabra muy larga: clip duro
+                        lines.append(_clip(w, max_w, font))
+                        used_words += 1
+                        cur = ""
+                    if len(lines) >= max_lines:
+                        cur = ""
+                        break
+
+                if cur and len(lines) < max_lines:
+                    lines.append(cur)
+
+                truncated = used_words < len(words)
+                if truncated and lines:
+                    ell = "…"
+                    last = (lines[-1] or "").rstrip()
+                    # asegurar espacio para ellipsis
+                    target_w = max(20, max_w - int(draw.textlength(ell, font=font)))
+                    last2 = _clip(last, target_w, font).rstrip()
+                    lines[-1] = (last2 + ell) if last2 else ell
+                return lines
+
             # Brand palettes (from your "Colores corporativos")
             PAL = {
                 "CAM": {
@@ -1486,9 +1540,17 @@ def pdf_placeholder(
                         elif ckey == "desc":
                             x = xL + pad
                             max_w = max(60, (xR - xL - 2 * pad))
-                            draw.text((x, y_top + (5 if compact else 8)), _clip(prod, max_w, cell_bold), font=cell_bold, fill=txt)
+                            y_prod = y_top + (5 if compact else 8)
+                            draw.text((x, y_prod), _clip(prod, max_w, cell_bold), font=cell_bold, fill=txt)
                             if desc:
-                                draw.text((x, y_top + (23 if compact else 30)), _clip(desc, max_w, desc_font), font=desc_font, fill=muted)
+                                # Envuelve descripción (2–3 líneas según espacio) para que se lea completa.
+                                y_desc0 = y_top + (22 if compact else 30)
+                                lh = _line_h(desc_font)
+                                # espacio disponible hasta el final de la fila
+                                avail = max(0, (y_bot - 4) - y_desc0)
+                                max_lines = max(1, min(3, int(avail // max(1, lh))))
+                                for li, line_txt in enumerate(_wrap_lines(desc, max_w, desc_font, max_lines=max_lines)):
+                                    draw.text((x, y_desc0 + li * lh), line_txt, font=desc_font, fill=muted)
 
                 # Hint if truncated
                 if len(items) > max_rows:
