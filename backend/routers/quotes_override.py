@@ -1241,6 +1241,7 @@ def pdf_placeholder(
             f12 = _font_reg(18)
             f12s = _font_reg(15)   # desc pequeña / modo compacto
             f10 = _font_reg(13)    # desc extra-compacta
+            f9 = _font_reg(11)     # desc multi-línea (para que se lea completa)
             f12b = _font_bold(18)
             f12bs = _font_bold(15)
             f14b = _font_bold(22)
@@ -1487,7 +1488,9 @@ def pdf_placeholder(
                 head_font = f12bs if compact else f12b
                 cell_font = f12s if compact else f12
                 cell_bold = f12bs if compact else f12b
-                desc_font = f10 if compact else f12s
+                # La descripción suele ser larga: usamos una fuente más pequeña para permitir 2+ líneas
+                # sin sacrificar la cantidad de filas.
+                desc_font = f9 if not compact else f9
 
                 for i, (_, label, _, align) in enumerate(cols):
                     xL, xR = col_x[i], col_x[i + 1]
@@ -1540,15 +1543,17 @@ def pdf_placeholder(
                         elif ckey == "desc":
                             x = xL + pad
                             max_w = max(60, (xR - xL - 2 * pad))
-                            y_prod = y_top + (5 if compact else 8)
+                            y_prod = y_top + (4 if compact else 6)
                             draw.text((x, y_prod), _clip(prod, max_w, cell_bold), font=cell_bold, fill=txt)
                             if desc:
                                 # Envuelve descripción (2–3 líneas según espacio) para que se lea completa.
-                                y_desc0 = y_top + (22 if compact else 30)
+                                y_desc0 = y_top + (20 if compact else 24)
                                 lh = _line_h(desc_font)
                                 # espacio disponible hasta el final de la fila
                                 avail = max(0, (y_bot - 4) - y_desc0)
-                                max_lines = max(1, min(3, int(avail // max(1, lh))))
+                                # En compacto apuntamos a 2 líneas; en normal hasta 3 si cabe.
+                                cap = 2 if compact else 3
+                                max_lines = max(1, min(cap, int(avail // max(1, lh))))
                                 for li, line_txt in enumerate(_wrap_lines(desc, max_w, desc_font, max_lines=max_lines)):
                                     draw.text((x, y_desc0 + li * lh), line_txt, font=desc_font, fill=muted)
 
