@@ -781,14 +781,106 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
                 {"n": comuna_name, "n_like": comuna_name + "%"},
             ).scalar()
 
-        # tipo cliente por nombre
-        tipo_name = (payload.get("tipo_cliente") or payload.get("tipo") or "").strip()
+        # tipo cliente (empresa/particular) — formularios tienden a mandar keys distintas o variaciones.
+        # Guardamos siempre id_tipo_cliente cuando se pueda inferir.
         id_tipo_cliente = None
-        if tipo_name:
+        try:
+            id_tipo_in = payload.get("id_tipo_cliente") or payload.get("tipo_cliente_id") or payload.get("idTipoCliente")
+            if str(id_tipo_in or "").isdigit():
+                id_tipo_cliente = int(id_tipo_in)
+        except Exception:
+            id_tipo_cliente = None
+
+        def _norm_txt(s: str) -> str:
+            try:
+                import unicodedata
+
+                s2 = unicodedata.normalize("NFD", str(s or "").strip().upper())
+                s2 = "".join(ch for ch in s2 if unicodedata.category(ch) != "Mn")
+            except Exception:
+                s2 = str(s or "").strip().upper()
+            # solo letras/números/espacio
+            out = []
+            for ch in s2:
+                if ch.isalnum() or ch.isspace():
+                    out.append(ch)
+            return "".join(out).strip()
+
+        tipo_name = ""
+        if id_tipo_cliente is None:
+            for k in (
+                "tipo_cliente",
+                "tipoCliente",
+                "tipo_de_cliente",
+                "tipoClienteNombre",
+                "tipo_cliente_nombre",
+                "tipocliente",
+                "tipo",
+                "client_type",
+                "clientType",
+                "empresa_particular",
+                "empresaParticular",
+            ):
+                v = payload.get(k)
+                if v is None:
+                    continue
+                s = str(v).strip()
+                if s:
+                    tipo_name = s
+                    break
+
+        tipo_norm = _norm_txt(tipo_name)
+        if id_tipo_cliente is None and tipo_norm:
+            # Heurísticas típicas: EMPRESA / PARTICULAR (y sinónimos)
+            is_emp = ("EMP" in tipo_norm) or ("CORP" in tipo_norm)
+            is_part = ("PART" in tipo_norm) or ("PERSONA" in tipo_norm) or ("NATURAL" in tipo_norm)
+
+            # 1) match exacto
             id_tipo_cliente = conn.execute(
                 text("SELECT id_tipo_cliente FROM public.tipos_cliente WHERE UPPER(tipo)=UPPER(:n) LIMIT 1"),
                 {"n": tipo_name},
             ).scalar()
+
+            # 2) match por LIKE (sin tildes/variaciones)
+            if not id_tipo_cliente:
+                id_tipo_cliente = conn.execute(
+                    text(
+                        """
+                        SELECT id_tipo_cliente
+                        FROM public.tipos_cliente
+                        WHERE UPPER(tipo) LIKE UPPER(:n_like)
+                        ORDER BY id_tipo_cliente ASC
+                        LIMIT 1
+                        """
+                    ),
+                    {"n_like": "%" + tipo_norm.replace(" ", "%") + "%"},
+                ).scalar()
+
+            # 3) fallback por categoría
+            if not id_tipo_cliente and is_emp:
+                id_tipo_cliente = conn.execute(
+                    text(
+                        """
+                        SELECT id_tipo_cliente
+                        FROM public.tipos_cliente
+                        WHERE UPPER(tipo) LIKE '%EMP%'
+                        ORDER BY id_tipo_cliente ASC
+                        LIMIT 1
+                        """
+                    )
+                ).scalar()
+            if not id_tipo_cliente and is_part:
+                id_tipo_cliente = conn.execute(
+                    text(
+                        """
+                        SELECT id_tipo_cliente
+                        FROM public.tipos_cliente
+                        WHERE UPPER(tipo) LIKE '%PART%' OR UPPER(tipo) LIKE '%PERSON%'
+                        ORDER BY id_tipo_cliente ASC
+                        LIMIT 1
+                        """
+                    )
+                ).scalar()
 
         cliente = (payload.get("cliente") or payload.get("nombre_cliente") or payload.get("nombre") or "").strip()
         if not cliente:
@@ -813,7 +905,9 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
         email = (payload.get("email") or payload.get("correo") or payload.get("Correo") or payload.get("mail") or "").strip()
         fecha = (payload.get("fecha_evento") or payload.get("fechaEvento") or payload.get("Fecha") or payload.get("fecha") or payload.get("FechaEvento") or "").strip()
         comuna = (payload.get("comuna") or payload.get("comuna_nombre") or "").strip()
-        plataforma = (payload.get("plataforma") or "webform").strip()
+        # Canal: este endpoint es el FORMULARIO, por requerimiento de funnel.
+        plataforma = "FORMULARIO"
+        plataforma_det = (payload.get("plataforma") or payload.get("canal") or payload.get("channel") or "").strip()
         rid = (payload.get("rid") or "").strip()
 
         lines = []
@@ -821,8 +915,11 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
             lines.append(msg)
             lines.append("")
         lines.append("[FORMULARIO]")
-        if plataforma:
-            lines.append(f"Plataforma: {plataforma}")
+        lines.append(f"Plataforma: {plataforma}")
+        if plataforma_det and _norm_txt(plataforma_det) not in ("FORMULARIO", "WEBFORM"):
+            lines.append(f"Fuente: {plataforma_det}")
+        if tipo_norm:
+            lines.append(f"Tipo cliente: {tipo_name}")
         if tipo:
             lines.append(f"Tipo evento: {tipo}")
         if fecha:
@@ -857,7 +954,7 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
             "id_tipo_cliente": id_tipo_cliente,
             "fecha_evento": payload.get("fecha_evento") or fecha or None,
             "monto_cotizado": payload.get("monto_cotizado") or 0,
-            "plataforma": payload.get("plataforma") or "webform",
+            "plataforma": plataforma,
             "notas": notas,
             "num_cotizacion": payload.get("num_cotizacion"),
         }).scalar_one()
