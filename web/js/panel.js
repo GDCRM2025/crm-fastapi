@@ -1045,6 +1045,15 @@ function renderNotifications(data) {
     }
     if (lastLeadCount !== null && leadCount > lastLeadCount) {
       playNotifSound("lead");
+      try{
+        const delta = leadCount - lastLeadCount;
+        const txt2 = delta === 1 ? "Nuevo lead" : `Nuevos leads (+${delta})`;
+        toast(`${txt2} — click para abrir`, {
+          kind: "ok",
+          ms: 9000,
+          onClick: () => openItem({ id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html" })
+        });
+      }catch(_){}
     } else if (staleCount > 0 && (lastStaleCount === null || staleCount > lastStaleCount)) {
       playNotifSound("lead");
     } else if (lastNotifCount !== null && total > lastNotifCount) {

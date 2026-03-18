@@ -436,7 +436,8 @@
     // Pre-abre pestaña para evitar bloqueos de popup (navegaremos al PDF tras guardar).
     let pdfPopup = null;
     try{
-      pdfPopup = window.open("", "_blank", "noopener,noreferrer");
+      // Nota: la pestaña se abre *antes* del primer await para evitar bloqueos.
+      pdfPopup = window.open("", "_blank");
       if (pdfPopup && pdfPopup.document){
         pdfPopup.document.write(`
           <html><head><title>Guardando…</title></head>
@@ -448,6 +449,7 @@
           </body></html>
         `);
         pdfPopup.document.close();
+        try{ pdfPopup.focus(); }catch(_){}
       }
     }catch(_){
       pdfPopup = null;
@@ -521,15 +523,28 @@
         try{
           if (pdfPopup && !pdfPopup.closed){
             pdfPopup.location.href = wait;
+            try{ pdfPopup.focus(); }catch(_){}
           } else {
-            window.open(wait, "_blank", "noopener,noreferrer");
+            const w = window.open(wait, "_blank");
+            if (!w && window.Swal){
+              await Swal.fire({
+                icon:"info",
+                title:"PDF listo",
+                text:"El navegador bloqueó la ventana emergente. Presiona “Abrir PDF”.",
+                confirmButtonText:"Abrir PDF",
+                confirmButtonColor:"#19C37D"
+              }).then((r)=> r.isConfirmed && window.open(wait, "_blank"));
+            }
           }
         }catch(_){}
       } else {
         try{ if (pdfPopup && !pdfPopup.closed) pdfPopup.close(); }catch(_){}
       }
 
-      location.href = apiURL(`/web/views/historial_cotizaciones.html?id_lead=${leadId}`);
+      // Deja respirar al navegador para que la pestaña del PDF navegue/focus antes del redirect.
+      setTimeout(() => {
+        location.href = apiURL(`/web/views/historial_cotizaciones.html?id_lead=${leadId}`);
+      }, 220);
     }catch(e){
       console.error(e);
       const raw = String(e?.message || e || "");

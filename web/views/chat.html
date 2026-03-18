@@ -391,10 +391,17 @@
       if (EMBED) qs(".app")?.classList.add("embed");
     }catch(_){}
 
-    function isOnlineByEmail(email) {
+    let PRESENCE_IDS = new Set();
+    let PRESENCE_EMAILS = new Set();
+
+    function isOnline(userOrEmailOrId) {
+      const obj = userOrEmailOrId && typeof userOrEmailOrId === "object" ? userOrEmailOrId : null;
+      const id = obj ? (obj.user_id ?? obj.id ?? obj.other_user_id) : userOrEmailOrId;
+      if (id != null && String(id).trim() && PRESENCE_IDS.has(String(id))) return true;
+      const email = obj ? (obj.email ?? obj.other_email) : userOrEmailOrId;
       const e = String(email || "").toLowerCase();
       if (!e) return false;
-      return (PRESENCE || []).some((p) => String(p.email || "").toLowerCase() === e);
+      return PRESENCE_EMAILS.has(e);
     }
 
     function setMode(m) {
@@ -426,7 +433,7 @@
           ? items.map((t) => {
               const active = selectedThread && String(selectedThread) === String(t.id_thread) ? "active" : "";
               const avUrl = t.other_avatar_url || "";
-              const dot = isOnlineByEmail(t.other_email) ? "on" : "";
+              const dot = isOnline({ other_user_id: t.other_user_id, other_email: t.other_email }) ? "on" : "";
               return `
                 <div class="row ${active}" data-thread="${esc(t.id_thread)}">
                   <div class="av" style="${avUrl ? `background-image:url('${avUrl}')` : ""}">
@@ -461,7 +468,7 @@
       list.innerHTML = items.length
         ? items.map((u) => {
             const avUrl = u.avatar_url || "";
-            const dot = isOnlineByEmail(u.email) ? "on" : "";
+            const dot = isOnline(u) ? "on" : "";
             return `
               <div class="row" data-user="${esc(u.id)}">
                 <div class="av" style="${avUrl ? `background-image:url('${avUrl}')` : ""}">
@@ -493,6 +500,13 @@
     async function loadPresence() {
       const j = await api("/chat/presence");
       PRESENCE = j.items || [];
+      try{
+        PRESENCE_IDS = new Set((PRESENCE || []).map((p) => String(p.user_id ?? "")).filter(Boolean));
+        PRESENCE_EMAILS = new Set((PRESENCE || []).map((p) => String(p.email || "").toLowerCase()).filter(Boolean));
+      }catch(_){
+        PRESENCE_IDS = new Set();
+        PRESENCE_EMAILS = new Set();
+      }
       renderOnlineBadge();
     }
 
