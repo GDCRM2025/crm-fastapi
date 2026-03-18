@@ -1113,6 +1113,59 @@ def update_lead(id_lead: int, payload: dict = Body(...)):
         conn.commit()
         return {"ok": True}
 
+
+@router.post("/leads/{id_lead}/append_note")
+def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+    """
+    Agrega una entrada al historial/notas del lead (sin pisar el texto existente).
+    Útil para registrar seguimientos WhatsApp, llamadas, etc, con timestamp.
+    """
+    text_in = (payload.get("text") or payload.get("nota") or payload.get("message") or "").strip()
+    if not text_in:
+        raise HTTPException(400, "text requerido")
+    if len(text_in) > 8000:
+        raise HTTPException(400, "text demasiado largo")
+
+    kind = str(payload.get("kind") or payload.get("tipo") or "NOTE").strip().upper()[:24]
+    title = str(payload.get("title") or payload.get("titulo") or "").strip()[:120]
+
+    try:
+        from datetime import datetime
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        ts = ""
+
+    who = (user.get("name") or user.get("username") or "").strip()[:80] or "Usuario"
+
+    header = f"[{kind}] {ts} · {who}".strip()
+    if title:
+        header = f"{header} · {title}".strip()
+
+    block = f"{header}\n{text_in}".strip()
+
+    with get_connection() as conn:
+        row = conn.execute(text("SELECT 1 FROM public.leads WHERE id_lead=:id"), {"id": int(id_lead)}).first()
+        if not row:
+            raise HTTPException(404, "Lead no existe")
+
+        conn.execute(
+            text(
+                """
+                UPDATE public.leads
+                SET notas = CASE
+                  WHEN COALESCE(notas,'') = '' THEN :b
+                  ELSE notas || E'\\n\\n' || :b
+                END,
+                updated_at = now()
+                WHERE id_lead=:id
+                """
+            ),
+            {"id": int(id_lead), "b": block},
+        )
+        conn.commit()
+        return {"ok": True}
+
 @router.patch("/leads/{id_lead}/estado")
 def move_estado(id_lead: int, payload: dict = Body(...)):
     """

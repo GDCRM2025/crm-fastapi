@@ -288,6 +288,20 @@
       border-color: rgba(25,195,125,.55);
       box-shadow: 0 0 0 3px rgba(25,195,125,.12);
     }
+    .wspBox{
+      margin-top:6px;
+      padding:10px;
+      border-radius:14px;
+      border:1px dashed rgba(255,255,255,.12);
+      background: rgba(255,255,255,.03);
+    }
+    .wspRow{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .wspRow select{ flex: 1 1 260px; }
 
     .swal2-popup{
       background: var(--surface) !important;
@@ -1277,7 +1291,8 @@ async function doSeguimiento(lead){
   const tel = String(lead.telefono || "").replace(/\D/g,"");
   if (!tel){ toast("Lead sin teléfono", "warning"); return; }
   const tpls = followupTemplatesFor(lead);
-  const opts = tpls.map((t, i) => `<option value="${i}">Seguimiento ${String(i+1).padStart(2,"0")}</option>`).join("");
+  const stName = estadoNombre(lead?.id_estado || "") || "SEGUIMIENTO";
+  const opts = tpls.map((t, i) => `<option value="${i}">WSP ${String(i+1).padStart(2,"0")} · ${escapeHtml(stName)}</option>`).join("");
   const res = await Swal.fire({
     title:"Mensaje de seguimiento",
     html: `
@@ -1313,7 +1328,9 @@ async function doSeguimiento(lead){
         Swal.showValidationMessage("Mensaje vacío");
         return false;
       }
-      return v;
+      const sel = document.getElementById("sw_fu_tpl");
+      const idx = Number(sel?.value || 0);
+      return { msg: v, idx };
     },
     preDeny: () => {
       const ta = document.getElementById("sw_fu_txt");
@@ -1324,7 +1341,23 @@ async function doSeguimiento(lead){
     }
   });
   if (!res.isConfirmed) return;
-  const msg = String(res.value || "").trim();
+  const msg = String(res.value?.msg || "").trim();
+  const idx = Number(res.value?.idx || 0);
+
+  // Log a historial (backend) para trazabilidad.
+  try{
+    await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({
+        kind: "WSP",
+        title: `Seguimiento ${String(idx+1).padStart(2,"0")} · ${stName}`,
+        text: msg,
+      }),
+    });
+  }catch(_){
+    // No bloquea apertura de WhatsApp si falla el log.
+  }
   const url = "https://wa.me/" + tel + "?text=" + encodeURIComponent(msg);
   window.open(url, "_blank", "noopener");
 }
@@ -1416,8 +1449,8 @@ const DECLINE_TEMPLATES = [
   { id:"otro", label:"Otro (editar)", text:"" },
 ];
 
-// Seguimiento masivo (plantillas): se habilita al final del dia.
-const ENABLE_SEGUIMIENTO = false;
+  // Seguimiento masivo (plantillas): requerido para WSP por estado + logging a historial.
+  const ENABLE_SEGUIMIENTO = true;
 
 function renderTpl(t, lead){
   const cliente = (lead?.cliente || lead?.nombre_cliente || "").trim();
@@ -1431,43 +1464,49 @@ function renderTpl(t, lead){
 
 function followupTemplatesFor(lead){
   const st = estadoNombre(lead?.id_estado || "");
-  const base = [
-    "Hola {cliente}, soy del equipo {marca}. Te escribo para confirmar detalles del evento {fecha_evento}.",
-    "Hola {cliente}, ¿cómo estás? Quedo atento(a) para avanzar con tu cotización y coordinar el servicio.",
-    "Hola {cliente}, te dejo este mensaje para saber si seguimos avanzando con el evento.",
-    "Hola {cliente}, ¿me confirmas si el evento sigue en pie y la fecha {fecha_evento} se mantiene?",
-    "Hola {cliente}, si te parece, puedo enviarte alternativas y cerrar la reserva hoy.",
-    "Hola {cliente}, te escribo para ayudarte a cerrar la cotización y reservar el servicio.",
-    "Hola {cliente}, ¿tienes un minuto para confirmar cantidades y horario?",
-    "Hola {cliente}, sigo atento(a) para coordinar la logística del evento {fecha_evento}.",
-    "Hola {cliente}, ¿quieres que te llame para cerrar en 2 minutos?",
-    "Hola {cliente}, quedo pendiente de tu confirmación para bloquear disponibilidad.",
+  const fecha = String(lead?.fecha_evento || "").slice(0, 10);
+  const num = String(lead?.num_cotizacion || "").trim();
+  const monto = money(lead?.monto_cotizado || 0);
+
+  // 10 inicios x 5 cierres => 50 plantillas.
+  const openers = [
+    "Hola {cliente}, soy del equipo {marca}.",
+    "Hola {cliente}, ¿cómo estás? Soy del equipo {marca}.",
+    "Hola {cliente}, te escribo por tu solicitud en {marca}.",
+    "Hola {cliente}, te contacto para avanzar con tu evento.",
+    "Hola {cliente}, gracias por escribirnos.",
+    "Hola {cliente}, quedo atento(a) para coordinar tu servicio.",
+    "Hola {cliente}, te escribo para confirmar algunos detalles.",
+    "Hola {cliente}, ¿tienes un minuto para revisar el estado de tu cotización?",
+    "Hola {cliente}, quería dejarte un mensaje corto para coordinar.",
+    "Hola {cliente}, te escribo para cerrar los últimos detalles.",
   ];
-  const asks = [
-    "¿Prefieres que te llame o lo coordinamos por WhatsApp?",
-    "¿Cuántas personas serán aproximadamente?",
-    "¿La dirección y comuna se mantienen?",
-    "¿Tienes alguna preferencia de horario?",
-    "¿Te envío la cotización final para aprobación?",
-    "¿Mantienes el servicio para la fecha indicada?",
-    "¿Deseas agregar o quitar productos del servicio?",
-    "¿Confirmamos horario de montaje y desmontaje?",
-    "¿Puedo enviarte el link de pago/confirmación?",
-    "¿Me confirmas el nombre para emitir la cotización?",
+  const closers = [
+    "Quedo atento(a).",
+    "Gracias, quedo atento(a) a tu confirmación.",
+    "Quedo pendiente para avanzar cuando me indiques.",
+    "Si te acomoda, lo cerramos hoy para asegurar disponibilidad.",
+    "Cualquier cosa me dices y lo ajustamos.",
   ];
-  const close = "Quedo atento(a).";
+
+  let body = "¿Me confirmas fecha, dirección y cantidad de personas para enviarte la propuesta final?";
+  if (st.includes("NUEVO") || st.includes("CONTACT")){
+    body = `Para ayudarte mejor, ¿me confirmas la fecha${fecha ? " (" + fecha + ")" : ""} y la cantidad aproximada de personas?`;
+  }else if (st.includes("COTIZ")){
+    body = `Te envié la cotización${num ? " N° " + num : ""}${monto ? " (" + monto + ")" : ""}. ¿La revisamos y la dejamos lista para aprobación?`;
+  }else if (st.includes("PEND") || st.includes("SEGUIM") || st.includes("ESPER")){
+    body = "Solo para confirmar si avanzamos con la reserva. Si hay algún cambio, lo ajustamos.";
+  }else if (st.includes("CONFIRM")){
+    body = "Para coordinar operación: ¿confirmamos horario de montaje/desmontaje y punto exacto de instalación?";
+  }
+
   const out = [];
-  // Genera 100 variaciones (10x10).
-  for (const b of base){
-    for (const a of asks){
-      out.push(renderTpl(`${b}\n\n${a}\n\n${close}`, lead));
+  for (let i = 0; i < openers.length; i++){
+    for (let j = 0; j < closers.length; j++){
+      out.push(renderTpl(`${openers[i]}\n\n${body}\n\n${closers[j]}`, lead));
     }
   }
-  // Ajuste leve por estado (prioriza primeros, pero mantiene 100)
-  if (st.includes("NUEVO")) return out.slice(0, 100);
-  if (st.includes("CONTACT")) return out.slice(0, 100);
-  if (st.includes("COTIZ")) return out.slice(0, 100);
-  return out.slice(0, 100);
+  return out;
 }
 
 async function handleDeclinado(lead, newEstado){
@@ -2398,6 +2437,9 @@ async function openEditModal(lead){
   const comunas = CATS.comunas || [];
   const tipos  = CATS.tipos  || [];
   const estados = CATS.estados || [];
+  const platformsBase = ["FORMULARIO","WHATSAPP","INSTAGRAM","EMAIL","TEL","REFERIDO","OTRO"];
+  const curPlat = String(lead.plataforma || "").trim();
+  const platforms = Array.from(new Set([curPlat, ...platformsBase].filter(Boolean)));
   let pdfFile = null;
   let isAdmin = false;
 
@@ -2423,6 +2465,10 @@ async function openEditModal(lead){
       '<option value="">- Seleccionar -</option>' +
       tipos.map(t=>`<option value="${t.id_tipo_cliente}" ${Number(t.id_tipo_cliente)===Number(lead.id_tipo_cliente)?"selected":""}>${escapeHtml(t.nombre)}</option>`).join("") +
     '</select></label>' +
+    '<label>Plataforma<select id="e_plataforma" class="swSel">' +
+      '<option value="">- Seleccionar -</option>' +
+      platforms.map(p=>`<option value="${escapeHtml(p)}" ${String(p)===String(curPlat)?"selected":""}>${escapeHtml(p)}</option>`).join("") +
+    '</select></label>' +
     '<label>Estado<select id="e_estado" class="swSel">' +
       estados.map(s=>`<option value="${s.id_estado}" ${Number(s.id_estado)===Number(lead.id_estado)?"selected":""}>${escapeHtml(s.nombre)}</option>`).join("") +
     '</select></label>' +
@@ -2431,6 +2477,17 @@ async function openEditModal(lead){
     `<label>N° Cotización<input id="e_numcot" class="swInp" value="${escapeHtml(String(lead.num_cotizacion ?? ""))}" /></label>` +
     `<label>Monto cotizado<input id="e_monto" class="swInp" type="number" step="0.01" value="${escapeHtml(String(lead.monto_cotizado ?? 0))}" /></label>` +
     `<label class="span2">Dirección<input id="e_dir" class="swInp" value="${escapeHtml(lead.direccion || "")}" /></label>` +
+    `<label class="span2">WhatsApp (seguimiento por estado)
+        <div class="wspBox">
+          <div class="wspRow">
+            <select id="e_wsp_tpl" class="swSel"></select>
+            <button type="button" class="swBtn secondary" id="e_wsp_copy" style="white-space:nowrap">Copiar</button>
+            <button type="button" class="swBtn" id="e_wsp_send" style="white-space:nowrap">Enviar</button>
+          </div>
+          <textarea id="e_wsp_msg" class="swTa" style="min-height:120px" placeholder="Selecciona una plantilla o escribe tu mensaje…"></textarea>
+          <div class="muted" style="margin-top:6px">Al enviar se abre WhatsApp y se registra en Historial con timestamp.</div>
+        </div>
+     </label>` +
     `<label class="span2">PDF Cotización
         <input id="e_pdf" class="swInp" type="file" accept="application/pdf" />
         <div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap">
@@ -2463,6 +2520,82 @@ async function openEditModal(lead){
       let localPdfFile = null;
       let isUploadingPdf = false;
       let metaSaveT = null;
+      const wspSel = qs("#e_wsp_tpl");
+      const wspTa = qs("#e_wsp_msg");
+      const wspCopy = qs("#e_wsp_copy");
+      const wspSend = qs("#e_wsp_send");
+      const estadoSel = qs("#e_estado");
+
+      function normTel(raw){
+        const tel = String(raw || "").replace(/\D/g, "");
+        // si viene sin 56 pero es móvil CL 9 dígitos, lo dejamos igual; wa.me acepta ambos
+        return tel;
+      }
+
+      function buildWspTemplates(){
+        // usa el motor existente (50 por estado)
+        const tmp = { ...(lead||{}) };
+        try{ tmp.id_estado = Number(estadoSel?.value || lead.id_estado || 0); }catch(_){}
+        return followupTemplatesFor(tmp);
+      }
+
+      function refreshWsp(){
+        if (!wspSel || !wspTa) return;
+        const tpls = buildWspTemplates();
+        const stName = estadoNombre(Number(estadoSel?.value || lead.id_estado || 0)) || "SEGUIMIENTO";
+        wspSel.innerHTML = tpls.map((_, i)=>`<option value="${i}">WSP ${String(i+1).padStart(2,"0")} · ${escapeHtml(stName)}</option>`).join("");
+        const apply = ()=>{
+          const idx = Number(wspSel.value || 0);
+          wspTa.value = String(tpls[idx] || "").trim();
+        };
+        wspSel.onchange = apply;
+        apply();
+      }
+
+      async function logWspToHist(title, text){
+        try{
+          await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+            method: "POST",
+            headers: { "Content-Type":"application/json" },
+            body: JSON.stringify({ kind: "WSP", title, text }),
+          });
+          // refleja también en el textarea de notas para feedback inmediato
+          try{
+            const nEl = qs("#e_notas");
+            if (nEl){
+              const cur = (nEl.value || "").trim();
+              const block = `\n\n[WSP] ${title}\n${text}`.trim();
+              nEl.value = (cur ? (cur + "\n\n") : "") + block;
+            }
+          }catch(_){}
+        }catch(_){}
+      }
+
+      if (wspCopy && wspTa){
+        wspCopy.addEventListener("click", async ()=>{
+          const msg = String(wspTa.value || "").trim();
+          if (!msg){ toast("Mensaje vacío", "warning"); return; }
+          try{ await navigator.clipboard.writeText(msg); toast("Copiado", "success"); }
+          catch(_){ toast("No pude copiar", "error"); }
+        });
+      }
+      if (wspSend && wspTa){
+        wspSend.addEventListener("click", async ()=>{
+          const msg = String(wspTa.value || "").trim();
+          if (!msg){ toast("Mensaje vacío", "warning"); return; }
+          const tel = normTel(lead.telefono);
+          if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+          const idx = Number(wspSel?.value || 0);
+          const stName = estadoNombre(Number(estadoSel?.value || lead.id_estado || 0)) || "SEGUIMIENTO";
+          const title = `Seguimiento ${String(idx+1).padStart(2,"0")} · ${stName}`;
+          await logWspToHist(title, msg);
+          window.open("https://wa.me/" + tel + "?text=" + encodeURIComponent(msg), "_blank", "noopener");
+        });
+      }
+      if (estadoSel){
+        estadoSel.addEventListener("change", refreshWsp);
+      }
+      refreshWsp();
 
       function setButtonsState(){
         const hasLocal = !!localPdfFile;
@@ -2966,6 +3099,7 @@ async function openEditModal(lead){
         id_marca: Number(qs("#e_marca").value),
         id_comuna: Number(qs("#e_comuna").value),
         id_tipo_cliente: qs("#e_tipo").value ? Number(qs("#e_tipo").value) : null,
+        plataforma: (qs("#e_plataforma")?.value || "").trim() || null,
         id_estado: Number(qs("#e_estado").value),
         fecha_evento: (qs("#e_fecha").value || null),
         direccion: (qs("#e_dir").value || "").trim() || null,
