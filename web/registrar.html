@@ -38,7 +38,7 @@
           </div>
           <div><label class="text-sm text-white/70">Email</label><input id="email" class="input mt-1" inputmode="email" autocomplete="email" /></div>
           <div><label class="text-sm text-white/70">RUT <span class="text-white/45">(sin puntos, con guion)</span></label><input id="rut" class="input mt-1" placeholder="Ej: 12345678-9" autocapitalize="none" /></div>
-          <div><label class="text-sm text-white/70">Teléfono <span class="text-white/45">(opcional)</span></label><input id="telefono" class="input mt-1" inputmode="tel" autocomplete="tel" placeholder="Ej: +56912345678" /></div>
+          <div><label class="text-sm text-white/70">Teléfono <span class="text-white/45">(obligatorio)</span></label><input id="telefono" class="input mt-1" inputmode="tel" autocomplete="tel" placeholder="Ej: +56912345678" /></div>
           <button class="w-full bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-semibold rounded-lg py-2.5">Crear cuenta</button>
           <div class="text-center text-xs mt-3 text-white/60">¿Ya tienes cuenta? <a href="./login.html" class="text-emerald-400 hover:text-emerald-300">Volver al login</a></div>
         </form>
@@ -69,7 +69,7 @@
         rut,
         telefono: tel
       };
-      if (!payload.nombre || !payload.email || !payload.rut){
+      if (!payload.nombre || !payload.email || !payload.rut || !payload.telefono){
         Swal.fire('Error','Completa todos los campos','error'); return;
       }
       if (!/^\d{6,9}-[\dkK]$/.test(payload.rut)){

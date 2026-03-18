@@ -448,7 +448,7 @@ def register(data: RegisterIn):
     # Username definitivo: EMAIL
     username = email
 
-    if not nombre or not email or not rut:
+    if not nombre or not email or not rut or not telefono_in:
         raise HTTPException(status_code=400, detail="Faltan datos requeridos")
     with get_connection() as conn:
         _ensure_operadores_allowlist(conn)
