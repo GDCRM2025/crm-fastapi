@@ -947,7 +947,7 @@ def _build_event(
     start_time,
     end_time,
     hr_tbd,
-    created_by=None,
+    agenda_notes: str | None = None,
 ):
     fe = lead.get("fecha_evento")
     if not fe:
@@ -1021,20 +1021,33 @@ def _build_event(
     dir_label = "DIR TBD" if missing_dir else _as_text(direccion).strip()
     phone_label = _as_text(telefono).strip() or "POR CONFIRMAR"
 
-    desc_lines = [
+    # Formato requerido para Calendar:
+    # - NOTAS arriba (destacadas)
+    # - Espacio entre encabezado y primer item en PRODUCTOS/MONTAJE
+    # - Espacio entre OPS y contacto
+    notes = _as_text(agenda_notes).strip()
+    desc_lines = []
+    if notes:
+        desc_lines += [
+            "🟨 NOTAS (IMPORTANTE):",
+            notes,
+            "",
+        ]
+
+    desc_lines += [
         "🛒 PRODUCTOS:",
+        "",
         *prod_lines,
         "",
         "🧰 MONTAJE:",
+        "",
         *m_lines,
         "",
         "👥 OPS: %s" % ops,
+        "",
         "🕒 HORARIO: %s" % hr_label,
         "📞 TELEFONO: %s" % phone_label,
         "📍 DIRECCION: %s" % dir_label,
-        "",
-        "Green Diamond",
-        "Creado por: %s" % (created_by or "CRM"),
     ]
     description = "\n".join(desc_lines).strip()
 
@@ -1048,6 +1061,75 @@ def _build_event(
         "montaje_text": montaje_text,
         "products_text": products_text,
     }
+
+
+def _items_grouped_by_day(items: list[dict], fallback_day: date) -> list[tuple[date, list[dict]]]:
+    by: dict[date, list[dict]] = {}
+    for it in items or []:
+        d = _parse_iso_date(it.get("service_date") or it.get("fecha") or it.get("dia") or it.get("day"))
+        if not d:
+            d = fallback_day
+        by.setdefault(d, []).append(it)
+    return sorted(by.items(), key=lambda x: x[0])
+
+
+def _build_event_for_day(
+    *,
+    lead: dict,
+    day: date,
+    comuna: str,
+    marca: str,
+    items_day: list[dict],
+    telefono: str,
+    direccion: str,
+    start_time: str | None,
+    end_time: str | None,
+    hr_tbd: bool,
+    agenda_notes: str | None = None,
+    override_title: str | None = None,
+    override_location: str | None = None,
+    override_description: str | None = None,
+    override_ops: int | None = None,
+    override_montaje_text: str | None = None,
+    day_label: str | None = None,
+) -> dict:
+    _, ops_sug, montaje_sug, _products_text = _calcular_montaje(items_day)
+    ops = int(override_ops) if override_ops is not None else ops_sug
+    montaje_text = (override_montaje_text or "").strip() or montaje_sug
+
+    lead2 = dict(lead or {})
+    lead2["fecha_evento"] = day.isoformat()
+    ev = _build_event(
+        lead=lead2,
+        comuna=comuna,
+        marca=marca,
+        items=items_day,
+        montaje_text=montaje_text,
+        ops=ops,
+        telefono=telefono,
+        direccion=direccion,
+        start_time=start_time,
+        end_time=end_time,
+        hr_tbd=hr_tbd,
+        agenda_notes=agenda_notes,
+    )
+
+    # Claridad en multi-día
+    try:
+        if day_label:
+            ev["description"] = f"📅 FECHA: {day_label}\n\n{ev.get('description') or ''}".strip()
+    except Exception:
+        pass
+
+    if override_title:
+        ev["title"] = override_title
+    if override_location:
+        ev["location"] = override_location
+    if override_description:
+        ev["description"] = override_description
+
+    ev["day"] = day.isoformat()
+    return ev
 
 
 @router.post("/{id_lead}/move")
@@ -1201,6 +1283,7 @@ def move_lead_and_maybe_agenda(
 
         telefono = str(payload.get("telefono") or lead.get("telefono") or "").strip()
         direccion = str(payload.get("direccion") or lead.get("direccion") or "").strip()
+        agenda_notes = str(payload.get("agenda_notes") or payload.get("notas_agenda") or payload.get("notas") or "").strip() or None
         start_time = _safe_time_hhmm(payload.get("start_time"))
         end_time = _safe_time_hhmm(payload.get("end_time"))
         hr_tbd = bool(payload.get("hr_tbd", False))
@@ -1236,68 +1319,134 @@ def move_lead_and_maybe_agenda(
         except Exception:
             pass
 
-        comuna = _get_comuna_nombre(lead.get("id_comuna"))
-        marca = _get_marca_nombre(lead.get("id_marca"))
-        if (not marca or marca == "Sin Marca") and id_cot:
-            marca2 = _infer_marca_from_cotizacion(id_cot)
-            if marca2:
-                marca = marca2
+            comuna = _get_comuna_nombre(lead.get("id_comuna"))
+            marca = _get_marca_nombre(lead.get("id_marca"))
+            if (not marca or marca == "Sin Marca") and id_cot:
+                marca2 = _infer_marca_from_cotizacion(id_cot)
+                if marca2:
+                    marca = marca2
 
-        ev = _build_event(
-            lead=lead,
-            comuna=comuna,
-            marca=marca,
-            items=items,
-            montaje_text=montaje_text,
-            ops=ops,
-            telefono=telefono,
-            direccion=direccion,
-            start_time=start_time,
-            end_time=end_time,
-            hr_tbd=hr_tbd,
-            created_by=str(payload.get("created_by") or "") or None,
-        )
+            # overrides globales
+            override_title = str(payload.get("override_title") or "").strip() or None
+            override_location = str(payload.get("override_location") or "").strip() or None
+            override_description = str(payload.get("override_description") or "").strip() or None
 
-        try:
-            t = str(payload.get("override_title") or "").strip()
-            if t:
-                ev["title"] = t
-        except Exception:
-            pass
+            # overrides por día: [{day:"YYYY-MM-DD", ops:int, montaje_text:"..."}]
+            overrides_by_day: dict[str, dict] = {}
+            try:
+                raw_obd = payload.get("override_by_day")
+                if isinstance(raw_obd, dict):
+                    overrides_by_day = {str(k): (v or {}) for k, v in raw_obd.items()}
+                elif isinstance(raw_obd, list):
+                    for r in raw_obd:
+                        if not isinstance(r, dict):
+                            continue
+                        d = str(r.get("day") or r.get("fecha") or r.get("service_date") or "").strip()
+                        if not d:
+                            continue
+                        overrides_by_day[d] = r
+            except Exception:
+                overrides_by_day = {}
 
-        try:
-            loc_o = str(payload.get("override_location") or "").strip()
-            if loc_o:
-                ev["location"] = loc_o
-        except Exception:
-            pass
+            # overrides globales (compat)
+            override_ops_global: int | None = None
+            try:
+                if payload.get("override_ops") is not None and str(payload.get("override_ops")).strip() != "":
+                    override_ops_global = int(payload.get("override_ops"))
+            except Exception:
+                override_ops_global = None
 
-        try:
-            desc_o = str(payload.get("override_description") or "").strip()
-            if desc_o:
-                ev["description"] = desc_o
-        except Exception:
-            pass
+            override_montaje_global: str | None = None
+            try:
+                if payload.get("override_montaje_text") is not None:
+                    mt = str(payload.get("override_montaje_text") or "").strip()
+                    if mt:
+                        override_montaje_global = mt
+            except Exception:
+                override_montaje_global = None
 
-        if dry_run:
-            return {
-                "ok": True,
-                "preview": True,
-                "quote_source": quote_source or ("cotizador" if id_cot else "manual"),
-                "id_cotizacion": int(id_cot) if id_cot else None,
-                "items": items,
-                "evento": {
-                    "id_evento": None,
-                    "title": ev["title"],
-                    "start_at": ev["start_at"],
-                    "end_at": ev["end_at"],
-                    "location": ev["location"],
-                    "description": ev["description"],
-                    "ops": ops,
-                    "montaje_text": montaje_text,
-                    "products_text": products_text,
-                },
-            }
+            base_day = date.fromisoformat(str(lead.get("fecha_evento"))[:10]) if lead.get("fecha_evento") else date.today()
+            grouped = _items_grouped_by_day(items, base_day)
+            total_days = len(grouped) if grouped else 1
+
+            eventos: list[dict] = []
+            for idx, (day, items_day) in enumerate(grouped or [(base_day, items)], start=1):
+                obd = overrides_by_day.get(day.isoformat(), {}) if overrides_by_day else {}
+
+                ops_day = None
+                try:
+                    if obd.get("ops") is not None and str(obd.get("ops")).strip() != "":
+                        ops_day = int(obd.get("ops"))
+                except Exception:
+                    ops_day = None
+
+                mt_day = None
+                try:
+                    if obd.get("montaje_text") is not None:
+                        mt_day = str(obd.get("montaje_text") or "").strip() or None
+                except Exception:
+                    mt_day = None
+
+                day_label = f"Día {idx}/{total_days} · {day.isoformat()}" if total_days > 1 else day.isoformat()
+
+            eventos.append(
+                _build_event_for_day(
+                    lead=lead,
+                    day=day,
+                    comuna=comuna,
+                    marca=marca,
+                    items_day=items_day,
+                    telefono=telefono,
+                    direccion=direccion,
+                    start_time=start_time,
+                    end_time=end_time,
+                    hr_tbd=hr_tbd,
+                    agenda_notes=agenda_notes,
+                    override_title=override_title,
+                    override_location=override_location,
+                    override_description=override_description,
+                    override_ops=(ops_day if ops_day is not None else override_ops_global),
+                    override_montaje_text=(mt_day if mt_day is not None else override_montaje_global),
+                    day_label=day_label,
+                )
+            )
+
+            ev = eventos[0] if eventos else {}
+
+            if dry_run:
+                return {
+                    "ok": True,
+                    "preview": True,
+                    "quote_source": quote_source or ("cotizador" if id_cot else "manual"),
+                    "id_cotizacion": int(id_cot) if id_cot else None,
+                    "items": items,
+                    "eventos": [
+                        {
+                            "id_evento": None,
+                            "day": e.get("day"),
+                            "title": e.get("title"),
+                            "start_at": e.get("start_at"),
+                            "end_at": e.get("end_at"),
+                            "location": e.get("location"),
+                            "description": e.get("description"),
+                            "ops": e.get("ops"),
+                            "montaje_text": e.get("montaje_text"),
+                            "products_text": e.get("products_text"),
+                        }
+                        for e in (eventos or [])
+                    ],
+                    "evento": {
+                        "id_evento": None,
+                        "title": ev["title"],
+                        "start_at": ev["start_at"],
+                        "end_at": ev["end_at"],
+                        "location": ev["location"],
+                        "description": ev["description"],
+                        "ops": ev.get("ops"),
+                        "montaje_text": ev.get("montaje_text"),
+                        "products_text": ev.get("products_text"),
+                    },
+                }
 
         evento_id = None
         if _table_exists("eventos_calendario"):
@@ -1363,30 +1512,42 @@ def move_lead_and_maybe_agenda(
 
         if "calendar_start" in cols_lead:
             extra_ev_ref["calendar_start"] = ev["start_at"]
-        if "calendar_end" in cols_lead:
-            extra_ev_ref["calendar_end"] = ev["end_at"]
+            if "calendar_end" in cols_lead:
+                extra_ev_ref["calendar_end"] = ev["end_at"]
 
-        _update_row(
-            "leads",
-            "id_lead",
-            id_lead,
-            {
-                "id_estado": int(id_estado),
-                "pendiente_agendar": False,
-                **({"id_cotizacion_vigente": int(id_cot)} if id_cot else {}),
-                **extra_ev_ref,
-                "pre_products_text": ev["products_text"],
-                "pre_montaje_text": ev["montaje_text"],
-                "pre_ops": ops,
-                "pre_title": ev["title"],
-                "pre_start": ev["start_at"],
-                "pre_end": ev["end_at"],
-                "pre_location": ev["location"],
-                "pre_telefono": telefono if telefono else "POR CONFIRMAR",
-                "pre_direccion": direccion if direccion else "DIR TBD",
-                "pre_description": ev["description"],
-            },
-        )
+            # Guardar plan multi-día (si la columna existe o la podemos crear)
+            pre_events_json = None
+            try:
+                if "pre_events_json" not in cols_lead:
+                    with engine.begin() as cn:
+                        cn.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_events_json TEXT"))
+                    cols_lead = set(_cols_for("leads"))
+                pre_events_json = json.dumps(eventos, ensure_ascii=False)
+            except Exception:
+                pre_events_json = None
+
+            _update_row(
+                "leads",
+                "id_lead",
+                id_lead,
+                {
+                    "id_estado": int(id_estado),
+                    "pendiente_agendar": False,
+                    **({"id_cotizacion_vigente": int(id_cot)} if id_cot else {}),
+                    **extra_ev_ref,
+                    "pre_products_text": ev["products_text"],
+                    "pre_montaje_text": ev["montaje_text"],
+                    "pre_ops": int(ev.get("ops")) if ev.get("ops") is not None else ops,
+                    "pre_title": ev["title"],
+                    "pre_start": ev["start_at"],
+                    "pre_end": ev["end_at"],
+                    "pre_location": ev["location"],
+                    "pre_telefono": telefono if telefono else "POR CONFIRMAR",
+                    "pre_direccion": direccion if direccion else "DIR TBD",
+                    "pre_description": ev["description"],
+                    **({"pre_events_json": pre_events_json} if pre_events_json else {}),
+                },
+            )
 
         try:
             cols = _cols_for("leads")

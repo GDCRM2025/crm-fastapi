@@ -1590,7 +1590,8 @@ def pdf_placeholder(
                                 avail = max(0, (y_bot - 4) - y_desc0)
                                 # En compacto hasta 3 líneas; en normal hasta 4 si cabe.
                                 cap = 3 if compact else 4
-                                max_lines = max(1, min(cap, int(avail // max(1, lh))))
+                                min_lines = 2 if row_h >= 42 else 1
+                                max_lines = max(min_lines, min(cap, int(avail // max(1, lh))))
                                 for li, line_txt in enumerate(_wrap_lines(desc, max_w, desc_font, max_lines=max_lines)):
                                     draw.text((x, y_desc0 + li * lh), line_txt, font=desc_font, fill=muted)
 
@@ -1608,8 +1609,8 @@ def pdf_placeholder(
 
             # Requisito: 1 página, sin crear más hojas.
             # Si hay muchos items, hacemos la tabla más compacta pero SIEMPRE mantenemos los totales dentro del margen.
-            # Compacto más temprano para asegurar que quepan al menos 12 items cuando corresponde.
-            compact = len(items) > 8
+            # No entrar en compacto antes de 12 ítems (UX: al menos 12 legibles).
+            compact = len(items) > 12
             want_rows = 20  # objetivo: mostrar hasta 20 filas sin desbordar
 
             if is_cam:
@@ -1626,10 +1627,10 @@ def pdf_placeholder(
                 y += (52 if compact else 64)
 
                 cols = [
-                    ("cantidad", "Cant.", 0.12, "r"),
-                    ("desc", "Descripcion", 0.56, "l"),
-                    ("pu", "P. Unitario", 0.16, "r"),
-                    ("total", "Total", 0.16, "r"),
+                    ("cantidad", "Cant.", 0.10, "r"),
+                    ("desc", "Descripcion", 0.60, "l"),
+                    ("pu", "P. Unitario", 0.15, "r"),
+                    ("total", "Total", 0.15, "r"),
                 ]
                 # Table geometry: totales dentro del mismo "marco" de tabla.
                 table_top = y
@@ -1767,11 +1768,11 @@ def pdf_placeholder(
                 y += 64
 
                 cols = [
-                    ("codigo", "Codigo", 0.14, "l"),
-                    ("desc", "Descripcion", 0.50, "l"),
-                    ("cantidad", "Cant.", 0.12, "r"),
-                    ("pu", "Precio", 0.12, "r"),
-                    ("total", "Total", 0.12, "r"),
+                    ("codigo", "Codigo", 0.12, "l"),
+                    ("desc", "Descripcion", 0.56, "l"),
+                    ("cantidad", "Cant.", 0.10, "r"),
+                    ("pu", "Precio", 0.11, "r"),
+                    ("total", "Total", 0.11, "r"),
                 ]
                 table_top = y
                 table_bottom = cy1 - pad - 8
@@ -1841,10 +1842,10 @@ def pdf_placeholder(
                 y += 78
 
                 cols = [
-                    ("cantidad", "Cantidad", 0.14, "r"),
-                    ("desc", "Descripcion", 0.54, "l"),
-                    ("pu", "Precio", 0.16, "r"),
-                    ("total", "Monto", 0.16, "r"),
+                    ("cantidad", "Cantidad", 0.13, "r"),
+                    ("desc", "Descripcion", 0.58, "l"),
+                    ("pu", "Precio", 0.145, "r"),
+                    ("total", "Monto", 0.145, "r"),
                 ]
                 table_top = y
                 table_bottom = cy1 - pad - 8

@@ -80,6 +80,9 @@ def _ensure_lead_calendar_cols(db: Session):
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_location TEXT"))
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_title TEXT"))
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_description TEXT"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_events_json TEXT"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS calendar_event_ids_json TEXT"))
+        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS calendar_html_links_json TEXT"))
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS agenda_approved_by TEXT"))
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS agenda_approved_at TIMESTAMP"))
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pendiente_agendar BOOLEAN DEFAULT FALSE"))
@@ -2514,16 +2517,17 @@ def approve_agenda(
             db.execute(
                 text(
                     f"""
-                    SELECT
-                        l.id_lead,
-                        l.pre_title,
-                        l.pre_start,
-                        l.pre_end,
-                        l.pre_location,
-                        l.pre_description,
-                        l.fecha_evento,
-                        {name_expr} AS lead_nombre
-                    FROM leads l
+                        SELECT
+                            l.id_lead,
+                            l.pre_title,
+                            l.pre_start,
+                            l.pre_end,
+                            l.pre_location,
+                            l.pre_description,
+                            l.pre_events_json,
+                            l.fecha_evento,
+                            {name_expr} AS lead_nombre
+                        FROM leads l
                     WHERE l.id_lead=:id
                     LIMIT 1
                     """
@@ -2567,77 +2571,163 @@ def approve_agenda(
             db.commit()
             row = {**row, "pre_start": start, "pre_end": end}
 
-        title = row.get("pre_title") or row.get("lead_nombre") or f"Evento Lead {id_lead}"
-        start = row["pre_start"]
-        end = row["pre_end"]
-        loc = row.get("pre_location") or ""
-        details = row.get("pre_description") or ""
+            title = row.get("pre_title") or row.get("lead_nombre") or f"Evento Lead {id_lead}"
+            start = row["pre_start"]
+            end = row["pre_end"]
+            loc = row.get("pre_location") or ""
+            details = row.get("pre_description") or ""
 
-        link = _gcal_link(title, start, end, details=details, location=loc)
-        event_id = None
-        gcal_error = None
-        connected = False
+            tz = ZoneInfo("America/Santiago")
 
-        svc = _gcal_service(db)
-        if svc:
-            connected = True
-            cal_id = os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+            def _as_dt(v) -> datetime | None:
+                if v is None:
+                    return None
+                if isinstance(v, datetime):
+                    return v if v.tzinfo else v.replace(tzinfo=tz)
+                s = str(v).strip()
+                if not s:
+                    return None
+                try:
+                    if s.endswith("Z"):
+                        s = s[:-1] + "+00:00"
+                    d = datetime.fromisoformat(s)
+                    if d.tzinfo is None:
+                        d = d.replace(tzinfo=tz)
+                    return d.astimezone(tz)
+                except Exception:
+                    return None
+
+            plan = None
             try:
-                found = (
-                    svc.events()
-                    .list(
-                        calendarId=cal_id,
-                        privateExtendedProperty=f"lead_id={id_lead}",
-                        maxResults=1,
-                        singleEvents=True,
-                    )
-                    .execute()
-                )
-                items = found.get("items") or []
-                if items:
-                    event_id = items[0].get("id")
-                    link = items[0].get("htmlLink") or link
-                else:
-                    event = {
-                        "summary": title,
-                        "location": loc,
-                        "description": details or "",
-                        "start": {"dateTime": start.isoformat(), "timeZone": "America/Santiago"},
-                        "end": {"dateTime": end.isoformat(), "timeZone": "America/Santiago"},
-                        "extendedProperties": {"private": {"lead_id": str(id_lead)}},
-                    }
-                    created = svc.events().insert(calendarId=cal_id, body=event).execute()
-                    event_id = created.get("id")
-                    link = created.get("htmlLink") or link
-            except Exception as e:
-                gcal_error = str(e)
-        else:
-            gcal_error = "Google Calendar no conectado"
+                raw_plan = (row.get("pre_events_json") or "").strip()
+                if raw_plan:
+                    plan = json.loads(raw_plan)
+            except Exception:
+                plan = None
 
-        db.execute(
-            text(
-                """
-                UPDATE leads
-                SET calendar_start=:s,
-                    calendar_end=:e,
-                    calendar_html_link=:lnk,
-                    calendar_event_id=:eid,
-                    agenda_approved_by=:by,
-                    agenda_approved_at=now(),
-                    pendiente_agendar=FALSE,
-                    updated_at=now()
-                WHERE id_lead=:id
-                """
-            ),
-            {
-                "s": start,
-                "e": end,
-                "lnk": link,
-                "eid": event_id,
-                "by": (x_user or me.get("name") or me.get("nombre") or "admin"),
-                "id": id_lead,
-            },
-        )
+            to_create: list[dict] = []
+            if isinstance(plan, list) and plan:
+                for e in plan:
+                    if not isinstance(e, dict):
+                        continue
+                    st = _as_dt(e.get("start_at"))
+                    en = _as_dt(e.get("end_at"))
+                    if not st or not en:
+                        continue
+                    to_create.append(
+                        {
+                            "day": str(e.get("day") or st.date().isoformat()),
+                            "title": str(e.get("title") or title),
+                            "location": str(e.get("location") or loc),
+                            "description": str(e.get("description") or details or ""),
+                            "start": st,
+                            "end": en,
+                        }
+                    )
+            else:
+                st = _as_dt(start)
+                en = _as_dt(end)
+                if st and en:
+                    to_create = [
+                        {
+                            "day": st.date().isoformat(),
+                            "title": title,
+                            "location": loc,
+                            "description": details or "",
+                            "start": st,
+                            "end": en,
+                        }
+                    ]
+
+            # Si no hay nada válido, caemos al evento compat
+            if not to_create:
+                st = _as_dt(start) or datetime.now(tz)
+                en = _as_dt(end) or (st + timedelta(hours=2))
+                to_create = [
+                    {"day": st.date().isoformat(), "title": title, "location": loc, "description": details or "", "start": st, "end": en}
+                ]
+
+            links: list[str] = []
+            event_ids: list[str | None] = []
+            connected = False
+            gcal_error = None
+
+            svc = _gcal_service(db)
+            if svc:
+                connected = True
+                cal_id = os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+                for ev2 in to_create:
+                    lead_key = f"{id_lead}:{ev2.get('day')}"
+                    try:
+                        found = (
+                            svc.events()
+                            .list(
+                                calendarId=cal_id,
+                                privateExtendedProperty=f"lead_key={lead_key}",
+                                maxResults=1,
+                                singleEvents=True,
+                            )
+                            .execute()
+                        )
+                        items = found.get("items") or []
+                        body = {
+                            "summary": ev2["title"],
+                            "location": ev2["location"],
+                            "description": ev2.get("description") or "",
+                            "start": {"dateTime": ev2["start"].isoformat(), "timeZone": "America/Santiago"},
+                            "end": {"dateTime": ev2["end"].isoformat(), "timeZone": "America/Santiago"},
+                            "extendedProperties": {"private": {"lead_id": str(id_lead), "lead_key": lead_key}},
+                        }
+                        if items:
+                            eid = items[0].get("id")
+                            patched = svc.events().patch(calendarId=cal_id, eventId=eid, body=body).execute()
+                            event_ids.append(eid)
+                            links.append(patched.get("htmlLink") or items[0].get("htmlLink") or _gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"]))
+                        else:
+                            created = svc.events().insert(calendarId=cal_id, body=body).execute()
+                            event_ids.append(created.get("id"))
+                            links.append(created.get("htmlLink") or _gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"]))
+                    except Exception as e:
+                        gcal_error = str(e)
+                        event_ids.append(None)
+                        links.append(_gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"]))
+            else:
+                gcal_error = "Google Calendar no conectado"
+                for ev2 in to_create:
+                    links.append(_gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"]))
+                    event_ids.append(None)
+
+            first_link = links[0] if links else _gcal_link(title, to_create[0]["start"], to_create[0]["end"], details=details, location=loc)
+            first_eid = event_ids[0] if event_ids else None
+
+            db.execute(
+                text(
+                    """
+                    UPDATE leads
+                    SET calendar_start=:s,
+                        calendar_end=:e,
+                        calendar_html_link=:lnk,
+                        calendar_event_id=:eid,
+                        calendar_event_ids_json=:eids,
+                        calendar_html_links_json=:lnks,
+                        agenda_approved_by=:by,
+                        agenda_approved_at=now(),
+                        pendiente_agendar=FALSE,
+                        updated_at=now()
+                    WHERE id_lead=:id
+                    """
+                ),
+                {
+                    "s": to_create[0]["start"],
+                    "e": to_create[0]["end"],
+                    "lnk": first_link,
+                    "eid": first_eid,
+                    "eids": json.dumps(event_ids, ensure_ascii=False),
+                    "lnks": json.dumps(links, ensure_ascii=False),
+                    "by": (x_user or me.get("name") or me.get("nombre") or "admin"),
+                    "id": id_lead,
+                },
+            )
 
         try:
             if _table_exists_pg(db, "eventos_calendario"):
@@ -2668,14 +2758,16 @@ def approve_agenda(
         except Exception:
             pass
 
-        db.commit()
-        return {
-            "ok": True,
-            "connected": connected,
-            "calendar_html_link": link,
-            "calendar_event_id": event_id,
-            "gcal_error": gcal_error,
-        }
+            db.commit()
+            return {
+                "ok": True,
+                "connected": connected,
+                "calendar_html_link": first_link,
+                "calendar_event_id": first_eid,
+                "calendar_html_links": links,
+                "calendar_event_ids": event_ids,
+                "gcal_error": gcal_error,
+            }
     except HTTPException:
         raise
     except Exception as e:

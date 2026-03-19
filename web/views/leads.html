@@ -311,6 +311,10 @@
     }
     .swal2-title{ color: var(--text) !important; }
     .swal2-html-container{ color: var(--text) !important; }
+    /* Edit modal: sin scroll global (solo Notas/Historial) */
+    .swal2-html-container{ max-height: 72vh; overflow: hidden !important; }
+    .swForm{ max-height: 70vh; overflow: hidden; }
+    #e_notas{ max-height: 22vh; overflow:auto; }
 
     /* ===== Mobile pragmatic mode ===== */
     @media (max-width: 820px){
@@ -2061,47 +2065,127 @@ async function handleConfirmado(lead, newEstado){
           </label>
         </div>
 
-        <div class="agCard">
-          <div class="agRow">
-            <label class="agLabel" style="width:140px">
-              <div class="muted">OPS</div>
-              <input id="ag_ops" class="swInp" type="number" min="0" step="1" />
-            </label>
-            <div class="muted agSmall" id="ag_calc_status" style="flex:1;align-self:center">Calculando…</div>
-            <button type="button" class="swBtn secondary" id="ag_recalc">Recalcular</button>
-          </div>
+	        <div class="agCard">
+	          <div class="agRow">
+	            <div class="muted agSmall" id="ag_calc_status" style="flex:1;align-self:center">Calculando…</div>
+	            <button type="button" class="swBtn secondary" id="ag_recalc">Recalcular</button>
+	          </div>
 
-          <label class="agLabel">
-            <div class="muted">Título</div>
-            <input id="ag_title" class="swInp" placeholder="Título del evento" />
-          </label>
+	          <label class="agLabel">
+	            <div class="muted">Título</div>
+	            <input id="ag_title" class="swInp" placeholder="Título del evento" />
+	          </label>
 
-          <div class="agRow" style="align-items:stretch">
-            <label class="agLabel" style="flex:1;min-width:300px">
-              <div class="muted">Montaje</div>
-              <textarea id="ag_montaje" class="swTa" rows="3" placeholder="Montaje sugerido…"></textarea>
-            </label>
-            <label class="agLabel" style="flex:1;min-width:300px">
-              <div class="muted">Descripción</div>
-              <textarea id="ag_desc" class="swTa" rows="3" placeholder="Descripción para Calendar…"></textarea>
-            </label>
-          </div>
+	          <label class="agLabel">
+	            <div class="muted">Notas (se verán en Calendar arriba, destacadas)</div>
+	            <textarea id="ag_notes" class="swTa" rows="3" placeholder="Notas importantes para operaciones / cliente…"></textarea>
+	          </label>
 
-          <div style="border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.10)">
-            <div class="muted" style="margin-bottom:6px;font-weight:1000">Productos</div>
-            <pre id="ag_products" style="margin:0;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;opacity:.95;max-height:110px;overflow:auto">(cargando…)</pre>
-          </div>
+	          <div style="border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.10);display:grid;gap:10px">
+	            <div class="muted" style="font-weight:1000">Montaje sugerido</div>
+	            <div id="ag_day_tabs" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+	            <div class="agRow" style="align-items:center">
+	              <label class="agLabel" style="width:140px">
+	                <div class="muted">OPS (día)</div>
+	                <input id="ag_ops_day" class="swInp" type="number" min="0" step="1" />
+	              </label>
+	              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:22px">
+	                <button type="button" class="swBtn secondary" id="ag_montaje_confirm" style="white-space:nowrap">Confirmar montaje</button>
+	                <button type="button" class="swBtn" id="ag_montaje_edit" style="white-space:nowrap">Editar</button>
+	              </div>
+	            </div>
+	            <textarea id="ag_montaje_day" class="swTa" rows="7" placeholder="Montaje sugerido…"></textarea>
+	          </div>
 
-          <div class="muted agSmall" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-            <div>Google Calendar: <b>${gcalConnected ? "conectado" : "NO conectado"}</b></div>
-            ${gcalConnected ? "" : `<a href="${escapeHtml(apiURL("/tools/gcal/start"))}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:1000">Conectar</a>`}
-          </div>
-        </div>
+	          <div style="border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.10)">
+	            <div class="muted" style="margin-bottom:6px;font-weight:1000">Productos</div>
+	            <pre id="ag_products_day" style="margin:0;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;opacity:.95;max-height:160px;overflow:auto">(cargando…)</pre>
+	          </div>
+
+	          <label class="agLabel">
+	            <div class="muted">Descripción (opcional)</div>
+	            <textarea id="ag_desc" class="swTa" rows="3" placeholder="Descripción para Calendar…"></textarea>
+	          </label>
+
+	          <div class="muted agSmall" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+	            <div>Google Calendar: <b>${gcalConnected ? "conectado" : "NO conectado"}</b></div>
+	            ${gcalConnected ? "" : `<a href="${escapeHtml(apiURL("/tools/gcal/start"))}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:1000">Conectar</a>`}
+	          </div>
+	        </div>
       </div>
     </div>
   `;
 
-  const touched = { title:false, loc:false, ops:false, montaje:false, desc:false };
+  const touched = { title:false, loc:false, desc:false };
+  let previewEvents = [];
+  let selectedIdx = 0;
+  const dayEdits = {}; // day -> { ops, montaje }
+  const touchedDay = {}; // day -> { ops, montaje }
+
+  const saveCurrentDay = ()=>{
+    const e = previewEvents[selectedIdx];
+    if (!e) return;
+    const day = String(e.day || "").trim();
+    if (!day) return;
+    const opsV = (qs("#ag_ops_day")?.value || "").trim();
+    const mtV = (qs("#ag_montaje_day")?.value || "").trim();
+    dayEdits[day] = { ops: opsV, montaje: mtV };
+  };
+
+  const setMontajeLocked = (locked)=>{
+    const ta = qs("#ag_montaje_day");
+    if (ta) ta.readOnly = !!locked;
+    const ops = qs("#ag_ops_day");
+    if (ops) ops.readOnly = !!locked;
+    const btnC = qs("#ag_montaje_confirm");
+    const btnE = qs("#ag_montaje_edit");
+    if (btnC) btnC.disabled = !!locked;
+    if (btnE) btnE.disabled = !locked;
+  };
+
+  const renderDayTabs = ()=>{
+    const wrap = qs("#ag_day_tabs");
+    if (!wrap) return;
+    const parts = [];
+    for (let i=0;i<previewEvents.length;i++){
+      const e = previewEvents[i] || {};
+      const d = String(e.day || "").slice(0,10);
+      const lab = (previewEvents.length>1) ? `Día ${i+1}/${previewEvents.length} · ${d || "-"}` : (d || "Evento");
+      parts.push(`<button type="button" class="swBtn ${i===selectedIdx ? "" : "secondary"}" data-ag-day="${i}" style="padding:8px 10px;border-radius:999px">${escapeHtml(lab)}</button>`);
+    }
+    wrap.innerHTML = parts.join("");
+    wrap.querySelectorAll("button[data-ag-day]").forEach((b)=>{
+      b.addEventListener("click", ()=>{
+        const i = Number(b.getAttribute("data-ag-day") || 0);
+        if (!Number.isFinite(i)) return;
+        if (i === selectedIdx) return;
+        saveCurrentDay();
+        selectedIdx = Math.max(0, Math.min(previewEvents.length-1, i));
+        renderDayTabs();
+        renderPreviewForSelectedDay();
+      });
+    });
+  };
+
+  const renderPreviewForSelectedDay = ()=>{
+    const ev = previewEvents[selectedIdx] || {};
+    const day = String(ev.day || "").trim();
+
+    if (!touched.title && qs("#ag_title")) qs("#ag_title").value = ev.title || "";
+    if (!touched.loc && qs("#ag_loc")) qs("#ag_loc").value = ev.location || "";
+    if (!touched.desc && qs("#ag_desc")) qs("#ag_desc").value = ev.description || "";
+
+    const ed = (day && dayEdits[day]) ? dayEdits[day] : null;
+    const td = (day && touchedDay[day]) ? touchedDay[day] : { ops:false, montaje:false };
+
+    if (qs("#ag_ops_day") && !td.ops) qs("#ag_ops_day").value = (ed?.ops ?? (ev.ops != null ? String(ev.ops) : "")) || "";
+    if (qs("#ag_montaje_day") && !td.montaje) qs("#ag_montaje_day").value = (ed?.montaje ?? (ev.montaje_text || "")) || "";
+    if (qs("#ag_products_day")) qs("#ag_products_day").textContent = ev.products_text || "(sin productos)";
+
+    // por defecto: montaje bloqueado (profesional). El usuario debe presionar "Editar".
+    setMontajeLocked(true);
+  };
+
   const runPreview = async ()=>{
     const st = qs("#ag_calc_status");
     const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
@@ -2112,6 +2196,7 @@ async function handleConfirmado(lead, newEstado){
     const hFin = (qs("#ag_hfin")?.value || "").trim();
     const tel = (qs("#ag_tel")?.value || "").trim();
     const dir = (qs("#ag_dir")?.value || "").trim();
+    const notes = (qs("#ag_notes")?.value || "").trim();
 
     if (st) st.textContent = "Calculando…";
     try{
@@ -2126,19 +2211,18 @@ async function handleConfirmado(lead, newEstado){
           ...(idCot ? { id_cotizacion: Number(idCot) } : {}),
           telefono: tel,
           direccion: dir,
+          ...(notes ? { agenda_notes: notes } : {}),
           ...(hrTbd ? { hr_tbd: true } : { start_time: hIni, end_time: hFin, hr_tbd: false }),
         })
       });
-      const ev = out?.evento || {};
-      if (!touched.title && qs("#ag_title")) qs("#ag_title").value = ev.title || "";
-      if (!touched.loc && qs("#ag_loc")) qs("#ag_loc").value = ev.location || "";
-      if (!touched.ops && qs("#ag_ops")) qs("#ag_ops").value = (ev.ops != null) ? String(ev.ops) : "";
-      if (!touched.montaje && qs("#ag_montaje")) qs("#ag_montaje").value = ev.montaje_text || "";
-      if (!touched.desc && qs("#ag_desc")) qs("#ag_desc").value = ev.description || "";
-      if (qs("#ag_products")) qs("#ag_products").textContent = ev.products_text || "(sin productos)";
+      previewEvents = (Array.isArray(out?.eventos) && out.eventos.length) ? out.eventos : (out?.evento ? [out.evento] : []);
+      if (selectedIdx >= previewEvents.length) selectedIdx = 0;
+      renderDayTabs();
+      renderPreviewForSelectedDay();
       if (st) st.textContent = "Listo";
     }catch(err){
-      if (qs("#ag_products")) qs("#ag_products").textContent = "(sin productos)";
+      previewEvents = [];
+      if (qs("#ag_products_day")) qs("#ag_products_day").textContent = "(sin productos)";
       if (st) st.textContent = String(err?.message || err);
     }
   };
@@ -2167,9 +2251,43 @@ async function handleConfirmado(lead, newEstado){
 
       qs("#ag_title") && qs("#ag_title").addEventListener("input", ()=>{ touched.title=true; });
       qs("#ag_loc") && qs("#ag_loc").addEventListener("input", ()=>{ touched.loc=true; });
-      qs("#ag_ops") && qs("#ag_ops").addEventListener("input", ()=>{ touched.ops=true; });
-      qs("#ag_montaje") && qs("#ag_montaje").addEventListener("input", ()=>{ touched.montaje=true; });
       qs("#ag_desc") && qs("#ag_desc").addEventListener("input", ()=>{ touched.desc=true; });
+      qs("#ag_notes") && qs("#ag_notes").addEventListener("input", runPreview);
+
+      const ensureDayTouched = (day)=>{
+        if (!day) return { ops:false, montaje:false };
+        if (!touchedDay[day]) touchedDay[day] = { ops:false, montaje:false };
+        if (!dayEdits[day]) dayEdits[day] = {};
+        return touchedDay[day];
+      };
+      const currentDay = ()=>{
+        const e = previewEvents[selectedIdx] || {};
+        return String(e.day || "").slice(0,10);
+      };
+
+      qs("#ag_ops_day") && qs("#ag_ops_day").addEventListener("input", ()=>{
+        const day = currentDay();
+        const td = ensureDayTouched(day);
+        td.ops = true;
+        saveCurrentDay();
+      });
+      qs("#ag_montaje_day") && qs("#ag_montaje_day").addEventListener("input", ()=>{
+        const day = currentDay();
+        const td = ensureDayTouched(day);
+        td.montaje = true;
+        saveCurrentDay();
+      });
+
+      qs("#ag_montaje_edit") && (qs("#ag_montaje_edit").onclick = ()=>{
+        setMontajeLocked(false);
+        const ta = qs("#ag_montaje_day");
+        ta && ta.focus && ta.focus();
+      });
+      qs("#ag_montaje_confirm") && (qs("#ag_montaje_confirm").onclick = ()=>{
+        saveCurrentDay();
+        setMontajeLocked(true);
+        toast("Montaje confirmado", "success");
+      });
 
       editManualBtn && (editManualBtn.onclick = async ()=>{
         const okMeta = await ensureQuoteMeta();
@@ -2218,9 +2336,8 @@ async function handleConfirmado(lead, newEstado){
         // Recalcular debe sobrescribir sugerencias automáticamente.
         touched.title = false;
         touched.loc = false;
-        touched.ops = false;
-        touched.montaje = false;
         touched.desc = false;
+        // Recalcular NO borra ediciones por día, solo recalcula sugerencias base.
         await runPreview();
         toast("Recalculado", "success");
       });
@@ -2236,6 +2353,21 @@ async function handleConfirmado(lead, newEstado){
       const hIni = (qs("#ag_hini")?.value || "").trim();
       const hFin = (qs("#ag_hfin")?.value || "").trim();
       if (!hrTbd && (!hIni || !hFin)) return Swal.showValidationMessage("Debes indicar horas o marcar HR TBD.");
+      saveCurrentDay();
+      const overrideByDay = [];
+      for (const e of (previewEvents || [])){
+        const day = String(e.day || "").slice(0,10);
+        if (!day) continue;
+        const ed = dayEdits[day];
+        const td = touchedDay[day];
+        if (!ed && !td) continue;
+        const row = { day };
+        const opsV = (ed?.ops ?? "").toString().trim();
+        const mtV = (ed?.montaje ?? "").toString().trim();
+        if ((td?.ops || false) && opsV !== "") row.ops = Number(opsV);
+        if ((td?.montaje || false) && mtV) row.montaje_text = mtV;
+        if (row.ops != null || row.montaje_text) overrideByDay.push(row);
+      }
       return {
         quote_source: quoteSource,
         id_cotizacion: idCot ? Number(idCot) : null,
@@ -2244,11 +2376,11 @@ async function handleConfirmado(lead, newEstado){
         end_time: hFin,
         telefono: (qs("#ag_tel")?.value || "").trim(),
         direccion: (qs("#ag_dir")?.value || "").trim(),
+        agenda_notes: (qs("#ag_notes")?.value || "").trim(),
         override_title: (qs("#ag_title")?.value || "").trim(),
         override_location: (qs("#ag_loc")?.value || "").trim(),
-        override_ops: (qs("#ag_ops")?.value || "").trim(),
-        override_montaje_text: (qs("#ag_montaje")?.value || "").trim(),
         override_description: (qs("#ag_desc")?.value || "").trim(),
+        override_by_day: overrideByDay,
       };
     }
     ,
@@ -2297,21 +2429,21 @@ async function handleConfirmado(lead, newEstado){
     if (!okItems) return false;
   }
 
-  const payload = {
-    id_estado: Number(newEstado),
-    agendar: true,
-    quote_source: v.quote_source,
-    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
-    telefono: v.telefono,
-    direccion: v.direccion,
-    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
-    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
-    ...(v.override_ops ? { override_ops: Number(v.override_ops) } : {}),
-    ...(v.override_montaje_text ? { override_montaje_text: v.override_montaje_text } : {}),
-    ...(v.override_title ? { override_title: v.override_title } : {}),
-    ...(v.override_location ? { override_location: v.override_location } : {}),
-    ...(v.override_description ? { override_description: v.override_description } : {}),
-  };
+	  const payload = {
+	    id_estado: Number(newEstado),
+	    agendar: true,
+	    quote_source: v.quote_source,
+	    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
+	    telefono: v.telefono,
+	    direccion: v.direccion,
+	    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
+	    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
+	    ...(v.agenda_notes ? { agenda_notes: v.agenda_notes } : {}),
+	    ...(v.override_title ? { override_title: v.override_title } : {}),
+	    ...(v.override_location ? { override_location: v.override_location } : {}),
+	    ...(v.override_description ? { override_description: v.override_description } : {}),
+	    ...(Array.isArray(v.override_by_day) && v.override_by_day.length ? { override_by_day: v.override_by_day } : {}),
+	  };
 
   const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
     method:"POST",
@@ -2542,13 +2674,6 @@ async function openEditModal(lead){
     `<label>N° Cotización<input id="e_numcot" class="swInp" value="${escapeHtml(String(lead.num_cotizacion ?? ""))}" /></label>` +
     `<label>Monto cotizado<input id="e_monto" class="swInp" type="number" step="0.01" value="${escapeHtml(String(lead.monto_cotizado ?? 0))}" /></label>` +
     `<label class="span2">Dirección<input id="e_dir" class="swInp" value="${escapeHtml(lead.direccion || "")}" /></label>` +
-    `<label class="span2">Acciones rápidas
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
-          <button type="button" class="swBtn secondary" id="e_call" style="white-space:nowrap">Llamar</button>
-          <button type="button" class="swBtn" id="e_wsp" style="white-space:nowrap">WhatsApp</button>
-        </div>
-        <div class="muted" style="margin-top:6px">WhatsApp muestra 50 mensajes por estado antes de abrir.</div>
-     </label>` +
     `<label class="span2">PDF Cotización
         <input id="e_pdf" class="swInp" type="file" accept="application/pdf" />
         <div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap">
@@ -2557,8 +2682,15 @@ async function openEditModal(lead){
           <div class="muted" id="e_pdfhint">${lead.cotizacion_pdf_url ? "PDF cargado. Puedes verlo y/o cargar productos manualmente." : "Sin PDF (opcional). Igual puedes cargar productos manualmente."}</div>
         </div>
      </label>` +
-    `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa">${escapeHtml(lead.notas || "")}</textarea></label>` +
-    `<label class="span2">Agregar comentario<textarea id="e_comment" class="swTa" placeholder="Nuevo comentario..."></textarea></label>` +
+    `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa" spellcheck="false">${escapeHtml(lead.notas || "")}</textarea></label>` +
+    `<label class="span2">Agregar comentario<textarea id="e_comment" class="swTa" rows="2" placeholder="Nuevo comentario..."></textarea></label>` +
+    `<label class="span2">
+        <div style="margin-top:4px;padding:12px;border:1px solid rgba(25,195,125,.25);background:rgba(25,195,125,.10);border-radius:14px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap">
+          <button type="button" class="swBtn secondary" id="e_call" style="white-space:nowrap">Llamar</button>
+          <button type="button" class="swBtn" id="e_wsp" style="white-space:nowrap">WhatsApp</button>
+        </div>
+        <div class="muted" style="margin-top:8px;text-align:center">WhatsApp muestra 50 mensajes por estado antes de abrir.</div>
+     </label>` +
     '</div></div>';
 
   const res = await Swal.fire({

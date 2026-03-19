@@ -839,6 +839,12 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
             for k in (
                 "tipo_cliente",
                 "tipoCliente",
+                "tipo_cliente_form",
+                "tipoClienteForm",
+                "tipo_cliente_select",
+                "tipoClienteSelect",
+                "cliente_tipo",
+                "clienteTipo",
                 "tipo_de_cliente",
                 "tipoClienteNombre",
                 "tipo_cliente_nombre",
@@ -859,7 +865,6 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
 
         tipo_norm = _norm_txt(tipo_name)
         if id_tipo_cliente is None and tipo_norm:
-            # Heurísticas típicas: EMPRESA / PARTICULAR (y sinónimos)
             is_emp = ("EMP" in tipo_norm) or ("CORP" in tipo_norm)
             is_part = ("PART" in tipo_norm) or ("PERSONA" in tipo_norm) or ("NATURAL" in tipo_norm)
 
@@ -909,6 +914,34 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
                         """
                     )
                 ).scalar()
+
+            # 4) Último fallback: si la tabla no tiene EMPRESA/PARTICULAR, los creamos (idempotente best-effort)
+            if not id_tipo_cliente and (is_emp or is_part):
+                try:
+                    def _ensure_tipo(tipo_txt: str) -> int | None:
+                        tid = conn.execute(
+                            text("SELECT id_tipo_cliente FROM public.tipos_cliente WHERE UPPER(tipo)=UPPER(:t) LIMIT 1"),
+                            {"t": tipo_txt},
+                        ).scalar()
+                        if tid:
+                            return int(tid)
+                        try:
+                            tid2 = conn.execute(
+                                text("INSERT INTO public.tipos_cliente(tipo) VALUES (:t) RETURNING id_tipo_cliente"),
+                                {"t": tipo_txt},
+                            ).scalar()
+                            return int(tid2) if tid2 else None
+                        except Exception:
+                            return None
+
+                    emp_id = _ensure_tipo("EMPRESA")
+                    part_id = _ensure_tipo("PARTICULAR")
+                    if is_emp and emp_id:
+                        id_tipo_cliente = emp_id
+                    elif is_part and part_id:
+                        id_tipo_cliente = part_id
+                except Exception:
+                    pass
 
         cliente = (payload.get("cliente") or payload.get("nombre_cliente") or payload.get("nombre") or "").strip()
         if not cliente:

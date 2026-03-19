@@ -450,8 +450,8 @@ def register(data: RegisterIn):
 
     if not nombre or not email or not rut or not telefono_in:
         raise HTTPException(status_code=400, detail="Faltan datos requeridos")
-    with get_connection() as conn:
-        _ensure_operadores_allowlist(conn)
+        with get_connection() as conn:
+            _ensure_operadores_allowlist(conn)
         # Asegura columnas (deploy idempotente)
         try:
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rut TEXT"))
@@ -462,25 +462,38 @@ def register(data: RegisterIn):
                 conn.rollback()
             except Exception:
                 pass
-        row = conn.execute(
-            text(
-                """
-                SELECT nombre, email, rut, cargo, status
-                FROM operadores_allowlist
-                WHERE lower(rut)=:r
-                LIMIT 1
-                """
-            ),
-            {"r": rut},
-        ).mappings().first()
-        if not row:
-            raise HTTPException(status_code=403, detail="No estás autorizado para registrarte")
-        status = (row.get("status") or "").upper()
-        if status and status not in ("ACTIVO", "ACTIVE", "OK"):
-            raise HTTPException(status_code=403, detail="Usuario no activo")
-        cargo = (row.get("cargo") or "OPERADOR").strip().upper()
-        if cargo not in ("OPERADOR", "CHOP", "CHOFER", "CONDUCTOR"):
+            # Allowlist:
+            # - Si hay registros en operadores_allowlist, se exige match por RUT (modo seguro).
+            # - Si está vacía (p.ej. en go-live), permitimos registro libre PERO solo como OPERADOR.
+            enforce_allowlist = (os.getenv("OPERADORES_REQUIRE_ALLOWLIST") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+            try:
+                if not enforce_allowlist:
+                    cnt = conn.execute(text("SELECT COUNT(*) FROM operadores_allowlist")).scalar() or 0
+                    enforce_allowlist = int(cnt) > 0
+            except Exception:
+                enforce_allowlist = False
+
             cargo = "OPERADOR"
+            if enforce_allowlist:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT nombre, email, rut, cargo, status
+                        FROM operadores_allowlist
+                        WHERE lower(rut)=:r
+                        LIMIT 1
+                        """
+                    ),
+                    {"r": rut},
+                ).mappings().first()
+                if not row:
+                    raise HTTPException(status_code=403, detail="No estás autorizado para registrarte")
+                status = (row.get("status") or "").upper()
+                if status and status not in ("ACTIVO", "ACTIVE", "OK"):
+                    raise HTTPException(status_code=403, detail="Usuario no activo")
+                cargo = (row.get("cargo") or "OPERADOR").strip().upper()
+                if cargo not in ("OPERADOR", "CHOP", "CHOFER", "CONDUCTOR"):
+                    cargo = "OPERADOR"
         exists = conn.execute(
             text("SELECT id_usuario FROM usuarios WHERE lower(email)=:e OR lower(username)=:u LIMIT 1"),
             {"e": email, "u": username},

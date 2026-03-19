@@ -70,6 +70,25 @@ def _code_like_snippet(code):
     return None
 
 
+def _code_like_snippets(code) -> list[str]:
+    """
+    Algunos registros antiguos/ediciones manuales guardan `marca` como abreviación (p.ej. "CAM", "EXP").
+    Para que usuarios no-admin no "pierdan" productos por filtro, aceptamos alias cortos además del snippet principal.
+    """
+    s = _code_like_snippet(code)
+    if not s:
+        return []
+    if code == "CAMALEON":
+        return [s, "CAM"]
+    if code == "DEL SABOR":
+        return [s, "SABOR"]
+    if code == "GOURMET":
+        return [s, "GOUR"]
+    if code == "EXPRESS":
+        return [s, "EXP"]
+    return [s]
+
+
 def _extract_user_brand_ids(user):
     raw = user.get("marcas") or user.get("brands") or []
     out = []
@@ -368,18 +387,22 @@ def list_productos(
             # devolvemos todo (respetando only_active si viene).
             only_own = False
 
-        if only_own:
-            with get_connection() as conn:
-                rows = conn.execute(
-                    text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
-                    {"m": marcas_ids},
-                ).fetchall()
+            if only_own:
+                with get_connection() as conn:
+                    rows = conn.execute(
+                        text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
+                        {"m": marcas_ids},
+                    ).fetchall()
 
-            marcas = [r[0] or r[1] for r in rows if (r[0] or r[1])]
-            marcas_codes = [_canon_code_py(m) for m in marcas]
-            marcas_snips = [s for s in [_code_like_snippet(c) for c in marcas_codes] if s]
-            marcas_like = ["%%%s%%" % s for s in marcas_snips]
-            marca_expr = _norm_key_sql("COALESCE(marca,'')")
+                marcas = [r[0] or r[1] for r in rows if (r[0] or r[1])]
+                marcas_codes = [_canon_code_py(m) for m in marcas]
+                marcas_snips = []
+                for c in marcas_codes:
+                    for s in _code_like_snippets(c):
+                        if s:
+                            marcas_snips.append(s)
+                marcas_like = ["%%%s%%" % s for s in marcas_snips]
+                marca_expr = _norm_key_sql("COALESCE(marca,'')")
 
             if has_id_marca and marcas_ids and marcas_like:
                 where.append("(id_marca = ANY(:marcas_ids) OR (id_marca IS NULL AND %s LIKE ANY(:marcas_like)))" % marca_expr)

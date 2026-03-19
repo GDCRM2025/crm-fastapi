@@ -189,11 +189,11 @@
     tbody.innerHTML = html;
     updateResumenUI();
 
-    // listeners: hover + botón PDF
+    // listeners: hover
     tbody.querySelectorAll('tr[data-lead]').forEach((tr) => {
+      tr.style.cursor = 'pointer';
       tr.addEventListener('mouseenter', onRowEnter);
       tr.addEventListener('mouseleave', hideTooltip);
-      tr.addEventListener('click', onOpenLead);
     });
     tbody.querySelectorAll('button[data-action="pdf"]').forEach((btn) => {
       btn.addEventListener('click', onVerCotizacion);
@@ -204,15 +204,27 @@
     return location.pathname.startsWith('/crm/') ? '/crm' : '';
   }
 
-  function onOpenLead(ev) {
-    // si el click fue en botón PDF, no navegamos
-    const btn = ev.target && ev.target.closest && ev.target.closest('button');
-    if (btn) return;
-    const tr = ev.currentTarget;
-    const idLead = tr && tr.dataset ? tr.dataset.lead : '';
-    if (!idLead) return;
-    // Abrir ficha completa del lead (misma UI de Leads).
-    location.href = `${apiBase()}/web/views/leads.html?open_lead=${encodeURIComponent(idLead)}`;
+  // Click delegado (más robusto que 1 listener por fila, y evita problemas con re-render).
+  const tbodyEl = $('#tbodyResultados');
+  if (tbodyEl && !tbodyEl.dataset.clickbound) {
+    tbodyEl.dataset.clickbound = '1';
+    tbodyEl.addEventListener('click', (ev) => {
+      const btn = ev.target && ev.target.closest && ev.target.closest('button');
+      if (btn) return;
+      const tr = ev.target && ev.target.closest && ev.target.closest('tr[data-lead]');
+      if (!tr) return;
+      const idLead = tr.dataset.lead;
+      if (!idLead) return;
+      const url = `${apiBase()}/web/views/leads.html?open_lead=${encodeURIComponent(idLead)}`;
+      try {
+        // Si este view está embebido en el panel (iframe), navegar arriba para que abra el CRM completo.
+        if (window.top && window.top !== window) {
+          window.top.location.href = url;
+          return;
+        }
+      } catch (_) {}
+      location.href = url;
+    });
   }
 
   // ---------- tooltip productos ----------
