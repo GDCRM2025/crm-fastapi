@@ -301,7 +301,7 @@
       align-items:center;
       flex-wrap:wrap;
     }
-    .wspRow select{ flex: 1 1 260px; }
+	    .wspRow select{ flex: 1 1 260px; }
 
 	    .swal2-popup{
 	      background: var(--surface) !important;
@@ -311,6 +311,9 @@
 	    }
 	    .swal2-title{ color: var(--text) !important; }
 	    .swal2-html-container{ color: var(--text) !important; }
+
+	    /* Agenda modal: permitir scroll dentro del contenido */
+	    .gdAgenda .swal2-html-container{ max-height: 78vh; overflow:auto !important; }
 	    /* Edit modal: sin scroll global (solo Notas/Historial) */
 	    .gdEditLead .swal2-html-container{ max-height: 72vh; overflow: hidden !important; }
 	    .gdEditLead .swForm{ max-height: 70vh; overflow: hidden; }
@@ -2092,7 +2095,7 @@ async function handleConfirmado(lead, newEstado){
               <div class="muted">Cotización aprobada</div>
               <select id="ag_quote" class="swSel">${quoteOptions}</select>
             </label>
-            <button type="button" class="swBtn secondary" id="ag_edit_manual" style="display:none;white-space:nowrap">Editar manual</button>
+            <button type="button" class="swBtn secondary" id="ag_edit_manual" style="display:none;white-space:nowrap">Productos manuales</button>
           </div>
 
           <div class="agRow">
@@ -2126,10 +2129,9 @@ async function handleConfirmado(lead, newEstado){
         </div>
 
 	        <div class="agCard">
-	          <div class="agRow">
-	            <div class="muted agSmall" id="ag_calc_status" style="flex:1;align-self:center">Calculando…</div>
-	            <button type="button" class="swBtn secondary" id="ag_recalc">Recalcular</button>
-	          </div>
+		          <div class="agRow">
+		            <div class="muted agSmall" id="ag_calc_status" style="flex:1;align-self:center">Calculando…</div>
+		          </div>
 
 	          <label class="agLabel">
 	            <div class="muted">Título</div>
@@ -2192,23 +2194,24 @@ async function handleConfirmado(lead, newEstado){
     dayEdits[day] = { ops: opsV, montaje: mtV };
   };
 
-  const setMontajeLocked = (locked)=>{
-    const ta = qs("#ag_montaje_day");
-    if (ta) ta.readOnly = !!locked;
-    const ops = qs("#ag_ops_day");
-    if (ops) ops.readOnly = !!locked;
-    const btnC = qs("#ag_montaje_confirm");
-    const btnE = qs("#ag_montaje_edit");
-    if (btnC) btnC.disabled = !!locked;
-    if (btnE) btnE.disabled = !locked;
-  };
+	  const setMontajeLocked = (locked)=>{
+	    const ta = qs("#ag_montaje_day");
+	    if (ta) ta.readOnly = !!locked;
+	    const ops = qs("#ag_ops_day");
+	    if (ops) ops.readOnly = !!locked;
+	    const btnC = qs("#ag_montaje_confirm");
+	    const btnE = qs("#ag_montaje_edit");
+	    // Confirmar debe estar disponible incluso si no editas (confirmar sugerido)
+	    if (btnC) btnC.disabled = false;
+	    if (btnE) btnE.disabled = !locked;
+	  };
 
 	  const renderDayTabs = ()=>{
 	    const wrap = qs("#ag_day_tabs");
 	    if (!wrap) return;
 	    const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
 	    const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
-	    const showTabs = (quoteSource === "manual" && previewEvents.length > 1);
+	    const showTabs = (previewEvents.length > 1);
 	    wrap.style.display = showTabs ? "flex" : "none";
 	    if (!showTabs){
 	      wrap.innerHTML = "";
@@ -2235,9 +2238,9 @@ async function handleConfirmado(lead, newEstado){
     });
   };
 
-  const renderPreviewForSelectedDay = ()=>{
-    const ev = previewEvents[selectedIdx] || {};
-    const day = String(ev.day || "").trim();
+	  const renderPreviewForSelectedDay = ()=>{
+	    const ev = previewEvents[selectedIdx] || {};
+	    const day = String(ev.day || "").trim();
 
     if (!touched.title && qs("#ag_title")) qs("#ag_title").value = ev.title || "";
     if (!touched.loc && qs("#ag_loc")) qs("#ag_loc").value = ev.location || "";
@@ -2248,11 +2251,11 @@ async function handleConfirmado(lead, newEstado){
 
     if (qs("#ag_ops_day") && !td.ops) qs("#ag_ops_day").value = (ed?.ops ?? (ev.ops != null ? String(ev.ops) : "")) || "";
     if (qs("#ag_montaje_day") && !td.montaje) qs("#ag_montaje_day").value = (ed?.montaje ?? (ev.montaje_text || "")) || "";
-    if (qs("#ag_products_day")) qs("#ag_products_day").textContent = ev.products_text || "(sin productos)";
+	    if (qs("#ag_products_day")) qs("#ag_products_day").textContent = ev.products_text || "(sin productos)";
 
-    // por defecto: montaje bloqueado (profesional). El usuario debe presionar "Editar".
-    setMontajeLocked(true);
-  };
+	    // por defecto: montaje bloqueado (profesional). El usuario debe presionar "Editar".
+	    setMontajeLocked(true);
+	  };
 
   const runPreview = async ()=>{
     const st = qs("#ag_calc_status");
@@ -2295,25 +2298,27 @@ async function handleConfirmado(lead, newEstado){
     }
   };
 
-  const res = await Swal.fire({
-    title:"Confirmar + Agenda",
-    html,
-    width: 1040,
-    focusConfirm:false,
-    showCancelButton:true,
-    showDenyButton:true,
-    confirmButtonText:"Confirmar y crear en Calendar",
-    denyButtonText:"Confirmar sin agendar",
-    cancelButtonText:"Cancelar",
-    didOpen: async ()=>{
+	  const res = await Swal.fire({
+	    title:"Confirmar + Agenda",
+	    html,
+	    width: 1040,
+	    focusConfirm:false,
+	    showCancelButton:true,
+	    showDenyButton:true,
+	    confirmButtonText:"Confirmar y crear en Calendar",
+	    denyButtonText:"Confirmar sin agendar",
+	    cancelButtonText:"Cancelar",
+	    heightAuto:false,
+	    customClass: { popup: "gdAgenda" },
+	    didOpen: async ()=>{
       const q = qs("#ag_quote");
       if (q) q.value = defaultSel || "manual";
 
-      const editManualBtn = qs("#ag_edit_manual");
-      const refreshManualBtn = ()=>{
-        const v = (qs("#ag_quote")?.value || "").toString().trim();
-        if (editManualBtn) editManualBtn.style.display = (v === "manual") ? "" : "none";
-      };
+	      const editManualBtn = qs("#ag_edit_manual");
+	      const refreshManualBtn = ()=>{
+	        const v = (qs("#ag_quote")?.value || "").toString().trim();
+	        if (editManualBtn) editManualBtn.style.display = (v === "manual") ? "" : "none";
+	      };
       refreshManualBtn();
       q && q.addEventListener("change", async ()=>{ refreshManualBtn(); await runPreview(); });
 
@@ -2346,24 +2351,35 @@ async function handleConfirmado(lead, newEstado){
         saveCurrentDay();
       });
 
-      qs("#ag_montaje_edit") && (qs("#ag_montaje_edit").onclick = ()=>{
-        setMontajeLocked(false);
-        const ta = qs("#ag_montaje_day");
-        ta && ta.focus && ta.focus();
-      });
-      qs("#ag_montaje_confirm") && (qs("#ag_montaje_confirm").onclick = ()=>{
-        saveCurrentDay();
-        setMontajeLocked(true);
-        toast("Montaje confirmado", "success");
-      });
+	      qs("#ag_montaje_edit") && (qs("#ag_montaje_edit").onclick = ()=>{
+	        setMontajeLocked(false);
+	        const ta = qs("#ag_montaje_day");
+	        ta && ta.focus && ta.focus();
+	      });
+	      qs("#ag_montaje_confirm") && (qs("#ag_montaje_confirm").onclick = async ()=>{
+	        const isLocked = !!qs("#ag_montaje_day")?.readOnly;
+	        const txt = isLocked ? "¿Confirmas el montaje sugerido para este día?" : "¿Guardar/confirmar los cambios de montaje para este día?";
+	        const ok = await Swal.fire({
+	          icon: "question",
+	          title: "Confirmar montaje",
+	          text: txt,
+	          showCancelButton: true,
+	          confirmButtonText: "Sí, confirmar",
+	          cancelButtonText: "Cancelar",
+	        });
+	        if (!ok.isConfirmed) return;
+	        saveCurrentDay();
+	        setMontajeLocked(true);
+	        toast("Montaje confirmado", "success");
+	      });
 
-      editManualBtn && (editManualBtn.onclick = async ()=>{
-        const okMeta = await ensureQuoteMeta();
-        if (!okMeta) return;
-        const okItems = await ensureManualMiceItems();
-        if (!okItems) return;
-        await runPreview();
-      });
+	      editManualBtn && (editManualBtn.onclick = async ()=>{
+	        const okMeta = await ensureQuoteMeta();
+	        if (!okMeta) return;
+	        const okItems = await ensureManualMiceItems();
+	        if (!okItems) return;
+	        await runPreview();
+	      });
 
       const updDur = ()=>{
         const el = qs("#ag_duracion");
@@ -2399,20 +2415,9 @@ async function handleConfirmado(lead, newEstado){
       qs("#ag_hfin") && qs("#ag_hfin").addEventListener("change", ()=>{ updDur(); runPreview(); });
       qs("#ag_tel") && qs("#ag_tel").addEventListener("change", runPreview);
       qs("#ag_dir") && qs("#ag_dir").addEventListener("change", runPreview);
-      qs("#ag_recalc") && (qs("#ag_recalc").onclick = async ()=>{
-        // Importante: NO abrir otro Swal acá, porque SweetAlert2 cierra el modal actual.
-        // Recalcular debe sobrescribir sugerencias automáticamente.
-        touched.title = false;
-        touched.loc = false;
-        touched.desc = false;
-        // Recalcular NO borra ediciones por día, solo recalcula sugerencias base.
-        await runPreview();
-        toast("Recalculado", "success");
-      });
-
-      updDur();
-      await runPreview();
-    },
+	      updDur();
+	      await runPreview();
+	    },
     preConfirm: ()=>{
       const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
       const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
