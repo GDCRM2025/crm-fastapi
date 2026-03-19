@@ -1319,75 +1319,75 @@ def move_lead_and_maybe_agenda(
         except Exception:
             pass
 
-            comuna = _get_comuna_nombre(lead.get("id_comuna"))
-            marca = _get_marca_nombre(lead.get("id_marca"))
-            if (not marca or marca == "Sin Marca") and id_cot:
-                marca2 = _infer_marca_from_cotizacion(id_cot)
-                if marca2:
-                    marca = marca2
+        comuna = _get_comuna_nombre(lead.get("id_comuna"))
+        marca = _get_marca_nombre(lead.get("id_marca"))
+        if (not marca or marca == "Sin Marca") and id_cot:
+            marca2 = _infer_marca_from_cotizacion(id_cot)
+            if marca2:
+                marca = marca2
 
-            # overrides globales
-            override_title = str(payload.get("override_title") or "").strip() or None
-            override_location = str(payload.get("override_location") or "").strip() or None
-            override_description = str(payload.get("override_description") or "").strip() or None
+        # overrides globales
+        override_title = str(payload.get("override_title") or "").strip() or None
+        override_location = str(payload.get("override_location") or "").strip() or None
+        override_description = str(payload.get("override_description") or "").strip() or None
 
-            # overrides por día: [{day:"YYYY-MM-DD", ops:int, montaje_text:"..."}]
-            overrides_by_day: dict[str, dict] = {}
+        # overrides por día: { "YYYY-MM-DD": {ops:int, montaje_text:"..."} }
+        overrides_by_day: dict[str, dict] = {}
+        try:
+            raw_obd = payload.get("override_by_day")
+            if isinstance(raw_obd, dict):
+                overrides_by_day = {str(k): (v or {}) for k, v in raw_obd.items()}
+            elif isinstance(raw_obd, list):
+                for r in raw_obd:
+                    if not isinstance(r, dict):
+                        continue
+                    d = str(r.get("day") or r.get("fecha") or r.get("service_date") or "").strip()
+                    if not d:
+                        continue
+                    overrides_by_day[d] = r
+        except Exception:
+            overrides_by_day = {}
+
+        # overrides globales (compat)
+        override_ops_global: int | None = None
+        try:
+            if payload.get("override_ops") is not None and str(payload.get("override_ops")).strip() != "":
+                override_ops_global = int(payload.get("override_ops"))
+        except Exception:
+            override_ops_global = None
+
+        override_montaje_global: str | None = None
+        try:
+            if payload.get("override_montaje_text") is not None:
+                mt = str(payload.get("override_montaje_text") or "").strip()
+                if mt:
+                    override_montaje_global = mt
+        except Exception:
+            override_montaje_global = None
+
+        base_day = date.fromisoformat(str(lead.get("fecha_evento"))[:10]) if lead.get("fecha_evento") else date.today()
+        grouped = _items_grouped_by_day(items, base_day)
+        total_days = len(grouped) if grouped else 1
+
+        eventos: list[dict] = []
+        for idx, (day, items_day) in enumerate(grouped or [(base_day, items)], start=1):
+            obd = overrides_by_day.get(day.isoformat(), {}) if overrides_by_day else {}
+
+            ops_day = None
             try:
-                raw_obd = payload.get("override_by_day")
-                if isinstance(raw_obd, dict):
-                    overrides_by_day = {str(k): (v or {}) for k, v in raw_obd.items()}
-                elif isinstance(raw_obd, list):
-                    for r in raw_obd:
-                        if not isinstance(r, dict):
-                            continue
-                        d = str(r.get("day") or r.get("fecha") or r.get("service_date") or "").strip()
-                        if not d:
-                            continue
-                        overrides_by_day[d] = r
+                if obd.get("ops") is not None and str(obd.get("ops")).strip() != "":
+                    ops_day = int(obd.get("ops"))
             except Exception:
-                overrides_by_day = {}
-
-            # overrides globales (compat)
-            override_ops_global: int | None = None
-            try:
-                if payload.get("override_ops") is not None and str(payload.get("override_ops")).strip() != "":
-                    override_ops_global = int(payload.get("override_ops"))
-            except Exception:
-                override_ops_global = None
-
-            override_montaje_global: str | None = None
-            try:
-                if payload.get("override_montaje_text") is not None:
-                    mt = str(payload.get("override_montaje_text") or "").strip()
-                    if mt:
-                        override_montaje_global = mt
-            except Exception:
-                override_montaje_global = None
-
-            base_day = date.fromisoformat(str(lead.get("fecha_evento"))[:10]) if lead.get("fecha_evento") else date.today()
-            grouped = _items_grouped_by_day(items, base_day)
-            total_days = len(grouped) if grouped else 1
-
-            eventos: list[dict] = []
-            for idx, (day, items_day) in enumerate(grouped or [(base_day, items)], start=1):
-                obd = overrides_by_day.get(day.isoformat(), {}) if overrides_by_day else {}
-
                 ops_day = None
-                try:
-                    if obd.get("ops") is not None and str(obd.get("ops")).strip() != "":
-                        ops_day = int(obd.get("ops"))
-                except Exception:
-                    ops_day = None
 
+            mt_day = None
+            try:
+                if obd.get("montaje_text") is not None:
+                    mt_day = str(obd.get("montaje_text") or "").strip() or None
+            except Exception:
                 mt_day = None
-                try:
-                    if obd.get("montaje_text") is not None:
-                        mt_day = str(obd.get("montaje_text") or "").strip() or None
-                except Exception:
-                    mt_day = None
 
-                day_label = f"Día {idx}/{total_days} · {day.isoformat()}" if total_days > 1 else day.isoformat()
+            day_label = f"Día {idx}/{total_days} · {day.isoformat()}" if total_days > 1 else day.isoformat()
 
             eventos.append(
                 _build_event_for_day(
@@ -1411,7 +1411,9 @@ def move_lead_and_maybe_agenda(
                 )
             )
 
-            ev = eventos[0] if eventos else {}
+        ev = eventos[0] if eventos else None
+        if not ev:
+            raise HTTPException(500, detail="No se pudo construir el evento para agendar")
 
             if dry_run:
                 return {
@@ -1480,7 +1482,7 @@ def move_lead_and_maybe_agenda(
                 if "id_cotizacion" in cols_ev:
                     data_ev["id_cotizacion"] = int(id_cot) if id_cot else None
                 if "ops" in cols_ev:
-                    data_ev["ops"] = ops
+                    data_ev["ops"] = int(ev.get("ops")) if ev.get("ops") is not None else int(ops)
                 if "estado" in cols_ev:
                     data_ev["estado"] = "agendado"
 
@@ -1512,42 +1514,41 @@ def move_lead_and_maybe_agenda(
 
         if "calendar_start" in cols_lead:
             extra_ev_ref["calendar_start"] = ev["start_at"]
-            if "calendar_end" in cols_lead:
-                extra_ev_ref["calendar_end"] = ev["end_at"]
+        if "calendar_end" in cols_lead:
+            extra_ev_ref["calendar_end"] = ev["end_at"]
 
-            # Guardar plan multi-día (si la columna existe o la podemos crear)
+        pre_events_json = None
+        try:
+            if "pre_events_json" not in cols_lead:
+                with engine.begin() as cn:
+                    cn.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_events_json TEXT"))
+                cols_lead = set(_cols_for("leads"))
+            pre_events_json = json.dumps(eventos, ensure_ascii=False)
+        except Exception:
             pre_events_json = None
-            try:
-                if "pre_events_json" not in cols_lead:
-                    with engine.begin() as cn:
-                        cn.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_events_json TEXT"))
-                    cols_lead = set(_cols_for("leads"))
-                pre_events_json = json.dumps(eventos, ensure_ascii=False)
-            except Exception:
-                pre_events_json = None
 
-            _update_row(
-                "leads",
-                "id_lead",
-                id_lead,
-                {
-                    "id_estado": int(id_estado),
-                    "pendiente_agendar": False,
-                    **({"id_cotizacion_vigente": int(id_cot)} if id_cot else {}),
-                    **extra_ev_ref,
-                    "pre_products_text": ev["products_text"],
-                    "pre_montaje_text": ev["montaje_text"],
-                    "pre_ops": int(ev.get("ops")) if ev.get("ops") is not None else ops,
-                    "pre_title": ev["title"],
-                    "pre_start": ev["start_at"],
-                    "pre_end": ev["end_at"],
-                    "pre_location": ev["location"],
-                    "pre_telefono": telefono if telefono else "POR CONFIRMAR",
-                    "pre_direccion": direccion if direccion else "DIR TBD",
-                    "pre_description": ev["description"],
-                    **({"pre_events_json": pre_events_json} if pre_events_json else {}),
-                },
-            )
+        _update_row(
+            "leads",
+            "id_lead",
+            id_lead,
+            {
+                "id_estado": int(id_estado),
+                "pendiente_agendar": False,
+                **({"id_cotizacion_vigente": int(id_cot)} if id_cot else {}),
+                **extra_ev_ref,
+                "pre_products_text": ev["products_text"],
+                "pre_montaje_text": ev["montaje_text"],
+                "pre_ops": int(ev.get("ops")) if ev.get("ops") is not None else int(ops),
+                "pre_title": ev["title"],
+                "pre_start": ev["start_at"],
+                "pre_end": ev["end_at"],
+                "pre_location": ev["location"],
+                "pre_telefono": telefono if telefono else "POR CONFIRMAR",
+                "pre_direccion": direccion if direccion else "DIR TBD",
+                "pre_description": ev["description"],
+                **({"pre_events_json": pre_events_json} if pre_events_json else {}),
+            },
+        )
 
         try:
             cols = _cols_for("leads")
