@@ -1800,6 +1800,48 @@ const MENU = [
     ]
   }
 ];
+
+const FAV_KEY = "gd_sidebar_favs";
+function getFavIds() {
+  try {
+    const raw = localStorage.getItem(FAV_KEY) || "[]";
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.map((x) => String(x)).filter(Boolean) : [];
+  } catch (_) {
+    return [];
+  }
+}
+function setFavIds(ids) {
+  try {
+    const uniq = [...new Set((ids || []).map((x) => String(x)).filter(Boolean))];
+    localStorage.setItem(FAV_KEY, JSON.stringify(uniq));
+  } catch (_) {
+  }
+}
+function isFav(id) {
+  return getFavIds().includes(String(id));
+}
+function toggleFav(id) {
+  const ids = getFavIds();
+  const sid = String(id);
+  const next = ids.includes(sid) ? ids.filter((x) => x !== sid) : [sid, ...ids];
+  setFavIds(next);
+}
+function listVisibleMenuItems() {
+  const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : null;
+  const isDriver = CURRENT_ROLE_ID === 6;
+  const isAdmin = CURRENT_ROLE_ID === 1;
+  const out = [];
+  for (const g of MENU) {
+    for (const it of g.items) {
+      if (it.sep || it.noSidebar || !it.url) continue;
+      if (allowed && !allowed.has(it.id)) continue;
+      if (it.driverOnly && !isDriver && !isAdmin) continue;
+      out.push({ ...it, groupId: g.id, groupTitle: g.title, groupIco: g.ico });
+    }
+  }
+  return out;
+}
 let ACTIVE_ITEM_ID = null;
 let CURRENT_ROLE_ID = null;
 let CURRENT_ALLOWED = null;
@@ -2050,6 +2092,66 @@ function buildMenu() {
   const isDriver = CURRENT_ROLE_ID === 6;
   const isAdmin = CURRENT_ROLE_ID === 1;
   let lastGroupId = null;
+
+  // Favoritos (items fijados)
+  try {
+    const favIds = getFavIds();
+    if (favIds.length) {
+      const visible = listVisibleMenuItems();
+      const byId = /* @__PURE__ */ new Map(visible.map((x) => [String(x.id), x]));
+      const favItems = [];
+      for (const id of favIds) {
+        const it = byId.get(String(id));
+        if (it) favItems.push(it);
+      }
+      if (favItems.length) {
+        const group = document.createElement("section");
+        group.className = "menu-group open";
+        group.dataset.group = "favoritos";
+        const head = document.createElement("button");
+        head.type = "button";
+        head.className = "menu-group-head";
+        head.title = "Favoritos";
+        head.innerHTML = `
+          <span class="menu-ico">★</span>
+          <span class="menu-title">Favoritos</span>
+          <span class="menu-chevron">\u203A</span>
+        `;
+        const items = document.createElement("div");
+        items.className = "menu-items";
+        for (const it of favItems) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "menu-item";
+          b.dataset.item = it.id;
+          b.title = it.label;
+          b.innerHTML = `<span class="dot"></span><span class="lbl">${it.label}</span><span class="fav-ico on" data-fav="${it.id}" title="Quitar fijado">★</span>`;
+          b.addEventListener("click", () => openItem(it));
+          b.querySelector("[data-fav]")?.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            toggleFav(it.id);
+            buildMenu();
+          });
+          items.appendChild(b);
+        }
+        head.addEventListener("click", () => {
+          const isOpen = group.classList.contains("open");
+          if (isOpen) group.classList.remove("open");
+          else group.classList.add("open");
+        });
+        group.appendChild(head);
+        group.appendChild(items);
+        nav.appendChild(group);
+
+        const divider = document.createElement("div");
+        divider.className = "menu-sep";
+        nav.appendChild(divider);
+        lastGroupId = "favoritos";
+      }
+    }
+  } catch (_) {
+  }
   for (const g of MENU) {
     const visibleItems = allowed ? g.items.filter((it) => !it.sep && !it.noSidebar && allowed.has(it.id) && (!it.driverOnly || isDriver)) : g.items.filter((it) => !it.sep && !it.noSidebar && (!it.driverOnly || isDriver));
     if (!visibleItems.length) continue;
@@ -2087,8 +2189,15 @@ function buildMenu() {
       b.className = "menu-item";
       b.dataset.item = it.id;
       b.title = it.label;
-      b.innerHTML = `<span class="dot"></span><span class="lbl">${it.label}</span>`;
+      const favOn = isFav(it.id);
+      b.innerHTML = `<span class="dot"></span><span class="lbl">${it.label}</span><span class="fav-ico ${favOn ? "on" : ""}" data-fav="${it.id}" title="${favOn ? "Quitar fijado" : "Fijar"}">★</span>`;
       b.addEventListener("click", () => openItem(it));
+      b.querySelector("[data-fav]")?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        toggleFav(it.id);
+        buildMenu();
+      });
       items.appendChild(b);
     }
     head.addEventListener("click", () => {
@@ -2240,6 +2349,124 @@ function bindSidebarBehavior() {
     if (ev.target.closest("#sidebar") || ev.target.closest("#btnSidebar")) return;
     sb.classList.remove("open-mobile");
     document.body.classList.remove("sb-open");
+  }, { capture: true });
+}
+
+function bindSidebarTools() {
+  const sb = qs("#sidebar");
+  const pinBtn = qs("#btnSidebarPin");
+  const search = qs("#sideSearch");
+  const results = qs("#sideSearchResults");
+  if (!sb || !pinBtn || !results) return;
+
+  const refreshPinUI = () => {
+    const pinned = isSidebarPinned();
+    pinBtn.classList.toggle("pinned", pinned);
+    pinBtn.setAttribute("aria-pressed", pinned ? "true" : "false");
+    pinBtn.title = pinned ? "Sidebar fijado (click para soltar)" : "Fijar sidebar";
+  };
+  refreshPinUI();
+
+  pinBtn.addEventListener("click", () => {
+    const pinned = isSidebarPinned();
+    setSidebarPinned(!pinned);
+    if (!pinned) {
+      sb.classList.remove("collapsed");
+      const g = findGroupByItemId(ACTIVE_ITEM_ID);
+      if (g) g.classList.add("open");
+    } else {
+      sb.classList.add("collapsed");
+      closeAllGroups();
+    }
+    refreshPinUI();
+  });
+
+  const closeResults = () => {
+    results.classList.remove("open");
+    results.setAttribute("aria-hidden", "true");
+    results.innerHTML = "";
+  };
+
+  const renderResults = (q) => {
+    const query = String(q || "").trim().toLowerCase();
+    if (!query) {
+      closeResults();
+      return;
+    }
+    const items = listVisibleMenuItems();
+    const scored = [];
+    for (const it of items) {
+      const hay = `${it.label} ${it.groupTitle}`.toLowerCase();
+      if (!hay.includes(query)) continue;
+      const l = it.label.toLowerCase();
+      let s = 0;
+      if (l.startsWith(query)) s += 50;
+      if (l.includes(query)) s += 20;
+      if (it.groupTitle.toLowerCase().includes(query)) s += 5;
+      scored.push({ s, it });
+    }
+    scored.sort((a, b) => b.s - a.s || a.it.label.localeCompare(b.it.label));
+    const top = scored.slice(0, 14).map((x) => x.it);
+    if (!top.length) {
+      results.innerHTML = `<div style="padding:10px;color:var(--muted);font-weight:900">Sin resultados.</div>`;
+      results.classList.add("open");
+      results.setAttribute("aria-hidden", "false");
+      return;
+    }
+    results.innerHTML = top.map((it) => {
+      const on = isFav(it.id);
+      return `
+        <button type="button" class="sb-result" data-open="${it.id}">
+          <span class="sb-fav ${on ? "on" : ""}" data-fav="${it.id}" title="${on ? "Quitar fijado" : "Fijar"}">★</span>
+          <span class="meta">
+            <span class="top">${escapeHtml(it.label)}</span>
+            <span class="sub">${escapeHtml(it.groupTitle)}</span>
+          </span>
+        </button>
+      `;
+    }).join("");
+    results.classList.add("open");
+    results.setAttribute("aria-hidden", "false");
+
+    results.querySelectorAll("[data-open]").forEach((b) => {
+      b.addEventListener("click", (ev) => {
+        const fav = ev.target && ev.target.closest && ev.target.closest("[data-fav]");
+        if (fav) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          toggleFav(fav.getAttribute("data-fav"));
+          buildMenu();
+          renderResults(query);
+          return;
+        }
+        const id = b.getAttribute("data-open");
+        const it = findItemById(id);
+        if (it) openItem(it);
+        closeResults();
+        if (search) search.value = "";
+      });
+    });
+  };
+
+  if (search) {
+    search.addEventListener("input", () => renderResults(search.value));
+    search.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        closeResults();
+        search.value = "";
+      } else if (ev.key === "Enter") {
+        const first = results.querySelector(".sb-result[data-open]");
+        if (first) {
+          first.click();
+          ev.preventDefault();
+        }
+      }
+    });
+  }
+
+  document.addEventListener("click", (ev) => {
+    if (ev.target.closest("#sidebarTools")) return;
+    closeResults();
   }, { capture: true });
 }
 function bindTopbar() {
@@ -2484,6 +2711,7 @@ function openDefault() {
   renderTopTools();
   buildMenu();
   bindSidebarBehavior();
+  bindSidebarTools();
   bindTopbar();
   bindNotifications();
   startClock();
