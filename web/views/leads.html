@@ -2111,23 +2111,32 @@ async function handleConfirmado(lead, newEstado){
 
   const html = `
     <style>
-      .agGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .agGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
       .agCard{border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.10);display:grid;gap:10px}
       .agRow{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
       .agLabel{display:grid;gap:6px}
       .agLabel > .muted{font-weight:900}
       .agSmall{font-size:12px;opacity:.9}
+      .agMono{margin:0;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;opacity:.95}
+      .agPreview{max-height:200px;overflow:auto;border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.10)}
+      .agPill{padding:8px 10px;border-radius:999px}
       @media (max-width: 980px){ .agGrid{grid-template-columns:1fr} }
+      /* Scroll claro dentro del modal (cuando no cabe en pantallas más chicas) */
+      .gdAgenda .swal2-html-container{ scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.40) transparent; }
+      .gdAgenda .swal2-html-container::-webkit-scrollbar{ width: 8px; }
+      .gdAgenda .swal2-html-container::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.28); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+      .gdAgenda .swal2-html-container:hover::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.42); background-clip: content-box; }
     </style>
     <div style="text-align:left;display:grid;gap:12px">
       <div class="agGrid">
+        <!-- Izquierda: datos + notas + productos (por día) -->
         <div class="agCard">
           <div class="agRow">
             <label class="agLabel" style="flex:1;min-width:280px">
               <div class="muted">Cotización aprobada</div>
               <select id="ag_quote" class="swSel">${quoteOptions}</select>
             </label>
-            <button type="button" class="swBtn secondary" id="ag_edit_manual" style="display:none;white-space:nowrap">Productos manuales</button>
+            <button type="button" class="swBtn secondary" id="ag_edit_manual" style="display:none;white-space:nowrap">Editar productos</button>
           </div>
 
           <div class="agRow">
@@ -2146,66 +2155,79 @@ async function handleConfirmado(lead, newEstado){
             <div class="muted agSmall" id="ag_duracion" style="align-self:center;margin-top:26px">Duración: —</div>
           </div>
 
-          <label class="agLabel">
-            <div class="muted">Teléfono</div>
-            <input id="ag_tel" class="swInp" value="${escapeHtml(lead.telefono||"")}" placeholder="POR CONFIRMAR" />
-          </label>
-          <label class="agLabel">
-            <div class="muted">Dirección</div>
-            <input id="ag_dir" class="swInp" value="${escapeHtml(lead.direccion||"")}" placeholder="POR CONFIRMAR" />
-          </label>
+          <div class="agRow" style="gap:12px">
+            <label class="agLabel" style="flex:1;min-width:240px">
+              <div class="muted">Teléfono</div>
+              <input id="ag_tel" class="swInp" value="${escapeHtml(lead.telefono||"")}" placeholder="POR CONFIRMAR" />
+            </label>
+            <label class="agLabel" style="flex:1;min-width:240px">
+              <div class="muted">Dirección</div>
+              <input id="ag_dir" class="swInp" value="${escapeHtml(lead.direccion||"")}" placeholder="POR CONFIRMAR" />
+            </label>
+          </div>
+
           <label class="agLabel">
             <div class="muted">Location</div>
             <input id="ag_loc" class="swInp" placeholder="Comuna o lugar (ej: Las Condes)" />
           </label>
+
+          <label class="agLabel">
+            <div class="muted">Notas (se verán destacadas en Calendar)</div>
+            <textarea id="ag_notes" class="swTa" rows="3" placeholder="Notas importantes para operaciones / cliente…"></textarea>
+          </label>
+
+          <div class="agPreview" style="max-height:none">
+            <div class="muted" style="margin-bottom:6px;font-weight:1000">Productos (día seleccionado)</div>
+            <pre id="ag_products_day" class="agMono">(cargando…)</pre>
+          </div>
         </div>
 
-	        <div class="agCard">
-		          <div class="agRow">
-		            <div class="muted agSmall" id="ag_calc_status" style="flex:1;align-self:center">Calculando…</div>
-		          </div>
+        <!-- Derecha: tabs + montaje + preview del evento por día -->
+        <div class="agCard">
+          <div class="agRow">
+            <div class="muted agSmall" id="ag_calc_status" style="flex:1;align-self:center">Calculando…</div>
+          </div>
 
-	          <label class="agLabel">
-	            <div class="muted">Título</div>
-	            <input id="ag_title" class="swInp" placeholder="Título del evento" />
-	          </label>
+          <label class="agLabel">
+            <div class="muted">Título</div>
+            <input id="ag_title" class="swInp" placeholder="Título del evento" />
+          </label>
 
-	          <label class="agLabel">
-	            <div class="muted">Notas (se verán en Calendar arriba, destacadas)</div>
-	            <textarea id="ag_notes" class="swTa" rows="3" placeholder="Notas importantes para operaciones / cliente…"></textarea>
-	          </label>
+          <div class="agRow" style="align-items:center;justify-content:space-between">
+            <div class="muted" style="font-weight:1000">Agenda por día</div>
+            <div id="ag_day_tabs" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"></div>
+          </div>
 
-	          <div style="border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.10);display:grid;gap:10px">
-	            <div class="muted" style="font-weight:1000">Montaje sugerido</div>
-	            <div id="ag_day_tabs" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-	            <div class="agRow" style="align-items:center">
-	              <label class="agLabel" style="width:140px">
-	                <div class="muted">OPS (día)</div>
-	                <input id="ag_ops_day" class="swInp" type="number" min="0" step="1" />
-	              </label>
-	              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:22px">
-	                <button type="button" class="swBtn secondary" id="ag_montaje_confirm" style="white-space:nowrap">Confirmar montaje</button>
-	                <button type="button" class="swBtn" id="ag_montaje_edit" style="white-space:nowrap">Editar</button>
-	              </div>
-	            </div>
-	            <textarea id="ag_montaje_day" class="swTa" rows="7" placeholder="Montaje sugerido…"></textarea>
-	          </div>
+          <div style="border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.10);display:grid;gap:10px">
+            <div class="muted" style="font-weight:1000">Montaje sugerido</div>
+            <div class="agRow" style="align-items:center">
+              <label class="agLabel" style="width:140px">
+                <div class="muted">OPS (día)</div>
+                <input id="ag_ops_day" class="swInp" type="number" min="0" step="1" />
+              </label>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:22px">
+                <button type="button" class="swBtn secondary" id="ag_montaje_confirm" style="white-space:nowrap">Confirmar montaje</button>
+                <button type="button" class="swBtn" id="ag_montaje_edit" style="white-space:nowrap">Editar</button>
+              </div>
+            </div>
+            <textarea id="ag_montaje_day" class="swTa" rows="7" placeholder="Montaje sugerido…"></textarea>
+          </div>
 
-	          <div style="border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.10)">
-	            <div class="muted" style="margin-bottom:6px;font-weight:1000">Productos</div>
-	            <pre id="ag_products_day" style="margin:0;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;opacity:.95;max-height:160px;overflow:auto">(cargando…)</pre>
-	          </div>
+          <label class="agLabel">
+            <div class="muted">Descripción (opcional)</div>
+            <textarea id="ag_desc" class="swTa" rows="3" placeholder="Descripción para Calendar…"></textarea>
+          </label>
 
-	          <label class="agLabel">
-	            <div class="muted">Descripción (opcional)</div>
-	            <textarea id="ag_desc" class="swTa" rows="3" placeholder="Descripción para Calendar…"></textarea>
-	          </label>
+          <div class="agPreview">
+            <div class="muted" style="margin-bottom:6px;font-weight:1000">Previsualización (día seleccionado)</div>
+            <pre id="ag_preview_day" class="agMono">(cargando…)</pre>
+          </div>
 
-	          <div class="muted agSmall" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-	            <div>Google Calendar: <b>${gcalConnected ? "conectado" : "NO conectado"}</b></div>
-	            ${gcalConnected ? "" : `<a href="${escapeHtml(apiURL("/tools/gcal/start"))}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:1000">Conectar</a>`}
-	          </div>
-	        </div>
+          <div class="muted agSmall" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+            <div>Google Calendar: <b>${gcalConnected ? "conectado" : "NO conectado"}</b></div>
+            ${gcalConnected ? "" : `<a href="${escapeHtml(apiURL("/tools/gcal/start"))}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:1000">Conectar</a>`}
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -2238,22 +2260,22 @@ async function handleConfirmado(lead, newEstado){
 	    if (btnE) btnE.disabled = !locked;
 	  };
 
-	  const renderDayTabs = ()=>{
-	    const wrap = qs("#ag_day_tabs");
-	    if (!wrap) return;
-	    const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
-	    const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
-	    const showTabs = (previewEvents.length > 1);
-	    wrap.style.display = showTabs ? "flex" : "none";
-	    if (!showTabs){
-	      wrap.innerHTML = "";
-	      return;
-	    }
+  const renderDayTabs = ()=>{
+    const wrap = qs("#ag_day_tabs");
+    if (!wrap) return;
+    const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
+    const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
+    const showTabs = (quoteSource === "manual") && (previewEvents.length > 1);
+    wrap.style.display = showTabs ? "flex" : "none";
+    if (!showTabs){
+      wrap.innerHTML = "";
+      return;
+    }
 	    const parts = [];
 	    for (let i=0;i<previewEvents.length;i++){
 	      const e = previewEvents[i] || {};
-	      const d = String(e.day || "").slice(0,10);
-	      const lab = (previewEvents.length>1) ? `Día ${i+1}/${previewEvents.length} · ${d || "-"}` : (d || "Evento");
+      const d = String(e.day || "").slice(0,10);
+      const lab = `Día ${i+1}/${previewEvents.length} · ${d || "-"}`;
       parts.push(`<button type="button" class="swBtn ${i===selectedIdx ? "" : "secondary"}" data-ag-day="${i}" style="padding:8px 10px;border-radius:999px">${escapeHtml(lab)}</button>`);
     }
     wrap.innerHTML = parts.join("");
@@ -2270,24 +2292,26 @@ async function handleConfirmado(lead, newEstado){
     });
   };
 
-	  const renderPreviewForSelectedDay = ()=>{
-	    const ev = previewEvents[selectedIdx] || {};
-	    const day = String(ev.day || "").trim();
+  const renderPreviewForSelectedDay = ()=>{
+    const ev = previewEvents[selectedIdx] || {};
+    const day = String(ev.day || "").trim();
 
     if (!touched.title && qs("#ag_title")) qs("#ag_title").value = ev.title || "";
     if (!touched.loc && qs("#ag_loc")) qs("#ag_loc").value = ev.location || "";
-    if (!touched.desc && qs("#ag_desc")) qs("#ag_desc").value = ev.description || "";
+    // "Descripción" es un override opcional. No la llenamos con el auto-preview para no confundir.
+    if (!touched.desc && qs("#ag_desc")) qs("#ag_desc").value = "";
 
     const ed = (day && dayEdits[day]) ? dayEdits[day] : null;
     const td = (day && touchedDay[day]) ? touchedDay[day] : { ops:false, montaje:false };
 
     if (qs("#ag_ops_day") && !td.ops) qs("#ag_ops_day").value = (ed?.ops ?? (ev.ops != null ? String(ev.ops) : "")) || "";
     if (qs("#ag_montaje_day") && !td.montaje) qs("#ag_montaje_day").value = (ed?.montaje ?? (ev.montaje_text || "")) || "";
-	    if (qs("#ag_products_day")) qs("#ag_products_day").textContent = ev.products_text || "(sin productos)";
+    if (qs("#ag_products_day")) qs("#ag_products_day").textContent = ev.products_text || "(sin productos)";
+    if (qs("#ag_preview_day")) qs("#ag_preview_day").textContent = ev.description || "";
 
-	    // por defecto: montaje bloqueado (profesional). El usuario debe presionar "Editar".
-	    setMontajeLocked(true);
-	  };
+    // por defecto: montaje bloqueado (profesional). El usuario debe presionar "Editar".
+    setMontajeLocked(true);
+  };
 
   const runPreview = async ()=>{
     const st = qs("#ag_calc_status");
@@ -2326,6 +2350,7 @@ async function handleConfirmado(lead, newEstado){
     }catch(err){
       previewEvents = [];
       if (qs("#ag_products_day")) qs("#ag_products_day").textContent = "(sin productos)";
+      if (qs("#ag_preview_day")) qs("#ag_preview_day").textContent = "";
       if (st) st.textContent = String(err?.message || err);
     }
   };
@@ -2388,22 +2413,18 @@ async function handleConfirmado(lead, newEstado){
 	        const ta = qs("#ag_montaje_day");
 	        ta && ta.focus && ta.focus();
 	      });
-	      qs("#ag_montaje_confirm") && (qs("#ag_montaje_confirm").onclick = async ()=>{
-	        const isLocked = !!qs("#ag_montaje_day")?.readOnly;
-	        const txt = isLocked ? "¿Confirmas el montaje sugerido para este día?" : "¿Guardar/confirmar los cambios de montaje para este día?";
-	        const ok = await Swal.fire({
-	          icon: "question",
-	          title: "Confirmar montaje",
-	          text: txt,
-	          showCancelButton: true,
-	          confirmButtonText: "Sí, confirmar",
-	          cancelButtonText: "Cancelar",
-	        });
-	        if (!ok.isConfirmed) return;
-	        saveCurrentDay();
-	        setMontajeLocked(true);
-	        toast("Montaje confirmado", "success");
-	      });
+		      qs("#ag_montaje_confirm") && (qs("#ag_montaje_confirm").onclick = ()=>{
+		        const isLocked = !!qs("#ag_montaje_day")?.readOnly;
+		        const txt = isLocked
+		          ? "¿Confirmas el montaje sugerido para este día?"
+		          : "¿Guardar/confirmar los cambios de montaje para este día?";
+		        // Importante: NO abrir otro SweetAlert aquí (SweetAlert2 no soporta modales anidados).
+		        // Usamos confirm nativo para no cerrar el modal de agenda.
+		        if (!window.confirm(txt)) return;
+		        saveCurrentDay();
+		        setMontajeLocked(true);
+		        toast("Montaje confirmado", "success");
+		      });
 
 	      editManualBtn && (editManualBtn.onclick = async ()=>{
 	        const okMeta = await ensureQuoteMeta();

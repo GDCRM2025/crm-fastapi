@@ -1297,6 +1297,16 @@ function findItemById(itemId) {
   }
   return null;
 }
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  })[m] || m);
+}
 function initUserMenu() {
   var _a, _b;
   const btn = qs("#btnUserMenu");
@@ -2364,6 +2374,10 @@ function bindSidebarTools() {
     pinBtn.classList.toggle("pinned", pinned);
     pinBtn.setAttribute("aria-pressed", pinned ? "true" : "false");
     pinBtn.title = pinned ? "Sidebar fijado (click para soltar)" : "Fijar sidebar";
+    try {
+      pinBtn.textContent = pinned ? "🔒" : "📎";
+    } catch (_) {
+    }
   };
   refreshPinUI();
 
