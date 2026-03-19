@@ -2115,7 +2115,21 @@ async function openItem(it) {
   try {
     const isNarrow = window.matchMedia && window.matchMedia("(max-width: 860px)").matches;
     if (isNarrow && (it.id === "leads_ver" || it.id === "leads_fil")) {
-      it = { ...it, url: "/web/views/leads_mobile.html" };
+      let mobileURL = "/web/views/leads_mobile.html";
+      try {
+        const u = new URL(it.url, location.origin);
+        const openLead = u.searchParams.get("open_lead") || u.searchParams.get("id_lead") || u.searchParams.get("lead_id");
+        const staleIds = u.searchParams.get("stale_ids");
+        const stale = u.searchParams.get("stale");
+        const params = new URLSearchParams();
+        if (openLead) params.set("open_lead", openLead);
+        if (stale) params.set("stale", stale);
+        if (staleIds) params.set("stale_ids", staleIds);
+        const qs = params.toString();
+        if (qs) mobileURL += `?${qs}`;
+      } catch (_) {
+      }
+      it = { ...it, url: mobileURL };
     }
   } catch (_) {
   }

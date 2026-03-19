@@ -634,6 +634,7 @@
       ST.leads = ST.leads.concat(items);
       ST.offset += items.length;
       renderList();
+      tryOpenFromQuery();
     }
 
     // Events
@@ -657,6 +658,12 @@
         qs("#btnMore").disabled = true;
         return;
       }
+      // Si vienen query params para abrir un lead específico (desde Filtrar Leads), lo intentamos.
+      try {
+        const p = new URLSearchParams(location.search);
+        const id = p.get("open_lead") || p.get("id_lead") || p.get("lead_id");
+        if (id) ST.openLeadId = String(id);
+      } catch (_) {}
       try{
         await loadCatalogos();
         await loadMore(true);
@@ -665,7 +672,15 @@
         setPill("Error cargando");
       }
     })();
+
+    function tryOpenFromQuery(){
+      const id = String(ST.openLeadId || "").trim();
+      if (!id) return;
+      const found = ST.leads.find(x => String(x.id_lead) === id);
+      if (!found) return;
+      ST.openLeadId = null;
+      try { openLead(found); } catch (_) {}
+    }
   </script>
 </body>
 </html>
-

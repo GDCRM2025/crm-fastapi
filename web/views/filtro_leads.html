@@ -222,29 +222,45 @@
       return {mMarca,mComuna,mEstado};
     }
 
-    function render(rows){
-      const {mMarca,mComuna,mEstado}=maps();
-      const tb=qs("#tb");
-      tb.innerHTML="";
-      for(const l of rows){
-        const tr=document.createElement("tr");
-        const ingreso = l.fecha_ingreso || l.created_at || "";
-        const dShow = (DATE_FIELD === "ingreso")
-          ? (ingreso ? String(ingreso).slice(0,10) : "—")
-          : (l.fecha_evento ? String(l.fecha_evento) : "—");
-        tr.innerHTML=`
-          <td>${l.id_lead}</td>
-          <td>${(l.nombre_cliente||"")}</td>
-          <td>${(mMarca[l.id_marca]||"")}</td>
-          <td>${(mEstado[l.id_estado]||l.id_estado||"")}</td>
-          <td>${dShow}</td>
-          <td>${(mComuna[l.id_comuna]||"—")}</td>
-          <td>${money(l.monto_cotizado)}</td>
-        `;
-        tb.appendChild(tr);
-      }
-      qs("#hint").textContent = `${rows.length} resultados`;
-    }
+	    function render(rows){
+	      const {mMarca,mComuna,mEstado}=maps();
+	      const tb=qs("#tb");
+	      tb.innerHTML="";
+	      const openLead = (id)=>{
+	        const idStr = String(id||"").trim();
+	        if (!idStr) return;
+	        const url = `/web/views/leads.html?open_lead=${encodeURIComponent(idStr)}`;
+	        try{
+	          if (window.parent && window.parent !== window && window.parent.postMessage){
+	            window.parent.postMessage({ type:"openItem", id:"leads_ver", url }, "*");
+	            return;
+	          }
+	        }catch(_){}
+	        location.href = url;
+	      };
+	      for(const l of rows){
+	        const tr=document.createElement("tr");
+	        tr.style.cursor = "pointer";
+	        tr.addEventListener("click", ()=>{
+	          openLead(l.id_lead);
+	        });
+	        const ingreso = l.fecha_ingreso || l.created_at || "";
+	        const dShow = (DATE_FIELD === "ingreso")
+	          ? (ingreso ? String(ingreso).slice(0,10) : "—")
+	          : (l.fecha_evento ? String(l.fecha_evento) : "—");
+	        tr.innerHTML=`
+	          <td>${l.id_lead}</td>
+	          <td>${(l.nombre_cliente||"")}</td>
+	          <td>${(mMarca[l.id_marca]||"")}</td>
+	          <td>${(mEstado[l.id_estado]||l.id_estado||"")}</td>
+	          <td>${dShow}</td>
+	          <td>${(mComuna[l.id_comuna]||"—")}</td>
+	          <td>${money(l.monto_cotizado)}</td>
+	        `;
+	        tb.appendChild(tr);
+	      }
+	      qs("#hint").textContent = `${rows.length} resultados`;
+	    }
 
     function applyFilters(all){
       const q=(qs("#q").value||"").trim().toLowerCase();
