@@ -2143,14 +2143,22 @@ async function handleConfirmado(lead, newEstado){
     if (btnE) btnE.disabled = !locked;
   };
 
-  const renderDayTabs = ()=>{
-    const wrap = qs("#ag_day_tabs");
-    if (!wrap) return;
-    const parts = [];
-    for (let i=0;i<previewEvents.length;i++){
-      const e = previewEvents[i] || {};
-      const d = String(e.day || "").slice(0,10);
-      const lab = (previewEvents.length>1) ? `Día ${i+1}/${previewEvents.length} · ${d || "-"}` : (d || "Evento");
+	  const renderDayTabs = ()=>{
+	    const wrap = qs("#ag_day_tabs");
+	    if (!wrap) return;
+	    const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
+	    const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
+	    const showTabs = (quoteSource === "manual" && previewEvents.length > 1);
+	    wrap.style.display = showTabs ? "flex" : "none";
+	    if (!showTabs){
+	      wrap.innerHTML = "";
+	      return;
+	    }
+	    const parts = [];
+	    for (let i=0;i<previewEvents.length;i++){
+	      const e = previewEvents[i] || {};
+	      const d = String(e.day || "").slice(0,10);
+	      const lab = (previewEvents.length>1) ? `Día ${i+1}/${previewEvents.length} · ${d || "-"}` : (d || "Evento");
       parts.push(`<button type="button" class="swBtn ${i===selectedIdx ? "" : "secondary"}" data-ag-day="${i}" style="padding:8px 10px;border-radius:999px">${escapeHtml(lab)}</button>`);
     }
     wrap.innerHTML = parts.join("");
