@@ -9,22 +9,23 @@
     @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;800&family=Manrope:wght@400;600;800&family=Sora:wght@400;600;800&family=Plus+Jakarta+Sans:wght@400;600;800&family=Rubik:wght@400;600;800&family=Poppins:wght@400;600;800&family=Nunito:wght@400;600;800&family=Montserrat:wght@400;600;800&family=Urbanist:wght@400;600;800&family=Source+Sans+3:wght@400;600;800&family=Fraunces:wght@400;600;800&family=Playfair+Display:wght@400;600;800&family=JetBrains+Mono:wght@400;600;800&display=swap");
   </style>
 
-    <link rel="stylesheet" href="./styles.css?v=20260318-2" />
-    <link rel="stylesheet" href="./panel.css?v=20260318-1" />
+	    <link rel="stylesheet" href="./styles.css?v=20260319-1" />
+	    <link rel="stylesheet" href="./panel.css?v=20260319-1" />
 
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 
 <body class="app">
   <!-- TOPBAR -->
-  <header class="topbar gcp">
-    <div class="tb-left">
-      <button class="iconbtn" id="btnSidebar" aria-label="Menú">☰</button>
-      <button class="brand brand-home" id="brandHome" aria-label="Dashboard">
-        <span class="brand-ico">◆</span>
-        <span>GREEN DIAMOND</span>
-      </button>
-    </div>
+	  <header class="topbar gcp">
+	    <div class="tb-left">
+	      <button class="iconbtn" id="btnSidebar" aria-label="Menú">☰</button>
+	      <button class="iconbtn" id="btnSidebarPinTop" aria-label="Fijar menú" title="Fijar menú">🔓</button>
+	      <button class="brand brand-home" id="brandHome" aria-label="Dashboard">
+	        <span class="brand-ico">◆</span>
+	        <span>GREEN DIAMOND</span>
+	      </button>
+	    </div>
 
     <div class="tb-right">
       <button class="iconbtn" id="btnGpt" title="GPT">
@@ -52,15 +53,14 @@
   <!-- LAYOUT -->
   <div class="layout">
 	    <aside class="sidebar collapsed" id="sidebar">
-	      <div class="sidebar-inner">
-	        <div class="sidebar-tools" id="sidebarTools">
-	          <div class="sb-search">
-	            <input id="sideSearch" placeholder="Buscar en el menú…" autocomplete="off" />
-	            <button class="iconbtn sb-pin" id="btnSidebarPin" title="Fijar sidebar" aria-label="Fijar sidebar">📎</button>
-	          </div>
-	          <div class="sb-results" id="sideSearchResults" aria-hidden="true"></div>
-	        </div>
-	        <nav class="side-nav" id="sideMenu"></nav>
+		      <div class="sidebar-inner">
+		        <div class="sidebar-tools" id="sidebarTools">
+		          <div class="sb-search">
+		            <input id="sideSearch" placeholder="Buscar en el menú…" autocomplete="off" />
+		          </div>
+		          <div class="sb-results" id="sideSearchResults" aria-hidden="true"></div>
+		        </div>
+		        <nav class="side-nav" id="sideMenu"></nav>
 
 	        <!-- Bottom: Sistema (perfil + personalización + avatar) -->
 	        <div class="sidebar-bottom">
@@ -247,7 +247,7 @@
     </section>
   </div>
 
-  <script type="module" src="./js/panel.js?v=20260318-1"></script>
+  <script type="module" src="./js/panel.js?v=20260319-1"></script>
   <script type="module" src="./js/weather.js?v=20260206-1"></script>
 </body>
 </html>

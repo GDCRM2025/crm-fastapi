@@ -2344,14 +2344,18 @@ function bindSidebarBehavior() {
       }
       return;
     }
-    const pinned = isSidebarPinned();
-    setSidebarPinned(!pinned);
-    if (!pinned) {
+    // Desktop: el botón menú solo expande/colapsa. El pin vive en btnSidebarPinTop.
+    const collapsed = sb.classList.contains("collapsed");
+    if (collapsed) {
       sb.classList.remove("collapsed");
-    } else {
-      sb.classList.add("collapsed");
-      closeAllGroups();
+      const g = findGroupByItemId(ACTIVE_ITEM_ID);
+      if (g) g.classList.add("open");
+      return;
     }
+    // Si el usuario colapsa manualmente, soltamos el pin (evita estados confusos).
+    if (isSidebarPinned()) setSidebarPinned(false);
+    sb.classList.add("collapsed");
+    closeAllGroups();
   });
   document.addEventListener("click", (ev) => {
     if (!isMobile()) return;
@@ -2364,36 +2368,35 @@ function bindSidebarBehavior() {
 
 function bindSidebarTools() {
   const sb = qs("#sidebar");
-  const pinBtn = qs("#btnSidebarPin");
+  const pinBtn = qs("#btnSidebarPinTop");
   const search = qs("#sideSearch");
   const results = qs("#sideSearchResults");
-  if (!sb || !pinBtn || !results) return;
+  if (!sb || !results) return;
 
   const refreshPinUI = () => {
+    if (!pinBtn) return;
     const pinned = isSidebarPinned();
-    pinBtn.classList.toggle("pinned", pinned);
     pinBtn.setAttribute("aria-pressed", pinned ? "true" : "false");
-    pinBtn.title = pinned ? "Sidebar fijado (click para soltar)" : "Fijar sidebar";
+    pinBtn.title = pinned ? "Menú fijado (click para soltar)" : "Fijar menú";
     try {
-      pinBtn.textContent = pinned ? "🔒" : "📎";
+      pinBtn.textContent = pinned ? "🔒" : "🔓";
     } catch (_) {
     }
   };
   refreshPinUI();
 
-  pinBtn.addEventListener("click", () => {
-    const pinned = isSidebarPinned();
-    setSidebarPinned(!pinned);
-    if (!pinned) {
-      sb.classList.remove("collapsed");
-      const g = findGroupByItemId(ACTIVE_ITEM_ID);
-      if (g) g.classList.add("open");
-    } else {
-      sb.classList.add("collapsed");
-      closeAllGroups();
-    }
-    refreshPinUI();
-  });
+  if (pinBtn) {
+    pinBtn.addEventListener("click", () => {
+      const pinned = isSidebarPinned();
+      setSidebarPinned(!pinned);
+      if (!pinned) {
+        sb.classList.remove("collapsed");
+        const g = findGroupByItemId(ACTIVE_ITEM_ID);
+        if (g) g.classList.add("open");
+      }
+      refreshPinUI();
+    });
+  }
 
   const closeResults = () => {
     results.classList.remove("open");
@@ -2455,7 +2458,12 @@ function bindSidebarTools() {
         }
         const id = b.getAttribute("data-open");
         const it = findItemById(id);
-        if (it) openItem(it);
+        if (it) {
+          sb.classList.remove("collapsed");
+          const g = findGroupByItemId(it.id);
+          if (g) g.classList.add("open");
+          openItem(it);
+        }
         closeResults();
         if (search) search.value = "";
       });
