@@ -23,6 +23,117 @@ except Exception:  # pragma: no cover
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
+def _ensure_comunas_bruto_once() -> None:
+    """
+    Requisito: al editar el monto neto de comunas, debe quedar el bruto automáticamente.
+    Además, backfill para comunas existentes (idempotente, 1 vez por día).
+    """
+    try:
+        with engine.begin() as cn:
+            # lock para evitar concurrencia
+            got = bool(cn.execute(text("SELECT pg_try_advisory_lock(25032027)")).scalar())
+            if not got:
+                return
+            try:
+                cn.execute(
+                    text(
+                        """
+                        CREATE TABLE IF NOT EXISTS system_kv (
+                          key TEXT PRIMARY KEY,
+                          value TEXT NOT NULL,
+                          updated_at TIMESTAMP DEFAULT now()
+                        )
+                        """
+                    )
+                )
+                today = datetime.utcnow().date().isoformat()
+                last = cn.execute(text("SELECT value FROM system_kv WHERE key='comunas_bruto_last_run' LIMIT 1")).scalar()
+                if (last or "") == today:
+                    return
+
+                cols = {c["column_name"] for c in _cols_for("comunas")}
+                # Intentamos soportar varios schemas legacy.
+                if "neto" in cols and "bruto" in cols:
+                    cn.execute(
+                        text(
+                            """
+                            UPDATE public.comunas
+                            SET bruto = round(COALESCE(neto,0) * 1.19)
+                            WHERE (bruto IS NULL OR bruto=0) AND COALESCE(neto,0) > 0
+                            """
+                        )
+                    )
+                if "monto_neto" in cols and "monto_bruto" in cols:
+                    cn.execute(
+                        text(
+                            """
+                            UPDATE public.comunas
+                            SET monto_bruto = round(COALESCE(monto_neto,0) * 1.19)
+                            WHERE (monto_bruto IS NULL OR monto_bruto=0) AND COALESCE(monto_neto,0) > 0
+                            """
+                        )
+                    )
+                if "costo_traslado" in cols and "costo_traslado_bruto" in cols:
+                    cn.execute(
+                        text(
+                            """
+                            UPDATE public.comunas
+                            SET costo_traslado_bruto = round(COALESCE(costo_traslado,0) * 1.19)
+                            WHERE (costo_traslado_bruto IS NULL OR costo_traslado_bruto=0) AND COALESCE(costo_traslado,0) > 0
+                            """
+                        )
+                    )
+
+                cn.execute(
+                    text(
+                        """
+                        INSERT INTO system_kv(key,value,updated_at)
+                        VALUES ('comunas_bruto_last_run', :v, now())
+                        ON CONFLICT(key) DO UPDATE SET value=:v, updated_at=now()
+                        """
+                    ),
+                    {"v": today},
+                )
+            finally:
+                try:
+                    cn.execute(text("SELECT pg_advisory_unlock(25032027)"))
+                except Exception:
+                    pass
+    except Exception:
+        return
+
+
+def _apply_comunas_bruto(cols: List[Dict[str, Any]], data: Dict[str, Any]) -> None:
+    """
+    Si viene un neto en payload, setea el bruto automáticamente (si existen columnas).
+    CLP: redondeamos a entero.
+    """
+    try:
+        colset = {c["column_name"] for c in cols}
+        iva = 1.19
+
+        def _round_clp(x: Any) -> int | None:
+            try:
+                n = float(x)
+            except Exception:
+                return None
+            return int(round(n))
+
+        if "neto" in data and "bruto" in colset and "bruto" not in data:
+            n = _round_clp(float(data.get("neto")) * iva) if data.get("neto") is not None else None
+            if n is not None:
+                data["bruto"] = n
+        if "monto_neto" in data and "monto_bruto" in colset and "monto_bruto" not in data:
+            n = _round_clp(float(data.get("monto_neto")) * iva) if data.get("monto_neto") is not None else None
+            if n is not None:
+                data["monto_bruto"] = n
+        if "costo_traslado" in data and "costo_traslado_bruto" in colset and "costo_traslado_bruto" not in data:
+            n = _round_clp(float(data.get("costo_traslado")) * iva) if data.get("costo_traslado") is not None else None
+            if n is not None:
+                data["costo_traslado_bruto"] = n
+    except Exception:
+        return
+
 def _as_text(v: Any) -> str:
     if v is None:
         return ""
@@ -1127,6 +1238,9 @@ def list_rows(
     if table == "productos":
         # Esto evita que ejecutivos pierdan catálogos por marcas escritas distinto.
         _normalize_productos_marcas_once()
+    if table == "comunas":
+        # Backfill bruto 1 vez por día (idempotente).
+        _ensure_comunas_bruto_once()
     cols = _cols_for(table)
     pk = _pk_for(table)
     hidden = set(_hidden_for(table))
@@ -1235,6 +1349,10 @@ def create_row(
 
     if table == "usuarios" and "hashed_password" not in data:
         raise HTTPException(400, detail="Password requerido")
+
+    # comunas: auto-calcula bruto en base a neto (si corresponde).
+    if table == "comunas":
+        _apply_comunas_bruto(cols, data)
 
     # roles: evitar error genérico por UNIQUE(nombre)
     if table == "roles" and data.get("nombre"):
@@ -1521,6 +1639,10 @@ def update_row(
 
     if not data:
         raise HTTPException(400, detail="Nada que actualizar")
+
+    # comunas: auto-calcula bruto en base a neto (si corresponde).
+    if table == "comunas":
+        _apply_comunas_bruto(cols, data)
 
     # usuarios: map rol -> id_rol si falta
     if table == "usuarios" and "id_rol" not in data and data.get("rol"):

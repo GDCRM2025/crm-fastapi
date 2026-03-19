@@ -24,6 +24,34 @@ def _lead_quote_path(id_lead: int) -> Path:
 def now():
     return datetime.now(timezone.utc)
 
+def _append_notas(conn, id_lead: int, text_block: str) -> None:
+    """
+    Append seguro a leads.notas (no rompe si la columna no existe).
+    """
+    try:
+        cols = _cols_for("leads")
+        if "notas" not in cols:
+            return
+        block = (text_block or "").strip()
+        if not block:
+            return
+        conn.execute(
+            text(
+                """
+                UPDATE public.leads
+                SET notas = CASE
+                  WHEN COALESCE(notas,'') = '' THEN :b
+                  ELSE notas || E'\n\n' || :b
+                END,
+                updated_at = now()
+                WHERE id_lead=:id
+                """
+            ),
+            {"id": int(id_lead), "b": block},
+        )
+    except Exception:
+        return
+
 def _cols_for(table: str) -> set[str]:
     with get_connection() as conn:
         rows = conn.execute(text("""
@@ -962,17 +990,18 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
         return {"ok": True, "id_lead": int(new_id)}
 
 @router.put("/leads/{id_lead}")
-def update_lead(id_lead: int, payload: dict = Body(...)):
+def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
     with get_connection() as conn:
         row = conn.execute(
-            text("SELECT id_marca, notas FROM public.leads WHERE id_lead=:id"),
+            text("SELECT id_marca, id_estado, notas FROM public.leads WHERE id_lead=:id"),
             {"id": id_lead},
         ).first()
         exists = bool(row)
         if not exists:
             raise HTTPException(404, "Lead no existe")
         old_id_marca = row[0] if row else None
-        old_notas = row[1] if row else None
+        old_estado = row[1] if row else None
+        old_notas = row[2] if row else None
 
         cliente = payload.get("cliente")
         if cliente is None:
@@ -1037,6 +1066,20 @@ def update_lead(id_lead: int, payload: dict = Body(...)):
             "notas": notas_val,
             "num_cotizacion": payload.get("num_cotizacion"),
         })
+
+        # Trazabilidad: si cambió estado desde este endpoint, agregar nota (timestamp + actor).
+        try:
+            if id_estado is not None and (str(id_estado).strip() != ""):
+                new_estado = int(id_estado)
+                old_estado_i = int(old_estado) if str(old_estado or "").isdigit() else None
+                if old_estado_i and new_estado and old_estado_i != new_estado:
+                    old_name = conn.execute(text("SELECT nombre FROM public.estados_lead WHERE id_estado=:i"), {"i": old_estado_i}).scalar() or str(old_estado_i)
+                    new_name = conn.execute(text("SELECT nombre FROM public.estados_lead WHERE id_estado=:i"), {"i": new_estado}).scalar() or str(new_estado)
+                    actor = (user.get("name") or user.get("username") or user.get("id") or "Usuario")
+                    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    _append_notas(conn, id_lead, f"[ESTADO {ts}] {actor}: {old_name} → {new_name}")
+        except Exception:
+            pass
 
         # Regla negocio (consistencia): si el lead ya tiene cotización (monto/num/pdf/cotizaciones),
         # NO debe quedarse en NUEVO/CONTACTADO. Lo subimos a COTIZADO automáticamente
@@ -1167,7 +1210,7 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
         return {"ok": True}
 
 @router.patch("/leads/{id_lead}/estado")
-def move_estado(id_lead: int, payload: dict = Body(...)):
+def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
     """
     Payload:
       { "id_estado": 3 }
@@ -1182,9 +1225,10 @@ def move_estado(id_lead: int, payload: dict = Body(...)):
     undo_preagenda = bool(payload.get("undo_preagenda", False))
 
     with get_connection() as conn:
-        lead = conn.execute(text("SELECT id_lead FROM public.leads WHERE id_lead=:id"), {"id": id_lead}).first()
+        lead = conn.execute(text("SELECT id_lead, id_estado FROM public.leads WHERE id_lead=:id"), {"id": id_lead}).first()
         if not lead:
             raise HTTPException(404, "Lead no existe")
+        old_estado = lead[1] if lead and len(lead) > 1 else None
 
         estado_row = conn.execute(
             text("SELECT id_estado, nombre FROM public.estados_lead WHERE id_estado=:i"),
@@ -1263,6 +1307,19 @@ def move_estado(id_lead: int, payload: dict = Body(...)):
               SET id_estado=:e, declinado_motivo=NULL, declinado_at=NULL, updated_at=now()
               WHERE id_lead=:id
             """), {"e": id_estado, "id": id_lead})
+
+        # Nota automática de cambio de estado (siempre).
+        try:
+            old_estado_i = int(old_estado) if str(old_estado or "").isdigit() else None
+            new_estado_i = int(id_estado)
+            if old_estado_i and new_estado_i and old_estado_i != new_estado_i:
+                old_name = conn.execute(text("SELECT nombre FROM public.estados_lead WHERE id_estado=:i"), {"i": old_estado_i}).scalar() or str(old_estado_i)
+                new_name = conn.execute(text("SELECT nombre FROM public.estados_lead WHERE id_estado=:i"), {"i": new_estado_i}).scalar() or str(new_estado_i)
+                who = (user.get("name") or user.get("username") or user.get("id") or "Usuario")
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+                _append_notas(conn, id_lead, f"[ESTADO {ts}] {who}: {old_name} → {new_name}")
+        except Exception:
+            pass
 
         conn.commit()
 

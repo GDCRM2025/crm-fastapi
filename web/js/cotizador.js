@@ -127,11 +127,16 @@
   async function getProductos() {
     // Cache por sesión para acelerar abrir el cotizador (muy usado por ejecutivos).
     const cacheKey = `gd_cotizador_products_${(lead?.marca_nombre || lead?.marca || "ALL").toString().trim().toUpperCase()}`;
+    let cachedArr = null;
     try{
       const cached = sessionStorage.getItem(cacheKey);
       if (cached){
-        const arr = JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        // compat: antes guardábamos solo array
+        const arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.items) ? parsed.items : []);
         if (Array.isArray(arr) && arr.length){
+          cachedArr = arr;
+          // Pintamos rápido, pero igual refrescamos desde servidor para no “perder” productos nuevos.
           productosIndex = arr;
           dlProductos.innerHTML = "";
           for (const p of productosIndex) {
@@ -140,7 +145,6 @@
             opt.label = p.producto;
             dlProductos.appendChild(opt);
           }
-          return;
         }
       }
     }catch(_){}
@@ -199,8 +203,13 @@
       dlProductos.appendChild(opt);
     }
 
+    if (!productosIndex.length && cachedArr && cachedArr.length){
+      // Si falló el fetch (o filtró todo), mantenemos el cache previo para no dejar cotizador vacío.
+      productosIndex = cachedArr;
+      return;
+    }
     try{
-      if (productosIndex.length) sessionStorage.setItem(cacheKey, JSON.stringify(productosIndex));
+      if (productosIndex.length) sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), items: productosIndex }));
     }catch(_){}
   }
 

@@ -1284,7 +1284,72 @@ function doCall(lead){
 function doWhatsApp(lead){
   const tel = String(lead.telefono || "").replace(/\D/g,"");
   if (!tel){ toast("Lead sin teléfono", "warning"); return; }
-  window.open("https://wa.me/" + tel, "_blank", "noopener");
+  // Selección de mensaje (50) antes de abrir WhatsApp (requerimiento).
+  const tpls = followupTemplatesFor(lead);
+  const stName = estadoNombre(lead?.id_estado || "") || "SEGUIMIENTO";
+  const opts = tpls.map((t, i) => `<option value="${i}">WSP ${String(i+1).padStart(2,"0")} · ${escapeHtml(stName)}</option>`).join("");
+  Swal.fire({
+    title: "WhatsApp",
+    html: `
+      <div style="text-align:left;display:grid;gap:10px">
+        <label>Plantilla (${tpls.length})
+          <select id="sw_wa_tpl" class="swInp">${opts}</select>
+        </label>
+        <label>Mensaje (editable)
+          <textarea id="sw_wa_txt" class="swInp" rows="7"></textarea>
+        </label>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: "Abrir WhatsApp",
+    cancelButtonText: "Cancelar",
+    showDenyButton: true,
+    denyButtonText: "Copiar",
+    didOpen: () => {
+      const sel = document.getElementById("sw_wa_tpl");
+      const ta = document.getElementById("sw_wa_txt");
+      const apply = () => {
+        const idx = Number(sel?.value || 0);
+        const msg = String(tpls[idx] || "");
+        if (ta) ta.value = msg;
+      };
+      if (sel) sel.addEventListener("change", apply);
+      apply();
+    },
+    preConfirm: () => {
+      const sel = document.getElementById("sw_wa_tpl");
+      const ta = document.getElementById("sw_wa_txt");
+      const v = (ta?.value || "").trim();
+      if (!v) { Swal.showValidationMessage("Mensaje vacío"); return false; }
+      const idx = Number(sel?.value || 0);
+      return { msg: v, idx };
+    },
+    preDeny: () => {
+      const ta = document.getElementById("sw_wa_txt");
+      const v = (ta?.value || "").trim();
+      if (!v) return false;
+      try{ navigator.clipboard.writeText(v); }catch(_){}
+      return false;
+    }
+  }).then(async (res)=>{
+    if (res.isDenied) return;
+    if (!res.isConfirmed) return;
+    const msg = String(res.value?.msg || "").trim();
+    const idx = Number(res.value?.idx || 0);
+    // Log historial (best-effort)
+    try{
+      await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({
+          kind: "WSP",
+          title: `WhatsApp ${String(idx+1).padStart(2,"0")} · ${stName}`,
+          text: msg,
+        }),
+      });
+    }catch(_){}
+    window.open("https://wa.me/" + tel + "?text=" + encodeURIComponent(msg), "_blank", "noopener");
+  });
 }
 
 async function doSeguimiento(lead){
@@ -2477,16 +2542,12 @@ async function openEditModal(lead){
     `<label>N° Cotización<input id="e_numcot" class="swInp" value="${escapeHtml(String(lead.num_cotizacion ?? ""))}" /></label>` +
     `<label>Monto cotizado<input id="e_monto" class="swInp" type="number" step="0.01" value="${escapeHtml(String(lead.monto_cotizado ?? 0))}" /></label>` +
     `<label class="span2">Dirección<input id="e_dir" class="swInp" value="${escapeHtml(lead.direccion || "")}" /></label>` +
-    `<label class="span2">WhatsApp (seguimiento por estado)
-        <div class="wspBox">
-          <div class="wspRow">
-            <select id="e_wsp_tpl" class="swSel"></select>
-            <button type="button" class="swBtn secondary" id="e_wsp_copy" style="white-space:nowrap">Copiar</button>
-            <button type="button" class="swBtn" id="e_wsp_send" style="white-space:nowrap">Enviar</button>
-          </div>
-          <textarea id="e_wsp_msg" class="swTa" style="min-height:120px" placeholder="Selecciona una plantilla o escribe tu mensaje…"></textarea>
-          <div class="muted" style="margin-top:6px">Al enviar se abre WhatsApp y se registra en Historial con timestamp.</div>
+    `<label class="span2">Acciones rápidas
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
+          <button type="button" class="swBtn secondary" id="e_call" style="white-space:nowrap">Llamar</button>
+          <button type="button" class="swBtn" id="e_wsp" style="white-space:nowrap">WhatsApp</button>
         </div>
+        <div class="muted" style="margin-top:6px">WhatsApp muestra 50 mensajes por estado antes de abrir.</div>
      </label>` +
     `<label class="span2">PDF Cotización
         <input id="e_pdf" class="swInp" type="file" accept="application/pdf" />
@@ -2520,82 +2581,20 @@ async function openEditModal(lead){
       let localPdfFile = null;
       let isUploadingPdf = false;
       let metaSaveT = null;
-      const wspSel = qs("#e_wsp_tpl");
-      const wspTa = qs("#e_wsp_msg");
-      const wspCopy = qs("#e_wsp_copy");
-      const wspSend = qs("#e_wsp_send");
-      const estadoSel = qs("#e_estado");
-
-      function normTel(raw){
-        const tel = String(raw || "").replace(/\D/g, "");
-        // si viene sin 56 pero es móvil CL 9 dígitos, lo dejamos igual; wa.me acepta ambos
-        return tel;
-      }
-
-      function buildWspTemplates(){
-        // usa el motor existente (50 por estado)
-        const tmp = { ...(lead||{}) };
-        try{ tmp.id_estado = Number(estadoSel?.value || lead.id_estado || 0); }catch(_){}
-        return followupTemplatesFor(tmp);
-      }
-
-      function refreshWsp(){
-        if (!wspSel || !wspTa) return;
-        const tpls = buildWspTemplates();
-        const stName = estadoNombre(Number(estadoSel?.value || lead.id_estado || 0)) || "SEGUIMIENTO";
-        wspSel.innerHTML = tpls.map((_, i)=>`<option value="${i}">WSP ${String(i+1).padStart(2,"0")} · ${escapeHtml(stName)}</option>`).join("");
-        const apply = ()=>{
-          const idx = Number(wspSel.value || 0);
-          wspTa.value = String(tpls[idx] || "").trim();
-        };
-        wspSel.onchange = apply;
-        apply();
-      }
-
-      async function logWspToHist(title, text){
-        try{
-          await apiJSON(`/leads/${lead.id_lead}/append_note`, {
-            method: "POST",
-            headers: { "Content-Type":"application/json" },
-            body: JSON.stringify({ kind: "WSP", title, text }),
-          });
-          // refleja también en el textarea de notas para feedback inmediato
-          try{
-            const nEl = qs("#e_notas");
-            if (nEl){
-              const cur = (nEl.value || "").trim();
-              const block = `\n\n[WSP] ${title}\n${text}`.trim();
-              nEl.value = (cur ? (cur + "\n\n") : "") + block;
-            }
-          }catch(_){}
-        }catch(_){}
-      }
-
-      if (wspCopy && wspTa){
-        wspCopy.addEventListener("click", async ()=>{
-          const msg = String(wspTa.value || "").trim();
-          if (!msg){ toast("Mensaje vacío", "warning"); return; }
-          try{ await navigator.clipboard.writeText(msg); toast("Copiado", "success"); }
-          catch(_){ toast("No pude copiar", "error"); }
-        });
-      }
-      if (wspSend && wspTa){
-        wspSend.addEventListener("click", async ()=>{
-          const msg = String(wspTa.value || "").trim();
-          if (!msg){ toast("Mensaje vacío", "warning"); return; }
-          const tel = normTel(lead.telefono);
+      const callBtn = qs("#e_call");
+      const wspBtn = qs("#e_wsp");
+      if (callBtn){
+        callBtn.addEventListener("click", ()=>{
+          const tel = String(lead.telefono || "").trim();
           if (!tel){ toast("Lead sin teléfono", "warning"); return; }
-          const idx = Number(wspSel?.value || 0);
-          const stName = estadoNombre(Number(estadoSel?.value || lead.id_estado || 0)) || "SEGUIMIENTO";
-          const title = `Seguimiento ${String(idx+1).padStart(2,"0")} · ${stName}`;
-          await logWspToHist(title, msg);
-          window.open("https://wa.me/" + tel + "?text=" + encodeURIComponent(msg), "_blank", "noopener");
+          window.open("tel:" + tel, "_self");
         });
       }
-      if (estadoSel){
-        estadoSel.addEventListener("change", refreshWsp);
+      if (wspBtn){
+        wspBtn.addEventListener("click", ()=>{
+          try{ doWhatsApp(lead); }catch(_){}
+        });
       }
-      refreshWsp();
 
       function setButtonsState(){
         const hasLocal = !!localPdfFile;

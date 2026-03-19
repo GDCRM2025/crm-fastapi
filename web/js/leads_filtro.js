@@ -193,10 +193,26 @@
     tbody.querySelectorAll('tr[data-lead]').forEach((tr) => {
       tr.addEventListener('mouseenter', onRowEnter);
       tr.addEventListener('mouseleave', hideTooltip);
+      tr.addEventListener('click', onOpenLead);
     });
     tbody.querySelectorAll('button[data-action="pdf"]').forEach((btn) => {
       btn.addEventListener('click', onVerCotizacion);
     });
+  }
+
+  function apiBase() {
+    return location.pathname.startsWith('/crm/') ? '/crm' : '';
+  }
+
+  function onOpenLead(ev) {
+    // si el click fue en botón PDF, no navegamos
+    const btn = ev.target && ev.target.closest && ev.target.closest('button');
+    if (btn) return;
+    const tr = ev.currentTarget;
+    const idLead = tr && tr.dataset ? tr.dataset.lead : '';
+    if (!idLead) return;
+    // Abrir ficha completa del lead (misma UI de Leads).
+    location.href = `${apiBase()}/web/views/leads.html?open_lead=${encodeURIComponent(idLead)}`;
   }
 
   // ---------- tooltip productos ----------

@@ -467,7 +467,26 @@ def pdf_placeholder(
     # para PDF preferimos logo remoto (mejor compatibilidad que webp local)
     logo = logo_for(marca_key, prefer_local=False)
 
-    numero = cot.get("numero") or cot.get("id_cotizacion")
+    # Numero visible (correlativo):
+    # - Preferimos `cotizaciones.numero` (secuencial por marca).
+    # - Si está vacío (legacy), usamos `leads.num_cotizacion`.
+    # - Último fallback: id_cotizacion.
+    numero = cot.get("numero")
+    try:
+        if numero is not None and str(numero).strip() != "":
+            numero = int(numero)
+    except Exception:
+        numero = None
+    if not numero:
+        try:
+            nlead = (lead.get("num_cotizacion") if lead else "") or ""
+            nlead = str(nlead).strip()
+            if nlead.isdigit():
+                numero = int(nlead)
+        except Exception:
+            numero = None
+    if not numero:
+        numero = cot.get("id_cotizacion")
     # revision (0=original)
     revision = 0
     try:
@@ -501,12 +520,29 @@ def pdf_placeholder(
     direccion = (lead.get("direccion") if lead else "") or ""
     telefono = (lead.get("telefono") if lead else "") or ""
 
+    def _safe_filename_part(s: str) -> str:
+        s = (s or "").strip()
+        if not s:
+            return ""
+        # keep simple: letters, numbers, spaces, dash, underscore
+        out = []
+        for ch in s:
+            if ch.isalnum() or ch in (" ", "-", "_"):
+                out.append(ch)
+        s2 = "".join(out).strip()
+        s2 = " ".join(s2.split())
+        return s2[:60]
+
     # path por marca y mes
     base_dir = Path(__file__).resolve().parents[2] / "data" / "quotes"
     yymm = (fecha_evento[:7] if fecha_evento else datetime.now().strftime("%Y-%m"))
     out_dir = base_dir / (marca_key or "GENERICA") / yymm
     out_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"cotizacion_{numero}" + (f"_v{revision}" if revision > 0 else "") + ".pdf"
+    cliente_part = _safe_filename_part(str(nombre_cliente or ""))
+    vpart = (f" ({revision})" if revision > 0 else "")
+    # Nombre final para descarga/archivo:
+    # "Cotizacion 12947 (1) - Oscar Mendoza.pdf"
+    filename = f"Cotizacion {numero}{vpart}" + (f" - {cliente_part}" if cliente_part else "") + ".pdf"
     pdf_path = out_dir / filename
 
     def _drive_assets_ttl_seconds() -> int:
