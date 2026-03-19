@@ -204,6 +204,12 @@
     window.addEventListener("message",(ev)=>{
       if(ev.data?.type==="theme") document.documentElement.classList.toggle("light", ev.data.mode==="light");
     });
+    // Cerrar el modal embebido cuando el iframe (leads.html?embed=1) cierre el lead.
+    window.addEventListener("message",(ev)=>{
+      if (ev?.data?.type === "embed:close"){
+        try{ Swal.close(); }catch(_){}
+      }
+    });
 
     function money(n){
       const v=Number(n||0);
@@ -321,6 +327,17 @@
     async function doCall(lead){
       const tel = String(lead?.telefono || "").trim();
       if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+      try{
+        await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({
+            kind: "CALL",
+            title: "Llamada iniciada",
+            text: `Se inicia llamada a ${tel}.`,
+          }),
+        });
+      }catch(_){}
       window.open("tel:" + tel, "_self");
     }
 

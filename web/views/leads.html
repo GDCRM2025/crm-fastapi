@@ -340,8 +340,8 @@
 	    /* Agenda modal: permitir scroll dentro del contenido */
 	    .gdAgenda .swal2-html-container{ max-height: 78vh; overflow:auto !important; }
 	    /* Edit modal: sin scroll global (solo Notas/Historial) */
-	    .gdEditLead .swal2-html-container{ max-height: 72vh; overflow: hidden !important; }
-	    .gdEditLead .swForm{ max-height: 70vh; overflow: hidden; }
+	    .gdEditLead .swal2-html-container{ max-height: 72vh; overflow: auto !important; }
+	    .gdEditLead .swForm{ max-height: 70vh; overflow: auto; }
 	    .gdEditLead #e_notas{ max-height: 22vh; overflow:auto; }
 
 	    /* WhatsApp picker: más legible */
@@ -2812,30 +2812,30 @@ async function openEditModal(lead){
      </label>` +
     `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa" spellcheck="false">${escapeHtml(lead.notas || "")}</textarea></label>` +
     `<label class="span2">Agregar comentario<textarea id="e_comment" class="swTa" rows="2" placeholder="Nuevo comentario..."></textarea></label>` +
-	    `<label class="span2">
-	        <div style="margin-top:4px;padding:12px;border:1px solid rgba(25,195,125,.25);background:rgba(25,195,125,.10);border-radius:14px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap">
-	          <button type="button" class="swBtn secondary" id="e_call" style="white-space:nowrap">Llamar</button>
-	          <button type="button" class="swBtn secondary" id="e_wsp_copy" style="white-space:nowrap">Copiar WSP</button>
-	          <button type="button" class="swBtn" id="e_wsp" style="white-space:nowrap">WhatsApp</button>
-	        </div>
-	        <div class="muted" style="margin-top:8px;text-align:center">WhatsApp muestra 50 mensajes por estado antes de abrir.</div>
-	     </label>` +
     '</div></div>';
 
-	  const res = await Swal.fire({
-	    title: "Editar lead de: " + (lead.cliente || lead.nombre_cliente || ("#" + lead.id_lead)),
-	    html,
-	    width: 860,
-	    focusConfirm: false,
-	    allowOutsideClick: false,
-	    customClass: { popup: "gdEditLead" },
-	    showCancelButton: true,
-	    confirmButtonText: "Guardar",
-	    cancelButtonText: "Cerrar",
-    showDenyButton: isAdmin,
-    denyButtonText: "Borrar lead",
-    denyButtonColor: "#ef4444",
-    didOpen: ()=>{
+	  const isEmbed = (()=>{
+	    try{ return new URLSearchParams(location.search).get("embed") === "1"; }catch(_){ return false; }
+	  })();
+
+		  const res = await Swal.fire({
+		    title: "Editar lead de: " + (lead.cliente || lead.nombre_cliente || ("#" + lead.id_lead)),
+		    html,
+		    width: 860,
+		    focusConfirm: false,
+		    allowOutsideClick: false,
+		    customClass: { popup: "gdEditLead" },
+		    showCancelButton: true,
+		    confirmButtonText: "Guardar",
+		    cancelButtonText: "Cerrar",
+	    showDenyButton: isAdmin,
+	    denyButtonText: "Borrar lead",
+	    denyButtonColor: "#ef4444",
+		    willClose: ()=>{
+		      if (!isEmbed) return;
+		      try{ window.parent?.postMessage({ type:"embed:close", id_lead: lead.id_lead }, "*"); }catch(_){}
+		    },
+	    didOpen: ()=>{
       const viewBtn = qs("#e_viewpdf");
       const ocrBtn = qs("#e_ocrpdf");
       const hint = qs("#e_pdfhint");
@@ -2843,26 +2843,61 @@ async function openEditModal(lead){
       let localPdfFile = null;
       let isUploadingPdf = false;
       let metaSaveT = null;
-	      const callBtn = qs("#e_call");
-	      const wspBtn = qs("#e_wsp");
-	      const wspCopyBtn = qs("#e_wsp_copy");
-	      if (callBtn){
-	        callBtn.addEventListener("click", ()=>{
-	          const tel = String(lead.telefono || "").trim();
-	          if (!tel){ toast("Lead sin teléfono", "warning"); return; }
-	          window.open("tel:" + tel, "_self");
-	        });
-	      }
-	      if (wspBtn){
-	        wspBtn.addEventListener("click", ()=>{
-	          try{ doWhatsApp(lead, { defaultAction:"open" }); }catch(_){}
-	        });
-	      }
-	      if (wspCopyBtn){
-	        wspCopyBtn.addEventListener("click", ()=>{
-	          try{ doWhatsApp(lead, { defaultAction:"copy" }); }catch(_){}
-	        });
-	      }
+		      // Acciones rápidas junto a Guardar/Cerrar (acciones de SweetAlert)
+		      try{
+		        const actions = Swal.getActions?.();
+		        if (actions && !actions.querySelector("[data-gd-qa]")){
+		          const wrap = document.createElement("div");
+		          wrap.setAttribute("data-gd-qa","1");
+		          wrap.style.display = "flex";
+		          wrap.style.gap = "8px";
+		          wrap.style.flexWrap = "wrap";
+		          wrap.style.alignItems = "center";
+		          wrap.style.marginRight = "10px";
+
+		          const mk = (txt, cls)=>{
+		            const b = document.createElement("button");
+		            b.type = "button";
+		            b.className = cls;
+		            b.textContent = txt;
+		            return b;
+		          };
+
+		          const btnCall = mk("Llamar", "swBtn secondary");
+		          const btnCopy = mk("Copiar WSP", "swBtn secondary");
+		          const btnWa = mk("WhatsApp", "swBtn");
+
+		          const logAction = async (kind, title, text)=>{
+		            try{
+		              await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+		                method: "POST",
+		                headers: { "Content-Type":"application/json" },
+		                body: JSON.stringify({ kind, title, text }),
+		              });
+		            }catch(_){}
+		          };
+
+		          btnCall.addEventListener("click", async ()=>{
+		            const tel = String(lead.telefono || "").trim();
+		            if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+		            await logAction("CALL", "Llamada iniciada", `Se inicia llamada a ${tel}.`);
+		            window.open("tel:" + tel, "_self");
+		          });
+		          btnWa.addEventListener("click", ()=>{
+		            try{ doWhatsApp(lead, { defaultAction:"open" }); }catch(_){}
+		          });
+		          btnCopy.addEventListener("click", ()=>{
+		            try{ doWhatsApp(lead, { defaultAction:"copy" }); }catch(_){}
+		          });
+
+		          wrap.appendChild(btnCall);
+		          wrap.appendChild(btnCopy);
+		          wrap.appendChild(btnWa);
+
+		          // Insertar antes de botones de Swal (al inicio)
+		          actions.insertBefore(wrap, actions.firstChild);
+		        }
+		      }catch(_){}
 
       function setButtonsState(){
         const hasLocal = !!localPdfFile;
