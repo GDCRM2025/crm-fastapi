@@ -2471,17 +2471,17 @@ async function handleConfirmado(lead, newEstado){
 	      updDur();
 	      await runPreview();
 	    },
-    preConfirm: ()=>{
-      const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
-      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
-      const idCot = (quoteSource === "cotizador") ? qSel : null;
-      const hrTbd = !!qs("#ag_hrtbd")?.checked;
-      const hIni = (qs("#ag_hini")?.value || "").trim();
-      const hFin = (qs("#ag_hfin")?.value || "").trim();
-      if (!hrTbd && (!hIni || !hFin)) return Swal.showValidationMessage("Debes indicar horas o marcar HR TBD.");
-      saveCurrentDay();
-      const overrideByDay = [];
-      for (const e of (previewEvents || [])){
+	    preConfirm: ()=>{
+	      const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
+	      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
+	      const idCot = (quoteSource === "cotizador") ? qSel : null;
+	      const hrTbd = !!qs("#ag_hrtbd")?.checked;
+	      const hIni = (qs("#ag_hini")?.value || "").trim();
+	      const hFin = (qs("#ag_hfin")?.value || "").trim();
+	      if (!hrTbd && (!hIni || !hFin)) return Swal.showValidationMessage("Debes indicar horas o marcar HR TBD.");
+	      saveCurrentDay();
+	      const overrideByDay = [];
+	      for (const e of (previewEvents || [])){
         const day = String(e.day || "").slice(0,10);
         if (!day) continue;
         const ed = dayEdits[day];
@@ -2490,14 +2490,38 @@ async function handleConfirmado(lead, newEstado){
         const row = { day };
         const opsV = (ed?.ops ?? "").toString().trim();
         const mtV = (ed?.montaje ?? "").toString().trim();
-        if ((td?.ops || false) && opsV !== "") row.ops = Number(opsV);
-        if ((td?.montaje || false) && mtV) row.montaje_text = mtV;
-        if (row.ops != null || row.montaje_text) overrideByDay.push(row);
-      }
-      return {
-        quote_source: quoteSource,
-        id_cotizacion: idCot ? Number(idCot) : null,
-        hr_tbd: hrTbd,
+	        if ((td?.ops || false) && opsV !== "") row.ops = Number(opsV);
+	        if ((td?.montaje || false) && mtV) row.montaje_text = mtV;
+	        if (row.ops != null || row.montaje_text) overrideByDay.push(row);
+	      }
+	      // Validación: SIEMPRE debe haber operadores (>=1) por día.
+	      // En manual multi-día esto es crítico para operaciones.
+	      const opsByDay = new Map();
+	      for (const r of overrideByDay){
+	        const d = String(r?.day || "").slice(0,10);
+	        if (d && r?.ops != null && Number.isFinite(Number(r.ops))) opsByDay.set(d, Number(r.ops));
+	      }
+	      for (let i=0;i<(previewEvents||[]).length;i++){
+	        const e = previewEvents[i] || {};
+	        const d = String(e.day || "").slice(0,10);
+	        const baseOps = Number(e.ops ?? 0);
+	        const finalOps = opsByDay.has(d) ? Number(opsByDay.get(d) || 0) : baseOps;
+	        if (!Number.isFinite(finalOps) || finalOps < 1){
+	          try{
+	            selectedIdx = Math.max(0, Math.min((previewEvents||[]).length-1, i));
+	            renderDayTabs();
+	            renderPreviewForSelectedDay();
+	            const el = qs("#ag_ops_day");
+	            el && el.focus && el.focus();
+	          }catch(_){}
+	          Swal.showValidationMessage(`Falta OPS (>=1) para ${d ? ("el día " + d) : "un día del evento"}.`);
+	          return false;
+	        }
+	      }
+	      return {
+	        quote_source: quoteSource,
+	        id_cotizacion: idCot ? Number(idCot) : null,
+	        hr_tbd: hrTbd,
         start_time: hIni,
         end_time: hFin,
         telefono: (qs("#ag_tel")?.value || "").trim(),

@@ -173,18 +173,44 @@ def _ensure_leads_delete_cols() -> None:
 def _clear_preagenda_fields(id_lead: int) -> None:
     cols = _cols_for("leads")
 
-    # Si existe un evento ya creado en Google Calendar, al "desconfirmar" debemos
-    # eliminarlo para evitar inconsistencias (evento huérfano en Calendar).
-    event_id = None
-    if "calendar_event_id" in cols:
-        try:
-            with get_connection() as conn:
-                event_id = conn.execute(
-                    text("SELECT calendar_event_id FROM public.leads WHERE id_lead=:id"),
-                    {"id": id_lead},
-                ).scalar()
-        except Exception:
-            event_id = None
+    # Si existen eventos ya creados en Google Calendar, al "desconfirmar" debemos
+    # eliminarlos para evitar inconsistencias (eventos huérfanos en Calendar).
+    # Para multi-día, se usa calendar_event_ids_json cuando existe.
+    event_ids: list[str] = []
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT
+                      COALESCE(calendar_event_id,'') AS eid,
+                      COALESCE(calendar_event_ids_json,'') AS eids_json
+                    FROM public.leads
+                    WHERE id_lead=:id
+                    """
+                ),
+                {"id": id_lead},
+            ).mappings().first()
+        if row:
+            eid = str(row.get("eid") or "").strip()
+            if eid:
+                event_ids.append(eid)
+            eids_json = str(row.get("eids_json") or "").strip()
+            if eids_json:
+                try:
+                    parsed = json.loads(eids_json)
+                    if isinstance(parsed, list):
+                        for x in parsed:
+                            s = str(x or "").strip()
+                            if s:
+                                event_ids.append(s)
+                except Exception:
+                    pass
+    except Exception:
+        event_ids = []
+    # De-dup manteniendo orden
+    seen = set()
+    event_ids = [x for x in event_ids if not (x in seen or seen.add(x))]
 
     def _try_delete_gcal_event(eid: str) -> bool:
         eid = (eid or "").strip()
@@ -243,11 +269,15 @@ def _clear_preagenda_fields(id_lead: int) -> None:
             return False
 
     deleted_ok = False
-    if event_id:
-        try:
-            deleted_ok = _try_delete_gcal_event(str(event_id))
-        except Exception:
-            deleted_ok = False
+    deleted_n = 0
+    if event_ids:
+        for eid in event_ids:
+            try:
+                if _try_delete_gcal_event(str(eid)):
+                    deleted_n += 1
+            except Exception:
+                pass
+        deleted_ok = deleted_n == len(event_ids)
 
     data = {}
     for col in (
@@ -255,7 +285,8 @@ def _clear_preagenda_fields(id_lead: int) -> None:
         "pre_ops","pre_telefono","pre_direccion","pre_description",
         "calendar_start","calendar_end","calendar_event_id",
         "calendar_html_link","agenda_approved_at","agenda_approved_by",
-        "pendiente_agendar"
+        "calendar_event_ids_json","calendar_html_links_json",
+        "pendiente_agendar",
     ):
         if col in cols:
             data[col] = None
@@ -270,7 +301,13 @@ def _clear_preagenda_fields(id_lead: int) -> None:
             try:
                 if "notas" in cols:
                     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    extra = f"[CALENDAR {ts}] Evento eliminado al sacar de CONFIRMADO" if deleted_ok else f"[CALENDAR {ts}] Lead sacado de CONFIRMADO (evento NO eliminado)"
+                    if event_ids:
+                        if deleted_n:
+                            extra = f"[CALENDAR {ts}] Eliminados {deleted_n}/{len(event_ids)} evento(s) al sacar de CONFIRMADO"
+                        else:
+                            extra = f"[CALENDAR {ts}] Lead sacado de CONFIRMADO (eventos NO eliminados)"
+                    else:
+                        extra = f"[CALENDAR {ts}] Lead sacado de CONFIRMADO (sin eventos asociados)"
                     conn.execute(
                         text(
                             """

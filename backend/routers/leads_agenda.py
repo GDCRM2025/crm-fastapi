@@ -1095,6 +1095,13 @@ def _build_event_for_day(
 ) -> dict:
     _, ops_sug, montaje_sug, _products_text = _calcular_montaje(items_day)
     ops = int(override_ops) if override_ops is not None else ops_sug
+    # Regla negocio: SIEMPRE debe haber operadores (>=1), incluso en carga manual multi-día.
+    try:
+        ops = int(ops or 0)
+    except Exception:
+        ops = 0
+    if ops < 1:
+        ops = 1
     montaje_text = (override_montaje_text or "").strip() or montaje_sug
 
     lead2 = dict(lead or {})

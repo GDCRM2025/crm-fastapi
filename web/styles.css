@@ -617,6 +617,7 @@ body{
   display:flex;
   gap: var(--gap);
   padding: var(--gap);
+  min-height: 0;
 }
 
 /* Operadores/Conductores: portal full-screen sin sidebar (más legible en celular). */
@@ -635,6 +636,7 @@ body.ops-mode .main{
 
 .sidebar{
   width: var(--sidebar-w);
+  height: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
