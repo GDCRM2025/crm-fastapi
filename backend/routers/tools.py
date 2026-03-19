@@ -2758,16 +2758,16 @@ def approve_agenda(
         except Exception:
             pass
 
-            db.commit()
-            return {
-                "ok": True,
-                "connected": connected,
-                "calendar_html_link": first_link,
-                "calendar_event_id": first_eid,
-                "calendar_html_links": links,
-                "calendar_event_ids": event_ids,
-                "gcal_error": gcal_error,
-            }
+        db.commit()
+        return {
+            "ok": True,
+            "connected": connected,
+            "calendar_html_link": first_link,
+            "calendar_event_id": first_eid,
+            "calendar_html_links": links,
+            "calendar_event_ids": event_ids,
+            "gcal_error": gcal_error,
+        }
     except HTTPException:
         raise
     except Exception as e:
