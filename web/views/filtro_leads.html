@@ -97,6 +97,25 @@
     tbody tr:hover{ background: rgba(255,255,255,.03); }
 
     .hint{ margin-top:10px; color:var(--muted); font-weight:800; font-size:12px; }
+
+    .miniBtn{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+      padding:6px 8px;
+      border-radius:10px;
+      font-weight:950;
+      font-size:12px;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .miniBtn:hover{ filter:brightness(1.06); }
+    .miniBtn.wa{ border-color: rgba(25,195,125,.35); background: rgba(25,195,125,.14); }
+    .miniBtn.tel{ border-color: rgba(96,165,250,.35); background: rgba(96,165,250,.14); }
+
+    /* SweetAlert embed */
+    .gdFilterEmbed.swal2-popup{ width: min(1200px, 94vw) !important; padding: 12px !important; }
+    .gdFilterEmbed .swal2-html-container{ max-height: 84vh; overflow:hidden !important; padding:0 !important; margin:0 !important; }
   </style>
 </head>
 <body>
@@ -149,11 +168,13 @@
           <tr>
             <th style="width:70px">ID</th>
             <th>Cliente</th>
+            <th style="width:150px">Teléfono</th>
             <th style="width:160px">Marca</th>
             <th style="width:160px">Estado</th>
             <th style="width:140px">Fecha</th>
             <th style="width:180px">Comuna</th>
             <th style="width:130px">Monto</th>
+            <th style="width:170px">Acciones</th>
           </tr>
         </thead>
         <tbody id="tb"></tbody>
@@ -163,9 +184,22 @@
 
   <script type="module">
     const qs=(s,el=document)=>el.querySelector(s);
+    const qsa=(s,el=document)=>[...el.querySelectorAll(s)];
 
     function getToken(){ return localStorage.getItem("token")||sessionStorage.getItem("token")||""; }
     function authHeaders(extra={}){ const t=getToken(); return t?{...extra,Authorization:`Bearer ${t}`} : extra; }
+    async function apiJSON(url, init={}){
+      const r = await fetch(url, { ...init, headers: authHeaders(init.headers || {}) });
+      const text = await r.text();
+      let j = null;
+      try{ j = text ? JSON.parse(text) : null; }catch(_){}
+      if(!r.ok){
+        const msg = (j && (j.detail || j.error)) ? (j.detail || j.error) : (text || (r.status + ""));
+        throw new Error(String(msg));
+      }
+      return j;
+    }
+    const toast = (t, icon="info") => Swal.fire({ toast:true, position:"top-end", timer:2200, showConfirmButton:false, icon, title:t });
 
     window.addEventListener("message",(ev)=>{
       if(ev.data?.type==="theme") document.documentElement.classList.toggle("light", ev.data.mode==="light");
@@ -222,41 +256,247 @@
       return {mMarca,mComuna,mEstado};
     }
 
+    function estadoNombre(id){
+      const est = (CATS?.estados || []).find(e => Number(e.id_estado) === Number(id));
+      return (est?.nombre || est?.estado || "").toString().toUpperCase();
+    }
+
+    function renderTpl(t, lead){
+      const {mMarca}=maps();
+      const cliente = (lead?.cliente || lead?.nombre_cliente || "").trim();
+      const marca = (lead?.marca_nombre || mMarca[lead?.id_marca] || "").trim();
+      const fecha = String(lead?.fecha_evento || "").slice(0,10);
+      return String(t || "")
+        .replaceAll("{cliente}", cliente || "cliente")
+        .replaceAll("{marca}", marca || "marca")
+        .replaceAll("{fecha_evento}", fecha || "");
+    }
+
+    function followupTemplatesFor(lead){
+      const st = estadoNombre(lead?.id_estado || "") || "SEGUIMIENTO";
+      const fecha = String(lead?.fecha_evento || "").slice(0, 10);
+      const num = String(lead?.num_cotizacion || "").trim();
+      const monto = money(lead?.monto_cotizado || 0);
+
+      const openers = [
+        "Hola {cliente}, soy del equipo {marca}.",
+        "Hola {cliente}, ¿cómo estás? Soy del equipo {marca}.",
+        "Hola {cliente}, te escribo por tu solicitud en {marca}.",
+        "Hola {cliente}, te contacto para avanzar con tu evento.",
+        "Hola {cliente}, gracias por escribirnos.",
+        "Hola {cliente}, quedo atento(a) para coordinar tu servicio.",
+        "Hola {cliente}, te escribo para confirmar algunos detalles.",
+        "Hola {cliente}, ¿tienes un minuto para revisar el estado de tu cotización?",
+        "Hola {cliente}, quería dejarte un mensaje corto para coordinar.",
+        "Hola {cliente}, te escribo para cerrar los últimos detalles.",
+      ];
+      const closers = [
+        "Quedo atento(a).",
+        "Gracias, quedo atento(a) a tu confirmación.",
+        "Quedo pendiente para avanzar cuando me indiques.",
+        "Si te acomoda, lo cerramos hoy para asegurar disponibilidad.",
+        "Cualquier cosa me dices y lo ajustamos.",
+      ];
+
+      let body = "¿Me confirmas fecha, dirección y cantidad de personas para enviarte la propuesta final?";
+      if (st.includes("NUEVO") || st.includes("CONTACT")){
+        body = `Para ayudarte mejor, ¿me confirmas la fecha${fecha ? " (" + fecha + ")" : ""} y la cantidad aproximada de personas?`;
+      }else if (st.includes("COTIZ")){
+        body = `Te envié la cotización${num ? " N° " + num : ""}${monto ? " (" + monto + ")" : ""}. ¿La revisamos y la dejamos lista para aprobación?`;
+      }else if (st.includes("PEND") || st.includes("SEGUIM") || st.includes("ESPER")){
+        body = "Solo para confirmar si avanzamos con la reserva. Si hay algún cambio, lo ajustamos.";
+      }else if (st.includes("CONFIRM")){
+        body = "Para coordinar operación: ¿confirmamos horario de montaje/desmontaje y punto exacto de instalación?";
+      }
+
+      const out = [];
+      for (let i = 0; i < openers.length; i++){
+        for (let j = 0; j < closers.length; j++){
+          out.push(renderTpl(`${openers[i]}\n\n${body}\n\n${closers[j]}`, lead));
+        }
+      }
+      return out;
+    }
+
+    async function doCall(lead){
+      const tel = String(lead?.telefono || "").trim();
+      if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+      window.open("tel:" + tel, "_self");
+    }
+
+    async function doWhatsApp(lead){
+      const tel = String(lead?.telefono || "").replace(/\D/g,"");
+      if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+      const tpls = followupTemplatesFor(lead);
+      const stName = estadoNombre(lead?.id_estado || "") || "SEGUIMIENTO";
+      const labels = tpls.map((t, i)=>{
+        const txt = String(t || "").trim();
+        const first = (txt.split("\n").map(x=>x.trim()).find(Boolean) || "").replace(/\s{2,}/g," ");
+        const short = first.length > 54 ? (first.slice(0,54) + "…") : first;
+        return `WSP ${String(i+1).padStart(2,"0")} · ${short || stName}`;
+      });
+
+      const escapeHtml = (s)=>String(s??"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]));
+
+      const res = await Swal.fire({
+        title: "WhatsApp",
+        html: `
+          <div style="text-align:left">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <div class="hint" style="margin:0;flex:1 1 auto">Estado: <b style="color:var(--text)">${escapeHtml(stName)}</b> · Plantillas: <b>${tpls.length}</b></div>
+              <input id="sw_wa_q" placeholder="Buscar plantilla…" style="flex:1 1 260px;min-width:220px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:10px;color:var(--text);font-weight:850;font-size:14px" />
+            </div>
+            <div style="display:grid;grid-template-columns: 320px 1fr;gap:12px;margin-top:10px;align-items:start">
+              <div id="sw_wa_list" style="max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:14px;background:var(--surface2);padding:10px"></div>
+              <div style="display:grid;gap:8px">
+                <div class="hint" style="margin:0;font-weight:950">Mensaje (editable)</div>
+                <textarea id="sw_wa_txt" rows="10" style="width:100%;border-radius:14px;border:1px solid var(--border);background:var(--surface2);color:var(--text);padding:12px 12px;font-weight:650;font-size:15px;line-height:1.35;resize:vertical;min-height:180px" placeholder="Mensaje…"></textarea>
+                <div class="hint" style="margin:0">Al abrir o copiar se registra en historial.</div>
+              </div>
+            </div>
+          </div>
+        `,
+        width: 980,
+        showCancelButton: true,
+        confirmButtonText: "Abrir WhatsApp",
+        showDenyButton: true,
+        denyButtonText: "Copiar",
+        cancelButtonText: "Cancelar",
+        focusConfirm: false,
+	        didOpen: ()=>{
+	          const listEl = document.getElementById("sw_wa_list");
+	          const qEl = document.getElementById("sw_wa_q");
+	          const ta = document.getElementById("sw_wa_txt");
+	          if (!listEl || !ta) return;
+	          let selectedIdx = 0;
+	          const setIdx = ()=>{
+	            try{ ta.dataset.idx = String(selectedIdx); }catch(_){}
+	          };
+	          const renderList = ()=>{
+	            const q = String(qEl?.value || "").trim().toLowerCase();
+	            const parts = [];
+            for (let i=0;i<labels.length;i++){
+              const lab = labels[i] || "";
+              const body = String(tpls[i] || "");
+              const hay = !q || lab.toLowerCase().includes(q) || body.toLowerCase().includes(q);
+              if (!hay) continue;
+              const active = i===selectedIdx;
+              parts.push(`
+                <button type="button" data-idx="${i}" style="width:100%;text-align:left;padding:12px 12px;border-radius:14px;margin-bottom:10px;border:1px solid ${active ? "rgba(25,195,125,.55)" : "var(--border)"};background:${active ? "rgba(25,195,125,.14)" : "rgba(255,255,255,.04)"};color:var(--text);font-weight:950;font-size:14px;line-height:1.25;white-space:normal;cursor:pointer">
+                  <div style="font-weight:1000">${escapeHtml(lab)}</div>
+                  <div style="opacity:.75;margin-top:6px;font-weight:750;font-size:13px;white-space:pre-line">${escapeHtml(body.split("\n").slice(1,3).join("\n"))}</div>
+                </button>
+              `);
+            }
+            listEl.innerHTML = parts.join("") || `<div class="hint" style="margin:0">Sin coincidencias.</div>`;
+            qsa("button[data-idx]", listEl).forEach(b=>{
+	              b.addEventListener("click", ()=>{
+	                const i = Number(b.getAttribute("data-idx") || 0);
+	                if (!Number.isFinite(i)) return;
+	                selectedIdx = i;
+	                ta.value = String(tpls[selectedIdx] || "");
+	                setIdx();
+	                renderList();
+	              });
+	            });
+	          };
+	          qEl && qEl.addEventListener("input", renderList);
+	          ta.value = String(tpls[0] || "");
+	          setIdx();
+	          renderList();
+	        },
+	        preConfirm: ()=>{
+	          const msg = (document.getElementById("sw_wa_txt")?.value || "").trim();
+	          if (!msg) return Swal.showValidationMessage("Mensaje vacío");
+	          const idx = Number(document.getElementById("sw_wa_txt")?.dataset?.idx || 0);
+	          return { action:"open", msg, idx };
+	        },
+	        preDeny: ()=>{
+	          const msg = (document.getElementById("sw_wa_txt")?.value || "").trim();
+	          if (!msg) return Swal.showValidationMessage("Mensaje vacío");
+	          const idx = Number(document.getElementById("sw_wa_txt")?.dataset?.idx || 0);
+	          return { action:"copy", msg, idx };
+	        }
+	      });
+      if (!res.isConfirmed && !res.isDenied) return;
+      const action = res.value?.action || (res.isDenied ? "copy" : "open");
+      const msg = String(res.value?.msg || "").trim();
+      if (!msg) return;
+      if (action === "copy"){
+        try{ await navigator.clipboard.writeText(msg); }catch(_){}
+      }
+      try{
+        await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({
+            kind: "WSP",
+            title: `WhatsApp · ${stName} · ${action==="copy" ? "COPIADO" : "ENVIADO"}`,
+            text: msg,
+          }),
+        });
+      }catch(_){}
+      if (action === "open"){
+        window.open("https://wa.me/" + tel + "?text=" + encodeURIComponent(msg), "_blank", "noopener");
+      }
+    }
+
+    function openLeadEmbed(id){
+      const idStr = String(id||"").trim();
+      if(!idStr) return;
+      const url = `/web/views/leads.html?embed=1&open_lead=${encodeURIComponent(idStr)}`;
+      Swal.fire({
+        title: `Lead #${idStr}`,
+        html: `<iframe src="${url}" style="width:100%;height:82vh;border:1px solid var(--border);border-radius:16px;background:var(--app-bg)"></iframe>`,
+        showConfirmButton: false,
+        showCloseButton: true,
+        allowOutsideClick: true,
+        customClass: { popup: "gdFilterEmbed" },
+      });
+    }
+
 	    function render(rows){
 	      const {mMarca,mComuna,mEstado}=maps();
 	      const tb=qs("#tb");
 	      tb.innerHTML="";
-	      const openLead = (id)=>{
-	        const idStr = String(id||"").trim();
-	        if (!idStr) return;
-	        const url = `/web/views/leads.html?open_lead=${encodeURIComponent(idStr)}`;
-	        try{
-	          if (window.parent && window.parent !== window && window.parent.postMessage){
-	            window.parent.postMessage({ type:"openItem", id:"leads_ver", url }, "*");
-	            return;
-	          }
-	        }catch(_){}
-	        location.href = url;
-	      };
 	      for(const l of rows){
 	        const tr=document.createElement("tr");
 	        tr.style.cursor = "pointer";
 	        tr.addEventListener("click", ()=>{
-	          openLead(l.id_lead);
+	          openLeadEmbed(l.id_lead);
 	        });
 	        const ingreso = l.fecha_ingreso || l.created_at || "";
 	        const dShow = (DATE_FIELD === "ingreso")
 	          ? (ingreso ? String(ingreso).slice(0,10) : "—")
 	          : (l.fecha_evento ? String(l.fecha_evento) : "—");
+	        const telShow = (l.telefono || l.phone || "").toString().trim() || "—";
 	        tr.innerHTML=`
 	          <td>${l.id_lead}</td>
 	          <td>${(l.nombre_cliente||"")}</td>
+	          <td>${telShow}</td>
 	          <td>${(mMarca[l.id_marca]||"")}</td>
 	          <td>${(mEstado[l.id_estado]||l.id_estado||"")}</td>
 	          <td>${dShow}</td>
 	          <td>${(mComuna[l.id_comuna]||"—")}</td>
 	          <td>${money(l.monto_cotizado)}</td>
+	          <td>
+	            <div style="display:flex;gap:8px;flex-wrap:wrap">
+	              <button type="button" class="miniBtn tel" data-act="tel">Llamar</button>
+	              <button type="button" class="miniBtn wa" data-act="wa">WhatsApp</button>
+	            </div>
+	          </td>
 	        `;
+	        tr.querySelectorAll("button[data-act]").forEach(btn=>{
+	          btn.addEventListener("click", async (e)=>{
+	            e.preventDefault(); e.stopPropagation();
+	            // Para acciones rápidas, traemos el lead completo (asegura teléfono/estado/nombre).
+	            let full = l;
+	            try{ full = await apiJSON(`/leads/${l.id_lead}`); }catch(_){}
+	            const act = btn.getAttribute("data-act");
+	            if (act === "tel") return doCall(full);
+	            if (act === "wa") return doWhatsApp(full);
+	          });
+	        });
 	        tb.appendChild(tr);
 	      }
 	      qs("#hint").textContent = `${rows.length} resultados`;

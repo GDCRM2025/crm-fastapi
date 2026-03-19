@@ -26,6 +26,10 @@
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       overflow-x:hidden; /* NO scroll lateral */
     }
+    body.embed .page{ padding:0; }
+    body.embed .toolbar,
+    body.embed #kanbanView,
+    body.embed #tableView{ display:none !important; }
     .page{ padding:14px; overflow-x:hidden; }
 
     .toolbar{
@@ -288,6 +292,27 @@
       border-color: rgba(25,195,125,.55);
       box-shadow: 0 0 0 3px rgba(25,195,125,.12);
     }
+    .swBtn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid rgba(25,195,125,.32);
+      background: rgba(25,195,125,.16);
+      color: var(--text);
+      font-weight: 950;
+      cursor:pointer;
+    }
+    .swBtn:hover{ filter:brightness(1.06); }
+    .swBtn.secondary{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--text);
+    }
+    .swBtn:disabled{ opacity:.45; cursor:not-allowed; filter:none; }
+
     .wspBox{
       margin-top:6px;
       padding:10px;
@@ -318,6 +343,12 @@
 	    .gdEditLead .swal2-html-container{ max-height: 72vh; overflow: hidden !important; }
 	    .gdEditLead .swForm{ max-height: 70vh; overflow: hidden; }
 	    .gdEditLead #e_notas{ max-height: 22vh; overflow:auto; }
+
+	    /* WhatsApp picker: más legible */
+	    .gdWsp .swal2-html-container{ max-height: 78vh; overflow:auto !important; }
+	    .gdWsp .swInp{ font-size:15px; font-weight:750; }
+	    .gdWsp .swTa{ font-size:16px; font-weight:650; line-height:1.35; min-height: 190px; }
+	    .gdWsp #sw_wa_list .swBtn{ font-size:14px; }
 
     /* ===== Mobile pragmatic mode ===== */
     @media (max-width: 820px){
@@ -1304,9 +1335,9 @@ function doCall(lead){
 	  });
 	  const otherAction = (defaultAction === "copy") ? "open" : "copy";
 
-	  Swal.fire({
-	    title: "WhatsApp",
-	    html: `
+		  Swal.fire({
+		    title: "WhatsApp",
+		    html: `
 	      <div class="wspBox" style="text-align:left">
 	        <div class="wspRow">
 	          <div class="muted" style="font-weight:950;flex:1 1 auto;min-width:0">Estado: <span style="color:var(--text)">${escapeHtml(stName)}</span> · Plantillas: <b>${tpls.length}</b></div>
@@ -1322,13 +1353,14 @@ function doCall(lead){
 	        </div>
 	      </div>
 	    `,
-	    showCancelButton: true,
-	    confirmButtonText: (defaultAction === "copy") ? "Copiar" : "Abrir WhatsApp",
-	    cancelButtonText: "Cancelar",
-	    showDenyButton: true,
-	    denyButtonText: (defaultAction === "copy") ? "Abrir WhatsApp" : "Copiar",
-	    didOpen: () => {
-	      const listEl = document.getElementById("sw_wa_list");
+		    showCancelButton: true,
+		    confirmButtonText: (defaultAction === "copy") ? "Copiar" : "Abrir WhatsApp",
+		    cancelButtonText: "Cancelar",
+		    showDenyButton: true,
+		    denyButtonText: (defaultAction === "copy") ? "Abrir WhatsApp" : "Copiar",
+		    customClass: { popup: "gdWsp" },
+		    didOpen: () => {
+		      const listEl = document.getElementById("sw_wa_list");
 	      const qEl = document.getElementById("sw_wa_q");
 	      const ta = document.getElementById("sw_wa_txt");
 	      if (!listEl || !ta) return;
@@ -2473,6 +2505,17 @@ async function handleConfirmado(lead, newEstado){
   const v = res.value || {};
 
   if (res.isDenied){
+    {
+      const ok = await Swal.fire({
+        icon: "question",
+        title: "¿Confirmar sin agendar?",
+        text: "El lead quedará confirmado, pero NO se creará evento en Google Calendar.",
+        showCancelButton: true,
+        confirmButtonText: "Sí, confirmar",
+        cancelButtonText: "Cancelar",
+      });
+      if (!ok.isConfirmed) return false;
+    }
     if (v.quote_source === "manual"){
       // Para confirmar sin agendar SOLO exigimos meta (monto + número),
       // pero NO obligamos productos manuales (se pueden cargar después).
@@ -2502,9 +2545,21 @@ async function handleConfirmado(lead, newEstado){
     if (!okItems) return false;
   }
 
-	  const payload = {
-	    id_estado: Number(newEstado),
-	    agendar: true,
+  {
+    const ok = await Swal.fire({
+      icon: "question",
+      title: "¿Confirmar evento?",
+      text: "Se confirmará el lead y se intentará crear/actualizar el/los evento(s) en Google Calendar.",
+      showCancelButton: true,
+      confirmButtonText: "Sí, confirmar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!ok.isConfirmed) return false;
+  }
+
+		  const payload = {
+		    id_estado: Number(newEstado),
+		    agendar: true,
 	    quote_source: v.quote_source,
 	    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
 	    telefono: v.telefono,
@@ -3412,6 +3467,11 @@ async function openEditModal(lead){
 
 /* ========= Init ========= */
 async function init(){
+  try{
+    const params = new URLSearchParams(location.search);
+    document.body.classList.toggle("embed", params.get("embed") === "1");
+  }catch(_){}
+
   const t = getToken();
   if (!t){
     showError("No hay token. Vuelve a /web/login.html y entra de nuevo.");

@@ -1415,40 +1415,43 @@ def move_lead_and_maybe_agenda(
         if not ev:
             raise HTTPException(500, detail="No se pudo construir el evento para agendar")
 
-            if dry_run:
-                return {
-                    "ok": True,
-                    "preview": True,
-                    "quote_source": quote_source or ("cotizador" if id_cot else "manual"),
-                    "id_cotizacion": int(id_cot) if id_cot else None,
-                    "items": items,
-                    "eventos": [
-                        {
-                            "id_evento": None,
-                            "day": e.get("day"),
-                            "title": e.get("title"),
-                            "start_at": e.get("start_at"),
-                            "end_at": e.get("end_at"),
-                            "location": e.get("location"),
-                            "description": e.get("description"),
-                            "ops": e.get("ops"),
-                            "montaje_text": e.get("montaje_text"),
-                            "products_text": e.get("products_text"),
-                        }
-                        for e in (eventos or [])
-                    ],
-                    "evento": {
+        if dry_run:
+            # Dry-run: NO escribe en BD, solo devuelve preview (multi-día si aplica).
+            return {
+                "ok": True,
+                "preview": True,
+                "quote_source": quote_source or ("cotizador" if id_cot else "manual"),
+                "id_cotizacion": int(id_cot) if id_cot else None,
+                "items": items,
+                "eventos": [
+                    {
                         "id_evento": None,
-                        "title": ev["title"],
-                        "start_at": ev["start_at"],
-                        "end_at": ev["end_at"],
-                        "location": ev["location"],
-                        "description": ev["description"],
-                        "ops": ev.get("ops"),
-                        "montaje_text": ev.get("montaje_text"),
-                        "products_text": ev.get("products_text"),
-                    },
-                }
+                        "day": e.get("day"),
+                        "title": e.get("title"),
+                        "start_at": e.get("start_at"),
+                        "end_at": e.get("end_at"),
+                        "location": e.get("location"),
+                        "description": e.get("description"),
+                        "ops": e.get("ops"),
+                        "montaje_text": e.get("montaje_text"),
+                        "products_text": e.get("products_text"),
+                    }
+                    for e in (eventos or [])
+                ],
+                # Back-compat (primer día)
+                "evento": {
+                    "id_evento": None,
+                    "day": ev.get("day"),
+                    "title": ev["title"],
+                    "start_at": ev["start_at"],
+                    "end_at": ev["end_at"],
+                    "location": ev["location"],
+                    "description": ev["description"],
+                    "ops": ev.get("ops"),
+                    "montaje_text": ev.get("montaje_text"),
+                    "products_text": ev.get("products_text"),
+                },
+            }
 
         evento_id = None
         if _table_exists("eventos_calendario"):
