@@ -2509,6 +2509,13 @@ def approve_agenda(
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
+    # Defaults: evita UnboundLocalError si algo falla antes de asignar.
+    connected: bool = False
+    links: list[str] = []
+    event_ids: list[str | None] = []
+    first_link: str | None = None
+    first_eid: str | None = None
+    gcal_error: str | None = None
     try:
         _ensure_lead_calendar_cols(db)
 
@@ -2647,8 +2654,8 @@ def approve_agenda(
             en = _as_dt(end) or (st + timedelta(hours=2))
             to_create = [{"day": st.date().isoformat(), "title": title, "location": loc, "description": details or "", "start": st, "end": en}]
 
-        links: list[str] = []
-        event_ids: list[str | None] = []
+        links = []
+        event_ids = []
         connected = False
         gcal_error = None
 
