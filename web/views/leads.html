@@ -303,18 +303,18 @@
     }
     .wspRow select{ flex: 1 1 260px; }
 
-    .swal2-popup{
-      background: var(--surface) !important;
-      color: var(--text) !important;
-      border: 1px solid var(--border) !important;
-      border-radius: 16px !important;
-    }
-    .swal2-title{ color: var(--text) !important; }
-    .swal2-html-container{ color: var(--text) !important; }
-    /* Edit modal: sin scroll global (solo Notas/Historial) */
-    .swal2-html-container{ max-height: 72vh; overflow: hidden !important; }
-    .swForm{ max-height: 70vh; overflow: hidden; }
-    #e_notas{ max-height: 22vh; overflow:auto; }
+	    .swal2-popup{
+	      background: var(--surface) !important;
+	      color: var(--text) !important;
+	      border: 1px solid var(--border) !important;
+	      border-radius: 16px !important;
+	    }
+	    .swal2-title{ color: var(--text) !important; }
+	    .swal2-html-container{ color: var(--text) !important; }
+	    /* Edit modal: sin scroll global (solo Notas/Historial) */
+	    .gdEditLead .swal2-html-container{ max-height: 72vh; overflow: hidden !important; }
+	    .gdEditLead .swForm{ max-height: 70vh; overflow: hidden; }
+	    .gdEditLead #e_notas{ max-height: 22vh; overflow:auto; }
 
     /* ===== Mobile pragmatic mode ===== */
     @media (max-width: 820px){
@@ -1285,76 +1285,136 @@ function doCall(lead){
   if (!tel){ toast("Lead sin teléfono", "warning"); return; }
   window.open("tel:" + tel, "_self");
 }
-function doWhatsApp(lead){
-  const tel = String(lead.telefono || "").replace(/\D/g,"");
-  if (!tel){ toast("Lead sin teléfono", "warning"); return; }
-  // Selección de mensaje (50) antes de abrir WhatsApp (requerimiento).
-  const tpls = followupTemplatesFor(lead);
-  const stName = estadoNombre(lead?.id_estado || "") || "SEGUIMIENTO";
-  const opts = tpls.map((t, i) => `<option value="${i}">WSP ${String(i+1).padStart(2,"0")} · ${escapeHtml(stName)}</option>`).join("");
-  Swal.fire({
-    title: "WhatsApp",
-    html: `
-      <div style="text-align:left;display:grid;gap:10px">
-        <label>Plantilla (${tpls.length})
-          <select id="sw_wa_tpl" class="swInp">${opts}</select>
-        </label>
-        <label>Mensaje (editable)
-          <textarea id="sw_wa_txt" class="swInp" rows="7"></textarea>
-        </label>
-      </div>
-    `,
-    showCancelButton: true,
-    confirmButtonText: "Abrir WhatsApp",
-    cancelButtonText: "Cancelar",
-    showDenyButton: true,
-    denyButtonText: "Copiar",
-    didOpen: () => {
-      const sel = document.getElementById("sw_wa_tpl");
-      const ta = document.getElementById("sw_wa_txt");
-      const apply = () => {
-        const idx = Number(sel?.value || 0);
-        const msg = String(tpls[idx] || "");
-        if (ta) ta.value = msg;
-      };
-      if (sel) sel.addEventListener("change", apply);
-      apply();
-    },
-    preConfirm: () => {
-      const sel = document.getElementById("sw_wa_tpl");
-      const ta = document.getElementById("sw_wa_txt");
-      const v = (ta?.value || "").trim();
-      if (!v) { Swal.showValidationMessage("Mensaje vacío"); return false; }
-      const idx = Number(sel?.value || 0);
-      return { msg: v, idx };
-    },
-    preDeny: () => {
-      const ta = document.getElementById("sw_wa_txt");
-      const v = (ta?.value || "").trim();
-      if (!v) return false;
-      try{ navigator.clipboard.writeText(v); }catch(_){}
-      return false;
-    }
-  }).then(async (res)=>{
-    if (res.isDenied) return;
-    if (!res.isConfirmed) return;
-    const msg = String(res.value?.msg || "").trim();
-    const idx = Number(res.value?.idx || 0);
-    // Log historial (best-effort)
-    try{
-      await apiJSON(`/leads/${lead.id_lead}/append_note`, {
-        method: "POST",
-        headers: { "Content-Type":"application/json" },
-        body: JSON.stringify({
-          kind: "WSP",
-          title: `WhatsApp ${String(idx+1).padStart(2,"0")} · ${stName}`,
-          text: msg,
-        }),
-      });
-    }catch(_){}
-    window.open("https://wa.me/" + tel + "?text=" + encodeURIComponent(msg), "_blank", "noopener");
-  });
-}
+	function doWhatsApp(lead){
+	  const defaultAction = (arguments?.length > 1 && arguments[1] && typeof arguments[1] === "object")
+	    ? (arguments[1].defaultAction || "open")
+	    : "open";
+	  const tel = String(lead.telefono || "").replace(/\D/g,"");
+	  if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+	  const tpls = followupTemplatesFor(lead);
+	  const stName = estadoNombre(lead?.id_estado || "") || "SEGUIMIENTO";
+	  const labels = tpls.map((t, i)=>{
+	    const txt = String(t || "").trim();
+	    const first = (txt.split("\n").map(x=>x.trim()).find(Boolean) || "").replace(/\s{2,}/g," ");
+	    const short = first.length > 54 ? (first.slice(0,54) + "…") : first;
+	    return `WSP ${String(i+1).padStart(2,"0")} · ${short || stName}`;
+	  });
+	  const otherAction = (defaultAction === "copy") ? "open" : "copy";
+
+	  Swal.fire({
+	    title: "WhatsApp",
+	    html: `
+	      <div class="wspBox" style="text-align:left">
+	        <div class="wspRow">
+	          <div class="muted" style="font-weight:950;flex:1 1 auto;min-width:0">Estado: <span style="color:var(--text)">${escapeHtml(stName)}</span> · Plantillas: <b>${tpls.length}</b></div>
+	          <input id="sw_wa_q" class="swInp" placeholder="Buscar plantilla…" style="flex:1 1 240px;min-width:220px" />
+	        </div>
+	        <div style="display:grid;grid-template-columns: 280px 1fr;gap:10px;margin-top:10px;align-items:start">
+	          <div id="sw_wa_list" style="max-height:44vh;overflow:auto;border:1px solid var(--border);border-radius:14px;background:var(--surface2);padding:8px"></div>
+	          <div style="display:grid;gap:8px">
+	            <div class="muted" style="font-weight:950">Mensaje (editable)</div>
+	            <textarea id="sw_wa_txt" class="swTa" rows="10" placeholder="Mensaje…"></textarea>
+	            <div class="muted" style="font-size:12px">Al ${defaultAction==="copy" ? "copiar" : "abrir"} se registra automáticamente en el historial.</div>
+	          </div>
+	        </div>
+	      </div>
+	    `,
+	    showCancelButton: true,
+	    confirmButtonText: (defaultAction === "copy") ? "Copiar" : "Abrir WhatsApp",
+	    cancelButtonText: "Cancelar",
+	    showDenyButton: true,
+	    denyButtonText: (defaultAction === "copy") ? "Abrir WhatsApp" : "Copiar",
+	    didOpen: () => {
+	      const listEl = document.getElementById("sw_wa_list");
+	      const qEl = document.getElementById("sw_wa_q");
+	      const ta = document.getElementById("sw_wa_txt");
+	      if (!listEl || !ta) return;
+	      let selectedIdx = 0;
+	      const renderList = ()=>{
+	        const q = String(qEl?.value || "").trim().toLowerCase();
+	        const parts = [];
+	        for (let i=0;i<labels.length;i++){
+	          const lab = labels[i] || "";
+	          const body = String(tpls[i] || "");
+	          const hay = !q || lab.toLowerCase().includes(q) || body.toLowerCase().includes(q);
+	          if (!hay) continue;
+	          parts.push(`
+	            <button type="button" data-idx="${i}" class="swBtn ${i===selectedIdx ? "" : "secondary"}" style="width:100%;text-align:left;justify-content:flex-start;padding:10px 10px;border-radius:14px;margin-bottom:8px;white-space:normal;line-height:1.25">
+	              <span style="display:block;font-weight:1000">${escapeHtml(lab)}</span>
+	              <span class="muted" style="display:block;margin-top:4px;font-size:12px;opacity:.85">${escapeHtml(String(body).replace(/\\s+/g,' ').slice(0,80))}${String(body).length>80?'…':''}</span>
+	            </button>
+	          `);
+	        }
+	        listEl.innerHTML = parts.join("") || `<div class="muted" style="padding:10px">Sin coincidencias.</div>`;
+	        listEl.querySelectorAll("button[data-idx]").forEach((b)=>{
+	          b.addEventListener("click", ()=>{
+	            const idx = Number(b.getAttribute("data-idx") || "0");
+	            if (!Number.isFinite(idx)) return;
+	            selectedIdx = idx;
+	            ta.value = String(tpls[selectedIdx] || "");
+	            renderList();
+	          });
+	        });
+	      };
+	      const init = ()=>{
+	        selectedIdx = 0;
+	        ta.value = String(tpls[0] || "");
+	        renderList();
+	      };
+	      if (qEl) qEl.addEventListener("input", renderList);
+	      init();
+	    },
+	    preConfirm: () => {
+	      const ta = document.getElementById("sw_wa_txt");
+	      const v = (ta?.value || "").trim();
+	      if (!v) { Swal.showValidationMessage("Mensaje vacío"); return false; }
+	      const q = document.getElementById("sw_wa_q");
+	      // idx seleccionado está implícito en el primer número del label si el usuario no tocó lista,
+	      // pero lo guardamos leyendo el textarea contra tpls.
+	      let idx = 0;
+	      const raw = String(ta?.value || "");
+	      const hit = tpls.findIndex(t => String(t||"").trim() === raw.trim());
+	      if (hit >= 0) idx = hit;
+	      return { msg: v, idx, action: defaultAction, q: String(q?.value||"") };
+	    },
+	    preDeny: () => {
+	      const ta = document.getElementById("sw_wa_txt");
+	      const v = (ta?.value || "").trim();
+	      if (!v) return false;
+	      let idx = 0;
+	      const raw = String(ta?.value || "");
+	      const hit = tpls.findIndex(t => String(t||"").trim() === raw.trim());
+	      if (hit >= 0) idx = hit;
+	      return { msg: v, idx, action: otherAction };
+	    }
+	  }).then(async (res)=>{
+	    if (!res.isConfirmed && !res.isDenied) return;
+	    const action = String(res.value?.action || (res.isDenied ? otherAction : defaultAction));
+	    const msg = String(res.value?.msg || "").trim();
+	    const idx = Number(res.value?.idx || 0);
+	    if (!msg) return;
+
+	    if (action === "copy"){
+	      try{ await navigator.clipboard.writeText(msg); }catch(_){}
+	    }
+	    // Log historial (best-effort)
+	    try{
+	      await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+	        method: "POST",
+	        headers: { "Content-Type":"application/json" },
+	        body: JSON.stringify({
+	          kind: "WSP",
+	          title: `WhatsApp ${String(idx+1).padStart(2,"0")} · ${stName} · ${action==="copy" ? "COPIADO" : "ENVIADO"}`,
+	          text: msg,
+	        }),
+	      });
+	    }catch(_){}
+
+	    if (action === "open"){
+	      window.open("https://wa.me/" + tel + "?text=" + encodeURIComponent(msg), "_blank", "noopener");
+	    }
+	  });
+	}
 
 async function doSeguimiento(lead){
   const tel = String(lead.telefono || "").replace(/\D/g,"");
@@ -2692,24 +2752,26 @@ async function openEditModal(lead){
      </label>` +
     `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa" spellcheck="false">${escapeHtml(lead.notas || "")}</textarea></label>` +
     `<label class="span2">Agregar comentario<textarea id="e_comment" class="swTa" rows="2" placeholder="Nuevo comentario..."></textarea></label>` +
-    `<label class="span2">
-        <div style="margin-top:4px;padding:12px;border:1px solid rgba(25,195,125,.25);background:rgba(25,195,125,.10);border-radius:14px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap">
-          <button type="button" class="swBtn secondary" id="e_call" style="white-space:nowrap">Llamar</button>
-          <button type="button" class="swBtn" id="e_wsp" style="white-space:nowrap">WhatsApp</button>
-        </div>
-        <div class="muted" style="margin-top:8px;text-align:center">WhatsApp muestra 50 mensajes por estado antes de abrir.</div>
-     </label>` +
+	    `<label class="span2">
+	        <div style="margin-top:4px;padding:12px;border:1px solid rgba(25,195,125,.25);background:rgba(25,195,125,.10);border-radius:14px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap">
+	          <button type="button" class="swBtn secondary" id="e_call" style="white-space:nowrap">Llamar</button>
+	          <button type="button" class="swBtn secondary" id="e_wsp_copy" style="white-space:nowrap">Copiar WSP</button>
+	          <button type="button" class="swBtn" id="e_wsp" style="white-space:nowrap">WhatsApp</button>
+	        </div>
+	        <div class="muted" style="margin-top:8px;text-align:center">WhatsApp muestra 50 mensajes por estado antes de abrir.</div>
+	     </label>` +
     '</div></div>';
 
-  const res = await Swal.fire({
-    title: "Editar lead de: " + (lead.cliente || lead.nombre_cliente || ("#" + lead.id_lead)),
-    html,
-    width: 860,
-    focusConfirm: false,
-    allowOutsideClick: false,
-    showCancelButton: true,
-    confirmButtonText: "Guardar",
-    cancelButtonText: "Cerrar",
+	  const res = await Swal.fire({
+	    title: "Editar lead de: " + (lead.cliente || lead.nombre_cliente || ("#" + lead.id_lead)),
+	    html,
+	    width: 860,
+	    focusConfirm: false,
+	    allowOutsideClick: false,
+	    customClass: { popup: "gdEditLead" },
+	    showCancelButton: true,
+	    confirmButtonText: "Guardar",
+	    cancelButtonText: "Cerrar",
     showDenyButton: isAdmin,
     denyButtonText: "Borrar lead",
     denyButtonColor: "#ef4444",
@@ -2721,20 +2783,26 @@ async function openEditModal(lead){
       let localPdfFile = null;
       let isUploadingPdf = false;
       let metaSaveT = null;
-      const callBtn = qs("#e_call");
-      const wspBtn = qs("#e_wsp");
-      if (callBtn){
-        callBtn.addEventListener("click", ()=>{
-          const tel = String(lead.telefono || "").trim();
-          if (!tel){ toast("Lead sin teléfono", "warning"); return; }
-          window.open("tel:" + tel, "_self");
-        });
-      }
-      if (wspBtn){
-        wspBtn.addEventListener("click", ()=>{
-          try{ doWhatsApp(lead); }catch(_){}
-        });
-      }
+	      const callBtn = qs("#e_call");
+	      const wspBtn = qs("#e_wsp");
+	      const wspCopyBtn = qs("#e_wsp_copy");
+	      if (callBtn){
+	        callBtn.addEventListener("click", ()=>{
+	          const tel = String(lead.telefono || "").trim();
+	          if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+	          window.open("tel:" + tel, "_self");
+	        });
+	      }
+	      if (wspBtn){
+	        wspBtn.addEventListener("click", ()=>{
+	          try{ doWhatsApp(lead, { defaultAction:"open" }); }catch(_){}
+	        });
+	      }
+	      if (wspCopyBtn){
+	        wspCopyBtn.addEventListener("click", ()=>{
+	          try{ doWhatsApp(lead, { defaultAction:"copy" }); }catch(_){}
+	        });
+	      }
 
       function setButtonsState(){
         const hasLocal = !!localPdfFile;
