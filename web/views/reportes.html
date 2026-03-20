@@ -123,10 +123,21 @@
       text-decoration:none;
     }
     .chip:hover{filter:brightness(1.06);}
+
+    .chartBox{
+      margin-top:10px;
+      border:1px solid rgba(148,163,184,.16);
+      border-radius:16px;
+      background: rgba(2,6,23,.16);
+      padding:10px;
+      overflow:hidden;
+    }
+    :root.light .chartBox{background: rgba(255,255,255,.62);}
+    .chartBox svg{width:100%; height:auto; display:block;}
   </style>
 </head>
 <body>
-    <div class="wrap">
+  <div class="wrap">
     <section class="head">
       <div>
         <div class="ttl">Reportes</div>
@@ -192,6 +203,7 @@
           </div>
           <button class="btn" id="expFunnel" type="button">Exportar CSV</button>
         </div>
+        <div class="chartBox" id="chFunnel"></div>
         <div style="max-height:420px;overflow:auto;margin-top:10px">
           <table class="tbl">
             <thead><tr><th>Estado</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
@@ -214,6 +226,7 @@
           </div>
           <button class="btn" id="expTipo" type="button">Exportar CSV</button>
         </div>
+        <div class="chartBox" id="chTipo"></div>
         <div id="boxTipo" style="margin-top:10px"></div>
       </section>
 
@@ -263,6 +276,7 @@
           </div>
           <button class="btn" id="expProd" type="button">Exportar CSV</button>
         </div>
+        <div class="chartBox" id="chProd"></div>
         <div style="max-height:420px;overflow:auto;margin-top:10px">
           <table class="tbl">
             <thead><tr><th>Producto</th><th>Marca</th><th class="right">Cantidad</th><th class="right">Monto</th></tr></thead>
@@ -279,6 +293,7 @@
           </div>
           <button class="btn" id="expCom" type="button">Exportar CSV</button>
         </div>
+        <div class="chartBox" id="chCom"></div>
         <div style="max-height:420px;overflow:auto;margin-top:10px">
           <table class="tbl">
             <thead><tr><th>Comuna</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
@@ -295,6 +310,7 @@
           </div>
           <button class="btn" id="expCli" type="button">Exportar CSV</button>
         </div>
+        <div class="chartBox" id="chCli"></div>
         <div style="max-height:420px;overflow:auto;margin-top:10px">
           <table class="tbl">
             <thead><tr><th>Cliente</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
@@ -312,24 +328,28 @@
       <section class="card" style="grid-column: span 12" id="total">
         <div class="h2">Total venta</div>
         <div class="muted">Comparativo mensual por marca (backend).</div>
+        <div class="chartBox" id="chTotal"></div>
         <div id="boxTotal" style="margin-top:10px"></div>
       </section>
 
       <section class="card" style="grid-column: span 6" id="cxc">
         <div class="h2">Cuentas por cobrar</div>
         <div class="muted">Saldo pendiente desde <code>fin_eventos</code>.</div>
+        <div class="chartBox" id="chCxc"></div>
         <div id="boxCxc" style="margin-top:10px"></div>
       </section>
 
       <section class="card" style="grid-column: span 6" id="cxp">
         <div class="h2">Cuentas por pagar</div>
         <div class="muted">Pendiente por proveedor desde <code>fin_gastos</code> (pagado=false).</div>
+        <div class="chartBox" id="chCxp"></div>
         <div id="boxCxp" style="margin-top:10px"></div>
       </section>
 
       <section class="card" style="grid-column: span 12" id="venta_diaria">
         <div class="h2">Venta diaria</div>
         <div class="muted">Doble click en una celda para abrir los leads confirmados ese día (si hay activity_log).</div>
+        <div class="chartBox" id="chDaily"></div>
         <div id="boxDaily" style="margin-top:10px; overflow:auto"></div>
       </section>
     </section>
@@ -345,6 +365,147 @@
     };
     const LAST = { dash:null, rep:null, ini:"", fin:"", mid:"" };
     const ME = { role:"", username:"" };
+
+    // ---------- charts (SVG, sin libs) ----------
+    function setChart(id, html){
+      const el = qs("#"+id);
+      if (!el) return;
+      el.innerHTML = html || `<div class="muted">Sin datos.</div>`;
+    }
+    function fmtShort(n){
+      const v = Number(n||0);
+      if (!isFinite(v)) return "0";
+      const abs = Math.abs(v);
+      if (abs >= 1_000_000_000) return (v/1_000_000_000).toFixed(1).replace(/\.0$/,"")+"B";
+      if (abs >= 1_000_000) return (v/1_000_000).toFixed(1).replace(/\.0$/,"")+"M";
+      if (abs >= 1_000) return (v/1_000).toFixed(1).replace(/\.0$/,"")+"k";
+      return String(Math.round(v));
+    }
+    function chartBarH(rows, opts){
+      const o = Object.assign({
+        title: "",
+        maxRows: 10,
+        labelWidth: 260,
+        valueWidth: 110,
+        w: 900,
+        rowH: 28,
+        barH: 10,
+        barFill: "rgba(25,195,125,.35)",
+        barBg: "rgba(148,163,184,.14)",
+        text: "rgba(255,255,255,.86)",
+        subText: "rgba(255,255,255,.70)",
+      }, opts||{});
+
+      const r0 = (rows||[]).filter(x => x && isFinite(Number(x.value||0)));
+      const rows2 = r0.slice(0, o.maxRows);
+      if (!rows2.length) return "";
+
+      const maxV = Math.max(1, ...rows2.map(x => Number(x.value||0)));
+      const W = o.w;
+      const left = o.labelWidth;
+      const right = o.valueWidth;
+      const barW = Math.max(80, W - left - right - 20);
+      const H = 18 + rows2.length * o.rowH + (o.title ? 22 : 0);
+
+      const title = o.title ? `<text x="0" y="16" fill="${o.subText}" font-size="12" font-weight="900">${esc(o.title)}</text>` : "";
+      const y0 = o.title ? 30 : 10;
+
+      const bars = rows2.map((r, i) => {
+        const y = y0 + i*o.rowH;
+        const v = Number(r.value||0);
+        const w = Math.round((v/maxV) * barW);
+        const lbl = String(r.label||"—");
+        const sub = r.sub ? `<text x="0" y="${y+24}" fill="${o.subText}" font-size="11" font-weight="800">${esc(String(r.sub))}</text>` : "";
+        return `
+          <g>
+            <text x="0" y="${y+14}" fill="${o.text}" font-size="12" font-weight="1000">${esc(lbl)}</text>
+            ${sub}
+            <rect x="${left}" y="${y+6}" width="${barW}" height="${o.barH}" rx="999" fill="${o.barBg}"></rect>
+            <rect x="${left}" y="${y+6}" width="${w}" height="${o.barH}" rx="999" fill="${o.barFill}"></rect>
+            <text x="${W-right}" y="${y+14}" fill="${o.text}" font-size="12" font-weight="1000" text-anchor="end">${esc(r.valueText || fmtShort(v))}</text>
+          </g>
+        `;
+      }).join("");
+
+      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.title||"chart")}">${title}${bars}</svg>`;
+    }
+
+    function chartStackedBar(segments, opts){
+      const o = Object.assign({
+        title: "",
+        w: 900,
+        h: 34,
+        colors: ["rgba(25,195,125,.35)","rgba(99,102,241,.35)","rgba(245,158,11,.35)","rgba(239,68,68,.35)","rgba(148,163,184,.28)"],
+        text: "rgba(255,255,255,.86)",
+        subText: "rgba(255,255,255,.70)",
+      }, opts||{});
+      const segs = (segments||[]).filter(s => s && isFinite(Number(s.value||0)) && Number(s.value||0) > 0);
+      if (!segs.length) return "";
+      const total = segs.reduce((a,s)=>a+Number(s.value||0),0) || 1;
+      const W = o.w;
+      const H = (o.title ? 22 : 0) + o.h + 44;
+      let x = 0;
+      const title = o.title ? `<text x="0" y="16" fill="${o.subText}" font-size="12" font-weight="900">${esc(o.title)}</text>` : "";
+      const yBar = o.title ? 26 : 6;
+      const rects = segs.map((s, i) => {
+        const w = Math.max(2, Math.round((Number(s.value||0)/total)*W));
+        const r = `<rect x="${x}" y="${yBar}" width="${w}" height="${o.h}" rx="999" fill="${o.colors[i % o.colors.length]}"></rect>`;
+        x += w;
+        return r;
+      }).join("");
+      const legend = segs.slice(0, 6).map((s,i) => {
+        const pct = Math.round((Number(s.value||0)/total)*100);
+        const lx = (i%3)*300;
+        const ly = (o.title ? 74 : 54) + Math.floor(i/3)*18;
+        return `
+          <g>
+            <rect x="${lx}" y="${ly-10}" width="10" height="10" rx="3" fill="${o.colors[i % o.colors.length]}"></rect>
+            <text x="${lx+16}" y="${ly-1}" fill="${o.text}" font-size="12" font-weight="900">${esc(String(s.label||"—"))} · ${esc(pct)}%</text>
+          </g>
+        `;
+      }).join("");
+      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.title||"stack")}">${title}${rects}${legend}</svg>`;
+    }
+
+    function chartBarsV(labels, values, opts){
+      const o = Object.assign({
+        title: "",
+        w: 900,
+        h: 160,
+        barFill: "rgba(25,195,125,.35)",
+        barBg: "rgba(148,163,184,.14)",
+        text: "rgba(255,255,255,.78)",
+        subText: "rgba(255,255,255,.70)",
+      }, opts||{});
+      const L = (labels||[]).slice(0, 14);
+      const V = (values||[]).slice(0, L.length).map(x => Number(x||0));
+      if (!L.length) return "";
+      const maxV = Math.max(1, ...V.map(v => Number(v||0)));
+      const W = o.w;
+      const H = (o.title ? 22 : 0) + o.h;
+      const pad = 12;
+      const top = o.title ? 26 : 6;
+      const chartH = o.h - 38;
+      const barW = Math.max(10, Math.floor((W - pad*2) / (L.length*1.4)));
+      const gap = Math.floor(barW*0.4);
+      const startX = pad;
+      const title = o.title ? `<text x="0" y="16" fill="${o.subText}" font-size="12" font-weight="900">${esc(o.title)}</text>` : "";
+      const bars = L.map((lab, i) => {
+        const v = V[i] || 0;
+        const h = Math.round((v/maxV)*chartH);
+        const x = startX + i*(barW+gap);
+        const y = top + (chartH - h);
+        const lbl = String(lab||"").slice(0,5);
+        return `
+          <g>
+            <rect x="${x}" y="${top}" width="${barW}" height="${chartH}" rx="6" fill="${o.barBg}"></rect>
+            <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="${o.barFill}"></rect>
+            <text x="${x + barW/2}" y="${top + chartH + 16}" fill="${o.text}" font-size="11" font-weight="900" text-anchor="middle">${esc(lbl)}</text>
+          </g>
+        `;
+      }).join("");
+      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.title||"bars")}">${title}${bars}</svg>`;
+    }
 
     const API_BASE = (() => {
       try{
@@ -648,8 +809,15 @@
       if (!tb) return;
       if (!items.length){
         tb.innerHTML = `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
+        setChart("chFunnel", "");
         return;
       }
+      setChart("chFunnel", chartBarH(items.map(r => ({
+        label: r.estado || "—",
+        value: Number(r.monto||0),
+        valueText: money(r.monto||0),
+        sub: `${Number(r.cantidad||0)} leads`,
+      })), { title:"Monto por estado (Top 10)", maxRows: 10, valueWidth: 160 }));
       const maxMonto = Math.max(1, ...items.map(x => Number(x?.monto||0)));
       tb.innerHTML = items.map(r => `
         <tr class="rowlink" data-estado="${encodeURIComponent(r.estado||"")}">
@@ -719,12 +887,43 @@
           ${mk("Confirmados (rango)", conf, totalConf)}
         </div>
       `;
+
+      // chart (distribución por cantidad, stacked)
+      const segAll = all.map(x => ({ label: x.tipo || "—", value: Number(x.cantidad||0) }));
+      const segConf = conf.map(x => ({ label: x.tipo || "—", value: Number(x.cantidad||0) }));
+      const html = `
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:260px">${chartStackedBar(segAll, { title:"Todos · distribución (cantidad)" }) || `<div class="muted">Sin datos.</div>`}</div>
+          <div style="flex:1;min-width:260px">${chartStackedBar(segConf, { title:"Confirmados · distribución (cantidad)" }) || `<div class="muted">Sin datos.</div>`}</div>
+        </div>
+      `;
+      setChart("chTipo", html);
     }
 
     function renderTop(rep){
       const tp = rep?.top_productos || [];
       const com = rep?.comunas || [];
       const cli = rep?.clientes || [];
+
+      // charts (Top 10 por monto)
+      setChart("chProd", chartBarH(tp.map(x => ({
+        label: x.producto || "—",
+        sub: x.marca ? String(x.marca) : "",
+        value: Number(x.monto||0),
+        valueText: money(x.monto||0),
+      })), { title:"Top productos (monto)", maxRows: 10, valueWidth: 160 }));
+      setChart("chCom", chartBarH(com.map(x => ({
+        label: x.comuna || "—",
+        value: Number(x.monto||0),
+        valueText: money(x.monto||0),
+        sub: `${Number(x.cantidad||0)} leads`,
+      })), { title:"Top comunas (monto)", maxRows: 10, valueWidth: 160 }));
+      setChart("chCli", chartBarH(cli.map(x => ({
+        label: x.cliente || "—",
+        value: Number(x.monto||0),
+        valueText: money(x.monto||0),
+        sub: `${Number(x.cantidad||0)} leads`,
+      })), { title:"Top clientes (monto)", maxRows: 10, valueWidth: 160 }));
 
       const tbP = qs("#tbProd");
       if (tbP){
@@ -872,8 +1071,18 @@
       if (!box) return;
       if (!items.length){
         box.innerHTML = `<div class="muted">Sin datos.</div>`;
+        setChart("chTotal", "");
         return;
       }
+      // chart: comparar actual vs baseline (Top 10 por actual)
+      const top = [...items].sort((a,b)=>Number(b.actual||0)-Number(a.actual||0)).slice(0,10);
+      const rows = top.map(r => ({
+        label: r.marca || "—",
+        value: Number(r.actual||0),
+        valueText: money(r.actual||0),
+        sub: `baseline ${money(r.baseline||0)}`,
+      }));
+      setChart("chTotal", chartBarH(rows, { title:"Total venta por marca (actual) · Top 10", maxRows: 10, valueWidth: 180 }));
       box.innerHTML = `
         <div style="max-height:420px;overflow:auto">
           <table class="tbl">
@@ -909,6 +1118,16 @@
       try{
         const out = await jget(`/finanzas/cxc_resumen${qp}`);
         const items = Array.isArray(out?.items) ? out.items : [];
+        // chart: top pendientes
+        setChart("chCxc", chartBarH(items
+          .slice()
+          .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
+          .map(r => ({
+            label: r.cliente || "—",
+            sub: r.marca ? String(r.marca) : "",
+            value: Number(r.saldo_pendiente||0),
+            valueText: money(r.saldo_pendiente||0),
+          })), { title:"Top clientes por saldo pendiente", maxRows: 10, valueWidth: 180 }));
         const total = items.reduce((a,x)=>a+Number(x.saldo_pendiente||0),0);
         const rows = items.slice(0, 120);
         if (boxCxc){
@@ -937,11 +1156,21 @@
         }
       }catch(e){
         if (boxCxc) boxCxc.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+        setChart("chCxc", "");
       }
 
       try{
         const out = await jget(`/finanzas/cxp_resumen`);
         const items = Array.isArray(out?.items) ? out.items : [];
+        setChart("chCxp", chartBarH(items
+          .slice()
+          .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
+          .map(r => ({
+            label: r.proveedor || "—",
+            value: Number(r.pendiente||0),
+            valueText: money(r.pendiente||0),
+            sub: `pagado ${money(r.pagado||0)}`,
+          })), { title:"Top proveedores por pendiente", maxRows: 10, valueWidth: 180 }));
         const total = items.reduce((a,x)=>a+Number(x.pendiente||0),0);
         const rows = items.slice(0, 120);
         if (boxCxp){
@@ -969,6 +1198,7 @@
         }
       }catch(e){
         if (boxCxp) boxCxp.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+        setChart("chCxp", "");
       }
     }
 
@@ -992,8 +1222,16 @@
       if (!box) return;
       if (!daily.length || !days.length){
         box.innerHTML = `<div class="muted">Sin datos diarios.</div>`;
+        setChart("chDaily", "");
         return;
       }
+      // chart: totales por día (marca seleccionada o global)
+      const totals = days.map(d => {
+        const rows = daily.filter(x => x.dia === d && (!mid || String(x.id_marca||"") === String(mid)));
+        return rows.reduce((a,x)=>a+Number(x.monto||0),0);
+      });
+      const labels = days.map(d => d.slice(8,10)+"/"+d.slice(5,7));
+      setChart("chDaily", chartBarsV(labels, totals, { title:"Totales por día (semana)" }));
       const brands = [...new Set(daily.map(x => x.marca))];
       box.innerHTML = `
         <table class="tbl">
