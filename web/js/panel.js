@@ -1694,21 +1694,21 @@ const MENU = [
     ico: "\u{1F4CA}",
     title: "Reportes",
     items: [
-      { id: "rep_funnel", label: "Funnel de ventas", url: "/web/views/reportes.html#funnel" },
-      { id: "rep_cierre", label: "% de cierre", url: "/web/views/reportes.html#cierre" },
-      { id: "rep_tipo", label: "Tipo de cliente", url: "/web/views/reportes.html#tipo_cliente" },
-      { id: "rep_total", label: "Total venta", url: "/web/views/reportes.html#total" },
+      { id: "rep_funnel", label: "Funnel de ventas", url: "/web/views/reportes.html?only=funnel#funnel" },
+      { id: "rep_cierre", label: "% de cierre", url: "/web/views/reportes.html?only=cierre#cierre" },
+      { id: "rep_tipo", label: "Tipo de cliente", url: "/web/views/reportes.html?only=tipo_cliente#tipo_cliente" },
+      { id: "rep_total", label: "Total venta", url: "/web/views/reportes.html?only=total#total" },
       { id: "rep_sep1", label: "\u2014", url: null, sep: true },
-      { id: "rep_cxc", label: "Por cobrar", url: "/web/views/reportes.html#cxc" },
-      { id: "rep_cxp", label: "Por pagar", url: "/web/views/reportes.html#cxp" },
-      { id: "rep_mkt", label: "Email marketing", url: "/web/views/reportes.html#email_mkt" },
+      { id: "rep_cxc", label: "Por cobrar", url: "/web/views/reportes.html?only=cxc#cxc" },
+      { id: "rep_cxp", label: "Por pagar", url: "/web/views/reportes.html?only=cxp#cxp" },
+      { id: "rep_mkt", label: "Email marketing", url: "/web/views/reportes.html?only=email_mkt#email_mkt" },
       { id: "rep_sepFin", label: "\u2014", url: null, sep: true },
-      { id: "rep_com", label: "Comunas m\xE1s vendidas", url: "/web/views/reportes.html#comunas" },
-      { id: "rep_prod", label: "Productos m\xE1s vendidos", url: "/web/views/reportes.html#productos" },
-      { id: "rep_cli", label: "Clientes m\xE1s frecuentes", url: "/web/views/reportes.html#clientes" },
+      { id: "rep_com", label: "Comunas m\xE1s vendidas", url: "/web/views/reportes.html?only=comunas#comunas" },
+      { id: "rep_prod", label: "Productos m\xE1s vendidos", url: "/web/views/reportes.html?only=productos#productos" },
+      { id: "rep_cli", label: "Clientes m\xE1s frecuentes", url: "/web/views/reportes.html?only=clientes#clientes" },
       { id: "rep_sep2", label: "\u2014", url: null, sep: true },
-      { id: "rep_hoy", label: "Leads creados hoy", url: "/web/views/reportes.html#leads_hoy" },
-      { id: "rep_dia", label: "Venta diaria", url: "/web/views/reportes.html#venta_diaria" }
+      { id: "rep_hoy", label: "Leads creados hoy", url: "/web/views/reportes.html?only=leads_hoy#leads_hoy" },
+      { id: "rep_dia", label: "Venta diaria", url: "/web/views/reportes.html?only=venta_diaria#venta_diaria" }
     ]
   },
   {

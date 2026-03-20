@@ -125,20 +125,20 @@ const MENU = [
     ico: "📊",
     title: "Reportes",
     items: [
-      { id: "rep_funnel", label: "Funnel de ventas", url: "/web/views/reportes.html#funnel" },
-      { id: "rep_cierre", label: "% de cierre", url: "/web/views/reportes.html#cierre" },
-      { id: "rep_total", label: "Total venta", url: "/web/views/reportes.html#total" },
+      { id: "rep_funnel", label: "Funnel de ventas", url: "/web/views/reportes.html?only=funnel#funnel" },
+      { id: "rep_cierre", label: "% de cierre", url: "/web/views/reportes.html?only=cierre#cierre" },
+      { id: "rep_total", label: "Total venta", url: "/web/views/reportes.html?only=total#total" },
 
       { id: "rep_sep1", label: "—", url: null, sep: true },
 
-      { id: "rep_com", label: "Comunas más vendidas", url: "/web/views/reportes.html#comunas" },
-      { id: "rep_prod", label: "Productos más vendidos", url: "/web/views/reportes.html#productos" },
-      { id: "rep_cli", label: "Clientes más frecuentes", url: "/web/views/reportes.html#clientes" },
+      { id: "rep_com", label: "Comunas más vendidas", url: "/web/views/reportes.html?only=comunas#comunas" },
+      { id: "rep_prod", label: "Productos más vendidos", url: "/web/views/reportes.html?only=productos#productos" },
+      { id: "rep_cli", label: "Clientes más frecuentes", url: "/web/views/reportes.html?only=clientes#clientes" },
 
       { id: "rep_sep2", label: "—", url: null, sep: true },
 
-      { id: "rep_hoy", label: "Leads creados hoy", url: "/web/views/reportes.html#leads_hoy" },
-      { id: "rep_dia", label: "Venta diaria", url: "/web/views/reportes.html#venta_diaria" },
+      { id: "rep_hoy", label: "Leads creados hoy", url: "/web/views/reportes.html?only=leads_hoy#leads_hoy" },
+      { id: "rep_dia", label: "Venta diaria", url: "/web/views/reportes.html?only=venta_diaria#venta_diaria" },
     ],
   },
   {

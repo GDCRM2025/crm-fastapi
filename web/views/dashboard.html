@@ -1372,10 +1372,10 @@
     $("#btnApply")?.addEventListener("click", () => refreshAll());
 
     $("#btnGoReportes")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html#total" }, "*");
+      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html?only=total#total" }, "*");
     });
     $("#btnGoFinReportes")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html#cxc" }, "*");
+      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html?only=cxc#cxc" }, "*");
     });
 
     (async () => {
