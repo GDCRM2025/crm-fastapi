@@ -615,6 +615,7 @@ body{
 .layout{
   height: calc(100vh - var(--topbar-h));
   display:flex;
+  align-items: stretch;
   gap: var(--gap);
   padding: var(--gap);
   min-height: 0;
@@ -637,6 +638,7 @@ body.ops-mode .main{
 .sidebar{
   width: var(--sidebar-w);
   height: 100%;
+  align-self: stretch;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -661,6 +663,9 @@ body.ops-mode .main{
   padding: 10px 10px;
   min-height: 0;
 }
+.sidebar-tools{ grid-row: 1; }
+.side-nav{ grid-row: 2; }
+.sidebar-bottom{ grid-row: 3; }
 
 /* Sidebar tools (search + pin + results) */
 .sidebar-tools{
