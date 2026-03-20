@@ -575,8 +575,13 @@
     }
 
     async function loadPresence() {
-      const j = await api("/chat/presence");
-      PRESENCE = j.items || [];
+      let j = null;
+      try{
+        j = await api("/chat/presence");
+      }catch(_){
+        j = { items: [] };
+      }
+      PRESENCE = j?.items || [];
       try{
         PRESENCE_IDS = new Set((PRESENCE || []).map((p) => String(p.user_id ?? "")).filter(Boolean));
         PRESENCE_EMAILS = new Set((PRESENCE || []).map((p) => String(p.email || "").toLowerCase()).filter(Boolean));
@@ -588,15 +593,17 @@
     }
 
     async function loadThreads() {
-      const j = await api("/chat/threads");
-      THREADS = j.items || [];
+      let j = null;
+      try{ j = await api("/chat/threads"); }catch(_){ j = { items: [] }; }
+      THREADS = j?.items || [];
       const sb = qs("#srcBadge");
       if (sb) sb.textContent = `Threads: ${THREADS.length}`;
     }
 
     async function loadUsers() {
-      const j = await api("/chat/users?limit=200");
-      USERS = j.items || [];
+      let j = null;
+      try{ j = await api("/chat/users?limit=200"); }catch(_){ j = { items: [] }; }
+      USERS = j?.items || [];
     }
 
     async function loadMessages() {

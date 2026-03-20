@@ -3,6 +3,15 @@
   'use strict';
   const U = (s) => String(s || '').toUpperCase();
   const $ = (q, c=document) => c.querySelector(q);
+  const API_BASE = (() => {
+    try {
+      const h = String(location.hostname || "").toLowerCase();
+      const isLocal = h === "localhost" || h === "127.0.0.1";
+      return isLocal ? "" : "/crm";
+    } catch (_) {
+      return "";
+    }
+  })();
 
   function authHeaders(extra={}) {
     const GD = window.parent && window.parent.GD;
@@ -20,7 +29,7 @@
   }
 
   async function load() {
-    const res = await fetch('/tools/dashboard', { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}/tools/dashboard`, { headers: authHeaders() });
     if (!res.ok) return;
     const j = await res.json();
 
@@ -54,4 +63,3 @@
 
   document.addEventListener('DOMContentLoaded', load);
 })();
-ma

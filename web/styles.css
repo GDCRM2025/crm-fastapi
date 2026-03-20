@@ -642,11 +642,25 @@ body.ops-mode .main{
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow:hidden;
+  /* Fallback robusto: el scroll lo maneja el contenedor completo del sidebar.
+     Esto evita bugs de overflow anidado (Safari/Chrome) cuando hay muchos submenús. */
+  overflow-y:auto;
+  overflow-x:hidden;
   transition: width .18s ease;
   box-shadow: var(--shadow);
   position:relative;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148,163,184,.32) transparent;
 }
+.sidebar::-webkit-scrollbar{ width: 6px; }
+.sidebar::-webkit-scrollbar-track{ background: transparent; }
+.sidebar::-webkit-scrollbar-thumb{
+  background: rgba(148,163,184,.22);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.sidebar:hover::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.38); background-clip: content-box; }
 .sidebar::after{
   content:none;
   display:none;
@@ -656,16 +670,15 @@ body.ops-mode .main{
 }
 
 .sidebar-inner{
-  height:100%;
-  display:grid;
-  grid-template-rows: auto 1fr auto;
-  overflow:hidden;
+  min-height:100%;
+  display:flex;
+  flex-direction:column;
+  overflow:visible;
   padding: 10px 10px;
-  min-height: 0;
 }
-.sidebar-tools{ grid-row: 1; }
-.side-nav{ grid-row: 2; }
-.sidebar-bottom{ grid-row: 3; }
+.sidebar-tools{ flex: 0 0 auto; }
+.side-nav{ flex: 0 0 auto; }
+.sidebar-bottom{ flex: 0 0 auto; }
 
 /* Sidebar tools (search + pin + results) */
 .sidebar-tools{
@@ -762,24 +775,12 @@ body.ops-mode .main{
   display:flex;
   flex-direction:column;
   gap: 10px;
-  flex: 1;
-  overflow:auto;
-  min-height: 0;
-  padding-bottom: 10px;
+  /* el scroll lo maneja .sidebar (más confiable) */
+  overflow:visible;
+  /* deja espacio para el avatar sticky */
+  padding-bottom: 92px;
   scroll-behavior: smooth;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148,163,184,.38) transparent;
-  -webkit-overflow-scrolling: touch;
 }
-.side-nav::-webkit-scrollbar{ width: 6px; }
-.side-nav::-webkit-scrollbar-track{ background: transparent; }
-.side-nav::-webkit-scrollbar-thumb{
-  background: rgba(148,163,184,.25);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-.side-nav:hover::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.40); background-clip: content-box; }
 
 .sb-results{
   scrollbar-width: thin;
@@ -802,8 +803,8 @@ body.ops-mode .main{
 .sidebar-bottom{
   flex: 0 0 auto;
   margin-top: auto;
-  position: relative;
-  bottom: auto;
+  position: sticky;
+  bottom: 0;
   padding-top: 12px;
   padding-bottom: 4px;
   background: linear-gradient(180deg, transparent 0%, rgba(2,6,23,.22) 35%, rgba(2,6,23,.40) 100%);
