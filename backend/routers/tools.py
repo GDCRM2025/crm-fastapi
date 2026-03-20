@@ -1809,62 +1809,78 @@ def dashboard_reportes(
 
     confirmado_id = _estado_id(db, "CONFIRM")
 
-    q_funnel = f"""
-        SELECT COALESCE(e.nombre,'Sin estado') AS estado,
-               COUNT(*)::int AS cantidad,
-               COALESCE(SUM(l.monto_cotizado),0) AS monto
-        FROM leads l
-        LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
-        WHERE {where_sql}
-        GROUP BY e.nombre
-        ORDER BY cantidad DESC
-    """
-    funnel = db.execute(text(q_funnel), params).mappings().all()
+    funnel: list[dict] = []
+    try:
+        q_funnel = f"""
+            SELECT COALESCE(e.nombre,'Sin estado') AS estado,
+                   COUNT(*)::int AS cantidad,
+                   COALESCE(SUM(l.monto_cotizado),0) AS monto
+            FROM leads l
+            LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+            WHERE {where_sql}
+            GROUP BY e.nombre
+            ORDER BY cantidad DESC
+        """
+        funnel = db.execute(text(q_funnel), params).mappings().all()
+    except Exception:
+        funnel = []
 
     diarios_col = "fecha_evento" if _col_exists(db, "leads", "fecha_evento") else date_col
-    q_diarios = f"""
-        SELECT DATE(l.{diarios_col}) AS dia,
-               COUNT(*)::int AS cantidad,
-               COALESCE(SUM(l.monto_cotizado),0) AS monto
-        FROM leads l
-        WHERE {where_sql}
-          AND l.{diarios_col} IS NOT NULL
-          {"AND l.id_estado=:conf" if confirmado_id else ""}
-        GROUP BY DATE(l.{diarios_col})
-        ORDER BY dia ASC
-    """
     diarios_params = dict(params)
     if confirmado_id:
         diarios_params["conf"] = confirmado_id
-    eventos_diarios = db.execute(text(q_diarios), diarios_params).mappings().all()
+    eventos_diarios: list[dict] = []
+    try:
+        q_diarios = f"""
+            SELECT DATE(l.{diarios_col}) AS dia,
+                   COUNT(*)::int AS cantidad,
+                   COALESCE(SUM(l.monto_cotizado),0) AS monto
+            FROM leads l
+            WHERE {where_sql}
+              AND l.{diarios_col} IS NOT NULL
+              {"AND l.id_estado=:conf" if confirmado_id else ""}
+            GROUP BY DATE(l.{diarios_col})
+            ORDER BY dia ASC
+        """
+        eventos_diarios = db.execute(text(q_diarios), diarios_params).mappings().all()
+    except Exception:
+        eventos_diarios = []
 
     name_expr = _lead_name_expr(db)
-    q_clientes = f"""
-        SELECT {name_expr} AS cliente,
-               COUNT(*)::int AS cantidad,
-               COALESCE(SUM(l.monto_cotizado),0) AS monto
-        FROM leads l
-        WHERE {where_sql}
-          {"AND l.id_estado=:conf" if confirmado_id else ""}
-        GROUP BY {name_expr}
-        ORDER BY monto DESC
-        LIMIT 20
-    """
-    clientes = db.execute(text(q_clientes), diarios_params).mappings().all()
+    clientes: list[dict] = []
+    try:
+        q_clientes = f"""
+            SELECT {name_expr} AS cliente,
+                   COUNT(*)::int AS cantidad,
+                   COALESCE(SUM(l.monto_cotizado),0) AS monto
+            FROM leads l
+            WHERE {where_sql}
+              {"AND l.id_estado=:conf" if confirmado_id else ""}
+            GROUP BY {name_expr}
+            ORDER BY monto DESC
+            LIMIT 20
+        """
+        clientes = db.execute(text(q_clientes), diarios_params).mappings().all()
+    except Exception:
+        clientes = []
 
-    q_comunas = f"""
-        SELECT COALESCE(c.nombre,'—') AS comuna,
-               COUNT(*)::int AS cantidad,
-               COALESCE(SUM(l.monto_cotizado),0) AS monto
-        FROM leads l
-        LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
-        WHERE {where_sql}
-          {"AND l.id_estado=:conf" if confirmado_id else ""}
-        GROUP BY c.nombre
-        ORDER BY monto DESC
-        LIMIT 20
-    """
-    comunas = db.execute(text(q_comunas), diarios_params).mappings().all()
+    comunas: list[dict] = []
+    try:
+        q_comunas = f"""
+            SELECT COALESCE(c.nombre,'—') AS comuna,
+                   COUNT(*)::int AS cantidad,
+                   COALESCE(SUM(l.monto_cotizado),0) AS monto
+            FROM leads l
+            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+            WHERE {where_sql}
+              {"AND l.id_estado=:conf" if confirmado_id else ""}
+            GROUP BY c.nombre
+            ORDER BY monto DESC
+            LIMIT 20
+        """
+        comunas = db.execute(text(q_comunas), diarios_params).mappings().all()
+    except Exception:
+        comunas = []
 
     # Tipo de cliente (empresa/particular u otros)
     tipos_rows: list[dict] = []

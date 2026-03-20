@@ -1381,7 +1381,10 @@
     (async () => {
       await initFilters();
       await refreshAll();
-      setInterval(refreshAll, 15000);
+      setInterval(() => {
+        if (document.hidden) return;
+        refreshAll();
+      }, 60000);
     })();
   </script>
 </body>
