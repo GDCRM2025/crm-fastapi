@@ -1769,6 +1769,10 @@ def dashboard_reportes(
     fecha_inicio: Optional[str] = None,
     fecha_termino: Optional[str] = None,
     id_marca: int | None = None,
+    top_n: int = 20,
+    productos_order: str = "monto",
+    comunas_order: str = "monto",
+    clientes_order: str = "monto",
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
@@ -1916,6 +1920,12 @@ def dashboard_reportes(
             tipos_rows = []
             tipos_rows_conf = []
 
+        top_n_i = int(top_n or 20)
+        top_n_i = max(5, min(100, top_n_i))
+        prod_order = "monto" if str(productos_order or "").lower() not in ("cantidad", "qty", "count") else "cantidad"
+        com_order = "monto" if str(comunas_order or "").lower() not in ("cantidad", "qty", "count") else "cantidad"
+        cli_order = "monto" if str(clientes_order or "").lower() not in ("cantidad", "qty", "count") else "cantidad"
+
         top_productos: list[dict] = []
         try:
             if _table_exists_pg(db, "cotizacion_items") and _table_exists_pg(db, "cotizaciones"):
@@ -1942,8 +1952,8 @@ def dashboard_reportes(
                           {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
                           {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
                         GROUP BY i.{prod_col}, {marca_expr}
-                        ORDER BY monto DESC
-                        LIMIT 20
+                        ORDER BY {prod_order} DESC
+                        LIMIT {top_n_i}
                     """
                     try:
                         top_productos = db.execute(text(q_prod), params).mappings().all()
@@ -1972,8 +1982,8 @@ def dashboard_reportes(
                           {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
                           {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
                         GROUP BY d.{prod_col}, COALESCE(m.nombre, m.marca,'')
-                        ORDER BY monto DESC
-                        LIMIT 20
+                        ORDER BY {prod_order} DESC
+                        LIMIT {top_n_i}
                     """
                     try:
                         top_productos = db.execute(text(q_prod), params).mappings().all()
@@ -1981,6 +1991,23 @@ def dashboard_reportes(
                         top_productos = []
         except Exception:
             top_productos = []
+
+        # Reordenar comunas/clientes si pidieron por cantidad
+        try:
+            if com_order == "cantidad" and comunas:
+                comunas = sorted(list(comunas), key=lambda x: (int(x.get("cantidad") or 0), float(x.get("monto") or 0)), reverse=True)[:top_n_i]
+            else:
+                comunas = list(comunas)[:top_n_i]
+        except Exception:
+            comunas = list(comunas)[:top_n_i] if comunas else []
+
+        try:
+            if cli_order == "cantidad" and clientes:
+                clientes = sorted(list(clientes), key=lambda x: (int(x.get("cantidad") or 0), float(x.get("monto") or 0)), reverse=True)[:top_n_i]
+            else:
+                clientes = list(clientes)[:top_n_i]
+        except Exception:
+            clientes = list(clientes)[:top_n_i] if clientes else []
 
         return {
             "ok": True,
@@ -1991,6 +2018,12 @@ def dashboard_reportes(
             "comunas": list(comunas),
             "tipo_cliente": list(tipos_rows),
             "tipo_cliente_confirmados": list(tipos_rows_conf),
+            "params": {
+                "top_n": top_n_i,
+                "productos_order": prod_order,
+                "comunas_order": com_order,
+                "clientes_order": cli_order,
+            },
         }
     except HTTPException:
         raise
@@ -2007,6 +2040,79 @@ def dashboard_reportes(
             "tipo_cliente_confirmados": [],
             "_error": str(e),
         }
+
+
+@router.get("/dashboard/leads_hoy")
+def dashboard_leads_hoy(
+    id_marca: int | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Lista de leads creados hoy (para Reportes). Visible según permisos (admin ve todo; no-admin solo sus marcas).
+    """
+    role = (me.get("role") or me.get("rol") or "").upper()
+    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    only_own = not _is_admin(role)
+
+    tz = ZoneInfo("America/Santiago")
+    today = datetime.now(tz).date()
+
+    # date col
+    if _col_exists(db, "leads", "fecha_ingreso"):
+        date_col = "fecha_ingreso"
+    elif _col_exists(db, "leads", "created_at"):
+        date_col = "created_at"
+    else:
+        date_col = "updated_at"
+
+    lim = int(limit or 50)
+    lim = max(10, min(200, lim))
+
+    marca_sql = ""
+    params: dict[str, Any] = {"d": str(today), "lim": lim}
+    if only_own and marcas:
+        marca_sql = " AND l.id_marca = ANY(:marcas) "
+        params["marcas"] = marcas
+    if id_marca:
+        try:
+            mid = int(id_marca)
+        except Exception:
+            mid = 0
+        if mid > 0:
+            if only_own and marcas and (mid not in set(marcas)):
+                raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
+            marca_sql += " AND l.id_marca = :id_marca "
+            params["id_marca"] = mid
+
+    name_expr = _lead_name_expr(db)
+    tel_expr = _lead_col(db, "telefono")
+    monto_expr = _lead_col(db, "monto_cotizado")
+
+    rows = db.execute(
+        text(
+            f"""
+            SELECT l.id_lead::bigint AS id_lead,
+                   {name_expr} AS cliente,
+                   COALESCE(m.nombre, m.marca,'') AS marca,
+                   COALESCE(c.nombre,'—') AS comuna,
+                   COALESCE(e.nombre,'') AS estado,
+                   {tel_expr} AS telefono,
+                   COALESCE({monto_expr},0)::float AS monto
+            FROM leads l
+            LEFT JOIN marcas m ON m.id_marca=l.id_marca
+            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+            LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+            WHERE DATE(l.{date_col}) = :d
+            {marca_sql}
+            ORDER BY l.id_lead DESC
+            LIMIT :lim
+            """
+        ),
+        params,
+    ).mappings().all()
+    return {"ok": True, "date": str(today), "items": list(rows)}
 
 
 @router.get("/dashboard/sales_ids")

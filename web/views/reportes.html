@@ -138,6 +138,24 @@
         <select id="marca" class="sel" title="Marca">
           <option value="">Todas las marcas</option>
         </select>
+        <select id="topN" class="sel" title="Top">
+          <option value="5">Top 5</option>
+          <option value="10">Top 10</option>
+          <option value="20" selected>Top 20</option>
+          <option value="50">Top 50</option>
+        </select>
+        <select id="prodOrd" class="sel" title="Orden productos">
+          <option value="monto" selected>Prod: monto</option>
+          <option value="cantidad">Prod: cantidad</option>
+        </select>
+        <select id="comOrd" class="sel" title="Orden comunas">
+          <option value="monto" selected>Com: monto</option>
+          <option value="cantidad">Com: cantidad</option>
+        </select>
+        <select id="cliOrd" class="sel" title="Orden clientes">
+          <option value="monto" selected>Cli: monto</option>
+          <option value="cantidad">Cli: cantidad</option>
+        </select>
         <input id="ini" class="inp" type="date" />
         <input id="fin" class="inp" type="date" />
         <button id="go" class="btn primary" type="button">Cargar</button>
@@ -424,6 +442,13 @@
       qs("#expCom")?.addEventListener("click", ()=> exportCSV("comunas"));
       qs("#expCli")?.addEventListener("click", ()=> exportCSV("clientes"));
 
+      // Auto-reload when changing filters/knobs
+      ["topN","prodOrd","comOrd","cliOrd","marca"].forEach(id=>{
+        const el = qs("#"+id);
+        if (!el) return;
+        el.addEventListener("change", ()=> qs("#go")?.click());
+      });
+
       const isAdmin = (ME.role === "ADMIN" || ME.role === "SUPERADMIN");
 
       // Email marketing (Admin)
@@ -467,6 +492,10 @@
       const ini = qs("#ini").value;
       const fin = qs("#fin").value;
       const mid = qs("#marca").value;
+      const topN = String(qs("#topN")?.value || "20");
+      const prodOrd = String(qs("#prodOrd")?.value || "monto");
+      const comOrd = String(qs("#comOrd")?.value || "monto");
+      const cliOrd = String(qs("#cliOrd")?.value || "monto");
       qs("#st").textContent = "Cargando…";
 
       const dashQs = new URLSearchParams();
@@ -475,6 +504,10 @@
       if (ini) repQs.set("fecha_inicio", ini);
       if (fin) repQs.set("fecha_termino", fin);
       if (mid) repQs.set("id_marca", mid);
+      repQs.set("top_n", topN);
+      repQs.set("productos_order", prodOrd);
+      repQs.set("comunas_order", comOrd);
+      repQs.set("clientes_order", cliOrd);
 
       const [dash, rep] = await Promise.all([
         jget("/tools/dashboard" + (dashQs.toString() ? ("?"+dashQs.toString()) : "")),
@@ -492,7 +525,7 @@
       renderTipos(rep);
       renderTop(rep);
       renderCierre(dash);
-      renderLeadsHoy(dash, mid);
+      await renderLeadsHoyList(mid);
       renderTotal(dash);
       renderDaily(dash, mid);
       await renderFinanzas(ini, fin);
@@ -662,6 +695,53 @@
           </div>
         </div>
       `;
+    }
+
+    async function renderLeadsHoyList(mid){
+      const box = qs("#boxLeadsHoy");
+      if (!box) return;
+      box.innerHTML = `<div class="muted">Cargando leads de hoy…</div>`;
+      const usp = new URLSearchParams({ limit:"60" });
+      if (mid) usp.set("id_marca", mid);
+      try{
+        const j = await jget(`/tools/dashboard/leads_hoy?${usp.toString()}`);
+        const items = Array.isArray(j.items) ? j.items : [];
+        if (!items.length){
+          box.innerHTML = `<div class="muted">Sin leads creados hoy.</div>`;
+          return;
+        }
+        box.innerHTML = `
+          <div style="max-height:420px; overflow:auto">
+            <table class="tbl">
+              <thead><tr><th>ID</th><th>Cliente</th><th>Marca</th><th>Comuna</th><th>Estado</th><th>Tel</th><th class="right">Monto</th></tr></thead>
+              <tbody>
+                ${items.map(x => `
+                  <tr class="rowlink" data-lead="${esc(x.id_lead)}">
+                    <td><strong>${esc(x.id_lead)}</strong></td>
+                    <td>${esc(x.cliente||"—")}</td>
+                    <td class="muted">${esc(x.marca||"")}</td>
+                    <td class="muted">${esc(x.comuna||"—")}</td>
+                    <td><strong>${esc(x.estado||"")}</strong></td>
+                    <td class="muted">${esc(x.telefono||"")}</td>
+                    <td class="right">${esc(money(x.monto||0))}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+          <div class="muted" style="margin-top:10px;">Tip: click en una fila para abrir el lead.</div>
+        `;
+        box.querySelectorAll("tr.rowlink[data-lead]").forEach(tr => {
+          tr.addEventListener("click", ()=>{
+            const id = tr.getAttribute("data-lead");
+            if (!id) return;
+            const url = "/web/views/leads.html?stale_ids=" + encodeURIComponent(String(id));
+            try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+          });
+        });
+      }catch(e){
+        box.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+      }
     }
 
     function renderLeadsHoy(dash, mid){
