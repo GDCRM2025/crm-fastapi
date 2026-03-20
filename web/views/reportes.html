@@ -123,6 +123,8 @@
           <a class="chip" href="#funnel">Funnel</a>
           <a class="chip" href="#cierre">% cierre</a>
           <a class="chip" href="#tipo_cliente">Tipo cliente</a>
+          <a class="chip" href="#metas">Metas</a>
+          <a class="chip" href="#email_mkt">Email marketing</a>
           <a class="chip" href="#total">Total venta</a>
           <a class="chip" href="#cxc">Por cobrar</a>
           <a class="chip" href="#cxp">Por pagar</a>
@@ -183,6 +185,58 @@
           <button class="btn" id="expTipo" type="button">Exportar CSV</button>
         </div>
         <div id="boxTipo" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 12; display:none;" id="metas">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h2" style="margin:0">Metas (Admin)</div>
+            <div class="muted">Ingresa venta año pasado y % crecimiento. La meta se calcula automáticamente.</div>
+          </div>
+          <div class="row">
+            <select id="metaYear" class="sel" title="Año"></select>
+            <button class="btn primary" id="btnMetaReload" type="button">Cargar</button>
+          </div>
+        </div>
+        <div id="metaBox" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 12; display:none;" id="email_mkt">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h2" style="margin:0">Email marketing (Admin)</div>
+            <div class="muted">Snapshot mensual (por fecha_evento) + envío por lotes vía SMTP.</div>
+          </div>
+          <div class="row">
+            <input id="mktYyyymm" class="inp" inputmode="numeric" placeholder="YYYYMM" style="width:120px" />
+            <select id="mktMarca" class="sel" title="Marca" style="min-width:220px">
+              <option value="">Todas</option>
+            </select>
+            <button class="btn primary" id="btnMktSnapshot" type="button">Snapshot</button>
+            <button class="btn" id="btnMktLoad" type="button">Ver audiencia</button>
+            <button class="btn" id="btnMktExport" type="button">Export CSV</button>
+          </div>
+        </div>
+        <div id="mktBox" style="margin-top:10px"></div>
+        <div style="margin-top:12px; border-top:1px solid rgba(148,163,184,.16); padding-top:12px;">
+          <div class="row" style="justify-content:space-between;">
+            <div class="muted" style="font-weight:1000;">Enviar campaña (por lotes)</div>
+            <div class="row">
+              <input id="mktLimit" class="inp" inputmode="numeric" value="50" style="width:80px" title="Límite por envío" />
+              <label class="muted" style="display:flex;align-items:center;gap:8px;font-weight:900;">
+                <input type="checkbox" id="mktDry" checked /> Dry-run
+              </label>
+              <button class="btn primary" id="btnMktSend" type="button">Enviar</button>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+            <input id="mktSubject" class="inp" placeholder="Asunto" />
+            <input id="mktFromHint" class="inp" placeholder="(usa SMTP_FROM)" disabled />
+            <textarea id="mktText" class="inp" placeholder="Texto (requerido)" style="height:120px; border-radius:16px; padding:10px;"></textarea>
+            <textarea id="mktHtml" class="inp" placeholder="HTML (opcional)" style="height:120px; border-radius:16px; padding:10px;"></textarea>
+          </div>
+          <div class="muted" style="margin-top:8px;">Recomendación: enviar por lotes (50) y desactivar “Dry-run” cuando confirmes.</div>
+        </div>
       </section>
 
       <section class="card" style="grid-column: span 6" id="productos">
@@ -274,6 +328,7 @@
       catch(_){ return "$"+Math.round(v); }
     };
     const LAST = { dash:null, rep:null, ini:"", fin:"", mid:"" };
+    const ME = { role:"", username:"" };
 
     const API_BASE = (() => {
       try{
@@ -324,6 +379,17 @@
       return txt ? JSON.parse(txt) : {};
     }
 
+    async function jput(url, body){
+      const r = await fetch(apiURL(url), {
+        method: "PUT",
+        headers: authHeaders({ "Content-Type":"application/json" }),
+        body: JSON.stringify(body || {}),
+      });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
     async function loadMarcas(){
       try{
         const j = await jget("/marcas?solo_activas=1");
@@ -344,6 +410,15 @@
       qs("#ini").value = fmtDate(start);
       qs("#fin").value = fmtDate(now);
 
+      // Role (para secciones admin)
+      try{
+        const me = await jget("/me");
+        ME.role = String(me?.role || me?.rol || "").toUpperCase();
+        ME.username = String(me?.username || me?.id || me?.name || "");
+      }catch(_){
+        ME.role = "";
+      }
+
       const marcas = await loadMarcas();
       const sel = qs("#marca");
       if (sel){
@@ -363,6 +438,42 @@
       qs("#expProd")?.addEventListener("click", ()=> exportCSV("top_productos"));
       qs("#expCom")?.addEventListener("click", ()=> exportCSV("comunas"));
       qs("#expCli")?.addEventListener("click", ()=> exportCSV("clientes"));
+
+      // Metas (Admin)
+      const metaCard = qs("#metas");
+      const isAdmin = (ME.role === "ADMIN" || ME.role === "SUPERADMIN");
+      if (metaCard) metaCard.style.display = isAdmin ? "" : "none";
+      if (isAdmin){
+        initMetasYears();
+        qs("#btnMetaReload")?.addEventListener("click", ()=> loadMetas().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
+        qs("#metaYear")?.addEventListener("change", ()=> loadMetas().catch(()=>{}));
+        setTimeout(()=> loadMetas().catch(()=>{}), 150);
+      }
+
+      // Email marketing (Admin)
+      const mktCard = qs("#email_mkt");
+      if (mktCard) mktCard.style.display = isAdmin ? "" : "none";
+      if (isAdmin){
+        // defaults
+        const now2 = new Date();
+        const yyyymm = `${now2.getFullYear()}${String(now2.getMonth()+1).padStart(2,"0")}`;
+        const yyy = qs("#mktYyyymm"); if (yyy) yyy.value = yyyymm;
+        // marcas in select
+        const marcas2 = await loadMarcas();
+        const msel = qs("#mktMarca");
+        if (msel){
+          msel.innerHTML = `<option value="">Todas</option>` + (marcas2||[]).map(m => {
+            const id = m.id_marca ?? m.id ?? "";
+            const nombre = m.nombre ?? m.marca ?? "";
+            return `<option value="${esc(id)}">${esc(nombre)}</option>`;
+          }).join("");
+        }
+        qs("#btnMktSnapshot")?.addEventListener("click", ()=> mktSnapshot().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
+        qs("#btnMktLoad")?.addEventListener("click", ()=> mktLoad().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
+        qs("#btnMktExport")?.addEventListener("click", ()=> mktExport());
+        qs("#btnMktSend")?.addEventListener("click", ()=> mktSend().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
+        setTimeout(()=> mktLoad().catch(()=>{}), 250);
+      }
 
       // auto
       qs("#go").click();
@@ -806,6 +917,191 @@
         return;
       }
       downloadText(name, toCSV(rows));
+    }
+
+    function initMetasYears(){
+      const sel = qs("#metaYear");
+      if (!sel) return;
+      const y = (new Date()).getFullYear();
+      const ys = [y-1, y, y+1];
+      sel.innerHTML = ys.map(v => `<option value="${esc(v)}"${v===y?" selected":""}>${esc(v)}</option>`).join("");
+    }
+
+    function formatNum(n){
+      const v = Number(n||0);
+      if (!isFinite(v)) return "0";
+      return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    }
+
+    async function loadMetas(){
+      const box = qs("#metaBox");
+      const sel = qs("#metaYear");
+      if (!box || !sel) return;
+      const year = Number(sel.value || (new Date()).getFullYear());
+      box.innerHTML = `<div class="muted">Cargando…</div>`;
+      const j = await jget(`/tools/metas?year=${encodeURIComponent(year)}`);
+      const items = Array.isArray(j?.items) ? j.items : [];
+      if (!items.length){
+        box.innerHTML = `
+          <div class="muted">Aún no hay metas cargadas para ${esc(year)}.</div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn primary" id="btnMetaInit" type="button">Inicializar desde marcas</button>
+          </div>
+        `;
+        qs("#btnMetaInit")?.addEventListener("click", async ()=>{
+          await fetch(apiURL(`/tools/metas/init?year=${encodeURIComponent(year)}`), { method:"POST", headers: authHeaders() });
+          await loadMetas();
+        }, { once:true });
+        return;
+      }
+
+      const rows = items.map(it => ({
+        year: Number(it.year||year),
+        id_marca: Number(it.id_marca||0),
+        marca: String(it.marca||""),
+        venta: Number(it.venta_anio_pasado||0),
+        crec: Number(it.crecimiento_pct||12),
+        meta: Number(it.meta||0),
+        updated_by: String(it.updated_by||""),
+      }));
+
+      box.innerHTML = `
+        <div style="overflow:auto; max-height:520px;">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Marca</th>
+                <th class="right">Venta año pasado</th>
+                <th class="right">% crec.</th>
+                <th class="right">Meta (auto)</th>
+                <th>Actualizado por</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(r => `
+                <tr data-mid="${esc(r.id_marca)}">
+                  <td><strong>${esc(r.marca || ("#" + r.id_marca))}</strong></td>
+                  <td class="right"><input class="inp" data-f="venta" inputmode="numeric" value="${esc(String(Math.round(r.venta||0)))}" style="width:160px"/></td>
+                  <td class="right"><input class="inp" data-f="crec" inputmode="decimal" value="${esc(String(Number(r.crec||12).toFixed(2)))}" style="width:110px"/></td>
+                  <td class="right"><span data-f="meta" style="font-weight:1100">${esc(formatNum(r.meta||0))}</span></td>
+                  <td class="muted" style="font-size:12px">${esc(r.updated_by||"")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="muted" style="margin-top:10px;">Tip: al cambiar un valor, se guarda automáticamente.</div>
+      `;
+
+      const recalcRow = (tr)=>{
+        const ventaEl = tr.querySelector('input[data-f="venta"]');
+        const crecEl = tr.querySelector('input[data-f="crec"]');
+        const metaEl = tr.querySelector('[data-f="meta"]');
+        const venta = Number(String(ventaEl?.value||"0").replace(/[^\d.-]/g,"")) || 0;
+        const crec = Number(String(crecEl?.value||"12").replace(/[^\d.-]/g,"")) || 12;
+        const meta = venta * (1 + crec/100);
+        if (metaEl) metaEl.textContent = formatNum(meta);
+        return { venta, crec, meta };
+      };
+
+      const saveRow = async (tr)=>{
+        const mid = Number(tr.getAttribute("data-mid")||0);
+        if (!mid) return;
+        const { venta, crec } = recalcRow(tr);
+        await jput("/tools/metas", { year, id_marca: mid, venta_anio_pasado: venta, crecimiento_pct: crec });
+      };
+
+      let t = null;
+      box.querySelectorAll("tr[data-mid]").forEach(tr => {
+        tr.querySelectorAll("input[data-f]").forEach(inp => {
+          inp.addEventListener("input", ()=>{
+            recalcRow(tr);
+            if (t) clearTimeout(t);
+            t = setTimeout(()=> saveRow(tr).catch(()=>{}), 450);
+          });
+          inp.addEventListener("blur", ()=> saveRow(tr).catch(()=>{}));
+        });
+      });
+    }
+
+    function mktParams(){
+      const y = String(qs("#mktYyyymm")?.value || "").trim();
+      const mid = String(qs("#mktMarca")?.value || "").trim();
+      if (!/^\d{6}$/.test(y)) throw new Error("YYYYMM inválido");
+      return { yyyymm: y, id_marca: mid ? Number(mid) : null };
+    }
+
+    async function mktSnapshot(){
+      const box = qs("#mktBox");
+      if (!box) return;
+      const { yyyymm, id_marca } = mktParams();
+      box.innerHTML = `<div class="muted">Creando snapshot…</div>`;
+      const qs2 = new URLSearchParams({ yyyymm, dry_run: "false" });
+      if (id_marca) qs2.set("id_marca", String(id_marca));
+      const j = await jget(`/marketing/audiencia/snapshot?${qs2.toString()}`);
+      box.innerHTML = `<div class="muted">Snapshot OK: ${esc(JSON.stringify({ inserted:j.inserted, updated:j.updated, total:j.total }))}</div>`;
+      await mktLoad();
+    }
+
+    async function mktLoad(){
+      const box = qs("#mktBox");
+      if (!box) return;
+      const { yyyymm, id_marca } = mktParams();
+      box.innerHTML = `<div class="muted">Cargando audiencia…</div>`;
+      const qs2 = new URLSearchParams({ yyyymm, limit:"50", offset:"0" });
+      if (id_marca) qs2.set("id_marca", String(id_marca));
+      const j = await jget(`/marketing/audiencia?${qs2.toString()}`);
+      const items = Array.isArray(j.items) ? j.items : [];
+      box.innerHTML = `
+        <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+          <div class="muted">Total: <strong>${esc(j.total||0)}</strong></div>
+          <div class="muted">Muestra: ${esc(items.length)}</div>
+        </div>
+        <div style="max-height:320px; overflow:auto;">
+          <table class="tbl">
+            <thead><tr><th>Nombre</th><th>Email</th><th>Tel</th><th>Tipo</th><th>Opt-out</th></tr></thead>
+            <tbody>
+              ${items.map(it => `
+                <tr>
+                  <td><strong>${esc(it.nombre||"—")}</strong></td>
+                  <td>${esc(it.email||"")}</td>
+                  <td>${esc(it.telefono||"")}</td>
+                  <td class="muted">${esc(it.tipo_cliente||"")}</td>
+                  <td class="muted">${it.opt_out ? "Sí" : "No"}</td>
+                </tr>
+              `).join("") || `<tr><td colspan="5" class="muted">Sin datos.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function mktExport(){
+      const { yyyymm, id_marca } = (()=>{ try{ return mktParams(); }catch(_){ return { yyyymm:"", id_marca:null }; }})();
+      if (!yyyymm) return;
+      const qs2 = new URLSearchParams({ yyyymm });
+      if (id_marca) qs2.set("id_marca", String(id_marca));
+      window.open(apiURL(`/marketing/audiencia/export.csv?${qs2.toString()}`), "_blank", "noopener");
+    }
+
+    async function mktSend(){
+      const { yyyymm, id_marca } = mktParams();
+      const subject = String(qs("#mktSubject")?.value || "").trim();
+      const text = String(qs("#mktText")?.value || "").trim();
+      const html = String(qs("#mktHtml")?.value || "").trim();
+      const limit = Number(qs("#mktLimit")?.value || "50") || 50;
+      const dry_run = !!qs("#mktDry")?.checked;
+      if (!subject || !text) throw new Error("Asunto y Texto son requeridos");
+      const payload = { yyyymm, id_marca: id_marca || null, subject, text, html: html || null, limit, dry_run };
+      const r = await fetch(apiURL("/marketing/campanas/send"), {
+        method:"POST",
+        headers: authHeaders({ "Content-Type":"application/json" }),
+        body: JSON.stringify(payload),
+      });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      const j = txt ? JSON.parse(txt) : {};
+      Swal.fire("OK", `Campaña #${j.id_campana} · enviados=${j.enviados}/${j.total} · fallidos=${j.fallidos} · dry_run=${j.dry_run}`, "success");
     }
 
     init().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));

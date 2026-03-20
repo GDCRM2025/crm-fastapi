@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 import re
 import unicodedata
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Body
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -366,6 +366,143 @@ def _ensure_baseline(db: Session) -> None:
         )
     db.commit()
 
+
+def _ensure_metas(db: Session) -> None:
+    """
+    Metas anuales por marca (admin-only).
+    - venta_anio_pasado: base (año anterior)
+    - crecimiento_pct: % crecimiento (default 12)
+    - meta: venta_anio_pasado * (1 + crecimiento_pct/100)
+    """
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS metas_marca_anual (
+              id_meta bigserial PRIMARY KEY,
+              year integer NOT NULL,
+              id_marca integer NOT NULL,
+              venta_anio_pasado numeric(16,2) NOT NULL DEFAULT 0,
+              crecimiento_pct numeric(8,2) NOT NULL DEFAULT 12,
+              meta numeric(16,2) NOT NULL DEFAULT 0,
+              updated_at timestamp without time zone NOT NULL DEFAULT now(),
+              updated_by text,
+              UNIQUE (year, id_marca)
+            )
+            """
+        )
+    )
+    db.commit()
+
+
+def _is_admin_strict(role: str) -> bool:
+    return role in ("ADMIN", "SUPERADMIN")
+
+
+@router.get("/metas")
+def metas_get(
+    year: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    role = (me.get("role") or me.get("rol") or "").upper()
+    if not _is_admin_strict(role):
+        raise HTTPException(status_code=403, detail="Solo admin puede ver metas")
+    _ensure_metas(db)
+
+    y = int(year or date.today().year)
+    rows = db.execute(
+        text(
+            """
+            SELECT m.year, m.id_marca, COALESCE(ma.nombre, ma.marca,'') AS marca,
+                   COALESCE(m.venta_anio_pasado,0)::float AS venta_anio_pasado,
+                   COALESCE(m.crecimiento_pct,12)::float AS crecimiento_pct,
+                   COALESCE(m.meta,0)::float AS meta,
+                   COALESCE(m.updated_by,'') AS updated_by,
+                   m.updated_at
+            FROM metas_marca_anual m
+            LEFT JOIN marcas ma ON ma.id_marca=m.id_marca
+            WHERE m.year=:y
+            ORDER BY COALESCE(ma.nombre, ma.marca,'') ASC
+            """
+        ),
+        {"y": y},
+    ).mappings().all()
+    return {"ok": True, "year": y, "items": list(rows)}
+
+
+@router.put("/metas")
+def metas_upsert(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    role = (me.get("role") or me.get("rol") or "").upper()
+    if not _is_admin_strict(role):
+        raise HTTPException(status_code=403, detail="Solo admin puede editar metas")
+    _ensure_metas(db)
+
+    try:
+        y = int(payload.get("year") or date.today().year)
+        id_marca = int(payload.get("id_marca") or 0)
+        if id_marca <= 0:
+            raise ValueError("id_marca inválido")
+        venta = float(payload.get("venta_anio_pasado") or 0)
+        crec = float(payload.get("crecimiento_pct") or 12)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Payload inválido: {e}")
+
+    meta = round(venta * (1.0 + (crec / 100.0)), 2)
+    by = (me.get("username") or me.get("id") or me.get("nombre") or "admin")
+
+    db.execute(
+        text(
+            """
+            INSERT INTO metas_marca_anual(year, id_marca, venta_anio_pasado, crecimiento_pct, meta, updated_by, updated_at)
+            VALUES (:y, :id_marca, :venta, :crec, :meta, :by, now())
+            ON CONFLICT (year, id_marca) DO UPDATE
+              SET venta_anio_pasado=EXCLUDED.venta_anio_pasado,
+                  crecimiento_pct=EXCLUDED.crecimiento_pct,
+                  meta=EXCLUDED.meta,
+                  updated_by=EXCLUDED.updated_by,
+                  updated_at=now()
+            """
+        ),
+        {"y": y, "id_marca": id_marca, "venta": venta, "crec": crec, "meta": meta, "by": by},
+    )
+    db.commit()
+    return {"ok": True, "year": y, "id_marca": id_marca, "meta": meta}
+
+
+@router.post("/metas/init")
+def metas_init(
+    year: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    role = (me.get("role") or me.get("rol") or "").upper()
+    if not _is_admin_strict(role):
+        raise HTTPException(status_code=403, detail="Solo admin puede inicializar metas")
+    _ensure_metas(db)
+    y = int(year or date.today().year)
+    by = (me.get("username") or me.get("id") or me.get("nombre") or "admin")
+
+    marcas = db.execute(text("SELECT id_marca FROM marcas ORDER BY id_marca ASC")).fetchall()
+    created = 0
+    for r in marcas:
+        mid = int(r[0])
+        db.execute(
+            text(
+                """
+                INSERT INTO metas_marca_anual(year, id_marca, venta_anio_pasado, crecimiento_pct, meta, updated_by, updated_at)
+                VALUES (:y, :id_marca, 0, 12, 0, :by, now())
+                ON CONFLICT (year, id_marca) DO NOTHING
+                """
+            ),
+            {"y": y, "id_marca": mid, "by": by},
+        )
+        created += 1
+    db.commit()
+    return {"ok": True, "year": y, "created": created}
 
 @router.get("/gcal/status")
 def gcal_status(db: Session = Depends(get_db)):
