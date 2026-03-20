@@ -152,6 +152,77 @@
     }
     .pipe-bar > span{display:block; height:100%;}
 
+    /* Funnel (visual) */
+    .funnel{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      margin-bottom:10px;
+    }
+    .fstep{
+      position:relative;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.18);
+      padding:10px 12px 10px 12px;
+      cursor:pointer;
+      overflow:hidden;
+    }
+    .fstep:hover{ border-color: rgba(255,255,255,.18); }
+    .fstep::before{
+      content:"";
+      position:absolute;
+      left:10px;
+      top:10px;
+      height:28px;
+      width: calc(var(--w, 0) * 1%);
+      max-width: calc(100% - 20px);
+      background: var(--c, rgba(34,197,94,.28));
+      opacity:.35;
+      clip-path: polygon(0 0, 100% 0, 94% 100%, 6% 100%);
+      border-radius:12px;
+      pointer-events:none;
+    }
+    .fstep .row{
+      position:relative;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      min-width:0;
+    }
+    .fstep .name{
+      font-weight:1100;
+      font-size:12px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      min-width:0;
+    }
+    .fstep .meta{
+      display:flex;
+      gap:10px;
+      align-items:baseline;
+      flex:0 0 auto;
+      font-weight:1000;
+      font-size:12px;
+      opacity:.92;
+      white-space:nowrap;
+    }
+    .fstep .sub{
+      position:relative;
+      margin-top:6px;
+      font-size:11px;
+      opacity:.70;
+      font-weight:900;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
     .pipe-table{width:100%; border-collapse:collapse; font-size:12px;}
     .pipe-table th,.pipe-table td{
       padding:9px 10px;
@@ -205,11 +276,11 @@
     .events-strip:hover::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.40); }
 
     .event-day{
-      flex: 0 0 220px;
+      flex: 0 0 190px;
       border:1px solid rgba(255,255,255,.10);
       border-radius:16px;
       background:rgba(0,0,0,.18);
-      padding:8px;
+      padding:7px;
       min-height:110px;
     }
     .event-day-head{
@@ -227,7 +298,7 @@
       display:flex;
       align-items:center;
       gap:10px;
-      padding:8px 10px;
+      padding:7px 9px;
       border-radius:14px;
       border:1px solid rgba(255,255,255,.10);
       background:rgba(10,16,22,.55);
@@ -235,14 +306,14 @@
       margin-bottom:6px;
     }
     .event-pill:hover{ border-color: rgba(255,255,255,.18); }
-    .event-pill .t1{ font-weight:1100; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .event-pill .t2{ font-size:11px; opacity:.72; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .event-pill .t1{ font-weight:1100; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .event-pill .t2{ font-size:10px; opacity:.70; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .event-pill .tip{
       display:none;
       position:absolute;
       left: 12px;
       top: calc(100% + 8px);
-      width: 280px;
+      width: 260px;
       max-width: 65vw;
       z-index: 50;
       border-radius: 14px;
@@ -711,18 +782,54 @@
       const root = $(rootSel);
       if (!root) return;
       const pipe = (arr || []).map(p => ({
+        id_estado: Number(p.id_estado ?? 9999),
         estado: (p.estado || "SIN ESTADO").toString().trim() || "SIN ESTADO",
         cantidad: Number(p.cantidad || 0),
         monto: Number(p.monto || 0),
         color: p.color || "#64748b",
       }));
+      // Orden: por id_estado (pipeline real). Si no hay ids (legacy), cae a cantidad desc.
+      pipe.sort((a,b) => (a.id_estado - b.id_estado) || (b.cantidad - a.cantidad));
+
       const total = pipe.reduce((a,b)=> a + b.monto, 0) || 1;
+      const maxQty = Math.max(1, ...pipe.map(p => p.cantidad || 0));
       const bar = `<div class="pipe-bar">` + pipe.map(p => {
         const w = Math.max(0.5, (p.monto / total) * 100);
         return `<span style="width:${w}%; background:${p.color};"></span>`;
       }).join("") + `</div>`;
 
-      let html = bar;
+      // Funnel visual (conversión etapa a etapa)
+      let prev = null;
+      const funnel = `<div class="funnel">` + pipe.map(p => {
+        const w = Math.max(8, Math.round((p.cantidad / maxQty) * 100));
+        const conv = prev && prev.cantidad ? Math.round((p.cantidad / prev.cantidad) * 100) : null;
+        const convTxt = (conv == null) ? "—" : (conv + "%");
+        const prevEstado = prev ? prev.estado : "";
+        prev = p;
+        const c = (p.color || "#64748b").replace(/"/g, "");
+        return `
+          <div class="fstep rowlink" data-estado="${encodeURIComponent(p.estado)}" data-range="${rangeType}"
+               style="--w:${w};--c:${c}55;">
+            <div class="row">
+              <div class="name">
+                <span class="dot" style="background:${p.color}"></span>
+                <span style="min-width:0; overflow:hidden; text-overflow:ellipsis;">${p.estado}</span>
+              </div>
+              <div class="meta">
+                <span>${p.cantidad}</span>
+                <span style="opacity:.75">·</span>
+                <span>$ ${fmt.format(p.monto)}</span>
+              </div>
+            </div>
+            <div class="sub">
+              <span>Participación: ${Math.round((p.monto/total)*100)}%</span>
+              <span>Conv. vs anterior: ${convTxt}</span>
+            </div>
+          </div>
+        `;
+      }).join("") + `</div>`;
+
+      let html = funnel + bar;
       html += `<table class="pipe-table"><thead><tr><th>Estado</th><th class="right">Leads</th><th class="right">Monto</th><th class="right">%</th></tr></thead><tbody>`;
       html += pipe.map(p => {
         const pct = Math.round((p.monto / total) * 100);

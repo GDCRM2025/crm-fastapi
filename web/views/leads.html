@@ -2955,10 +2955,29 @@ async function openEditModal(lead){
 			              await logAction("VCARD", "vCard generado", "Se descargó la vCard del cliente.");
 			            }catch(_){}
 			            try{
-			              const url = apiURL(`/leads/${lead.id_lead}/vcard`);
-			              window.open(url, "_blank", "noopener");
-			            }catch(_){
-			              toast("No pude abrir vCard", "error");
+			              const r = await fetch(apiURL(`/leads/${lead.id_lead}/vcard`), {
+			                headers: authHeaders({ "Accept": "text/vcard,text/x-vcard,text/plain,*/*" }),
+			              });
+			              if (!r.ok){
+			                throw new Error("No pude generar vCard (HTTP " + r.status + ")");
+			              }
+			              const blob = await r.blob();
+			              const url = URL.createObjectURL(blob);
+
+			              const safe = (s)=> String(s||"").trim().replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+			              const cliente = safe(lead.nombre_cliente || lead.cliente || "Cliente");
+			              const marca = safe(lead.marca || "");
+			              const fname = `Contacto - ${cliente}${marca ? (" - " + marca) : ""}.vcf`;
+
+			              const a = document.createElement("a");
+			              a.href = url;
+			              a.download = fname;
+			              document.body.appendChild(a);
+			              a.click();
+			              a.remove();
+			              setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){ } }, 60_000);
+			            }catch(err){
+			              toast("No pude generar vCard: " + String(err?.message||err), "error");
 			            }
 			          });
 

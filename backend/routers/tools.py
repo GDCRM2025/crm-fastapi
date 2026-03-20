@@ -1186,7 +1186,8 @@ def dashboard(
     brand_map = {int(r["id_marca"]): r["nombre"] for r in brand_rows if r.get("id_marca")}
 
     q_pipe = f"""
-        SELECT COALESCE(e.nombre,'') AS estado,
+        SELECT COALESCE(e.id_estado, 9999)::int AS id_estado,
+               COALESCE(e.nombre,'') AS estado,
                COALESCE(e.color,'#64748b') AS color,
                COUNT(*)::int AS cantidad,
                COALESCE(SUM(l.monto_cotizado),0)::float AS monto
@@ -1194,13 +1195,14 @@ def dashboard(
         LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
         WHERE 1=1
         {marca_sql}
-        GROUP BY e.nombre, e.color
-        ORDER BY cantidad DESC
+        GROUP BY e.id_estado, e.nombre, e.color
+        ORDER BY COALESCE(e.id_estado, 9999) ASC, cantidad DESC
     """
     pipeline = db.execute(text(q_pipe), params).mappings().all()
 
     q_pipe_week = f"""
-        SELECT COALESCE(e.nombre,'') AS estado,
+        SELECT COALESCE(e.id_estado, 9999)::int AS id_estado,
+               COALESCE(e.nombre,'') AS estado,
                COALESCE(e.color,'#64748b') AS color,
                COUNT(*)::int AS cantidad,
                COALESCE(SUM(l.monto_cotizado),0)::float AS monto
@@ -1208,8 +1210,8 @@ def dashboard(
         LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
         WHERE l.{date_col}::date BETWEEN :ws AND :we
         {marca_sql}
-        GROUP BY e.nombre, e.color
-        ORDER BY cantidad DESC
+        GROUP BY e.id_estado, e.nombre, e.color
+        ORDER BY COALESCE(e.id_estado, 9999) ASC, cantidad DESC
     """
     pipeline_week = db.execute(text(q_pipe_week), params).mappings().all()
 
@@ -1217,7 +1219,8 @@ def dashboard(
     month_end = date(today.year, today.month, 28) + timedelta(days=4)
     month_end = month_end.replace(day=1) - timedelta(days=1)
     q_pipe_month = f"""
-        SELECT COALESCE(e.nombre,'') AS estado,
+        SELECT COALESCE(e.id_estado, 9999)::int AS id_estado,
+               COALESCE(e.nombre,'') AS estado,
                COALESCE(e.color,'#64748b') AS color,
                COUNT(*)::int AS cantidad,
                COALESCE(SUM(l.monto_cotizado),0)::float AS monto
@@ -1225,8 +1228,8 @@ def dashboard(
         LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
         WHERE l.{date_col}::date BETWEEN :ms AND :me
         {marca_sql}
-        GROUP BY e.nombre, e.color
-        ORDER BY cantidad DESC
+        GROUP BY e.id_estado, e.nombre, e.color
+        ORDER BY COALESCE(e.id_estado, 9999) ASC, cantidad DESC
     """
     pipeline_month = db.execute(
         text(q_pipe_month),
@@ -1725,6 +1728,37 @@ def dashboard_reportes(
     """
     comunas = db.execute(text(q_comunas), diarios_params).mappings().all()
 
+    # Tipo de cliente (empresa/particular u otros)
+    tipos_rows: list[dict] = []
+    tipos_rows_conf: list[dict] = []
+    try:
+        tipo_expr = None
+        join_sql = ""
+        if _col_exists(db, "leads", "id_tipo_cliente") and _table_exists_pg(db, "tipos_cliente"):
+            tipo_expr = "COALESCE(tc.nombre,'—')"
+            join_sql = "LEFT JOIN tipos_cliente tc ON tc.id_tipo_cliente = l.id_tipo_cliente"
+        elif _col_exists(db, "leads", "tipo_cliente"):
+            tipo_expr = "COALESCE(l.tipo_cliente,'—')"
+        if tipo_expr:
+            q_tipo = f"""
+                SELECT {tipo_expr} AS tipo_cliente,
+                       COUNT(*)::int AS cantidad,
+                       COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                FROM leads l
+                {join_sql}
+                WHERE {where_sql}
+                GROUP BY {tipo_expr}
+                ORDER BY cantidad DESC
+            """
+            tipos_rows = db.execute(text(q_tipo), params).mappings().all()
+
+            if confirmado_id:
+                q_tipo_conf = q_tipo.replace(f"WHERE {where_sql}", f"WHERE {where_sql} AND l.id_estado=:conf")
+                tipos_rows_conf = db.execute(text(q_tipo_conf), diarios_params).mappings().all()
+    except Exception:
+        tipos_rows = []
+        tipos_rows_conf = []
+
     top_productos: list[dict] = []
     if _table_exists_pg(db, "cotizacion_items") and _table_exists_pg(db, "cotizaciones"):
         cols_items = _cols_pg(db, "cotizacion_items")
@@ -1786,6 +1820,8 @@ def dashboard_reportes(
         "top_productos": list(top_productos),
         "clientes": list(clientes),
         "comunas": list(comunas),
+        "tipo_cliente": list(tipos_rows),
+        "tipo_cliente_confirmados": list(tipos_rows_conf),
     }
 
 
