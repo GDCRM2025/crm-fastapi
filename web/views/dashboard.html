@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dashboard</title>
-  <link rel="stylesheet" href="../styles.css?v=20260320-3" />
+  <link rel="stylesheet" href="../styles.css?v=20260320-4" />
   <script src="../js/iframe-theme.js"></script>
   <style>
     :root{
@@ -784,39 +784,48 @@
         return;
       }
 
-      const html = `
-        <div class="muted" style="font-weight:900;font-size:12px;margin-bottom:8px">
-          Click en una fila para ver detalle / abrir calendario.
-        </div>
-        <table class="table-mini">
-          <thead>
-            <tr>
-              <th style="width:130px">Día</th>
-              <th>Cliente</th>
-              <th style="width:150px">Marca</th>
-              <th style="width:170px">Comuna</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${events.map(ev => {
-              const date = (ev.fecha_evento || "").slice(0,10);
-              const marca = (ev.marca || "").toString().trim();
-              const dot = brandColors[marca.toUpperCase()] || "#7ee7b0";
-              return `
-                <tr class="rowlink" data-evt='${encodeURIComponent(JSON.stringify(ev))}'>
-                  <td><span class="dot" style="background:${dot}"></span> ${date ? `${date.slice(8,10)}/${date.slice(5,7)}` : "—"}</td>
-                  <td><strong>${(ev.cliente || "").toString().trim() || "—"}</strong></td>
-                  <td>${marca || "—"}</td>
-                  <td>${(ev.comuna || "").toString().trim() || "—"}</td>
-                </tr>
-              `;
-            }).join("")}
-          </tbody>
-        </table>
-      `;
-      $("#eventsWeek").innerHTML = html;
+      // Agrupado por día (minimalista)
+      const byDay = new Map();
+      events.forEach(ev => {
+        const d = String(ev.fecha_evento || "").slice(0,10) || "SIN_FECHA";
+        if (!byDay.has(d)) byDay.set(d, []);
+        byDay.get(d).push(ev);
+      });
+      const days = [...byDay.keys()].sort();
+      const html = days.map(d => {
+        const arr = byDay.get(d) || [];
+        const label = d !== "SIN_FECHA" ? `${d.slice(8,10)}/${d.slice(5,7)}/${d.slice(0,4)}` : "Sin fecha";
+        const dayName = d !== "SIN_FECHA" ? daysEs[new Date(d + "T00:00:00").getDay() === 0 ? 6 : (new Date(d + "T00:00:00").getDay() - 1)] : "";
+        return `
+          <div style="padding:10px 12px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); border-radius:16px; margin-bottom:10px;">
+            <div class="muted" style="font-weight:1000; letter-spacing:.14em; text-transform:uppercase; font-size:11px; margin-bottom:8px;">
+              ${dayName ? (dayName + " · ") : ""}${label} · ${arr.length} evento(s)
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              ${arr.map(ev => {
+                const marca = (ev.marca || "").toString().trim();
+                const dot = brandColors[marca.toUpperCase()] || "#7ee7b0";
+                const cliente = (ev.cliente || "").toString().trim() || "—";
+                const comuna = (ev.comuna || "").toString().trim() || "—";
+                const payload = encodeURIComponent(JSON.stringify(ev));
+                return `
+                  <div class="event-row rowlink" data-evt='${payload}' style="cursor:pointer; padding:10px 12px; border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(10,16,22,.55); display:flex; align-items:center; gap:10px;">
+                    <span class="dot" style="background:${dot}"></span>
+                    <div style="min-width:0; flex:1;">
+                      <div style="font-weight:1100; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${cliente}</div>
+                      <div class="muted" style="font-size:12px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${marca || "—"} · ${comuna}</div>
+                    </div>
+                    <div class="muted" style="font-weight:1000; font-size:12px;">Abrir</div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </div>
+        `;
+      }).join("");
+      $("#eventsWeek").innerHTML = html || `<div class="muted">Sin eventos confirmados en la semana.</div>`;
 
-      $("#eventsWeek").querySelectorAll("tr.rowlink[data-evt]").forEach(row => {
+      $("#eventsWeek").querySelectorAll(".rowlink[data-evt]").forEach(row => {
         row.addEventListener("click", () => {
           const raw = row.getAttribute("data-evt");
           if (!raw) return;
@@ -1124,7 +1133,7 @@
       window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html#total" }, "*");
     });
     $("#btnGoFinReportes")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"rep_fin", url:"/web/views/reportes.html#fin" }, "*");
+      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html#cxc" }, "*");
     });
 
     (async () => {

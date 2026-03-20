@@ -1071,6 +1071,21 @@ async function loadCatalogos(){
 }
 
 async function loadLeads(){
+  // Optimización: cuando venimos de drilldown (stale_ids), traemos solo esos leads.
+  try{
+    const params = new URLSearchParams(location.search);
+    const rawIds = (params.get("stale_ids") || "").trim();
+    const ids = rawIds ? rawIds.split(",").map(x=>x.trim()).filter(Boolean) : [];
+    if (ids.length && ids.length <= 450){
+      const r = await tryGetFirstJSON([`/leads/by_ids?ids=${encodeURIComponent(ids.join(","))}`]);
+      const items = Array.isArray(r) ? r : (r.items || []);
+      LEADS = (items||[]).map(normLead);
+      computeMonthTotal();
+      computeHighlightIds();
+      return;
+    }
+  }catch(_){}
+
   const raw = await tryGetFirstJSON(["/leads?limit=5000", "/leads?limit=1000", "/leads"]);
   const items = Array.isArray(raw) ? raw : (raw.items || raw.leads || []);
   LEADS = (items||[]).map(normLead);

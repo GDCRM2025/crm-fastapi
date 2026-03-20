@@ -441,6 +441,85 @@ def list_leads(
         return {"total": int(total), "items": list(rows)}
 
 
+@router.get("/leads/by_ids")
+def leads_by_ids(
+    ids: str = Query(..., description="Lista separada por coma de id_lead"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Devuelve leads por IDs (para drilldowns rápidos desde Dashboard).
+    Aplica la misma restricción por marcas del usuario cuando corresponde.
+    """
+    _ensure_leads_delete_cols()
+    role = _role(user)
+    if not _can_access_leads(role):
+        raise HTTPException(403, "Sin permiso para Leads")
+
+    raw = [x.strip() for x in str(ids or "").split(",") if x.strip()]
+    lead_ids: list[int] = []
+    for x in raw[:600]:
+        if not x.isdigit():
+            continue
+        try:
+            lead_ids.append(int(x))
+        except Exception:
+            continue
+    lead_ids = [x for x in lead_ids if x > 0]
+    if not lead_ids:
+        return {"ok": True, "items": []}
+
+    marcas = _user_marcas(user)
+    only_own = _restrict_leads_to_user_marcas(role)
+
+    lead_cols = _cols_for("leads")
+    marca_cols = _cols_for("marcas") if _table_exists("marcas") else set()
+    comuna_cols = _cols_for("comunas") if _table_exists("comunas") else set()
+
+    marca_name_expr = "m.marca" if "marca" in marca_cols else ("m.nombre" if "nombre" in marca_cols else "NULL")
+    comuna_name_expr = "c.nombre" if "nombre" in comuna_cols else ("c.comuna" if "comuna" in comuna_cols else "NULL")
+
+    extra_cols = []
+    if "fecha_ingreso" in lead_cols:
+        extra_cols.append("l.fecha_ingreso")
+    for col in ("id_cotizacion_vigente", "calendar_html_link", "calendar_event_id", "agenda_approved_at", "agenda_approved_by"):
+        if col in lead_cols:
+            extra_cols.append(f"l.{col}")
+    extra_sql = (", " + ", ".join(extra_cols)) if extra_cols else ""
+
+    with get_connection() as conn:
+        where_parts = ["COALESCE(l.is_deleted,false)=false", "l.id_lead = ANY(:ids)"]
+        params: dict[str, Any] = {"ids": lead_ids}
+        if only_own:
+            if not marcas:
+                return {"ok": True, "items": []}
+            where_parts.append("l.id_marca = ANY(:marcas)")
+            params["marcas"] = marcas
+
+        where_sql = "WHERE " + " AND ".join(where_parts)
+        q = f"""
+            SELECT
+              l.id_lead, l.cliente, l.cliente AS nombre_cliente, l.email, l.telefono, l.direccion,
+              l.id_marca, l.id_estado, l.id_comuna, l.id_tipo_cliente,
+              l.fecha_evento, l.monto_cotizado, l.plataforma, l.notas, l.num_cotizacion, l.cotizacion_pdf_url,
+              l.created_at, l.updated_at{extra_sql},
+              COALESCE({marca_name_expr},'Sin Marca') AS marca,
+              COALESCE(e.nombre,'') AS estado_nombre,
+              COALESCE(e.color,'#64748b') AS estado_color,
+              COALESCE({comuna_name_expr},'Sin Comuna') AS comuna,
+              COALESCE(e.nombre,'') AS estado,
+              COALESCE(e.color,'#64748b') AS color,
+              COALESCE({comuna_name_expr},'Sin Comuna') AS comuna_nombre
+            FROM public.leads l
+            LEFT JOIN public.marcas m ON m.id_marca = l.id_marca
+            LEFT JOIN public.estados_lead e ON e.id_estado = l.id_estado
+            LEFT JOIN public.comunas c ON c.id_comuna = l.id_comuna
+            {where_sql}
+            ORDER BY l.id_lead DESC
+        """
+        rows = conn.execute(text(q), params).mappings().all()
+        return {"ok": True, "items": list(rows)}
+
+
 @router.get("/leads/{id_lead}")
 def get_lead(id_lead: int, user: dict = Depends(get_current_user)):
     _ensure_leads_delete_cols()
