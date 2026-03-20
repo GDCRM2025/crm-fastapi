@@ -126,7 +126,7 @@
   </style>
 </head>
 <body>
-  <div class="wrap">
+    <div class="wrap">
     <section class="head">
       <div>
         <div class="ttl">Reportes</div>
@@ -172,12 +172,13 @@
         <input id="fin" class="inp" type="date" />
         <button id="go" class="btn primary" type="button">Cargar</button>
         <button id="openDash" class="btn" type="button">Abrir Dashboard</button>
+        <button id="viewAll" class="btn" type="button" style="display:none;">Ver todos</button>
       </div>
     </section>
 
     <div class="muted" id="st">—</div>
 
-    <section class="card">
+    <section class="card" id="kpi_card">
       <div class="h2">KPIs</div>
       <div class="kpis" id="kpis"></div>
     </section>
@@ -428,6 +429,9 @@
     }
 
     async function init(){
+      const only = getOnlySection();
+      if (only) applyOnlyMode(only);
+
       const now = new Date();
       const start = new Date(now.getTime() - 1000*60*60*24*30);
       qs("#ini").value = fmtDate(start);
@@ -453,6 +457,7 @@
       }
 
       qs("#openDash").onclick = () => openInParent("/web/views/dashboard.html");
+      qs("#viewAll").onclick = () => openInParent("/web/views/reportes.html");
       qs("#go").onclick = () => load().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
 
       // Export (CSV)
@@ -500,12 +505,69 @@
       qs("#go").click();
 
       // hash scroll
-      setTimeout(() => {
-        const h = String(location.hash||"").replace("#","");
-        if (!h) return;
-        const el = document.getElementById(h);
-        if (el) el.scrollIntoView({ behavior:"smooth", block:"start" });
-      }, 250);
+      setTimeout(scrollToHash, 250);
+    }
+
+    function getOnlySection(){
+      try{
+        const usp = new URLSearchParams(location.search || "");
+        const only = String(usp.get("only") || "").trim();
+        return only || "";
+      }catch(_){
+        return "";
+      }
+    }
+
+    function applyOnlyMode(only){
+      // Solo mostrar 1 sección de reportes cuando se abre desde el menú lateral
+      // (ej: reportes.html?only=funnel#funnel)
+      if (!only) return;
+      const allow = new Set([
+        "funnel","cierre","tipo_cliente","email_mkt","total","cxc","cxp",
+        "comunas","productos","clientes","leads_hoy","venta_diaria"
+      ]);
+      if (!allow.has(only)) return;
+
+      // botón "Ver todos"
+      const v = qs("#viewAll");
+      if (v) v.style.display = "";
+
+      // ocultar KPIs en modo "solo 1 reporte"
+      const kpi = qs("#kpi_card");
+      if (kpi) kpi.style.display = "none";
+
+      // ocultar chips (dejar 1 visible para contexto)
+      document.querySelectorAll(".navchips .chip").forEach(a => {
+        const href = String(a.getAttribute("href") || "");
+        const id = href.startsWith("#") ? href.slice(1) : "";
+        if (!id) return;
+        a.style.display = (id === only) ? "" : "none";
+      });
+
+      // ocultar secciones que no sean la elegida y expandir la elegida
+      const ids = Array.from(allow);
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (id !== only){
+          el.style.display = "none";
+          return;
+        }
+        // expandir
+        if (el.closest(".grid")) el.style.gridColumn = "span 12";
+      });
+
+      // asegurar que el hash sea consistente
+      if (!location.hash || location.hash === "#"){
+        location.hash = "#" + only;
+      }
+    }
+
+    function scrollToHash(){
+      const h = String(location.hash||"").replace("#","");
+      if (!h) return;
+      const el = document.getElementById(h);
+      if (el) el.scrollIntoView({ behavior:"smooth", block:"start" });
     }
 
     async function load(){
