@@ -94,6 +94,18 @@
     .rowlink:hover{background: rgba(255,255,255,.04);}
     :root.light .rowlink:hover{background: rgba(0,0,0,.04);}
 
+    /* Barras minimalistas dentro de tablas */
+    .barcell{min-width:220px;}
+    .barwrap{
+      margin-top:6px;
+      height:8px;
+      border-radius:999px;
+      background:rgba(148,163,184,.14);
+      overflow:hidden;
+      border:1px solid rgba(148,163,184,.16);
+    }
+    .bar{height:100%; width:calc(var(--w,0) * 1%); background:rgba(25,195,125,.35);}
+
     .navchips{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
     .chip{
       height:30px;
@@ -368,6 +380,14 @@
       }
     }
 
+    function scrollToHash(){
+      const h = String(location.hash||"").replace("#","");
+      if (!h) return;
+      const el = document.getElementById(h);
+      if (!el) return;
+      try{ el.scrollIntoView({ behavior:"smooth", block:"start" }); }catch(_){}
+    }
+
     function openFilter(params){
       const usp = new URLSearchParams();
       Object.entries(params||{}).forEach(([k,v]) => { if (v!=null && v!=="") usp.set(k, String(v)); });
@@ -531,6 +551,7 @@
       await renderFinanzas(ini, fin);
 
       qs("#st").textContent = `OK · Rango: ${ini} → ${fin}${mid ? (" · Marca ID: " + mid) : ""}`;
+      setTimeout(scrollToHash, 60);
     }
 
     function renderKPIs(dash, ini, fin, mid){
@@ -567,9 +588,15 @@
         tb.innerHTML = `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
         return;
       }
+      const maxMonto = Math.max(1, ...items.map(x => Number(x?.monto||0)));
       tb.innerHTML = items.map(r => `
         <tr class="rowlink" data-estado="${encodeURIComponent(r.estado||"")}">
-          <td><strong>${esc(r.estado||"—")}</strong></td>
+          <td class="barcell">
+            <strong>${esc(r.estado||"—")}</strong>
+            <div class="barwrap" style="--w:${Math.round((Number(r.monto||0)/maxMonto)*100)}">
+              <div class="bar"></div>
+            </div>
+          </td>
           <td class="right">${esc(r.cantidad||0)}</td>
           <td class="right">${esc(money(r.monto||0))}</td>
         </tr>
@@ -639,9 +666,15 @@
 
       const tbP = qs("#tbProd");
       if (tbP){
+        const maxMonto = Math.max(1, ...tp.map(x => Number(x?.monto||0)));
         tbP.innerHTML = tp.length ? tp.map(r => `
           <tr>
-            <td><strong>${esc(r.producto||"—")}</strong></td>
+            <td class="barcell">
+              <strong>${esc(r.producto||"—")}</strong>
+              <div class="barwrap" style="--w:${Math.round((Number(r.monto||0)/maxMonto)*100)}">
+                <div class="bar"></div>
+              </div>
+            </td>
             <td class="muted">${esc(r.marca||"")}</td>
             <td class="right">${esc(Math.round(Number(r.cantidad||0)))}</td>
             <td class="right">${esc(money(r.monto||0))}</td>
@@ -651,9 +684,15 @@
 
       const tbC = qs("#tbCom");
       if (tbC){
+        const maxMonto = Math.max(1, ...com.map(x => Number(x?.monto||0)));
         tbC.innerHTML = com.length ? com.map(r => `
           <tr>
-            <td><strong>${esc(r.comuna||"—")}</strong></td>
+            <td class="barcell">
+              <strong>${esc(r.comuna||"—")}</strong>
+              <div class="barwrap" style="--w:${Math.round((Number(r.monto||0)/maxMonto)*100)}">
+                <div class="bar"></div>
+              </div>
+            </td>
             <td class="right">${esc(r.cantidad||0)}</td>
             <td class="right">${esc(money(r.monto||0))}</td>
           </tr>
@@ -662,9 +701,15 @@
 
       const tbU = qs("#tbCli");
       if (tbU){
+        const maxMonto = Math.max(1, ...cli.map(x => Number(x?.monto||0)));
         tbU.innerHTML = cli.length ? cli.map(r => `
           <tr>
-            <td><strong>${esc(r.cliente||"—")}</strong></td>
+            <td class="barcell">
+              <strong>${esc(r.cliente||"—")}</strong>
+              <div class="barwrap" style="--w:${Math.round((Number(r.monto||0)/maxMonto)*100)}">
+                <div class="bar"></div>
+              </div>
+            </td>
             <td class="right">${esc(r.cantidad||0)}</td>
             <td class="right">${esc(money(r.monto||0))}</td>
           </tr>
@@ -989,7 +1034,14 @@
       box.innerHTML = `<div class="muted">Creando snapshot…</div>`;
       const qs2 = new URLSearchParams({ yyyymm, dry_run: "false" });
       if (id_marca) qs2.set("id_marca", String(id_marca));
-      const j = await jget(`/marketing/audiencia/snapshot?${qs2.toString()}`);
+      const r = await fetch(apiURL(`/marketing/audiencia/snapshot?${qs2.toString()}`), {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: "{}"
+      });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      const j = txt ? JSON.parse(txt) : {};
       box.innerHTML = `<div class="muted">Snapshot OK: ${esc(JSON.stringify({ inserted:j.inserted, updated:j.updated, total:j.total }))}</div>`;
       await mktLoad();
     }
