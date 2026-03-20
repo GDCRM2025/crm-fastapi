@@ -1772,220 +1772,241 @@ def dashboard_reportes(
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
-    role = (me.get("role") or me.get("rol") or "").upper()
-    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
-    only_own = not _is_admin(role)
+    # IMPORTANTE: este endpoint no debe botar el frontend. Si algo falla en reportería
+    # (tablas/columnas faltantes o SQL incompatibles), devolvemos payload vacío con ok=true.
+    try:
+        role = (me.get("role") or me.get("rol") or "").upper()
+        marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+        only_own = not _is_admin(role)
 
-    if _col_exists(db, "leads", "fecha_evento"):
-        date_col = "fecha_evento"
-    elif _col_exists(db, "leads", "fecha_ingreso"):
-        date_col = "fecha_ingreso"
-    else:
-        date_col = "created_at"
+        if _col_exists(db, "leads", "fecha_evento"):
+            date_col = "fecha_evento"
+        elif _col_exists(db, "leads", "fecha_ingreso"):
+            date_col = "fecha_ingreso"
+        else:
+            date_col = "created_at"
 
-    where_parts = ["1=1"]
-    params: dict[str, Any] = {}
-    if fecha_inicio:
-        where_parts.append(f"DATE(l.{date_col}) >= :ini")
-        params["ini"] = fecha_inicio
-    if fecha_termino:
-        where_parts.append(f"DATE(l.{date_col}) <= :fin")
-        params["fin"] = fecha_termino
+        where_parts = ["1=1"]
+        params: dict[str, Any] = {}
+        if fecha_inicio:
+            where_parts.append(f"DATE(l.{date_col}) >= :ini")
+            params["ini"] = fecha_inicio
+        if fecha_termino:
+            where_parts.append(f"DATE(l.{date_col}) <= :fin")
+            params["fin"] = fecha_termino
 
-    if id_marca:
+        if id_marca:
+            try:
+                mid = int(id_marca)
+            except Exception:
+                mid = 0
+            if mid > 0:
+                if only_own and marcas and (mid not in set(marcas)):
+                    raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
+                where_parts.append("l.id_marca = :id_marca")
+                params["id_marca"] = mid
+        if only_own and marcas:
+            where_parts.append("l.id_marca = ANY(:marcas)")
+            params["marcas"] = marcas
+        where_sql = " AND ".join(where_parts)
+
+        confirmado_id = _estado_id(db, "CONFIRM")
+
+        funnel: list[dict] = []
         try:
-            mid = int(id_marca)
-        except Exception:
-            mid = 0
-        if mid > 0:
-            if only_own and marcas and (mid not in set(marcas)):
-                raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
-            where_parts.append("l.id_marca = :id_marca")
-            params["id_marca"] = mid
-    if only_own and marcas:
-        where_parts.append("l.id_marca = ANY(:marcas)")
-        params["marcas"] = marcas
-    where_sql = " AND ".join(where_parts)
-
-    confirmado_id = _estado_id(db, "CONFIRM")
-
-    funnel: list[dict] = []
-    try:
-        q_funnel = f"""
-            SELECT COALESCE(e.nombre,'Sin estado') AS estado,
-                   COUNT(*)::int AS cantidad,
-                   COALESCE(SUM(l.monto_cotizado),0) AS monto
-            FROM leads l
-            LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
-            WHERE {where_sql}
-            GROUP BY e.nombre
-            ORDER BY cantidad DESC
-        """
-        funnel = db.execute(text(q_funnel), params).mappings().all()
-    except Exception:
-        funnel = []
-
-    diarios_col = "fecha_evento" if _col_exists(db, "leads", "fecha_evento") else date_col
-    diarios_params = dict(params)
-    if confirmado_id:
-        diarios_params["conf"] = confirmado_id
-    eventos_diarios: list[dict] = []
-    try:
-        q_diarios = f"""
-            SELECT DATE(l.{diarios_col}) AS dia,
-                   COUNT(*)::int AS cantidad,
-                   COALESCE(SUM(l.monto_cotizado),0) AS monto
-            FROM leads l
-            WHERE {where_sql}
-              AND l.{diarios_col} IS NOT NULL
-              {"AND l.id_estado=:conf" if confirmado_id else ""}
-            GROUP BY DATE(l.{diarios_col})
-            ORDER BY dia ASC
-        """
-        eventos_diarios = db.execute(text(q_diarios), diarios_params).mappings().all()
-    except Exception:
-        eventos_diarios = []
-
-    name_expr = _lead_name_expr(db)
-    clientes: list[dict] = []
-    try:
-        q_clientes = f"""
-            SELECT {name_expr} AS cliente,
-                   COUNT(*)::int AS cantidad,
-                   COALESCE(SUM(l.monto_cotizado),0) AS monto
-            FROM leads l
-            WHERE {where_sql}
-              {"AND l.id_estado=:conf" if confirmado_id else ""}
-            GROUP BY {name_expr}
-            ORDER BY monto DESC
-            LIMIT 20
-        """
-        clientes = db.execute(text(q_clientes), diarios_params).mappings().all()
-    except Exception:
-        clientes = []
-
-    comunas: list[dict] = []
-    try:
-        q_comunas = f"""
-            SELECT COALESCE(c.nombre,'—') AS comuna,
-                   COUNT(*)::int AS cantidad,
-                   COALESCE(SUM(l.monto_cotizado),0) AS monto
-            FROM leads l
-            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
-            WHERE {where_sql}
-              {"AND l.id_estado=:conf" if confirmado_id else ""}
-            GROUP BY c.nombre
-            ORDER BY monto DESC
-            LIMIT 20
-        """
-        comunas = db.execute(text(q_comunas), diarios_params).mappings().all()
-    except Exception:
-        comunas = []
-
-    # Tipo de cliente (empresa/particular u otros)
-    tipos_rows: list[dict] = []
-    tipos_rows_conf: list[dict] = []
-    try:
-        tipo_expr = None
-        join_sql = ""
-        if _col_exists(db, "leads", "id_tipo_cliente") and _table_exists_pg(db, "tipos_cliente"):
-            tipo_expr = "COALESCE(tc.nombre,'—')"
-            join_sql = "LEFT JOIN tipos_cliente tc ON tc.id_tipo_cliente = l.id_tipo_cliente"
-        elif _col_exists(db, "leads", "tipo_cliente"):
-            tipo_expr = "COALESCE(l.tipo_cliente,'—')"
-        if tipo_expr:
-            q_tipo = f"""
-                SELECT {tipo_expr} AS tipo_cliente,
+            q_funnel = f"""
+                SELECT COALESCE(e.nombre,'Sin estado') AS estado,
                        COUNT(*)::int AS cantidad,
-                       COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                       COALESCE(SUM(l.monto_cotizado),0) AS monto
                 FROM leads l
-                {join_sql}
+                LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
                 WHERE {where_sql}
-                GROUP BY {tipo_expr}
+                GROUP BY e.nombre
                 ORDER BY cantidad DESC
             """
-            tipos_rows = db.execute(text(q_tipo), params).mappings().all()
+            funnel = db.execute(text(q_funnel), params).mappings().all()
+        except Exception:
+            funnel = []
 
-            if confirmado_id:
-                q_tipo_conf = q_tipo.replace(f"WHERE {where_sql}", f"WHERE {where_sql} AND l.id_estado=:conf")
-                tipos_rows_conf = db.execute(text(q_tipo_conf), diarios_params).mappings().all()
-    except Exception:
-        tipos_rows = []
-        tipos_rows_conf = []
+        diarios_col = "fecha_evento" if _col_exists(db, "leads", "fecha_evento") else date_col
+        diarios_params = dict(params)
+        if confirmado_id:
+            diarios_params["conf"] = confirmado_id
+        eventos_diarios: list[dict] = []
+        try:
+            q_diarios = f"""
+                SELECT DATE(l.{diarios_col}) AS dia,
+                       COUNT(*)::int AS cantidad,
+                       COALESCE(SUM(l.monto_cotizado),0) AS monto
+                FROM leads l
+                WHERE {where_sql}
+                  AND l.{diarios_col} IS NOT NULL
+                  {"AND l.id_estado=:conf" if confirmado_id else ""}
+                GROUP BY DATE(l.{diarios_col})
+                ORDER BY dia ASC
+            """
+            eventos_diarios = db.execute(text(q_diarios), diarios_params).mappings().all()
+        except Exception:
+            eventos_diarios = []
 
-    top_productos: list[dict] = []
-    if _table_exists_pg(db, "cotizacion_items") and _table_exists_pg(db, "cotizaciones"):
-        cols_items = _cols_pg(db, "cotizacion_items")
-        cols_cot = _cols_pg(db, "cotizaciones")
-        prod_col = "producto" if "producto" in cols_items else ("nombre_producto" if "nombre_producto" in cols_items else None)
-        qty_col = "cantidad" if "cantidad" in cols_items else None
-        total_col = "total_linea" if "total_linea" in cols_items else ("subtotal" if "subtotal" in cols_items else None)
-        date_cot = "fecha" if "fecha" in cols_cot else ("created_at" if "created_at" in cols_cot else "updated_at")
-        has_id_lead = "id_lead" in cols_cot
-        marca_expr = "COALESCE(i.marca, m.nombre, m.marca,'')" if "marca" in cols_items else "COALESCE(m.nombre, m.marca,'')"
-        if prod_col and qty_col and total_col and has_id_lead:
-            q_prod = f"""
-                SELECT i.{prod_col} AS producto,
-                       {marca_expr} AS marca,
-                       SUM(COALESCE(i.{qty_col},0))::float AS cantidad,
-                       SUM(COALESCE(i.{total_col},0))::float AS monto
-                FROM cotizacion_items i
-                JOIN cotizaciones c ON c.id_cotizacion=i.id_cotizacion
-                LEFT JOIN leads l ON l.id_lead=c.id_lead
-                LEFT JOIN marcas m ON m.id_marca=l.id_marca
-                WHERE 1=1
-                  {("AND DATE(c." + date_cot + ") >= :ini" if fecha_inicio else "")}
-                  {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
-                  {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
-                GROUP BY i.{prod_col}, {marca_expr}
+        name_expr = _lead_name_expr(db)
+        clientes: list[dict] = []
+        try:
+            q_clientes = f"""
+                SELECT {name_expr} AS cliente,
+                       COUNT(*)::int AS cantidad,
+                       COALESCE(SUM(l.monto_cotizado),0) AS monto
+                FROM leads l
+                WHERE {where_sql}
+                  {"AND l.id_estado=:conf" if confirmado_id else ""}
+                GROUP BY {name_expr}
                 ORDER BY monto DESC
                 LIMIT 20
             """
-            try:
-                top_productos = db.execute(text(q_prod), params).mappings().all()
-            except Exception:
-                top_productos = []
-    elif _table_exists_pg(db, "cotizaciones_detalle") and _table_exists_pg(db, "cotizaciones"):
-        cols_det = _cols_pg(db, "cotizaciones_detalle")
-        cols_cot = _cols_pg(db, "cotizaciones")
-        prod_col = "nombre_producto" if "nombre_producto" in cols_det else ("producto" if "producto" in cols_det else None)
-        qty_col = "cantidad" if "cantidad" in cols_det else None
-        total_col = "subtotal" if "subtotal" in cols_det else None
-        date_cot = "fecha" if "fecha" in cols_cot else ("created_at" if "created_at" in cols_cot else "updated_at")
-        has_id_lead = "id_lead" in cols_cot
-        if prod_col and qty_col and total_col and has_id_lead:
-            q_prod = f"""
-                SELECT d.{prod_col} AS producto,
-                       COALESCE(m.nombre, m.marca,'') AS marca,
-                       SUM(COALESCE(d.{qty_col},0))::float AS cantidad,
-                       SUM(COALESCE(d.{total_col},0))::float AS monto
-                FROM cotizaciones_detalle d
-                JOIN cotizaciones c ON c.id_cotizacion=d.id_cotizacion
-                LEFT JOIN leads l ON l.id_lead=c.id_lead
-                LEFT JOIN marcas m ON m.id_marca=l.id_marca
-                WHERE 1=1
-                  {("AND DATE(c." + date_cot + ") >= :ini" if fecha_inicio else "")}
-                  {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
-                  {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
-                GROUP BY d.{prod_col}, COALESCE(m.nombre, m.marca,'')
+            clientes = db.execute(text(q_clientes), diarios_params).mappings().all()
+        except Exception:
+            clientes = []
+
+        comunas: list[dict] = []
+        try:
+            q_comunas = f"""
+                SELECT COALESCE(c.nombre,'—') AS comuna,
+                       COUNT(*)::int AS cantidad,
+                       COALESCE(SUM(l.monto_cotizado),0) AS monto
+                FROM leads l
+                LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                WHERE {where_sql}
+                  {"AND l.id_estado=:conf" if confirmado_id else ""}
+                GROUP BY c.nombre
                 ORDER BY monto DESC
                 LIMIT 20
             """
-            try:
-                top_productos = db.execute(text(q_prod), params).mappings().all()
-            except Exception:
-                top_productos = []
+            comunas = db.execute(text(q_comunas), diarios_params).mappings().all()
+        except Exception:
+            comunas = []
 
-    return {
-        "ok": True,
-        "funnel": list(funnel),
-        "eventos_diarios": list(eventos_diarios),
-        "top_productos": list(top_productos),
-        "clientes": list(clientes),
-        "comunas": list(comunas),
-        "tipo_cliente": list(tipos_rows),
-        "tipo_cliente_confirmados": list(tipos_rows_conf),
-    }
+        # Tipo de cliente (empresa/particular u otros)
+        tipos_rows: list[dict] = []
+        tipos_rows_conf: list[dict] = []
+        try:
+            tipo_expr = None
+            join_sql = ""
+            if _col_exists(db, "leads", "id_tipo_cliente") and _table_exists_pg(db, "tipos_cliente"):
+                tipo_expr = "COALESCE(tc.nombre,'—')"
+                join_sql = "LEFT JOIN tipos_cliente tc ON tc.id_tipo_cliente = l.id_tipo_cliente"
+            elif _col_exists(db, "leads", "tipo_cliente"):
+                tipo_expr = "COALESCE(l.tipo_cliente,'—')"
+            if tipo_expr:
+                q_tipo = f"""
+                    SELECT {tipo_expr} AS tipo_cliente,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    {join_sql}
+                    WHERE {where_sql}
+                    GROUP BY {tipo_expr}
+                    ORDER BY cantidad DESC
+                """
+                tipos_rows = db.execute(text(q_tipo), params).mappings().all()
+
+                if confirmado_id:
+                    q_tipo_conf = q_tipo.replace(f"WHERE {where_sql}", f"WHERE {where_sql} AND l.id_estado=:conf")
+                    tipos_rows_conf = db.execute(text(q_tipo_conf), diarios_params).mappings().all()
+        except Exception:
+            tipos_rows = []
+            tipos_rows_conf = []
+
+        top_productos: list[dict] = []
+        try:
+            if _table_exists_pg(db, "cotizacion_items") and _table_exists_pg(db, "cotizaciones"):
+                cols_items = _cols_pg(db, "cotizacion_items")
+                cols_cot = _cols_pg(db, "cotizaciones")
+                prod_col = "producto" if "producto" in cols_items else ("nombre_producto" if "nombre_producto" in cols_items else None)
+                qty_col = "cantidad" if "cantidad" in cols_items else None
+                total_col = "total_linea" if "total_linea" in cols_items else ("subtotal" if "subtotal" in cols_items else None)
+                date_cot = "fecha" if "fecha" in cols_cot else ("created_at" if "created_at" in cols_cot else "updated_at")
+                has_id_lead = "id_lead" in cols_cot
+                marca_expr = "COALESCE(i.marca, m.nombre, m.marca,'')" if "marca" in cols_items else "COALESCE(m.nombre, m.marca,'')"
+                if prod_col and qty_col and total_col and has_id_lead:
+                    q_prod = f"""
+                        SELECT i.{prod_col} AS producto,
+                               {marca_expr} AS marca,
+                               SUM(COALESCE(i.{qty_col},0))::float AS cantidad,
+                               SUM(COALESCE(i.{total_col},0))::float AS monto
+                        FROM cotizacion_items i
+                        JOIN cotizaciones c ON c.id_cotizacion=i.id_cotizacion
+                        LEFT JOIN leads l ON l.id_lead=c.id_lead
+                        LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                        WHERE 1=1
+                          {("AND DATE(c." + date_cot + ") >= :ini" if fecha_inicio else "")}
+                          {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
+                          {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
+                        GROUP BY i.{prod_col}, {marca_expr}
+                        ORDER BY monto DESC
+                        LIMIT 20
+                    """
+                    try:
+                        top_productos = db.execute(text(q_prod), params).mappings().all()
+                    except Exception:
+                        top_productos = []
+            elif _table_exists_pg(db, "cotizaciones_detalle") and _table_exists_pg(db, "cotizaciones"):
+                cols_det = _cols_pg(db, "cotizaciones_detalle")
+                cols_cot = _cols_pg(db, "cotizaciones")
+                prod_col = "nombre_producto" if "nombre_producto" in cols_det else ("producto" if "producto" in cols_det else None)
+                qty_col = "cantidad" if "cantidad" in cols_det else None
+                total_col = "subtotal" if "subtotal" in cols_det else None
+                date_cot = "fecha" if "fecha" in cols_cot else ("created_at" if "created_at" in cols_cot else "updated_at")
+                has_id_lead = "id_lead" in cols_cot
+                if prod_col and qty_col and total_col and has_id_lead:
+                    q_prod = f"""
+                        SELECT d.{prod_col} AS producto,
+                               COALESCE(m.nombre, m.marca,'') AS marca,
+                               SUM(COALESCE(d.{qty_col},0))::float AS cantidad,
+                               SUM(COALESCE(d.{total_col},0))::float AS monto
+                        FROM cotizaciones_detalle d
+                        JOIN cotizaciones c ON c.id_cotizacion=d.id_cotizacion
+                        LEFT JOIN leads l ON l.id_lead=c.id_lead
+                        LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                        WHERE 1=1
+                          {("AND DATE(c." + date_cot + ") >= :ini" if fecha_inicio else "")}
+                          {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
+                          {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
+                        GROUP BY d.{prod_col}, COALESCE(m.nombre, m.marca,'')
+                        ORDER BY monto DESC
+                        LIMIT 20
+                    """
+                    try:
+                        top_productos = db.execute(text(q_prod), params).mappings().all()
+                    except Exception:
+                        top_productos = []
+        except Exception:
+            top_productos = []
+
+        return {
+            "ok": True,
+            "funnel": list(funnel),
+            "eventos_diarios": list(eventos_diarios),
+            "top_productos": list(top_productos),
+            "clientes": list(clientes),
+            "comunas": list(comunas),
+            "tipo_cliente": list(tipos_rows),
+            "tipo_cliente_confirmados": list(tipos_rows_conf),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        # "Never 500": respuesta mínima para que el frontend no caiga.
+        return {
+            "ok": True,
+            "funnel": [],
+            "eventos_diarios": [],
+            "top_productos": [],
+            "clientes": [],
+            "comunas": [],
+            "tipo_cliente": [],
+            "tipo_cliente_confirmados": [],
+            "_error": str(e),
+        }
 
 
 @router.get("/dashboard/sales_ids")
