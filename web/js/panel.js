@@ -1806,6 +1806,7 @@ const MENU = [
       { id: "set_tc", label: "Tipos Cliente", url: "/web/views/settings.html?entity=tipos_cliente&v=20260218-6" },
       { id: "set_el", label: "Estados Lead", url: "/web/views/settings.html?entity=estados_lead&v=20260218-6" },
       { id: "set_roles", label: "Roles", url: "/web/views/settings.html?entity=roles&v=20260218-6" },
+      { id: "set_metas", label: "Metas ventas", url: "/web/views/settings_metas.html?v=20260320-1" },
       { id: "set_bak", label: "Backups", url: "/web/views/backups.html", noSidebar: true }
     ]
   }
@@ -1933,6 +1934,7 @@ const PERMISSIONS = {
     "set_tc",
     "set_el",
     "set_roles",
+    "set_metas",
     "set_bak"
   ]),
   2: /* @__PURE__ */ new Set([

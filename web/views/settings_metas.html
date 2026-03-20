@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Settings · Metas ventas</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:14px;overflow:auto;}
+    .wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .head{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.25);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    :root.light .head{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .sub{opacity:.72;font-weight:850;font-size:12px;margin-top:4px;max-width:760px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .inp,.sel{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 12px;
+      font-weight:900;
+      outline:none;
+    }
+    .sel{ padding-right: 34px; }
+    :root.light .inp,:root.light .sel{background: rgba(255,255,255,.65); color: rgba(0,0,0,.85);}
+    .btn{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-weight:1000;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn:hover{filter:brightness(1.06);}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+      min-height:0;
+    }
+    :root.light .card{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
+    .muted{opacity:.72; font-weight:850; font-size:12px;}
+    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:sticky; top:0; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
+    :root.light .tbl th{background: rgba(255,255,255,.92);}
+    .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
+    .right{text-align:right;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="head">
+      <div>
+        <div class="ttl">Settings · Metas ventas</div>
+        <div class="sub">Solo Admin. Ingresa venta del año pasado + % crecimiento (default 12). La meta se calcula y se guarda automáticamente.</div>
+      </div>
+      <div class="row">
+        <select id="metaYear" class="sel" title="Año"></select>
+        <button class="btn primary" id="btnMetaReload" type="button">Cargar</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="h2">Metas</div>
+      <div id="metaBox" class="muted">—</div>
+    </section>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(u){
+      const s = String(u||"");
+      if (!s) return s;
+      if (s.startsWith("/crm/")) return s;
+      if (s.startsWith("/")) return API_BASE + s;
+      return API_BASE + "/" + s;
+    }
+    function token(){
+      return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    }
+    function authHeaders(extra={}){
+      const t = token();
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+    async function jget(url){
+      const r = await fetch(apiURL(url), { headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+    async function jput(url, body){
+      const r = await fetch(apiURL(url), {
+        method: "PUT",
+        headers: authHeaders({ "Content-Type":"application/json" }),
+        body: JSON.stringify(body || {}),
+      });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    function initYears(){
+      const sel = qs("#metaYear");
+      if (!sel) return;
+      const y = (new Date()).getFullYear();
+      const ys = [y-1, y, y+1];
+      sel.innerHTML = ys.map(v => `<option value="${esc(v)}"${v===y?" selected":""}>${esc(v)}</option>`).join("");
+    }
+
+    function formatNum(n){
+      const v = Number(n||0);
+      if (!isFinite(v)) return "0";
+      return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    }
+
+    async function loadMetas(){
+      const box = qs("#metaBox");
+      const sel = qs("#metaYear");
+      if (!box || !sel) return;
+      const year = Number(sel.value || (new Date()).getFullYear());
+      box.innerHTML = `<div class="muted">Cargando…</div>`;
+
+      const j = await jget(`/tools/metas?year=${encodeURIComponent(year)}`);
+      const items = Array.isArray(j?.items) ? j.items : [];
+      if (!items.length){
+        box.innerHTML = `
+          <div class="muted">Aún no hay metas cargadas para ${esc(year)}.</div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn primary" id="btnMetaInit" type="button">Inicializar desde marcas</button>
+          </div>
+        `;
+        qs("#btnMetaInit")?.addEventListener("click", async ()=>{
+          await fetch(apiURL(`/tools/metas/init?year=${encodeURIComponent(year)}`), { method:"POST", headers: authHeaders() });
+          await loadMetas();
+        }, { once:true });
+        return;
+      }
+
+      const rows = items.map(it => ({
+        year: Number(it.year||year),
+        id_marca: Number(it.id_marca||0),
+        marca: String(it.marca||""),
+        venta: Number(it.venta_anio_pasado||0),
+        crec: Number(it.crecimiento_pct||12),
+        meta: Number(it.meta||0),
+        updated_by: String(it.updated_by||""),
+      }));
+
+      box.innerHTML = `
+        <div style="overflow:auto; max-height:70vh;">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Marca</th>
+                <th class="right">Venta año pasado</th>
+                <th class="right">% crec.</th>
+                <th class="right">Meta (auto)</th>
+                <th>Actualizado por</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(r => `
+                <tr data-mid="${esc(r.id_marca)}">
+                  <td><strong>${esc(r.marca || ("#" + r.id_marca))}</strong></td>
+                  <td class="right"><input class="inp" data-f="venta" inputmode="numeric" value="${esc(String(Math.round(r.venta||0)))}" style="width:160px"/></td>
+                  <td class="right"><input class="inp" data-f="crec" inputmode="decimal" value="${esc(String(Number(r.crec||12).toFixed(2)))}" style="width:110px"/></td>
+                  <td class="right"><span data-f="meta" style="font-weight:1100">${esc(formatNum(r.meta||0))}</span></td>
+                  <td class="muted" style="font-size:12px">${esc(r.updated_by||"")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="muted" style="margin-top:10px;">Tip: al cambiar un valor, se guarda automáticamente.</div>
+      `;
+
+      const recalcRow = (tr)=>{
+        const ventaEl = tr.querySelector('input[data-f="venta"]');
+        const crecEl = tr.querySelector('input[data-f="crec"]');
+        const metaEl = tr.querySelector('[data-f="meta"]');
+        const venta = Number(String(ventaEl?.value||"0").replace(/[^\d.-]/g,"")) || 0;
+        const crec = Number(String(crecEl?.value||"12").replace(/[^\d.-]/g,"")) || 12;
+        const meta = venta * (1 + crec/100);
+        if (metaEl) metaEl.textContent = formatNum(meta);
+        return { venta, crec };
+      };
+
+      const saveRow = async (tr)=>{
+        const mid = Number(tr.getAttribute("data-mid")||0);
+        if (!mid) return;
+        const { venta, crec } = recalcRow(tr);
+        await jput("/tools/metas", { year, id_marca: mid, venta_anio_pasado: venta, crecimiento_pct: crec });
+      };
+
+      let t = null;
+      box.querySelectorAll("tr[data-mid]").forEach(tr => {
+        tr.querySelectorAll("input[data-f]").forEach(inp => {
+          inp.addEventListener("input", ()=>{
+            recalcRow(tr);
+            if (t) clearTimeout(t);
+            t = setTimeout(()=> saveRow(tr).catch(()=>{}), 450);
+          });
+          inp.addEventListener("blur", ()=> saveRow(tr).catch(()=>{}));
+        });
+      });
+    }
+
+    (async ()=>{
+      initYears();
+      qs("#btnMetaReload")?.addEventListener("click", ()=> loadMetas().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
+      qs("#metaYear")?.addEventListener("change", ()=> loadMetas().catch(()=>{}));
+      await loadMetas();
+    })().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
+  </script>
+</body>
+</html>
+
