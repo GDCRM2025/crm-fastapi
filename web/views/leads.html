@@ -2923,13 +2923,14 @@ async function openEditModal(lead){
 		            return b;
 		          };
 
-		          const btnCall = mk("Llamar", "swBtn secondary");
-		          const btnCopy = mk("Copiar WSP", "swBtn secondary");
-		          const btnWa = mk("WhatsApp", "swBtn");
+			          const btnCall = mk("Llamar", "swBtn secondary");
+			          const btnCopy = mk("Copiar WSP", "swBtn secondary");
+			          const btnWa = mk("WhatsApp", "swBtn");
+			          const btnVcf = mk("vCard", "swBtn secondary");
 
-		          const logAction = async (kind, title, text)=>{
-		            try{
-		              await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+			          const logAction = async (kind, title, text)=>{
+			            try{
+			              await apiJSON(`/leads/${lead.id_lead}/append_note`, {
 		                method: "POST",
 		                headers: { "Content-Type":"application/json" },
 		                body: JSON.stringify({ kind, title, text }),
@@ -2946,13 +2947,25 @@ async function openEditModal(lead){
 		          btnWa.addEventListener("click", ()=>{
 		            try{ doWhatsApp(lead, { defaultAction:"open" }); }catch(_){}
 		          });
-		          btnCopy.addEventListener("click", ()=>{
-		            try{ doWhatsApp(lead, { defaultAction:"copy" }); }catch(_){}
-		          });
+			          btnCopy.addEventListener("click", ()=>{
+			            try{ doWhatsApp(lead, { defaultAction:"copy" }); }catch(_){}
+			          });
+			          btnVcf.addEventListener("click", async ()=>{
+			            try{
+			              await logAction("VCARD", "vCard generado", "Se descargó la vCard del cliente.");
+			            }catch(_){}
+			            try{
+			              const url = apiURL(`/leads/${lead.id_lead}/vcard`);
+			              window.open(url, "_blank", "noopener");
+			            }catch(_){
+			              toast("No pude abrir vCard", "error");
+			            }
+			          });
 
-		          wrap.appendChild(btnCall);
-		          wrap.appendChild(btnCopy);
-		          wrap.appendChild(btnWa);
+			          wrap.appendChild(btnCall);
+			          wrap.appendChild(btnCopy);
+			          wrap.appendChild(btnWa);
+			          wrap.appendChild(btnVcf);
 
 		          // Insertar antes de botones de Swal (al inicio)
 		          actions.insertBefore(wrap, actions.firstChild);

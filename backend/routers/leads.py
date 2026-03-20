@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 import json
-from fastapi import APIRouter, HTTPException, Query, Body, Depends, Request, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, Body, Depends, Request, UploadFile, File, Response
 from fastapi.responses import FileResponse
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text
@@ -575,6 +575,63 @@ def get_lead(id_lead: int, user: dict = Depends(get_current_user)):
             except Exception:
                 pass
         return data
+
+
+@router.get("/leads/{id_lead}/vcard")
+def lead_vcard(id_lead: int, user: dict = Depends(get_current_user)):
+    """
+    Genera una vCard (.vcf) para guardar el contacto del cliente en el teléfono.
+    """
+    role = _role(user)
+    if not _can_access_leads(role):
+        raise HTTPException(403, "Sin permiso para Leads")
+
+    lead = get_lead(id_lead, user)
+
+    def esc(s: str) -> str:
+        s = (s or "").replace("\r", "").replace("\n", "\\n")
+        s = s.replace(";", "\\;").replace(",", "\\,")
+        return s
+
+    name = str(lead.get("cliente") or lead.get("nombre_cliente") or "").strip() or f"Lead {id_lead}"
+    email = str(lead.get("email") or "").strip()
+    tel = str(lead.get("telefono") or "").strip()
+    org = str(lead.get("marca_nombre") or lead.get("marca") or "").strip()
+    comuna = str(lead.get("comuna_nombre") or lead.get("comuna") or "").strip()
+    note_bits = []
+    if comuna:
+        note_bits.append(f"Comuna: {comuna}")
+    if org:
+        note_bits.append(f"Marca: {org}")
+    note = " · ".join(note_bits)
+
+    lines = [
+        "BEGIN:VCARD",
+        "VERSION:3.0",
+        f"FN:{esc(name)}",
+    ]
+    parts = [p for p in name.split(" ") if p.strip()]
+    if parts:
+        first = parts[0]
+        last = " ".join(parts[1:]) if len(parts) > 1 else ""
+        lines.append(f"N:{esc(last)};{esc(first)};;;")
+    if org:
+        lines.append(f"ORG:{esc(org)}")
+    if tel:
+        lines.append(f"TEL;TYPE=CELL:{esc(tel)}")
+    if email:
+        lines.append(f"EMAIL;TYPE=INTERNET:{esc(email)}")
+    if note:
+        lines.append(f"NOTE:{esc(note)}")
+    lines.append("END:VCARD")
+    body = "\r\n".join(lines) + "\r\n"
+
+    filename = f"contacto_lead_{id_lead}.vcf"
+    return Response(
+        content=body,
+        media_type="text/vcard; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
+    )
 
 @router.delete("/leads/{id_lead}")
 def delete_lead(id_lead: int, user: dict = Depends(get_current_user)):
