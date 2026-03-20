@@ -1905,10 +1905,12 @@ def dashboard_reportes(
         qty_col = "cantidad" if "cantidad" in cols_items else None
         total_col = "total_linea" if "total_linea" in cols_items else ("subtotal" if "subtotal" in cols_items else None)
         date_cot = "fecha" if "fecha" in cols_cot else ("created_at" if "created_at" in cols_cot else "updated_at")
-        if prod_col and qty_col and total_col:
+        has_id_lead = "id_lead" in cols_cot
+        marca_expr = "COALESCE(i.marca, m.nombre, m.marca,'')" if "marca" in cols_items else "COALESCE(m.nombre, m.marca,'')"
+        if prod_col and qty_col and total_col and has_id_lead:
             q_prod = f"""
                 SELECT i.{prod_col} AS producto,
-                       COALESCE(i.marca, m.nombre, m.marca,'') AS marca,
+                       {marca_expr} AS marca,
                        SUM(COALESCE(i.{qty_col},0))::float AS cantidad,
                        SUM(COALESCE(i.{total_col},0))::float AS monto
                 FROM cotizacion_items i
@@ -1919,11 +1921,14 @@ def dashboard_reportes(
                   {("AND DATE(c." + date_cot + ") >= :ini" if fecha_inicio else "")}
                   {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
                   {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
-                GROUP BY i.{prod_col}, COALESCE(i.marca, m.nombre, m.marca,'')
+                GROUP BY i.{prod_col}, {marca_expr}
                 ORDER BY monto DESC
                 LIMIT 20
             """
-            top_productos = db.execute(text(q_prod), params).mappings().all()
+            try:
+                top_productos = db.execute(text(q_prod), params).mappings().all()
+            except Exception:
+                top_productos = []
     elif _table_exists_pg(db, "cotizaciones_detalle") and _table_exists_pg(db, "cotizaciones"):
         cols_det = _cols_pg(db, "cotizaciones_detalle")
         cols_cot = _cols_pg(db, "cotizaciones")
@@ -1931,7 +1936,8 @@ def dashboard_reportes(
         qty_col = "cantidad" if "cantidad" in cols_det else None
         total_col = "subtotal" if "subtotal" in cols_det else None
         date_cot = "fecha" if "fecha" in cols_cot else ("created_at" if "created_at" in cols_cot else "updated_at")
-        if prod_col and qty_col and total_col:
+        has_id_lead = "id_lead" in cols_cot
+        if prod_col and qty_col and total_col and has_id_lead:
             q_prod = f"""
                 SELECT d.{prod_col} AS producto,
                        COALESCE(m.nombre, m.marca,'') AS marca,
@@ -1949,7 +1955,10 @@ def dashboard_reportes(
                 ORDER BY monto DESC
                 LIMIT 20
             """
-            top_productos = db.execute(text(q_prod), params).mappings().all()
+            try:
+                top_productos = db.execute(text(q_prod), params).mappings().all()
+            except Exception:
+                top_productos = []
 
     return {
         "ok": True,
