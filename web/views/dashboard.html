@@ -1147,6 +1147,13 @@
 
       const show = (id, on) => { const el = $(id); if (el) el.style.display = on ? "" : "none"; };
 
+      // KPIs y ventas: solo Ejecutivos + Admin
+      show("#kpiCard", (isAdmin || isSales));
+      show("#salesCard", (isAdmin || isSales));
+
+      // Eventos confirmados (semana): para TODOS los usuarios
+      show("#eventsCard", true);
+
       // Ops card: Admin + Ventas + Operaciones
       const opsCard = $("#opsCard");
       if (opsCard) opsCard.style.display = (isAdmin || isSales || isOps) ? "" : "none";
@@ -1158,18 +1165,13 @@
       // Ajuste de enfoque por rol
       if (isFinance && !isAdmin){
         show("#pipelineCard", false);
-        show("#eventsCard", false);
         show("#reportsCard", true);
-        show("#salesCard", false);
       } else if (isOps && !isAdmin){
         show("#pipelineCard", false);
-        show("#salesCard", false);
       } else {
         // Admin/Ventas y otros: default visible
         show("#pipelineCard", true);
-        show("#eventsCard", true);
         show("#reportsCard", true);
-        show("#salesCard", true);
       }
     }
 

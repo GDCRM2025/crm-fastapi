@@ -1821,15 +1821,16 @@ def dashboard_reportes(
     """
     funnel = db.execute(text(q_funnel), params).mappings().all()
 
+    diarios_col = "fecha_evento" if _col_exists(db, "leads", "fecha_evento") else date_col
     q_diarios = f"""
-        SELECT DATE(l.fecha_evento) AS dia,
+        SELECT DATE(l.{diarios_col}) AS dia,
                COUNT(*)::int AS cantidad,
                COALESCE(SUM(l.monto_cotizado),0) AS monto
         FROM leads l
         WHERE {where_sql}
-          AND l.fecha_evento IS NOT NULL
+          AND l.{diarios_col} IS NOT NULL
           {"AND l.id_estado=:conf" if confirmado_id else ""}
-        GROUP BY DATE(l.fecha_evento)
+        GROUP BY DATE(l.{diarios_col})
         ORDER BY dia ASC
     """
     diarios_params = dict(params)
@@ -2048,9 +2049,8 @@ def dashboard_events(
     week_end = week_start + timedelta(days=6)
     week_num = week_start.isocalendar().week
 
-    role = (me.get("role") or me.get("rol") or "").upper()
-    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
-    only_own = not _is_admin(role)
+    # Nota (producto): los eventos confirmados de la semana se muestran para todos los usuarios.
+    # No aplicamos restricciones por "marcas" del usuario (solo filtramos si se solicita id_marca).
 
     if _col_exists(db, "leads", "fecha_ingreso"):
         date_col = "fecha_ingreso"
@@ -2070,15 +2070,7 @@ def dashboard_events(
 
     params = {"ws": week_start, "we": week_end}
     marca_sql = ""
-    if only_own and marcas:
-        marca_sql = " AND l.id_marca = ANY(:marcas) "
-        params["marcas"] = marcas
-        if id_marca and int(id_marca) in set(marcas):
-            marca_sql += " AND l.id_marca = :id_marca "
-            params["id_marca"] = int(id_marca)
-        elif id_marca:
-            raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
-    elif id_marca:
+    if id_marca:
         try:
             mid = int(id_marca)
         except Exception:
