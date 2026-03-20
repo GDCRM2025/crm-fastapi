@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>E‑Mkt</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:14px;overflow:auto;}
+    .wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .head{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.25);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    :root.light .head{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .sub{opacity:.72;font-weight:850;font-size:12px;margin-top:4px;max-width:760px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .inp,.sel{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 12px;
+      font-weight:900;
+      outline:none;
+    }
+    .sel{ padding-right: 34px; }
+    :root.light .inp,:root.light .sel{background: rgba(255,255,255,.65); color: rgba(0,0,0,.85);}
+    .btn{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-weight:1000;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn:hover{filter:brightness(1.06);}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+      min-height:0;
+    }
+    :root.light .card{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
+    .muted{opacity:.72; font-weight:850; font-size:12px;}
+    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:sticky; top:0; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
+    :root.light .tbl th{background: rgba(255,255,255,.92);}
+    .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="head">
+      <div>
+        <div class="ttl">E‑Mkt</div>
+        <div class="sub">Email marketing por snapshot mensual (por fecha_evento). Asumimos “legítimo interés”. Incluye opt‑out.</div>
+      </div>
+      <div class="row">
+        <input id="yyyymm" class="inp" inputmode="numeric" placeholder="YYYYMM" style="width:120px" />
+        <select id="marca" class="sel" title="Marca" style="min-width:240px">
+          <option value="">Todas</option>
+        </select>
+        <button class="btn primary" id="btnSnapshot" type="button">Snapshot</button>
+        <button class="btn" id="btnLoad" type="button">Ver audiencia</button>
+        <button class="btn" id="btnExport" type="button">Export CSV</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="h2">Audiencia</div>
+      <div class="muted">Se muestra una muestra (hasta 250). El envío respeta <code>opt_out</code>.</div>
+      <div id="box" style="margin-top:10px"></div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between;">
+        <div>
+          <div class="h2" style="margin:0">Enviar campaña (por lotes)</div>
+          <div class="muted">Usa el SMTP actual. Recomendación: 50 por envío.</div>
+        </div>
+        <div class="row">
+          <input id="limit" class="inp" inputmode="numeric" value="50" style="width:80px" title="Límite por envío" />
+          <label class="muted" style="display:flex;align-items:center;gap:8px;font-weight:900;">
+            <input type="checkbox" id="dry" checked /> Dry-run
+          </label>
+          <button class="btn primary" id="btnSend" type="button">Enviar</button>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+        <input id="subject" class="inp" placeholder="Asunto (requerido)" />
+        <input id="fromHint" class="inp" placeholder="(usa SMTP_FROM)" disabled />
+        <textarea id="text" class="inp" placeholder="Texto (requerido)" style="height:140px; border-radius:16px; padding:10px;"></textarea>
+        <textarea id="html" class="inp" placeholder="HTML (opcional)" style="height:140px; border-radius:16px; padding:10px;"></textarea>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(u){
+      const s = String(u||"");
+      if (!s) return s;
+      if (s.startsWith("/crm/")) return s;
+      if (s.startsWith("/")) return API_BASE + s;
+      return s;
+    }
+    function authHeaders(extra){
+      const t = localStorage.getItem("token") || "";
+      return Object.assign({ "Authorization": "Bearer " + t }, extra || {});
+    }
+    async function jget(url){
+      const r = await fetch(apiURL(url), { headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    async function jpost(url, body){
+      const r = await fetch(apiURL(url), {
+        method: "POST",
+        headers: authHeaders({ "Content-Type":"application/json" }),
+        body: JSON.stringify(body || {}),
+      });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    async function loadMarcas(){
+      try{
+        const j = await jget("/marcas?solo_activas=1");
+        return j.items || j || [];
+      }catch(_){
+        try{
+          const c = await jget("/leads/catalogos");
+          return c.marcas || [];
+        }catch(__){
+          return [];
+        }
+      }
+    }
+
+    function params(){
+      const y = String(qs("#yyyymm")?.value || "").trim();
+      const mid = String(qs("#marca")?.value || "").trim();
+      if (!/^\d{6}$/.test(y)) throw new Error("YYYYMM inválido");
+      return { yyyymm: y, id_marca: mid ? Number(mid) : null };
+    }
+
+    async function snapshot(){
+      const { yyyymm, id_marca } = params();
+      const box = qs("#box");
+      if (box) box.innerHTML = `<div class="muted">Creando snapshot…</div>`;
+      const qs2 = new URLSearchParams({ yyyymm, dry_run: "false" });
+      if (id_marca) qs2.set("id_marca", String(id_marca));
+      const j = await jpost(`/marketing/audiencia/snapshot?${qs2.toString()}`, {});
+      if (box) box.innerHTML = `<div class="muted">Snapshot OK: ${esc(JSON.stringify({ inserted:j.inserted, updated:j.updated, total:j.total }))}</div>`;
+      await loadAudience();
+    }
+
+    async function loadAudience(){
+      const { yyyymm, id_marca } = params();
+      const box = qs("#box");
+      if (box) box.innerHTML = `<div class="muted">Cargando audiencia…</div>`;
+      const qs2 = new URLSearchParams({ yyyymm, limit:"50", offset:"0" });
+      if (id_marca) qs2.set("id_marca", String(id_marca));
+      const j = await jget(`/marketing/audiencia?${qs2.toString()}`);
+      const items = Array.isArray(j.items) ? j.items : [];
+      if (!box) return;
+      box.innerHTML = `
+        <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+          <div class="muted">Total: <strong>${esc(j.total||0)}</strong></div>
+          <div class="muted">Muestra: ${esc(items.length)}</div>
+        </div>
+        <div style="max-height:420px; overflow:auto;">
+          <table class="tbl">
+            <thead><tr><th>Nombre</th><th>Email</th><th>Tel</th><th>Tipo</th><th>Opt-out</th></tr></thead>
+            <tbody>
+              ${items.slice(0,250).map(it => `
+                <tr>
+                  <td><strong>${esc(it.nombre||"—")}</strong></td>
+                  <td>${esc(it.email||"")}</td>
+                  <td>${esc(it.telefono||"")}</td>
+                  <td class="muted">${esc(it.tipo_cliente||"")}</td>
+                  <td class="muted">${it.opt_out ? "Sí" : "No"}</td>
+                </tr>
+              `).join("") || `<tr><td colspan="5" class="muted">Sin datos.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function exportCSV(){
+      const { yyyymm, id_marca } = (()=>{ try{ return params(); }catch(_){ return { yyyymm:"", id_marca:null }; }})();
+      if (!yyyymm) return;
+      const qs2 = new URLSearchParams({ yyyymm });
+      if (id_marca) qs2.set("id_marca", String(id_marca));
+      window.open(apiURL(`/marketing/audiencia/export.csv?${qs2.toString()}`), "_blank", "noopener");
+    }
+
+    async function send(){
+      const { yyyymm, id_marca } = params();
+      const subject = String(qs("#subject")?.value || "").trim();
+      const text = String(qs("#text")?.value || "").trim();
+      const html = String(qs("#html")?.value || "").trim();
+      const limit = Number(qs("#limit")?.value || "50") || 50;
+      const dry_run = !!qs("#dry")?.checked;
+      if (!subject || !text) throw new Error("Asunto y Texto son requeridos");
+      const payload = { yyyymm, id_marca: id_marca || null, subject, text, html: html || null, limit, dry_run };
+      const j = await jpost("/marketing/campanas/send", payload);
+      Swal.fire("OK", `Campaña #${j.id_campana} · enviados=${j.enviados}/${j.total} · fallidos=${j.fallidos} · dry_run=${j.dry_run}`, "success");
+      await loadAudience();
+    }
+
+    async function init(){
+      try{
+        const me = await jget("/me");
+        const role = String(me?.role || me?.rol || "").toUpperCase();
+        if (role !== "ADMIN" && role !== "SUPERADMIN"){
+          Swal.fire("No autorizado", "E‑Mkt es solo para Admin.", "warning");
+        }
+      }catch(_){}
+
+      const now = new Date();
+      const yyyymm = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}`;
+      qs("#yyyymm").value = yyyymm;
+
+      const marcas = await loadMarcas();
+      const sel = qs("#marca");
+      if (sel){
+        sel.innerHTML = `<option value="">Todas</option>` + (marcas||[]).map(m => {
+          const id = m.id_marca ?? m.id ?? "";
+          const nombre = m.nombre ?? m.marca ?? "";
+          return `<option value="${esc(id)}">${esc(nombre)}</option>`;
+        }).join("");
+      }
+
+      qs("#btnSnapshot").onclick = () => snapshot().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
+      qs("#btnLoad").onclick = () => loadAudience().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
+      qs("#btnExport").onclick = () => exportCSV();
+      qs("#btnSend").onclick = () => send().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
+
+      setTimeout(()=> loadAudience().catch(()=>{}), 250);
+    }
+
+    init().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
+  </script>
+</body>
+</html>
+

@@ -6,6 +6,7 @@
   <title>Reportes</title>
   <link rel="stylesheet" href="../styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="../js/iframe-theme.js"></script>
   <style>
     html,body{height:100%;margin:0;}
@@ -146,7 +147,6 @@
           <a class="chip" href="#funnel">Funnel</a>
           <a class="chip" href="#cierre">% cierre</a>
           <a class="chip" href="#tipo_cliente">Tipo cliente</a>
-          <a class="chip" href="#email_mkt">Email marketing</a>
           <a class="chip" href="#total">Total venta</a>
           <a class="chip" href="#cxc">Por cobrar</a>
           <a class="chip" href="#cxp">Por pagar</a>
@@ -228,44 +228,6 @@
         </div>
         <div class="chartBox" id="chTipo"></div>
         <div id="boxTipo" style="margin-top:10px"></div>
-      </section>
-
-      <section class="card" style="grid-column: span 12; display:none;" id="email_mkt">
-        <div class="row" style="justify-content:space-between;">
-          <div>
-            <div class="h2" style="margin:0">Email marketing (Admin)</div>
-            <div class="muted">Snapshot mensual (por fecha_evento) + envío por lotes vía SMTP.</div>
-          </div>
-          <div class="row">
-            <input id="mktYyyymm" class="inp" inputmode="numeric" placeholder="YYYYMM" style="width:120px" />
-            <select id="mktMarca" class="sel" title="Marca" style="min-width:220px">
-              <option value="">Todas</option>
-            </select>
-            <button class="btn primary" id="btnMktSnapshot" type="button">Snapshot</button>
-            <button class="btn" id="btnMktLoad" type="button">Ver audiencia</button>
-            <button class="btn" id="btnMktExport" type="button">Export CSV</button>
-          </div>
-        </div>
-        <div id="mktBox" style="margin-top:10px"></div>
-        <div style="margin-top:12px; border-top:1px solid rgba(148,163,184,.16); padding-top:12px;">
-          <div class="row" style="justify-content:space-between;">
-            <div class="muted" style="font-weight:1000;">Enviar campaña (por lotes)</div>
-            <div class="row">
-              <input id="mktLimit" class="inp" inputmode="numeric" value="50" style="width:80px" title="Límite por envío" />
-              <label class="muted" style="display:flex;align-items:center;gap:8px;font-weight:900;">
-                <input type="checkbox" id="mktDry" checked /> Dry-run
-              </label>
-              <button class="btn primary" id="btnMktSend" type="button">Enviar</button>
-            </div>
-          </div>
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
-            <input id="mktSubject" class="inp" placeholder="Asunto" />
-            <input id="mktFromHint" class="inp" placeholder="(usa SMTP_FROM)" disabled />
-            <textarea id="mktText" class="inp" placeholder="Texto (requerido)" style="height:120px; border-radius:16px; padding:10px;"></textarea>
-            <textarea id="mktHtml" class="inp" placeholder="HTML (opcional)" style="height:120px; border-radius:16px; padding:10px;"></textarea>
-          </div>
-          <div class="muted" style="margin-top:8px;">Recomendación: enviar por lotes (50) y desactivar “Dry-run” cuando confirmes.</div>
-        </div>
       </section>
 
       <section class="card" style="grid-column: span 6" id="productos">
@@ -367,6 +329,219 @@
     const ME = { role:"", username:"" };
 
     // ---------- charts (SVG, sin libs) ----------
+    const CHARTS = {};
+    function hasCharts(){ return typeof window.Chart !== "undefined" && !!window.Chart; }
+    function destroyChart(key){
+      try{ CHARTS[key]?.destroy?.(); }catch(_){}
+      try{ delete CHARTS[key]; }catch(_){}
+    }
+    function chartColors(){
+      const isLight = document.documentElement.classList.contains("light");
+      return {
+        grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.18)",
+        tick: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.78)",
+        title: isLight ? "rgba(0,0,0,.82)" : "rgba(255,255,255,.86)",
+        accent: "rgba(25,195,125,.55)",
+        accent2: "rgba(99,102,241,.55)",
+        warn: "rgba(245,158,11,.55)",
+        bad: "rgba(239,68,68,.55)",
+      };
+    }
+    function ensureCanvas(containerId, height=180){
+      const box = qs("#"+containerId);
+      if (!box) return null;
+      // si ya existe canvas, reusa
+      let cv = box.querySelector("canvas");
+      if (!cv){
+        box.innerHTML = `<canvas style="width:100%;height:${height}px"></canvas>`;
+        cv = box.querySelector("canvas");
+      }
+      if (!cv) return null;
+      cv.style.height = `${height}px`;
+      return cv.getContext("2d");
+    }
+
+    function renderBarHChart(containerId, title, rows, opts){
+      if (!hasCharts()) return;
+      const o = Object.assign({ valueFmt:(v)=>fmtShort(v), height:220 }, opts||{});
+      destroyChart(containerId);
+      const ctx = ensureCanvas(containerId, o.height);
+      if (!ctx) return;
+      const c = chartColors();
+      const labels = (rows||[]).map(r => String(r.label||"—"));
+      const values = (rows||[]).map(r => Number(r.value||0));
+      const tooltips = (rows||[]).map(r => String(r.tooltip||""));
+      CHARTS[containerId] = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: title,
+            data: values,
+            backgroundColor: c.accent,
+            borderWidth: 0,
+            borderRadius: 10,
+            barThickness: 14,
+          }]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            title: {
+              display: !!title,
+              text: title,
+              color: c.title,
+              font: { weight: "800", size: 12 }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx2) => {
+                  const v = ctx2.raw;
+                  const extra = tooltips[ctx2.dataIndex] || "";
+                  return extra ? `${o.valueFmt(v)} · ${extra}` : `${o.valueFmt(v)}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: c.grid },
+              ticks: { color: c.tick, callback: (v)=>fmtShort(v) }
+            },
+            y: {
+              grid: { display:false },
+              ticks: { color: c.tick }
+            }
+          }
+        }
+      });
+    }
+
+    function renderDailyChart(containerId, labels, totals){
+      if (!hasCharts()) return;
+      destroyChart(containerId);
+      const ctx = ensureCanvas(containerId, 190);
+      if (!ctx) return;
+      const c = chartColors();
+      CHARTS[containerId] = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: labels || [],
+          datasets: [{
+            label: "Totales",
+            data: (totals||[]).map(x=>Number(x||0)),
+            backgroundColor: c.accent,
+            borderRadius: 12,
+            borderWidth: 0,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display:false },
+            title: { display:true, text:"Totales por día (semana)", color:c.title, font:{weight:"800", size:12} },
+            tooltip: { callbacks:{ label:(ctx2)=>money(ctx2.raw) } }
+          },
+          scales: {
+            x: { grid:{ display:false }, ticks:{ color:c.tick } },
+            y: { grid:{ color:c.grid }, ticks:{ color:c.tick, callback:(v)=>fmtShort(v) } }
+          }
+        }
+      });
+    }
+
+    function renderTotalCompareChart(containerId, items){
+      if (!hasCharts()) return;
+      destroyChart(containerId);
+      const ctx = ensureCanvas(containerId, 230);
+      if (!ctx) return;
+      const c = chartColors();
+      const labels = (items||[]).map(r => String(r.marca||"—"));
+      const actual = (items||[]).map(r => Number(r.actual||0));
+      const base = (items||[]).map(r => Number(r.baseline||0));
+      CHARTS[containerId] = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            { label:"Actual", data: actual, backgroundColor: c.accent, borderRadius: 10, borderWidth:0 },
+            { label:"Baseline", data: base, backgroundColor: c.accent2, borderRadius: 10, borderWidth:0 },
+          ]
+        },
+        options: {
+          responsive:true,
+          maintainAspectRatio:false,
+          plugins:{
+            legend:{ display:true, labels:{ color:c.tick, font:{ weight:"800" } } },
+            title:{ display:true, text:"Total venta por marca (Actual vs Baseline) · Top 10", color:c.title, font:{weight:"800", size:12} },
+            tooltip:{ callbacks:{ label:(ctx2)=> `${ctx2.dataset.label}: ${money(ctx2.raw)}` } }
+          },
+          scales:{
+            x:{ grid:{ display:false }, ticks:{ color:c.tick } },
+            y:{ grid:{ color:c.grid }, ticks:{ color:c.tick, callback:(v)=>fmtShort(v) } }
+          }
+        }
+      });
+    }
+
+    function renderStackedTipoChart(containerId, all, conf){
+      if (!hasCharts()) return;
+      destroyChart(containerId+"_all");
+      destroyChart(containerId+"_conf");
+      const box = qs("#"+containerId);
+      if (!box) return;
+      box.innerHTML = `
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:260px"><canvas data-k="all" style="width:100%;height:190px"></canvas></div>
+          <div style="flex:1;min-width:260px"><canvas data-k="conf" style="width:100%;height:190px"></canvas></div>
+        </div>
+      `;
+      const c = chartColors();
+      const mk = (arr) => (arr||[]).filter(x=>Number(x?.cantidad||0)>0);
+      const a = mk(all);
+      const b = mk(conf);
+      const colors = [c.accent,c.accent2,c.warn,c.bad,"rgba(148,163,184,.40)","rgba(34,211,238,.45)"];
+
+      const cvsAll = box.querySelector('canvas[data-k="all"]');
+      const cvsConf = box.querySelector('canvas[data-k="conf"]');
+      if (cvsAll){
+        CHARTS[containerId+"_all"] = new Chart(cvsAll.getContext("2d"), {
+          type:"doughnut",
+          data:{
+            labels: a.map(x=>String(x.tipo||"—")),
+            datasets:[{ data: a.map(x=>Number(x.cantidad||0)), backgroundColor: a.map((_,i)=>colors[i%colors.length]), borderWidth:0 }]
+          },
+          options:{
+            responsive:true, maintainAspectRatio:false,
+            plugins:{
+              legend:{ position:"bottom", labels:{ color:c.tick, boxWidth:10, font:{ weight:"800", size:11 } } },
+              title:{ display:true, text:"Todos · distribución (cantidad)", color:c.title, font:{ weight:"800", size:12 } }
+            }
+          }
+        });
+      }
+      if (cvsConf){
+        CHARTS[containerId+"_conf"] = new Chart(cvsConf.getContext("2d"), {
+          type:"doughnut",
+          data:{
+            labels: b.map(x=>String(x.tipo||"—")),
+            datasets:[{ data: b.map(x=>Number(x.cantidad||0)), backgroundColor: b.map((_,i)=>colors[i%colors.length]), borderWidth:0 }]
+          },
+          options:{
+            responsive:true, maintainAspectRatio:false,
+            plugins:{
+              legend:{ position:"bottom", labels:{ color:c.tick, boxWidth:10, font:{ weight:"800", size:11 } } },
+              title:{ display:true, text:"Confirmados · distribución (cantidad)", color:c.title, font:{ weight:"800", size:12 } }
+            }
+          }
+        });
+      }
+    }
+
     function setChart(id, html){
       const el = qs("#"+id);
       if (!el) return;
@@ -635,32 +810,7 @@
         el.addEventListener("change", ()=> qs("#go")?.click());
       });
 
-      const isAdmin = (ME.role === "ADMIN" || ME.role === "SUPERADMIN");
-
-      // Email marketing (Admin)
-      const mktCard = qs("#email_mkt");
-      if (mktCard) mktCard.style.display = isAdmin ? "" : "none";
-      if (isAdmin){
-        // defaults
-        const now2 = new Date();
-        const yyyymm = `${now2.getFullYear()}${String(now2.getMonth()+1).padStart(2,"0")}`;
-        const yyy = qs("#mktYyyymm"); if (yyy) yyy.value = yyyymm;
-        // marcas in select
-        const marcas2 = await loadMarcas();
-        const msel = qs("#mktMarca");
-        if (msel){
-          msel.innerHTML = `<option value="">Todas</option>` + (marcas2||[]).map(m => {
-            const id = m.id_marca ?? m.id ?? "";
-            const nombre = m.nombre ?? m.marca ?? "";
-            return `<option value="${esc(id)}">${esc(nombre)}</option>`;
-          }).join("");
-        }
-        qs("#btnMktSnapshot")?.addEventListener("click", ()=> mktSnapshot().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
-        qs("#btnMktLoad")?.addEventListener("click", ()=> mktLoad().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
-        qs("#btnMktExport")?.addEventListener("click", ()=> mktExport());
-        qs("#btnMktSend")?.addEventListener("click", ()=> mktSend().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
-        setTimeout(()=> mktLoad().catch(()=>{}), 250);
-      }
+      // Email marketing se movió a /web/views/emkt.html
 
       // auto
       qs("#go").click();
@@ -684,7 +834,7 @@
       // (ej: reportes.html?only=funnel#funnel)
       if (!only) return;
       const allow = new Set([
-        "funnel","cierre","tipo_cliente","email_mkt","total","cxc","cxp",
+        "funnel","cierre","tipo_cliente","total","cxc","cxp",
         "comunas","productos","clientes","leads_hoy","venta_diaria"
       ]);
       if (!allow.has(only)) return;
@@ -812,12 +962,20 @@
         setChart("chFunnel", "");
         return;
       }
-      setChart("chFunnel", chartBarH(items.map(r => ({
-        label: r.estado || "—",
-        value: Number(r.monto||0),
-        valueText: money(r.monto||0),
-        sub: `${Number(r.cantidad||0)} leads`,
-      })), { title:"Monto por estado (Top 10)", maxRows: 10, valueWidth: 160 }));
+      if (hasCharts()){
+        renderBarHChart("chFunnel", "Monto por estado (Top 10)", items.slice(0,10).map(r => ({
+          label: r.estado || "—",
+          value: Number(r.monto||0),
+          tooltip: `${Number(r.cantidad||0)} leads`,
+        })), { valueFmt: money });
+      }else{
+        setChart("chFunnel", chartBarH(items.map(r => ({
+          label: r.estado || "—",
+          value: Number(r.monto||0),
+          valueText: money(r.monto||0),
+          sub: `${Number(r.cantidad||0)} leads`,
+        })), { title:"Monto por estado (Top 10)", maxRows: 10, valueWidth: 160 }));
+      }
       const maxMonto = Math.max(1, ...items.map(x => Number(x?.monto||0)));
       tb.innerHTML = items.map(r => `
         <tr class="rowlink" data-estado="${encodeURIComponent(r.estado||"")}">
@@ -891,13 +1049,17 @@
       // chart (distribución por cantidad, stacked)
       const segAll = all.map(x => ({ label: x.tipo || "—", value: Number(x.cantidad||0) }));
       const segConf = conf.map(x => ({ label: x.tipo || "—", value: Number(x.cantidad||0) }));
-      const html = `
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <div style="flex:1;min-width:260px">${chartStackedBar(segAll, { title:"Todos · distribución (cantidad)" }) || `<div class="muted">Sin datos.</div>`}</div>
-          <div style="flex:1;min-width:260px">${chartStackedBar(segConf, { title:"Confirmados · distribución (cantidad)" }) || `<div class="muted">Sin datos.</div>`}</div>
-        </div>
-      `;
-      setChart("chTipo", html);
+      if (hasCharts()){
+        renderStackedTipoChart("chTipo", all, conf);
+      }else{
+        const html = `
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:260px">${chartStackedBar(segAll, { title:"Todos · distribución (cantidad)" }) || `<div class="muted">Sin datos.</div>`}</div>
+            <div style="flex:1;min-width:260px">${chartStackedBar(segConf, { title:"Confirmados · distribución (cantidad)" }) || `<div class="muted">Sin datos.</div>`}</div>
+          </div>
+        `;
+        setChart("chTipo", html);
+      }
     }
 
     function renderTop(rep){
@@ -906,24 +1068,42 @@
       const cli = rep?.clientes || [];
 
       // charts (Top 10 por monto)
-      setChart("chProd", chartBarH(tp.map(x => ({
-        label: x.producto || "—",
-        sub: x.marca ? String(x.marca) : "",
-        value: Number(x.monto||0),
-        valueText: money(x.monto||0),
-      })), { title:"Top productos (monto)", maxRows: 10, valueWidth: 160 }));
-      setChart("chCom", chartBarH(com.map(x => ({
-        label: x.comuna || "—",
-        value: Number(x.monto||0),
-        valueText: money(x.monto||0),
-        sub: `${Number(x.cantidad||0)} leads`,
-      })), { title:"Top comunas (monto)", maxRows: 10, valueWidth: 160 }));
-      setChart("chCli", chartBarH(cli.map(x => ({
-        label: x.cliente || "—",
-        value: Number(x.monto||0),
-        valueText: money(x.monto||0),
-        sub: `${Number(x.cantidad||0)} leads`,
-      })), { title:"Top clientes (monto)", maxRows: 10, valueWidth: 160 }));
+      if (hasCharts()){
+        renderBarHChart("chProd", "Top productos (monto)", tp.slice(0,10).map(x => ({
+          label: x.producto || "—",
+          value: Number(x.monto||0),
+          tooltip: x.marca ? String(x.marca) : "",
+        })), { valueFmt: money });
+        renderBarHChart("chCom", "Top comunas (monto)", com.slice(0,10).map(x => ({
+          label: x.comuna || "—",
+          value: Number(x.monto||0),
+          tooltip: `${Number(x.cantidad||0)} leads`,
+        })), { valueFmt: money });
+        renderBarHChart("chCli", "Top clientes (monto)", cli.slice(0,10).map(x => ({
+          label: x.cliente || "—",
+          value: Number(x.monto||0),
+          tooltip: `${Number(x.cantidad||0)} leads`,
+        })), { valueFmt: money });
+      }else{
+        setChart("chProd", chartBarH(tp.map(x => ({
+          label: x.producto || "—",
+          sub: x.marca ? String(x.marca) : "",
+          value: Number(x.monto||0),
+          valueText: money(x.monto||0),
+        })), { title:"Top productos (monto)", maxRows: 10, valueWidth: 160 }));
+        setChart("chCom", chartBarH(com.map(x => ({
+          label: x.comuna || "—",
+          value: Number(x.monto||0),
+          valueText: money(x.monto||0),
+          sub: `${Number(x.cantidad||0)} leads`,
+        })), { title:"Top comunas (monto)", maxRows: 10, valueWidth: 160 }));
+        setChart("chCli", chartBarH(cli.map(x => ({
+          label: x.cliente || "—",
+          value: Number(x.monto||0),
+          valueText: money(x.monto||0),
+          sub: `${Number(x.cantidad||0)} leads`,
+        })), { title:"Top clientes (monto)", maxRows: 10, valueWidth: 160 }));
+      }
 
       const tbP = qs("#tbProd");
       if (tbP){
@@ -1076,13 +1256,17 @@
       }
       // chart: comparar actual vs baseline (Top 10 por actual)
       const top = [...items].sort((a,b)=>Number(b.actual||0)-Number(a.actual||0)).slice(0,10);
-      const rows = top.map(r => ({
-        label: r.marca || "—",
-        value: Number(r.actual||0),
-        valueText: money(r.actual||0),
-        sub: `baseline ${money(r.baseline||0)}`,
-      }));
-      setChart("chTotal", chartBarH(rows, { title:"Total venta por marca (actual) · Top 10", maxRows: 10, valueWidth: 180 }));
+      if (hasCharts()){
+        renderTotalCompareChart("chTotal", top);
+      }else{
+        const rows = top.map(r => ({
+          label: r.marca || "—",
+          value: Number(r.actual||0),
+          valueText: money(r.actual||0),
+          sub: `baseline ${money(r.baseline||0)}`,
+        }));
+        setChart("chTotal", chartBarH(rows, { title:"Total venta por marca (actual) · Top 10", maxRows: 10, valueWidth: 180 }));
+      }
       box.innerHTML = `
         <div style="max-height:420px;overflow:auto">
           <table class="tbl">
@@ -1119,15 +1303,27 @@
         const out = await jget(`/finanzas/cxc_resumen${qp}`);
         const items = Array.isArray(out?.items) ? out.items : [];
         // chart: top pendientes
-        setChart("chCxc", chartBarH(items
-          .slice()
-          .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
-          .map(r => ({
-            label: r.cliente || "—",
-            sub: r.marca ? String(r.marca) : "",
-            value: Number(r.saldo_pendiente||0),
-            valueText: money(r.saldo_pendiente||0),
-          })), { title:"Top clientes por saldo pendiente", maxRows: 10, valueWidth: 180 }));
+        if (hasCharts()){
+          renderBarHChart("chCxc", "Top clientes por saldo pendiente", items
+            .slice()
+            .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
+            .slice(0,10)
+            .map(r => ({
+              label: r.cliente || "—",
+              value: Number(r.saldo_pendiente||0),
+              tooltip: r.marca ? String(r.marca) : "",
+            })), { valueFmt: money });
+        }else{
+          setChart("chCxc", chartBarH(items
+            .slice()
+            .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
+            .map(r => ({
+              label: r.cliente || "—",
+              sub: r.marca ? String(r.marca) : "",
+              value: Number(r.saldo_pendiente||0),
+              valueText: money(r.saldo_pendiente||0),
+            })), { title:"Top clientes por saldo pendiente", maxRows: 10, valueWidth: 180 }));
+        }
         const total = items.reduce((a,x)=>a+Number(x.saldo_pendiente||0),0);
         const rows = items.slice(0, 120);
         if (boxCxc){
@@ -1162,15 +1358,27 @@
       try{
         const out = await jget(`/finanzas/cxp_resumen`);
         const items = Array.isArray(out?.items) ? out.items : [];
-        setChart("chCxp", chartBarH(items
-          .slice()
-          .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
-          .map(r => ({
-            label: r.proveedor || "—",
-            value: Number(r.pendiente||0),
-            valueText: money(r.pendiente||0),
-            sub: `pagado ${money(r.pagado||0)}`,
-          })), { title:"Top proveedores por pendiente", maxRows: 10, valueWidth: 180 }));
+        if (hasCharts()){
+          renderBarHChart("chCxp", "Top proveedores por pendiente", items
+            .slice()
+            .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
+            .slice(0,10)
+            .map(r => ({
+              label: r.proveedor || "—",
+              value: Number(r.pendiente||0),
+              tooltip: `pagado ${money(r.pagado||0)}`,
+            })), { valueFmt: money });
+        }else{
+          setChart("chCxp", chartBarH(items
+            .slice()
+            .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
+            .map(r => ({
+              label: r.proveedor || "—",
+              value: Number(r.pendiente||0),
+              valueText: money(r.pendiente||0),
+              sub: `pagado ${money(r.pagado||0)}`,
+            })), { title:"Top proveedores por pendiente", maxRows: 10, valueWidth: 180 }));
+        }
         const total = items.reduce((a,x)=>a+Number(x.pendiente||0),0);
         const rows = items.slice(0, 120);
         if (boxCxp){
@@ -1231,7 +1439,11 @@
         return rows.reduce((a,x)=>a+Number(x.monto||0),0);
       });
       const labels = days.map(d => d.slice(8,10)+"/"+d.slice(5,7));
-      setChart("chDaily", chartBarsV(labels, totals, { title:"Totales por día (semana)" }));
+      if (hasCharts()){
+        renderDailyChart("chDaily", labels, totals);
+      }else{
+        setChart("chDaily", chartBarsV(labels, totals, { title:"Totales por día (semana)" }));
+      }
       const brands = [...new Set(daily.map(x => x.marca))];
       box.innerHTML = `
         <table class="tbl">
@@ -1320,92 +1532,7 @@
       downloadText(name, toCSV(rows));
     }
 
-    function mktParams(){
-      const y = String(qs("#mktYyyymm")?.value || "").trim();
-      const mid = String(qs("#mktMarca")?.value || "").trim();
-      if (!/^\d{6}$/.test(y)) throw new Error("YYYYMM inválido");
-      return { yyyymm: y, id_marca: mid ? Number(mid) : null };
-    }
-
-    async function mktSnapshot(){
-      const box = qs("#mktBox");
-      if (!box) return;
-      const { yyyymm, id_marca } = mktParams();
-      box.innerHTML = `<div class="muted">Creando snapshot…</div>`;
-      const qs2 = new URLSearchParams({ yyyymm, dry_run: "false" });
-      if (id_marca) qs2.set("id_marca", String(id_marca));
-      const r = await fetch(apiURL(`/marketing/audiencia/snapshot?${qs2.toString()}`), {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: "{}"
-      });
-      const txt = await r.text();
-      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
-      const j = txt ? JSON.parse(txt) : {};
-      box.innerHTML = `<div class="muted">Snapshot OK: ${esc(JSON.stringify({ inserted:j.inserted, updated:j.updated, total:j.total }))}</div>`;
-      await mktLoad();
-    }
-
-    async function mktLoad(){
-      const box = qs("#mktBox");
-      if (!box) return;
-      const { yyyymm, id_marca } = mktParams();
-      box.innerHTML = `<div class="muted">Cargando audiencia…</div>`;
-      const qs2 = new URLSearchParams({ yyyymm, limit:"50", offset:"0" });
-      if (id_marca) qs2.set("id_marca", String(id_marca));
-      const j = await jget(`/marketing/audiencia?${qs2.toString()}`);
-      const items = Array.isArray(j.items) ? j.items : [];
-      box.innerHTML = `
-        <div class="row" style="justify-content:space-between; margin-bottom:8px;">
-          <div class="muted">Total: <strong>${esc(j.total||0)}</strong></div>
-          <div class="muted">Muestra: ${esc(items.length)}</div>
-        </div>
-        <div style="max-height:320px; overflow:auto;">
-          <table class="tbl">
-            <thead><tr><th>Nombre</th><th>Email</th><th>Tel</th><th>Tipo</th><th>Opt-out</th></tr></thead>
-            <tbody>
-              ${items.map(it => `
-                <tr>
-                  <td><strong>${esc(it.nombre||"—")}</strong></td>
-                  <td>${esc(it.email||"")}</td>
-                  <td>${esc(it.telefono||"")}</td>
-                  <td class="muted">${esc(it.tipo_cliente||"")}</td>
-                  <td class="muted">${it.opt_out ? "Sí" : "No"}</td>
-                </tr>
-              `).join("") || `<tr><td colspan="5" class="muted">Sin datos.</td></tr>`}
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
-
-    function mktExport(){
-      const { yyyymm, id_marca } = (()=>{ try{ return mktParams(); }catch(_){ return { yyyymm:"", id_marca:null }; }})();
-      if (!yyyymm) return;
-      const qs2 = new URLSearchParams({ yyyymm });
-      if (id_marca) qs2.set("id_marca", String(id_marca));
-      window.open(apiURL(`/marketing/audiencia/export.csv?${qs2.toString()}`), "_blank", "noopener");
-    }
-
-    async function mktSend(){
-      const { yyyymm, id_marca } = mktParams();
-      const subject = String(qs("#mktSubject")?.value || "").trim();
-      const text = String(qs("#mktText")?.value || "").trim();
-      const html = String(qs("#mktHtml")?.value || "").trim();
-      const limit = Number(qs("#mktLimit")?.value || "50") || 50;
-      const dry_run = !!qs("#mktDry")?.checked;
-      if (!subject || !text) throw new Error("Asunto y Texto son requeridos");
-      const payload = { yyyymm, id_marca: id_marca || null, subject, text, html: html || null, limit, dry_run };
-      const r = await fetch(apiURL("/marketing/campanas/send"), {
-        method:"POST",
-        headers: authHeaders({ "Content-Type":"application/json" }),
-        body: JSON.stringify(payload),
-      });
-      const txt = await r.text();
-      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
-      const j = txt ? JSON.parse(txt) : {};
-      Swal.fire("OK", `Campaña #${j.id_campana} · enviados=${j.enviados}/${j.total} · fallidos=${j.fallidos} · dry_run=${j.dry_run}`, "success");
-    }
+    // Email marketing se movió a /web/views/emkt.html
 
     init().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
   </script>

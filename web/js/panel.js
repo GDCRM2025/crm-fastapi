@@ -1701,7 +1701,6 @@ const MENU = [
       { id: "rep_sep1", label: "\u2014", url: null, sep: true },
       { id: "rep_cxc", label: "Por cobrar", url: "/web/views/reportes.html?only=cxc#cxc" },
       { id: "rep_cxp", label: "Por pagar", url: "/web/views/reportes.html?only=cxp#cxp" },
-      { id: "rep_mkt", label: "Email marketing", url: "/web/views/reportes.html?only=email_mkt#email_mkt" },
       { id: "rep_sepFin", label: "\u2014", url: null, sep: true },
       { id: "rep_com", label: "Comunas m\xE1s vendidas", url: "/web/views/reportes.html?only=comunas#comunas" },
       { id: "rep_prod", label: "Productos m\xE1s vendidos", url: "/web/views/reportes.html?only=productos#productos" },
@@ -1709,6 +1708,14 @@ const MENU = [
       { id: "rep_sep2", label: "\u2014", url: null, sep: true },
       { id: "rep_hoy", label: "Leads creados hoy", url: "/web/views/reportes.html?only=leads_hoy#leads_hoy" },
       { id: "rep_dia", label: "Venta diaria", url: "/web/views/reportes.html?only=venta_diaria#venta_diaria" }
+    ]
+  },
+  {
+    id: "emkt",
+    ico: "\u{1F4E3}",
+    title: "E\u2011Mkt",
+    items: [
+      { id: "emkt_email", label: "Email marketing", url: "/web/views/emkt.html" }
     ]
   },
   {
@@ -1897,7 +1904,7 @@ const PERMISSIONS = {
     "rep_total",
     "rep_cxc",
     "rep_cxp",
-    "rep_mkt",
+    "emkt_email",
     "rep_com",
     "rep_prod",
     "rep_cli",
