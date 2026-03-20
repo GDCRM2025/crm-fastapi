@@ -1890,6 +1890,8 @@ def dashboard_events(
     pre_end_expr = _lead_col(db, "pre_end")
     pre_location_expr = _lead_col(db, "pre_location")
     pre_title_expr = _lead_col(db, "pre_title")
+    pre_products_expr = _lead_col(db, "pre_products_text")
+    pre_ops_expr = _lead_col(db, "pre_ops")
     cal_expr = _lead_col(db, "calendar_html_link")
     confirmado_id = _estado_id(db, "CONFIRM")
 
@@ -1923,6 +1925,8 @@ def dashboard_events(
     q_ev = f"""
         SELECT l.id_lead, {name_expr} AS cliente, l.fecha_evento,
                {pre_start_expr} AS pre_start, {pre_end_expr} AS pre_end, {pre_location_expr} AS pre_location,
+               {pre_products_expr} AS pre_products_text,
+               {pre_ops_expr} AS pre_ops,
                {cal_expr} AS calendar_html_link,
                l.calendar_event_id,
                {pre_title_expr} AS pre_title,
@@ -1971,6 +1975,10 @@ def dashboard_events(
             "fecha_evento": str(r.get("fecha_evento")) if r.get("fecha_evento") else None,
             "marca": r.get("marca"),
             "comuna": r.get("comuna"),
+            "pre_start": r.get("pre_start"),
+            "pre_end": r.get("pre_end"),
+            "pre_products_text": r.get("pre_products_text") or "",
+            "pre_ops": r.get("pre_ops"),
             "calendar_html_link": r.get("calendar_html_link") or "",
             "calendar_event_id": r.get("calendar_event_id") or "",
         }

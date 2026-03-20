@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dashboard</title>
-  <link rel="stylesheet" href="../styles.css?v=20260320-4" />
+  <link rel="stylesheet" href="../styles.css?v=20260320-5" />
   <script src="../js/iframe-theme.js"></script>
   <style>
     :root{
@@ -158,6 +158,23 @@
       border-bottom:1px solid rgba(255,255,255,.08);
       text-align:left;
     }
+    /* “Gráfico” simple dentro de la tabla (barra de porcentaje por fila) */
+    .pipe-table tbody tr{
+      position:relative;
+    }
+    .pipe-table tbody tr::before{
+      content:"";
+      position:absolute;
+      inset:0;
+      background: linear-gradient(90deg, rgba(34,197,94,.18), rgba(34,197,94,.18));
+      width: calc(var(--pct, 0) * 1%);
+      max-width: 100%;
+      pointer-events:none;
+      opacity:.9;
+    }
+    .pipe-table tbody tr{ --c: rgba(34,197,94,.18); }
+    .pipe-table tbody tr::before{ background: linear-gradient(90deg, var(--c), var(--c)); }
+    .pipe-table tbody td{ position:relative; }
     .right{text-align:right;}
 
     .rowlink{cursor:pointer;}
@@ -173,20 +190,78 @@
     }
     .dot{width:10px; height:10px; border-radius:999px; background:#7ee7b0; flex:0 0 auto;}
 
-    .events-grid{
-      display:grid; grid-template-columns:repeat(7, minmax(0,1fr));
+    /* Eventos (horizontal, por día) */
+    .events-strip{
+      display:flex;
       gap:12px;
+      overflow:auto;
+      padding-bottom:6px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(148,163,184,.35) transparent;
     }
-    @media (max-width:1200px){ .events-grid{grid-template-columns:repeat(4, minmax(0,1fr));} }
-    @media (max-width:900px){ .events-grid{grid-template-columns:repeat(2, minmax(0,1fr));} }
-    @media (max-width:820px){ .events-grid{grid-template-columns:1fr;} }
+    .events-strip::-webkit-scrollbar{ height: 6px; }
+    .events-strip::-webkit-scrollbar-track{ background: transparent; }
+    .events-strip::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.25); border-radius: 999px; }
+    .events-strip:hover::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.40); }
 
     .event-day{
+      flex: 0 0 280px;
       border:1px solid rgba(255,255,255,.10);
       border-radius:16px;
       background:rgba(0,0,0,.18);
       padding:10px;
-      min-height:110px;
+      min-height:120px;
+    }
+    .event-day-head{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      margin-bottom:10px;
+    }
+    .event-day-title{
+      font-weight:1100; letter-spacing:.14em; text-transform:uppercase; font-size:11px; opacity:.85;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .event-pill{
+      position:relative;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(10,16,22,.55);
+      cursor:pointer;
+      margin-bottom:8px;
+    }
+    .event-pill:hover{ border-color: rgba(255,255,255,.18); }
+    .event-pill .t1{ font-weight:1100; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .event-pill .t2{ font-size:12px; opacity:.72; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .event-pill .tip{
+      display:none;
+      position:absolute;
+      left: 12px;
+      top: calc(100% + 8px);
+      width: 340px;
+      max-width: 65vw;
+      z-index: 50;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(10,16,22,.96);
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.25;
+      white-space: pre-wrap;
+    }
+    .event-pill:hover .tip{ display:block; }
+    .event-more{
+      width:100%;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.04);
+      color:inherit;
+      border-radius:12px;
+      padding:8px 10px;
+      font-weight:1000;
+      cursor:pointer;
     }
     .event-day-head{
       display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -328,6 +403,15 @@
       </div>
     </section>
 
+    <section class="card" id="eventsCard" style="grid-column: span 12;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <h3 style="margin:0">Eventos confirmados (semana)</h3>
+        <div class="muted" id="weekLabel">—</div>
+      </div>
+      <div class="muted" style="margin-top:8px; font-size:12px;">Máx. 3 por día. Pasa el mouse para ver detalle.</div>
+      <div id="eventsWeek" style="margin-top:10px"></div>
+    </section>
+
     <section class="card" id="opsCard" style="grid-column: span 12; display:none;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
         <div>
@@ -414,14 +498,6 @@
         </div>
       </div>
       <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en un estado para ir al filtro de leads.</div>
-    </section>
-
-    <section class="card" id="eventsCard" style="grid-column: span 12;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-        <h3 style="margin:0">Eventos confirmados (semana)</h3>
-        <div class="muted" id="weekLabel">—</div>
-      </div>
-      <div id="eventsWeek" style="margin-top:10px"></div>
     </section>
 
     <section class="card" id="reportsCard" style="grid-column: span 12;">
@@ -677,7 +753,8 @@
       html += `<table class="pipe-table"><thead><tr><th>Estado</th><th class="right">Leads</th><th class="right">Monto</th><th class="right">%</th></tr></thead><tbody>`;
       html += pipe.map(p => {
         const pct = Math.round((p.monto / total) * 100);
-        return `<tr class="rowlink" data-estado="${encodeURIComponent(p.estado)}" data-range="${rangeType}">
+        const c = (p.color || "#64748b").replace(/"/g, "");
+        return `<tr class="rowlink" data-estado="${encodeURIComponent(p.estado)}" data-range="${rangeType}" style="--pct:${pct};--c: ${c}33;">
           <td><span class="badge"><span class="dot" style="background:${p.color}"></span>${p.estado}</span></td>
           <td class="right"><strong>${p.cantidad}</strong></td>
           <td class="right">$ ${fmt.format(p.monto)}</td>
@@ -784,52 +861,87 @@
         return;
       }
 
-      // Agrupado por día (minimalista)
+      // Por día, horizontal; máx 3 y botón "Ver más"
       const byDay = new Map();
-      events.forEach(ev => {
+      (events || []).forEach(ev => {
         const d = String(ev.fecha_evento || "").slice(0,10) || "SIN_FECHA";
         if (!byDay.has(d)) byDay.set(d, []);
         byDay.get(d).push(ev);
       });
       const days = [...byDay.keys()].sort();
-      const html = days.map(d => {
-        const arr = byDay.get(d) || [];
-        const label = d !== "SIN_FECHA" ? `${d.slice(8,10)}/${d.slice(5,7)}/${d.slice(0,4)}` : "Sin fecha";
-        const dayName = d !== "SIN_FECHA" ? daysEs[new Date(d + "T00:00:00").getDay() === 0 ? 6 : (new Date(d + "T00:00:00").getDay() - 1)] : "";
-        return `
-          <div style="padding:10px 12px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); border-radius:16px; margin-bottom:10px;">
-            <div class="muted" style="font-weight:1000; letter-spacing:.14em; text-transform:uppercase; font-size:11px; margin-bottom:8px;">
-              ${dayName ? (dayName + " · ") : ""}${label} · ${arr.length} evento(s)
-            </div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-              ${arr.map(ev => {
-                const marca = (ev.marca || "").toString().trim();
-                const dot = brandColors[marca.toUpperCase()] || "#7ee7b0";
-                const cliente = (ev.cliente || "").toString().trim() || "—";
-                const comuna = (ev.comuna || "").toString().trim() || "—";
-                const payload = encodeURIComponent(JSON.stringify(ev));
-                return `
-                  <div class="event-row rowlink" data-evt='${payload}' style="cursor:pointer; padding:10px 12px; border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(10,16,22,.55); display:flex; align-items:center; gap:10px;">
-                    <span class="dot" style="background:${dot}"></span>
-                    <div style="min-width:0; flex:1;">
-                      <div style="font-weight:1100; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${cliente}</div>
-                      <div class="muted" style="font-size:12px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${marca || "—"} · ${comuna}</div>
-                    </div>
-                    <div class="muted" style="font-weight:1000; font-size:12px;">Abrir</div>
-                  </div>
-                `;
-              }).join("")}
-            </div>
-          </div>
-        `;
-      }).join("");
-      $("#eventsWeek").innerHTML = html || `<div class="muted">Sin eventos confirmados en la semana.</div>`;
+      const safeLines = (txt, max=8) => {
+        const raw = String(txt || "").replace(/\r/g, "");
+        const lines = raw.split("\n").map(s=>s.trim()).filter(Boolean);
+        return lines.slice(0, max).join("\n");
+      };
+      const fmtHr = (ev) => {
+        const s = String(ev?.pre_start || "");
+        const e = String(ev?.pre_end || "");
+        if (!s || !e) return "HR TBD";
+        const sh = s.slice(11,16);
+        const eh = e.slice(11,16);
+        return (sh && eh) ? `${sh} - ${eh}` : "HR TBD";
+      };
 
-      $("#eventsWeek").querySelectorAll(".rowlink[data-evt]").forEach(row => {
+      const strip = `
+        <div class="events-strip">
+          ${days.map(d=>{
+            const arr = byDay.get(d) || [];
+            const label = d !== "SIN_FECHA" ? `${d.slice(8,10)}/${d.slice(5,7)}` : "—";
+            const dayName = d !== "SIN_FECHA"
+              ? daysEs[(new Date(d + "T00:00:00").getDay() + 6) % 7]
+              : "";
+            const top = arr.slice(0, 3);
+            return `
+              <div class="event-day" data-day="${d}">
+                <div class="event-day-head">
+                  <div class="event-day-title">${dayName ? (dayName + " · ") : ""}${label} · ${arr.length}</div>
+                </div>
+                ${top.map(ev=>{
+                  const marca = (ev.marca || "").toString().trim();
+                  const dot = brandColors[marca.toUpperCase()] || "#7ee7b0";
+                  const cliente = (ev.cliente || "").toString().trim() || "—";
+                  const comuna = (ev.comuna || "").toString().trim() || "—";
+                  const ops = (ev.pre_ops != null && String(ev.pre_ops).trim() !== "") ? String(ev.pre_ops) : "—";
+                  const hr = fmtHr(ev);
+                  const productos = safeLines(ev.pre_products_text || "", 8) || "PRODUCTOS\n—";
+                  const tip = `COMUNA: ${comuna}\nHORARIO: ${hr}\nOPS: ${ops}\n\n${productos}`;
+                  const payload = encodeURIComponent(JSON.stringify(ev));
+                  return `
+                    <div class="event-pill" data-evt="${payload}">
+                      <span class="dot" style="background:${dot}"></span>
+                      <div style="min-width:0; flex:1;">
+                        <div class="t1">${cliente}</div>
+                        <div class="t2">${marca || "—"}</div>
+                      </div>
+                      <div class="tip">${tip}</div>
+                    </div>
+                  `;
+                }).join("")}
+                ${arr.length > 3 ? `<button class="event-more" type="button" data-more="${d}">Ver más</button>` : ``}
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+      $("#eventsWeek").innerHTML = strip || `<div class="muted">Sin eventos confirmados en la semana.</div>`;
+
+      $("#eventsWeek").querySelectorAll(".event-pill[data-evt]").forEach(row => {
         row.addEventListener("click", () => {
           const raw = row.getAttribute("data-evt");
           if (!raw) return;
           try{ openEventModal(JSON.parse(decodeURIComponent(raw))); }catch(_){ }
+        });
+      });
+      $("#eventsWeek").querySelectorAll("[data-more]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const d = btn.getAttribute("data-more") || "";
+          const items = byDay.get(d) || [];
+          const label = d !== "SIN_FECHA" ? `${d.slice(8,10)}/${d.slice(5,7)}/${d.slice(0,4)}` : "Sin fecha";
+          const dayName = d !== "SIN_FECHA"
+            ? daysEs[(new Date(d + "T00:00:00").getDay() + 6) % 7]
+            : "";
+          openDayModal({ date: d, label: (dayName ? (dayName + " · ") : "") + label, items });
         });
       });
     }
@@ -839,22 +951,43 @@
       const title = $("#dayModalTitle");
       const list = $("#dayModalList");
       if (!modal || !title || !list) return;
-      const dayNum = day.date ? day.date.slice(8,10) : "";
-      title.textContent = `${day.label} ${dayNum}`;
+      title.textContent = `${day.label || "Día"}`;
       const nrm = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+      const safeLines = (txt, max=10) => {
+        const raw = String(txt || "").replace(/\r/g, "");
+        const lines = raw.split("\n").map(s=>s.trim()).filter(Boolean);
+        return lines.slice(0, max).join("\n");
+      };
+      const fmtHr = (ev) => {
+        const s = String(ev?.pre_start || "");
+        const e = String(ev?.pre_end || "");
+        if (!s || !e) return "HR TBD";
+        const sh = s.slice(11,16);
+        const eh = e.slice(11,16);
+        return (sh && eh) ? `${sh} - ${eh}` : "HR TBD";
+      };
 
       list.innerHTML = (day.items || []).map(ev => {
         const cliente = (ev.cliente || "Cliente").trim();
         const marca = (ev.marca || "").trim();
         const label = marca && !nrm(cliente).includes(nrm(marca)) ? `${cliente} - ${marca}` : cliente;
         const dot = brandColors[(ev.marca || "").toUpperCase()] || "#7ee7b0";
-        return `<div class="event-row" data-evt='${encodeURIComponent(JSON.stringify(ev))}' style="border:1px solid rgba(255,255,255,.12);">
+        const comuna = (ev.comuna || "").toString().trim() || "—";
+        const hr = fmtHr(ev);
+        const ops = (ev.pre_ops != null && String(ev.pre_ops).trim() !== "") ? String(ev.pre_ops) : "—";
+        const productos = safeLines(ev.pre_products_text || "", 12) || "PRODUCTOS\n—";
+        const tip = `COMUNA: ${comuna}\nHORARIO: ${hr}\nOPS: ${ops}\n\n${productos}`;
+        return `<div class="event-row rowlink" data-evt='${encodeURIComponent(JSON.stringify(ev))}' style="border:1px solid rgba(255,255,255,.12);">
           <span class="dot" style="background:${dot}"></span>
-          <div style="font-weight:1000">${label}</div>
+          <div style="min-width:0;">
+            <div style="font-weight:1100">${label}</div>
+            <div class="muted" style="font-size:12px; margin-top:2px; white-space:pre-wrap;">${tip}</div>
+          </div>
         </div>`;
       }).join("") || `<div class="muted">Sin eventos.</div>`;
 
-      list.querySelectorAll(".event-row").forEach(row => {
+      list.querySelectorAll(".rowlink[data-evt]").forEach(row => {
         row.addEventListener("click", () => {
           const raw = row.getAttribute("data-evt");
           if (!raw) return;
@@ -874,6 +1007,14 @@
       const cliente = (ev.cliente || "Cliente").trim();
       const marca = (ev.marca || "").trim();
       const label = marca && !nrm(cliente).includes(nrm(marca)) ? `${cliente} - ${marca}` : cliente;
+      const comuna = (ev.comuna || "").toString().trim() || "—";
+      const preStart = String(ev?.pre_start || "");
+      const preEnd = String(ev?.pre_end || "");
+      const hr = (preStart && preEnd) ? `${preStart.slice(11,16)} - ${preEnd.slice(11,16)}` : "HR TBD";
+      const ops = (ev.pre_ops != null && String(ev.pre_ops).trim() !== "") ? String(ev.pre_ops) : "—";
+      const prodRaw = String(ev.pre_products_text || "").replace(/\r/g, "");
+      const prodLines = prodRaw.split("\n").map(s=>s.trim()).filter(Boolean);
+      const prod = prodLines.slice(0, 18).join("\n") || "PRODUCTOS\n—";
 
       title.textContent = label;
       body.innerHTML = `
@@ -881,7 +1022,8 @@
           <span class="dot" style="background:${brandColors[(ev.marca || "").toUpperCase()] || "#7ee7b0"}"></span>
           <div>
             <div style="font-weight:1100">${label}</div>
-            <div class="muted" style="font-size:12px; margin-top:2px;">${ev.fecha_evento || "—"} · ${ev.comuna || "—"}</div>
+            <div class="muted" style="font-size:12px; margin-top:2px;">${ev.fecha_evento || "—"} · ${comuna}</div>
+            <div class="muted" style="font-size:12px; margin-top:8px; white-space:pre-wrap;">HORARIO: ${hr}\nOPS: ${ops}\n\n${prod}</div>
           </div>
         </div>
       `;

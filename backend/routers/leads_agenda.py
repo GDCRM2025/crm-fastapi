@@ -1045,7 +1045,6 @@ def _build_event(
         "",
         "👥 OPS: %s" % ops,
         "",
-        "🕒 HORARIO: %s" % hr_label,
         "📞 TELEFONO: %s" % phone_label,
         "📍 DIRECCION: %s" % dir_label,
     ]
@@ -1121,12 +1120,7 @@ def _build_event_for_day(
         agenda_notes=agenda_notes,
     )
 
-    # Claridad en multi-día
-    try:
-        if day_label:
-            ev["description"] = f"📅 FECHA: {day_label}\n\n{ev.get('description') or ''}".strip()
-    except Exception:
-        pass
+    # En Google Calendar ya se ve la fecha/hora en el encabezado; no repetimos en la descripción.
 
     if override_title:
         ev["title"] = override_title
