@@ -1013,6 +1013,118 @@ def agenda(db: Session = Depends(get_db), me=Depends(get_current_user)):
     }
 
 
+@router.get("/dashboard/ops_alertas")
+def dashboard_ops_alertas(
+    days_ahead: int = 30,
+    id_marca: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Alertas operacionales para eventos confirmados próximos:
+    - Falta teléfono
+    - Falta dirección (pre_direccion o direccion)
+    - Falta horario (pre_start/pre_end)
+    """
+    tz = ZoneInfo("America/Santiago")
+    today = datetime.now(tz).date()
+    try:
+        days_ahead = int(days_ahead)
+    except Exception:
+        days_ahead = 30
+    if days_ahead < 3:
+        days_ahead = 3
+    if days_ahead > 120:
+        days_ahead = 120
+    end_day = today + timedelta(days=days_ahead)
+
+    role = (me.get("role") or me.get("rol") or "").upper()
+    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    only_own = not _is_admin(role)
+    if only_own and not marcas:
+        return {"ok": True, "range": {"from": str(today), "to": str(end_day)}, "counts": {"tel": 0, "dir": 0, "hr": 0}, "items": {"tel": [], "dir": [], "hr": []}}
+
+    confirmado_id = _estado_id(db, "CONFIRM")
+    if not confirmado_id:
+        return {"ok": True, "range": {"from": str(today), "to": str(end_day)}, "counts": {"tel": 0, "dir": 0, "hr": 0}, "items": {"tel": [], "dir": [], "hr": []}}
+
+    name_expr = _lead_name_expr(db)
+    pre_start_expr = _lead_col(db, "pre_start")
+    pre_end_expr = _lead_col(db, "pre_end")
+    pre_dir_expr = _lead_col(db, "pre_direccion")
+    dir_expr = _lead_col(db, "direccion")
+
+    marca_sql = ""
+    params: dict[str, Any] = {"conf": confirmado_id, "d1": today, "d2": end_day}
+    if only_own and marcas:
+        marca_sql = " AND l.id_marca = ANY(:marcas) "
+        params["marcas"] = marcas
+        if id_marca and int(id_marca) in set(marcas):
+            marca_sql += " AND l.id_marca = :id_marca "
+            params["id_marca"] = int(id_marca)
+    elif id_marca:
+        marca_sql = " AND l.id_marca = :id_marca "
+        params["id_marca"] = int(id_marca)
+
+    base_where = f"""
+      l.id_estado = :conf
+      AND l.fecha_evento::date BETWEEN :d1 AND :d2
+      {marca_sql}
+    """
+
+    def _rows(where_extra: str) -> list[dict]:
+        q = f"""
+          SELECT l.id_lead,
+                 {name_expr} AS cliente,
+                 l.telefono,
+                 l.fecha_evento,
+                 {pre_start_expr} AS pre_start,
+                 {pre_end_expr} AS pre_end,
+                 COALESCE({pre_dir_expr}, {dir_expr}, '') AS direccion,
+                 COALESCE(m.nombre, m.marca, '') AS marca,
+                 COALESCE(c.nombre, '') AS comuna
+          FROM leads l
+          LEFT JOIN marcas m ON m.id_marca = l.id_marca
+          LEFT JOIN comunas c ON c.id_comuna = l.id_comuna
+          WHERE {base_where}
+            {where_extra}
+          ORDER BY l.fecha_evento ASC NULLS LAST, l.id_lead DESC
+          LIMIT 30
+        """
+        return [dict(r) for r in db.execute(text(q), params).mappings().all()]
+
+    def _count(where_extra: str) -> int:
+        q = f"""
+          SELECT COUNT(*)::int AS n
+          FROM leads l
+          WHERE {base_where}
+            {where_extra}
+        """
+        try:
+            return int(db.execute(text(q), params).scalar_one() or 0)
+        except Exception:
+            return 0
+
+    tel_where = " AND (l.telefono IS NULL OR btrim(l.telefono) = '') "
+    dir_where = f" AND (COALESCE({pre_dir_expr}, {dir_expr}, '') IS NULL OR btrim(COALESCE({pre_dir_expr}, {dir_expr}, '')) = '') "
+    hr_where = f" AND ({pre_start_expr} IS NULL OR {pre_end_expr} IS NULL) "
+
+    items_tel = _rows(tel_where)
+    items_dir = _rows(dir_where)
+    items_hr = _rows(hr_where)
+
+    return {
+        "ok": True,
+        "range": {"from": str(today), "to": str(end_day)},
+        "counts": {
+            "tel": _count(tel_where),
+            "dir": _count(dir_where),
+            "hr": _count(hr_where),
+        },
+        "items": {"tel": items_tel, "dir": items_dir, "hr": items_hr},
+    }
+
+
 @router.get("/dashboard")
 def dashboard(
     id_marca: int | None = None,

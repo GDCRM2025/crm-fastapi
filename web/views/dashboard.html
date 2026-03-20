@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dashboard</title>
-  <link rel="stylesheet" href="../styles.css?v=20260320-2" />
+  <link rel="stylesheet" href="../styles.css?v=20260320-3" />
   <script src="../js/iframe-theme.js"></script>
   <style>
     :root{
@@ -297,7 +297,7 @@
   </header>
 
   <div class="layout">
-    <section class="card" style="grid-column: span 12;">
+    <section class="card" id="kpiCard" style="grid-column: span 12;">
       <h3>KPIs</h3>
       <div class="kpis">
         <div class="kpi" data-tone="good" id="kpi1">
@@ -328,7 +328,80 @@
       </div>
     </section>
 
-    <section class="card" style="grid-column: span 12;">
+    <section class="card" id="opsCard" style="grid-column: span 12; display:none;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0">Operaciones · Alertas</h3>
+          <div class="muted" style="margin-top:6px">Confirmados pr&oacute;ximos con datos incompletos y pendientes de agenda.</div>
+        </div>
+        <div class="muted" id="opsRange">—</div>
+      </div>
+      <div class="split" style="margin-top:12px;">
+        <div style="grid-column: span 4;">
+          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+            <div class="label">Falta tel&eacute;fono</div>
+            <div class="value" id="opsMissingTel">0</div>
+            <div class="hint">Eventos confirmados (pr&oacute;ximos)</div>
+          </div>
+        </div>
+        <div style="grid-column: span 4;">
+          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+            <div class="label">Falta direcci&oacute;n</div>
+            <div class="value" id="opsMissingDir">0</div>
+            <div class="hint">pre_direccion / direccion</div>
+          </div>
+        </div>
+        <div style="grid-column: span 4;">
+          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+            <div class="label">Falta horario</div>
+            <div class="value" id="opsMissingHr">0</div>
+            <div class="hint">pre_start / pre_end</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="split" style="margin-top:12px;">
+        <div style="grid-column: span 6;">
+          <div class="muted" style="font-weight:1000; margin-bottom:8px;">Pendientes (Agenda)</div>
+          <div id="opsAgendaBox"></div>
+        </div>
+        <div style="grid-column: span 6;">
+          <div class="muted" style="font-weight:1000; margin-bottom:8px;">Detalle (top)</div>
+          <div id="opsMissingBox"></div>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en un lead para abrirlo.</div>
+    </section>
+
+    <section class="card" id="finCard" style="grid-column: span 12; display:none;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0">Finanzas · Por cobrar / por pagar</h3>
+          <div class="muted" style="margin-top:6px">Resumen del mes (CxC/CxP).</div>
+        </div>
+        <button class="btn" id="btnGoFinReportes" type="button">Abrir Reportes financieros</button>
+      </div>
+      <div class="split" style="margin-top:12px;">
+        <div style="grid-column: span 6;">
+          <div class="kpi" data-tone="good" style="padding:12px 14px;">
+            <div class="label">CxC (por cobrar)</div>
+            <div class="value" id="finCxcTotal">$ 0</div>
+            <div class="hint"><span id="finCxcCount">0</span> eventos con saldo</div>
+          </div>
+          <div id="finCxcBox" style="margin-top:10px;"></div>
+        </div>
+        <div style="grid-column: span 6;">
+          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+            <div class="label">CxP (por pagar)</div>
+            <div class="value" id="finCxpTotal">$ 0</div>
+            <div class="hint"><span id="finCxpCount">0</span> gastos pendientes</div>
+          </div>
+          <div id="finCxpBox" style="margin-top:10px;"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="pipelineCard" style="grid-column: span 12;">
       <h3>Pipeline</h3>
       <div class="split">
         <div style="grid-column: span 6;">
@@ -343,7 +416,7 @@
       <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en un estado para ir al filtro de leads.</div>
     </section>
 
-    <section class="card" style="grid-column: span 12;">
+    <section class="card" id="eventsCard" style="grid-column: span 12;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
         <h3 style="margin:0">Eventos confirmados (semana)</h3>
         <div class="muted" id="weekLabel">—</div>
@@ -351,7 +424,7 @@
       <div id="eventsWeek" style="margin-top:10px"></div>
     </section>
 
-    <section class="card" style="grid-column: span 12;">
+    <section class="card" id="reportsCard" style="grid-column: span 12;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
         <div>
           <h3 style="margin:0">Reportes</h3>
@@ -361,7 +434,7 @@
       </div>
     </section>
 
-    <section class="card" style="grid-column: span 12;">
+    <section class="card" id="salesCard" style="grid-column: span 12;">
       <h3>Venta diaria por marca (semana)</h3>
       <div id="salesDaily"></div>
     </section>
@@ -409,12 +482,52 @@
       "EXPRESS":"#06b6d4",
       "DEL SABOR":"#f59e0b"
     };
+    const ROLE_NUM = {
+      "ADMIN": 1,
+      "SUPERADMIN": 1,
+      "EJECUTIVO DE VENTAS": 2,
+      "EJECUTIVO": 2,
+      "VENTAS": 2,
+      "JEFE DE OPERACIONES": 3,
+      "OPERACIONES": 3,
+      "BODEGUERO": 4,
+      "COMPRAS": 5,
+      "CONDUCTOR": 6,
+      "CHOFER": 6,
+      "OPERADOR": 7,
+      "MICE": 8,
+      "OPERADOR PATIO": 9,
+      "FINANZAS": 11,
+    };
 
     function authHeaders(extra={}){
       const GD = window.parent && window.parent.GD;
       if (GD && GD.authHeaders) return GD.authHeaders(extra);
       const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
       return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+    async function apiJson(path, opt={}){
+      const url = String(path || "").startsWith("http")
+        ? String(path)
+        : `${API_BASE}${String(path || "").startsWith("/") ? "" : "/"}${path}`;
+      const r = await fetch(url, { ...opt, headers: authHeaders(opt.headers || {}) });
+      const txt = await r.text();
+      let j = null;
+      try{ j = txt ? JSON.parse(txt) : null; }catch(_){}
+      if (!r.ok) throw new Error((j && (j.detail || j.error)) ? (j.detail || j.error) : (txt || String(r.status)));
+      return j;
+    }
+    function detectRoleId(me){
+      const raw = me?.role_id ?? me?.id_rol ?? me?.rol_id ?? me?.role ?? me?.rol ?? "";
+      const s = String(raw || "").trim();
+      if (/^\d+$/.test(s)) return Number(s);
+      const up = s.toUpperCase();
+      return ROLE_NUM[up] || null;
+    }
+    function openLead(id){
+      const lid = String(id || "").trim();
+      if (!lid) return;
+      window.parent?.postMessage({ type:"openItem", id:"leads_ver", url:`/web/views/leads.html?open_lead=${encodeURIComponent(lid)}` }, "*");
     }
 
     function openFilter(params){
@@ -450,16 +563,19 @@
       }
     }
 
-    const state = {
-      idMarca: "",
-      range: "week",
-      from: "",
-      to: "",
-      weekOffset: 0,
-      me: null,
-      marcasMap: {},
-      lastWeek: null,
-    };
+	    const state = {
+	      idMarca: "",
+	      range: "week",
+	      from: "",
+	      to: "",
+	      weekOffset: 0,
+	      me: null,
+	      marcasMap: {},
+	      lastWeek: null,
+	      roleId: null,
+	      lastOpsAt: 0,
+	      lastFinAt: 0,
+	    };
 
     // Fechas en TZ negocio (America/Santiago) para que "hoy" calce con backend.
     const fmtSCL = new Intl.DateTimeFormat("en-CA", {
@@ -773,11 +889,166 @@
     $("#eventModalClose")?.addEventListener("click", () => $("#eventModal")?.classList.remove("open"));
     $("#eventModal")?.addEventListener("click", (e) => { if (e.target?.id === "eventModal") $("#eventModal")?.classList.remove("open"); });
 
+    function applyRoleLayout(){
+      const rid = state.roleId;
+      const isAdmin = rid === 1;
+      const isSales = rid === 2;
+      const isOps = rid === 3;
+      const isFinance = rid === 11;
+
+      const show = (id, on) => { const el = $(id); if (el) el.style.display = on ? "" : "none"; };
+
+      // Ops card: Admin + Ventas + Operaciones
+      const opsCard = $("#opsCard");
+      if (opsCard) opsCard.style.display = (isAdmin || isSales || isOps) ? "" : "none";
+
+      // Finanzas: Admin + Finanzas
+      const finCard = $("#finCard");
+      if (finCard) finCard.style.display = (isAdmin || isFinance) ? "" : "none";
+
+      // Ajuste de enfoque por rol
+      if (isFinance && !isAdmin){
+        show("#pipelineCard", false);
+        show("#eventsCard", false);
+        show("#reportsCard", true);
+        show("#salesCard", false);
+      } else if (isOps && !isAdmin){
+        show("#pipelineCard", false);
+        show("#salesCard", false);
+      } else {
+        // Admin/Ventas y otros: default visible
+        show("#pipelineCard", true);
+        show("#eventsCard", true);
+        show("#reportsCard", true);
+        show("#salesCard", true);
+      }
+    }
+
+    async function loadOpsCards(force=false){
+      const now = Date.now();
+      if (!force && now - (state.lastOpsAt || 0) < 30000) return;
+      state.lastOpsAt = now;
+      const card = $("#opsCard");
+      if (!card || card.style.display === "none") return;
+      try{
+        const mid = String(state.idMarca || "").trim();
+        const qs = new URLSearchParams();
+        if (mid) qs.set("id_marca", mid);
+        const alerts = await apiJson(`/tools/dashboard/ops_alertas?${qs.toString()}`);
+        const agenda = await apiJson(`/tools/agenda${qs.toString() ? ("?"+qs.toString()) : ""}`);
+
+        $("#opsRange").textContent = `${alerts?.range?.from || "—"} → ${alerts?.range?.to || "—"}`;
+        $("#opsMissingTel").textContent = String(alerts?.counts?.tel ?? 0);
+        $("#opsMissingDir").textContent = String(alerts?.counts?.dir ?? 0);
+        $("#opsMissingHr").textContent = String(alerts?.counts?.hr ?? 0);
+
+        const c = agenda?.counts || {};
+        const box = $("#opsAgendaBox");
+        if (box){
+          box.innerHTML = `
+            <table class="pipe-table">
+              <thead><tr><th>Tipo</th><th class="right">Cantidad</th></tr></thead>
+              <tbody>
+                <tr class="rowlink" data-open="por_aprobar"><td>Preagenda por aprobar</td><td class="right"><strong>${Number(c.por_aprobar||0)}</strong></td></tr>
+                <tr class="rowlink" data-open="sin_pre"><td>Confirmados sin preagenda</td><td class="right"><strong>${Number(c.confirmados_sin_preagenda||0)}</strong></td></tr>
+                <tr class="rowlink" data-open="agendados"><td>Agendados</td><td class="right"><strong>${Number(c.agendados||0)}</strong></td></tr>
+              </tbody>
+            </table>
+          `;
+          // Nota: agenda.html puede no existir en todos los despliegues; si falla, igual deja el conteo visible.
+          box.querySelectorAll("tr.rowlink[data-open]").forEach(tr=>{
+            tr.addEventListener("click", ()=>{
+              const t = tr.dataset.open || "";
+              if (t === "por_aprobar" || t === "agendados"){
+                window.parent?.postMessage({ type:"openItem", id:"tool_cal", url:"/web/views/tools.html#agenda" }, "*");
+              } else if (t === "sin_pre"){
+                window.parent?.postMessage({ type:"openItem", id:"leads_ver", url:"/web/views/leads.html" }, "*");
+              }
+            });
+          });
+        }
+
+        const missBox = $("#opsMissingBox");
+        if (missBox){
+          const mk = (arr, title) => {
+            const rows = (arr || []).slice(0, 8);
+            if (!rows.length) return "";
+            const html = rows.map(r => `
+              <tr class="rowlink" data-lead="${r.id_lead}">
+                <td><strong>#${r.id_lead}</strong> ${String(r.cliente||"").slice(0,34)}</td>
+                <td class="right">${String(r.fecha_evento||"").slice(0,10)||"—"}</td>
+              </tr>
+            `).join("");
+            return `
+              <div class="muted" style="font-weight:1000; margin:10px 0 6px;">${title}</div>
+              <table class="pipe-table"><thead><tr><th>Lead</th><th class="right">Fecha</th></tr></thead><tbody>${html}</tbody></table>
+            `;
+          };
+          missBox.innerHTML =
+            mk(alerts?.items?.tel, "Falta teléfono") +
+            mk(alerts?.items?.dir, "Falta dirección") +
+            mk(alerts?.items?.hr, "Falta horario") ||
+            `<div class="muted">Sin alertas.</div>`;
+
+          missBox.querySelectorAll("[data-lead]").forEach(el=>{
+            el.addEventListener("click", ()=> openLead(el.getAttribute("data-lead")));
+          });
+        }
+      }catch(e){
+        const box = $("#opsAgendaBox");
+        if (box) box.innerHTML = `<div class="muted">No se pudieron cargar alertas.</div>`;
+        const missBox = $("#opsMissingBox");
+        if (missBox) missBox.innerHTML = `<div class="muted">${String(e?.message||e)}</div>`;
+      }
+    }
+
+    async function loadFinCards(force=false){
+      const now = Date.now();
+      if (!force && now - (state.lastFinAt || 0) < 60000) return;
+      state.lastFinAt = now;
+      const card = $("#finCard");
+      if (!card || card.style.display === "none") return;
+      try{
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth() + 1;
+        const cxc = await apiJson(`/finanzas/cxc_resumen?year=${year}&month=${month}`);
+        const cxp = await apiJson(`/finanzas/cxp_resumen?year=${year}&month=${month}`);
+
+        const cxcTotal = Number(cxc?.total_saldo || 0);
+        const cxpTotal = Number(cxp?.total_pendiente || 0);
+        $("#finCxcTotal").textContent = `$ ${fmt.format(cxcTotal)}`;
+        $("#finCxpTotal").textContent = `$ ${fmt.format(cxpTotal)}`;
+        $("#finCxcCount").textContent = String(Number(cxc?.items?.length || 0));
+        $("#finCxpCount").textContent = String(Number(cxp?.items?.length || 0));
+
+        const mk = (items, fields) => {
+          const rows = (items || []).slice(0, 8);
+          if (!rows.length) return `<div class="muted">Sin registros.</div>`;
+          const body = rows.map(r => `
+            <tr>
+              <td>${String(r[fields[0]] ?? "—").toString().slice(0, 34)}</td>
+              <td class="right">$ ${fmt.format(Number(r[fields[1]] || 0))}</td>
+            </tr>
+          `).join("");
+          return `<table class="pipe-table"><thead><tr><th>Item</th><th class="right">Monto</th></tr></thead><tbody>${body}</tbody></table>`;
+        };
+
+        $("#finCxcBox").innerHTML = mk(cxc?.items, ["cliente", "saldo"]);
+        $("#finCxpBox").innerHTML = mk(cxp?.items, ["proveedor", "pendiente"]);
+      }catch(_){
+        $("#finCxcBox").innerHTML = `<div class="muted">No se pudo cargar CxC.</div>`;
+        $("#finCxpBox").innerHTML = `<div class="muted">No se pudo cargar CxP.</div>`;
+      }
+    }
+
     async function initFilters(){
       try{
         const meR = await fetch(`${API_BASE}/me`, { headers: authHeaders() });
         state.me = meR.ok ? await meR.json() : null;
       }catch(_){ state.me = null; }
+      state.roleId = detectRoleId(state.me);
+      applyRoleLayout();
 
       try{
         const mR = await fetch(`${API_BASE}/marcas?solo_activas=1`, { headers: authHeaders() });
@@ -826,6 +1097,8 @@
     async function refreshAll(){
       await loadDashboard();
       await loadEvents(state.weekOffset || 0);
+      await loadOpsCards(false);
+      await loadFinCards(false);
     }
 
     $("#rangeSel")?.addEventListener("change", (e) => {
@@ -849,6 +1122,9 @@
 
     $("#btnGoReportes")?.addEventListener("click", () => {
       window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html#total" }, "*");
+    });
+    $("#btnGoFinReportes")?.addEventListener("click", () => {
+      window.parent?.postMessage({ type:"openItem", id:"rep_fin", url:"/web/views/reportes.html#fin" }, "*");
     });
 
     (async () => {
