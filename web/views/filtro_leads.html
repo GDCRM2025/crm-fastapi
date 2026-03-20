@@ -200,7 +200,7 @@
     function apiURL(u){
       const s = String(u || "");
       if (!s) return s;
-      if (/^https?:\\/\\//i.test(s)) return s;
+      if (/^https?:\/\//i.test(s)) return s;
       if (s.startsWith("/")) return API_BASE + s;
       return API_BASE + "/" + s;
     }
