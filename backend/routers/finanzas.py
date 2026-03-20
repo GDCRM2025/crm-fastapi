@@ -600,6 +600,45 @@ def cxp_resumen(me=Depends(get_current_user)):
     return {"ok": True, "items": list(rows)}
 
 
+@router.get("/cxc_resumen")
+def cxc_resumen(
+    month: int = Query(0, ge=0, le=12),
+    year: int = Query(0, ge=0, le=2100),
+    me=Depends(get_current_user),
+):
+    """
+    Cuentas por cobrar: resumen por cliente (saldo pendiente).
+    Fuente: fin_eventos.saldo (>0).
+    """
+    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "COMPRAS"})
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        where = "WHERE COALESCE(saldo,0) > 0"
+        params = {}
+        if month and year:
+            where += " AND EXTRACT(MONTH FROM fecha_evento)=:m AND EXTRACT(YEAR FROM fecha_evento)=:y"
+            params = {"m": month, "y": year}
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT COALESCE(NULLIF(btrim(cliente),''),'(SIN CLIENTE)') AS cliente,
+                       COALESCE(NULLIF(btrim(marca),''),'(SIN MARCA)') AS marca,
+                       SUM(COALESCE(saldo,0)) AS saldo_pendiente,
+                       SUM(COALESCE(monto_bruto,0)) AS total_bruto,
+                       COUNT(*) AS n,
+                       MAX(fecha_evento) AS ultimo_evento
+                FROM fin_eventos
+                {where}
+                GROUP BY 1,2
+                ORDER BY saldo_pendiente DESC, cliente ASC
+                LIMIT 300
+                """
+            ),
+            params,
+        ).mappings().all()
+    return {"ok": True, "items": list(rows)}
+
+
 @router.get("/eventos/{id_evento}/pagos")
 def list_pagos(id_evento: int, me=Depends(get_current_user)):
     _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})

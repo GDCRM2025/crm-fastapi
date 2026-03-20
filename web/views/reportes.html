@@ -123,6 +123,8 @@
           <a class="chip" href="#funnel">Funnel</a>
           <a class="chip" href="#cierre">% cierre</a>
           <a class="chip" href="#total">Total venta</a>
+          <a class="chip" href="#cxc">Por cobrar</a>
+          <a class="chip" href="#cxp">Por pagar</a>
           <a class="chip" href="#comunas">Comunas</a>
           <a class="chip" href="#productos">Productos</a>
           <a class="chip" href="#clientes">Clientes</a>
@@ -209,6 +211,18 @@
         <div class="h2">Total venta</div>
         <div class="muted">Comparativo mensual por marca (backend).</div>
         <div id="boxTotal" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="cxc">
+        <div class="h2">Cuentas por cobrar</div>
+        <div class="muted">Saldo pendiente desde <code>fin_eventos</code>.</div>
+        <div id="boxCxc" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="cxp">
+        <div class="h2">Cuentas por pagar</div>
+        <div class="muted">Pendiente por proveedor desde <code>fin_gastos</code> (pagado=false).</div>
+        <div id="boxCxp" style="margin-top:10px"></div>
       </section>
 
       <section class="card" style="grid-column: span 12" id="venta_diaria">
@@ -347,6 +361,7 @@
       renderLeadsHoy(dash, mid);
       renderTotal(dash);
       renderDaily(dash, mid);
+      await renderFinanzas(ini, fin);
 
       qs("#st").textContent = `OK · Rango: ${ini} → ${fin}${mid ? (" · Marca ID: " + mid) : ""}`;
     }
@@ -508,6 +523,82 @@
           </table>
         </div>
       `;
+    }
+
+    async function renderFinanzas(ini, fin){
+      const boxCxc = qs("#boxCxc");
+      const boxCxp = qs("#boxCxp");
+      if (boxCxc) boxCxc.innerHTML = `<div class="muted">Cargando…</div>`;
+      if (boxCxp) boxCxp.innerHTML = `<div class="muted">Cargando…</div>`;
+
+      const ym = (ini && /^\d{4}-\d{2}-\d{2}$/.test(ini)) ? ini.slice(0,7) : "";
+      const [yy, mm] = ym ? ym.split("-").map(Number) : [0,0];
+      const qp = (mm && yy) ? `?month=${encodeURIComponent(String(mm))}&year=${encodeURIComponent(String(yy))}` : "";
+
+      try{
+        const out = await jget(`/finanzas/cxc_resumen${qp}`);
+        const items = Array.isArray(out?.items) ? out.items : [];
+        const total = items.reduce((a,x)=>a+Number(x.saldo_pendiente||0),0);
+        const rows = items.slice(0, 120);
+        if (boxCxc){
+          boxCxc.innerHTML = `
+            <div class="row" style="justify-content:space-between;margin-bottom:10px">
+              <div class="muted">Total pendiente</div>
+              <div style="font-weight:1100">${esc(money(total))}</div>
+            </div>
+            <div style="max-height:420px;overflow:auto">
+              <table class="tbl">
+                <thead><tr><th>Cliente</th><th>Marca</th><th class="right">Saldo</th><th class="right">#</th><th>Último</th></tr></thead>
+                <tbody>
+                  ${rows.map(r => `
+                    <tr>
+                      <td><strong>${esc(r.cliente||"—")}</strong></td>
+                      <td class="muted">${esc(r.marca||"")}</td>
+                      <td class="right">${esc(money(r.saldo_pendiente||0))}</td>
+                      <td class="right">${esc(r.n||0)}</td>
+                      <td>${esc(String(r.ultimo_evento||""))}</td>
+                    </tr>
+                  `).join("") || `<tr><td colspan="5" class="muted">Sin datos.</td></tr>`}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+      }catch(e){
+        if (boxCxc) boxCxc.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+      }
+
+      try{
+        const out = await jget(`/finanzas/cxp_resumen`);
+        const items = Array.isArray(out?.items) ? out.items : [];
+        const total = items.reduce((a,x)=>a+Number(x.pendiente||0),0);
+        const rows = items.slice(0, 120);
+        if (boxCxp){
+          boxCxp.innerHTML = `
+            <div class="row" style="justify-content:space-between;margin-bottom:10px">
+              <div class="muted">Total pendiente</div>
+              <div style="font-weight:1100">${esc(money(total))}</div>
+            </div>
+            <div style="max-height:420px;overflow:auto">
+              <table class="tbl">
+                <thead><tr><th>Proveedor</th><th class="right">Pendiente</th><th class="right">Pagado</th><th class="right">#</th></tr></thead>
+                <tbody>
+                  ${rows.map(r => `
+                    <tr>
+                      <td><strong>${esc(r.proveedor||"—")}</strong></td>
+                      <td class="right">${esc(money(r.pendiente||0))}</td>
+                      <td class="right">${esc(money(r.pagado||0))}</td>
+                      <td class="right">${esc(r.n||0)}</td>
+                    </tr>
+                  `).join("") || `<tr><td colspan="4" class="muted">Sin datos.</td></tr>`}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+      }catch(e){
+        if (boxCxp) boxCxp.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+      }
     }
 
     async function openConfirmedSales(desde, hasta, mid){
