@@ -97,8 +97,47 @@ def _is_admin_role(role: str) -> bool:
 
 
 def _lead_name_expr() -> str:
-    # nombre_cliente puede variar; en este proyecto normalmente es nombre_cliente
+    # NOTA: esta versión "string-only" asume columnas; úsala solo cuando sabes que existen.
     return "COALESCE(NULLIF(btrim(l.nombre_cliente),''), NULLIF(btrim(l.cliente),''), '—')"
+
+
+def _table_exists(db: Session, table: str) -> bool:
+    try:
+        return bool(db.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{table}"}).scalar())
+    except Exception:
+        return False
+
+
+def _col_exists(db: Session, table: str, col: str) -> bool:
+    try:
+        return bool(
+            db.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name=:t AND column_name=:c
+                    LIMIT 1
+                    """
+                ),
+                {"t": table, "c": col},
+            ).scalar()
+        )
+    except Exception:
+        return False
+
+
+def _lead_name_expr_db(db: Session) -> str:
+    # Compat: distintos deploys han usado 'nombre_cliente' o 'cliente'.
+    has_nombre = _col_exists(db, "leads", "nombre_cliente")
+    has_cliente = _col_exists(db, "leads", "cliente")
+    if has_nombre and has_cliente:
+        return "COALESCE(NULLIF(btrim(l.nombre_cliente),''), NULLIF(btrim(l.cliente),''), '—')"
+    if has_nombre:
+        return "COALESCE(NULLIF(btrim(l.nombre_cliente),''), '—')"
+    if has_cliente:
+        return "COALESCE(NULLIF(btrim(l.cliente),''), '—')"
+    return "'—'"
 
 
 def _estado_id_like(db: Session, pattern: str, default: int) -> int:
@@ -464,29 +503,87 @@ def list_tasks(
         where += " AND t.status = :st"
         params["st"] = status
 
-    q = f"""
-      SELECT t.id_task, t.created_at, t.updated_at, t.status, t.priority,
-             t.kind, t.title, t.description, t.entity_type, t.entity_id,
-             t.due_at, t.completed_at, t.completed_by,
-             {_lead_name_expr()} AS lead_cliente,
-             COALESCE(m.nombre, m.marca, '') AS lead_marca,
-             COALESCE(e.nombre, '') AS lead_estado,
-             l.telefono AS lead_telefono,
-             l.fecha_evento AS lead_fecha_evento
-      FROM public.tasks t
-      LEFT JOIN public.leads l ON (t.entity_type='lead' AND t.entity_id=l.id_lead)
-      LEFT JOIN public.marcas m ON m.id_marca = l.id_marca
-      LEFT JOIN public.estados_lead e ON e.id_estado = l.id_estado
-      WHERE {where}
-      ORDER BY
-        (CASE WHEN t.status='open' AND t.due_at IS NOT NULL AND t.due_at < now() THEN 0 ELSE 1 END) ASC,
-        t.priority ASC,
-        t.due_at ASC NULLS LAST,
-        t.id_task DESC
-      LIMIT :lim OFFSET :off
-    """
-    items = [dict(r) for r in db.execute(text(q), params).mappings().all()]
-    return {"ok": True, "items": items, "limit": limit, "offset": offset}
+    # Nunca 500: si hay diferencias de esquema (columnas/tablas), degradar a lista simple.
+    try:
+        has_leads = _table_exists(db, "leads")
+        has_marcas = _table_exists(db, "marcas")
+        has_estados = _table_exists(db, "estados_lead")
+
+        joins = ""
+        lead_cliente_expr = "'—' AS lead_cliente"
+        lead_marca_expr = "'' AS lead_marca"
+        lead_estado_expr = "'' AS lead_estado"
+        lead_tel_expr = "'' AS lead_telefono"
+        lead_fecha_expr = "NULL::date AS lead_fecha_evento"
+
+        if has_leads:
+            joins += " LEFT JOIN public.leads l ON (t.entity_type='lead' AND t.entity_id=l.id_lead) "
+            lead_cliente_expr = f"{_lead_name_expr_db(db)} AS lead_cliente"
+            if _col_exists(db, "leads", "telefono"):
+                lead_tel_expr = "COALESCE(l.telefono,'') AS lead_telefono"
+            if _col_exists(db, "leads", "fecha_evento"):
+                lead_fecha_expr = "l.fecha_evento AS lead_fecha_evento"
+
+            if has_marcas and _col_exists(db, "leads", "id_marca") and _col_exists(db, "marcas", "id_marca"):
+                joins += " LEFT JOIN public.marcas m ON m.id_marca = l.id_marca "
+                # algunas bases usan m.nombre, otras m.marca
+                if _col_exists(db, "marcas", "nombre") and _col_exists(db, "marcas", "marca"):
+                    lead_marca_expr = "COALESCE(m.nombre, m.marca, '') AS lead_marca"
+                elif _col_exists(db, "marcas", "nombre"):
+                    lead_marca_expr = "COALESCE(m.nombre, '') AS lead_marca"
+                elif _col_exists(db, "marcas", "marca"):
+                    lead_marca_expr = "COALESCE(m.marca, '') AS lead_marca"
+
+            if has_estados and _col_exists(db, "leads", "id_estado") and _col_exists(db, "estados_lead", "id_estado"):
+                joins += " LEFT JOIN public.estados_lead e ON e.id_estado = l.id_estado "
+                if _col_exists(db, "estados_lead", "nombre"):
+                    lead_estado_expr = "COALESCE(e.nombre, '') AS lead_estado"
+
+        q = f"""
+          SELECT t.id_task, t.created_at, t.updated_at, t.status, t.priority,
+                 t.kind, t.title, t.description, t.entity_type, t.entity_id,
+                 t.due_at, t.completed_at, t.completed_by,
+                 {lead_cliente_expr},
+                 {lead_marca_expr},
+                 {lead_estado_expr},
+                 {lead_tel_expr},
+                 {lead_fecha_expr}
+          FROM public.tasks t
+          {joins}
+          WHERE {where}
+          ORDER BY
+            (CASE WHEN t.status='open' AND t.due_at IS NOT NULL AND t.due_at < now() THEN 0 ELSE 1 END) ASC,
+            t.priority ASC,
+            t.due_at ASC NULLS LAST,
+            t.id_task DESC
+          LIMIT :lim OFFSET :off
+        """
+        items = [dict(r) for r in db.execute(text(q), params).mappings().all()]
+        return {"ok": True, "items": items, "limit": limit, "offset": offset}
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        # Fallback ultra-seguro: tareas sin joins
+        try:
+            q2 = f"""
+              SELECT t.id_task, t.created_at, t.updated_at, t.status, t.priority,
+                     t.kind, t.title, t.description, t.entity_type, t.entity_id,
+                     t.due_at, t.completed_at, t.completed_by
+              FROM public.tasks t
+              WHERE {where}
+              ORDER BY
+                (CASE WHEN t.status='open' AND t.due_at IS NOT NULL AND t.due_at < now() THEN 0 ELSE 1 END) ASC,
+                t.priority ASC,
+                t.due_at ASC NULLS LAST,
+                t.id_task DESC
+              LIMIT :lim OFFSET :off
+            """
+            items = [dict(r) for r in db.execute(text(q2), params).mappings().all()]
+            return {"ok": True, "items": items, "limit": limit, "offset": offset, "degraded": True, "error": str(e)[:160]}
+        except Exception:
+            return {"ok": True, "items": [], "limit": limit, "offset": offset, "disabled": True, "error": str(e)[:160]}
 
 
 def complete_task(db: Session, *, id_task: int, completed_by: str) -> Dict[str, Any]:

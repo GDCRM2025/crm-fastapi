@@ -689,13 +689,24 @@ def pdf_placeholder(
                         return ""
                 if cache_path.exists() and (not refresh_assets) and _fresh(cache_path):
                     data = cache_path.read_bytes()
-                    # guess mime
-                    try:
-                        import imghdr
-                        kind = imghdr.what(None, h=data) or ""
-                    except Exception:
-                        kind = ""
-                    # detectar webp por magia si imghdr falla
+                    # guess mime (sin imghdr; fue removido en Python 3.13)
+                    def _guess_kind(buf: bytes) -> str:
+                        b = buf or b""
+                        # PNG
+                        if b.startswith(b"\x89PNG\r\n\x1a\n"):
+                            return "png"
+                        # JPEG
+                        if b.startswith(b"\xff\xd8"):
+                            return "jpeg"
+                        # GIF
+                        if b.startswith(b"GIF87a") or b.startswith(b"GIF89a"):
+                            return "gif"
+                        # WEBP
+                        if len(b) >= 12 and b[:4] == b"RIFF" and b[8:12] == b"WEBP":
+                            return "webp"
+                        return ""
+                    kind = _guess_kind(data)
+                    # detectar webp por magia (redundante, pero deja compat con assets raros)
                     is_webp = data[:4] == b"RIFF" and data[8:12] == b"WEBP"
                     if kind == "jpeg":
                         mime = "image/jpeg"
