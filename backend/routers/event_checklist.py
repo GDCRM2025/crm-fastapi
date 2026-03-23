@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.db import get_db
 from backend.core.activity_log import log_activity
 from backend.core.event_checklist import list_event_checklists, upsert_event_checklist
+from backend.core.system_notifs import push_system_notif
 
 try:
     from backend.routers.auth import get_current_user  # type: ignore
@@ -357,6 +358,46 @@ def confirm_event(
             )
         except Exception:
             pass
+    except Exception:
+        pass
+
+    # Notificación interna a Operaciones (solo cuando queda completo).
+    # Se muestra en Campana > "Eventos agendados / Operaciones" para roles target.
+    try:
+        keys = ["cliente", "comuna", "marca", "equipos", "inicio", "fin", "ops"]
+        all_ok = True
+        for k in keys:
+            if not bool((items or {}).get(k)):
+                all_ok = False
+                break
+        if all_ok:
+            # Contexto mínimo (nombre cliente si existe)
+            try:
+                name_expr = _lead_name_expr(db)
+                row = db.execute(
+                    text(f"SELECT {name_expr} AS cliente FROM public.leads l WHERE l.id_lead=:id LIMIT 1"),
+                    {"id": int(id_lead)},
+                ).mappings().first()
+                cliente = str((row or {}).get("cliente") or "").strip()
+            except Exception:
+                cliente = ""
+
+            kind = f"CHECKLIST_OK_{d.isoformat()}"
+            title = f"Checklist OK · {cliente or ('Lead #' + str(id_lead))}"
+            body = f"Checklist del día {d.isoformat()} confirmado por {who}."
+            payload = {"id_lead": int(id_lead), "day": d.isoformat(), "by": who}
+
+            # Duplicado por rol_target para cubrir todo el equipo.
+            for rt in ("OPERACIONES", "COMPRAS", "BODEGUERO", "MICE", "ADMIN"):
+                push_system_notif(
+                    db.connection(),
+                    kind=kind,
+                    role_target=rt,
+                    id_lead=int(id_lead),
+                    title=title,
+                    body=body,
+                    payload=payload,
+                )
     except Exception:
         pass
 
