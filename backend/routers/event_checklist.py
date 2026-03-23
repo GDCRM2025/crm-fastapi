@@ -59,6 +59,15 @@ def _col_exists(db: Session, table: str, col: str) -> bool:
         return False
 
 
+def _lead_name_expr(db: Session) -> str:
+    # Compatibilidad: algunos deploys usan nombre_cliente, otros cliente.
+    if _col_exists(db, "leads", "nombre_cliente"):
+        return "COALESCE(NULLIF(btrim(l.nombre_cliente),''), '')"
+    if _col_exists(db, "leads", "cliente"):
+        return "COALESCE(NULLIF(btrim(l.cliente),''), '')"
+    return "''"
+
+
 def _estado_id(db: Session, like: str) -> Optional[int]:
     try:
         v = db.execute(
@@ -126,10 +135,12 @@ def events_for_day(
 
     where_sql = " AND ".join(where)
 
+    name_expr = _lead_name_expr(db)
+
     sql = f"""
       SELECT
         l.id_lead::bigint AS id_lead,
-        COALESCE(l.cliente,'') AS cliente,
+        {name_expr} AS cliente,
         COALESCE(m.nombre, m.marca,'') AS marca,
         COALESCE(c.nombre,'') AS comuna,
         {start_expr} AS start_at,
@@ -264,4 +275,3 @@ def confirm_event(
         except Exception:
             pass
     return out
-

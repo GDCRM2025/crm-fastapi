@@ -133,8 +133,8 @@
 .topbar{ position:relative; overflow:visible; }
 #sidebar{
   position:relative;
-  /* el scroll lo maneja .side-nav (ver styles.css) */
-  overflow:hidden;
+  /* IMPORTANTE: NO bloquear scroll del menú. El overflow lo maneja `web/styles.css`. */
+  overflow: visible;
 }
 .topbar .tb-left, .topbar .tb-right{ position:relative; z-index:2; }
 #sidebar .sidebar-inner{ position:relative; z-index:2; }
