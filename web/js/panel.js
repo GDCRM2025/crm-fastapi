@@ -1719,6 +1719,14 @@ const MENU = [
     ]
   },
   {
+    id: "tareas",
+    ico: "\u{1F9FE}",
+    title: "Tareas",
+    items: [
+      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html" }
+    ]
+  },
+  {
     id: "operaciones",
     ico: "\u{1F6E0}\uFE0F",
     title: "Operaciones",
@@ -1952,6 +1960,7 @@ const PERMISSIONS = {
     "set_roles",
     "set_metas",
     "set_bak"
+    ,"tasks_my"
   ]),
   2: /* @__PURE__ */ new Set([
     "dash_home",
@@ -1978,6 +1987,7 @@ const PERMISSIONS = {
     "set_prod",
     "set_com",
     "set_el"
+    ,"tasks_my"
   ]),
   3: /* @__PURE__ */ new Set([
     "dash_home",
