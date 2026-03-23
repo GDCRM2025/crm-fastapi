@@ -6,7 +6,7 @@
   <title>Reportes</title>
   <link rel="stylesheet" href="../styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
   <script src="../js/iframe-theme.js"></script>
   <style>
     html,body{height:100%;margin:0;}
@@ -135,6 +135,12 @@
     }
     :root.light .chartBox{background: rgba(255,255,255,.62);}
     .chartBox svg{width:100%; height:auto; display:block;}
+    .ech{
+      width:100%;
+      height:220px;
+    }
+    .ech.tall{height:260px;}
+    .ech.short{height:180px;}
   </style>
 </head>
 <body>
@@ -328,225 +334,228 @@
     const LAST = { dash:null, rep:null, ini:"", fin:"", mid:"" };
     const ME = { role:"", username:"" };
 
-    // ---------- charts (SVG, sin libs) ----------
-    const CHARTS = {};
-    function hasCharts(){ return typeof window.Chart !== "undefined" && !!window.Chart; }
-    function destroyChart(key){
-      try{ CHARTS[key]?.destroy?.(); }catch(_){}
-      try{ delete CHARTS[key]; }catch(_){}
-    }
-    function chartColors(){
+    // ---------- charts (ECharts, BI look) ----------
+    const EC = {};
+    function hasECharts(){ return typeof window.echarts !== "undefined" && !!window.echarts; }
+    function ecColors(){
       const isLight = document.documentElement.classList.contains("light");
       return {
-        grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.18)",
-        tick: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.78)",
-        title: isLight ? "rgba(0,0,0,.82)" : "rgba(255,255,255,.86)",
-        accent: "rgba(25,195,125,.55)",
-        accent2: "rgba(99,102,241,.55)",
-        warn: "rgba(245,158,11,.55)",
-        bad: "rgba(239,68,68,.55)",
+        axis: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.80)",
+        grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.16)",
+        title: isLight ? "rgba(0,0,0,.85)" : "rgba(255,255,255,.88)",
+        sub: isLight ? "rgba(0,0,0,.60)" : "rgba(255,255,255,.70)",
+        accent: "#17c37d",
+        accent2: "#6366f1",
+        warn: "#f59e0b",
+        bad: "#ef4444",
+        cyan: "#22d3ee",
       };
     }
-    function ensureCanvas(containerId, height=180){
-      const box = qs("#"+containerId);
-      if (!box) return null;
-      // si ya existe canvas, reusa
-      let cv = box.querySelector("canvas");
-      if (!cv){
-        box.innerHTML = `<canvas style="width:100%;height:${height}px"></canvas>`;
-        cv = box.querySelector("canvas");
-      }
-      if (!cv) return null;
-      cv.style.height = `${height}px`;
-      return cv.getContext("2d");
+    function destroyEC(id){
+      try{ EC[id]?.dispose?.(); }catch(_){}
+      try{ delete EC[id]; }catch(_){}
     }
-
-    function renderBarHChart(containerId, title, rows, opts){
-      if (!hasCharts()) return;
-      const o = Object.assign({ valueFmt:(v)=>fmtShort(v), height:220 }, opts||{});
-      destroyChart(containerId);
-      const ctx = ensureCanvas(containerId, o.height);
-      if (!ctx) return;
-      const c = chartColors();
-      const labels = (rows||[]).map(r => String(r.label||"—"));
-      const values = (rows||[]).map(r => Number(r.value||0));
-      const tooltips = (rows||[]).map(r => String(r.tooltip||""));
-      CHARTS[containerId] = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels,
-          datasets: [{
-            label: title,
-            data: values,
-            backgroundColor: c.accent,
-            borderWidth: 0,
+    function ensureECBox(id, cls){
+      const wrap = qs("#"+id);
+      if (!wrap) return null;
+      let el = wrap.querySelector(".ech");
+      if (!el){
+        wrap.innerHTML = `<div class="ech ${esc(cls||"")}"></div>`;
+        el = wrap.querySelector(".ech");
+      }
+      return el;
+    }
+    function setChartMsg(id, msg){
+      destroyEC(id);
+      const wrap = qs("#"+id);
+      if (!wrap) return;
+      wrap.innerHTML = `<div class="muted">${esc(msg || "Sin datos.")}</div>`;
+    }
+    function initEC(id, cls){
+      if (!hasECharts()) return null;
+      const el = ensureECBox(id, cls);
+      if (!el) return null;
+      destroyEC(id);
+      EC[id] = echarts.init(el, null, { renderer:"canvas" });
+      return EC[id];
+    }
+    function fmtAxisMoney(v){
+      const n = Number(v||0);
+      if (!isFinite(n)) return "0";
+      const abs = Math.abs(n);
+      if (abs >= 1_000_000_000) return (n/1_000_000_000).toFixed(1).replace(/\.0$/,"")+"B";
+      if (abs >= 1_000_000) return (n/1_000_000).toFixed(1).replace(/\.0$/,"")+"M";
+      if (abs >= 1_000) return (n/1_000).toFixed(1).replace(/\.0$/,"")+"k";
+      return String(Math.round(n));
+    }
+    function ecBarH(id, title, rows, valueFmt, onClick){
+      const r = (rows||[]).slice(0, 25);
+      if (!r.length){ setChartMsg(id, "Sin datos."); return; }
+      const c = ecColors();
+      const chart = initEC(id, "tall");
+      if (!chart) return;
+      const labels = r.map(x => String(x.label||"—"));
+      const vals = r.map(x => Number(x.value||0));
+      const extra = r.map(x => String(x.tooltip||""));
+      const option = {
+        title: { text: title, left: 0, top: 0, textStyle:{ color:c.title, fontWeight: 900, fontSize: 12 } },
+        grid: { left: 150, right: 24, top: 38, bottom: 10, containLabel: true },
+        xAxis: {
+          type: "value",
+          axisLabel: { color: c.axis, formatter: (v)=> valueFmt ? valueFmt(v) : fmtAxisMoney(v) },
+          splitLine: { lineStyle:{ color: c.grid } }
+        },
+        yAxis: {
+          type: "category",
+          data: labels,
+          axisLabel: { color: c.axis, fontWeight: 900, overflow:"truncate", width: 140 },
+          axisTick: { show:false },
+          axisLine: { show:false }
+        },
+        tooltip: {
+          trigger: "axis",
+          axisPointer: { type: "shadow" },
+          formatter: (p) => {
+            const i = p?.[0]?.dataIndex ?? 0;
+            const v = vals[i] ?? 0;
+            const x = extra[i] ? `<div style="opacity:.8;margin-top:4px">${esc(extra[i])}</div>` : "";
+            const vv = valueFmt ? valueFmt(v) : fmtAxisMoney(v);
+            return `<div style="font-weight:900">${esc(labels[i])}</div><div style="margin-top:4px">${esc(vv)}</div>${x}`;
+          }
+        },
+        series: [{
+          type: "bar",
+          data: vals,
+          barWidth: 14,
+          showBackground: true,
+          backgroundStyle: { color: "rgba(148,163,184,.10)", borderRadius: 10 },
+          itemStyle: {
             borderRadius: 10,
-            barThickness: 14,
-          }]
-        },
-        options: {
-          indexAxis: "y",
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            title: {
-              display: !!title,
-              text: title,
-              color: c.title,
-              font: { weight: "800", size: 12 }
-            },
-            tooltip: {
-              callbacks: {
-                label: (ctx2) => {
-                  const v = ctx2.raw;
-                  const extra = tooltips[ctx2.dataIndex] || "";
-                  return extra ? `${o.valueFmt(v)} · ${extra}` : `${o.valueFmt(v)}`;
-                }
-              }
+            color: {
+              type: "linear", x: 0, y: 0, x2: 1, y2: 0,
+              colorStops: [
+                { offset: 0, color: "rgba(23,195,125,.55)" },
+                { offset: 1, color: "rgba(23,195,125,.28)" }
+              ]
             }
           },
-          scales: {
-            x: {
-              grid: { color: c.grid },
-              ticks: { color: c.tick, callback: (v)=>fmtShort(v) }
-            },
-            y: {
-              grid: { display:false },
-              ticks: { color: c.tick }
-            }
-          }
-        }
-      });
-    }
-
-    function renderDailyChart(containerId, labels, totals){
-      if (!hasCharts()) return;
-      destroyChart(containerId);
-      const ctx = ensureCanvas(containerId, 190);
-      if (!ctx) return;
-      const c = chartColors();
-      CHARTS[containerId] = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels: labels || [],
-          datasets: [{
-            label: "Totales",
-            data: (totals||[]).map(x=>Number(x||0)),
-            backgroundColor: c.accent,
-            borderRadius: 12,
-            borderWidth: 0,
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display:false },
-            title: { display:true, text:"Totales por día (semana)", color:c.title, font:{weight:"800", size:12} },
-            tooltip: { callbacks:{ label:(ctx2)=>money(ctx2.raw) } }
-          },
-          scales: {
-            x: { grid:{ display:false }, ticks:{ color:c.tick } },
-            y: { grid:{ color:c.grid }, ticks:{ color:c.tick, callback:(v)=>fmtShort(v) } }
-          }
-        }
-      });
-    }
-
-    function renderTotalCompareChart(containerId, items){
-      if (!hasCharts()) return;
-      destroyChart(containerId);
-      const ctx = ensureCanvas(containerId, 230);
-      if (!ctx) return;
-      const c = chartColors();
-      const labels = (items||[]).map(r => String(r.marca||"—"));
-      const actual = (items||[]).map(r => Number(r.actual||0));
-      const base = (items||[]).map(r => Number(r.baseline||0));
-      CHARTS[containerId] = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels,
-          datasets: [
-            { label:"Actual", data: actual, backgroundColor: c.accent, borderRadius: 10, borderWidth:0 },
-            { label:"Baseline", data: base, backgroundColor: c.accent2, borderRadius: 10, borderWidth:0 },
-          ]
-        },
-        options: {
-          responsive:true,
-          maintainAspectRatio:false,
-          plugins:{
-            legend:{ display:true, labels:{ color:c.tick, font:{ weight:"800" } } },
-            title:{ display:true, text:"Total venta por marca (Actual vs Baseline) · Top 10", color:c.title, font:{weight:"800", size:12} },
-            tooltip:{ callbacks:{ label:(ctx2)=> `${ctx2.dataset.label}: ${money(ctx2.raw)}` } }
-          },
-          scales:{
-            x:{ grid:{ display:false }, ticks:{ color:c.tick } },
-            y:{ grid:{ color:c.grid }, ticks:{ color:c.tick, callback:(v)=>fmtShort(v) } }
-          }
-        }
-      });
-    }
-
-    function renderStackedTipoChart(containerId, all, conf){
-      if (!hasCharts()) return;
-      destroyChart(containerId+"_all");
-      destroyChart(containerId+"_conf");
-      const box = qs("#"+containerId);
-      if (!box) return;
-      box.innerHTML = `
-        <div style="display:flex;gap:12px;flex-wrap:wrap;">
-          <div style="flex:1;min-width:260px"><canvas data-k="all" style="width:100%;height:190px"></canvas></div>
-          <div style="flex:1;min-width:260px"><canvas data-k="conf" style="width:100%;height:190px"></canvas></div>
-        </div>
-      `;
-      const c = chartColors();
-      const mk = (arr) => (arr||[]).filter(x=>Number(x?.cantidad||0)>0);
-      const a = mk(all);
-      const b = mk(conf);
-      const colors = [c.accent,c.accent2,c.warn,c.bad,"rgba(148,163,184,.40)","rgba(34,211,238,.45)"];
-
-      const cvsAll = box.querySelector('canvas[data-k="all"]');
-      const cvsConf = box.querySelector('canvas[data-k="conf"]');
-      if (cvsAll){
-        CHARTS[containerId+"_all"] = new Chart(cvsAll.getContext("2d"), {
-          type:"doughnut",
-          data:{
-            labels: a.map(x=>String(x.tipo||"—")),
-            datasets:[{ data: a.map(x=>Number(x.cantidad||0)), backgroundColor: a.map((_,i)=>colors[i%colors.length]), borderWidth:0 }]
-          },
-          options:{
-            responsive:true, maintainAspectRatio:false,
-            plugins:{
-              legend:{ position:"bottom", labels:{ color:c.tick, boxWidth:10, font:{ weight:"800", size:11 } } },
-              title:{ display:true, text:"Todos · distribución (cantidad)", color:c.title, font:{ weight:"800", size:12 } }
-            }
-          }
-        });
-      }
-      if (cvsConf){
-        CHARTS[containerId+"_conf"] = new Chart(cvsConf.getContext("2d"), {
-          type:"doughnut",
-          data:{
-            labels: b.map(x=>String(x.tipo||"—")),
-            datasets:[{ data: b.map(x=>Number(x.cantidad||0)), backgroundColor: b.map((_,i)=>colors[i%colors.length]), borderWidth:0 }]
-          },
-          options:{
-            responsive:true, maintainAspectRatio:false,
-            plugins:{
-              legend:{ position:"bottom", labels:{ color:c.tick, boxWidth:10, font:{ weight:"800", size:11 } } },
-              title:{ display:true, text:"Confirmados · distribución (cantidad)", color:c.title, font:{ weight:"800", size:12 } }
-            }
-          }
+          emphasis: { itemStyle:{ color: c.accent } },
+        }]
+      };
+      chart.setOption(option, true);
+      chart.off("click");
+      if (onClick){
+        chart.on("click", (p)=> {
+          const i = p?.dataIndex ?? 0;
+          onClick(r[i], i);
         });
       }
     }
-
-    function setChart(id, html){
-      const el = qs("#"+id);
-      if (!el) return;
-      el.innerHTML = html || `<div class="muted">Sin datos.</div>`;
+    function ecFunnel(id, items, onClick){
+      const arr = (items||[]).filter(x => x && (Number(x.monto||0) > 0 || Number(x.cantidad||0) > 0));
+      if (!arr.length){ setChartMsg(id, "Sin datos."); return; }
+      const c = ecColors();
+      const chart = initEC(id, "tall");
+      if (!chart) return;
+      // Usamos MONTO como valor principal para el funnel (BI)
+      const data = arr.map(x => ({ name: String(x.estado||"—"), value: Number(x.monto||0), cantidad: Number(x.cantidad||0) }))
+        .sort((a,b)=> b.value - a.value);
+      chart.setOption({
+        title:{ text:"Funnel de ventas (monto)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+        tooltip:{
+          trigger:"item",
+          formatter: (p) => {
+            const d = p.data || {};
+            return `<div style="font-weight:900">${esc(d.name||"—")}</div>` +
+              `<div style="margin-top:4px">Monto: ${esc(money(d.value||0))}</div>` +
+              `<div style="opacity:.8;margin-top:4px">Leads: ${esc(d.cantidad||0)}</div>`;
+          }
+        },
+        series:[{
+          type:"funnel",
+          left: 10, right: 10, top: 46, bottom: 10,
+          sort:"descending",
+          gap: 6,
+          minSize:"20%",
+          maxSize:"100%",
+          label:{ color: c.axis, fontWeight: 900 },
+          labelLine:{ lineStyle:{ color:c.grid } },
+          itemStyle:{ borderRadius: 10, borderColor:"rgba(0,0,0,0)", borderWidth:0 },
+          emphasis:{ label:{ fontSize: 13 } },
+          data
+        }]
+      }, true);
+      chart.off("click");
+      if (onClick){
+        chart.on("click", (p)=>{
+          const name = String(p?.data?.name || "");
+          onClick(name);
+        });
+      }
     }
+    function ecTipoCliente(id, all, conf){
+      const c = ecColors();
+      const a = (all||[]).map(x => ({ name: String(x.tipo||x.tipo_cliente||"—"), value: Number(x.cantidad||0) })).filter(x => x.value > 0);
+      const b = (conf||[]).map(x => ({ name: String(x.tipo||x.tipo_cliente||"—"), value: Number(x.cantidad||0) })).filter(x => x.value > 0);
+      if (!a.length && !b.length){ setChartMsg(id, "Sin datos."); return; }
+      const chart = initEC(id, "tall");
+      if (!chart) return;
+      chart.setOption({
+        title:{ text:"Tipo de cliente (cantidad)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+        tooltip:{ trigger:"item", formatter: "{b}<br/>{c} · {d}%" },
+        legend:{ top: 36, left: 0, textStyle:{ color:c.axis, fontWeight:800 } },
+        series:[
+          {
+            name:"Todos",
+            type:"pie",
+            radius:["42%","66%"],
+            center:["25%","64%"],
+            label:{ show:false },
+            data: a,
+          },
+          {
+            name:"Confirmados",
+            type:"pie",
+            radius:["42%","66%"],
+            center:["75%","64%"],
+            label:{ show:false },
+            data: b,
+          }
+        ],
+        graphic: [
+          { type:"text", left:"18%", top:"62%", style:{ text:"Todos", fill:c.sub, fontWeight:900 } },
+          { type:"text", left:"67%", top:"62%", style:{ text:"Confirm.", fill:c.sub, fontWeight:900 } },
+        ]
+      }, true);
+    }
+    function ecDaily(id, labels, totals){
+      if (!labels?.length){ setChartMsg(id, "Sin datos."); return; }
+      const c = ecColors();
+      const chart = initEC(id, "short");
+      if (!chart) return;
+      chart.setOption({
+        title:{ text:"Venta diaria (semana)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+        tooltip:{ trigger:"axis", formatter: (p)=> `${esc(p[0].axisValue)}<br/>${esc(money(p[0].data))}` },
+        grid:{ left: 10, right: 10, top: 42, bottom: 10, containLabel:true },
+        xAxis:{ type:"category", data: labels, axisLabel:{ color:c.axis, fontWeight:800 }, axisTick:{ show:false }, axisLine:{ lineStyle:{ color:c.grid } } },
+        yAxis:{ type:"value", axisLabel:{ color:c.axis, formatter: (v)=>fmtAxisMoney(v) }, splitLine:{ lineStyle:{ color:c.grid } } },
+        series:[{
+          type:"line",
+          data: totals,
+          smooth:true,
+          symbolSize: 8,
+          lineStyle:{ width: 3, color: c.accent },
+          itemStyle:{ color: c.accent },
+          areaStyle:{ color: "rgba(23,195,125,.16)" }
+        }]
+      }, true);
+    }
+    function resizeEC(){
+      for (const k of Object.keys(EC)){
+        try{ EC[k]?.resize?.(); }catch(_){}
+      }
+    }
+    window.addEventListener("resize", () => resizeEC(), { passive:true });
     function fmtShort(n){
       const v = Number(n||0);
       if (!isFinite(v)) return "0";
@@ -959,23 +968,11 @@
       if (!tb) return;
       if (!items.length){
         tb.innerHTML = `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
-        setChart("chFunnel", "");
+        setChartMsg("chFunnel", "Sin datos.");
         return;
       }
-      if (hasCharts()){
-        renderBarHChart("chFunnel", "Monto por estado (Top 10)", items.slice(0,10).map(r => ({
-          label: r.estado || "—",
-          value: Number(r.monto||0),
-          tooltip: `${Number(r.cantidad||0)} leads`,
-        })), { valueFmt: money });
-      }else{
-        setChart("chFunnel", chartBarH(items.map(r => ({
-          label: r.estado || "—",
-          value: Number(r.monto||0),
-          valueText: money(r.monto||0),
-          sub: `${Number(r.cantidad||0)} leads`,
-        })), { title:"Monto por estado (Top 10)", maxRows: 10, valueWidth: 160 }));
-      }
+      // Funnel BI (click => filtro por estado)
+      ecFunnel("chFunnel", items, (estado)=> openFilter({ estado }));
       const maxMonto = Math.max(1, ...items.map(x => Number(x?.monto||0)));
       tb.innerHTML = items.map(r => `
         <tr class="rowlink" data-estado="${encodeURIComponent(r.estado||"")}">
@@ -1046,20 +1043,8 @@
         </div>
       `;
 
-      // chart (distribución por cantidad, stacked)
-      const segAll = all.map(x => ({ label: x.tipo || "—", value: Number(x.cantidad||0) }));
-      const segConf = conf.map(x => ({ label: x.tipo || "—", value: Number(x.cantidad||0) }));
-      if (hasCharts()){
-        renderStackedTipoChart("chTipo", all, conf);
-      }else{
-        const html = `
-          <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:260px">${chartStackedBar(segAll, { title:"Todos · distribución (cantidad)" }) || `<div class="muted">Sin datos.</div>`}</div>
-            <div style="flex:1;min-width:260px">${chartStackedBar(segConf, { title:"Confirmados · distribución (cantidad)" }) || `<div class="muted">Sin datos.</div>`}</div>
-          </div>
-        `;
-        setChart("chTipo", html);
-      }
+      // chart BI (2 donuts)
+      ecTipoCliente("chTipo", all, conf);
     }
 
     function renderTop(rep){
@@ -1067,43 +1052,21 @@
       const com = rep?.comunas || [];
       const cli = rep?.clientes || [];
 
-      // charts (Top 10 por monto)
-      if (hasCharts()){
-        renderBarHChart("chProd", "Top productos (monto)", tp.slice(0,10).map(x => ({
-          label: x.producto || "—",
-          value: Number(x.monto||0),
-          tooltip: x.marca ? String(x.marca) : "",
-        })), { valueFmt: money });
-        renderBarHChart("chCom", "Top comunas (monto)", com.slice(0,10).map(x => ({
-          label: x.comuna || "—",
-          value: Number(x.monto||0),
-          tooltip: `${Number(x.cantidad||0)} leads`,
-        })), { valueFmt: money });
-        renderBarHChart("chCli", "Top clientes (monto)", cli.slice(0,10).map(x => ({
-          label: x.cliente || "—",
-          value: Number(x.monto||0),
-          tooltip: `${Number(x.cantidad||0)} leads`,
-        })), { valueFmt: money });
-      }else{
-        setChart("chProd", chartBarH(tp.map(x => ({
-          label: x.producto || "—",
-          sub: x.marca ? String(x.marca) : "",
-          value: Number(x.monto||0),
-          valueText: money(x.monto||0),
-        })), { title:"Top productos (monto)", maxRows: 10, valueWidth: 160 }));
-        setChart("chCom", chartBarH(com.map(x => ({
-          label: x.comuna || "—",
-          value: Number(x.monto||0),
-          valueText: money(x.monto||0),
-          sub: `${Number(x.cantidad||0)} leads`,
-        })), { title:"Top comunas (monto)", maxRows: 10, valueWidth: 160 }));
-        setChart("chCli", chartBarH(cli.map(x => ({
-          label: x.cliente || "—",
-          value: Number(x.monto||0),
-          valueText: money(x.monto||0),
-          sub: `${Number(x.cantidad||0)} leads`,
-        })), { title:"Top clientes (monto)", maxRows: 10, valueWidth: 160 }));
-      }
+      ecBarH("chProd", "Top productos (monto)", tp.slice(0,10).map(x => ({
+        label: x.producto || "—",
+        value: Number(x.monto||0),
+        tooltip: x.marca ? String(x.marca) : "",
+      })), money);
+      ecBarH("chCom", "Top comunas (monto)", com.slice(0,10).map(x => ({
+        label: x.comuna || "—",
+        value: Number(x.monto||0),
+        tooltip: `${Number(x.cantidad||0)} leads`,
+      })), money);
+      ecBarH("chCli", "Top clientes (monto)", cli.slice(0,10).map(x => ({
+        label: x.cliente || "—",
+        value: Number(x.monto||0),
+        tooltip: `${Number(x.cantidad||0)} leads`,
+      })), money);
 
       const tbP = qs("#tbProd");
       if (tbP){
@@ -1251,22 +1214,37 @@
       if (!box) return;
       if (!items.length){
         box.innerHTML = `<div class="muted">Sin datos.</div>`;
-        setChart("chTotal", "");
+        setChartMsg("chTotal", "Sin datos.");
         return;
       }
       // chart: comparar actual vs baseline (Top 10 por actual)
       const top = [...items].sort((a,b)=>Number(b.actual||0)-Number(a.actual||0)).slice(0,10);
-      if (hasCharts()){
-        renderTotalCompareChart("chTotal", top);
-      }else{
-        const rows = top.map(r => ({
-          label: r.marca || "—",
-          value: Number(r.actual||0),
-          valueText: money(r.actual||0),
-          sub: `baseline ${money(r.baseline||0)}`,
-        }));
-        setChart("chTotal", chartBarH(rows, { title:"Total venta por marca (actual) · Top 10", maxRows: 10, valueWidth: 180 }));
-      }
+      // BI: bar agrupado Actual vs Baseline
+      (()=>{
+        const c = ecColors();
+        const chart = initEC("chTotal", "tall");
+        if (!chart) return;
+        const labels = top.map(r => String(r.marca||"—"));
+        const actual = top.map(r => Number(r.actual||0));
+        const base = top.map(r => Number(r.baseline||0));
+        chart.setOption({
+          title:{ text:"Total venta por marca (Actual vs Baseline) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+          tooltip:{ trigger:"axis", axisPointer:{ type:"shadow" }, formatter:(p)=>{
+            const i = p?.[0]?.dataIndex ?? 0;
+            return `<div style="font-weight:900">${esc(labels[i])}</div>` +
+              `<div style="margin-top:4px">Actual: ${esc(money(actual[i]||0))}</div>` +
+              `<div style="opacity:.8;margin-top:4px">Baseline: ${esc(money(base[i]||0))}</div>`;
+          }},
+          legend:{ top: 28, right: 0, textStyle:{ color:c.axis, fontWeight:800 } },
+          grid:{ left: 10, right: 10, top: 58, bottom: 10, containLabel:true },
+          xAxis:{ type:"category", data: labels, axisLabel:{ color:c.axis, fontWeight:800, rotate:0, overflow:"truncate" }, axisLine:{ lineStyle:{ color:c.grid } }, axisTick:{ show:false } },
+          yAxis:{ type:"value", axisLabel:{ color:c.axis, formatter:(v)=>fmtAxisMoney(v) }, splitLine:{ lineStyle:{ color:c.grid } } },
+          series:[
+            { name:"Actual", type:"bar", data: actual, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accent } },
+            { name:"Baseline", type:"bar", data: base, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accent2 } },
+          ]
+        }, true);
+      })();
       box.innerHTML = `
         <div style="max-height:420px;overflow:auto">
           <table class="tbl">
@@ -1302,28 +1280,15 @@
       try{
         const out = await jget(`/finanzas/cxc_resumen${qp}`);
         const items = Array.isArray(out?.items) ? out.items : [];
-        // chart: top pendientes
-        if (hasCharts()){
-          renderBarHChart("chCxc", "Top clientes por saldo pendiente", items
-            .slice()
-            .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
-            .slice(0,10)
-            .map(r => ({
-              label: r.cliente || "—",
-              value: Number(r.saldo_pendiente||0),
-              tooltip: r.marca ? String(r.marca) : "",
-            })), { valueFmt: money });
-        }else{
-          setChart("chCxc", chartBarH(items
-            .slice()
-            .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
-            .map(r => ({
-              label: r.cliente || "—",
-              sub: r.marca ? String(r.marca) : "",
-              value: Number(r.saldo_pendiente||0),
-              valueText: money(r.saldo_pendiente||0),
-            })), { title:"Top clientes por saldo pendiente", maxRows: 10, valueWidth: 180 }));
-        }
+        ecBarH("chCxc", "Top clientes por saldo pendiente", items
+          .slice()
+          .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
+          .slice(0,10)
+          .map(r => ({
+            label: r.cliente || "—",
+            value: Number(r.saldo_pendiente||0),
+            tooltip: r.marca ? String(r.marca) : "",
+          })), money);
         const total = items.reduce((a,x)=>a+Number(x.saldo_pendiente||0),0);
         const rows = items.slice(0, 120);
         if (boxCxc){
@@ -1352,33 +1317,21 @@
         }
       }catch(e){
         if (boxCxc) boxCxc.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
-        setChart("chCxc", "");
+        setChartMsg("chCxc", "No disponible.");
       }
 
       try{
         const out = await jget(`/finanzas/cxp_resumen`);
         const items = Array.isArray(out?.items) ? out.items : [];
-        if (hasCharts()){
-          renderBarHChart("chCxp", "Top proveedores por pendiente", items
-            .slice()
-            .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
-            .slice(0,10)
-            .map(r => ({
-              label: r.proveedor || "—",
-              value: Number(r.pendiente||0),
-              tooltip: `pagado ${money(r.pagado||0)}`,
-            })), { valueFmt: money });
-        }else{
-          setChart("chCxp", chartBarH(items
-            .slice()
-            .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
-            .map(r => ({
-              label: r.proveedor || "—",
-              value: Number(r.pendiente||0),
-              valueText: money(r.pendiente||0),
-              sub: `pagado ${money(r.pagado||0)}`,
-            })), { title:"Top proveedores por pendiente", maxRows: 10, valueWidth: 180 }));
-        }
+        ecBarH("chCxp", "Top proveedores por pendiente", items
+          .slice()
+          .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
+          .slice(0,10)
+          .map(r => ({
+            label: r.proveedor || "—",
+            value: Number(r.pendiente||0),
+            tooltip: `pagado ${money(r.pagado||0)}`,
+          })), money);
         const total = items.reduce((a,x)=>a+Number(x.pendiente||0),0);
         const rows = items.slice(0, 120);
         if (boxCxp){
@@ -1406,7 +1359,7 @@
         }
       }catch(e){
         if (boxCxp) boxCxp.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
-        setChart("chCxp", "");
+        setChartMsg("chCxp", "No disponible.");
       }
     }
 
@@ -1430,7 +1383,7 @@
       if (!box) return;
       if (!daily.length || !days.length){
         box.innerHTML = `<div class="muted">Sin datos diarios.</div>`;
-        setChart("chDaily", "");
+        setChartMsg("chDaily", "Sin datos.");
         return;
       }
       // chart: totales por día (marca seleccionada o global)
@@ -1439,11 +1392,7 @@
         return rows.reduce((a,x)=>a+Number(x.monto||0),0);
       });
       const labels = days.map(d => d.slice(8,10)+"/"+d.slice(5,7));
-      if (hasCharts()){
-        renderDailyChart("chDaily", labels, totals);
-      }else{
-        setChart("chDaily", chartBarsV(labels, totals, { title:"Totales por día (semana)" }));
-      }
+      ecDaily("chDaily", labels, totals);
       const brands = [...new Set(daily.map(x => x.marca))];
       box.innerHTML = `
         <table class="tbl">
