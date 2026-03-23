@@ -193,33 +193,41 @@
     async function load(){
       const day = qs("#day").value;
       qs("#meta").textContent = "Cargando…";
-      const out = await apiJSON(`/checklist/events?day=${encodeURIComponent(day)}`);
-      const items = Array.isArray(out.items) ? out.items : [];
-      qs("#meta").textContent = items.length ? `Eventos confirmados del día: ${items.length}` : "Sin eventos confirmados para este día.";
-      const tb = qs("#tb");
-      tb.innerHTML = items.map(rowHTML).join("");
+      try{
+        const out = await apiJSON(`/checklist/events?day=${encodeURIComponent(day)}`);
+        const items = Array.isArray(out?.items) ? out.items : [];
+        const err = String(out?.error || "").trim();
+        qs("#meta").textContent = err
+          ? `Sin datos (backend): ${err}`
+          : (items.length ? `Eventos confirmados del día: ${items.length}` : "Sin eventos confirmados para este día.");
+        const tb = qs("#tb");
+        tb.innerHTML = items.map(rowHTML).join("");
 
-      tb.querySelectorAll("tr.row").forEach(tr=>{
-        const lid = Number(tr.getAttribute("data-lead")||0);
-        tr.querySelector("[data-open]")?.addEventListener("click", ()=>openLead(lid));
-        tr.querySelector("[data-save]")?.addEventListener("click", async ()=>{
-          const items = {};
-          tr.querySelectorAll("input[type=checkbox][data-k]").forEach(ch=>{
-            items[ch.getAttribute("data-k")] = !!ch.checked;
+        tb.querySelectorAll("tr.row").forEach(tr=>{
+          const lid = Number(tr.getAttribute("data-lead")||0);
+          tr.querySelector("[data-open]")?.addEventListener("click", ()=>openLead(lid));
+          tr.querySelector("[data-save]")?.addEventListener("click", async ()=>{
+            const items = {};
+            tr.querySelectorAll("input[type=checkbox][data-k]").forEach(ch=>{
+              items[ch.getAttribute("data-k")] = !!ch.checked;
+            });
+            const notes = String(tr.querySelector("[data-notes]")?.value || "").trim();
+            try{
+              await saveRow(lid, day, items, notes);
+              const pr = progress(items);
+              tr.querySelector(".name")?.insertAdjacentHTML("beforeend", pr.pct===100 ? ` <span class="muted mini">✅</span>` : "");
+              const stamp = tr.querySelector("[data-stamp]");
+              if (stamp) stamp.textContent = "Guardado.";
+              Swal.fire({ toast:true, position:"top-end", timer:1800, showConfirmButton:false, icon:"success", title:"Checklist guardado" });
+            }catch(e){
+              Swal.fire({ icon:"error", title:"No pude guardar", text:String(e.message||e).slice(0,200) });
+            }
           });
-          const notes = String(tr.querySelector("[data-notes]")?.value || "").trim();
-          try{
-            await saveRow(lid, day, items, notes);
-            const pr = progress(items);
-            tr.querySelector(".name")?.insertAdjacentHTML("beforeend", pr.pct===100 ? ` <span class="muted mini">✅</span>` : "");
-            const stamp = tr.querySelector("[data-stamp]");
-            if (stamp) stamp.textContent = "Guardado.";
-            Swal.fire({ toast:true, position:"top-end", timer:1800, showConfirmButton:false, icon:"success", title:"Checklist guardado" });
-          }catch(e){
-            Swal.fire({ icon:"error", title:"No pude guardar", text:String(e.message||e).slice(0,200) });
-          }
         });
-      });
+      }catch(e){
+        qs("#tb").innerHTML = "";
+        qs("#meta").textContent = `Error cargando checklist: ${String(e?.message||e).slice(0,220)}`;
+      }
     }
 
     // init
@@ -249,4 +257,3 @@
   </script>
 </body>
 </html>
-

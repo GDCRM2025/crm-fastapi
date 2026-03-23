@@ -964,8 +964,10 @@
       const card = $("#tasksCard");
       if (!card || card.style.display === "none") return;
 
+      let tasksDisabled = false;
       try{
         const sum = await apiJson("/tasks/summary");
+        tasksDisabled = !!sum?.disabled;
         $("#tasksOpen").textContent = String(sum?.open_total ?? 0);
         $("#tasksOverdue").textContent = String(sum?.overdue_total ?? 0);
         $("#tasksContactOverdue").textContent = String(sum?.overdue_contactar ?? 0);
@@ -977,12 +979,23 @@
 
       const list = $("#tasksList");
       if (!list) return;
-      list.innerHTML = `<div class="muted">Cargando tareas…</div>`;
+      list.innerHTML = tasksDisabled ? `<div class="muted">Tareas no disponibles en este entorno.</div>` : `<div class="muted">Cargando tareas…</div>`;
+      if (tasksDisabled) return;
 
       try{
         // refresca tareas automáticas (idempotente)
-        try{ await apiJson("/tasks/sync", { method:"POST" }); }catch(_){}
+        try{
+          const s = await apiJson("/tasks/sync", { method:"POST" });
+          if (s?.disabled){
+            list.innerHTML = `<div class="muted">Tareas no disponibles en este entorno.</div>`;
+            return;
+          }
+        }catch(_){}
         const j = await apiJson("/tasks?status=open&limit=12&offset=0");
+        if (j?.disabled){
+          list.innerHTML = `<div class="muted">Tareas no disponibles en este entorno.</div>`;
+          return;
+        }
         const items = Array.isArray(j?.items) ? j.items : [];
         if (!items.length){
           list.innerHTML = `<div class="muted">No tienes tareas pendientes.</div>`;

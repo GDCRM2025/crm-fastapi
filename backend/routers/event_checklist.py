@@ -188,41 +188,50 @@ def events_for_day(
 
         rows = db.execute(text(sql), params).mappings().all()
         saved = list_event_checklists(db, event_day=d, user_id=uid)
+
+        items: List[Dict[str, Any]] = []
+        for r in rows or []:
+            try:
+                lid = int(r.get("id_lead") or 0)
+            except Exception:
+                continue
+            start_at = r.get("start_at")
+            end_at = r.get("end_at")
+            items.append(
+                {
+                    "id_lead": lid,
+                    "cliente": r.get("cliente") or "",
+                    "marca": r.get("marca") or "",
+                    "comuna": r.get("comuna") or "",
+                    "start_at": str(start_at) if start_at else "",
+                    "end_at": str(end_at) if end_at else "",
+                    "ops": int(r.get("ops") or 0),
+                    "montaje_text": r.get("montaje_text") or "",
+                    "productos_text": r.get("productos_text") or "",
+                    "telefono": r.get("telefono") or "",
+                    "direccion": r.get("direccion") or "",
+                    "missing": {
+                        "cliente": not bool((r.get("cliente") or "").strip()),
+                        "comuna": not bool((r.get("comuna") or "").strip()),
+                        "marca": not bool((r.get("marca") or "").strip()),
+                        "equipos": not bool((r.get("montaje_text") or "").strip())
+                        and not bool((r.get("productos_text") or "").strip()),
+                        "inicio": not bool(start_at),
+                        "fin": not bool(end_at),
+                        "ops": int(r.get("ops") or 0) <= 0,
+                    },
+                    "checklist": (saved.get(lid) if isinstance(saved, dict) else None)
+                    or {"items": {}, "notes": "", "updated_at": ""},
+                }
+            )
+
+        return {"ok": True, "day": d.isoformat(), "items": items}
     except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return {"ok": True, "day": d.isoformat(), "items": [], "error": f"{type(e).__name__}: {str(e)[:240]}"}
-
-    items: List[Dict[str, Any]] = []
-    for r in rows:
-        lid = int(r["id_lead"])
-        start_at = r.get("start_at")
-        end_at = r.get("end_at")
-        items.append(
-            {
-                "id_lead": lid,
-                "cliente": r.get("cliente") or "",
-                "marca": r.get("marca") or "",
-                "comuna": r.get("comuna") or "",
-                "start_at": str(start_at) if start_at else "",
-                "end_at": str(end_at) if end_at else "",
-                "ops": int(r.get("ops") or 0),
-                "montaje_text": r.get("montaje_text") or "",
-                "productos_text": r.get("productos_text") or "",
-                "telefono": r.get("telefono") or "",
-                "direccion": r.get("direccion") or "",
-                "missing": {
-                    "cliente": not bool((r.get("cliente") or "").strip()),
-                    "comuna": not bool((r.get("comuna") or "").strip()),
-                    "marca": not bool((r.get("marca") or "").strip()),
-                    "equipos": not bool((r.get("montaje_text") or "").strip()) and not bool((r.get("productos_text") or "").strip()),
-                    "inicio": not bool(start_at),
-                    "fin": not bool(end_at),
-                    "ops": int(r.get("ops") or 0) <= 0,
-                },
-                "checklist": saved.get(lid) or {"items": {}, "notes": "", "updated_at": ""},
-            }
-        )
-
-    return {"ok": True, "day": d.isoformat(), "items": items}
 
 
 @router.post("/events/{id_lead}/confirm")
@@ -245,15 +254,30 @@ def confirm_event(
     uid = _uid(user)
     who = _uname(user)
 
-    out = upsert_event_checklist(
-        db,
-        id_lead=int(id_lead),
-        event_day=d,
-        user_id=uid,
-        username=who,
-        items=items,
-        notes=notes,
-    )
+    try:
+        out = upsert_event_checklist(
+            db,
+            id_lead=int(id_lead),
+            event_day=d,
+            user_id=uid,
+            username=who,
+            items=items,
+            notes=notes,
+        )
+        try:
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        # No romper checklist si no hay permisos DDL: responder ok=false pero 200.
+        return {"ok": False, "error": str(e)[:240], "disabled": True}
 
     # Registrar en notas del lead (best-effort, no bloqueante).
     try:

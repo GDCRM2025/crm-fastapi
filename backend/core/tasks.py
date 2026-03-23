@@ -17,61 +17,78 @@ def _now_utc() -> datetime:
 
 
 def ensure_tasks_table(db: Session) -> None:
-    """Idempotente: crea tabla + índices mínimos."""
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS public.tasks (
-              id_task BIGSERIAL PRIMARY KEY,
-              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-              updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-              status TEXT NOT NULL DEFAULT 'open',
-              priority INTEGER NOT NULL DEFAULT 50,
+    """Idempotente: crea tabla + índices mínimos.
 
-              kind TEXT NOT NULL,
-              title TEXT NOT NULL,
-              description TEXT,
+    Importante: en algunos entornos el usuario DB puede no tener permisos para DDL.
+    Esta función NO debe provocar 500 en producción.
+    """
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS public.tasks (
+                  id_task BIGSERIAL PRIMARY KEY,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  status TEXT NOT NULL DEFAULT 'open',
+                  priority INTEGER NOT NULL DEFAULT 50,
 
-              entity_type TEXT,
-              entity_id BIGINT,
+                  kind TEXT NOT NULL,
+                  title TEXT NOT NULL,
+                  description TEXT,
 
-              assigned_user_id BIGINT,
-              assigned_username TEXT,
+                  entity_type TEXT,
+                  entity_id BIGINT,
 
-              due_at TIMESTAMPTZ,
-              completed_at TIMESTAMPTZ,
-              completed_by TEXT,
+                  assigned_user_id BIGINT,
+                  assigned_username TEXT,
 
-              meta JSONB NOT NULL DEFAULT '{}'::jsonb
+                  due_at TIMESTAMPTZ,
+                  completed_at TIMESTAMPTZ,
+                  completed_by TEXT,
+
+                  meta JSONB NOT NULL DEFAULT '{}'::jsonb
+                )
+                """
             )
-            """
         )
-    )
 
-    # Índices
-    db.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_assigned_status_due ON public.tasks(assigned_user_id, status, due_at)"))
-    db.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_entity ON public.tasks(entity_type, entity_id)"))
+        # Índices
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_assigned_status_due ON public.tasks(assigned_user_id, status, due_at)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_entity ON public.tasks(entity_type, entity_id)"))
 
-    # Evita duplicar tareas abiertas del mismo tipo para el mismo lead
-    db.execute(
-        text(
-            """
-            DO $$
-            BEGIN
-              IF NOT EXISTS (
-                SELECT 1
-                FROM pg_indexes
-                WHERE schemaname='public'
-                  AND indexname='ux_tasks_open_unique'
-              ) THEN
-                CREATE UNIQUE INDEX ux_tasks_open_unique
-                  ON public.tasks(kind, entity_type, entity_id, assigned_user_id)
-                  WHERE status='open';
-              END IF;
-            END $$;
-            """
+        # Evita duplicar tareas abiertas del mismo tipo para el mismo lead
+        db.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                  IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname='public'
+                      AND indexname='ux_tasks_open_unique'
+                  ) THEN
+                    CREATE UNIQUE INDEX ux_tasks_open_unique
+                      ON public.tasks(kind, entity_type, entity_id, assigned_user_id)
+                      WHERE status='open';
+                  END IF;
+                END $$;
+                """
+            )
         )
-    )
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def _tasks_table_exists(db: Session) -> bool:
+    try:
+        return bool(db.execute(text("SELECT to_regclass('public.tasks') IS NOT NULL")).scalar())
+    except Exception:
+        return False
 
 
 def _is_admin_role(role: str) -> bool:
@@ -111,6 +128,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     - REVISAR_DECLINADO_FUTURO: (Admin) declinados con fecha_evento futura.
     """
     ensure_tasks_table(db)
+    if not _tasks_table_exists(db):
+        return {"ok": True, "created": 0, "skipped": 0, "disabled": True}
     is_admin = _is_admin_role(role)
 
     nuevo_id = _estado_id_like(db, "%NUEV%", 1)
@@ -433,6 +452,8 @@ def list_tasks(
     ensure_tasks_table(db)
     limit = max(1, min(int(limit or 50), 200))
     offset = max(0, int(offset or 0))
+    if not _tasks_table_exists(db):
+        return {"ok": True, "items": [], "limit": limit, "offset": offset, "disabled": True}
     status = (status or TASK_STATUS_OPEN).strip().lower()
     if status not in (TASK_STATUS_OPEN, TASK_STATUS_DONE, TASK_STATUS_SKIPPED, "all"):
         status = TASK_STATUS_OPEN
@@ -470,6 +491,8 @@ def list_tasks(
 
 def complete_task(db: Session, *, id_task: int, completed_by: str) -> Dict[str, Any]:
     ensure_tasks_table(db)
+    if not _tasks_table_exists(db):
+        return {"ok": False, "disabled": True}
     db.execute(
         text(
             """
@@ -485,6 +508,8 @@ def complete_task(db: Session, *, id_task: int, completed_by: str) -> Dict[str, 
 
 def skip_task(db: Session, *, id_task: int, skipped_by: str, reason: str) -> Dict[str, Any]:
     ensure_tasks_table(db)
+    if not _tasks_table_exists(db):
+        return {"ok": False, "disabled": True}
     db.execute(
         text(
             """

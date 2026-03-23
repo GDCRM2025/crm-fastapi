@@ -48,7 +48,11 @@ def sync_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_u
     Genera tareas automáticas (idempotente) para el usuario actual.
     """
     uid = _uid(user)
-    out = upsert_mvp_tasks_for_user(db, user_id=uid, username=_uname(user), role=_role(user))
+    try:
+        out = upsert_mvp_tasks_for_user(db, user_id=uid, username=_uname(user), role=_role(user))
+    except Exception as e:
+        # Nunca 500: si no hay permisos DDL o falta alguna tabla, degradar silenciosamente.
+        return {"ok": True, "created": 0, "skipped": 0, "disabled": True, "error": str(e)[:200]}
     try:
         db.commit()
     except Exception:
@@ -112,7 +116,14 @@ def summary(db: Session = Depends(get_db), user: dict = Depends(get_current_user
     Conteo rápido para UI/badges (no crea tareas).
     """
     uid = _uid(user)
-    ensure_tasks_table(db)
+    try:
+        ensure_tasks_table(db)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": True, "open_total": 0, "overdue_total": 0, "open_contactar": 0, "overdue_contactar": 0, "disabled": True}
     try:
         row = db.execute(
             text(

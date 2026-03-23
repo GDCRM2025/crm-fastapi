@@ -1741,7 +1741,7 @@ const MENU = [
       { id: "op_ca_ent", label: "Entrega de Camiones", url: "/web/views/op_camiones_entrega.html?v=20260304-1" },
       { id: "op_ca_dev", label: "Devolucion de Camiones", url: "/web/views/op_camiones_devolucion.html?v=20260304-1" },
       { id: "op_sep_chk", label: "\u2014", url: null, sep: true },
-      { id: "op_chk_ev", label: "Checklist eventos", url: "/web/views/checklist_eventos.html?v=20260323-1" }
+      { id: "op_chk_ev", label: "Checklist eventos", url: "/web/views/checklist_eventos.html?v=20260323-2" }
     ]
   },
   {
@@ -2451,6 +2451,7 @@ function collapseSidebarSoon() {
 }
 function bindSidebarBehavior() {
   const sb = qs("#sidebar");
+  const sideMenu = qs("#sideMenu");
   const isMobile = () => window.matchMedia && window.matchMedia("(max-width: 980px)").matches;
   if (isSidebarPinned()) {
     sb.classList.remove("collapsed");
@@ -2504,6 +2505,36 @@ function bindSidebarBehavior() {
     sb.classList.remove("open-mobile");
     document.body.classList.remove("sb-open");
   }, { capture: true });
+
+  // Fallback de scroll (rueda/trackpad) para evitar que el menú quede "clavado"
+  // por CSS/overlays del navegador. Scroll real lo maneja `#sideMenu`.
+  // Nota: este handler no debería ser necesario, pero en producción ha sido intermitente.
+  if (sb && sideMenu) {
+    try {
+      if (!sideMenu.hasAttribute("tabindex")) sideMenu.setAttribute("tabindex", "0");
+      // Asegura overflow (por si algún CSS viejo quedó cacheado).
+      sideMenu.style.overflowY = "auto";
+      sideMenu.style.overflowX = "hidden";
+    } catch (_) {
+    }
+    sb.addEventListener(
+      "wheel",
+      (e) => {
+        try {
+          const t = e.target;
+          // Si el usuario está scrolleando un panel interno (resultados búsqueda / menú usuario), no interceptar.
+          if (t && t.closest && (t.closest(".sb-results") || t.closest(".user-menu"))) return;
+          if (!sideMenu) return;
+          if (sideMenu.scrollHeight <= sideMenu.clientHeight + 2) return;
+          sideMenu.scrollTop += e.deltaY;
+          // Evita que el wheel se vaya al iframe/viewport y "parezca" que no scrollea.
+          e.preventDefault();
+        } catch (_) {
+        }
+      },
+      { passive: false }
+    );
+  }
 }
 
 function bindSidebarTools() {
@@ -2635,7 +2666,7 @@ function bindTopbar() {
   var _a, _b, _c, _d;
   (_a = qs("#brandHome")) == null ? void 0 : _a.addEventListener("click", () => {
     if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {
-      openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260320-6" });
+      openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260323-1" });
     } else {
       const first = findFirstAllowedItem();
       if (first) openItem(first);
@@ -2861,7 +2892,7 @@ function openDefault() {
     return;
   }
   if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {
-    openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260320-6" });
+    openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260323-1" });
     return;
   }
   const first = findFirstAllowedItem();
