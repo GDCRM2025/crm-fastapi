@@ -4,8 +4,23 @@
   <meta charset="utf-8" />
   <title>Chat interno</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#07131F" />
+  <link rel="manifest" href="../chat.manifest.json" />
+  <link rel="apple-touch-icon" href="../pwa/gd-192.png" />
   <link rel="stylesheet" href="../styles.css?v=20260226-3" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script>
+    // PWA: habilita instalación en Chrome/Edge (Android/Desktop).
+    // Nota: iOS instala vía "Agregar a pantalla de inicio" (Safari).
+    (function () {
+      try {
+        if (!("serviceWorker" in navigator)) return;
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("../chat-sw.js").catch(() => {});
+        });
+      } catch (_) {}
+    })();
+  </script>
   <style>
     :root{
       --bg:#07131F;
