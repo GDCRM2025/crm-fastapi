@@ -785,8 +785,9 @@ body.ops-mode .main{
   display:flex;
   flex-direction:column;
   gap: 10px;
-  /* el scroll lo maneja .sidebar (más confiable) */
-  overflow:visible;
+  /* Scroll del menú */
+  overflow-y: auto;
+  overflow-x: hidden;
   /* deja espacio para el avatar sticky */
   padding-bottom: 92px;
   scroll-behavior: smooth;
