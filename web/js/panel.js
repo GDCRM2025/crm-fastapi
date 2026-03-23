@@ -1683,6 +1683,14 @@ const MENU = [
     ]
   },
   {
+    id: "checklist",
+    ico: "\u2705",
+    title: "Checklist",
+    items: [
+      { id: "chk_hoy", label: "Eventos (día)", url: "/web/views/checklist_eventos.html" }
+    ]
+  },
+  {
     id: "cotizador",
     ico: "\u{1F9FE}",
     title: "Cotizador",
@@ -1896,7 +1904,7 @@ const ROLE_IDS = {
   "FINANZAS": 9
 };
 const PERMISSIONS = {
-  1: /* @__PURE__ */ new Set([
+	  1: /* @__PURE__ */ new Set([
     "dash_home",
     "op_gps",
     "op_vruta",
@@ -1963,10 +1971,11 @@ const PERMISSIONS = {
     "set_el",
     "set_roles",
     "set_metas",
-    "set_bak"
-    ,"tasks_my"
-  ]),
-  2: /* @__PURE__ */ new Set([
+	    "set_bak",
+	    "chk_hoy"
+	    ,"tasks_my"
+	  ]),
+	  2: /* @__PURE__ */ new Set([
     "dash_home",
     "leads_ver",
     "leads_fil",
@@ -1990,10 +1999,11 @@ const PERMISSIONS = {
     "vruta",
     "set_prod",
     "set_com",
-    "set_el"
-    ,"tasks_my"
-  ]),
-  3: /* @__PURE__ */ new Set([
+	    "set_el",
+	    "chk_hoy"
+	    ,"tasks_my"
+	  ]),
+	  3: /* @__PURE__ */ new Set([
     "dash_home",
     "rep_com",
     "rep_prod",
@@ -2027,8 +2037,9 @@ const PERMISSIONS = {
     "set_prod",
     "set_com",
     "rrhh_staff",
-    "rrhh_solicitudes"
-  ]),
+	    "rrhh_solicitudes",
+	    "chk_hoy"
+	  ]),
   4: /* @__PURE__ */ new Set([
     "dash_home",
     "rep_prod",

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Checklist de eventos</title>
+  <link rel="stylesheet" href="/web/styles.css?v=20260323-1" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    .wrap{ padding: 16px; }
+    .top{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:space-between; margin-bottom:12px; }
+    .title{ font-weight: 1100; font-size: 20px; }
+    .controls{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .inp{ border:1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 12px; padding: 10px 12px; font-weight: 900; }
+    .btn{ border:1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 12px; padding: 10px 12px; font-weight: 1000; cursor:pointer; }
+    .btn.ok{ background: rgba(25,195,125,.14); border-color: rgba(25,195,125,.28); }
+    .btn:hover{ background: var(--hover-surface); }
+    .pill{ display:inline-flex; align-items:center; gap:8px; border:1px solid var(--border); background: var(--surface); padding: 6px 10px; border-radius: 999px; font-weight: 1000; }
+    .tbl{ width:100%; border-collapse: separate; border-spacing:0 10px; }
+    .row{
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow:hidden;
+      box-shadow: var(--shadow);
+    }
+    .row td{ padding: 10px 10px; vertical-align:top; }
+    .muted{ color: var(--muted); font-weight: 900; }
+    .name{ font-weight: 1100; }
+    .mini{ font-size: 12px; }
+    .checks{ display:grid; grid-template-columns: repeat(7, minmax(86px, 1fr)); gap: 10px; }
+    .chk{
+      display:flex; align-items:center; gap:8px;
+      padding: 10px 10px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      font-weight: 1000;
+      user-select:none;
+    }
+    .chk.miss{ border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.06); }
+    .chk input{ width:18px; height:18px; }
+    .actions{ display:flex; gap:10px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
+    .actions .btn{ padding: 9px 11px; }
+    .grid2{ display:grid; grid-template-columns: 1fr; gap: 10px; }
+    .notes{ width:100%; min-height: 42px; resize: vertical; }
+    @media (max-width: 980px){
+      .checks{ grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      .actions{ justify-content:flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="title">Checklist de eventos (día)</div>
+        <div class="muted mini">Ejecutivos: confirmen que no falta nada antes de Operaciones.</div>
+      </div>
+      <div class="controls">
+        <span class="pill"><span class="muted">Día</span> <input class="inp" type="date" id="day" /></span>
+        <button class="btn" id="btnReload">Actualizar</button>
+        <button class="btn ok" id="btnHelp">¿Cómo se usa?</button>
+      </div>
+    </div>
+
+    <div id="meta" class="muted mini"></div>
+    <div style="height:10px"></div>
+
+    <table class="tbl">
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+
+  <script type="module">
+    const qs=(s,el=document)=>el.querySelector(s);
+    const esc=(s)=>String(s??"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]||m));
+    const API_BASE = (() => {
+      try { const h=String(location.hostname||"").toLowerCase(); return (h==="localhost"||h==="127.0.0.1") ? "" : "/crm"; }
+      catch(_){ return ""; }
+    })();
+    function getToken(){ return localStorage.getItem("token")||sessionStorage.getItem("token")||""; }
+    function authHeaders(extra={}){ const t=getToken(); return t?{...extra,Authorization:`Bearer ${t}`} : extra; }
+    function apiURL(u){
+      const s=String(u||"");
+      if(!s) return s;
+      if(/^https?:\/\//i.test(s)) return s;
+      if(s.startsWith("/")) return API_BASE + s;
+      return API_BASE + "/" + s;
+    }
+    async function apiJSON(url, init={}){
+      const r = await fetch(apiURL(url), { ...init, headers: authHeaders(init.headers || {}) });
+      const text = await r.text();
+      let j=null; try{ j = text?JSON.parse(text):null; }catch(_){}
+      if(!r.ok) throw new Error(String((j&&(j.detail||j.error))||(text||r.status)));
+      return j;
+    }
+
+    window.addEventListener("message",(ev)=>{
+      if(ev.data?.type==="theme") document.documentElement.classList.toggle("light", ev.data.mode==="light");
+    });
+
+    const KEYS = [
+      ["cliente","Cliente"],
+      ["comuna","Comuna"],
+      ["marca","Marca"],
+      ["equipos","Equipos"],
+      ["inicio","Inicio"],
+      ["fin","Término"],
+      ["ops","OPS"],
+    ];
+
+    function fmtTime(iso){
+      const s=String(iso||"");
+      if(!s) return "";
+      // "2026-03-20T11:00:00" o "2026-03-20 11:00:00"
+      const m = s.match(/(\d{2}:\d{2})/);
+      return m ? m[1] : s.slice(11,16);
+    }
+
+    function progress(items){
+      const ks = Object.keys(items||{});
+      if(!ks.length) return { pct:0, a:0, b:0 };
+      const a = ks.filter(k => !!items[k]).length;
+      return { pct: Math.round((a/ks.length)*100), a, b: ks.length };
+    }
+
+    async function openLead(id){
+      const lid = Number(id||0);
+      if(!lid) return;
+      const url = apiURL(`/web/views/leads.html?embed=1&open_lead=${lid}&from=checklist`);
+      await Swal.fire({
+        title: `Lead #${lid}`,
+        html: `<iframe src="${url}" style="width:100%;height:72vh;border:0;border-radius:16px;background:transparent" allow="clipboard-read; clipboard-write"></iframe>`,
+        width: 980,
+        showConfirmButton: false,
+        showCloseButton: true,
+        customClass: { popup: "gdModal" },
+      });
+    }
+
+    async function saveRow(lid, day, items, notes){
+      return apiJSON(`/checklist/events/${lid}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ day, items, notes }),
+      });
+    }
+
+    function rowHTML(it){
+      const lid = it.id_lead;
+      const miss = it.missing || {};
+      const saved = it.checklist || { items:{}, notes:"", updated_at:"" };
+      const items = saved.items || {};
+      // Defaults: si no hay guardado, marcar como "true" cuando el campo existe (asistencia al usuario)
+      const initial = {};
+      for(const [k] of KEYS){
+        if (items && Object.prototype.hasOwnProperty.call(items,k)) initial[k] = !!items[k];
+        else initial[k] = !miss[k]; // si está completo en data, lo propone como OK
+      }
+      const pr = progress(initial);
+
+      return `
+        <tr class="row" data-lead="${lid}">
+          <td style="width:300px">
+            <div class="name">${esc(it.cliente||"—")}</div>
+            <div class="muted mini">${esc(it.marca||"")} · ${esc(it.comuna||"")}</div>
+            <div class="muted mini" style="margin-top:6px">🕒 ${esc(fmtTime(it.start_at)||"—")} → ${esc(fmtTime(it.end_at)||"—")} · 👥 OPS: ${esc(it.ops||0)}</div>
+            <div class="muted mini" style="margin-top:6px">Lead #${esc(lid)} · ${pr.pct}% (${pr.a}/${pr.b})</div>
+          </td>
+          <td>
+            <div class="checks">
+              ${KEYS.map(([k,label])=>`
+                <label class="chk ${miss[k] ? "miss":""}">
+                  <input type="checkbox" data-k="${esc(k)}" ${initial[k] ? "checked":""} />
+                  <span>${esc(label)}</span>
+                </label>
+              `).join("")}
+            </div>
+            <div class="grid2" style="margin-top:10px">
+              <textarea class="inp notes" data-notes placeholder="Notas (opcional, queda en historial)">${esc(saved.notes||"")}</textarea>
+              <div class="actions">
+                <button class="btn" data-open>Ver lead</button>
+                <button class="btn ok" data-save>Guardar checklist</button>
+                <span class="muted mini" data-stamp>${saved.updated_at ? ("Último guardado: " + esc(String(saved.updated_at).replace("T"," ").slice(0,16))) : ""}</span>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    async function load(){
+      const day = qs("#day").value;
+      qs("#meta").textContent = "Cargando…";
+      const out = await apiJSON(`/checklist/events?day=${encodeURIComponent(day)}`);
+      const items = Array.isArray(out.items) ? out.items : [];
+      qs("#meta").textContent = items.length ? `Eventos confirmados del día: ${items.length}` : "Sin eventos confirmados para este día.";
+      const tb = qs("#tb");
+      tb.innerHTML = items.map(rowHTML).join("");
+
+      tb.querySelectorAll("tr.row").forEach(tr=>{
+        const lid = Number(tr.getAttribute("data-lead")||0);
+        tr.querySelector("[data-open]")?.addEventListener("click", ()=>openLead(lid));
+        tr.querySelector("[data-save]")?.addEventListener("click", async ()=>{
+          const items = {};
+          tr.querySelectorAll("input[type=checkbox][data-k]").forEach(ch=>{
+            items[ch.getAttribute("data-k")] = !!ch.checked;
+          });
+          const notes = String(tr.querySelector("[data-notes]")?.value || "").trim();
+          try{
+            await saveRow(lid, day, items, notes);
+            const pr = progress(items);
+            tr.querySelector(".name")?.insertAdjacentHTML("beforeend", pr.pct===100 ? ` <span class="muted mini">✅</span>` : "");
+            const stamp = tr.querySelector("[data-stamp]");
+            if (stamp) stamp.textContent = "Guardado.";
+            Swal.fire({ toast:true, position:"top-end", timer:1800, showConfirmButton:false, icon:"success", title:"Checklist guardado" });
+          }catch(e){
+            Swal.fire({ icon:"error", title:"No pude guardar", text:String(e.message||e).slice(0,200) });
+          }
+        });
+      });
+    }
+
+    // init
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth()+1).padStart(2,"0");
+    const d = String(today.getDate()).padStart(2,"0");
+    qs("#day").value = `${y}-${m}-${d}`;
+    qs("#btnReload").onclick = load;
+    qs("#day").addEventListener("change", load);
+    qs("#btnHelp").onclick = ()=>Swal.fire({
+      title:"Checklist (día)",
+      html:`<div style="text-align:left">
+        <div class="muted">Objetivo: confirmar que Operaciones reciba info completa.</div>
+        <ul style="margin:10px 0 0 18px">
+          <li>Marca/Comuna/Cliente correctos</li>
+          <li>Equipos (montaje + productos) revisados</li>
+          <li>Inicio/Término y OPS definidos</li>
+        </ul>
+        <div class="muted" style="margin-top:10px">Al guardar, queda registro en el historial del lead.</div>
+      </div>`,
+      confirmButtonText:"Entendido",
+      customClass:{ popup:"gdModal" }
+    });
+
+    load();
+  </script>
+</body>
+</html>
+

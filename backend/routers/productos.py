@@ -382,27 +382,26 @@ def list_productos(
             params["marca_key_like"] = "%%%s%%" % snippet
 
     elif only_own:
+        # Ejecutivos: filtrar por marcas asignadas (si existen). Si el usuario no tiene marcas,
+        # no dejamos el cotizador inutilizable: devolvemos todo (respetando only_active si viene).
         if not marcas_ids:
-            # Si el usuario no tiene marcas asignadas, no dejamos el cotizador inutilizable:
-            # devolvemos todo (respetando only_active si viene).
             only_own = False
+        else:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
+                    {"m": marcas_ids},
+                ).fetchall()
 
-            if only_own:
-                with get_connection() as conn:
-                    rows = conn.execute(
-                        text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
-                        {"m": marcas_ids},
-                    ).fetchall()
-
-                marcas = [r[0] or r[1] for r in rows if (r[0] or r[1])]
-                marcas_codes = [_canon_code_py(m) for m in marcas]
-                marcas_snips = []
-                for c in marcas_codes:
-                    for s in _code_like_snippets(c):
-                        if s:
-                            marcas_snips.append(s)
-                marcas_like = ["%%%s%%" % s for s in marcas_snips]
-                marca_expr = _norm_key_sql("COALESCE(marca,'')")
+            marcas = [r[0] or r[1] for r in rows if (r[0] or r[1])]
+            marcas_codes = [_canon_code_py(m) for m in marcas]
+            marcas_snips = []
+            for c in marcas_codes:
+                for s in _code_like_snippets(c):
+                    if s:
+                        marcas_snips.append(s)
+            marcas_like = ["%%%s%%" % s for s in marcas_snips]
+            marca_expr = _norm_key_sql("COALESCE(marca,'')")
 
             if has_id_marca and marcas_ids and marcas_like:
                 where.append("(id_marca = ANY(:marcas_ids) OR (id_marca IS NULL AND %s LIKE ANY(:marcas_like)))" % marca_expr)
