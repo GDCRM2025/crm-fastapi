@@ -1412,6 +1412,31 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             ),
             {"id": int(id_lead), "b": block},
         )
+        # Si el usuario registró contacto/seguimiento, cerrar tarea CONTACTAR_LEAD (si existe).
+        try:
+            uid_raw = user.get("id")
+            uid = int(uid_raw) if str(uid_raw or "").isdigit() else None
+            if uid:
+                # Evita fallar si la tabla aún no existe en instalaciones antiguas.
+                has_tasks = bool(conn.execute(text("SELECT to_regclass('public.tasks') IS NOT NULL")).scalar())
+                if not has_tasks:
+                    raise Exception("tasks table missing")
+                conn.execute(
+                    text(
+                        """
+                        UPDATE public.tasks
+                        SET status='done', completed_at=now(), completed_by=:by, updated_at=now()
+                        WHERE status='open'
+                          AND kind='CONTACTAR_LEAD'
+                          AND entity_type='lead'
+                          AND entity_id=:lid
+                          AND assigned_user_id=:uid
+                        """
+                    ),
+                    {"by": who, "lid": int(id_lead), "uid": int(uid)},
+                )
+        except Exception:
+            pass
         conn.commit()
         return {"ok": True}
 
@@ -1431,10 +1456,13 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
     undo_preagenda = bool(payload.get("undo_preagenda", False))
 
     with get_connection() as conn:
-        lead = conn.execute(text("SELECT id_lead, id_estado FROM public.leads WHERE id_lead=:id"), {"id": id_lead}).first()
+        lead = conn.execute(
+            text("SELECT id_lead, id_estado, fecha_evento, COALESCE(notas,'') AS notas FROM public.leads WHERE id_lead=:id"),
+            {"id": id_lead},
+        ).mappings().first()
         if not lead:
             raise HTTPException(404, "Lead no existe")
-        old_estado = lead[1] if lead and len(lead) > 1 else None
+        old_estado = lead.get("id_estado")
 
         estado_row = conn.execute(
             text("SELECT id_estado, nombre FROM public.estados_lead WHERE id_estado=:i"),
@@ -1486,6 +1514,35 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             raise HTTPException(400, "motivo requerido para DECLINADO")
 
         if id_estado == DECLINADO_ID:
+            # Consecuencia: no permitir declinar leads con fecha_evento futura sin seguimiento.
+            # Esto evita “limpiar” leads a Perdido/Declinado sin intentar contactar.
+            try:
+                role_now = str(user.get("role") or user.get("rol") or "").upper()
+                is_admin = role_now in ("ADMIN", "SUPERADMIN")
+                fe = lead.get("fecha_evento")
+                notas_now = str(lead.get("notas") or "").strip()
+                has_note = bool(notas_now)
+                has_note_tbl = False
+                try:
+                    has_note_tbl = bool(
+                        conn.execute(
+                            text("SELECT 1 FROM public.lead_notas WHERE id_lead=:id LIMIT 1"),
+                            {"id": int(id_lead)},
+                        ).scalar()
+                    )
+                except Exception:
+                    has_note_tbl = False
+                # Si la fecha_evento aún no pasa, exige al menos una nota/seguimiento (o Admin).
+                if fe and not is_admin and not (has_note or has_note_tbl):
+                    raise HTTPException(
+                        400,
+                        "Antes de DECLINAR, registra un seguimiento (nota / WhatsApp / llamada).",
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+
             # agrega motivo a notas si existe columna
             if "notas" in _cols_for("leads"):
                 conn.execute(text("""

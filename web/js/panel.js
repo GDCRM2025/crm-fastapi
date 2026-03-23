@@ -1284,6 +1284,7 @@ async function fetchMe() {
       if (btnChat) btnChat.style.display = "none";
     }
     buildMenu();
+    startTasksBadgePolling();
   } catch (_) {
     const userNameEl = qs("#userName");
     if (userNameEl) userNameEl.textContent = "Usuario";
@@ -1876,6 +1877,9 @@ function listVisibleMenuItems() {
 let ACTIVE_ITEM_ID = null;
 let CURRENT_ROLE_ID = null;
 let CURRENT_ALLOWED = null;
+let TASKS_BADGE = { open_total: 0, overdue_total: 0, open_contactar: 0, overdue_contactar: 0 };
+let TASKS_POLL_HANDLE = null;
+let TASKS_SYNC_INFLIGHT = false;
 const ROLE_IDS = {
   "ADMIN": 1,
   "SUPERADMIN": 1,
@@ -2229,7 +2233,8 @@ function buildMenu() {
       b.dataset.item = it.id;
       b.title = it.label;
       const favOn = isFav(it.id);
-      b.innerHTML = `<span class="dot"></span><span class="lbl">${it.label}</span><span class="fav-ico ${favOn ? "on" : ""}" data-fav="${it.id}" title="${favOn ? "Quitar fijado" : "Fijar"}">★</span>`;
+      const tasksBadge = it.id === "tasks_my" && TASKS_BADGE && Number(TASKS_BADGE.overdue_total || 0) > 0 ? `<span class="pill tasks-pill" style="margin-left:auto;border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.14);font-size:11px;font-weight:1100;padding:3px 8px;border-radius:999px">${Number(TASKS_BADGE.overdue_total || 0)}</span>` : "";
+      b.innerHTML = `<span class="dot"></span><span class="lbl">${it.label}</span>${tasksBadge}<span class="fav-ico ${favOn ? "on" : ""}" data-fav="${it.id}" title="${favOn ? "Quitar fijado" : "Fijar"}">★</span>`;
       b.addEventListener("click", () => openItem(it));
       b.querySelector("[data-fav]")?.addEventListener("click", (ev) => {
         ev.preventDefault();
@@ -2250,6 +2255,111 @@ function buildMenu() {
     lastGroupId = g.id;
   }
 }
+
+function canUseTasksBadge() {
+  const me = (window.GD && window.GD.me) || {};
+  const roleName = String(me.role || me.rol || "").toUpperCase();
+  return CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 2 || roleName.includes("EJECUTIVO");
+}
+
+function renderTasksBadge() {
+  try {
+    const overdue = Number((TASKS_BADGE && TASKS_BADGE.overdue_total) || 0);
+    const btn = qs('#sideMenu [data-item="tasks_my"]');
+    if (!btn) return;
+    const existing = btn.querySelector(".tasks-pill");
+    if (overdue > 0) {
+      const pill = existing || document.createElement("span");
+      pill.className = "pill tasks-pill";
+      pill.style.marginLeft = "auto";
+      pill.style.borderColor = "rgba(239,68,68,.45)";
+      pill.style.background = "rgba(239,68,68,.14)";
+      pill.style.fontSize = "11px";
+      pill.style.fontWeight = "1100";
+      pill.style.padding = "3px 8px";
+      pill.style.borderRadius = "999px";
+      pill.textContent = String(overdue);
+      if (!existing) {
+        const fav = btn.querySelector("[data-fav]");
+        if (fav && fav.parentElement === btn) btn.insertBefore(pill, fav);
+        else btn.appendChild(pill);
+      }
+    } else {
+      existing?.remove?.();
+    }
+  } catch (_) {
+  }
+}
+
+function maybeWarnTasks() {
+  try {
+    const overdueContact = Number((TASKS_BADGE && TASKS_BADGE.overdue_contactar) || 0);
+    if (!overdueContact || overdueContact <= 0) return;
+    const today = new Date();
+    const key = `gd_tasks_warn_${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+    if (localStorage.getItem(key) === "1") return;
+    localStorage.setItem(key, "1");
+    Swal.fire({
+      icon: "warning",
+      title: "Tareas vencidas",
+      html: `<div style="text-align:left">Tienes <b>${overdueContact}</b> seguimiento(s) vencido(s).<br/>Revisa <b>Mis tareas</b> para priorizar contactos.</div>`,
+      confirmButtonText: "Ir a Mis tareas",
+      showCancelButton: true,
+      cancelButtonText: "Más tarde",
+      customClass: { popup: "gdModal" }
+    }).then((r) => {
+      if (r.isConfirmed) {
+        const it = findItemById("tasks_my");
+        if (it) openItem(it);
+      }
+    });
+  } catch (_) {
+  }
+}
+
+async function fetchTasksSummary() {
+  if (!canUseTasksBadge()) return;
+  try {
+    const s = await apiJSON("/tasks/summary");
+    if (s && s.ok) {
+      TASKS_BADGE = {
+        open_total: Number(s.open_total || 0),
+        overdue_total: Number(s.overdue_total || 0),
+        open_contactar: Number(s.open_contactar || 0),
+        overdue_contactar: Number(s.overdue_contactar || 0)
+      };
+      renderTasksBadge();
+      maybeWarnTasks();
+    }
+  } catch (_) {
+  }
+}
+
+async function syncTasksOnce() {
+  if (!canUseTasksBadge()) return;
+  if (TASKS_SYNC_INFLIGHT) return;
+  TASKS_SYNC_INFLIGHT = true;
+  try {
+    await apiJSON("/tasks/sync", { method: "POST" });
+  } catch (_) {
+  } finally {
+    TASKS_SYNC_INFLIGHT = false;
+  }
+  await fetchTasksSummary();
+}
+
+function startTasksBadgePolling() {
+  if (!canUseTasksBadge()) return;
+  if (TASKS_POLL_HANDLE) return;
+  fetchTasksSummary();
+  setTimeout(() => {
+    syncTasksOnce();
+  }, 800);
+  TASKS_POLL_HANDLE = setInterval(() => {
+    fetchTasksSummary();
+  }, 5 * 60 * 1000);
+}
+
 function closeAllGroups() {
   for (const el of document.querySelectorAll(".menu-group.open")) {
     el.classList.remove("open");

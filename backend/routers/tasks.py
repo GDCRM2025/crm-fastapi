@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
@@ -103,6 +104,33 @@ def mark_done(id_task: int, db: Session = Depends(get_db), user: dict = Depends(
         except Exception:
             pass
     return out
+
+
+@router.get("/summary")
+def summary(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """
+    Conteo rápido para UI/badges (no crea tareas).
+    """
+    uid = _uid(user)
+    ensure_tasks_table(db)
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT
+                  COUNT(*) FILTER (WHERE status='open')::int AS open_total,
+                  COUNT(*) FILTER (WHERE status='open' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_total,
+                  COUNT(*) FILTER (WHERE status='open' AND kind='CONTACTAR_LEAD')::int AS open_contactar,
+                  COUNT(*) FILTER (WHERE status='open' AND kind='CONTACTAR_LEAD' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_contactar
+                FROM public.tasks
+                WHERE assigned_user_id=:uid
+                """
+            ),
+            {"uid": int(uid)},
+        ).mappings().first()
+        return {"ok": True, **(dict(row) if row else {})}
+    except Exception:
+        return {"ok": True, "open_total": 0, "overdue_total": 0, "open_contactar": 0, "overdue_contactar": 0}
 
 
 @router.post("/{id_task}/skip")

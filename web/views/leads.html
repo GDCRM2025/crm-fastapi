@@ -1329,11 +1329,22 @@ function renderTable(list){
 }
 
 /* ========= Acciones ========= */
-function doCall(lead){
-  const tel = String(lead.telefono || "").trim();
-  if (!tel){ toast("Lead sin teléfono", "warning"); return; }
-  window.open("tel:" + tel, "_self");
-}
+	async function doCall(lead){
+	  const tel = String(lead?.telefono || "").trim();
+	  if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+	  try{
+	    await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+	      method: "POST",
+	      headers: { "Content-Type":"application/json" },
+	      body: JSON.stringify({
+	        kind: "CALL",
+	        title: "Llamada iniciada",
+	        text: `Se inicia llamada a ${tel}.`,
+	      }),
+	    });
+	  }catch(_){}
+	  window.open("tel:" + tel, "_self");
+	}
 	function doWhatsApp(lead){
 	  const defaultAction = (arguments?.length > 1 && arguments[1] && typeof arguments[1] === "object")
 	    ? (arguments[1].defaultAction || "open")

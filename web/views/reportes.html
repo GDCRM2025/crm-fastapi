@@ -351,6 +351,16 @@
         cyan: "#22d3ee",
       };
     }
+    function ecTooltipSkin(c){
+      const isLight = document.documentElement.classList.contains("light");
+      return {
+        backgroundColor: isLight ? "rgba(255,255,255,.92)" : "rgba(10,18,28,.92)",
+        borderColor: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.20)",
+        borderWidth: 1,
+        textStyle: { color: c.axis, fontWeight: 850, fontSize: 12 },
+        extraCssText: "box-shadow:0 18px 50px rgba(0,0,0,.35);border-radius:14px;padding:10px 12px;"
+      };
+    }
     function destroyEC(id){
       try{ EC[id]?.dispose?.(); }catch(_){}
       try{ delete EC[id]; }catch(_){}
@@ -403,6 +413,7 @@
         xAxis: {
           type: "value",
           axisLabel: { color: c.axis, formatter: (v)=> valueFmt ? valueFmt(v) : fmtAxisMoney(v) },
+          axisLine: { lineStyle:{ color: c.grid } },
           splitLine: { lineStyle:{ color: c.grid } }
         },
         yAxis: {
@@ -415,6 +426,7 @@
         tooltip: {
           trigger: "axis",
           axisPointer: { type: "shadow" },
+          ...ecTooltipSkin(c),
           formatter: (p) => {
             const i = p?.[0]?.dataIndex ?? 0;
             const v = vals[i] ?? 0;
@@ -423,6 +435,8 @@
             return `<div style="font-weight:900">${esc(labels[i])}</div><div style="margin-top:4px">${esc(vv)}</div>${x}`;
           }
         },
+        animationDuration: 520,
+        animationEasing: "cubicOut",
         series: [{
           type: "bar",
           data: vals,
@@ -431,12 +445,25 @@
           backgroundStyle: { color: "rgba(148,163,184,.10)", borderRadius: 10 },
           itemStyle: {
             borderRadius: 10,
+            shadowBlur: 12,
+            shadowColor: "rgba(0,0,0,.20)",
             color: {
               type: "linear", x: 0, y: 0, x2: 1, y2: 0,
               colorStops: [
                 { offset: 0, color: "rgba(23,195,125,.55)" },
                 { offset: 1, color: "rgba(23,195,125,.28)" }
               ]
+            }
+          },
+          label: {
+            show: true,
+            position: "right",
+            distance: 10,
+            color: c.sub,
+            fontWeight: 900,
+            formatter: (p)=> {
+              const v = Number(p?.value || 0);
+              return valueFmt ? valueFmt(v) : fmtAxisMoney(v);
             }
           },
           emphasis: { itemStyle:{ color: c.accent } },
@@ -464,6 +491,7 @@
         title:{ text:"Funnel de ventas (monto)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
         tooltip:{
           trigger:"item",
+          ...ecTooltipSkin(c),
           formatter: (p) => {
             const d = p.data || {};
             return `<div style="font-weight:900">${esc(d.name||"—")}</div>` +
@@ -471,6 +499,8 @@
               `<div style="opacity:.8;margin-top:4px">Leads: ${esc(d.cantidad||0)}</div>`;
           }
         },
+        animationDuration: 520,
+        animationEasing: "cubicOut",
         series:[{
           type:"funnel",
           left: 10, right: 10, top: 46, bottom: 10,
@@ -480,7 +510,7 @@
           maxSize:"100%",
           label:{ color: c.axis, fontWeight: 900 },
           labelLine:{ lineStyle:{ color:c.grid } },
-          itemStyle:{ borderRadius: 10, borderColor:"rgba(0,0,0,0)", borderWidth:0 },
+          itemStyle:{ borderRadius: 12, borderColor:"rgba(0,0,0,0)", borderWidth:0, shadowBlur: 18, shadowColor:"rgba(0,0,0,.18)" },
           emphasis:{ label:{ fontSize: 13 } },
           data
         }]
@@ -502,8 +532,10 @@
       if (!chart) return;
       chart.setOption({
         title:{ text:"Tipo de cliente (cantidad)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
-        tooltip:{ trigger:"item", formatter: "{b}<br/>{c} · {d}%" },
+        tooltip:{ trigger:"item", ...ecTooltipSkin(c), formatter: "{b}<br/>{c} · {d}%" },
         legend:{ top: 36, left: 0, textStyle:{ color:c.axis, fontWeight:800 } },
+        animationDuration: 520,
+        animationEasing: "cubicOut",
         series:[
           {
             name:"Todos",
