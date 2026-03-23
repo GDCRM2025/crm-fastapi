@@ -96,7 +96,13 @@ def sync_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_u
     """
     uid = _resolve_uid(db, user)
     try:
-        out = upsert_mvp_tasks_for_user(db, user_id=uid, username=_uname(user), role=_role(user))
+        out = upsert_mvp_tasks_for_user(
+            db,
+            user_id=uid,
+            username=_uname(user),
+            role=_role(user),
+            marcas=list(user.get("marcas") or []),
+        )
     except Exception as e:
         # Nunca 500: si no hay permisos DDL o falta alguna tabla, degradar silenciosamente.
         return {"ok": True, "created": 0, "skipped": 0, "disabled": True, "error": str(e)[:200]}
