@@ -8,6 +8,7 @@ from sqlalchemy import text
 from backend.core.db import get_connection
 from backend.core.stale_leads import auto_decline_stale_leads
 from backend.core.pdf_parse import extract_text as _pdf_extract_text, parse_items_from_text as _pdf_parse_items, sample_lines as _pdf_sample_lines
+from backend.core.public_tokens import sign as sign_public
 from backend.routers.auth import get_current_user
 
 router = APIRouter()
@@ -632,6 +633,23 @@ def lead_vcard(id_lead: int, user: dict = Depends(get_current_user)):
         media_type="text/vcard; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
     )
+
+
+@router.get("/leads/{id_lead}/vcard_link")
+def lead_vcard_link(id_lead: int, user: dict = Depends(get_current_user)):
+    """
+    Devuelve un link público (firmado) para descargar la vCard desde el teléfono,
+    sin depender del JWT (ideal para compartir con ejecutivos por WhatsApp).
+    """
+    role = _role(user)
+    if not _can_access_leads(role):
+        raise HTTPException(status_code=403, detail="Sin permiso para Leads")
+
+    # Valida existencia y permisos por marca (misma regla que las demás acciones de lead).
+    get_lead(id_lead, user)
+
+    token = sign_public({"t": "vcard", "id_lead": int(id_lead)}, ttl_seconds=30 * 24 * 3600)
+    return {"ok": True, "url": f"/public/vcard/{token}", "ttl_days": 30}
 
 @router.delete("/leads/{id_lead}")
 def delete_lead(id_lead: int, user: dict = Depends(get_current_user)):

@@ -401,86 +401,107 @@
       if (abs >= 1_000) return (n/1_000).toFixed(1).replace(/\.0$/,"")+"k";
       return String(Math.round(n));
     }
-    function ecBarH(id, title, rows, valueFmt, onClick){
-      const r = (rows||[]).slice(0, 25);
-      if (!r.length){ setChartMsg(id, "Sin datos."); return; }
-      const c = ecColors();
-      const chart = initEC(id, "tall");
-      if (!chart) return;
-      const labels = r.map(x => String(x.label||"—"));
-      const vals = r.map(x => Number(x.value||0));
-      const extra = r.map(x => String(x.tooltip||""));
-      const option = {
-        title: { text: title, left: 0, top: 0, textStyle:{ color:c.title, fontWeight: 900, fontSize: 12 } },
-        grid: { left: 150, right: 24, top: 38, bottom: 10, containLabel: true },
-        xAxis: {
-          type: "value",
-          axisLabel: { color: c.axis, formatter: (v)=> valueFmt ? valueFmt(v) : fmtAxisMoney(v) },
-          axisLine: { lineStyle:{ color: c.grid } },
-          splitLine: { lineStyle:{ color: c.grid } }
-        },
-        yAxis: {
-          type: "category",
-          data: labels,
-          axisLabel: { color: c.axis, fontWeight: 900, overflow:"truncate", width: 140 },
-          axisTick: { show:false },
-          axisLine: { show:false }
-        },
-        tooltip: {
-          trigger: "axis",
-          axisPointer: { type: "shadow" },
-          ...ecTooltipSkin(c),
-          formatter: (p) => {
-            const i = p?.[0]?.dataIndex ?? 0;
-            const v = vals[i] ?? 0;
-            const x = extra[i] ? `<div style="opacity:.8;margin-top:4px">${esc(extra[i])}</div>` : "";
-            const vv = valueFmt ? valueFmt(v) : fmtAxisMoney(v);
-            return `<div style="font-weight:900">${esc(labels[i])}</div><div style="margin-top:4px">${esc(vv)}</div>${x}`;
-          }
-        },
-        animationDuration: 520,
-        animationEasing: "cubicOut",
-        series: [{
-          type: "bar",
-          data: vals,
-          barWidth: 14,
-          showBackground: true,
-          backgroundStyle: { color: "rgba(148,163,184,.10)", borderRadius: 10 },
-          itemStyle: {
-            borderRadius: 10,
-            shadowBlur: 12,
-            shadowColor: "rgba(0,0,0,.20)",
-            color: {
-              type: "linear", x: 0, y: 0, x2: 1, y2: 0,
-              colorStops: [
-                { offset: 0, color: "rgba(23,195,125,.55)" },
-                { offset: 1, color: "rgba(23,195,125,.28)" }
-              ]
-            }
-          },
-          label: {
-            show: true,
-            position: "right",
-            distance: 10,
-            color: c.sub,
-            fontWeight: 900,
-            formatter: (p)=> {
-              const v = Number(p?.value || 0);
-              return valueFmt ? valueFmt(v) : fmtAxisMoney(v);
-            }
-          },
-          emphasis: { itemStyle:{ color: c.accent } },
-        }]
-      };
-      chart.setOption(option, true);
-      chart.off("click");
-      if (onClick){
-        chart.on("click", (p)=> {
-          const i = p?.dataIndex ?? 0;
-          onClick(r[i], i);
-        });
-      }
-    }
+	    function ecBarH(id, title, rows, valueFmt, onClick){
+	      const r = (rows||[]).slice(0, 25);
+	      if (!r.length){ setChartMsg(id, "Sin datos."); return; }
+	      const c = ecColors();
+	      const chart = initEC(id, (r.length <= 8 ? "short" : "tall"));
+	      if (!chart) return;
+	      const labels = r.map(x => String(x.label||"—"));
+	      const vals = r.map(x => Number(x.value||0));
+	      const extra = r.map(x => String(x.tooltip||""));
+	      const maxV = Math.max(1, ...vals.map(v => Number(v||0)));
+	      const back = vals.map(()=> maxV * 1.02);
+	      const fmtV = (v)=> valueFmt ? valueFmt(v) : fmtAxisMoney(v);
+	      const option = {
+	        title: { text: title, left: 0, top: 0, textStyle:{ color:c.title, fontWeight: 900, fontSize: 12 } },
+	        grid: { left: 150, right: 24, top: 38, bottom: 10, containLabel: true },
+	        xAxis: {
+	          type: "value",
+	          axisLabel: { color: c.axis, fontWeight: 800, formatter: (v)=> fmtV(v) },
+	          axisLine: { lineStyle:{ color: "rgba(0,0,0,0)" } },
+	          splitLine: { lineStyle:{ color: c.grid } }
+	        },
+	        yAxis: {
+	          type: "category",
+	          data: labels,
+	          axisLabel: { color: c.axis, fontWeight: 1000, overflow:"truncate", width: 140 },
+	          axisTick: { show:false },
+	          axisLine: { show:false }
+	        },
+	        tooltip: {
+	          trigger: "axis",
+	          axisPointer: { type: "shadow" },
+	          ...ecTooltipSkin(c),
+	          formatter: (p) => {
+	            const i = p?.[0]?.dataIndex ?? 0;
+	            const v = vals[i] ?? 0;
+	            const x = extra[i] ? `<div style="opacity:.8;margin-top:4px">${esc(extra[i])}</div>` : "";
+	            const vv = fmtV(v);
+	            return `<div style="font-weight:1100">${esc(labels[i])}</div><div style="margin-top:4px">${esc(vv)}</div>${x}`;
+	          }
+	        },
+	        animationDuration: 520,
+	        animationEasing: "cubicOut",
+	        series: [
+	          {
+	            // barra “ghost” para look BI (background uniforme)
+	            type: "bar",
+	            data: back,
+	            barWidth: 14,
+	            barGap: "-100%",
+	            itemStyle: { color: "rgba(148,163,184,.10)", borderRadius: 999 },
+	            silent: true,
+	            z: 1
+	          },
+	          {
+	            type: "bar",
+	            data: vals,
+	            barWidth: 14,
+	            z: 2,
+	            itemStyle: {
+	              borderRadius: 999,
+	              shadowBlur: 14,
+	              shadowColor: "rgba(0,0,0,.22)",
+	              color: {
+	                type: "linear", x: 0, y: 0, x2: 1, y2: 0,
+	                colorStops: [
+	                  { offset: 0, color: "rgba(23,195,125,.70)" },
+	                  { offset: 0.65, color: "rgba(23,195,125,.38)" },
+	                  { offset: 1, color: "rgba(23,195,125,.18)" }
+	                ]
+	              }
+	            },
+	            label: {
+	              show: true,
+	              position: "insideRight",
+	              distance: 8,
+	              color: "rgba(255,255,255,.88)",
+	              fontWeight: 1100,
+	              formatter: (p)=> {
+	                const i = p?.dataIndex ?? 0;
+	                const v = Number(p?.value || 0);
+	                const rank = String(i + 1).padStart(2, "0");
+	                return `#${rank} · ${fmtV(v)}`;
+	              }
+	            },
+	            emphasis: {
+	              itemStyle: { shadowBlur: 22, shadowColor: "rgba(23,195,125,.25)" }
+	            },
+	          }
+	        ]
+	      };
+	      chart.setOption(option, true);
+	      chart.off("click");
+	      if (onClick){
+	        chart.on("click", (p)=> {
+	          const i = p?.dataIndex ?? 0;
+	          // Solo responder al click del "foreground" (serie 1)
+	          if (p?.seriesIndex !== 1) return;
+	          onClick(r[i], i);
+	        });
+	      }
+	    }
     function ecFunnel(id, items, onClick){
       const arr = (items||[]).filter(x => x && (Number(x.monto||0) > 0 || Number(x.cantidad||0) > 0));
       if (!arr.length){ setChartMsg(id, "Sin datos."); return; }
@@ -648,12 +669,16 @@
         }]
       }, true);
     }
-    function resizeEC(){
-      for (const k of Object.keys(EC)){
-        try{ EC[k]?.resize?.(); }catch(_){}
-      }
-    }
-    window.addEventListener("resize", () => resizeEC(), { passive:true });
+	    function resizeEC(){
+	      for (const k of Object.keys(EC)){
+	        try{ EC[k]?.resize?.(); }catch(_){}
+	      }
+	    }
+	    let __ecResizeT = null;
+	    window.addEventListener("resize", () => {
+	      try{ if (__ecResizeT) clearTimeout(__ecResizeT); }catch(_){}
+	      __ecResizeT = setTimeout(() => resizeEC(), 120);
+	    }, { passive:true });
     function fmtShort(n){
       const v = Number(n||0);
       if (!isFinite(v)) return "0";

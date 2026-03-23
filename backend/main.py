@@ -171,6 +171,7 @@ app.add_middleware(
 include_router_safe(app, "backend.routers.greeni_instagram")
 include_router_safe(app, "backend.routers.auth")
 include_router_safe(app, "backend.routers.leads")
+include_router_safe(app, "backend.routers.public_links")
 include_router_safe(app, "backend.routers.catalogos")
 include_router_safe(app, "backend.routers.lead_estados")
 include_router_safe(app, "backend.routers.settings_live")

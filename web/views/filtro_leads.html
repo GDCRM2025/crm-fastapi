@@ -197,13 +197,15 @@
 
     function getToken(){ return localStorage.getItem("token")||sessionStorage.getItem("token")||""; }
     function authHeaders(extra={}){ const t=getToken(); return t?{...extra,Authorization:`Bearer ${t}`} : extra; }
-    function apiURL(u){
-      const s = String(u || "");
-      if (!s) return s;
-      if (/^https?:\/\//i.test(s)) return s;
-      if (s.startsWith("/")) return API_BASE + s;
-      return API_BASE + "/" + s;
-    }
+	    function apiURL(u){
+	      const s = String(u || "");
+	      if (!s) return s;
+	      // Evitar regex literal (algunos navegadores/encodings pueden romper flags).
+	      const sl = s.toLowerCase();
+	      if (sl.startsWith("http://") || sl.startsWith("https://")) return s;
+	      if (s.startsWith("/")) return API_BASE + s;
+	      return API_BASE + "/" + s;
+	    }
     async function apiJSON(url, init={}){
       const r = await fetch(apiURL(url), { ...init, headers: authHeaders(init.headers || {}) });
       const text = await r.text();

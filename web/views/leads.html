@@ -2996,18 +2996,56 @@ async function openEditModal(lead){
 	        window.open(`mailto:${encodeURIComponent(mail)}`, "_self");
 	      });
 	      qs("#qa_vcard")?.addEventListener("click", async ()=>{
-	        try{ await logAction("VCARD", "vCard generado", "Se descargó la vCard del cliente."); }catch(_){}
 	        try{
-	          const r = await fetch(apiURL(`/leads/${lead.id_lead}/vcard`), {
-	            headers: authHeaders({ "Accept": "text/vcard,text/x-vcard,text/plain,*/*" }),
-	          });
-	          if (!r.ok) throw new Error("No pude generar vCard (HTTP " + r.status + ")");
-	          const blob = await r.blob();
-	          const url = URL.createObjectURL(blob);
 	          const safe = (s)=> String(s||"").trim().replace(/[\\/:*?\"<>|]+/g, " ").replace(/\\s+/g, " ").trim();
 	          const cliente = safe(lead.nombre_cliente || lead.cliente || "Cliente");
 	          const marca = safe(lead.marca || "");
 	          const fname = `Contacto - ${cliente}${marca ? (" - " + marca) : ""}.vcf`;
+
+	          const share = await apiJSON(`/leads/${lead.id_lead}/vcard_link`, { method:"GET" }).catch(()=>null);
+	          const sharePath = share?.url ? apiURL(String(share.url)) : "";
+	          const shareURL = sharePath ? (sharePath.startsWith("http") ? sharePath : (location.origin + sharePath)) : "";
+
+	          const r = await Swal.fire({
+	            title: "Contacto (vCard)",
+	            html: `
+	              <div style="text-align:left">
+	                <div class="muted" style="font-weight:900;margin-bottom:8px;">Opciones</div>
+	                <ul style="margin:0 0 10px 18px; padding:0;">
+	                  <li><strong>Descargar</strong> (.vcf) para guardarlo ahora.</li>
+	                  <li><strong>Copiar link</strong> para abrirlo desde el teléfono (sin token).</li>
+	                </ul>
+	                ${shareURL ? `<div class="muted" style="font-size:12px;">Link: <span style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">${escapeHtml(shareURL)}</span></div>` : `<div class="muted" style="font-size:12px;">(No pude generar link público; igual puedes descargar.)</div>`}
+	              </div>
+	            `,
+	            showCancelButton: true,
+	            showDenyButton: !!shareURL,
+	            confirmButtonText: "Descargar",
+	            denyButtonText: "Copiar link",
+	            cancelButtonText: "Cerrar",
+	            focusConfirm: false,
+	            width: 720,
+	          });
+
+	          if (r.isDenied && shareURL){
+	            try{
+	              await navigator.clipboard.writeText(shareURL);
+	              toast("Link copiado", "success");
+	              try{ await logAction("VCARD", "vCard compartida", `Se copió link vCard: ${shareURL}`); }catch(_){}
+	            }catch(_){
+	              toast("No pude copiar (permiso de clipboard)", "warning");
+	            }
+	            return;
+	          }
+	          if (!r.isConfirmed) return;
+
+	          try{ await logAction("VCARD", "vCard descargada", "Se descargó la vCard del cliente."); }catch(_){}
+	          const r2 = await fetch(apiURL(`/leads/${lead.id_lead}/vcard`), {
+	            headers: authHeaders({ "Accept": "text/vcard,text/x-vcard,text/plain,*/*" }),
+	          });
+	          if (!r2.ok) throw new Error("No pude generar vCard (HTTP " + r2.status + ")");
+	          const blob = await r2.blob();
+	          const url = URL.createObjectURL(blob);
 	          const a = document.createElement("a");
 	          a.href = url;
 	          a.download = fname;

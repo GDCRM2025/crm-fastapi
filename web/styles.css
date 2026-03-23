@@ -638,29 +638,20 @@ body.ops-mode .main{
 .sidebar{
   width: var(--sidebar-w);
   height: 100%;
+  min-height: 0; /* importante en flex layouts para que overflow funcione */
   align-self: stretch;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  /* Fallback robusto: el scroll lo maneja el contenedor completo del sidebar.
-     Esto evita bugs de overflow anidado (Safari/Chrome) cuando hay muchos submenús. */
-  overflow-y:auto;
-  overflow-x:hidden;
+  /* Scroll SOLO para el menú (side-nav). Así el avatar queda siempre visible abajo. */
+  overflow: hidden;
   transition: width .18s ease;
   box-shadow: var(--shadow);
   position:relative;
   scrollbar-width: thin;
   scrollbar-color: rgba(148,163,184,.32) transparent;
 }
-.sidebar::-webkit-scrollbar{ width: 6px; }
-.sidebar::-webkit-scrollbar-track{ background: transparent; }
-.sidebar::-webkit-scrollbar-thumb{
-  background: rgba(148,163,184,.22);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-.sidebar:hover::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.38); background-clip: content-box; }
+.sidebar::-webkit-scrollbar{ width: 0px; height: 0px; }
 .sidebar::after{
   content:none;
   display:none;
@@ -670,14 +661,33 @@ body.ops-mode .main{
 }
 
 .sidebar-inner{
-  min-height:100%;
+  min-height:0;
+  height: 100%;
   display:flex;
   flex-direction:column;
   overflow:visible;
   padding: 10px 10px;
 }
 .sidebar-tools{ flex: 0 0 auto; }
-.side-nav{ flex: 0 0 auto; }
+.side-nav{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px; /* deja espacio para scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148,163,184,.30) transparent;
+  scroll-behavior: smooth;
+}
+.side-nav::-webkit-scrollbar{ width: 6px; }
+.side-nav::-webkit-scrollbar-track{ background: transparent; }
+.side-nav::-webkit-scrollbar-thumb{
+  background: rgba(148,163,184,.20);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.side-nav:hover::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.34); background-clip: content-box; }
 .sidebar-bottom{ flex: 0 0 auto; }
 
 /* Sidebar tools (search + pin + results) */
