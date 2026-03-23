@@ -158,6 +158,18 @@ def _has_contact_sql() -> str:
     return "(COALESCE(l.notas,'') ILIKE '%[WSP]%' OR COALESCE(l.notas,'') ILIKE '%[CALL]%' OR COALESCE(l.notas,'') ILIKE '%[EMAIL]%')"
 
 
+def _assigned_to_user_sql() -> str:
+    """
+    Compat con `leads.id_usuario` bigint o texto.
+    Evita `COALESCE(l.id_usuario,0)` (revienta si es texto) y permite matchear por:
+    - id numérico (como string): :uid_str
+    - username/email del token: :uname
+
+    Requiere params: :uid_str, :uname
+    """
+    return "(NULLIF(btrim(COALESCE(l.id_usuario::text,'')),'') = :uid_str OR NULLIF(btrim(COALESCE(l.id_usuario::text,'')),'') = :uname)"
+
+
 def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role: str) -> Dict[str, Any]:
     """Genera tareas mínimas (idempotente) y devuelve un resumen.
 
@@ -176,6 +188,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     declinado_id = _estado_id_like(db, "%DECLIN%", 5)
     contactado_id = _estado_id_like(db, "%CONTACT%", 2)
     cotizado_id = _estado_id_like(db, "%COTIZ%", 3)
+    assigned_sql = _assigned_to_user_sql()
 
     # CONTACTAR (ventas): lead NUEVO asignado al usuario (id_usuario)
     # due_at = created_at + 24h
@@ -197,12 +210,12 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   jsonb_build_object('rule','mvp_contactar','estado_id',l.id_estado)
                 FROM public.leads l
                 WHERE l.id_estado = :nuevo
-                  AND COALESCE(l.id_usuario, 0) = :uid
+                  AND {assigned_sql}
                   AND ({_has_contact_sql()}) IS FALSE
                 ON CONFLICT DO NOTHING
                 """
             ),
-            {"uid": int(user_id), "uname": (username or "").strip()[:200], "nuevo": int(nuevo_id)},
+            {"uid": int(user_id), "uid_str": str(int(user_id)), "uname": (username or "").strip()[:200], "nuevo": int(nuevo_id)},
         )
     except Exception:
         pass
@@ -231,13 +244,13 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   jsonb_build_object('rule','risk_nuevo','estado_id',l.id_estado)
                 FROM public.leads l
                 WHERE l.id_estado = :nuevo
-                  AND COALESCE(l.id_usuario, 0) = :uid
+                  AND {assigned_sql}
                   AND ({_has_contact_sql()}) IS FALSE
                   AND COALESCE(l.created_at, now()) <= (now() - INTERVAL '5 days')
                 ON CONFLICT DO NOTHING
                 """
             ),
-            {"uid": int(user_id), "uname": (username or "").strip()[:200], "nuevo": int(nuevo_id)},
+            {"uid": int(user_id), "uid_str": str(int(user_id)), "uname": (username or "").strip()[:200], "nuevo": int(nuevo_id)},
         )
     except Exception:
         pass
@@ -261,12 +274,12 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 FROM public.leads l
                 WHERE l.id_estado = :contactado
                   AND l.fecha_evento IS NULL
-                  AND (:is_admin OR COALESCE(l.id_usuario,0)=:uid)
+                  AND (:is_admin OR {assigned_sql})
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '3 days')
                 ON CONFLICT DO NOTHING
                 """
             ),
-            {"uid": int(user_id), "uname": (username or "").strip()[:200], "contactado": int(contactado_id), "is_admin": bool(is_admin)},
+            {"uid": int(user_id), "uid_str": str(int(user_id)), "uname": (username or "").strip()[:200], "contactado": int(contactado_id), "is_admin": bool(is_admin)},
         )
     except Exception:
         pass
@@ -293,12 +306,12 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND EXTRACT(YEAR FROM l.fecha_evento) = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND EXTRACT(MONTH FROM l.fecha_evento) = EXTRACT(MONTH FROM CURRENT_DATE)
                   AND (COALESCE(NULLIF(btrim(l.notas),''), NULL) IS NOT NULL)
-                  AND (:is_admin OR COALESCE(l.id_usuario,0)=:uid)
+                  AND (:is_admin OR {assigned_sql})
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '5 days')
                 ON CONFLICT DO NOTHING
                 """
             ),
-            {"uid": int(user_id), "uname": (username or "").strip()[:200], "contactado": int(contactado_id), "is_admin": bool(is_admin)},
+            {"uid": int(user_id), "uid_str": str(int(user_id)), "uname": (username or "").strip()[:200], "contactado": int(contactado_id), "is_admin": bool(is_admin)},
         )
     except Exception:
         pass
@@ -323,11 +336,11 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 WHERE l.id_estado = :cotizado
                   AND l.fecha_evento IS NOT NULL
                   AND l.fecha_evento <= (CURRENT_DATE + 4)
-                  AND (:is_admin OR COALESCE(l.id_usuario,0)=:uid)
+                  AND (:is_admin OR {assigned_sql})
                 ON CONFLICT DO NOTHING
                 """
             ),
-            {"uid": int(user_id), "uname": (username or "").strip()[:200], "cotizado": int(cotizado_id), "is_admin": bool(is_admin)},
+            {"uid": int(user_id), "uid_str": str(int(user_id)), "uname": (username or "").strip()[:200], "cotizado": int(cotizado_id), "is_admin": bool(is_admin)},
         )
     except Exception:
         pass
@@ -360,11 +373,11 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 FROM public.leads l
                 WHERE l.id_estado = :conf
                   AND (l.telefono IS NULL OR btrim(l.telefono)='')
-                  AND (:is_admin OR COALESCE(l.id_usuario,0)=:uid)
+                  AND (:is_admin OR {assigned_sql})
                 ON CONFLICT DO NOTHING
                 """
             ),
-            {"uid": int(user_id), "uname": (username or "").strip()[:200], "conf": int(confirmado_id), "is_admin": bool(is_admin)},
+            {"uid": int(user_id), "uid_str": str(int(user_id)), "uname": (username or "").strip()[:200], "conf": int(confirmado_id), "is_admin": bool(is_admin)},
         )
         # dirección
         db.execute(
@@ -385,11 +398,11 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 FROM public.leads l
                 WHERE l.id_estado = :conf
                   AND (COALESCE(NULLIF(btrim(l.direccion),''), NULL) IS NULL)
-                  AND (:is_admin OR COALESCE(l.id_usuario,0)=:uid)
+                  AND (:is_admin OR {assigned_sql})
                 ON CONFLICT DO NOTHING
                 """
             ),
-            {"uid": int(user_id), "uname": (username or "").strip()[:200], "conf": int(confirmado_id), "is_admin": bool(is_admin)},
+            {"uid": int(user_id), "uid_str": str(int(user_id)), "uname": (username or "").strip()[:200], "conf": int(confirmado_id), "is_admin": bool(is_admin)},
         )
         # horario (pre_start/pre_end)
         db.execute(
@@ -410,11 +423,11 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 FROM public.leads l
                 WHERE l.id_estado = :conf
                   AND (l.pre_start IS NULL OR l.pre_end IS NULL)
-                  AND (:is_admin OR COALESCE(l.id_usuario,0)=:uid)
+                  AND (:is_admin OR {assigned_sql})
                 ON CONFLICT DO NOTHING
                 """
             ),
-            {"uid": int(user_id), "uname": (username or "").strip()[:200], "conf": int(confirmado_id), "is_admin": bool(is_admin)},
+            {"uid": int(user_id), "uid_str": str(int(user_id)), "uname": (username or "").strip()[:200], "conf": int(confirmado_id), "is_admin": bool(is_admin)},
         )
     except Exception:
         pass
