@@ -200,13 +200,24 @@
         return isLocal ? "" : "/crm";
       }catch(_){ return ""; }
     })();
-    function apiURL(u){
-      const s = String(u||"");
-      if (!s) return s;
-      if (s.startsWith("/crm/")) return s;
-      if (s.startsWith("/")) return API_BASE + s;
-      return API_BASE + "/" + s;
-    }
+	    function apiURL(u){
+	      const s = String(u||"");
+	      if (!s) return s;
+	      if (s.startsWith("/crm/")) return s;
+	      if (s.startsWith("/")) return API_BASE + s;
+	      return API_BASE + "/" + s;
+	    }
+	    async function apiJSON(url, init={}){
+	      const r = await fetch(apiURL(url), { ...init, headers: authHeaders(init.headers || {}) });
+	      const text = await r.text();
+	      let j = null;
+	      try{ j = text ? JSON.parse(text) : null; }catch(_){}
+	      if(!r.ok){
+	        const msg = (j && (j.detail || j.error)) ? (j.detail || j.error) : (text || (r.status + ""));
+	        throw new Error(String(msg));
+	      }
+	      return j;
+	    }
 
     window.addEventListener("message",(ev)=>{
       if(ev.data?.type==="theme") document.documentElement.classList.toggle("light", ev.data.mode==="light");
@@ -318,8 +329,8 @@
         tb.innerHTML="";
         updatePager(rows.length);
 
-        for(const r of rows){
-          const tr=document.createElement("tr");
+	      for(const r of rows){
+	        const tr=document.createElement("tr");
           const fecha = r.fecha_evento ? String(r.fecha_evento).slice(0,10)
             : (r.fecha ? String(r.fecha).replace("T"," ").slice(0,16)
             : (r.created_at ? String(r.created_at).replace("T"," ").slice(0,16)
@@ -331,23 +342,25 @@
           const descAbs = Number(r.descuento_abs || 0);
           const subtotalBruto = (r.subtotal_bruto != null) ? Number(r.subtotal_bruto) : Math.max(0, neto + Math.max(0, descAbs));
           const descCell = (descAbs > 0) ? ("-" + money(descAbs)) : money(0);
-          tr.innerHTML=`
-            <td>${r.numero || r.id_cotizacion}${(rev > 0) ? ` (${rev})` : ""}</td>
-            <td>${fecha}</td>
-            <td>${(r.nombre_cliente||"")}</td>
-            <td>${(r.marca||"")}</td>
-            <td>${money(neto)}</td>
-            <td>${descCell}</td>
-            <td>${money(r.iva)}</td>
-            <td>${money(r.traslado)}</td>
-            <td>${money(r.total)}</td>
-	            <td>
-	              <div class="act">
-	                <button class="mini" title="Ver PDF" data-act="view" data-id="${r.id_cotizacion}">👁</button>
-	                <button class="mini" title="Descargar PDF" data-act="download" data-id="${r.id_cotizacion}">⬇</button>
-	              </div>
-	            </td>
-	          `;
+	          const canOpenLead = !!(r.id_lead);
+	          tr.innerHTML=`
+	            <td>${r.numero || r.id_cotizacion}${(rev > 0) ? ` (${rev})` : ""}</td>
+	            <td>${fecha}</td>
+	            <td>${(r.nombre_cliente||"")}</td>
+	            <td>${(r.marca||"")}</td>
+	            <td>${money(neto)}</td>
+	            <td>${descCell}</td>
+	            <td>${money(r.iva)}</td>
+	            <td>${money(r.traslado)}</td>
+	            <td>${money(r.total)}</td>
+		            <td>
+		              <div class="act">
+		                <button class="mini" title="Abrir lead" data-act="lead" data-lead="${r.id_lead||""}" ${canOpenLead ? "" : "disabled"}>🧾</button>
+		                <button class="mini" title="Ver PDF" data-act="view" data-id="${r.id_cotizacion}">👁</button>
+		                <button class="mini" title="Descargar PDF" data-act="download" data-id="${r.id_cotizacion}">⬇</button>
+		              </div>
+		            </td>
+		          `;
 
           tr.addEventListener("mouseenter", async (ev)=>{
             const id=r.id_cotizacion;
@@ -371,15 +384,45 @@
           });
           tr.addEventListener("mouseleave", hideTip);
 
-          tr.addEventListener("click", async (ev)=>{
-            const btn = ev.target?.closest?.("button");
-            if(!btn) return;
-            const act = btn.dataset.act;
-            const id = btn.dataset.id;
-	            if(act==="view"){
-	              // Usar <a target="_blank"> (menos bloqueos que window.open)
-	              // No forzar refresh por defecto: si no, regeneramos y se vuelve lento.
-	              const pdf = apiURL(`/quotes/${id}/pdf`);
+	          async function openLeadEmbed(idLead){
+	            const lid = Number(idLead||0);
+	            if (!lid) return;
+	            // Abrir en embed para no sacar al ejecutivo del historial.
+	            const url = apiURL(`/web/views/leads.html?embed=1&open_lead=${lid}&from=historial`);
+	            await Swal.fire({
+	              title: `Lead #${lid}`,
+	              html: `<iframe src="${url}" style="width:100%;height:72vh;border:0;border-radius:16px;background:transparent" allow="clipboard-read; clipboard-write"></iframe>`,
+	              width: 980,
+	              showConfirmButton: false,
+	              showCloseButton: true,
+	              customClass: { popup: "gdModal" },
+	              didOpen: ()=>{
+	                try{
+	                  // Registrar acción (best-effort)
+	                  apiJSON(`/leads/${lid}/append_note`, {
+	                    method:"POST",
+	                    headers:{ "Content-Type":"application/json" },
+	                    body: JSON.stringify({ kind:"ACTION", title:"Lead abierto", text:`Lead abierto desde Historial de cotizaciones (cotización #${r.numero || r.id_cotizacion}).` })
+	                  }).catch(()=>{});
+	                }catch(_){}
+	              }
+	            });
+	          }
+
+	          tr.addEventListener("click", async (ev)=>{
+	            const btn = ev.target?.closest?.("button");
+	            if(!btn) return;
+	            const act = btn.dataset.act;
+	            const id = btn.dataset.id;
+	            const lid = btn.dataset.lead;
+	            if(act==="lead"){
+	              try{ await openLeadEmbed(lid); }catch(_){}
+	              return;
+	            }
+		            if(act==="view"){
+		              // Usar <a target="_blank"> (menos bloqueos que window.open)
+		              // No forzar refresh por defecto: si no, regeneramos y se vuelve lento.
+		              const pdf = apiURL(`/quotes/${id}/pdf`);
                 const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Abriendo PDF…")}`);
                 window.open(wait, "_blank", "noopener,noreferrer");
 	              return;

@@ -1920,6 +1920,25 @@ def dashboard_reportes(
             tipos_rows = []
             tipos_rows_conf = []
 
+        # Venta por marca (torta) para el rango/confirmados
+        ventas_por_marca: list[dict] = []
+        try:
+            if confirmado_id:
+                q_vm = f"""
+                    SELECT COALESCE(m.nombre, m.marca,'—') AS marca,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                    WHERE {where_sql}
+                      AND l.id_estado=:conf
+                    GROUP BY COALESCE(m.nombre, m.marca,'—')
+                    ORDER BY monto DESC
+                """
+                ventas_por_marca = db.execute(text(q_vm), diarios_params).mappings().all()
+        except Exception:
+            ventas_por_marca = []
+
         top_n_i = int(top_n or 20)
         top_n_i = max(5, min(100, top_n_i))
         prod_order = "monto" if str(productos_order or "").lower() not in ("cantidad", "qty", "count") else "cantidad"
@@ -2018,6 +2037,7 @@ def dashboard_reportes(
             "comunas": list(comunas),
             "tipo_cliente": list(tipos_rows),
             "tipo_cliente_confirmados": list(tipos_rows_conf),
+            "ventas_por_marca": list(ventas_por_marca),
             "params": {
                 "top_n": top_n_i,
                 "productos_order": prod_order,
@@ -2038,6 +2058,7 @@ def dashboard_reportes(
             "comunas": [],
             "tipo_cliente": [],
             "tipo_cliente_confirmados": [],
+            "ventas_por_marca": [],
             "_error": str(e),
         }
 

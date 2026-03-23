@@ -2850,7 +2850,12 @@ async function openEditModal(lead){
   const html =
     '<div class="swForm"><div class="grid2">' +
     `<label>Nombre cliente<input id="e_cliente" class="swInp" value="${escapeHtml(lead.cliente || "")}" /></label>` +
-    `<label>Email<input id="e_email" class="swInp" value="${escapeHtml(lead.email || "")}" /></label>` +
+    `<label>Email
+      <div class="gdInline">
+        <input id="e_email" class="swInp" value="${escapeHtml(lead.email || "")}" />
+        <button type="button" class="gdIcoBtn" id="qa_email" title="Enviar email">✉️</button>
+      </div>
+    </label>` +
     '<label>Marca<select id="e_marca" class="swSel">' +
       marcas.map(m=>`<option value="${m.id_marca}" ${Number(m.id_marca)===Number(lead.id_marca)?"selected":""}>${escapeHtml(m.nombre)}</option>`).join("") +
     '</select></label>' +
@@ -2868,19 +2873,37 @@ async function openEditModal(lead){
     '<label>Estado<select id="e_estado" class="swSel">' +
       estados.map(s=>`<option value="${s.id_estado}" ${Number(s.id_estado)===Number(lead.id_estado)?"selected":""}>${escapeHtml(s.nombre)}</option>`).join("") +
     '</select></label>' +
-    `<label>Teléfono<input id="e_tel" class="swInp" value="${escapeHtml(lead.telefono || "")}" /></label>` +
+    `<label>Teléfono
+      <div class="gdInline">
+        <input id="e_tel" class="swInp" value="${escapeHtml(lead.telefono || "")}" />
+        <button type="button" class="gdIcoBtn" id="qa_call" title="Llamar">📞</button>
+        <button type="button" class="gdIcoBtn" id="qa_wa" title="WhatsApp">🟢</button>
+        <button type="button" class="gdIcoBtn" id="qa_vcard" title="vCard">👤</button>
+      </div>
+    </label>` +
     `<label>Fecha evento<input id="e_fecha" class="swInp" type="date" value="${escapeHtml(String(lead.fecha_evento||"").slice(0,10))}" /></label>` +
-    `<label>N° Cotización<input id="e_numcot" class="swInp" value="${escapeHtml(String(lead.num_cotizacion ?? ""))}" /></label>` +
+    `<label>N° Cotización
+      <div class="gdInline">
+        <input id="e_numcot" class="swInp" value="${escapeHtml(String(lead.num_cotizacion ?? ""))}" />
+        <button type="button" class="gdIcoBtn" id="qa_quote" title="Abrir cotización">🧾</button>
+      </div>
+    </label>` +
     `<label>Monto cotizado<input id="e_monto" class="swInp" type="number" step="0.01" value="${escapeHtml(String(lead.monto_cotizado ?? 0))}" /></label>` +
     `<label class="span2">Dirección<input id="e_dir" class="swInp" value="${escapeHtml(lead.direccion || "")}" /></label>` +
-    `<label class="span2">PDF Cotización
-        <input id="e_pdf" class="swInp" type="file" accept="application/pdf" />
-        <div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap">
-          <button type="button" class="swBtn secondary" id="e_viewpdf" disabled>Ver PDF</button>
-          <button type="button" class="swBtn secondary" id="e_ocrpdf" disabled>Cargar productos</button>
-          <div class="muted" id="e_pdfhint">${lead.cotizacion_pdf_url ? "PDF cargado. Puedes verlo y/o cargar productos manualmente." : "Sin PDF (opcional). Igual puedes cargar productos manualmente."}</div>
+    `<label class="span2">
+      <details class="gdDetails" id="manualDetails" ${(!lead.id_cotizacion_vigente || lead.cotizacion_pdf_url) ? "open" : ""}>
+        <summary class="gdManualHdr">Carga manual (PDF)</summary>
+        <div class="gdManualBox">
+          <input id="e_pdf" class="swInp" type="file" accept="application/pdf" />
+          <div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap">
+            <button type="button" class="swBtn secondary" id="e_viewpdf" disabled>Ver PDF</button>
+            <button type="button" class="swBtn secondary" id="e_ocrpdf" disabled>Cargar productos</button>
+            <div class="muted" id="e_pdfhint">${lead.cotizacion_pdf_url ? "PDF cargado. Puedes verlo y/o cargar productos manualmente." : "Sin PDF (opcional). Igual puedes cargar productos manualmente."}</div>
+          </div>
         </div>
+      </details>
      </label>` +
+    `<label>Creado<input id="e_created" class="swInp" value="${escapeHtml(String(lead.created_at||"").replace("T"," ").slice(0,16))}" disabled /></label>` +
     `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa" spellcheck="false">${escapeHtml(lead.notas || "")}</textarea></label>` +
     `<label class="span2">Agregar comentario<textarea id="e_comment" class="swTa" rows="2" placeholder="Nuevo comentario..."></textarea></label>` +
     '</div></div>';
@@ -2907,104 +2930,122 @@ async function openEditModal(lead){
 		      try{ window.parent?.postMessage({ type:"embed:close", id_lead: lead.id_lead }, "*"); }catch(_){}
 		    },
 	    didOpen: ()=>{
-      const viewBtn = qs("#e_viewpdf");
-      const ocrBtn = qs("#e_ocrpdf");
-      const hint = qs("#e_pdfhint");
-      const fileEl = qs("#e_pdf");
-      let localPdfFile = null;
-      let isUploadingPdf = false;
-      let metaSaveT = null;
-		      // Acciones rápidas junto a Guardar/Cerrar (acciones de SweetAlert)
-		      try{
-		        const actions = Swal.getActions?.();
-		        if (actions && !actions.querySelector("[data-gd-qa]")){
-		          const wrap = document.createElement("div");
-		          wrap.setAttribute("data-gd-qa","1");
-		          wrap.style.display = "flex";
-		          wrap.style.gap = "8px";
-		          wrap.style.flexWrap = "wrap";
-		          wrap.style.alignItems = "center";
-		          wrap.style.marginRight = "10px";
+	      // Quick-actions: estilos mínimos (solo dentro del modal)
+	      try{
+	        if (!document.getElementById("gdLeadQaStyle")){
+	          const st = document.createElement("style");
+	          st.id = "gdLeadQaStyle";
+	          st.textContent = `
+	            .gdInline{ display:flex; gap:8px; align-items:center; }
+	            .gdIcoBtn{
+	              width:40px; height:40px; min-width:40px;
+	              border-radius:12px;
+	              border:1px solid var(--border);
+	              background: var(--surface2);
+	              color: var(--text);
+	              font-weight: 1000;
+	              cursor:pointer;
+	            }
+	            .gdIcoBtn:hover{ background: var(--hover-surface); }
+	            .gdDetails{ border:0; }
+	            .gdDetails > summary{ list-style:none; cursor:pointer; }
+	            .gdDetails > summary::-webkit-details-marker{ display:none; }
+	            .gdManualHdr{
+	              font-weight:1000; margin:2px 0 8px; color: var(--muted);
+	              letter-spacing:.2px; display:flex; align-items:center; gap:8px;
+	            }
+	            .gdManualHdr::after{ content:"▾"; opacity:.75; margin-left:auto; font-weight:1100; }
+	            details[open] > .gdManualHdr::after{ content:"▴"; }
+	            .gdManualBox{ border:1px solid var(--border); background: var(--surface2); border-radius:14px; padding:10px; }
+	          `;
+	          document.head.appendChild(st);
+	        }
+	      }catch(_){}
+	      const viewBtn = qs("#e_viewpdf");
+	      const ocrBtn = qs("#e_ocrpdf");
+	      const hint = qs("#e_pdfhint");
+	      const fileEl = qs("#e_pdf");
+	      let localPdfFile = null;
+	      let isUploadingPdf = false;
+	      let metaSaveT = null;
+	      const logAction = async (kind, title, text)=>{
+	        try{
+	          await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+	            method: "POST",
+	            headers: { "Content-Type":"application/json" },
+	            body: JSON.stringify({ kind, title, text }),
+	          });
+	        }catch(_){}
+	      };
 
-		          const mk = (txt, cls)=>{
-		            const b = document.createElement("button");
-		            b.type = "button";
-		            b.className = cls;
-		            b.textContent = txt;
-		            return b;
-		          };
+	      // Quick actions (iconos en labels)
+	      qs("#qa_call")?.addEventListener("click", async ()=>{
+	        const tel = String(qs("#e_tel")?.value || lead.telefono || "").trim();
+	        if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+	        await logAction("CALL", "Llamada iniciada", `Se inicia llamada a ${tel}.`);
+	        window.open("tel:" + tel, "_self");
+	      });
+	      qs("#qa_wa")?.addEventListener("click", ()=>{
+	        try{ lead.telefono = String(qs("#e_tel")?.value || lead.telefono || ""); }catch(_){}
+	        try{ doWhatsApp(lead, { defaultAction:"open" }); }catch(_){}
+	      });
+	      qs("#qa_email")?.addEventListener("click", async ()=>{
+	        const mail = String(qs("#e_email")?.value || lead.email || "").trim();
+	        if (!mail){ toast("Lead sin email", "warning"); return; }
+	        await logAction("EMAIL", "Email iniciado", `Se abre cliente de correo para ${mail}.`);
+	        window.open(`mailto:${encodeURIComponent(mail)}`, "_self");
+	      });
+	      qs("#qa_vcard")?.addEventListener("click", async ()=>{
+	        try{ await logAction("VCARD", "vCard generado", "Se descargó la vCard del cliente."); }catch(_){}
+	        try{
+	          const r = await fetch(apiURL(`/leads/${lead.id_lead}/vcard`), {
+	            headers: authHeaders({ "Accept": "text/vcard,text/x-vcard,text/plain,*/*" }),
+	          });
+	          if (!r.ok) throw new Error("No pude generar vCard (HTTP " + r.status + ")");
+	          const blob = await r.blob();
+	          const url = URL.createObjectURL(blob);
+	          const safe = (s)=> String(s||"").trim().replace(/[\\/:*?\"<>|]+/g, " ").replace(/\\s+/g, " ").trim();
+	          const cliente = safe(lead.nombre_cliente || lead.cliente || "Cliente");
+	          const marca = safe(lead.marca || "");
+	          const fname = `Contacto - ${cliente}${marca ? (" - " + marca) : ""}.vcf`;
+	          const a = document.createElement("a");
+	          a.href = url;
+	          a.download = fname;
+	          document.body.appendChild(a);
+	          a.click();
+	          a.remove();
+	          setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){ } }, 60_000);
+	        }catch(err){
+	          toast("No pude generar vCard: " + String(err?.message||err), "error");
+	        }
+	      });
+	      qs("#qa_quote")?.addEventListener("click", async ()=>{
+	        try{
+	          const num = String(qs("#e_numcot")?.value || lead.num_cotizacion || "").trim();
+	          const cid = Number(lead.id_cotizacion_vigente || 0);
+	          if (cid > 0){
+	            await logAction("QUOTE", "Cotización abierta", `Se abre cotización del sistema #${num || cid}.`);
+	            const pdf = apiURL(`/quotes/${cid}/pdf`);
+	            const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Abriendo PDF…")}`);
+	            window.open(wait, "_blank", "noopener,noreferrer");
+	            return;
+	          }
+	          if (lead.cotizacion_pdf_url){
+	            await logAction("QUOTE", "Cotización abierta", `Se abre cotización manual #${num || ("Lead " + lead.id_lead)}.`);
+	            const pdf = apiURL(`/leads/${lead.id_lead}/cotizacion_pdf`);
+	            const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Abriendo PDF…")}`);
+	            window.open(wait, "_blank", "noopener,noreferrer");
+	            return;
+	          }
+	          toast("Sin cotización para abrir", "warning");
+	        }catch(_){
+	          toast("No pude abrir cotización", "error");
+	        }
+	      });
 
-			          const btnCall = mk("Llamar", "swBtn secondary");
-			          const btnCopy = mk("Copiar WSP", "swBtn secondary");
-			          const btnWa = mk("WhatsApp", "swBtn");
-			          const btnVcf = mk("vCard", "swBtn secondary");
-
-			          const logAction = async (kind, title, text)=>{
-			            try{
-			              await apiJSON(`/leads/${lead.id_lead}/append_note`, {
-		                method: "POST",
-		                headers: { "Content-Type":"application/json" },
-		                body: JSON.stringify({ kind, title, text }),
-		              });
-		            }catch(_){}
-		          };
-
-		          btnCall.addEventListener("click", async ()=>{
-		            const tel = String(lead.telefono || "").trim();
-		            if (!tel){ toast("Lead sin teléfono", "warning"); return; }
-		            await logAction("CALL", "Llamada iniciada", `Se inicia llamada a ${tel}.`);
-		            window.open("tel:" + tel, "_self");
-		          });
-		          btnWa.addEventListener("click", ()=>{
-		            try{ doWhatsApp(lead, { defaultAction:"open" }); }catch(_){}
-		          });
-			          btnCopy.addEventListener("click", ()=>{
-			            try{ doWhatsApp(lead, { defaultAction:"copy" }); }catch(_){}
-			          });
-			          btnVcf.addEventListener("click", async ()=>{
-			            try{
-			              await logAction("VCARD", "vCard generado", "Se descargó la vCard del cliente.");
-			            }catch(_){}
-			            try{
-			              const r = await fetch(apiURL(`/leads/${lead.id_lead}/vcard`), {
-			                headers: authHeaders({ "Accept": "text/vcard,text/x-vcard,text/plain,*/*" }),
-			              });
-			              if (!r.ok){
-			                throw new Error("No pude generar vCard (HTTP " + r.status + ")");
-			              }
-			              const blob = await r.blob();
-			              const url = URL.createObjectURL(blob);
-
-			              const safe = (s)=> String(s||"").trim().replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
-			              const cliente = safe(lead.nombre_cliente || lead.cliente || "Cliente");
-			              const marca = safe(lead.marca || "");
-			              const fname = `Contacto - ${cliente}${marca ? (" - " + marca) : ""}.vcf`;
-
-			              const a = document.createElement("a");
-			              a.href = url;
-			              a.download = fname;
-			              document.body.appendChild(a);
-			              a.click();
-			              a.remove();
-			              setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){ } }, 60_000);
-			            }catch(err){
-			              toast("No pude generar vCard: " + String(err?.message||err), "error");
-			            }
-			          });
-
-			          wrap.appendChild(btnCall);
-			          wrap.appendChild(btnCopy);
-			          wrap.appendChild(btnWa);
-			          wrap.appendChild(btnVcf);
-
-		          // Insertar antes de botones de Swal (al inicio)
-		          actions.insertBefore(wrap, actions.firstChild);
-		        }
-		      }catch(_){}
-
-      function setButtonsState(){
-        const hasLocal = !!localPdfFile;
-        const hasRemote = !!lead.cotizacion_pdf_url;
+	      function setButtonsState(){
+	        const hasLocal = !!localPdfFile;
+	        const hasRemote = !!lead.cotizacion_pdf_url;
         if (viewBtn) viewBtn.disabled = !(hasLocal || hasRemote);
         // Cargar productos se puede abrir incluso sin PDF (carga manual).
         if (ocrBtn) ocrBtn.disabled = false;

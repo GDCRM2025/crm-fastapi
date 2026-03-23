@@ -372,6 +372,44 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0):
                 "url": "/web/views/leads.html"
             })
 
+        # A2) Leads nuevos de hoy (para sonido + badge en frontend).
+        # Nota: el panel usa el delta de este contador para reproducir "Nuevo lead".
+        try:
+            if _col_exists("leads", "created_at"):
+                date_col = "created_at"
+            elif _col_exists("leads", "fecha_ingreso"):
+                date_col = "fecha_ingreso"
+            else:
+                date_col = "updated_at"
+
+            params = {}
+            marca_sql = ""
+            if only_own and marcas:
+                marca_sql = " AND id_marca = ANY(:m) "
+                params["m"] = marcas
+
+            new_today = conn.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*)::int
+                    FROM leads
+                    WHERE DATE({date_col}) = current_date
+                    {marca_sql}
+                    """
+                ),
+                params,
+            ).scalar() or 0
+
+            counts["leads_nuevos"] = int(new_today)
+            items.append({
+                "key": "leads_nuevos",
+                "title": "Leads nuevos (hoy)",
+                "count": int(new_today),
+                "url": "/web/views/leads.html"
+            })
+        except Exception:
+            pass
+
         # B) Leads sin movimiento (solo lectura): usamos el motor oficial stale_leads (dry_run)
         stale_ids: list[int] = []
         stale_by_status: dict[str, list] = {"NUEVO": [], "CONTACTADO": [], "COTIZADO": []}

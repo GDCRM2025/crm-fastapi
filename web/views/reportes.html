@@ -296,7 +296,10 @@
       <section class="card" style="grid-column: span 12" id="total">
         <div class="h2">Total venta</div>
         <div class="muted">Comparativo mensual por marca (backend).</div>
-        <div class="chartBox" id="chTotal"></div>
+        <div style="display:grid;grid-template-columns: 1.3fr .7fr; gap:12px; align-items:stretch">
+          <div class="chartBox" id="chTotal"></div>
+          <div class="chartBox" id="chMarcaPie"></div>
+        </div>
         <div id="boxTotal" style="margin-top:10px"></div>
       </section>
 
@@ -558,6 +561,69 @@
           { type:"text", left:"18%", top:"62%", style:{ text:"Todos", fill:c.sub, fontWeight:900 } },
           { type:"text", left:"67%", top:"62%", style:{ text:"Confirm.", fill:c.sub, fontWeight:900 } },
         ]
+      }, true);
+    }
+
+    function ecDonut(id, title, rows, valueKey="value", nameKey="name"){
+      const dataRaw = (rows||[]).map(r=>({
+        name: String(r?.[nameKey] ?? r?.marca ?? r?.estado ?? "—"),
+        value: Number(r?.[valueKey] ?? r?.monto ?? r?.value ?? 0),
+        cantidad: Number(r?.cantidad ?? r?.count ?? 0),
+      })).filter(x=>x.value>0);
+      if (!dataRaw.length){ setChartMsg(id, "Sin datos."); return; }
+      const c = ecColors();
+      const chart = initEC(id, "tall");
+      if (!chart) return;
+      const total = dataRaw.reduce((a,b)=>a+(Number(b.value)||0),0);
+      const top = dataRaw.slice(0, 8);
+      const other = dataRaw.slice(8).reduce((a,b)=>a+(Number(b.value)||0),0);
+      const data = other > 0 ? top.concat([{ name:"Otros", value: other, cantidad: 0 }]) : top;
+      chart.setOption({
+        title:{ text:title, left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+        tooltip:{
+          trigger:"item",
+          ...ecTooltipSkin(c),
+          formatter:(p)=>{
+            const d = p.data || {};
+            const pct = total ? Math.round((Number(d.value||0)/total)*100) : 0;
+            return `<div style="font-weight:900">${esc(d.name||"—")}</div>` +
+              `<div style="margin-top:4px">Monto: ${esc(money(d.value||0))}</div>` +
+              (d.cantidad ? `<div style="opacity:.8;margin-top:4px">Leads: ${esc(d.cantidad||0)}</div>` : "") +
+              `<div style="opacity:.8;margin-top:4px">${pct}%</div>`;
+          }
+        },
+        legend:{ show:false },
+        graphic:[
+          {
+            type:"text",
+            left:"center",
+            top:"48%",
+            style:{ text: money(total), fill:c.title, fontWeight:1100, fontSize:14, textAlign:"center" }
+          },
+          {
+            type:"text",
+            left:"center",
+            top:"58%",
+            style:{ text:"Total", fill:c.sub, fontWeight:900, fontSize:12, textAlign:"center" }
+          }
+        ],
+        series:[{
+          type:"pie",
+          radius:["54%","78%"],
+          center:["50%","62%"],
+          avoidLabelOverlap:true,
+          itemStyle:{ borderRadius: 12, borderColor:"rgba(0,0,0,0)", borderWidth: 0, shadowBlur: 16, shadowColor:"rgba(0,0,0,.18)" },
+          label:{
+            color:c.axis,
+            fontWeight:900,
+            formatter:(p)=> {
+              const nm = String(p?.name||"");
+              return nm.length > 12 ? (nm.slice(0,12)+"…") : nm;
+            }
+          },
+          labelLine:{ lineStyle:{ color:c.grid } },
+          data
+        }]
       }, true);
     }
     function ecDaily(id, labels, totals){
@@ -961,6 +1027,7 @@
       renderCierre(dash);
       await renderLeadsHoyList(mid);
       renderTotal(dash);
+      renderMarcaPie(rep);
       renderDaily(dash, mid);
       await renderFinanzas(ini, fin);
 
@@ -1077,6 +1144,15 @@
 
       // chart BI (2 donuts)
       ecTipoCliente("chTipo", all, conf);
+    }
+
+    function renderMarcaPie(rep){
+      const rows = Array.isArray(rep?.ventas_por_marca) ? rep.ventas_por_marca : [];
+      if (!rows.length){
+        setChartMsg("chMarcaPie", "Sin datos.");
+        return;
+      }
+      ecDonut("chMarcaPie", "Torta por marca (confirmados)", rows, "monto", "marca");
     }
 
     function renderTop(rep){
