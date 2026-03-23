@@ -1115,6 +1115,14 @@
         try{ history.replaceState(null, "", "#" + tab); }catch(_){ location.hash = "#" + tab; }
       }
       try{ window.scrollTo({ top: 0, behavior: "smooth" }); }catch(_){ window.scrollTo(0,0); }
+      // ECharts necesita resize cuando un panel pasa de display:none -> visible
+      try{
+        requestAnimationFrame(()=> {
+          try{ resizeEC(); }catch(_){}
+        });
+        setTimeout(()=> { try{ resizeEC(); }catch(_){}
+        }, 120);
+      }catch(_){}
       return tab;
     }
 

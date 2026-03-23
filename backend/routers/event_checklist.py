@@ -118,7 +118,14 @@ def events_for_day(
     has_tel = _col_exists(db, "leads", "telefono")
     has_dir = _col_exists(db, "leads", "direccion")
 
-    date_expr = "DATE(l.fecha_evento)" if has_fecha else "DATE(l.calendar_start)"
+    # Fuente de fecha del evento: preferimos fecha_evento si existe; si no, calendar_start si existe.
+    if has_fecha:
+        date_expr = "DATE(l.fecha_evento)"
+    elif has_cal:
+        date_expr = "DATE(l.calendar_start)"
+    else:
+        # No hay forma confiable de filtrar por día -> no rompemos el frontend.
+        return {"ok": True, "day": d.isoformat(), "items": []}
     start_expr = "l.calendar_start" if has_cal else ("l.pre_start" if has_pre else "NULL")
     end_expr = "l.calendar_end" if has_cal else ("l.pre_end" if has_pre else "NULL")
     ops_expr = "COALESCE(l.pre_ops,0)" if has_ops else "0"
