@@ -447,6 +447,40 @@
       </div>
     </section>
 
+    <section class="card" id="tasksCard" style="grid-column: span 12; display:none;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0">Mis tareas</h3>
+          <div class="muted" style="margin-top:6px">Seguimiento y datos pendientes. Todo queda registrado. Si se acumula atraso, algunas reglas pueden declinar leads sin movimiento.</div>
+        </div>
+        <button class="btn" id="btnGoTasks" type="button">Abrir Tareas</button>
+      </div>
+      <div class="split" style="margin-top:12px;">
+        <div style="grid-column: span 4;">
+          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+            <div class="label">Vencidas</div>
+            <div class="value" id="tasksOverdue">0</div>
+            <div class="hint">Requieren acción hoy</div>
+          </div>
+        </div>
+        <div style="grid-column: span 4;">
+          <div class="kpi" data-tone="cold" style="padding:12px 14px;">
+            <div class="label">Abiertas</div>
+            <div class="value" id="tasksOpen">0</div>
+            <div class="hint">Total asignadas</div>
+          </div>
+        </div>
+        <div style="grid-column: span 4;">
+          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+            <div class="label">Sin contactar</div>
+            <div class="value" id="tasksContactOverdue">0</div>
+            <div class="hint">Leads nuevos vencidos</div>
+          </div>
+        </div>
+      </div>
+      <div id="tasksList" style="margin-top:10px"></div>
+    </section>
+
     <section class="card" id="eventsCard" style="grid-column: span 12;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
         <h3 style="margin:0">Eventos confirmados (semana)</h3>
@@ -926,6 +960,105 @@
 
     // Insights viven en /web/views/reportes.html (no en dashboard).
 
+    async function loadTasks(force=false){
+      const card = $("#tasksCard");
+      if (!card || card.style.display === "none") return;
+
+      try{
+        const sum = await apiJson("/tasks/summary");
+        $("#tasksOpen").textContent = String(sum?.open_total ?? 0);
+        $("#tasksOverdue").textContent = String(sum?.overdue_total ?? 0);
+        $("#tasksContactOverdue").textContent = String(sum?.overdue_contactar ?? 0);
+      }catch(_){
+        $("#tasksOpen").textContent = "0";
+        $("#tasksOverdue").textContent = "0";
+        $("#tasksContactOverdue").textContent = "0";
+      }
+
+      const list = $("#tasksList");
+      if (!list) return;
+      list.innerHTML = `<div class="muted">Cargando tareas…</div>`;
+
+      try{
+        // refresca tareas automáticas (idempotente)
+        try{ await apiJson("/tasks/sync", { method:"POST" }); }catch(_){}
+        const j = await apiJson("/tasks?status=open&limit=12&offset=0");
+        const items = Array.isArray(j?.items) ? j.items : [];
+        if (!items.length){
+          list.innerHTML = `<div class="muted">No tienes tareas pendientes.</div>`;
+          return;
+        }
+        const fmtDue = (s)=>{
+          const raw = String(s||"");
+          if (!raw) return "—";
+          try{
+            const d = new Date(raw);
+            return d.toLocaleString("es-CL", { hour:"2-digit", minute:"2-digit", day:"2-digit", month:"2-digit" });
+          }catch(_){ return raw; }
+        };
+        list.innerHTML = `
+          <table class="pipe-table">
+            <thead><tr><th>Tarea</th><th>Lead</th><th class="right">Vence</th><th class="right">Acción</th></tr></thead>
+            <tbody>
+              ${items.map(t => {
+                const due = t.due_at ? fmtDue(t.due_at) : "—";
+                const lead = t.entity_id ? `#${t.entity_id} ${String(t.lead_cliente||"").slice(0,26)}` : "";
+                const overdue = t.due_at && (new Date(t.due_at).getTime() < Date.now());
+                return `
+                  <tr data-task="${t.id_task}" data-lead="${t.entity_id||""}" class="rowlink" style="${overdue ? "background: rgba(239,68,68,.06);" : ""}">
+                    <td><strong>${String(t.title||t.kind||"Tarea")}</strong><div class="muted" style="font-size:12px;margin-top:4px">${String(t.description||"")}</div></td>
+                    <td class="muted">${lead}</td>
+                    <td class="right">${due}</td>
+                    <td class="right">
+                      <button class="btn" data-act="done" type="button">Hecho</button>
+                      <button class="btn" data-act="skip" type="button">Omitir</button>
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+          <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en una fila abre el lead. “Hecho/Omitir” registra en historial.</div>
+        `;
+
+        list.querySelectorAll("tr[data-task]").forEach(tr=>{
+          tr.addEventListener("click", (ev)=>{
+            const actBtn = ev.target?.closest?.("button[data-act]");
+            if (actBtn) return;
+            const lid = tr.getAttribute("data-lead");
+            if (lid) openLead(lid);
+          });
+        });
+        list.querySelectorAll("button[data-act]").forEach(btn=>{
+          btn.addEventListener("click", async (ev)=>{
+            ev.preventDefault(); ev.stopPropagation();
+            const tr = btn.closest("tr[data-task]");
+            const id = tr?.getAttribute("data-task");
+            if (!id) return;
+            const act = btn.getAttribute("data-act");
+            try{
+              if (act === "done"){
+                await apiJson(`/tasks/${encodeURIComponent(id)}/done`, { method:"POST" });
+              } else if (act === "skip"){
+                const reason = prompt("Motivo para omitir esta tarea (queda registrado):") || "";
+                if (!reason.trim()) return;
+                await apiJson(`/tasks/${encodeURIComponent(id)}/skip`, {
+                  method:"POST",
+                  headers: { "Content-Type":"application/json" },
+                  body: JSON.stringify({ reason })
+                });
+              }
+              await loadTasks(true);
+            }catch(e){
+              alert(String(e?.message || e));
+            }
+          });
+        });
+      }catch(e){
+        list.innerHTML = `<div class="muted">No disponible: ${String(e?.message||e)}</div>`;
+      }
+    }
+
     async function loadEvents(offset=0){
       const qs = new URLSearchParams({ week_offset: String(offset) });
       if (state.idMarca) qs.set("id_marca", state.idMarca);
@@ -1150,6 +1283,7 @@
       // KPIs y ventas: solo Ejecutivos + Admin
       show("#kpiCard", (isAdmin || isSales));
       show("#salesCard", (isAdmin || isSales));
+      show("#tasksCard", (isAdmin || isSales));
 
       // Eventos confirmados (semana): para TODOS los usuarios
       show("#eventsCard", true);
@@ -1345,11 +1479,22 @@
       syncCustomVisibility();
     }
 
+    let __refreshing = false;
     async function refreshAll(){
-      await loadDashboard();
-      await loadEvents(state.weekOffset || 0);
-      await loadOpsCards(false);
-      await loadFinCards(false);
+      if (__refreshing) return;
+      __refreshing = true;
+      try{
+        // Evita “parpadeo”: no limpiamos UI, solo refrescamos data en paralelo.
+        await loadDashboard();
+        await Promise.allSettled([
+          loadTasks(false),
+          loadEvents(state.weekOffset || 0),
+          loadOpsCards(false),
+          loadFinCards(false),
+        ]);
+      }finally{
+        __refreshing = false;
+      }
     }
 
     $("#rangeSel")?.addEventListener("change", (e) => {
@@ -1372,10 +1517,13 @@
     $("#btnApply")?.addEventListener("click", () => refreshAll());
 
     $("#btnGoReportes")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html?only=total#total" }, "*");
+      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html" }, "*");
     });
     $("#btnGoFinReportes")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html?only=cxc#cxc" }, "*");
+      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html?tab=cxc#cxc" }, "*");
+    });
+    $("#btnGoTasks")?.addEventListener("click", () => {
+      window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html" }, "*");
     });
 
     (async () => {

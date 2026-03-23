@@ -116,6 +116,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     nuevo_id = _estado_id_like(db, "%NUEV%", 1)
     confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
     declinado_id = _estado_id_like(db, "%DECLIN%", 5)
+    contactado_id = _estado_id_like(db, "%CONTACT%", 2)
+    cotizado_id = _estado_id_like(db, "%COTIZ%", 3)
 
     # CONTACTAR (ventas): lead NUEVO asignado al usuario (id_usuario)
     # due_at = created_at + 24h
@@ -143,6 +145,131 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 """
             ),
             {"uid": int(user_id), "uname": (username or "").strip()[:200], "nuevo": int(nuevo_id)},
+        )
+    except Exception:
+        pass
+
+    # RIESGO (ventas): leads que están a punto de caer en reglas de estancamiento/auto-declinación.
+    # Consecuencia real: si no se registra seguimiento, los jobs/reglas pueden declinar automáticamente.
+    # - NUEVO: a partir de 5 días sin contacto => warning (declina al día 7).
+    # - CONTACTADO sin fecha_evento: a partir de 3 días sin movimiento => warning (declina al día 5).
+    # - CONTACTADO con fecha_evento del mes: con comentarios, a partir de 5 días sin movimiento => warning (declina al día 7).
+    # - COTIZADO con evento cercano (<= 4 días): warning inmediato.
+    try:
+        db.execute(
+            text(
+                f"""
+                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                SELECT
+                  'RIESGO_AUTO_DECLINE_NUEVO' AS kind,
+                  'Riesgo: lead se declinará' AS title,
+                  'Lead NUEVO lleva 5+ días sin contacto. Si no hay seguimiento, puede declinar automáticamente.' AS description,
+                  'lead',
+                  l.id_lead,
+                  :uid,
+                  :uname,
+                  (COALESCE(l.created_at, now()) + INTERVAL '7 days') AS due_at,
+                  5,
+                  jsonb_build_object('rule','risk_nuevo','estado_id',l.id_estado)
+                FROM public.leads l
+                WHERE l.id_estado = :nuevo
+                  AND COALESCE(l.id_usuario, 0) = :uid
+                  AND ({_has_contact_sql()}) IS FALSE
+                  AND COALESCE(l.created_at, now()) <= (now() - INTERVAL '5 days')
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {"uid": int(user_id), "uname": (username or "").strip()[:200], "nuevo": int(nuevo_id)},
+        )
+    except Exception:
+        pass
+
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                SELECT
+                  'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA' AS kind,
+                  'Riesgo: lead sin movimiento' AS title,
+                  'Lead CONTACTADO sin fecha_evento y sin movimiento. Si no hay seguimiento, puede declinar automáticamente.' AS description,
+                  'lead',
+                  l.id_lead,
+                  :uid,
+                  :uname,
+                  (COALESCE(l.updated_at, l.created_at, now()) + INTERVAL '5 days') AS due_at,
+                  6,
+                  jsonb_build_object('rule','risk_contactado_sin_fecha','estado_id',l.id_estado)
+                FROM public.leads l
+                WHERE l.id_estado = :contactado
+                  AND l.fecha_evento IS NULL
+                  AND (:is_admin OR COALESCE(l.id_usuario,0)=:uid)
+                  AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '3 days')
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {"uid": int(user_id), "uname": (username or "").strip()[:200], "contactado": int(contactado_id), "is_admin": bool(is_admin)},
+        )
+    except Exception:
+        pass
+
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                SELECT
+                  'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA' AS kind,
+                  'Riesgo: lead con fecha estancado' AS title,
+                  'Lead CONTACTADO con fecha_evento del mes y comentarios, sin movimiento. Si no hay seguimiento, puede declinar automáticamente.' AS description,
+                  'lead',
+                  l.id_lead,
+                  :uid,
+                  :uname,
+                  (COALESCE(l.updated_at, l.created_at, now()) + INTERVAL '7 days') AS due_at,
+                  6,
+                  jsonb_build_object('rule','risk_contactado_con_fecha','estado_id',l.id_estado,'fecha_evento',l.fecha_evento)
+                FROM public.leads l
+                WHERE l.id_estado = :contactado
+                  AND l.fecha_evento IS NOT NULL
+                  AND EXTRACT(YEAR FROM l.fecha_evento) = EXTRACT(YEAR FROM CURRENT_DATE)
+                  AND EXTRACT(MONTH FROM l.fecha_evento) = EXTRACT(MONTH FROM CURRENT_DATE)
+                  AND (COALESCE(NULLIF(btrim(l.notas),''), NULL) IS NOT NULL)
+                  AND (:is_admin OR COALESCE(l.id_usuario,0)=:uid)
+                  AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '5 days')
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {"uid": int(user_id), "uname": (username or "").strip()[:200], "contactado": int(contactado_id), "is_admin": bool(is_admin)},
+        )
+    except Exception:
+        pass
+
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                SELECT
+                  'RIESGO_COTIZADO_EVENTO_CERCA' AS kind,
+                  'Riesgo: evento cerca sin confirmar' AS title,
+                  'Lead COTIZADO con evento cercano (<= 4 días) sin confirmar. Requiere acción inmediata.' AS description,
+                  'lead',
+                  l.id_lead,
+                  :uid,
+                  :uname,
+                  now() + INTERVAL '2 hours' AS due_at,
+                  4,
+                  jsonb_build_object('rule','risk_cotizado_evento_cerca','estado_id',l.id_estado,'fecha_evento',l.fecha_evento)
+                FROM public.leads l
+                WHERE l.id_estado = :cotizado
+                  AND l.fecha_evento IS NOT NULL
+                  AND l.fecha_evento <= (CURRENT_DATE + 4)
+                  AND (:is_admin OR COALESCE(l.id_usuario,0)=:uid)
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {"uid": int(user_id), "uname": (username or "").strip()[:200], "cotizado": int(cotizado_id), "is_admin": bool(is_admin)},
         )
     except Exception:
         pass
@@ -375,4 +502,3 @@ def skip_task(db: Session, *, id_task: int, skipped_by: str, reason: str) -> Dic
         },
     )
     return {"ok": True}
-

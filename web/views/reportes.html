@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="../styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="../js/iframe-theme.js"></script>
   <style>
     html,body{height:100%;margin:0;}
@@ -107,23 +108,40 @@
     }
     .bar{height:100%; width:calc(var(--w,0) * 1%); background:rgba(25,195,125,.35);}
 
-    .navchips{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
-    .chip{
+    .tabs{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:10px;
+      align-items:center;
+    }
+    .tab{
       height:30px;
       display:inline-flex;
       align-items:center;
       gap:8px;
-      padding:0 10px;
+      padding:0 12px;
       border-radius:999px;
       background: rgba(2,6,23,.18);
       border: 1px solid rgba(148,163,184,.22);
       color: var(--text);
       cursor:pointer;
       font-size:12px;
-      font-weight:900;
-      text-decoration:none;
+      font-weight:1000;
+      user-select:none;
     }
-    .chip:hover{filter:brightness(1.06);}
+    .tab:hover{filter:brightness(1.06);}
+    .tab.active{
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    }
+    .tabActions{
+      margin-left:auto;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
 
     .chartBox{
       margin-top:10px;
@@ -149,18 +167,23 @@
       <div>
         <div class="ttl">Reportes</div>
         <div class="sub">Funnel + cierre + ventas + top productos/comunas/clientes + finanzas. Todo sale del backend: `/tools/dashboard` y `/tools/dashboard/reportes`.</div>
-        <div class="navchips">
-          <a class="chip" href="#funnel">Funnel</a>
-          <a class="chip" href="#cierre">% cierre</a>
-          <a class="chip" href="#tipo_cliente">Tipo cliente</a>
-          <a class="chip" href="#total">Total venta</a>
-          <a class="chip" href="#cxc">Por cobrar</a>
-          <a class="chip" href="#cxp">Por pagar</a>
-          <a class="chip" href="#comunas">Comunas</a>
-          <a class="chip" href="#productos">Productos</a>
-          <a class="chip" href="#clientes">Clientes</a>
-          <a class="chip" href="#leads_hoy">Leads hoy</a>
-          <a class="chip" href="#venta_diaria">Venta diaria</a>
+        <div class="tabs" id="tabs">
+          <button class="tab" type="button" data-tab="funnel">Funnel</button>
+          <button class="tab" type="button" data-tab="cierre">% cierre</button>
+          <button class="tab" type="button" data-tab="tipo_cliente">Tipo cliente</button>
+          <button class="tab" type="button" data-tab="total">Total venta</button>
+          <button class="tab" type="button" data-tab="comunas">Comunas</button>
+          <button class="tab" type="button" data-tab="productos">Productos</button>
+          <button class="tab" type="button" data-tab="clientes">Clientes</button>
+          <button class="tab" type="button" data-tab="leads_hoy">Leads hoy</button>
+          <button class="tab" type="button" data-tab="venta_diaria">Venta diaria</button>
+          <button class="tab" type="button" data-tab="cxc">Por cobrar</button>
+          <button class="tab" type="button" data-tab="cxp">Por pagar</button>
+
+          <div class="tabActions">
+            <button id="btnXlsx" class="btn" type="button" title="Exporta el reporte seleccionado a Excel (incluye el gráfico como imagen)">Export XLSX</button>
+            <button id="btnWsp" class="btn" type="button" title="Copia un resumen y abre WhatsApp Web (adjunta el archivo manualmente)">WhatsApp</button>
+          </div>
         </div>
       </div>
       <div class="row">
@@ -340,20 +363,63 @@
     // ---------- charts (ECharts, BI look) ----------
     const EC = {};
     function hasECharts(){ return typeof window.echarts !== "undefined" && !!window.echarts; }
-    function ecColors(){
-      const isLight = document.documentElement.classList.contains("light");
-      return {
-        axis: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.80)",
-        grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.16)",
-        title: isLight ? "rgba(0,0,0,.85)" : "rgba(255,255,255,.88)",
-        sub: isLight ? "rgba(0,0,0,.60)" : "rgba(255,255,255,.70)",
-        accent: "#17c37d",
-        accent2: "#6366f1",
-        warn: "#f59e0b",
-        bad: "#ef4444",
-        cyan: "#22d3ee",
-      };
-    }
+	    function ecColors(){
+	      const isLight = document.documentElement.classList.contains("light");
+	      // Brandbook (GD Group) — verdes corporativos aproximados desde el arte compartido
+	      const g1 = "#587B0D"; // Pantone P155-16C (R88 G123 B13)
+	      const g2 = "#5B974E"; // Pantone P145-15C (R91 G151 B78)
+	      const g3 = "#96C251"; // Pantone P151-7C  (R150 G194 B81)
+	      return {
+	        axis: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.80)",
+	        grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.16)",
+	        title: isLight ? "rgba(0,0,0,.85)" : "rgba(255,255,255,.88)",
+	        sub: isLight ? "rgba(0,0,0,.60)" : "rgba(255,255,255,.70)",
+	        accent: g2,
+	        accentDark: g1,
+	        accentLight: g3,
+	        accent2: "#22c55e",
+	        warn: "#f59e0b",
+	        bad: "#ef4444",
+	        cyan: "#22d3ee",
+	      };
+	    }
+
+	    function ecWatermark(c){
+	      // Watermark sutil con diamante + GD (sin assets externos)
+	      const op = document.documentElement.classList.contains("light") ? 0.08 : 0.10;
+	      const x = "92%";
+	      const y = "90%";
+	      return [
+	        {
+	          type: "group",
+	          right: 10,
+	          bottom: 10,
+	          silent: true,
+	          opacity: op,
+	          children: [
+	            {
+	              type: "polygon",
+	              shape: { points: [[0,12],[12,0],[28,8],[16,28],[0,12]] },
+	              style: { fill: c.accentLight, stroke: c.accentDark, lineWidth: 1 }
+	            },
+	            {
+	              type: "text",
+	              style: { text: "GD", x: 34, y: 0, fill: c.title, font: "900 14px " + (getComputedStyle(document.documentElement).getPropertyValue("--font") || "system-ui") }
+	            },
+	            {
+	              type: "text",
+	              style: { text: "GROUP", x: 34, y: 16, fill: c.sub, font: "900 10px " + (getComputedStyle(document.documentElement).getPropertyValue("--font") || "system-ui"), letterSpacing: 2 }
+	            }
+	          ]
+	        }
+	      ];
+	    }
+
+	    function mergeGraphic(base, extra){
+	      const a = Array.isArray(base) ? base : (base ? [base] : []);
+	      const b = Array.isArray(extra) ? extra : (extra ? [extra] : []);
+	      return [...a, ...b];
+	    }
     function ecTooltipSkin(c){
       const isLight = document.documentElement.classList.contains("light");
       return {
@@ -402,7 +468,7 @@
       return String(Math.round(n));
     }
 	    function ecBarH(id, title, rows, valueFmt, onClick){
-	      const r = (rows||[]).slice(0, 25);
+	      const r = (rows||[]).slice(0, 60);
 	      if (!r.length){ setChartMsg(id, "Sin datos."); return; }
 	      const c = ecColors();
 	      const chart = initEC(id, (r.length <= 8 ? "short" : "tall"));
@@ -413,19 +479,20 @@
 	      const maxV = Math.max(1, ...vals.map(v => Number(v||0)));
 	      const back = vals.map(()=> maxV * 1.02);
 	      const fmtV = (v)=> valueFmt ? valueFmt(v) : fmtAxisMoney(v);
+        const needsZoom = labels.length > 10;
 	      const option = {
 	        title: { text: title, left: 0, top: 0, textStyle:{ color:c.title, fontWeight: 900, fontSize: 12 } },
-	        grid: { left: 150, right: 24, top: 38, bottom: 10, containLabel: true },
+	        grid: { left: 160, right: 24, top: 42, bottom: (needsZoom ? 26 : 10), containLabel: true },
 	        xAxis: {
 	          type: "value",
 	          axisLabel: { color: c.axis, fontWeight: 800, formatter: (v)=> fmtV(v) },
 	          axisLine: { lineStyle:{ color: "rgba(0,0,0,0)" } },
-	          splitLine: { lineStyle:{ color: c.grid } }
+	          splitLine: { lineStyle:{ color: c.grid, type:"dashed" } }
 	        },
 	        yAxis: {
 	          type: "category",
 	          data: labels,
-	          axisLabel: { color: c.axis, fontWeight: 1000, overflow:"truncate", width: 140 },
+	          axisLabel: { color: c.axis, fontWeight: 1050, overflow:"truncate", width: 150 },
 	          axisTick: { show:false },
 	          axisLine: { show:false }
 	        },
@@ -443,6 +510,16 @@
 	        },
 	        animationDuration: 520,
 	        animationEasing: "cubicOut",
+	        animationDurationUpdate: 420,
+	        animationEasingUpdate: "cubicOut",
+	        graphic: ecWatermark(c),
+	        dataZoom: needsZoom ? [
+	          { type:"inside", yAxisIndex:0, zoomOnMouseWheel:true, moveOnMouseWheel:true, moveOnMouseMove:true },
+	          { type:"slider", yAxisIndex:0, height: 16, bottom: 6, right: 20, left: 160,
+              borderColor:"rgba(148,163,184,.14)", backgroundColor:"rgba(148,163,184,.10)",
+              fillerColor: "rgba(91,151,78,.25)", handleStyle:{ color: c.accent, borderColor:"rgba(0,0,0,0)" },
+              textStyle:{ color: c.sub, fontWeight:900, fontSize:10 } }
+	        ] : [],
 	        series: [
 	          {
 	            // barra “ghost” para look BI (background uniforme)
@@ -461,14 +538,14 @@
 	            z: 2,
 	            itemStyle: {
 	              borderRadius: 999,
-	              shadowBlur: 14,
+	              shadowBlur: 16,
 	              shadowColor: "rgba(0,0,0,.22)",
 	              color: {
 	                type: "linear", x: 0, y: 0, x2: 1, y2: 0,
 	                colorStops: [
-	                  { offset: 0, color: "rgba(23,195,125,.70)" },
-	                  { offset: 0.65, color: "rgba(23,195,125,.38)" },
-	                  { offset: 1, color: "rgba(23,195,125,.18)" }
+	                  { offset: 0, color: c.accentDark },
+	                  { offset: 0.55, color: c.accent },
+	                  { offset: 1, color: c.accentLight }
 	                ]
 	              }
 	            },
@@ -488,6 +565,7 @@
 	            emphasis: {
 	              itemStyle: { shadowBlur: 22, shadowColor: "rgba(23,195,125,.25)" }
 	            },
+	            universalTransition: true,
 	          }
 	        ]
 	      };
@@ -511,11 +589,12 @@
       // Usamos MONTO como valor principal para el funnel (BI)
       const data = arr.map(x => ({ name: String(x.estado||"—"), value: Number(x.monto||0), cantidad: Number(x.cantidad||0) }))
         .sort((a,b)=> b.value - a.value);
-      chart.setOption({
-        title:{ text:"Funnel de ventas (monto)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
-        tooltip:{
-          trigger:"item",
-          ...ecTooltipSkin(c),
+	      chart.setOption({
+	        color: [c.accentDark, c.accent, c.accentLight, c.cyan, c.warn, c.bad],
+	        title:{ text:"Funnel de ventas (monto)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+	        tooltip:{
+	          trigger:"item",
+	          ...ecTooltipSkin(c),
           formatter: (p) => {
             const d = p.data || {};
             return `<div style="font-weight:900">${esc(d.name||"—")}</div>` +
@@ -523,19 +602,38 @@
               `<div style="opacity:.8;margin-top:4px">Leads: ${esc(d.cantidad||0)}</div>`;
           }
         },
-        animationDuration: 520,
-        animationEasing: "cubicOut",
-        series:[{
+	        animationDuration: 520,
+	        animationEasing: "cubicOut",
+	        animationDurationUpdate: 420,
+	        animationEasingUpdate: "cubicOut",
+	        graphic: ecWatermark(c),
+	        series:[{
           type:"funnel",
           left: 10, right: 10, top: 46, bottom: 10,
           sort:"descending",
           gap: 6,
           minSize:"20%",
           maxSize:"100%",
-          label:{ color: c.axis, fontWeight: 900 },
+          label:{
+            color: c.axis,
+            fontWeight: 1000,
+            formatter: (p)=>{
+              const d = p.data || {};
+              const nm = String(d.name||"—");
+              const m = money(d.value||0);
+              const n = Number(d.cantidad||0);
+              return `{a|${nm}}\\n{b|${m}}{c| · ${n} leads}`;
+            },
+            rich:{
+              a:{ fontWeight:1100, fontSize:12, color:c.title },
+              b:{ fontWeight:1100, fontSize:12, color:c.axis },
+              c:{ fontWeight:900, fontSize:11, color:c.sub },
+            }
+          },
           labelLine:{ lineStyle:{ color:c.grid } },
           itemStyle:{ borderRadius: 12, borderColor:"rgba(0,0,0,0)", borderWidth:0, shadowBlur: 18, shadowColor:"rgba(0,0,0,.18)" },
           emphasis:{ label:{ fontSize: 13 } },
+          universalTransition: true,
           data
         }]
       }, true);
@@ -552,14 +650,19 @@
       const a = (all||[]).map(x => ({ name: String(x.tipo||x.tipo_cliente||"—"), value: Number(x.cantidad||0) })).filter(x => x.value > 0);
       const b = (conf||[]).map(x => ({ name: String(x.tipo||x.tipo_cliente||"—"), value: Number(x.cantidad||0) })).filter(x => x.value > 0);
       if (!a.length && !b.length){ setChartMsg(id, "Sin datos."); return; }
-      const chart = initEC(id, "tall");
-      if (!chart) return;
-      chart.setOption({
-        title:{ text:"Tipo de cliente (cantidad)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
-        tooltip:{ trigger:"item", ...ecTooltipSkin(c), formatter: "{b}<br/>{c} · {d}%" },
-        legend:{ top: 36, left: 0, textStyle:{ color:c.axis, fontWeight:800 } },
-        animationDuration: 520,
-        animationEasing: "cubicOut",
+	      const chart = initEC(id, "tall");
+	      if (!chart) return;
+        const totA = a.reduce((s,x)=>s+(Number(x.value)||0),0);
+        const totB = b.reduce((s,x)=>s+(Number(x.value)||0),0);
+	      chart.setOption({
+	        color: [c.accentDark, c.accent, c.accentLight, c.cyan, c.warn, c.bad],
+	        title:{ text:"Tipo de cliente (cantidad)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+	        tooltip:{ trigger:"item", ...ecTooltipSkin(c), formatter: "{b}<br/>{c} · {d}%" },
+	        legend:{ top: 36, left: 0, textStyle:{ color:c.axis, fontWeight:800 } },
+	        animationDuration: 520,
+	        animationEasing: "cubicOut",
+	        animationDurationUpdate: 420,
+	        animationEasingUpdate: "cubicOut",
         series:[
           {
             name:"Todos",
@@ -568,6 +671,7 @@
             center:["25%","64%"],
             label:{ show:false },
             data: a,
+            universalTransition:true,
           },
           {
             name:"Confirmados",
@@ -576,14 +680,17 @@
             center:["75%","64%"],
             label:{ show:false },
             data: b,
+            universalTransition:true,
           }
-        ],
-        graphic: [
-          { type:"text", left:"18%", top:"62%", style:{ text:"Todos", fill:c.sub, fontWeight:900 } },
-          { type:"text", left:"67%", top:"62%", style:{ text:"Confirm.", fill:c.sub, fontWeight:900 } },
-        ]
-      }, true);
-    }
+	        ],
+	        graphic: mergeGraphic([
+	          { type:"text", left:"18%", top:"58%", style:{ text:"Todos", fill:c.sub, fontWeight:900 } },
+	          { type:"text", left:"18%", top:"64%", style:{ text:String(totA||0), fill:c.title, fontWeight:1100 } },
+	          { type:"text", left:"67%", top:"58%", style:{ text:"Confirm.", fill:c.sub, fontWeight:900 } },
+	          { type:"text", left:"67%", top:"64%", style:{ text:String(totB||0), fill:c.title, fontWeight:1100 } },
+	        ], ecWatermark(c))
+	      }, true);
+	    }
 
     function ecDonut(id, title, rows, valueKey="value", nameKey="name"){
       const dataRaw = (rows||[]).map(r=>({
@@ -599,8 +706,9 @@
       const top = dataRaw.slice(0, 8);
       const other = dataRaw.slice(8).reduce((a,b)=>a+(Number(b.value)||0),0);
       const data = other > 0 ? top.concat([{ name:"Otros", value: other, cantidad: 0 }]) : top;
-      chart.setOption({
-        title:{ text:title, left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+	      chart.setOption({
+	        color: [c.accentDark, c.accent, c.accentLight, c.cyan, c.warn, c.bad],
+	        title:{ text:title, left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
         tooltip:{
           trigger:"item",
           ...ecTooltipSkin(c),
@@ -613,24 +721,24 @@
               `<div style="opacity:.8;margin-top:4px">${pct}%</div>`;
           }
         },
-        legend:{ show:false },
-        graphic:[
-          {
-            type:"text",
-            left:"center",
-            top:"48%",
+	        legend:{ show:false },
+	        graphic: mergeGraphic([
+	          {
+	            type:"text",
+	            left:"center",
+	            top:"48%",
             style:{ text: money(total), fill:c.title, fontWeight:1100, fontSize:14, textAlign:"center" }
           },
           {
             type:"text",
             left:"center",
             top:"58%",
-            style:{ text:"Total", fill:c.sub, fontWeight:900, fontSize:12, textAlign:"center" }
-          }
-        ],
-        series:[{
-          type:"pie",
-          radius:["54%","78%"],
+	            style:{ text:"Total", fill:c.sub, fontWeight:900, fontSize:12, textAlign:"center" }
+	          }
+	        ], ecWatermark(c)),
+	        series:[{
+	          type:"pie",
+	          radius:["54%","78%"],
           center:["50%","62%"],
           avoidLabelOverlap:true,
           itemStyle:{ borderRadius: 12, borderColor:"rgba(0,0,0,0)", borderWidth: 0, shadowBlur: 16, shadowColor:"rgba(0,0,0,.18)" },
@@ -647,28 +755,41 @@
         }]
       }, true);
     }
-    function ecDaily(id, labels, totals){
-      if (!labels?.length){ setChartMsg(id, "Sin datos."); return; }
-      const c = ecColors();
-      const chart = initEC(id, "short");
-      if (!chart) return;
-      chart.setOption({
-        title:{ text:"Venta diaria (semana)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
-        tooltip:{ trigger:"axis", formatter: (p)=> `${esc(p[0].axisValue)}<br/>${esc(money(p[0].data))}` },
-        grid:{ left: 10, right: 10, top: 42, bottom: 10, containLabel:true },
-        xAxis:{ type:"category", data: labels, axisLabel:{ color:c.axis, fontWeight:800 }, axisTick:{ show:false }, axisLine:{ lineStyle:{ color:c.grid } } },
-        yAxis:{ type:"value", axisLabel:{ color:c.axis, formatter: (v)=>fmtAxisMoney(v) }, splitLine:{ lineStyle:{ color:c.grid } } },
-        series:[{
-          type:"line",
-          data: totals,
-          smooth:true,
-          symbolSize: 8,
-          lineStyle:{ width: 3, color: c.accent },
-          itemStyle:{ color: c.accent },
-          areaStyle:{ color: "rgba(23,195,125,.16)" }
-        }]
-      }, true);
-    }
+	    function ecDaily(id, labels, totals){
+	      if (!labels?.length){ setChartMsg(id, "Sin datos."); return; }
+	      const c = ecColors();
+	      const chart = initEC(id, "short");
+	      if (!chart) return;
+	      chart.setOption({
+	        color: [c.accentDark, c.accent, c.accentLight],
+	        title:{ text:"Venta diaria (semana)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+	        tooltip:{ trigger:"axis", ...ecTooltipSkin(c), formatter: (p)=> `${esc(p[0].axisValue)}<div style="margin-top:4px">${esc(money(p[0].data))}</div>` },
+	        grid:{ left: 10, right: 10, top: 42, bottom: 10, containLabel:true },
+	        xAxis:{ type:"category", data: labels, axisLabel:{ color:c.axis, fontWeight:800 }, axisTick:{ show:false }, axisLine:{ lineStyle:{ color:c.grid } } },
+	        yAxis:{ type:"value", axisLabel:{ color:c.axis, formatter: (v)=>fmtAxisMoney(v) }, splitLine:{ lineStyle:{ color:c.grid } } },
+	        graphic: ecWatermark(c),
+	        series:[{
+	          type:"bar",
+	          data: totals,
+	          barWidth: 18,
+	          itemStyle:{
+	            borderRadius: [10,10,10,10],
+	            shadowBlur: 14,
+	            shadowColor: "rgba(0,0,0,.18)",
+	            color: {
+	              type:"linear", x:0, y:0, x2:0, y2:1,
+	              colorStops: [
+	                { offset:0, color: "rgba(150,194,81,.92)" },
+	                { offset:.55, color: "rgba(91,151,78,.88)" },
+	                { offset:1, color: "rgba(88,123,13,.82)" },
+	              ]
+	            }
+	          },
+	          emphasis:{ itemStyle:{ shadowBlur: 22, shadowColor:"rgba(150,194,81,.22)" } },
+	          universalTransition:true,
+	        }]
+	      }, true);
+	    }
 	    function resizeEC(){
 	      for (const k of Object.keys(EC)){
 	        try{ EC[k]?.resize?.(); }catch(_){}
@@ -897,8 +1018,14 @@
     }
 
     async function init(){
-      const only = getOnlySection();
-      if (only) applyOnlyMode(only);
+      let CURRENT_TAB = getInitialTab();
+      // bind tabs
+      qs("#tabs")?.addEventListener("click", (ev)=>{
+        const b = ev.target?.closest?.(".tab[data-tab]");
+        if (!b) return;
+        const t = String(b.getAttribute("data-tab") || "");
+        CURRENT_TAB = selectTab(t);
+      });
 
       const now = new Date();
       const start = new Date(now.getTime() - 1000*60*60*24*30);
@@ -942,75 +1069,53 @@
         el.addEventListener("change", ()=> qs("#go")?.click());
       });
 
-      // Email marketing se movió a /web/views/emkt.html
+      // exports
+      qs("#btnXlsx")?.addEventListener("click", ()=> doExportXLSX(CURRENT_TAB).catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
+      qs("#btnWsp")?.addEventListener("click", ()=> shareWhatsApp(CURRENT_TAB).catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
 
       // auto
       qs("#go").click();
-
-      // hash scroll
-      setTimeout(scrollToHash, 250);
+      CURRENT_TAB = selectTab(CURRENT_TAB, { setHash: true });
     }
 
-    function getOnlySection(){
+    const TAB_IDS = [
+      "funnel","cierre","tipo_cliente","total","comunas","productos",
+      "clientes","leads_hoy","venta_diaria","cxc","cxp"
+    ];
+
+    function getInitialTab(){
       try{
         const usp = new URLSearchParams(location.search || "");
-        const only = String(usp.get("only") || "").trim();
-        return only || "";
-      }catch(_){
-        return "";
-      }
+        const tab = String(usp.get("tab") || usp.get("only") || "").trim();
+        if (tab && TAB_IDS.includes(tab)) return tab;
+      }catch(_){}
+      try{
+        const h = String(location.hash || "").replace("#","").trim();
+        if (h && TAB_IDS.includes(h)) return h;
+      }catch(_){}
+      return "total";
     }
 
-    function applyOnlyMode(only){
-      // Solo mostrar 1 sección de reportes cuando se abre desde el menú lateral
-      // (ej: reportes.html?only=funnel#funnel)
-      if (!only) return;
-      const allow = new Set([
-        "funnel","cierre","tipo_cliente","total","cxc","cxp",
-        "comunas","productos","clientes","leads_hoy","venta_diaria"
-      ]);
-      if (!allow.has(only)) return;
-
-      // botón "Ver todos"
-      const v = qs("#viewAll");
-      if (v) v.style.display = "";
-
-      // ocultar KPIs en modo "solo 1 reporte"
-      const kpi = qs("#kpi_card");
-      if (kpi) kpi.style.display = "none";
-
-      // ocultar chips (dejar 1 visible para contexto)
-      document.querySelectorAll(".navchips .chip").forEach(a => {
-        const href = String(a.getAttribute("href") || "");
-        const id = href.startsWith("#") ? href.slice(1) : "";
-        if (!id) return;
-        a.style.display = (id === only) ? "" : "none";
+    function selectTab(id, { setHash=true } = {}){
+      const tab = TAB_IDS.includes(id) ? id : "total";
+      // activar UI
+      document.querySelectorAll("#tabs .tab[data-tab]").forEach(b => {
+        const t = b.getAttribute("data-tab");
+        b.classList.toggle("active", t === tab);
       });
-
-      // ocultar secciones que no sean la elegida y expandir la elegida
-      const ids = Array.from(allow);
-      ids.forEach(id => {
-        const el = document.getElementById(id);
+      // mostrar solo 1 reporte (KPIs siempre arriba)
+      TAB_IDS.forEach(tid => {
+        const el = document.getElementById(tid);
         if (!el) return;
-        if (id !== only){
-          el.style.display = "none";
-          return;
-        }
-        // expandir
-        if (el.closest(".grid")) el.style.gridColumn = "span 12";
+        el.style.display = (tid === tab) ? "" : "none";
+        // restablecer grid-span por si venía de modo antiguo
+        try{ el.style.gridColumn = ""; }catch(_){}
       });
-
-      // asegurar que el hash sea consistente
-      if (!location.hash || location.hash === "#"){
-        location.hash = "#" + only;
+      if (setHash){
+        try{ history.replaceState(null, "", "#" + tab); }catch(_){ location.hash = "#" + tab; }
       }
-    }
-
-    function scrollToHash(){
-      const h = String(location.hash||"").replace("#","");
-      if (!h) return;
-      const el = document.getElementById(h);
-      if (el) el.scrollIntoView({ behavior:"smooth", block:"start" });
+      try{ window.scrollTo({ top: 0, behavior: "smooth" }); }catch(_){ window.scrollTo(0,0); }
+      return tab;
     }
 
     async function load(){
@@ -1057,7 +1162,6 @@
       await renderFinanzas(ini, fin);
 
       qs("#st").textContent = `OK · Rango: ${ini} → ${fin}${mid ? (" · Marca ID: " + mid) : ""}`;
-      setTimeout(scrollToHash, 60);
     }
 
     function renderKPIs(dash, ini, fin, mid){
@@ -1068,7 +1172,7 @@
         { id:"k_leads_hoy", l:"Leads hoy", v:String(k.leads_hoy||0), s:"Click: filtro día", on: () => openFilter({ campo:"ingreso", desde: fmtDate(new Date()), hasta: fmtDate(new Date()), ...(mid?{marca:mid}:{}) }) },
         { id:"k_venta_dia", l:"Venta día", v: money(k.venta_dia||0), s:"Click: confirmados hoy", on: () => openConfirmedSales(fmtDate(new Date()), fmtDate(new Date()), mid) },
         { id:"k_venta_sem", l:"Venta semana", v: money(k.venta_semana||0), s:"Click: confirmados semana", on: () => openConfirmedSales(dash?.week?.start||ini, dash?.week?.end||fin, mid) },
-        { id:"k_cierre", l:"% cierre", v: `${Number(k.cierre_pct||0).toFixed(2)}%`, s:"Semanal", on: () => location.hash = "#cierre" },
+        { id:"k_cierre", l:"% cierre", v: `${Number(k.cierre_pct||0).toFixed(2)}%`, s:"Semanal", on: () => { try{ selectTab("cierre"); }catch(_){ location.hash = "#cierre"; } } },
         { id:"k_total_sem", l:"Leads semana", v: String(k.total_semana||0), s:"Total", on: () => {} },
         { id:"k_conf_sem", l:"Confirmados semana", v: String(k.confirmados_semana||0), s:"Total", on: () => {} },
       ];
@@ -1146,7 +1250,7 @@
                       <td style="min-width:160px;">
                         <strong>${esc(r.tipo)}</strong>
                         <div style="margin-top:6px;height:8px;border-radius:999px;background:rgba(148,163,184,.14);overflow:hidden;border:1px solid rgba(148,163,184,.16);">
-                          <div style="width:${pct}%;height:100%;background:rgba(25,195,125,.35)"></div>
+                          <div style="width:${pct}%;height:100%;background:rgba(91,151,78,.40)"></div>
                         </div>
                       </td>
                       <td class="right">${esc(r.cantidad)}</td>
@@ -1184,21 +1288,26 @@
       const tp = rep?.top_productos || [];
       const com = rep?.comunas || [];
       const cli = rep?.clientes || [];
+      const chartN = (() => {
+        const n = Number(qs("#topN")?.value || 20);
+        if (!isFinite(n) || n <= 0) return 10;
+        return Math.max(5, Math.min(25, Math.round(n)));
+      })();
 
-      ecBarH("chProd", "Top productos (monto)", tp.slice(0,10).map(x => ({
+      ecBarH("chProd", "Top productos (monto)", tp.slice(0,chartN).map(x => ({
         label: x.producto || "—",
         value: Number(x.monto||0),
-        tooltip: x.marca ? String(x.marca) : "",
+        tooltip: `${x.marca ? String(x.marca) : ""}${x.marca ? " · " : ""}${Math.round(Number(x.cantidad||0))} uds`,
       })), money);
-      ecBarH("chCom", "Top comunas (monto)", com.slice(0,10).map(x => ({
+      ecBarH("chCom", "Top comunas (monto)", com.slice(0,chartN).map(x => ({
         label: x.comuna || "—",
         value: Number(x.monto||0),
-        tooltip: `${Number(x.cantidad||0)} leads`,
+        tooltip: `${Number(x.cantidad||0)} leads · prom ${money((Number(x.monto||0)/Math.max(1,Number(x.cantidad||0))))}`,
       })), money);
-      ecBarH("chCli", "Top clientes (monto)", cli.slice(0,10).map(x => ({
+      ecBarH("chCli", "Top clientes (monto)", cli.slice(0,chartN).map(x => ({
         label: x.cliente || "—",
         value: Number(x.monto||0),
-        tooltip: `${Number(x.cantidad||0)} leads`,
+        tooltip: `${Number(x.cantidad||0)} leads · prom ${money((Number(x.monto||0)/Math.max(1,Number(x.cantidad||0))))}`,
       })), money);
 
       const tbP = qs("#tbProd");
@@ -1286,12 +1395,13 @@
       const usp = new URLSearchParams({ limit:"60" });
       if (mid) usp.set("id_marca", mid);
       try{
-        const j = await jget(`/tools/dashboard/leads_hoy?${usp.toString()}`);
-        const items = Array.isArray(j.items) ? j.items : [];
-        if (!items.length){
-          box.innerHTML = `<div class="muted">Sin leads creados hoy.</div>`;
-          return;
-        }
+	        const j = await jget(`/tools/dashboard/leads_hoy?${usp.toString()}`);
+	        const items = Array.isArray(j.items) ? j.items : [];
+	        try{ LAST.leads_hoy_items = items; }catch(_){}
+	        if (!items.length){
+	          box.innerHTML = `<div class="muted">Sin leads creados hoy.</div>`;
+	          return;
+	        }
         box.innerHTML = `
           <div style="max-height:420px; overflow:auto">
             <table class="tbl">
@@ -1360,8 +1470,9 @@
         const labels = top.map(r => String(r.marca||"—"));
         const actual = top.map(r => Number(r.actual||0));
         const base = top.map(r => Number(r.baseline||0));
-        chart.setOption({
-          title:{ text:"Total venta por marca (Actual vs Baseline) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+	        chart.setOption({
+	          color: [c.accentDark, c.accent, c.accentLight, c.accent2],
+	          title:{ text:"Total venta por marca (Actual vs Baseline) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
           tooltip:{ trigger:"axis", axisPointer:{ type:"shadow" }, formatter:(p)=>{
             const i = p?.[0]?.dataIndex ?? 0;
             return `<div style="font-weight:900">${esc(labels[i])}</div>` +
@@ -1370,14 +1481,15 @@
           }},
           legend:{ top: 28, right: 0, textStyle:{ color:c.axis, fontWeight:800 } },
           grid:{ left: 10, right: 10, top: 58, bottom: 10, containLabel:true },
-          xAxis:{ type:"category", data: labels, axisLabel:{ color:c.axis, fontWeight:800, rotate:0, overflow:"truncate" }, axisLine:{ lineStyle:{ color:c.grid } }, axisTick:{ show:false } },
-          yAxis:{ type:"value", axisLabel:{ color:c.axis, formatter:(v)=>fmtAxisMoney(v) }, splitLine:{ lineStyle:{ color:c.grid } } },
-          series:[
-            { name:"Actual", type:"bar", data: actual, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accent } },
-            { name:"Baseline", type:"bar", data: base, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accent2 } },
-          ]
-        }, true);
-      })();
+	          xAxis:{ type:"category", data: labels, axisLabel:{ color:c.axis, fontWeight:800, rotate:0, overflow:"truncate" }, axisLine:{ lineStyle:{ color:c.grid } }, axisTick:{ show:false } },
+	          yAxis:{ type:"value", axisLabel:{ color:c.axis, formatter:(v)=>fmtAxisMoney(v) }, splitLine:{ lineStyle:{ color:c.grid } } },
+	          graphic: ecWatermark(c),
+	          series:[
+	            { name:"Actual", type:"bar", data: actual, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accent } },
+	            { name:"Baseline", type:"bar", data: base, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accentDark } },
+	          ]
+	        }, true);
+	      })();
       box.innerHTML = `
         <div style="max-height:420px;overflow:auto">
           <table class="tbl">
@@ -1400,19 +1512,21 @@
       `;
     }
 
-    async function renderFinanzas(ini, fin){
-      const boxCxc = qs("#boxCxc");
-      const boxCxp = qs("#boxCxp");
-      if (boxCxc) boxCxc.innerHTML = `<div class="muted">Cargando…</div>`;
-      if (boxCxp) boxCxp.innerHTML = `<div class="muted">Cargando…</div>`;
+	    async function renderFinanzas(ini, fin){
+	      const boxCxc = qs("#boxCxc");
+	      const boxCxp = qs("#boxCxp");
+	      if (boxCxc) boxCxc.innerHTML = `<div class="muted">Cargando…</div>`;
+	      if (boxCxp) boxCxp.innerHTML = `<div class="muted">Cargando…</div>`;
+	      try{ LAST.fin = LAST.fin || {}; }catch(_){}
 
       const ym = (ini && /^\d{4}-\d{2}-\d{2}$/.test(ini)) ? ini.slice(0,7) : "";
       const [yy, mm] = ym ? ym.split("-").map(Number) : [0,0];
       const qp = (mm && yy) ? `?month=${encodeURIComponent(String(mm))}&year=${encodeURIComponent(String(yy))}` : "";
 
-      try{
-        const out = await jget(`/finanzas/cxc_resumen${qp}`);
-        const items = Array.isArray(out?.items) ? out.items : [];
+	      try{
+	        const out = await jget(`/finanzas/cxc_resumen${qp}`);
+	        const items = Array.isArray(out?.items) ? out.items : [];
+	        try{ LAST.fin.cxc = items; LAST.fin.cxc_qp = qp; }catch(_){}
         ecBarH("chCxc", "Top clientes por saldo pendiente", items
           .slice()
           .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
@@ -1448,14 +1562,16 @@
             </div>
           `;
         }
-      }catch(e){
-        if (boxCxc) boxCxc.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
-        setChartMsg("chCxc", "No disponible.");
-      }
+	      }catch(e){
+	        if (boxCxc) boxCxc.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+	        setChartMsg("chCxc", "No disponible.");
+	        try{ LAST.fin.cxc = []; }catch(_){}
+	      }
 
-      try{
-        const out = await jget(`/finanzas/cxp_resumen`);
-        const items = Array.isArray(out?.items) ? out.items : [];
+	      try{
+	        const out = await jget(`/finanzas/cxp_resumen`);
+	        const items = Array.isArray(out?.items) ? out.items : [];
+	        try{ LAST.fin.cxp = items; }catch(_){}
         ecBarH("chCxp", "Top proveedores por pendiente", items
           .slice()
           .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
@@ -1490,11 +1606,12 @@
             </div>
           `;
         }
-      }catch(e){
-        if (boxCxp) boxCxp.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
-        setChartMsg("chCxp", "No disponible.");
-      }
-    }
+	      }catch(e){
+	        if (boxCxp) boxCxp.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+	        setChartMsg("chCxp", "No disponible.");
+	        try{ LAST.fin.cxp = []; }catch(_){}
+	      }
+	    }
 
     async function openConfirmedSales(desde, hasta, mid){
       const qs2 = new URLSearchParams({ desde, hasta });
@@ -1614,7 +1731,204 @@
       downloadText(name, toCSV(rows));
     }
 
-    // Email marketing se movió a /web/views/emkt.html
+    function _tabTitle(tab){
+      const m = {
+        funnel: "Funnel",
+        cierre: "% cierre",
+        tipo_cliente: "Tipo de cliente",
+        total: "Total venta",
+        comunas: "Comunas",
+        productos: "Productos",
+        clientes: "Clientes",
+        leads_hoy: "Leads hoy",
+        venta_diaria: "Venta diaria",
+        cxc: "Por cobrar",
+        cxp: "Por pagar",
+      };
+      return m[String(tab||"")] || String(tab||"Reporte");
+    }
+
+    function _safeSheetName(s){
+      return String(s||"Reporte").replace(/[\\/*?:[\]]+/g, " ").trim().slice(0, 28) || "Reporte";
+    }
+
+    function _chartDataUrl(id){
+      try{
+        const ch = EC[id];
+        if (!ch || !ch.getDataURL) return "";
+        return ch.getDataURL({ type:"png", pixelRatio: 2, backgroundColor: "rgba(0,0,0,0)" }) || "";
+      }catch(_){
+        return "";
+      }
+    }
+
+    function _dataUrlToBytes(dataUrl){
+      try{
+        const m = String(dataUrl||"").match(/^data:image\/png;base64,(.+)$/);
+        if (!m) return null;
+        const b64 = m[1];
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+        return bytes;
+      }catch(_){
+        return null;
+      }
+    }
+
+    function _tabDataset(tab){
+      const rep = LAST.rep || {};
+      const dash = LAST.dash || {};
+      const fin = LAST.fin || {};
+      const t = String(tab||"");
+
+      if (t === "funnel"){
+        const items = Array.isArray(rep.funnel) ? rep.funnel : [];
+        return { cols: ["estado","leads","monto"], rows: items.map(r => [r.estado||"", r.cantidad||0, r.monto||0]) };
+      }
+      if (t === "tipo_cliente"){
+        const all = Array.isArray(rep.tipo_cliente) ? rep.tipo_cliente : [];
+        const conf = Array.isArray(rep.tipo_cliente_confirmados) ? rep.tipo_cliente_confirmados : [];
+        const rows = []
+          .concat(all.map(r => ["all", r.tipo_cliente||"", r.cantidad||0, r.monto||0]))
+          .concat(conf.map(r => ["confirmados", r.tipo_cliente||"", r.cantidad||0, r.monto||0]));
+        return { cols: ["scope","tipo_cliente","leads","monto"], rows };
+      }
+      if (t === "productos"){
+        const items = Array.isArray(rep.top_productos) ? rep.top_productos : [];
+        return { cols: ["producto","marca","cantidad","monto"], rows: items.map(r => [r.producto||"", r.marca||"", r.cantidad||0, r.monto||0]) };
+      }
+      if (t === "comunas"){
+        const items = Array.isArray(rep.comunas) ? rep.comunas : [];
+        return { cols: ["comuna","leads","monto"], rows: items.map(r => [r.comuna||"", r.cantidad||0, r.monto||0]) };
+      }
+      if (t === "clientes"){
+        const items = Array.isArray(rep.clientes) ? rep.clientes : [];
+        return { cols: ["cliente","leads","monto"], rows: items.map(r => [r.cliente||"", r.cantidad||0, r.monto||0]) };
+      }
+      if (t === "leads_hoy"){
+        const items = LAST.leads_hoy_items || [];
+        return { cols: ["id_lead","cliente","marca","comuna","estado","telefono","monto"], rows: items.map(r => [r.id_lead||"", r.cliente||"", r.marca||"", r.comuna||"", r.estado||"", r.telefono||"", r.monto||0]) };
+      }
+      if (t === "venta_diaria"){
+        const items = Array.isArray(dash.sales_daily) ? dash.sales_daily : [];
+        return { cols: ["dia","marca","monto"], rows: items.map(r => [r.dia||"", r.marca||"", r.monto||0]) };
+      }
+      if (t === "cxc"){
+        const items = Array.isArray(fin.cxc) ? fin.cxc : [];
+        return { cols: ["cliente","marca","saldo_pendiente","total_bruto","n","#ultimo_evento"], rows: items.map(r => [r.cliente||"", r.marca||"", r.saldo_pendiente||0, r.total_bruto||0, r.n||0, r.ultimo_evento||""]) };
+      }
+      if (t === "cxp"){
+        const items = Array.isArray(fin.cxp) ? fin.cxp : [];
+        return { cols: ["proveedor","pendiente","pagado","n"], rows: items.map(r => [r.proveedor||"", r.pendiente||0, r.pagado||0, r.n||0]) };
+      }
+
+      // total/cierre: dejamos un resumen simple
+      const k = (dash.kpis || {});
+      return {
+        cols: ["metric","value"],
+        rows: [
+          ["leads_hoy", k.leads_hoy||0],
+          ["venta_dia", k.venta_dia||0],
+          ["venta_semana", k.venta_semana||0],
+          ["cierre_pct", k.cierre_pct||0],
+        ]
+      };
+    }
+
+    function _tabChartIds(tab){
+      const t = String(tab||"");
+      if (t === "funnel") return ["chFunnel"];
+      if (t === "tipo_cliente") return ["chTipo"];
+      if (t === "productos") return ["chProd"];
+      if (t === "comunas") return ["chCom"];
+      if (t === "clientes") return ["chCli"];
+      if (t === "venta_diaria") return ["chDaily"];
+      if (t === "cxc") return ["chCxc"];
+      if (t === "cxp") return ["chCxp"];
+      if (t === "total") return ["chTotal","chMarcaPie"];
+      return [];
+    }
+
+    async function doExportXLSX(tab){
+      if (!window.ExcelJS) throw new Error("ExcelJS no cargó (revisa conexión a CDN).");
+      const title = _tabTitle(tab);
+      const stamp = `${LAST.ini || "ini"}_${LAST.fin || "fin"}`.replace(/[^0-9A-Za-z_-]+/g, "-");
+      const mid = LAST.mid ? ("_marca" + LAST.mid) : "";
+      const fname = `reporte_${String(tab||"tab")}${mid}_${stamp}.xlsx`;
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "GD CRM";
+      wb.created = new Date();
+
+      const meta = wb.addWorksheet("Meta");
+      meta.addRow(["Reporte", title]);
+      meta.addRow(["Rango", `${LAST.ini || ""} → ${LAST.fin || ""}`]);
+      meta.addRow(["Marca", LAST.mid || "Todas"]);
+      meta.addRow(["Generado", new Date().toISOString()]);
+
+      const ds = _tabDataset(tab);
+      const ws = wb.addWorksheet(_safeSheetName(title));
+      ws.addRow(ds.cols);
+      ds.rows.forEach(r => ws.addRow(r));
+      ws.getRow(1).font = { bold: true };
+      ws.columns.forEach(c => { c.width = Math.min(48, Math.max(12, (c.header ? String(c.header).length : 10) + 2)); });
+
+      const charts = _tabChartIds(tab);
+      if (charts.length){
+        const chWs = wb.addWorksheet("Grafico");
+        let rowCursor = 1;
+        for (const id of charts){
+          const url = _chartDataUrl(id);
+          const bytes = _dataUrlToBytes(url);
+          if (!bytes) continue;
+          const imgId = wb.addImage({ buffer: bytes, extension: "png" });
+          chWs.addImage(imgId, { tl: { col: 0, row: rowCursor - 1 }, ext: { width: 900, height: 360 } });
+          rowCursor += 20;
+        }
+      }
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){ } }, 60_000);
+      return { ok:true, fname };
+    }
+
+    async function exportXLSXAndCopySummary(tab){
+      const ds = _tabDataset(tab);
+      const title = _tabTitle(tab);
+      const lines = [];
+      lines.push(`📊 ${title}`);
+      if (LAST.ini || LAST.fin) lines.push(`Rango: ${LAST.ini || "—"} → ${LAST.fin || "—"}`);
+      if (LAST.mid) lines.push(`Marca: ${LAST.mid}`);
+      if (ds?.cols?.length && ds?.rows?.length){
+        const head = ds.cols.slice(0,4);
+        lines.push("");
+        lines.push(head.join(" · "));
+        ds.rows.slice(0,5).forEach(r => lines.push(r.slice(0,4).join(" · ")));
+      }
+      const txt = lines.join("\n");
+      try{ await navigator.clipboard.writeText(txt); }catch(_){}
+      return txt;
+    }
+
+    async function shareWhatsApp(tab){
+      // Descarga primero el XLSX (para que el usuario lo adjunte en WA).
+      try{ await doExportXLSX(tab); }catch(_){}
+      const txt = await exportXLSXAndCopySummary(tab);
+      // WhatsApp Web no permite adjuntar automáticamente archivos desde JS.
+      // Abrimos WA con el texto y el usuario adjunta el XLSX descargado.
+      const u = "https://wa.me/?text=" + encodeURIComponent(txt);
+      window.open(u, "_blank", "noopener,noreferrer");
+      Swal.fire("WhatsApp", "Resumen copiado. Se abrió WhatsApp Web.\nAdjunta el XLSX descargado manualmente.", "info");
+    }
 
     init().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
   </script>
