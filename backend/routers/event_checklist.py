@@ -59,6 +59,13 @@ def _col_exists(db: Session, table: str, col: str) -> bool:
         return False
 
 
+def _table_exists(db: Session, table: str) -> bool:
+    try:
+        return bool(db.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{table}"}).scalar())
+    except Exception:
+        return False
+
+
 def _lead_name_expr(db: Session) -> str:
     # Compatibilidad: algunos deploys usan nombre_cliente, otros cliente.
     if _col_exists(db, "leads", "nombre_cliente"):
@@ -97,76 +104,92 @@ def events_for_day(
     except Exception:
         raise HTTPException(400, "day inválido (YYYY-MM-DD)")
 
-    confirmado_id = _estado_id(db, "CONFIRM")
-    if not confirmado_id:
-        return {"ok": True, "day": d.isoformat(), "items": []}
+    # Never 500: este endpoint no puede dejar el frontend pegado en "Cargando".
+    try:
+        if not _table_exists(db, "leads"):
+            return {"ok": True, "day": d.isoformat(), "items": [], "error": "Tabla leads no existe"}
 
-    role = _role(user)
-    uid = _uid(user)
+        confirmado_id = _estado_id(db, "CONFIRM")
+        if not confirmado_id:
+            return {"ok": True, "day": d.isoformat(), "items": []}
 
-    # Scope: Admin ve todo; no-admin respeta marcas si el token trae marcas[].
-    marcas = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
-    only_own = not _is_admin(role)
+        role = _role(user)
+        uid = _uid(user)
 
-    # columnas opcionales
-    has_fecha = _col_exists(db, "leads", "fecha_evento")
-    has_pre = _col_exists(db, "leads", "pre_start") and _col_exists(db, "leads", "pre_end")
-    has_cal = _col_exists(db, "leads", "calendar_start") and _col_exists(db, "leads", "calendar_end")
-    has_ops = _col_exists(db, "leads", "pre_ops")
-    has_pre_mont = _col_exists(db, "leads", "pre_montaje_text")
-    has_pre_prod = _col_exists(db, "leads", "pre_products_text")
-    has_tel = _col_exists(db, "leads", "telefono")
-    has_dir = _col_exists(db, "leads", "direccion")
+        # Scope: Admin ve todo; no-admin respeta marcas si el token trae marcas[].
+        marcas = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
+        only_own = not _is_admin(role)
 
-    # Fuente de fecha del evento: preferimos fecha_evento si existe; si no, calendar_start si existe.
-    if has_fecha:
-        date_expr = "DATE(l.fecha_evento)"
-    elif has_cal:
-        date_expr = "DATE(l.calendar_start)"
-    else:
-        # No hay forma confiable de filtrar por día -> no rompemos el frontend.
-        return {"ok": True, "day": d.isoformat(), "items": []}
-    start_expr = "l.calendar_start" if has_cal else ("l.pre_start" if has_pre else "NULL")
-    end_expr = "l.calendar_end" if has_cal else ("l.pre_end" if has_pre else "NULL")
-    ops_expr = "COALESCE(l.pre_ops,0)" if has_ops else "0"
-    montaje_expr = "COALESCE(l.pre_montaje_text,'')" if has_pre_mont else "''"
-    prod_expr = "COALESCE(l.pre_products_text,'')" if has_pre_prod else "''"
-    tel_expr = "COALESCE(l.telefono,'')" if has_tel else "''"
-    dir_expr = "COALESCE(l.direccion,'')" if has_dir else "''"
+        # columnas opcionales
+        has_fecha = _col_exists(db, "leads", "fecha_evento")
+        has_pre = _col_exists(db, "leads", "pre_start") and _col_exists(db, "leads", "pre_end")
+        has_cal = _col_exists(db, "leads", "calendar_start") and _col_exists(db, "leads", "calendar_end")
+        has_ops = _col_exists(db, "leads", "pre_ops")
+        has_pre_mont = _col_exists(db, "leads", "pre_montaje_text")
+        has_pre_prod = _col_exists(db, "leads", "pre_products_text")
+        has_tel = _col_exists(db, "leads", "telefono")
+        has_dir = _col_exists(db, "leads", "direccion")
 
-    where = [f"l.id_estado = :conf", f"{date_expr} = :d"]
-    params: Dict[str, Any] = {"conf": int(confirmado_id), "d": str(d)}
-    if only_own and marcas:
-        where.append("l.id_marca = ANY(:marcas)")
-        params["marcas"] = marcas
+        if has_fecha:
+            date_expr = "DATE(l.fecha_evento)"
+        elif has_cal:
+            date_expr = "DATE(l.calendar_start)"
+        else:
+            return {"ok": True, "day": d.isoformat(), "items": []}
 
-    where_sql = " AND ".join(where)
+        start_expr = "l.calendar_start" if has_cal else ("l.pre_start" if has_pre else "NULL")
+        end_expr = "l.calendar_end" if has_cal else ("l.pre_end" if has_pre else "NULL")
+        ops_expr = "COALESCE(l.pre_ops,0)" if has_ops else "0"
+        montaje_expr = "COALESCE(l.pre_montaje_text,'')" if has_pre_mont else "''"
+        prod_expr = "COALESCE(l.pre_products_text,'')" if has_pre_prod else "''"
+        tel_expr = "COALESCE(l.telefono,'')" if has_tel else "''"
+        dir_expr = "COALESCE(l.direccion,'')" if has_dir else "''"
 
-    name_expr = _lead_name_expr(db)
+        has_id_marca = _col_exists(db, "leads", "id_marca")
+        has_id_comuna = _col_exists(db, "leads", "id_comuna")
+        join_marcas = has_id_marca and _table_exists(db, "marcas")
+        join_comunas = has_id_comuna and _table_exists(db, "comunas")
 
-    sql = f"""
-      SELECT
-        l.id_lead::bigint AS id_lead,
-        {name_expr} AS cliente,
-        COALESCE(m.nombre, m.marca,'') AS marca,
-        COALESCE(c.nombre,'') AS comuna,
-        {start_expr} AS start_at,
-        {end_expr} AS end_at,
-        {ops_expr}::int AS ops,
-        {montaje_expr} AS montaje_text,
-        {prod_expr} AS productos_text,
-        {tel_expr} AS telefono,
-        {dir_expr} AS direccion
-      FROM public.leads l
-      LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
-      LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
-      WHERE {where_sql}
-      ORDER BY COALESCE({start_expr}, now()) ASC, l.id_lead ASC
-    """
+        marca_sel = "COALESCE(m.nombre, m.marca,'')" if join_marcas else "''"
+        comuna_sel = "COALESCE(c.nombre,'')" if join_comunas else "''"
+        join_sql = ""
+        if join_marcas:
+            join_sql += " LEFT JOIN public.marcas m ON m.id_marca=l.id_marca "
+        if join_comunas:
+            join_sql += " LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna "
 
-    rows = db.execute(text(sql), params).mappings().all()
+        where = [f"l.id_estado = :conf", f"{date_expr} = :d"]
+        params: Dict[str, Any] = {"conf": int(confirmado_id), "d": str(d)}
+        if only_own and marcas and has_id_marca:
+            where.append("l.id_marca = ANY(:marcas)")
+            params["marcas"] = marcas
 
-    saved = list_event_checklists(db, event_day=d, user_id=uid)
+        where_sql = " AND ".join(where)
+        name_expr = _lead_name_expr(db)
+
+        sql = f"""
+          SELECT
+            l.id_lead::bigint AS id_lead,
+            {name_expr} AS cliente,
+            {marca_sel} AS marca,
+            {comuna_sel} AS comuna,
+            {start_expr} AS start_at,
+            {end_expr} AS end_at,
+            {ops_expr}::int AS ops,
+            {montaje_expr} AS montaje_text,
+            {prod_expr} AS productos_text,
+            {tel_expr} AS telefono,
+            {dir_expr} AS direccion
+          FROM public.leads l
+          {join_sql}
+          WHERE {where_sql}
+          ORDER BY COALESCE({start_expr}, now()) ASC, l.id_lead ASC
+        """
+
+        rows = db.execute(text(sql), params).mappings().all()
+        saved = list_event_checklists(db, event_day=d, user_id=uid)
+    except Exception as e:
+        return {"ok": True, "day": d.isoformat(), "items": [], "error": f"{type(e).__name__}: {str(e)[:240]}"}
 
     items: List[Dict[str, Any]] = []
     for r in rows:

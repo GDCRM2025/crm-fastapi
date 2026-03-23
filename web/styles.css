@@ -643,9 +643,8 @@ body.ops-mode .main{
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  /* Scroll del sidebar completo (más robusto en Safari/Chrome cuando hay flex + sticky). */
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* El scroll lo maneja `.side-nav` para mantener el avatar siempre visible abajo. */
+  overflow: hidden;
   transition: width .18s ease;
   box-shadow: var(--shadow);
   position:relative;
@@ -666,19 +665,18 @@ body.ops-mode .main{
   height: 100%;
   display:flex;
   flex-direction:column;
-  overflow:visible;
+  overflow:hidden;
   padding: 10px 10px;
 }
 .sidebar-tools{ flex: 0 0 auto; }
 .side-nav{
   flex: 1 1 auto;
   min-height: 0;
-  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
   display:flex;
   flex-direction:column;
   gap: 10px;
-  /* el scroll lo maneja .sidebar */
-  overflow: visible;
   padding-right: 4px; /* deja espacio para scrollbar */
   padding-bottom: 92px; /* deja espacio para el avatar sticky */
   scrollbar-width: thin;
