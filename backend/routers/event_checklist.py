@@ -28,6 +28,45 @@ def _uid(user: dict) -> Optional[int]:
     return None
 
 
+def _resolve_uid(db: Session, user: dict) -> Optional[int]:
+    """
+    Algunos tokens usan sub/username string (ej: 'greengd'). Para no romper checklist,
+    intentamos resolver id_usuario desde public.usuarios (email o username).
+    """
+    uid0 = _uid(user)
+    if uid0 is not None:
+        return uid0
+    if not _table_exists(db, "usuarios"):
+        return None
+    cand = [
+        str(user.get("username") or "").strip(),
+        str(user.get("id") or "").strip(),
+        str(user.get("name") or "").strip(),
+    ]
+    cand = [c for c in cand if c]
+    if not cand:
+        return None
+    try:
+        for c in cand:
+            v = db.execute(
+                text(
+                    """
+                    SELECT id_usuario
+                    FROM public.usuarios
+                    WHERE email=:u OR username=:u
+                    ORDER BY id_usuario
+                    LIMIT 1
+                    """
+                ),
+                {"u": c},
+            ).scalar()
+            if v is not None and str(v).isdigit():
+                return int(v)
+    except Exception:
+        return None
+    return None
+
+
 def _uname(user: dict) -> str:
     return str(user.get("username") or user.get("email") or user.get("name") or user.get("id") or "").strip()[:200]
 
@@ -114,7 +153,7 @@ def events_for_day(
             return {"ok": True, "day": d.isoformat(), "items": []}
 
         role = _role(user)
-        uid = _uid(user)
+        uid = _resolve_uid(db, user)
 
         # Scope: Admin ve todo; no-admin respeta marcas si el token trae marcas[].
         marcas = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
@@ -251,7 +290,7 @@ def confirm_event(
         raise HTTPException(400, "items inválido")
     notes = str(payload.get("notes") or "").strip()
 
-    uid = _uid(user)
+    uid = _resolve_uid(db, user)
     who = _uname(user)
 
     try:

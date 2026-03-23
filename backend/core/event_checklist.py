@@ -54,7 +54,17 @@ def upsert_event_checklist(
     items: Dict[str, Any],
     notes: str = "",
 ) -> Dict[str, Any]:
-    ensure_event_checklist_table(db)
+    # Nunca 500 por DDL
+    try:
+        ensure_event_checklist_table(db)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "disabled": True}
+    # Para usuarios sin id numérico, guardamos user_id=0 para evitar duplicados (unique constraint).
+    uid_store = int(user_id) if user_id is not None else 0
     row = db.execute(
         text(
             """
@@ -72,7 +82,7 @@ def upsert_event_checklist(
         {
             "lid": int(id_lead),
             "d": event_day,
-            "uid": int(user_id) if user_id is not None else None,
+            "uid": int(uid_store),
             "u": (username or "")[:200],
             "items": json_dumps(items or {}),
             "notes": (notes or "")[:2000],
@@ -93,17 +103,26 @@ def list_event_checklists(
     event_day: date,
     user_id: Optional[int],
 ) -> Dict[int, Dict[str, Any]]:
-    ensure_event_checklist_table(db)
+    try:
+        ensure_event_checklist_table(db)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {}
+    # Evita AmbiguousParameter cuando uid es NULL: user_id=0 (ver upsert)
+    uid = int(user_id) if user_id is not None else 0
     rows = db.execute(
         text(
             """
             SELECT id_lead, items, notes, updated_at
             FROM public.event_checklists
             WHERE event_day=:d
-              AND (:uid IS NULL OR user_id=:uid)
+              AND user_id=:uid
             """
         ),
-        {"d": event_day, "uid": int(user_id) if user_id is not None else None},
+        {"d": event_day, "uid": uid},
     ).mappings().all()
     out: Dict[int, Dict[str, Any]] = {}
     for r in rows:
@@ -125,4 +144,3 @@ def json_dumps(obj: Any) -> str:
         return json.dumps(obj, ensure_ascii=False)
     except Exception:
         return "{}"
-

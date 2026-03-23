@@ -38,6 +38,53 @@ def _uid(user: dict) -> int:
     raise HTTPException(401, "Usuario inválido")
 
 
+def _table_exists(db: Session, table: str) -> bool:
+    try:
+        return bool(db.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{table}"}).scalar())
+    except Exception:
+        return False
+
+
+def _resolve_uid(db: Session, user: dict) -> int:
+    """
+    Compat: algunos tokens vienen con sub/username string (ej: 'greengd').
+    Intentamos mapear a public.usuarios.id_usuario para que tasks funcione.
+    """
+    try:
+        return _uid(user)
+    except Exception:
+        pass
+    if not _table_exists(db, "usuarios"):
+        raise HTTPException(401, "Usuario inválido")
+    cand = [
+        str(user.get("username") or "").strip(),
+        str(user.get("id") or "").strip(),
+        str(user.get("name") or "").strip(),
+    ]
+    cand = [c for c in cand if c]
+    if not cand:
+        raise HTTPException(401, "Usuario inválido")
+    try:
+        for c in cand:
+            v = db.execute(
+                text(
+                    """
+                    SELECT id_usuario
+                    FROM public.usuarios
+                    WHERE email=:u OR username=:u
+                    ORDER BY id_usuario
+                    LIMIT 1
+                    """
+                ),
+                {"u": c},
+            ).scalar()
+            if v is not None and str(v).isdigit():
+                return int(v)
+    except Exception:
+        pass
+    raise HTTPException(401, "Usuario inválido")
+
+
 def _uname(user: dict) -> str:
     return str(user.get("username") or user.get("email") or user.get("name") or user.get("id") or "").strip()[:200]
 
@@ -47,7 +94,7 @@ def sync_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_u
     """
     Genera tareas automáticas (idempotente) para el usuario actual.
     """
-    uid = _uid(user)
+    uid = _resolve_uid(db, user)
     try:
         out = upsert_mvp_tasks_for_user(db, user_id=uid, username=_uname(user), role=_role(user))
     except Exception as e:
@@ -72,13 +119,13 @@ def get_tasks(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    uid = _uid(user)
+    uid = _resolve_uid(db, user)
     return list_tasks(db, assigned_user_id=uid, status=status, limit=limit, offset=offset)
 
 
 @router.post("/{id_task}/done")
 def mark_done(id_task: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    uid = _uid(user)
+    uid = _resolve_uid(db, user)
     who = _uname(user)
     ensure_tasks_table(db)
     out = complete_task(db, id_task=id_task, completed_by=who)
@@ -115,7 +162,7 @@ def summary(db: Session = Depends(get_db), user: dict = Depends(get_current_user
     """
     Conteo rápido para UI/badges (no crea tareas).
     """
-    uid = _uid(user)
+    uid = _resolve_uid(db, user)
     try:
         ensure_tasks_table(db)
     except Exception:
@@ -151,7 +198,7 @@ def mark_skipped(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    uid = _uid(user)
+    uid = _resolve_uid(db, user)
     who = _uname(user)
     reason = str(payload.get("reason") or payload.get("motivo") or "").strip()
     if not reason:

@@ -2452,6 +2452,7 @@ function collapseSidebarSoon() {
 function bindSidebarBehavior() {
   const sb = qs("#sidebar");
   const sideMenu = qs("#sideMenu");
+  const sbInner = qs("#sidebar .sidebar-inner");
   const isMobile = () => window.matchMedia && window.matchMedia("(max-width: 980px)").matches;
   if (isSidebarPinned()) {
     sb.classList.remove("collapsed");
@@ -2524,11 +2525,39 @@ function bindSidebarBehavior() {
           const t = e.target;
           // Si el usuario está scrolleando un panel interno (resultados búsqueda / menú usuario), no interceptar.
           if (t && t.closest && (t.closest(".sb-results") || t.closest(".user-menu"))) return;
-          if (!sideMenu) return;
-          if (sideMenu.scrollHeight <= sideMenu.clientHeight + 2) return;
-          sideMenu.scrollTop += e.deltaY;
+          // Detecta target scrollable real (depende del CSS cargado/caché).
+          const candidates = [sideMenu, sbInner, sb];
+          let target = null;
+          for (const c of candidates) {
+            if (!c) continue;
+            if ((c.scrollHeight || 0) > (c.clientHeight || 0) + 2) {
+              target = c;
+              break;
+            }
+          }
+          if (!target) return;
+          target.scrollTop += e.deltaY;
           // Evita que el wheel se vaya al iframe/viewport y "parezca" que no scrollea.
           e.preventDefault();
+        } catch (_) {
+        }
+      },
+      { passive: false }
+    );
+
+    // Extra: si el wheel cae directo en el <nav>, igual forzamos scroll.
+    sideMenu.addEventListener(
+      "wheel",
+      (e) => {
+        try {
+          if ((sideMenu.scrollHeight || 0) <= (sideMenu.clientHeight || 0) + 2) {
+            if (sb && (sb.scrollHeight || 0) > (sb.clientHeight || 0) + 2) {
+              sb.scrollTop += e.deltaY;
+              e.preventDefault();
+            }
+            return;
+          }
+          // Dejar scroll nativo del sideMenu si existe.
         } catch (_) {
         }
       },
