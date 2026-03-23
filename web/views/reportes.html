@@ -1108,8 +1108,8 @@
         const el = document.getElementById(tid);
         if (!el) return;
         el.style.display = (tid === tab) ? "" : "none";
-        // restablecer grid-span por si venía de modo antiguo
-        try{ el.style.gridColumn = ""; }catch(_){}
+        // al usar tabs, el reporte activo debe ocupar todo el ancho
+        try{ el.style.gridColumn = (tid === tab) ? "span 12" : ""; }catch(_){}
       });
       if (setHash){
         try{ history.replaceState(null, "", "#" + tab); }catch(_){ location.hash = "#" + tab; }

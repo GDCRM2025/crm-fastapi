@@ -672,12 +672,19 @@ body.ops-mode .main{
 .side-nav{
   flex: 1 1 auto;
   min-height: 0;
+  max-height: 100%;
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px; /* deja espacio para scrollbar */
+  padding-bottom: 92px; /* deja espacio para el avatar sticky */
   scrollbar-width: thin;
   scrollbar-color: rgba(148,163,184,.30) transparent;
   scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .side-nav::-webkit-scrollbar{ width: 6px; }
 .side-nav::-webkit-scrollbar-track{ background: transparent; }
@@ -779,19 +786,6 @@ body.ops-mode .main{
   font-size: 14px;
 }
 .sb-fav.on{ background: rgba(250,204,21,.16); border-color: rgba(250,204,21,.35); }
-
-/* menu */
-.side-nav{
-  display:flex;
-  flex-direction:column;
-  gap: 10px;
-  /* Scroll del menú */
-  overflow-y: auto;
-  overflow-x: hidden;
-  /* deja espacio para el avatar sticky */
-  padding-bottom: 92px;
-  scroll-behavior: smooth;
-}
 
 .sb-results{
   scrollbar-width: thin;

@@ -1739,7 +1739,9 @@ const MENU = [
       { id: "op_sep3", label: "\u2014", url: null, sep: true },
       { id: "op_ca_ficha", label: "Ficha Camiones", url: "/web/views/op_camiones_ficha.html?v=20260304-1" },
       { id: "op_ca_ent", label: "Entrega de Camiones", url: "/web/views/op_camiones_entrega.html?v=20260304-1" },
-      { id: "op_ca_dev", label: "Devolucion de Camiones", url: "/web/views/op_camiones_devolucion.html?v=20260304-1" }
+      { id: "op_ca_dev", label: "Devolucion de Camiones", url: "/web/views/op_camiones_devolucion.html?v=20260304-1" },
+      { id: "op_sep_chk", label: "\u2014", url: null, sep: true },
+      { id: "op_chk_ev", label: "Checklist eventos", url: "/web/views/checklist_eventos.html?v=20260323-1" }
     ]
   },
   {
