@@ -643,8 +643,9 @@ body.ops-mode .main{
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  /* Scroll SOLO para el menú (side-nav). Así el avatar queda siempre visible abajo. */
-  overflow: hidden;
+  /* Scroll del sidebar completo (más robusto en Safari/Chrome cuando hay flex + sticky). */
+  overflow-y: auto;
+  overflow-x: hidden;
   transition: width .18s ease;
   box-shadow: var(--shadow);
   position:relative;
@@ -676,8 +677,8 @@ body.ops-mode .main{
   display:flex;
   flex-direction:column;
   gap: 10px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* el scroll lo maneja .sidebar */
+  overflow: visible;
   padding-right: 4px; /* deja espacio para scrollbar */
   padding-bottom: 92px; /* deja espacio para el avatar sticky */
   scrollbar-width: thin;

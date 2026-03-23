@@ -1704,7 +1704,7 @@ const MENU = [
     title: "Reportes",
     items: [
       // Un solo acceso: la vista Reportes maneja tabs internos.
-      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes.html" }
+      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes.html?v=20260323-2" }
     ]
   },
   {
