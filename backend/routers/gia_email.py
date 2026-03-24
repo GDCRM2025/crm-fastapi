@@ -4,7 +4,7 @@ import json
 import os
 import re
 import ssl
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from email.header import decode_header
 from email.message import Message
 from email.parser import BytesParser
@@ -78,6 +78,16 @@ def _ensure_schema() -> None:
                   body_text TEXT,
                   body_html TEXT,
 
+                  kind TEXT,
+                  kind_reason TEXT,
+                  reply_to_email TEXT,
+                  parsed_email TEXT,
+                  parsed_phone TEXT,
+                  parsed_comuna TEXT,
+                  parsed_fecha_evento DATE,
+                  parsed_cliente TEXT,
+                  parsed_rid TEXT,
+
                   ack_sent BOOLEAN NOT NULL DEFAULT FALSE,
                   ack_sent_at TIMESTAMPTZ,
                   ack_error TEXT,
@@ -87,6 +97,16 @@ def _ensure_schema() -> None:
                 """
             )
         )
+        # columnas nuevas (safe en ambientes antiguos)
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS kind TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS kind_reason TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS reply_to_email TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS parsed_email TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS parsed_phone TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS parsed_comuna TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS parsed_fecha_evento DATE;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS parsed_cliente TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS parsed_rid TEXT;"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gia_email_messages_marca ON public.gia_email_messages(id_marca, created_at DESC);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gia_email_messages_account_uid ON public.gia_email_messages(account_email, imap_uid DESC);"))
         conn.execute(
@@ -163,6 +183,87 @@ def _extract_bodies(msg: Message) -> Tuple[str, str]:
             html_body = _decode_payload(msg)
 
     return (text_body or "").strip(), (html_body or "").strip()
+
+
+def _extract_reply_to(msg: Message) -> str:
+    try:
+        rt = str(msg.get("Reply-To") or "").strip()
+        if not rt:
+            return ""
+        _n, em = parseaddr(rt)
+        return (em or "").strip().lower()
+    except Exception:
+        return ""
+
+
+def _extract_email_from_body(body: str) -> str:
+    # Prefer "Email:" / "Correo:" like fields
+    v = _find_after_label(body or "", ["Email", "E-mail", "Correo", "Mail"])
+    if v:
+        m = re.search(r"([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})", v, flags=re.I)
+        if m:
+            return m.group(1).strip().lower()
+    # Fallback: first email in body
+    m = re.search(r"([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})", body or "", flags=re.I)
+    return (m.group(1).strip().lower() if m else "")
+
+
+def _extract_phone_from_body(body: str) -> str:
+    v = _find_after_label(body or "", ["Telefono", "Teléfono", "Phone", "Celular", "Movil", "Móvil"])
+    if v:
+        digits = re.sub(r"\\D+", "", v)
+        return digits
+    # fallback: +56xxxxxxxxx
+    m = re.search(r"(\\+?56\\s*\\d[\\d\\s]{7,})", body or "", flags=re.I)
+    if not m:
+        return ""
+    return re.sub(r"\\D+", "", m.group(1))
+
+
+def _extract_rid(body: str) -> str:
+    m = re.search(r"(?im)^\\s*RID\\s*[:=]\\s*([A-Za-z0-9._-]{6,64})\\s*$", body or "")
+    return (m.group(1).strip() if m else "")
+
+
+def _classify_email(subject: str, body_text: str) -> tuple[str, str]:
+    s = (subject or "").upper()
+    b = (body_text or "").upper()
+    bb = s + "\n" + b
+
+    if "FORMULARIO" in bb or _extract_rid(body_text):
+        return ("form", "marker")
+
+    pay_kw = ("TRANSFER", "COMPROB", "PAGO", "ABONO", "DEPÓSITO", "DEPOSITO", "VOUCHER", "TRX", "TRANSACTION")
+    if any(k in bb for k in pay_kw):
+        return ("payment", "keywords")
+
+    lead_kw = ("COTIZ", "PRESUPUEST", "EVENTO", "CONSULT", "CONTACT", "REQUERIM", "SOLICIT")
+    if any(k in bb for k in lead_kw):
+        return ("lead", "keywords")
+
+    return ("other", "default")
+
+
+def _find_lead_by_rid(conn, rid: str) -> Optional[int]:
+    rid = (rid or "").strip()
+    if not rid:
+        return None
+    try:
+        r = conn.execute(
+            text(
+                """
+                SELECT id_lead
+                FROM public.leads
+                WHERE notas ILIKE :pat
+                ORDER BY id_lead DESC
+                LIMIT 1
+                """
+            ),
+            {"pat": f"%RID: {rid}%"},
+        ).scalar()
+        return int(r) if r is not None else None
+    except Exception:
+        return None
 
 
 def _resolve_marca_id(conn, marca_name: str) -> Optional[int]:
@@ -341,8 +442,8 @@ def _create_lead_from_email(
     if "cliente" not in cols:
         return None
 
-    cliente = _guess_cliente(from_name, from_email)
-    telefono = _find_after_label(body_text, ["Telefono", "Teléfono", "Phone", "Celular", "Móvil", "Movil"])
+    cliente = _find_after_label(body_text, ["Nombre", "Cliente", "Nombre cliente", "Nombre y Apellido"]) or _guess_cliente(from_name, from_email)
+    telefono = _find_after_label(body_text, ["Telefono", "Teléfono", "Phone", "Celular", "Móvil", "Movil"]) or _extract_phone_from_body(body_text or "")
     comuna = _find_after_label(body_text, ["Comuna", "Ciudad", "Lugar"])
     fecha = _find_after_label(body_text, ["Fecha", "Fecha evento", "Fecha_evento", "Fecha Evento"])
     fecha_iso = _parse_iso_date_any(fecha) or _parse_iso_date_any(body_text)
@@ -570,24 +671,40 @@ def sync(
                     from_email = (from_email or "").strip().lower()
                     from_name = _decode_mime_words(from_name).strip()
                     subject = _decode_mime_words(msg.get("Subject")).strip()
+                    reply_to_email = _extract_reply_to(msg)
+
                     received_at = None
                     try:
                         dt_raw = msg.get("Date")
                         if dt_raw:
-                            # best-effort; keep as string if parsing fails
                             received_at = datetime.now(timezone.utc)
                     except Exception:
                         received_at = None
 
                     text_body, html_body = _extract_bodies(msg)
                     if not text_body and html_body:
-                        # very small strip for preview
                         text_body = re.sub(r"<[^>]+>", " ", html_body)
                         text_body = re.sub(r"\\s+", " ", text_body).strip()
 
                     # skip self-sent
                     if from_email and from_email == account_email.lower():
                         continue
+
+                    kind, kind_reason = _classify_email(subject or "", text_body or "")
+                    parsed_rid = _extract_rid(text_body or "")
+                    parsed_email = _extract_email_from_body(text_body or "")
+                    parsed_phone = _extract_phone_from_body(text_body or "")
+                    parsed_comuna = _find_after_label(text_body or "", ["Comuna", "Ciudad", "Lugar"]) or ""
+                    parsed_fecha_raw = _find_after_label(text_body or "", ["Fecha", "Fecha evento", "Fecha_evento", "Fecha Evento"]) or ""
+                    parsed_fecha_iso = _parse_iso_date_any(parsed_fecha_raw) or _parse_iso_date_any(text_body or "")
+                    parsed_cliente = _find_after_label(text_body or "", ["Nombre", "Cliente", "Nombre cliente", "Nombre y Apellido"]) or ""
+
+                    parsed_fecha_dt = None
+                    if parsed_fecha_iso:
+                        try:
+                            parsed_fecha_dt = date.fromisoformat(str(parsed_fecha_iso)[:10])
+                        except Exception:
+                            parsed_fecha_dt = None
 
                     # upsert minimal
                     try:
@@ -596,9 +713,12 @@ def sync(
                                 """
                                 INSERT INTO public.gia_email_messages(
                                   id_marca, marca, account_email, imap_uid, message_id,
-                                  from_email, from_name, subject, received_at, body_text, body_html
+                                  from_email, from_name, subject, received_at, body_text, body_html,
+                                  kind, kind_reason, reply_to_email, parsed_email, parsed_phone, parsed_comuna,
+                                  parsed_fecha_evento, parsed_cliente, parsed_rid
                                 )
-                                VALUES (:mid, :marca, :acc, :uid, :msgid, :fe, :fn, :sub, :ra, :bt, :bh)
+                                VALUES (:mid, :marca, :acc, :uid, :msgid, :fe, :fn, :sub, :ra, :bt, :bh,
+                                        :k, :kr, :rt, :pe, :pp, :pc, :pf, :pcli, :prid)
                                 ON CONFLICT DO NOTHING
                                 """
                             ),
@@ -614,13 +734,60 @@ def sync(
                                 "ra": received_at,
                                 "bt": (text_body[:50000] if text_body else None),
                                 "bh": (html_body[:200000] if html_body else None),
+                                "k": kind,
+                                "kr": kind_reason,
+                                "rt": (reply_to_email or None),
+                                "pe": (parsed_email or None),
+                                "pp": (parsed_phone or None),
+                                "pc": (parsed_comuna or None),
+                                "pf": parsed_fecha_dt,
+                                "pcli": (parsed_cliente or None),
+                                "prid": (parsed_rid or None),
                             },
                         )
                         stored += 1
                     except Exception:
                         pass
 
+                    # Completar metadata si el registro ya existía (ON CONFLICT DO NOTHING).
+                    try:
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE public.gia_email_messages
+                                SET
+                                  kind=COALESCE(kind,:k),
+                                  kind_reason=COALESCE(kind_reason,:kr),
+                                  reply_to_email=COALESCE(reply_to_email,:rt),
+                                  parsed_email=COALESCE(parsed_email,:pe),
+                                  parsed_phone=COALESCE(parsed_phone,:pp),
+                                  parsed_comuna=COALESCE(parsed_comuna,:pc),
+                                  parsed_fecha_evento=COALESCE(parsed_fecha_evento,:pf),
+                                  parsed_cliente=COALESCE(parsed_cliente,:pcli),
+                                  parsed_rid=COALESCE(parsed_rid,:prid),
+                                  updated_at=now()
+                                WHERE account_email=:acc AND imap_uid=:uid
+                                """
+                            ),
+                            {
+                                "k": kind,
+                                "kr": kind_reason,
+                                "rt": (reply_to_email or None),
+                                "pe": (parsed_email or None),
+                                "pp": (parsed_phone or None),
+                                "pc": (parsed_comuna or None),
+                                "pf": parsed_fecha_dt,
+                                "pcli": (parsed_cliente or None),
+                                "prid": (parsed_rid or None),
+                                "acc": account_email,
+                                "uid": int(uid),
+                            },
+                        )
+                    except Exception:
+                        pass
+
                     # auto-ack (1 vez)
+                    rowm = None
                     try:
                         rowm = conn.execute(
                             text(
@@ -635,66 +802,83 @@ def sync(
                             {"acc": account_email, "uid": int(uid)},
                         ).mappings().first()
 
-                        # Crear/adjuntar lead (best-effort) si no existe aún.
-                        try:
-                            if rowm and rowm.get("id_msg") is not None and rowm.get("lead_id") is None:
-                                # Dedupe por email+marca (30 días).
-                                lead_id = _find_recent_lead_id(conn, id_marca=mid, from_email=from_email)
-                                if lead_id is None:
-                                    lead_id = _create_lead_from_email(
-                                        conn=conn,
-                                        id_marca=mid,
-                                        marca=marca,
-                                        from_name=from_name,
-                                        from_email=from_email,
-                                        subject=subject,
-                                        body_text=text_body or "",
-                                    )
-                                if lead_id is not None:
-                                    conn.execute(
-                                        text("UPDATE public.gia_email_messages SET lead_id=:lid, updated_at=now() WHERE id_msg=:id"),
-                                        {"lid": int(lead_id), "id": int(rowm.get("id_msg"))},
-                                    )
-                        except Exception:
-                            pass
+                        # Vincular con lead existente (sin duplicar):
+                        if rowm and rowm.get("id_msg") is not None and rowm.get("lead_id") is None:
+                            lead_id = None
 
-                        if rowm and not bool(rowm.get("ack_sent")) and from_email:
-                            ack_subject = "Re: " + (subject or "Contacto")
-                            ack_text = (
-                                "¡Gracias por contactarnos!\\n\\n"
-                                "Recibimos tu solicitud y un ejecutivo te contactará a la brevedad.\\n\\n"
-                                "--\\n"
-                                f"{marca} · Green Diamond"
-                            )
-                            _smtp_send(
-                                smtp_host=a["smtp_host"],
-                                smtp_port=int(a["smtp_port"]),
-                                smtp_ssl=bool(a["smtp_ssl"]),
-                                username=a["username"],
-                                password=a["password"],
-                                from_email=account_email,
-                                to_email=from_email,
-                                subject=ack_subject,
-                                text_body=ack_text,
-                            )
-                            conn.execute(
-                                text(
-                                    """
-                                    UPDATE public.gia_email_messages
-                                    SET ack_sent=TRUE, ack_sent_at=now(), ack_error=NULL, updated_at=now()
-                                    WHERE id_msg=:id
-                                    """
-                                ),
-                                {"id": int(rowm.get("id_msg"))},
-                            )
-                            ack_sent += 1
+                            # Formularios: NO crear duplicados. Solo intentar linkear.
+                            if kind == "form":
+                                lead_id = _find_lead_by_rid(conn, parsed_rid)
+
+                            contact_email = (reply_to_email or parsed_email or from_email or "").strip().lower()
+                            if lead_id is None and contact_email:
+                                lead_id = _find_recent_lead_id(conn, id_marca=mid, from_email=contact_email)
+
+                            # Crear lead solo si parece lead real (no formulario/pago).
+                            if lead_id is None and kind == "lead" and contact_email:
+                                lead_id = _create_lead_from_email(
+                                    conn=conn,
+                                    id_marca=mid,
+                                    marca=marca,
+                                    from_name=(parsed_cliente or from_name),
+                                    from_email=contact_email,
+                                    subject=subject,
+                                    body_text=text_body or "",
+                                )
+
+                            if lead_id is not None:
+                                conn.execute(
+                                    text("UPDATE public.gia_email_messages SET lead_id=:lid, updated_at=now() WHERE id_msg=:id"),
+                                    {"lid": int(lead_id), "id": int(rowm.get("id_msg"))},
+                                )
+
+                        # Auto-ack: SOLO para formularios (acuse de recibo).
+                        if rowm and not bool(rowm.get("ack_sent")) and kind == "form":
+                            ack_to = (reply_to_email or parsed_email or from_email or "").strip().lower()
+                            if ack_to and ack_to != account_email.lower():
+                                cliente_txt = (parsed_cliente or from_name or "").strip() or "PRUEBA SISTEMA"
+                                fecha_txt = (str(parsed_fecha_iso)[:10] if parsed_fecha_iso else "").strip()
+                                fecha_line = (
+                                    f"Para ayudarte mejor, ¿me confirmas la fecha ({fecha_txt}) y la cantidad aproximada de personas?"
+                                    if fecha_txt
+                                    else "Para ayudarte mejor, ¿me confirmas la fecha y la cantidad aproximada de personas?"
+                                )
+                                ack_subject = f"Gracias por contactarnos — {marca}"
+                                ack_text = (
+                                    f"Hola {cliente_txt}, soy del equipo {marca}.\\n\\n"
+                                    "¡Gracias por tu contacto! Recibimos tu solicitud y te contactaremos a la brevedad.\\n\\n"
+                                    f"{fecha_line}\\n\\n"
+                                    "Gracias, quedo atento(a) a tu confirmación.\\n\\n"
+                                    "--\\n"
+                                    f"{marca} · Green Diamond"
+                                )
+                                _smtp_send(
+                                    smtp_host=a["smtp_host"],
+                                    smtp_port=int(a["smtp_port"]),
+                                    smtp_ssl=bool(a["smtp_ssl"]),
+                                    username=a["username"],
+                                    password=a["password"],
+                                    from_email=account_email,
+                                    to_email=ack_to,
+                                    subject=ack_subject,
+                                    text_body=ack_text,
+                                )
+                                conn.execute(
+                                    text(
+                                        """
+                                        UPDATE public.gia_email_messages
+                                        SET ack_sent=TRUE, ack_sent_at=now(), ack_error=NULL, updated_at=now()
+                                        WHERE id_msg=:id
+                                        """
+                                    ),
+                                    {"id": int(rowm.get("id_msg"))},
+                                )
+                                ack_sent += 1
                     except Exception as e:
                         try:
                             if rowm and rowm.get("id_msg") is not None:
                                 conn.execute(
-                                    text(
-                                        "UPDATE public.gia_email_messages SET ack_error=:e, updated_at=now() WHERE id_msg=:id"
-                                    ),
+                                    text("UPDATE public.gia_email_messages SET ack_error=:e, updated_at=now() WHERE id_msg=:id"),
                                     {"e": str(e)[:200], "id": int(rowm.get("id_msg"))},
                                 )
                         except Exception:
