@@ -187,17 +187,23 @@
     let activeMsgId = null;
     let inboxItems = [];
 
-    function renderBrands(){
-      const host = qs("#folders");
-      if (!brands.length){
-        host.innerHTML = `
-          <div class="item active">
-            <div class="subj">Sin cuentas configuradas</div>
-            <div class="prev muted">Configura GIA Email en el servidor (.env).</div>
-          </div>
-        `;
-        return;
-      }
+	    function renderBrands(){
+	      const host = qs("#folders");
+	      if (!brands.length){
+	        host.innerHTML = `
+	          <div class="item active">
+	            <div class="subj">Sin cuentas configuradas</div>
+	            <div class="prev muted">Configura <b>GIA_EMAIL_ACCOUNTS_JSON</b> en el servidor (<code>~/crm/.env</code>) y reinicia Passenger.</div>
+	            <div class="prev muted" style="margin-top:8px">
+	              Ejemplo (rellena password):<br>
+	              <code style="display:block;white-space:pre-wrap;margin-top:6px;opacity:.9">
+GIA_EMAIL_ACCOUNTS_JSON=[{"marca":"GOURMET","from_email":"ventas@...","username":"ventas@...","password":"***","imap_host":"mail...","imap_port":993,"imap_ssl":true,"smtp_host":"mail...","smtp_port":465,"smtp_ssl":true}]
+	              </code>
+	            </div>
+	          </div>
+	        `;
+	        return;
+	      }
       host.innerHTML = brands.map(b => `
         <div class="item ${String(b.id_marca)===String(activeMarca) ? "active":""}" data-mid="${esc(b.id_marca)}">
           <div class="subj">${esc(b.marca || "Marca")}</div>

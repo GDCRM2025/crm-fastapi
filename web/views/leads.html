@@ -2725,21 +2725,22 @@ async function handleConfirmado(lead, newEstado){
   const uniqueDays = Array.from(new Set(days));
   uniqueDays.sort();
   const dateLine = uniqueDays.length > 1
-    ? `${fmtDateLong(uniqueDays[0])} → ${fmtDateLong(uniqueDays[uniqueDays.length-1])}`
+    ? `del ${fmtDateLong(uniqueDays[0])} al ${fmtDateLong(uniqueDays[uniqueDays.length-1])}`
     : (uniqueDays[0] ? fmtDateLong(uniqueDays[0]) : "");
 
   const hrLine = v?.hr_tbd ? "POR CONFIRMAR" : `${fmtHHMM(evs[0]?.start_at)} a ${fmtHHMM(evs[0]?.end_at)}`;
 
   const EMO = {
-    // Usamos emojis literales (UTF-8) para evitar problemas de surrogates que a veces aparecen como "�".
-    cal: "📅",
-    cart: "🛒",
-    tools: "🧰",
-    ops: "👥",
-    clock: "🕒",
-    phone: "📞",
-    pin: "📍",
-    doc: "📄",
+    // Importante: usamos escapes por codepoint para evitar problemas de encoding en producción
+    // (a veces los emojis literales terminan como "�" / U+FFFD).
+    cal: "\u{1F4C5}",   // 📅
+    cart: "\u{1F6D2}",  // 🛒
+    tools: "\u{1F9F0}", // 🧰
+    ops: "\u{1F465}",   // 👥
+    clock: "\u{1F552}", // 🕒
+    phone: "\u{1F4DE}", // 📞
+    pin: "\u{1F4CD}",   // 📍
+    doc: "\u{1F4C4}",   // 📄
   };
 
   let productosBlock = "";
@@ -2761,7 +2762,7 @@ async function handleConfirmado(lead, newEstado){
     montajeBlock = `${EMO.tools} MONTAJE:\n` + bulletsFrom(evs[0]?.montaje_text).join("\n") + `\n${EMO.ops} OPS: ${String(evs[0]?.ops ?? "—")}`;
   }
 
-  const wspText =
+  let wspText =
 `${EMO.cal} FECHA EVENTO: ${dateLine || "POR CONFIRMAR"}
 NOMBRE CLIENTE: ${[clienteNom, marcaNom].filter(Boolean).join(" - ") || "—"}
 COMUNA: ${comunaNom || "—"}
@@ -2779,6 +2780,29 @@ ${EMO.phone} TELEFONO: ${telCliente || "POR CONFIRMAR"}
 ${EMO.pin} DIRECCION: ${dirTxt || "POR CONFIRMAR"}
 
 ¿Me confirmas por favor que estos datos están correctos?`;
+
+  // Fallback ultra-seguro si por algún motivo el runtime terminó con U+FFFD.
+  if (wspText.includes("\uFFFD")){
+    const ALT = {
+      cal: "[FECHA EVENTO]",
+      cart: "[PRODUCTOS]",
+      tools: "[MONTAJE]",
+      ops: "[OPS]",
+      clock: "[HORARIO]",
+      phone: "[TELEFONO]",
+      pin: "[DIRECCION]",
+      doc: "[DOCUMENTO]",
+    };
+    wspText = wspText
+      .replaceAll(EMO.cal, ALT.cal)
+      .replaceAll(EMO.cart, ALT.cart)
+      .replaceAll(EMO.tools, ALT.tools)
+      .replaceAll(EMO.ops, ALT.ops)
+      .replaceAll(EMO.clock, ALT.clock)
+      .replaceAll(EMO.phone, ALT.phone)
+      .replaceAll(EMO.pin, ALT.pin)
+      .replaceAll(EMO.doc, ALT.doc);
+  }
 
   const urlClient = telCliente ? `https://wa.me/${waDigits(telCliente)}?text=${encodeURIComponent(wspText)}` : "";
   const urlVentas = telVentas ? `https://wa.me/${waDigits(telVentas)}?text=${encodeURIComponent(wspText)}` : "";
