@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.db import get_db
 from backend.core.activity_log import log_activity
+from backend.core import tasks as core_tasks
 from backend.core.tasks import (
     complete_task,
     ensure_tasks_table,
@@ -195,6 +196,107 @@ def summary(db: Session = Depends(get_db), user: dict = Depends(get_current_user
         return {"ok": True, **(dict(row) if row else {})}
     except Exception:
         return {"ok": True, "open_total": 0, "overdue_total": 0, "open_contactar": 0, "overdue_contactar": 0}
+
+
+@router.get("/debug")
+def debug_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """
+    Diagnóstico rápido para entender por qué salen 0 tareas.
+    No expone contraseñas ni datos sensibles.
+    """
+    uid = _resolve_uid(db, user)
+    role = _role(user)
+    uname = _uname(user)
+    marcas = list(user.get("marcas") or [])
+
+    # Intenta usar helpers del core (best-effort).
+    try:
+        user_keys = core_tasks._user_match_keys(db, user_id=int(uid), username=uname)  # type: ignore[attr-defined]
+    except Exception:
+        user_keys = [str(uid), uname]
+    try:
+        has_id_usuario = bool(core_tasks._col_exists(db, "leads", "id_usuario"))  # type: ignore[attr-defined]
+    except Exception:
+        has_id_usuario = None
+    try:
+        has_id_marca = bool(core_tasks._col_exists(db, "leads", "id_marca"))  # type: ignore[attr-defined]
+    except Exception:
+        has_id_marca = None
+    try:
+        has_marca_txt = bool(core_tasks._col_exists(db, "leads", "marca"))  # type: ignore[attr-defined]
+    except Exception:
+        has_marca_txt = None
+
+    nuevo_id = core_tasks._estado_id_like(db, "%NUEV%", 1)  # type: ignore[attr-defined]
+    contactado_id = core_tasks._estado_id_like(db, "%CONTACT%", 2)  # type: ignore[attr-defined]
+    confirmado_id = core_tasks._estado_id_like(db, "CONFIRM%", 4)  # type: ignore[attr-defined]
+
+    marcas_ids: list[int] = []
+    for m in marcas:
+        try:
+            marcas_ids.append(int(m))
+        except Exception:
+            pass
+    marcas_upper: list[str] = []
+    try:
+        if marcas_ids:
+            rows = db.execute(
+                text("SELECT nombre FROM public.marcas WHERE id_marca = ANY(CAST(:mids AS int[]))"),
+                {"mids": marcas_ids},
+            ).fetchall()
+            marcas_upper = [str(r[0] or "").strip().upper() for r in rows if r and str(r[0] or "").strip()]
+    except Exception:
+        marcas_upper = []
+
+    try:
+        assigned_sql = core_tasks._assigned_to_user_sql()  # type: ignore[attr-defined]
+        unassigned_sql = core_tasks._unassigned_sql()  # type: ignore[attr-defined]
+        brand_sql = core_tasks._brand_filter_sql(db)  # type: ignore[attr-defined]
+    except Exception:
+        assigned_sql = "TRUE"
+        unassigned_sql = "FALSE"
+        brand_sql = "FALSE"
+
+    scope_sql = assigned_sql
+    if marcas_ids or marcas_upper:
+        scope_sql = f"({assigned_sql} OR ({unassigned_sql} AND {brand_sql}))"
+
+    params = {
+        "uid": int(uid),
+        "uname": (uname or "").strip()[:200],
+        "user_keys": [str(x).strip().lower() for x in (user_keys or []) if str(x).strip()],
+        "marcas_ids": marcas_ids or [0],
+        "marcas_upper": marcas_upper or ["__NONE__"],
+    }
+
+    def _count(where_sql: str, more: dict | None = None):
+        try:
+            p = dict(params)
+            if more:
+                p.update(more)
+            return int(db.execute(text(f"SELECT COUNT(*) FROM public.leads l WHERE {where_sql}"), p).scalar() or 0)
+        except Exception as e:
+            return {"error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+    return {
+        "ok": True,
+        "uid": int(uid),
+        "username": uname,
+        "role": role,
+        "marcas_ids": marcas_ids,
+        "marcas_names": marcas_upper,
+        "schema": {"id_usuario": has_id_usuario, "id_marca": has_id_marca, "marca": has_marca_txt},
+        "user_keys_sample": (params["user_keys"] or [])[:6],
+        "estado_ids": {"nuevo": int(nuevo_id), "contactado": int(contactado_id), "confirmado": int(confirmado_id)},
+        "scope_sql": scope_sql[:220],
+        "counts": {
+            "leads_total": _count("TRUE"),
+            "nuevo_total": _count("l.id_estado=:st", {"st": int(nuevo_id)}),
+            "nuevo_en_scope": _count(f"l.id_estado=:st AND {scope_sql}", {"st": int(nuevo_id)}),
+            "contactado_en_scope": _count(f"l.id_estado=:st AND {scope_sql}", {"st": int(contactado_id)}),
+            "confirmado_en_scope": _count(f"l.id_estado=:st AND {scope_sql}", {"st": int(confirmado_id)}),
+        },
+    }
 
 
 @router.post("/{id_task}/skip")
