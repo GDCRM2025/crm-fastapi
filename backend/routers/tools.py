@@ -2978,6 +2978,17 @@ def approve_agenda(
         _ensure_lead_calendar_cols(db)
 
         name_expr = _lead_name_expr(db)
+        lead_extra: dict[str, Any] = {}
+        ventas_telefono: str | None = None
+        cliente_telefono: str | None = None
+        cliente_direccion: str | None = None
+        num_cotizacion: str | None = None
+        monto_cotizado: float | None = None
+        id_cotizacion_vigente: int | None = None
+        id_marca: int | None = None
+        id_comuna: int | None = None
+        id_usuario_key: str | None = None
+
         row = (
             db.execute(
                 text(
@@ -3005,6 +3016,89 @@ def approve_agenda(
 
         if not row:
             raise HTTPException(status_code=404, detail="Lead no existe")
+
+        # Extra info (best-effort) para WhatsApp y UI.
+        try:
+            cols_lead = _cols_pg(db, "leads")
+            sel = []
+            for c in (
+                "telefono",
+                "direccion",
+                "num_cotizacion",
+                "monto_cotizado",
+                "id_cotizacion_vigente",
+                "id_marca",
+                "id_comuna",
+                "id_usuario",
+            ):
+                if c in cols_lead:
+                    sel.append(f"l.{c} AS {c}")
+            if sel:
+                lead_extra = (
+                    db.execute(text(f"SELECT {', '.join(sel)} FROM leads l WHERE l.id_lead=:id LIMIT 1"), {"id": id_lead})
+                    .mappings()
+                    .first()
+                    or {}
+                )
+        except Exception:
+            lead_extra = {}
+
+        try:
+            cliente_telefono = str(lead_extra.get("telefono") or "").strip() or None
+        except Exception:
+            cliente_telefono = None
+        try:
+            cliente_direccion = str(lead_extra.get("direccion") or "").strip() or None
+        except Exception:
+            cliente_direccion = None
+        try:
+            num_cotizacion = str(lead_extra.get("num_cotizacion") or "").strip() or None
+        except Exception:
+            num_cotizacion = None
+        try:
+            monto_cotizado = float(lead_extra.get("monto_cotizado")) if lead_extra.get("monto_cotizado") is not None else None
+        except Exception:
+            monto_cotizado = None
+        try:
+            id_cotizacion_vigente = int(lead_extra.get("id_cotizacion_vigente")) if lead_extra.get("id_cotizacion_vigente") is not None else None
+        except Exception:
+            id_cotizacion_vigente = None
+        try:
+            id_marca = int(lead_extra.get("id_marca")) if lead_extra.get("id_marca") is not None else None
+        except Exception:
+            id_marca = None
+        try:
+            id_comuna = int(lead_extra.get("id_comuna")) if lead_extra.get("id_comuna") is not None else None
+        except Exception:
+            id_comuna = None
+        try:
+            id_usuario_key = str(lead_extra.get("id_usuario") or "").strip() or None
+        except Exception:
+            id_usuario_key = None
+
+        # Teléfono de ventas (ejecutivo asignado al lead), best-effort.
+        try:
+            if id_usuario_key and _table_exists_pg(db, "usuarios"):
+                ucols = _cols_pg(db, "usuarios")
+                tel_col = "telefono" if "telefono" in ucols else ("phone" if "phone" in ucols else None)
+                if tel_col:
+                    params_u: dict[str, Any] = {"u": id_usuario_key}
+                    if str(id_usuario_key).isdigit() and "id_usuario" in ucols:
+                        q_u = text(f"SELECT {tel_col} FROM public.usuarios WHERE id_usuario=:uid LIMIT 1")
+                        v = db.execute(q_u, {"uid": int(id_usuario_key)}).scalar()
+                    else:
+                        q_u = text(
+                            f"""
+                            SELECT {tel_col}
+                            FROM public.usuarios
+                            WHERE lower(email)=lower(:u) OR lower(username)=lower(:u)
+                            LIMIT 1
+                            """
+                        )
+                        v = db.execute(q_u, params_u).scalar()
+                    ventas_telefono = str(v or "").strip() or None
+        except Exception:
+            ventas_telefono = None
 
         if not row.get("pre_start") or not row.get("pre_end"):
             fe = row.get("fecha_evento")
@@ -3239,6 +3333,18 @@ def approve_agenda(
             "calendar_html_links": links,
             "calendar_event_ids": event_ids,
             "gcal_error": gcal_error,
+            "lead": {
+                "id_lead": int(id_lead),
+                "telefono": cliente_telefono,
+                "direccion": cliente_direccion,
+                "ventas_telefono": ventas_telefono,
+                "id_usuario": id_usuario_key,
+                "num_cotizacion": num_cotizacion,
+                "monto_cotizado": monto_cotizado,
+                "id_cotizacion_vigente": id_cotizacion_vigente,
+                "id_marca": id_marca,
+                "id_comuna": id_comuna,
+            },
         }
     except HTTPException:
         raise

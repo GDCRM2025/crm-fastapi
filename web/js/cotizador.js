@@ -435,33 +435,43 @@
     }
   });
 
+  function safeFilename(s){
+    return String(s || "")
+      .replace(/[\\/:*?"<>|]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 140);
+  }
+
+  async function downloadQuotePdf(idCot, numero, nombreCliente){
+    const id = Number(idCot || 0);
+    if (!id) throw new Error("id_cotizacion inválido");
+    const numTxt = numero ? String(numero) : String(id);
+    const cliTxt = safeFilename(nombreCliente || lead?.cliente || lead?.nombre_cliente || "cliente");
+    const filename = `Cotizacion ${numTxt} - ${cliTxt}.pdf`;
+
+    const url = apiURL(`/quotes/${id}/pdf?download=1&v=${Date.now()}`);
+    const r = await fetch(url, { headers: authHeaders() });
+    if (!r.ok){
+      const txt = await r.text();
+      throw new Error(`No pude descargar PDF (HTTP ${r.status}). ${txt.substring(0,160)}`);
+    }
+    const blob = await r.blob();
+    const obj = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = obj;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(obj); }catch(_){} }, 60_000);
+  }
+
   $("btnGuardar").addEventListener("click", async () => {
     if (!items.length){
       if (window.Swal) Swal.fire({ icon:"warning", title:"Falta info", text:"Agrega al menos un producto." });
       else alert("Agrega al menos un producto.");
       return;
-    }
-
-    // Pre-abre pestaña para evitar bloqueos de popup (navegaremos al PDF tras guardar).
-    let pdfPopup = null;
-    try{
-      // Nota: la pestaña se abre *antes* del primer await para evitar bloqueos.
-      pdfPopup = window.open("", "_blank");
-      if (pdfPopup && pdfPopup.document){
-        pdfPopup.document.write(`
-          <html><head><title>Guardando…</title></head>
-          <body style="font-family:system-ui; background:#0b1220; color:#e5e7eb; display:grid; place-items:center; height:100vh; margin:0;">
-            <div style="max-width:520px; padding:18px; border:1px solid rgba(255,255,255,.14); border-radius:16px; background:rgba(15,26,43,.82);">
-              <div style="font-weight:900; font-size:16px;">Guardando cotización…</div>
-              <div style="opacity:.75; margin-top:6px; font-size:13px;">En unos segundos se abrirá el PDF.</div>
-            </div>
-          </body></html>
-        `);
-        pdfPopup.document.close();
-        try{ pdfPopup.focus(); }catch(_){}
-      }
-    }catch(_){
-      pdfPopup = null;
     }
 
     const subtotal = items.reduce((s, it) => s + (+it.subtotal || 0), 0);
@@ -525,32 +535,24 @@
         alert("Cotización guardada. " + msg);
       }
 
-      // Abrir PDF de inmediato (en la pestaña pre-abierta si existe).
+      // Descargar PDF de inmediato (sin abrir pestañas).
       if (currentQuoteId){
-        const pdf = apiURL(`/quotes/${currentQuoteId}/pdf?v=${Date.now()}`);
-        const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Abriendo PDF…")}`);
         try{
-          if (pdfPopup && !pdfPopup.closed){
-            pdfPopup.location.href = wait;
-            try{ pdfPopup.focus(); }catch(_){}
-          } else {
-            const w = window.open(wait, "_blank");
-            if (!w && window.Swal){
-              await Swal.fire({
-                icon:"info",
-                title:"PDF listo",
-                text:"El navegador bloqueó la ventana emergente. Presiona “Abrir PDF”.",
-                confirmButtonText:"Abrir PDF",
-                confirmButtonColor:"#19C37D"
-              }).then((r)=> r.isConfirmed && window.open(wait, "_blank"));
-            }
+          await downloadQuotePdf(currentQuoteId, currentQuoteNumero, cliente.value || lead?.cliente || "");
+        }catch(err){
+          console.error(err);
+          if (window.Swal){
+            await Swal.fire({
+              icon:"info",
+              title:"PDF listo",
+              text:"No pude iniciar la descarga automática. Puedes descargar desde Historial.",
+              timer: 1800,
+              showConfirmButton: false
+            });
           }
-        }catch(_){}
-      } else {
-        try{ if (pdfPopup && !pdfPopup.closed) pdfPopup.close(); }catch(_){}
+        }
       }
 
-      // Deja respirar al navegador para que la pestaña del PDF navegue/focus antes del redirect.
       setTimeout(() => {
         location.href = apiURL(`/web/views/historial_cotizaciones.html?id_lead=${leadId}`);
       }, 220);
@@ -563,7 +565,6 @@
         raw || "No pude guardar la cotización.";
       if (window.Swal) Swal.fire({ icon:"error", title:"No se pudo guardar", text: msg.slice(0, 300) });
       else alert("No se pudo guardar: " + msg);
-      try{ if (pdfPopup && !pdfPopup.closed) pdfPopup.close(); }catch(_){}
     }finally{
       btnGuardar.disabled = false;
       btnGuardar.textContent = oldTxt;

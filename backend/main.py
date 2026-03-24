@@ -199,6 +199,7 @@ include_router_safe(app, "backend.routers.assets_checklists")
 include_router_safe(app, "backend.routers.activity")
 include_router_safe(app, "backend.routers.tasks")
 include_router_safe(app, "backend.routers.event_checklist")
+include_router_safe(app, "backend.routers.gia_email")
 
 # =========================
 # Static /web (login, panel, views, assets)

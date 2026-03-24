@@ -102,31 +102,18 @@
     <aside class="pane">
       <div class="head">
         <div>
-          <div class="ttl">Carpetas</div>
-          <div class="muted">Bandeja (placeholder)</div>
+          <div class="ttl">Marcas</div>
+          <div class="muted">Inbox por marca (IMAP)</div>
         </div>
       </div>
-      <div class="list" id="folders">
-        <div class="item active" data-folder="inbox">
-          <div class="subj">📥 Bandeja de entrada</div>
-          <div class="prev muted">Responder desde el panel</div>
-        </div>
-        <div class="item" data-folder="sent">
-          <div class="subj">📤 Enviados</div>
-          <div class="prev muted">Historial</div>
-        </div>
-        <div class="item" data-folder="drafts">
-          <div class="subj">📝 Borradores</div>
-          <div class="prev muted">Plantillas (pronto)</div>
-        </div>
-      </div>
+      <div class="list" id="folders"></div>
     </aside>
 
     <section class="pane">
       <div class="head">
         <div>
           <div class="ttl">Bandeja</div>
-          <div class="muted">GIA aún no conecta IMAP/Gmail, UX lista.</div>
+          <div class="muted">Recarga: sincroniza IMAP + auto-respuesta.</div>
         </div>
         <button class="btn" id="btnReload" type="button">Recargar</button>
       </div>
@@ -155,68 +142,192 @@
     });
 
     const qs = (s, el=document)=> el.querySelector(s);
-
-    const SAMPLE = [
-      { id: 1, from: "Tamara Muñoz", email: "tamara@example.com", date:"2026-03-17 09:10", subj:"Cotización Camaleón", body:"Hola,\n¿Me puedes confirmar disponibilidad para el 31/03?\nGracias." },
-      { id: 2, from: "Nicolas Daza", email: "nicolas@example.com", date:"2026-03-17 09:25", subj:"Duda sobre traslado", body:"Hola,\n¿El traslado está incluido en el total?\nSaludos." },
-      { id: 3, from: "Carmen Moreno", email: "carmen@example.com", date:"2026-03-17 09:48", subj:"Confirmación de horario", body:"Hola,\nEl horario sería 18:00 a 22:00.\nQuedo atenta." },
-    ];
-
-    let activeId = null;
-
     function esc(s){ return String(s||"").replace(/[&<>\"']/g, (c)=>({\"&\":\"&amp;\",\"<\":\"&lt;\",\">\":\"&gt;\",\"\\\"\":\"&quot;\",\"'\":\"&#39;\"}[c])); }
 
-    function renderList(){
-      const host = qs("#msgList");
-      host.innerHTML = SAMPLE.map(m => `
-        <div class="item ${m.id===activeId ? "active":""}" data-id="${m.id}">
-          <div class="row1">
-            <div class="from">${esc(m.from)}</div>
-            <div class="date">${esc(m.date)}</div>
+    const API_BASE = (() => {
+      try{
+        const host = String(location.hostname||"").toLowerCase();
+        const isLocal = host === "127.0.0.1" || host === "localhost";
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(u){
+      const s = String(u||"");
+      if (!s) return s;
+      if (s.startsWith("/crm/")) return s;
+      if (s.startsWith("/")) return API_BASE + s;
+      return API_BASE + "/" + s;
+    }
+    function getToken(){
+      return (
+        localStorage.getItem("token") ||
+        localStorage.getItem("gd_token") ||
+        sessionStorage.getItem("token") ||
+        sessionStorage.getItem("gd_token") ||
+        ""
+      );
+    }
+    function authHeaders(extra={}){
+      const t = getToken();
+      return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+    }
+    async function apiJSON(u, opts={}){
+      const r = await fetch(apiURL(u), { ...opts, headers: authHeaders(opts.headers || {}) });
+      const txt = await r.text();
+      let data = null;
+      try{ data = txt ? JSON.parse(txt) : null; }catch(_){ data = txt; }
+      if (!r.ok){
+        throw new Error((data && data.detail) ? String(data.detail) : (`HTTP ${r.status}`));
+      }
+      return data;
+    }
+
+    let brands = [];
+    let activeMarca = null;
+    let activeMsgId = null;
+    let inboxItems = [];
+
+    function renderBrands(){
+      const host = qs("#folders");
+      if (!brands.length){
+        host.innerHTML = `
+          <div class="item active">
+            <div class="subj">Sin cuentas configuradas</div>
+            <div class="prev muted">Configura GIA Email en el servidor (.env).</div>
           </div>
-          <div class="subj">${esc(m.subj)}</div>
-          <div class="prev">${esc(m.body).slice(0,120)}${m.body.length>120?"…":""}</div>
+        `;
+        return;
+      }
+      host.innerHTML = brands.map(b => `
+        <div class="item ${String(b.id_marca)===String(activeMarca) ? "active":""}" data-mid="${esc(b.id_marca)}">
+          <div class="subj">${esc(b.marca || "Marca")}</div>
+          <div class="prev muted">${esc(b.account_email || "")}</div>
         </div>
       `).join("");
-      host.querySelectorAll("[data-id]").forEach(el => {
-        el.addEventListener("click", ()=>{
-          activeId = Number(el.getAttribute("data-id"));
-          renderList();
-          renderViewer();
+      host.querySelectorAll("[data-mid]").forEach(el => {
+        el.addEventListener("click", async ()=>{
+          activeMarca = Number(el.getAttribute("data-mid") || 0) || null;
+          activeMsgId = null;
+          renderBrands();
+          await loadInbox({ sync:false });
         });
       });
     }
 
-    function renderViewer(){
-      const m = SAMPLE.find(x=>x.id===activeId);
-      const v = qs("#viewer");
-      if (!m){
-        v.innerHTML = `<div class="muted">Selecciona un mensaje de la lista para ver y responder.</div>`;
-        qs("#btnSend").disabled = true;
+    function renderList(){
+      const host = qs("#msgList");
+      if (!inboxItems.length){
+        host.innerHTML = `<div class="muted" style="padding:10px">Sin mensajes.</div>`;
         return;
       }
-      v.innerHTML = `
-        <h2>${esc(m.subj)}</h2>
-        <div class="meta">
-          <div>De: ${esc(m.from)} &lt;${esc(m.email)}&gt;</div>
-          <div>${esc(m.date)}</div>
+      host.innerHTML = inboxItems.map(m => `
+        <div class="item ${Number(m.id_msg)===Number(activeMsgId) ? "active":""}" data-id="${esc(m.id_msg)}">
+          <div class="row1">
+            <div class="from">${esc(m.from_name || m.from_email || "—")}</div>
+            <div class="date">${esc(String(m.received_at || m.created_at || "").slice(0,16).replace("T"," "))}</div>
+          </div>
+          <div class="subj">${esc(m.subject || "(sin asunto)")}</div>
+          <div class="prev">${esc(m.preview || "")}${(m.ack_sent ? " · ✓ Auto-reply" : "")}</div>
         </div>
-        <div class="body">${esc(m.body)}</div>
-        <div class="reply">
-          <div class="muted">Respuesta (se enviará cuando GIA esté conectado):</div>
-          <textarea id="replyBox" placeholder="Escribe tu respuesta..."></textarea>
-        </div>
-      `;
-      qs("#btnSend").disabled = false;
+      `).join("");
+      host.querySelectorAll("[data-id]").forEach(el => {
+        el.addEventListener("click", async ()=>{
+          activeMsgId = Number(el.getAttribute("data-id") || 0);
+          renderList();
+          await loadViewer();
+        });
+      });
     }
 
-    qs("#btnReload").addEventListener("click", ()=>{ renderList(); renderViewer(); });
-    qs("#btnSend").addEventListener("click", ()=>{
-      alert("Envío pendiente: GIA aún no está conectado a correo. UX lista.");
+    async function loadViewer(){
+      const v = qs("#viewer");
+      const btn = qs("#btnSend");
+      if (!activeMsgId){
+        v.innerHTML = `<div class="muted">Selecciona un mensaje de la lista para ver y responder.</div>`;
+        btn.disabled = true;
+        return;
+      }
+      btn.disabled = true;
+      v.innerHTML = `<div class="muted">Cargando…</div>`;
+      try{
+        const r = await apiJSON(`/gia/email/inbox/${activeMsgId}`);
+        const m = r?.message || {};
+        const body = (m.body_text || "").trim() || "(sin cuerpo)";
+        v.innerHTML = `
+          <h2>${esc(m.subject || "(sin asunto)")}</h2>
+          <div class="meta">
+            <div>De: ${esc(m.from_name || "")} &lt;${esc(m.from_email || "")}&gt;</div>
+            <div>${esc(String(m.received_at || m.created_at || "").slice(0,19).replace("T"," "))}</div>
+            <div>${m.ack_sent ? "✓ Auto-reply" : "—"}</div>
+          </div>
+          <div class="body">${esc(body)}</div>
+          <div class="reply">
+            <div class="muted">Responder:</div>
+            <textarea id="replyBox" placeholder="Escribe tu respuesta..."></textarea>
+          </div>
+        `;
+        btn.disabled = false;
+      }catch(err){
+        v.innerHTML = `<div class="muted">Error: ${esc(String(err?.message||err))}</div>`;
+        btn.disabled = true;
+      }
+    }
+
+    async function loadStatus(){
+      const st = await apiJSON("/gia/email/status");
+      brands = Array.isArray(st?.items) ? st.items : [];
+      if (!activeMarca && brands.length){
+        activeMarca = Number(brands[0].id_marca || 0) || null;
+      }
+      renderBrands();
+    }
+
+    async function loadInbox({ sync }){
+      const host = qs("#msgList");
+      host.innerHTML = `<div class="muted" style="padding:10px">Cargando…</div>`;
+      try{
+        if (sync && activeMarca){
+          await apiJSON(`/gia/email/sync?id_marca=${encodeURIComponent(String(activeMarca))}`, { method:"POST" });
+        }
+        const r = await apiJSON(`/gia/email/inbox?id_marca=${encodeURIComponent(String(activeMarca||\"\"))}&limit=60&offset=0`);
+        inboxItems = Array.isArray(r?.items) ? r.items : [];
+        renderList();
+        await loadViewer();
+      }catch(err){
+        inboxItems = [];
+        host.innerHTML = `<div class="muted" style="padding:10px">Error: ${esc(String(err?.message||err))}</div>`;
+      }
+    }
+
+    qs("#btnReload").addEventListener("click", async ()=>{
+      await loadInbox({ sync:true });
+    });
+    qs("#btnSend").addEventListener("click", async ()=>{
+      try{
+        const textBody = (qs("#replyBox")?.value || "").trim();
+        if (!textBody) return alert("Escribe una respuesta.");
+        qs("#btnSend").disabled = true;
+        await apiJSON(`/gia/email/inbox/${activeMsgId}/reply`, {
+          method:"POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ text: textBody })
+        });
+        alert("Enviado.");
+      }catch(err){
+        alert("No pude enviar: " + String(err?.message||err));
+      }finally{
+        qs("#btnSend").disabled = false;
+      }
     });
 
-    renderList();
-    renderViewer();
+    (async ()=>{
+      try{
+        await loadStatus();
+        await loadInbox({ sync:false });
+      }catch(err){
+        qs("#msgList").innerHTML = `<div class="muted" style="padding:10px">Error: ${esc(String(err?.message||err))}</div>`;
+      }
+    })();
   </script>
 </body>
 </html>

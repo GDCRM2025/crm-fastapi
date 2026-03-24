@@ -1,0 +1,597 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import ssl
+from datetime import datetime, timezone
+from email.header import decode_header
+from email.message import Message
+from email.parser import BytesParser
+from email.policy import default
+from email.utils import parseaddr
+from typing import Any, Dict, List, Optional, Tuple
+
+import imaplib
+import smtplib
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy import text
+
+from backend.core.db import get_connection
+
+try:
+    from backend.routers.auth import get_current_user  # type: ignore
+except Exception:  # pragma: no cover
+    def get_current_user():  # type: ignore
+        return {"role": "ADMIN", "username": "dev", "marcas": []}
+
+
+router = APIRouter(prefix="/gia/email", tags=["gia-email"])
+
+
+def _role(user: dict) -> str:
+    return str(user.get("role") or user.get("rol") or "").upper().strip()
+
+
+def _is_admin(user: dict) -> bool:
+    return _role(user) in ("ADMIN", "SUPERADMIN")
+
+
+def _user_marcas_ids(user: dict) -> list[int]:
+    out: list[int] = []
+    for x in (user.get("marcas") or []):
+        try:
+            out.append(int(x))
+        except Exception:
+            continue
+    return out
+
+
+def _norm(s: str) -> str:
+    s = (s or "").strip().upper()
+    s = re.sub(r"\\s+", " ", s)
+    return s
+
+
+def _ensure_schema() -> None:
+    with get_connection() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS public.gia_email_messages (
+                  id_msg BIGSERIAL PRIMARY KEY,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+                  id_marca INTEGER,
+                  marca TEXT,
+                  account_email TEXT NOT NULL,
+
+                  imap_uid BIGINT,
+                  message_id TEXT,
+
+                  from_email TEXT,
+                  from_name TEXT,
+                  subject TEXT,
+                  received_at TIMESTAMPTZ,
+
+                  body_text TEXT,
+                  body_html TEXT,
+
+                  ack_sent BOOLEAN NOT NULL DEFAULT FALSE,
+                  ack_sent_at TIMESTAMPTZ,
+                  ack_error TEXT,
+
+                  lead_id BIGINT
+                );
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gia_email_messages_marca ON public.gia_email_messages(id_marca, created_at DESC);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gia_email_messages_account_uid ON public.gia_email_messages(account_email, imap_uid DESC);"))
+        conn.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_gia_email_messages_dedupe
+                ON public.gia_email_messages(account_email, COALESCE(message_id,''), COALESCE(imap_uid,0));
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS public.gia_email_state (
+                  account_email TEXT PRIMARY KEY,
+                  last_uid BIGINT NOT NULL DEFAULT 0,
+                  last_sync_at TIMESTAMPTZ
+                );
+                """
+            )
+        )
+        conn.commit()
+
+
+def _decode_mime_words(v: Any) -> str:
+    if v is None:
+        return ""
+    try:
+        parts = decode_header(str(v))
+    except Exception:
+        return str(v)
+    out = ""
+    for p, enc in parts:
+        if isinstance(p, bytes):
+            try:
+                out += p.decode(enc or "utf-8", errors="replace")
+            except Exception:
+                out += p.decode("utf-8", errors="replace")
+        else:
+            out += str(p)
+    return out
+
+
+def _extract_bodies(msg: Message) -> Tuple[str, str]:
+    text_body = ""
+    html_body = ""
+
+    def _decode_payload(part: Message) -> str:
+        try:
+            payload = part.get_payload(decode=True) or b""
+        except Exception:
+            payload = b""
+        charset = part.get_content_charset() or "utf-8"
+        try:
+            return payload.decode(charset, errors="replace")
+        except Exception:
+            return payload.decode("utf-8", errors="replace")
+
+    if msg.is_multipart():
+        for part in msg.walk():
+            ctype = (part.get_content_type() or "").lower()
+            disp = (part.get("Content-Disposition") or "").lower()
+            if "attachment" in disp:
+                continue
+            if ctype == "text/plain" and not text_body:
+                text_body = _decode_payload(part)
+            elif ctype == "text/html" and not html_body:
+                html_body = _decode_payload(part)
+    else:
+        ctype = (msg.get_content_type() or "").lower()
+        if ctype == "text/plain":
+            text_body = _decode_payload(msg)
+        elif ctype == "text/html":
+            html_body = _decode_payload(msg)
+
+    return (text_body or "").strip(), (html_body or "").strip()
+
+
+def _resolve_marca_id(conn, marca_name: str) -> Optional[int]:
+    try:
+        rows = conn.execute(text("SELECT id_marca, COALESCE(nombre,marca,'') AS nombre FROM public.marcas")).fetchall()
+        want = _norm(marca_name)
+        for r in rows:
+            nm = _norm(str(r[1] or ""))
+            if nm and nm == want:
+                return int(r[0])
+        return None
+    except Exception:
+        return None
+
+
+def _load_accounts() -> List[Dict[str, Any]]:
+    raw = (os.getenv("GIA_EMAIL_ACCOUNTS_JSON") or os.getenv("GIA_EMAIL_ACCOUNTS") or "").strip()
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    for a in data:
+        if not isinstance(a, dict):
+            continue
+        marca = str(a.get("marca") or "").strip()
+        from_email = str(a.get("from_email") or a.get("email") or a.get("username") or "").strip()
+        username = str(a.get("username") or from_email or "").strip()
+        password = str(a.get("password") or "").strip()
+        imap_host = str(a.get("imap_host") or "").strip()
+        smtp_host = str(a.get("smtp_host") or "").strip()
+        if not (marca and from_email and username and password and imap_host and smtp_host):
+            continue
+        out.append(
+            {
+                "marca": marca,
+                "from_email": from_email,
+                "username": username,
+                "password": password,
+                "imap_host": imap_host,
+                "imap_port": int(a.get("imap_port") or 993),
+                "imap_ssl": bool(a.get("imap_ssl", True)),
+                "smtp_host": smtp_host,
+                "smtp_port": int(a.get("smtp_port") or 465),
+                "smtp_ssl": bool(a.get("smtp_ssl", True)),
+            }
+        )
+    return out
+
+
+def _filter_accounts_for_user(conn, user: dict, accounts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if _is_admin(user):
+        return accounts
+    mids = set(_user_marcas_ids(user))
+    if not mids:
+        return []
+    out: List[Dict[str, Any]] = []
+    for a in accounts:
+        mid = _resolve_marca_id(conn, str(a.get("marca") or ""))
+        if mid is not None and int(mid) in mids:
+            out.append(a)
+    return out
+
+
+def _smtp_send(*, smtp_host: str, smtp_port: int, smtp_ssl: bool, username: str, password: str, from_email: str, to_email: str, subject: str, text_body: str) -> None:
+    # Minimal: text/plain
+    msg = (
+        "From: %s\\r\\n"
+        "To: %s\\r\\n"
+        "Subject: %s\\r\\n"
+        "MIME-Version: 1.0\\r\\n"
+        "Content-Type: text/plain; charset=utf-8\\r\\n"
+        "\\r\\n"
+        "%s"
+    ) % (from_email, to_email, subject, text_body)
+
+    context = ssl.create_default_context()
+    if smtp_ssl:
+        with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=25) as s:
+            s.login(username, password)
+            s.sendmail(from_email, [to_email], msg.encode("utf-8", errors="replace"))
+    else:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=25) as s:
+            s.starttls(context=context)
+            s.login(username, password)
+            s.sendmail(from_email, [to_email], msg.encode("utf-8", errors="replace"))
+
+
+def _imap_connect(*, host: str, port: int, use_ssl: bool) -> imaplib.IMAP4:
+    if use_ssl:
+        return imaplib.IMAP4_SSL(host, port)
+    return imaplib.IMAP4(host, port)
+
+
+@router.get("/status")
+def status(user: dict = Depends(get_current_user)):
+    _ensure_schema()
+    accounts = _load_accounts()
+    with get_connection() as conn:
+        allowed = _filter_accounts_for_user(conn, user, accounts)
+        items = []
+        for a in allowed:
+            acc = str(a.get("from_email") or "")
+            mid = _resolve_marca_id(conn, str(a.get("marca") or ""))
+            st = conn.execute(text("SELECT last_uid, last_sync_at FROM public.gia_email_state WHERE account_email=:a"), {"a": acc}).mappings().first() or {}
+            items.append(
+                {
+                    "marca": a.get("marca"),
+                    "id_marca": mid,
+                    "account_email": acc,
+                    "imap_host": a.get("imap_host"),
+                    "smtp_host": a.get("smtp_host"),
+                    "last_uid": int(st.get("last_uid") or 0),
+                    "last_sync_at": (str(st.get("last_sync_at")) if st.get("last_sync_at") is not None else None),
+                }
+            )
+        return {"ok": True, "configured": bool(accounts), "items": items}
+
+
+@router.post("/sync")
+def sync(
+    id_marca: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=50, ge=1, le=200),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Sincroniza IMAP (poll) y envía auto-respuesta 1 vez por correo nuevo.
+    Configuración via env `GIA_EMAIL_ACCOUNTS_JSON` (NO se guarda en BD).
+    """
+    _ensure_schema()
+    accounts = _load_accounts()
+    if not accounts:
+        return {"ok": False, "error": "GIA email no configurado (faltan variables de entorno)."}
+
+    with get_connection() as conn:
+        allowed = _filter_accounts_for_user(conn, user, accounts)
+        if id_marca:
+            allowed = [a for a in allowed if (_resolve_marca_id(conn, str(a.get("marca") or "")) == int(id_marca))]
+
+        synced = 0
+        stored = 0
+        ack_sent = 0
+        errors: list[str] = []
+
+        for a in allowed:
+            try:
+                marca = str(a.get("marca") or "").strip()
+                mid = _resolve_marca_id(conn, marca)
+                account_email = str(a.get("from_email") or "").strip()
+                st = conn.execute(text("SELECT last_uid FROM public.gia_email_state WHERE account_email=:a"), {"a": account_email}).scalar()
+                last_uid = int(st or 0)
+
+                im = _imap_connect(host=a["imap_host"], port=int(a["imap_port"]), use_ssl=bool(a["imap_ssl"]))
+                im.login(a["username"], a["password"])
+                im.select("INBOX")
+
+                # Strategy: fetch last `limit` UIDs; dedupe in DB.
+                typ, data = im.uid("search", None, "ALL")
+                if typ != "OK":
+                    raise RuntimeError("IMAP search failed")
+                uids = [int(x) for x in (data[0].split() if data and data[0] else [])]
+                uids.sort()
+                if last_uid:
+                    uids = [u for u in uids if u > last_uid]
+                if limit and len(uids) > limit:
+                    uids = uids[-limit:]
+
+                max_uid = last_uid
+                for uid in uids:
+                    max_uid = max(max_uid, uid)
+                    typ2, msg_data = im.uid("fetch", str(uid), "(RFC822)")
+                    if typ2 != "OK" or not msg_data or not msg_data[0]:
+                        continue
+                    raw_bytes = msg_data[0][1] if isinstance(msg_data[0], tuple) else None
+                    if not raw_bytes:
+                        continue
+                    msg = BytesParser(policy=default).parsebytes(raw_bytes)
+                    msg_id = str(msg.get("Message-ID") or "").strip()
+
+                    from_name, from_email = parseaddr(str(msg.get("From") or ""))
+                    from_email = (from_email or "").strip().lower()
+                    from_name = _decode_mime_words(from_name).strip()
+                    subject = _decode_mime_words(msg.get("Subject")).strip()
+                    received_at = None
+                    try:
+                        dt_raw = msg.get("Date")
+                        if dt_raw:
+                            # best-effort; keep as string if parsing fails
+                            received_at = datetime.now(timezone.utc)
+                    except Exception:
+                        received_at = None
+
+                    text_body, html_body = _extract_bodies(msg)
+                    if not text_body and html_body:
+                        # very small strip for preview
+                        text_body = re.sub(r"<[^>]+>", " ", html_body)
+                        text_body = re.sub(r"\\s+", " ", text_body).strip()
+
+                    # skip self-sent
+                    if from_email and from_email == account_email.lower():
+                        continue
+
+                    # upsert minimal
+                    try:
+                        conn.execute(
+                            text(
+                                """
+                                INSERT INTO public.gia_email_messages(
+                                  id_marca, marca, account_email, imap_uid, message_id,
+                                  from_email, from_name, subject, received_at, body_text, body_html
+                                )
+                                VALUES (:mid, :marca, :acc, :uid, :msgid, :fe, :fn, :sub, :ra, :bt, :bh)
+                                ON CONFLICT DO NOTHING
+                                """
+                            ),
+                            {
+                                "mid": int(mid) if mid is not None else None,
+                                "marca": marca,
+                                "acc": account_email,
+                                "uid": int(uid),
+                                "msgid": msg_id,
+                                "fe": from_email or None,
+                                "fn": from_name or None,
+                                "sub": subject or None,
+                                "ra": received_at,
+                                "bt": (text_body[:50000] if text_body else None),
+                                "bh": (html_body[:200000] if html_body else None),
+                            },
+                        )
+                        stored += 1
+                    except Exception:
+                        pass
+
+                    # auto-ack (1 vez)
+                    try:
+                        rowm = conn.execute(
+                            text(
+                                """
+                                SELECT id_msg, ack_sent
+                                FROM public.gia_email_messages
+                                WHERE account_email=:acc AND imap_uid=:uid
+                                ORDER BY id_msg DESC
+                                LIMIT 1
+                                """
+                            ),
+                            {"acc": account_email, "uid": int(uid)},
+                        ).mappings().first()
+                        if rowm and not bool(rowm.get("ack_sent")) and from_email:
+                            ack_subject = "Re: " + (subject or "Contacto")
+                            ack_text = (
+                                "¡Gracias por contactarnos!\\n\\n"
+                                "Recibimos tu solicitud y un ejecutivo te contactará a la brevedad.\\n\\n"
+                                "--\\n"
+                                f"{marca} · Green Diamond"
+                            )
+                            _smtp_send(
+                                smtp_host=a["smtp_host"],
+                                smtp_port=int(a["smtp_port"]),
+                                smtp_ssl=bool(a["smtp_ssl"]),
+                                username=a["username"],
+                                password=a["password"],
+                                from_email=account_email,
+                                to_email=from_email,
+                                subject=ack_subject,
+                                text_body=ack_text,
+                            )
+                            conn.execute(
+                                text(
+                                    """
+                                    UPDATE public.gia_email_messages
+                                    SET ack_sent=TRUE, ack_sent_at=now(), ack_error=NULL, updated_at=now()
+                                    WHERE id_msg=:id
+                                    """
+                                ),
+                                {"id": int(rowm.get("id_msg"))},
+                            )
+                            ack_sent += 1
+                    except Exception as e:
+                        try:
+                            if rowm and rowm.get("id_msg") is not None:
+                                conn.execute(
+                                    text(
+                                        "UPDATE public.gia_email_messages SET ack_error=:e, updated_at=now() WHERE id_msg=:id"
+                                    ),
+                                    {"e": str(e)[:200], "id": int(rowm.get("id_msg"))},
+                                )
+                        except Exception:
+                            pass
+
+                # state
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO public.gia_email_state(account_email, last_uid, last_sync_at)
+                        VALUES (:a, :u, now())
+                        ON CONFLICT(account_email) DO UPDATE SET last_uid=:u, last_sync_at=now()
+                        """
+                    ),
+                    {"a": account_email, "u": int(max_uid)},
+                )
+                conn.commit()
+                try:
+                    im.logout()
+                except Exception:
+                    pass
+                synced += 1
+            except Exception as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                errors.append(f"{a.get('marca')}: {str(e)[:160]}")
+
+        return {"ok": True, "synced": synced, "stored": stored, "ack_sent": ack_sent, "errors": errors}
+
+
+@router.get("/inbox")
+def inbox(
+    id_marca: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: dict = Depends(get_current_user),
+):
+    _ensure_schema()
+    with get_connection() as conn:
+        where = []
+        params: Dict[str, Any] = {"limit": int(limit), "offset": int(offset)}
+
+        if not _is_admin(user):
+            mids = _user_marcas_ids(user)
+            if not mids:
+                return {"ok": True, "total": 0, "items": []}
+            where.append("id_marca = ANY(:mids)")
+            params["mids"] = mids
+
+        if id_marca:
+            where.append("id_marca=:mid")
+            params["mid"] = int(id_marca)
+
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        total = conn.execute(text(f"SELECT COUNT(*) FROM public.gia_email_messages {where_sql}"), params).scalar() or 0
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT id_msg, created_at, id_marca, marca, account_email,
+                       from_email, from_name, subject, received_at,
+                       COALESCE(ack_sent,false) AS ack_sent,
+                       LEFT(COALESCE(body_text,''), 220) AS preview
+                FROM public.gia_email_messages
+                {where_sql}
+                ORDER BY COALESCE(received_at, created_at) DESC, id_msg DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        ).mappings().all()
+        return {"ok": True, "total": int(total), "items": list(rows)}
+
+
+@router.get("/inbox/{id_msg}")
+def inbox_get(id_msg: int, user: dict = Depends(get_current_user)):
+    _ensure_schema()
+    with get_connection() as conn:
+        row = conn.execute(text("SELECT * FROM public.gia_email_messages WHERE id_msg=:id"), {"id": int(id_msg)}).mappings().first()
+        if not row:
+            raise HTTPException(404, "Mensaje no existe")
+        if not _is_admin(user):
+            mids = set(_user_marcas_ids(user))
+            mid = row.get("id_marca")
+            if mid is None or int(mid) not in mids:
+                raise HTTPException(403, "Sin permiso")
+        return {"ok": True, "message": dict(row)}
+
+
+@router.post("/inbox/{id_msg}/reply")
+def reply(
+    id_msg: int,
+    payload: dict = Body(...),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Responder manualmente desde CRM (por ahora).
+    """
+    text_body = str(payload.get("text") or payload.get("text_body") or "").strip()
+    if not text_body:
+        raise HTTPException(400, "text requerido")
+    _ensure_schema()
+    accounts = _load_accounts()
+    with get_connection() as conn:
+        msg = conn.execute(text("SELECT * FROM public.gia_email_messages WHERE id_msg=:id"), {"id": int(id_msg)}).mappings().first()
+        if not msg:
+            raise HTTPException(404, "Mensaje no existe")
+        if not _is_admin(user):
+            mids = set(_user_marcas_ids(user))
+            mid = msg.get("id_marca")
+            if mid is None or int(mid) not in mids:
+                raise HTTPException(403, "Sin permiso")
+
+        acc_email = str(msg.get("account_email") or "").strip().lower()
+        to_email = str(msg.get("from_email") or "").strip()
+        if not to_email:
+            raise HTTPException(400, "Mensaje sin from_email")
+
+        # Find account config by from_email
+        acc = next((a for a in accounts if str(a.get("from_email") or "").strip().lower() == acc_email), None)
+        if not acc:
+            raise HTTPException(400, "Cuenta no configurada en servidor (.env)")
+
+        subj_in = str(msg.get("subject") or "").strip() or "Contacto"
+        subject = "Re: " + subj_in if not subj_in.lower().startswith("re:") else subj_in
+        try:
+            _smtp_send(
+                smtp_host=acc["smtp_host"],
+                smtp_port=int(acc["smtp_port"]),
+                smtp_ssl=bool(acc["smtp_ssl"]),
+                username=acc["username"],
+                password=acc["password"],
+                from_email=str(acc.get("from_email") or acc.get("username") or ""),
+                to_email=to_email,
+                subject=subject,
+                text_body=text_body,
+            )
+        except Exception as e:
+            raise HTTPException(500, detail=f"No pude enviar correo: {e}")
+        return {"ok": True}
+

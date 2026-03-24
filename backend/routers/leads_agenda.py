@@ -1051,6 +1051,7 @@ def _build_event(
     description = "\n".join(desc_lines).strip()
 
     return {
+        "day": day.isoformat(),
         "title": title,
         "start_at": dt_start.isoformat(),
         "end_at": dt_end.isoformat(),
@@ -1665,6 +1666,22 @@ def move_lead_and_maybe_agenda(
             "ok": True,
             "ask_agendar": False,
             "agendado": True,
+            # Multi-día (si aplica). Útil para UI (tabs por día / WhatsApp resumen).
+            "eventos": [
+                {
+                    "id_evento": evento_id,
+                    "day": e.get("day"),
+                    "title": e.get("title"),
+                    "start_at": e.get("start_at"),
+                    "end_at": e.get("end_at"),
+                    "location": e.get("location"),
+                    "description": e.get("description"),
+                    "ops": e.get("ops"),
+                    "montaje_text": e.get("montaje_text"),
+                    "products_text": e.get("products_text"),
+                }
+                for e in (eventos or [])
+            ],
             "evento": {
                 "id_evento": evento_id,
                 "title": ev["title"],

@@ -350,6 +350,30 @@
 	    .gdWsp .swTa{ font-size:16px; font-weight:650; line-height:1.35; min-height: 190px; }
 	    .gdWsp #sw_wa_list .swBtn{ font-size:14px; }
 
+      /* Selector neutro (1 día vs multi-día) */
+      .gdNeutral .swal2-radio{
+        display:grid !important;
+        gap:10px !important;
+        justify-content:stretch !important;
+      }
+      .gdNeutral .swal2-radio label{
+        display:flex !important;
+        align-items:center !important;
+        gap:10px !important;
+        padding:10px 12px !important;
+        border-radius:14px !important;
+        border:1px solid var(--border) !important;
+        background: rgba(255,255,255,.03) !important;
+        color: var(--text) !important;
+        font-weight:900 !important;
+      }
+      .gdNeutral .swal2-radio input[type="radio"]{
+        transform: scale(1.08);
+      }
+      .gdNeutral .swal2-radio label:hover{
+        filter: brightness(1.05);
+      }
+
     /* ===== Mobile pragmatic mode ===== */
     @media (max-width: 820px){
       .page{ padding:10px; }
@@ -2660,6 +2684,7 @@ async function handleConfirmado(lead, newEstado){
   const gcalLink = String(gcal?.calendar_html_link || "");
   const gcalEid = String(gcal?.calendar_event_id || "");
   const gcalErr = String(gcal?.gcal_error || "");
+  const gcalLead = (gcal && typeof gcal === "object" && gcal.lead && typeof gcal.lead === "object") ? gcal.lead : {};
 
   const fmtDT = (s)=>{
     if (!s) return "";
@@ -2667,23 +2692,166 @@ async function handleConfirmado(lead, newEstado){
     catch(_){ return String(s); }
   };
 
+  // WhatsApp (cliente + ventas) al calendarizar
+  const evs = (Array.isArray(out?.eventos) && out.eventos.length)
+    ? out.eventos
+    : ((Array.isArray(previewEvents) && previewEvents.length) ? previewEvents : (ev ? [ev] : []));
+
+  const moneyCLP = (n)=>{
+    const x = Number(n || 0);
+    if (!Number.isFinite(x)) return "—";
+    return "$" + new Intl.NumberFormat("es-CL",{maximumFractionDigits:0}).format(x);
+  };
+  const waDigits = (s)=> String(s || "").replace(/\\D/g,"");
+  const fmtDateLong = (d)=>{
+    if (!d) return "";
+    try{
+      const dd = new Date(String(d).slice(0,10) + "T00:00:00");
+      return dd.toLocaleDateString("es-CL",{weekday:"long", day:"2-digit", month:"long"});
+    }catch(_){ return String(d).slice(0,10); }
+  };
+  const fmtHHMM = (dt)=>{
+    try{
+      return new Date(dt).toLocaleTimeString("es-CL",{hour:"2-digit", minute:"2-digit"});
+    }catch(_){ return ""; }
+  };
+  const bulletsFrom = (txt)=>{
+    const raw = String(txt || "");
+    const lines = raw.split("\\n").map(l=>l.trim()).filter(Boolean);
+    const out = [];
+    for (const ln of lines){
+      if (!ln) continue;
+      const up = ln.toUpperCase();
+      if (up === "PRODUCTOS" || up === "PRODUCTOS:" || up === "MONTAJE" || up === "MONTAJE:" || up === "MONTAJE SUGERIDO") continue;
+      if (ln.startsWith("•")) out.push(ln);
+      else if (/^\\d+\\s*x\\s+/i.test(ln)) out.push("• " + ln);
+    }
+    return out.length ? out : ["• —"];
+  };
+
+  // quote meta
+  let cotN = (gcalLead?.num_cotizacion || lead?.num_cotizacion || "").toString().trim();
+  let total = (gcalLead?.monto_cotizado != null) ? Number(gcalLead.monto_cotizado) : Number(lead?.monto_cotizado || 0);
+  let abono = null;
+  if (v?.id_cotizacion){
+    try{
+      const q = await apiJSON(`/quotes/${Number(v.id_cotizacion)}`);
+      const c = q?.cotizacion || {};
+      if (c?.numero != null) cotN = String(c.numero);
+      if (c?.total != null) total = Number(c.total);
+      if (c?.abono != null) abono = Number(c.abono);
+    }catch(_){}
+  }
+
+  const clienteNom = (lead?.nombre_cliente || lead?.cliente || "").toString().trim();
+  const marcaNom = (lead?.marca_nombre || lead?.marca || "").toString().trim();
+  const comunaNom = (evs[0]?.location || lead?.comuna_nombre || lead?.comuna || "").toString().trim();
+  const telCliente = (v?.telefono || gcalLead?.telefono || lead?.telefono || "").toString().trim();
+  const telVentas = (gcalLead?.ventas_telefono || "").toString().trim();
+  const dirTxt = (v?.direccion || gcalLead?.direccion || lead?.direccion || "").toString().trim();
+
+  const days = evs.map(e => String(e?.day || e?.start_at || "").slice(0,10)).filter(Boolean);
+  const uniqueDays = Array.from(new Set(days));
+  uniqueDays.sort();
+  const dateLine = uniqueDays.length > 1
+    ? `del ${fmtDateLong(uniqueDays[0])} al ${fmtDateLong(uniqueDays[uniqueDays.length-1])}`
+    : (uniqueDays[0] ? fmtDateLong(uniqueDays[0]) : "");
+
+  const hrLine = v?.hr_tbd ? "POR CONFIRMAR" : `${fmtHHMM(evs[0]?.start_at)} a ${fmtHHMM(evs[0]?.end_at)}`;
+
+  let productosBlock = "";
+  let montajeBlock = "";
+  if (uniqueDays.length > 1){
+    productosBlock = "🛒 PRODUCTOS (por día):\\n" + uniqueDays.map((d, idx)=>{
+      const e = evs.find(x => String(x?.day || x?.start_at || "").slice(0,10) === d) || {};
+      const bl = bulletsFrom(e.products_text);
+      return `Día ${idx+1} · ${d}:\\n${bl.join("\\n")}`;
+    }).join("\\n\\n");
+    montajeBlock = "🧰 MONTAJE (por día):\\n" + uniqueDays.map((d, idx)=>{
+      const e = evs.find(x => String(x?.day || x?.start_at || "").slice(0,10) === d) || {};
+      const bl = bulletsFrom(e.montaje_text);
+      const ops = (e.ops != null) ? String(e.ops) : "—";
+      return `Día ${idx+1} · ${d}:\\n${bl.join("\\n")}\\n👥 OPS: ${ops}`;
+    }).join("\\n\\n");
+  } else {
+    productosBlock = "🛒 PRODUCTOS:\\n" + bulletsFrom(evs[0]?.products_text).join("\\n");
+    montajeBlock = "🧰 MONTAJE:\\n" + bulletsFrom(evs[0]?.montaje_text).join("\\n") + `\\n👥 OPS: ${String(evs[0]?.ops ?? "—")}`;
+  }
+
+  const wspText =
+`FECHA EVENTO: ${dateLine || "POR CONFIRMAR"}
+NOMBRE CLIENTE: ${[clienteNom, marcaNom].filter(Boolean).join(" - ") || "—"}
+COMUNA: ${comunaNom || "—"}
+Valor TOTAL: ${moneyCLP(total)}
+Abono: ${abono != null ? moneyCLP(abono) : "—"}
+COT Nº: ${cotN || "—"}
+Documento: Sin Documento
+HORARIO: ${hrLine}
+
+${productosBlock}
+
+${montajeBlock}
+
+📞 TELEFONO: ${telCliente || "POR CONFIRMAR"}
+📍 DIRECCION: ${dirTxt || "POR CONFIRMAR"}
+
+¿Me confirmas por favor que estos datos están correctos?`;
+
+  const urlClient = telCliente ? `https://wa.me/${waDigits(telCliente)}?text=${encodeURIComponent(wspText)}` : "";
+  const urlVentas = telVentas ? `https://wa.me/${waDigits(telVentas)}?text=${encodeURIComponent(wspText)}` : "";
+
   await Swal.fire({
     icon: (gcalLink && gcalEid) ? "success" : "warning",
-    title: (gcalLink && gcalEid) ? "Evento creado" : "Confirmado (sin Calendar)",
+    title: (gcalLink && gcalEid) ? "Evento calendarizado" : "Confirmado (sin Calendar)",
     html: `
-      <div style="text-align:left">
+      <div style="text-align:left;display:grid;gap:10px">
         <div style="font-weight:1000;font-size:14px">${escapeHtml(ev.title||"")}</div>
-        <div style="opacity:.7;margin-top:4px">${escapeHtml(fmtDT(ev.start_at))} → ${escapeHtml(fmtDT(ev.end_at))}</div>
-        <div style="margin-top:6px;font-weight:900">Location: ${escapeHtml(ev.location||"")}</div>
-        <div style="margin-top:6px;font-weight:900">OPS: ${escapeHtml(String(ev.ops ?? ""))}</div>
-        ${gcalLink ? `<div style="margin-top:10px"><a href="${escapeHtml(gcalLink)}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:1000">Abrir en Google Calendar</a></div>` : ``}
-        ${(!gcalLink || !gcalEid) ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);border-radius:12px">
+        <div style="opacity:.7">${escapeHtml(fmtDT(ev.start_at))} → ${escapeHtml(fmtDT(ev.end_at))}</div>
+        ${gcalLink ? `<div><a href="${escapeHtml(gcalLink)}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:1000">Abrir en Google Calendar</a></div>` : ``}
+        ${(!gcalLink || !gcalEid) ? `<div style="padding:10px 12px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);border-radius:12px">
           <div style="font-weight:1000">No se creó el evento en Google Calendar.</div>
           <div class="muted" style="margin-top:4px">${escapeHtml(gcalErr || "Revisar conexión/credenciales.")}</div>
         </div>` : ``}
-        <div style="margin-top:10px;white-space:pre-line;font-size:12px;opacity:.95">${escapeHtml(ev.description||"")}</div>
+
+        <div style="border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.10);display:grid;gap:8px">
+          <div class="muted" style="font-weight:1000">WhatsApp (mensaje listo)</div>
+          <textarea id="sw_ag_wsp_msg" class="swTa" rows="10" style="min-height:180px">${escapeHtml(wspText)}</textarea>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+            <button type="button" class="swBtn secondary" id="sw_ag_copy">Copiar</button>
+            <button type="button" class="swBtn secondary" id="sw_ag_ventas" ${urlVentas ? "" : "disabled"}>Enviar a Ventas</button>
+            <button type="button" class="swBtn" id="sw_ag_cliente" ${urlClient ? "" : "disabled"}>Enviar a Cliente</button>
+          </div>
+          <div class="muted agSmall">Tip: si falta teléfono/dirección, completa el lead antes de enviar.</div>
+        </div>
       </div>
     `,
+    showConfirmButton:false,
+    showCloseButton:true,
+    didOpen: ()=>{
+      const ta = qs("#sw_ag_wsp_msg");
+      const getTxt = ()=> (ta?.value || wspText || "").trim();
+      qs("#sw_ag_copy")?.addEventListener("click", async ()=>{
+        try{
+          await navigator.clipboard.writeText(getTxt());
+          toast("Mensaje copiado", "success");
+        }catch(_){
+          try{ ta && ta.select && ta.select(); }catch(_2){}
+          toast("Copia manual (Ctrl/Cmd+C)", "warning");
+        }
+      });
+      qs("#sw_ag_cliente")?.addEventListener("click", ()=>{
+        const t = getTxt();
+        const u = telCliente ? `https://wa.me/${waDigits(telCliente)}?text=${encodeURIComponent(t)}` : "";
+        if (!u) return toast("Lead sin teléfono", "warning");
+        window.open(u, "_blank", "noopener,noreferrer");
+      });
+      qs("#sw_ag_ventas")?.addEventListener("click", ()=>{
+        const t = getTxt();
+        const u = telVentas ? `https://wa.me/${waDigits(telVentas)}?text=${encodeURIComponent(t)}` : "";
+        if (!u) return toast("Falta teléfono de Ventas (usuario asignado)", "warning");
+        window.open(u, "_blank", "noopener,noreferrer");
+      });
+    }
   });
 
   return true;
@@ -2997,7 +3165,7 @@ async function openEditModal(lead){
 	      });
 	      qs("#qa_vcard")?.addEventListener("click", async ()=>{
 	        try{
-	          const safe = (s)=> String(s||"").trim().replace(/[\\/:*?\"<>|]+/g, " ").replace(/\\s+/g, " ").trim();
+	          const safe = (s)=> String(s||"").trim().replace(/[\\/:*?"<>|]+/g, " ").replace(/\\s+/g, " ").trim();
 	          const cliente = safe(lead.nombre_cliente || lead.cliente || "Cliente");
 	          const marca = safe(lead.marca || "");
 	          const fname = `Contacto - ${cliente}${marca ? (" - " + marca) : ""}.vcf`;
@@ -3206,6 +3374,7 @@ async function openEditModal(lead){
                 multi: "Varios días (día por día)",
               },
               inputValue: "single",
+              customClass: { popup: "gdNeutral" },
               showCancelButton: true,
               confirmButtonText: "Continuar",
               cancelButtonText: "Cancelar",
