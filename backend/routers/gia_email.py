@@ -593,10 +593,26 @@ def _load_accounts() -> List[Dict[str, Any]]:
                 candidates.append(Path.cwd() / ".env")
             except Exception:
                 pass
+            try:
+                candidates.append(Path.home() / "crm" / ".env")
+            except Exception:
+                pass
+
+            # Prefer python-dotenv parsing when available (más robusto con líneas largas).
+            try:
+                from dotenv import dotenv_values  # type: ignore
+            except Exception:
+                dotenv_values = None  # type: ignore
+
             for p in candidates:
                 try:
                     if not p or not p.exists():
                         continue
+                    if dotenv_values is not None:
+                        vals = dotenv_values(str(p))  # type: ignore
+                        v = (vals.get(var_name) or "").strip()
+                        if v:
+                            return v
                     for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
                         s = line.strip()
                         if not s or s.startswith("#"):
