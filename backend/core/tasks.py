@@ -218,13 +218,15 @@ def _brand_filter_sql(db: Session) -> str:
       - :marcas_upper (text[])
     Devuelve SQL (string) o "FALSE" si no aplicable.
     """
+    # Si existen ambos campos, usar OR para cubrir datos legacy (id_marca NULL pero marca texto llena).
     try:
-        if _col_exists(db, "leads", "id_marca"):
+        has_id = _col_exists(db, "leads", "id_marca")
+        has_txt = _col_exists(db, "leads", "marca")
+        if has_id and has_txt:
+            return "((l.id_marca IS NOT NULL AND l.id_marca = ANY(CAST(:marcas_ids AS int[]))) OR (upper(COALESCE(l.marca,'')) = ANY(CAST(:marcas_upper AS text[]))))"
+        if has_id:
             return "(l.id_marca = ANY(CAST(:marcas_ids AS int[])))"
-    except Exception:
-        pass
-    try:
-        if _col_exists(db, "leads", "marca"):
+        if has_txt:
             return "(upper(COALESCE(l.marca,'')) = ANY(CAST(:marcas_upper AS text[])))"
     except Exception:
         pass
