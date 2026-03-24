@@ -2725,46 +2725,57 @@ async function handleConfirmado(lead, newEstado){
   const uniqueDays = Array.from(new Set(days));
   uniqueDays.sort();
   const dateLine = uniqueDays.length > 1
-    ? `del ${fmtDateLong(uniqueDays[0])} al ${fmtDateLong(uniqueDays[uniqueDays.length-1])}`
+    ? `${fmtDateLong(uniqueDays[0])} → ${fmtDateLong(uniqueDays[uniqueDays.length-1])}`
     : (uniqueDays[0] ? fmtDateLong(uniqueDays[0]) : "");
 
   const hrLine = v?.hr_tbd ? "POR CONFIRMAR" : `${fmtHHMM(evs[0]?.start_at)} a ${fmtHHMM(evs[0]?.end_at)}`;
 
+  const EMO = {
+    cal: "\uD83D\uDCC5",     // 📅
+    cart: "\uD83D\uDED2",    // 🛒
+    tools: "\uD83E\uDDF0",   // 🧰
+    ops: "\uD83D\uDC65",     // 👥
+    clock: "\uD83D\uDD52",   // 🕒
+    phone: "\uD83D\uDCDE",   // 📞
+    pin: "\uD83D\uDCCD",     // 📍
+    doc: "\uD83D\uDCC4",     // 📄
+  };
+
   let productosBlock = "";
   let montajeBlock = "";
   if (uniqueDays.length > 1){
-    productosBlock = "🛒 PRODUCTOS (por día):\\n" + uniqueDays.map((d, idx)=>{
+    productosBlock = `${EMO.cart} PRODUCTOS (por día):\n` + uniqueDays.map((d, idx)=>{
       const e = evs.find(x => String(x?.day || x?.start_at || "").slice(0,10) === d) || {};
       const bl = bulletsFrom(e.products_text);
-      return `Día ${idx+1} · ${d}:\\n${bl.join("\\n")}`;
-    }).join("\\n\\n");
-    montajeBlock = "🧰 MONTAJE (por día):\\n" + uniqueDays.map((d, idx)=>{
+      return `Día ${idx+1} · ${d}:\n${bl.join("\n")}`;
+    }).join("\n\n");
+    montajeBlock = `${EMO.tools} MONTAJE (por día):\n` + uniqueDays.map((d, idx)=>{
       const e = evs.find(x => String(x?.day || x?.start_at || "").slice(0,10) === d) || {};
       const bl = bulletsFrom(e.montaje_text);
       const ops = (e.ops != null) ? String(e.ops) : "—";
-      return `Día ${idx+1} · ${d}:\\n${bl.join("\\n")}\\n👥 OPS: ${ops}`;
-    }).join("\\n\\n");
+      return `Día ${idx+1} · ${d}:\n${bl.join("\n")}\n${EMO.ops} OPS: ${ops}`;
+    }).join("\n\n");
   } else {
-    productosBlock = "🛒 PRODUCTOS:\\n" + bulletsFrom(evs[0]?.products_text).join("\\n");
-    montajeBlock = "🧰 MONTAJE:\\n" + bulletsFrom(evs[0]?.montaje_text).join("\\n") + `\\n👥 OPS: ${String(evs[0]?.ops ?? "—")}`;
+    productosBlock = `${EMO.cart} PRODUCTOS:\n` + bulletsFrom(evs[0]?.products_text).join("\n");
+    montajeBlock = `${EMO.tools} MONTAJE:\n` + bulletsFrom(evs[0]?.montaje_text).join("\n") + `\n${EMO.ops} OPS: ${String(evs[0]?.ops ?? "—")}`;
   }
 
   const wspText =
-`FECHA EVENTO: ${dateLine || "POR CONFIRMAR"}
+`${EMO.cal} FECHA EVENTO: ${dateLine || "POR CONFIRMAR"}
 NOMBRE CLIENTE: ${[clienteNom, marcaNom].filter(Boolean).join(" - ") || "—"}
 COMUNA: ${comunaNom || "—"}
 Valor TOTAL: ${moneyCLP(total)}
 Abono: ${abono != null ? moneyCLP(abono) : "—"}
 COT Nº: ${cotN || "—"}
-Documento: Sin Documento
-HORARIO: ${hrLine}
+${EMO.doc} Documento: Sin Documento
+${EMO.clock} HORARIO: ${hrLine}
 
 ${productosBlock}
 
 ${montajeBlock}
 
-📞 TELEFONO: ${telCliente || "POR CONFIRMAR"}
-📍 DIRECCION: ${dirTxt || "POR CONFIRMAR"}
+${EMO.phone} TELEFONO: ${telCliente || "POR CONFIRMAR"}
+${EMO.pin} DIRECCION: ${dirTxt || "POR CONFIRMAR"}
 
 ¿Me confirmas por favor que estos datos están correctos?`;
 
