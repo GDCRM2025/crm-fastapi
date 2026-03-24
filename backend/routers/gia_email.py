@@ -608,12 +608,59 @@ def _load_accounts() -> List[Dict[str, Any]]:
                 try:
                     if not p or not p.exists():
                         continue
+                    content = p.read_text(encoding="utf-8", errors="replace")
+
+                    # Robust extractor: soporta valores JSON largos y/o partidos en varias líneas.
+                    # Busca "VAR_NAME=" y si empieza con "[" o "{", lee hasta cerrar el JSON.
+                    try:
+                        m = re.search(rf"(?m)^\\s*{re.escape(var_name)}\\s*=\\s*(.+)$", content)
+                        if m:
+                            start = m.start(1)
+                            # include following lines as needed
+                            tail = content[start:].lstrip()
+                            if tail and tail[0] in ("'", '"'):
+                                q = tail[0]
+                                # quoted: take until matching quote on same line (best-effort)
+                                qend = tail.find(q, 1)
+                                if qend > 1:
+                                    return tail[1:qend].strip()
+                            if tail and tail[0] in ("[", "{"):
+                                open_ch = tail[0]
+                                close_ch = "]" if open_ch == "[" else "}"
+                                in_str = False
+                                esc = False
+                                depth = 0
+                                for idx, ch in enumerate(tail):
+                                    if esc:
+                                        esc = False
+                                        continue
+                                    if ch == "\\":
+                                        esc = True
+                                        continue
+                                    if ch == '"':
+                                        in_str = not in_str
+                                        continue
+                                    if in_str:
+                                        continue
+                                    if ch == open_ch:
+                                        depth += 1
+                                    elif ch == close_ch:
+                                        depth -= 1
+                                        if depth == 0:
+                                            return tail[: idx + 1].strip()
+                    except Exception:
+                        pass
+
                     if dotenv_values is not None:
                         vals = dotenv_values(str(p))  # type: ignore
                         v = (vals.get(var_name) or "").strip()
                         if v:
-                            return v
-                    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                            # si parece JSON incompleto (multi-line), vuelve al extractor robusto de arriba
+                            if (v.startswith("[") and not v.rstrip().endswith("]")) or (v.startswith("{") and not v.rstrip().endswith("}")):
+                                pass
+                            else:
+                                return v
+                    for line in content.splitlines():
                         s = line.strip()
                         if not s or s.startswith("#"):
                             continue
