@@ -1051,7 +1051,10 @@ def _build_event(
     description = "\n".join(desc_lines).strip()
 
     return {
-        "day": day.isoformat(),
+        # Compat: el campo `day` se usa en UI (tabs por día) y en pre_events_json.
+        # En esta función no existe una variable `day`; el día "base" del evento
+        # es `start_day` (derivado de items/service_date o fecha_evento).
+        "day": start_day.isoformat(),
         "title": title,
         "start_at": dt_start.isoformat(),
         "end_at": dt_end.isoformat(),
