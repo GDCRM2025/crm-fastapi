@@ -128,6 +128,25 @@ def _ensure_schema() -> None:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS public.gia_email_templates (
+                  id_tpl BIGSERIAL PRIMARY KEY,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  id_marca INTEGER,
+                  marca TEXT,
+                  kind TEXT NOT NULL,
+                  subject_tpl TEXT,
+                  body_tpl TEXT NOT NULL,
+                  active BOOLEAN NOT NULL DEFAULT TRUE,
+                  created_by TEXT
+                );
+                """
+            )
+        )
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_gia_email_templates ON public.gia_email_templates(id_marca, kind);"))
         conn.commit()
 
 
@@ -225,6 +244,32 @@ def _extract_rid(body: str) -> str:
     return (m.group(1).strip() if m else "")
 
 
+def _extract_oc(subject: str, body_text: str) -> str:
+    s = (subject or "") + "\n" + (body_text or "")
+    m = re.search(r"(?i)\\bOC\\s*[:#-]?\\s*([0-9]{3,})\\b", s)
+    return (m.group(1).strip() if m else "")
+
+
+def _extract_cot_nums(body_text: str) -> list[str]:
+    t = (body_text or "")
+    out: list[str] = []
+    for m in re.finditer(r"(?i)\\bcotizaci[oó]n(?:es)?\\s*([0-9]{3,})(?:\\s*y\\s*([0-9]{3,}))?", t):
+        out.append(m.group(1))
+        if m.group(2):
+            out.append(m.group(2))
+    if not out and re.search(r"(?i)\\bcotiz", t):
+        m2 = re.search(r"(?i)\\b([0-9]{3,})\\s*y\\s*([0-9]{3,})\\b", t)
+        if m2:
+            out.extend([m2.group(1), m2.group(2)])
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for x in out:
+        if x and x not in seen:
+            seen.add(x)
+            uniq.append(x)
+    return uniq[:6]
+
+
 def _looks_like_form(body_text: str) -> bool:
     """
     Heurística: muchos correos de formulario no traen la palabra "FORMULARIO" ni RID,
@@ -266,6 +311,10 @@ def _classify_email(subject: str, body_text: str) -> tuple[str, str]:
 
     if "FORMULARIO" in bb or _extract_rid(body_text) or _looks_like_form(body_text):
         return ("form", "marker/fields")
+
+    oc_kw = ("ORDEN DE COMPRA", "PURCHASE ORDER", "ADJUNTO OC", "ADJUNTAMOS OC")
+    if any(k in bb for k in oc_kw) or _extract_oc(subject, body_text) or re.search(r"(?i)\\bOC\\s*[0-9]{3,}\\b", subject or ""):
+        return ("purchase", "oc")
 
     pay_kw = ("TRANSFER", "COMPROB", "PAGO", "ABONO", "DEPÓSITO", "DEPOSITO", "VOUCHER", "TRX", "TRANSACTION")
     if any(k in bb for k in pay_kw):
@@ -1004,25 +1053,95 @@ def inbox_get(id_msg: int, user: dict = Depends(get_current_user)):
             if mid is None or int(mid) not in mids:
                 raise HTTPException(403, "Sin permiso")
         msg = dict(row)
-        # Draft sugerido (para que el ejecutivo edite y GIA "aprenda" por uso).
+
+        tpl = (
+            conn.execute(
+                text(
+                    """
+                    SELECT subject_tpl, body_tpl, active
+                    FROM public.gia_email_templates
+                    WHERE id_marca=:m AND kind=:k
+                    LIMIT 1
+                    """
+                ),
+                {"m": msg.get("id_marca"), "k": str(msg.get("kind") or "").strip()},
+            )
+            .mappings()
+            .first()
+            or {}
+        )
+
+        def _apply_placeholders(tpl_text: str, ctx: dict) -> str:
+            out = tpl_text or ""
+            for k, v in ctx.items():
+                out = out.replace("{" + str(k) + "}", str(v or ""))
+            return out
+
         try:
             marca = str(msg.get("marca") or "").strip() or "GD"
             cliente = str(msg.get("parsed_cliente") or msg.get("from_name") or "").strip() or "PRUEBA SISTEMA"
             fecha = msg.get("parsed_fecha_evento")
             fecha_txt = str(fecha) if fecha else ""
-            fecha_line = (
-                f"Para ayudarte mejor, ¿me confirmas la fecha ({fecha_txt}) y la cantidad aproximada de personas?"
-                if fecha_txt
-                else "Para ayudarte mejor, ¿me confirmas la fecha y la cantidad aproximada de personas?"
-            )
             kind = str(msg.get("kind") or "").strip().lower()
+            body = str(msg.get("body_text") or "")
+            subj = str(msg.get("subject") or "")
+
+            oc_num = _extract_oc(subj, body)
+            cot_nums = _extract_cot_nums(body)
+            cot_line = ""
+            if cot_nums:
+                cot_line = "Cotización: " + (" y ".join(cot_nums[:2]) if len(cot_nums) <= 2 else ", ".join(cot_nums))
+
+            has_date = bool(_parse_iso_date_any(body) or fecha_txt)
+            has_time = bool(re.search(r"\\b\\d{1,2}:\\d{2}\\b", body))
+            has_comuna = bool(_find_after_label(body, ["Comuna", "Ciudad", "Lugar"]))
+            has_qty = bool(re.search(r"(?i)\\b(\\d{2,5})\\s*(personas|pax|asistentes)\\b", body))
+
+            missing = []
+            if not has_date:
+                missing.append("Fecha del evento")
+            if not has_comuna:
+                missing.append("Comuna")
+            if not has_qty:
+                missing.append("Cantidad aproximada de personas")
+            if not has_time:
+                missing.append("Horario (inicio/fin)")
+
+            ctx = {
+                "cliente": cliente,
+                "marca": marca,
+                "fecha": fecha_txt,
+                "oc": oc_num,
+                "cot": (", ".join(cot_nums) if cot_nums else ""),
+                "subject": subj,
+            }
+
             if kind == "payment":
                 draft = (
                     f"Hola {cliente}, soy del equipo {marca}.\n\n"
                     "Gracias por tu mensaje. Ya estamos revisando el pago/transferencia y te confirmaremos a la brevedad.\n\n"
                     "Saludos.\n"
                 )
+            elif kind == "purchase":
+                oc_txt = f" OC {oc_num}" if oc_num else ""
+                draft = (
+                    f"Hola {cliente}, soy del equipo {marca}.\n\n"
+                    f"¡Gracias! Confirmo recepción de la{oc_txt}.\n"
+                    + (f"{cot_line}\n" if cot_line else "")
+                    + "\n"
+                    "Vamos a coordinar el servicio según lo indicado.\n\n"
+                    "Si necesitas factura, por favor envíame:\n"
+                    "- Razón social / RUT / Giro\n"
+                    "- Dirección de facturación\n"
+                    "- OC (si aplica)\n\n"
+                    "Quedo atento(a).\n"
+                )
             elif kind == "form":
+                fecha_line = (
+                    f"Para ayudarte mejor, ¿me confirmas la fecha ({fecha_txt}) y la cantidad aproximada de personas?"
+                    if fecha_txt
+                    else "Para ayudarte mejor, ¿me confirmas la fecha y la cantidad aproximada de personas?"
+                )
                 draft = (
                     f"Hola {cliente}, soy del equipo {marca}.\n\n"
                     "¡Gracias por tu contacto! Recibimos tu solicitud y te contactaremos a la brevedad.\n\n"
@@ -1030,18 +1149,29 @@ def inbox_get(id_msg: int, user: dict = Depends(get_current_user)):
                     "Gracias, quedo atento(a) a tu confirmación.\n"
                 )
             else:
-                draft = (
-                    f"Hola {cliente}, soy del equipo {marca}.\n\n"
-                    "¡Gracias por tu contacto! Para ayudarte mejor, ¿me confirmas estos datos?\n"
-                    "- Fecha del evento\n"
-                    "- Comuna\n"
-                    "- Cantidad aproximada de personas\n"
-                    "- Horario (inicio/fin)\n\n"
-                    "Gracias, quedo atento(a).\n"
-                )
+                if missing:
+                    missing_lines = "\\n".join([f"- {x}" for x in missing])
+                    draft = (
+                        f"Hola {cliente}, soy del equipo {marca}.\\n\\n"
+                        "¡Gracias por tu contacto! Para ayudarte mejor, ¿me confirmas estos datos?\\n"
+                        f"{missing_lines}\\n\\n"
+                        "Gracias, quedo atento(a).\\n"
+                    )
+                else:
+                    draft = (
+                        f"Hola {cliente}, soy del equipo {marca}.\\n\\n"
+                        "¡Gracias por tu correo! Confirmo recepción y quedo atento(a) por cualquier ajuste.\\n\\n"
+                        "Saludos.\\n"
+                    )
+
+            if tpl and bool(tpl.get("active")) and str(tpl.get("body_tpl") or "").strip():
+                draft = _apply_placeholders(str(tpl.get("body_tpl") or ""), ctx).strip() + "\\n"
+
             msg["draft_text"] = draft
+            msg["template_active"] = bool(tpl.get("active")) if tpl else False
         except Exception:
             msg["draft_text"] = ""
+            msg["template_active"] = False
         return {"ok": True, "message": msg}
 
 
@@ -1096,3 +1226,44 @@ def reply(
         except Exception as e:
             raise HTTPException(500, detail=f"No pude enviar correo: {e}")
         return {"ok": True}
+
+
+@router.put("/templates")
+def templates_upsert(payload: dict = Body(...), user: dict = Depends(get_current_user)):
+    """
+    Guarda plantilla por marca + kind (admin).
+    payload: {id_marca, kind, body_tpl, subject_tpl?, active?}
+    """
+    if not _is_admin(user):
+        raise HTTPException(403, "Solo admin puede guardar plantillas")
+    id_marca = payload.get("id_marca")
+    kind = str(payload.get("kind") or "").strip()
+    body_tpl = str(payload.get("body_tpl") or "").strip()
+    subject_tpl = str(payload.get("subject_tpl") or "").strip() or None
+    active = bool(payload.get("active", True))
+    if not id_marca or not kind or not body_tpl:
+        raise HTTPException(400, "id_marca, kind y body_tpl son requeridos")
+    _ensure_schema()
+    with get_connection() as conn:
+        marca = conn.execute(text("SELECT COALESCE(nombre,marca,'') FROM public.marcas WHERE id_marca=:m"), {"m": int(id_marca)}).scalar()
+        conn.execute(
+            text(
+                """
+                INSERT INTO public.gia_email_templates(id_marca, marca, kind, subject_tpl, body_tpl, active, created_by)
+                VALUES (:m, :marca, :k, :s, :b, :a, :by)
+                ON CONFLICT(id_marca, kind)
+                DO UPDATE SET subject_tpl=:s, body_tpl=:b, active=:a, updated_at=now(), created_by=:by
+                """
+            ),
+            {
+                "m": int(id_marca),
+                "marca": str(marca or ""),
+                "k": kind,
+                "s": subject_tpl,
+                "b": body_tpl,
+                "a": active,
+                "by": str(user.get("username") or ""),
+            },
+        )
+        conn.commit()
+    return {"ok": True}

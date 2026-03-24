@@ -273,22 +273,65 @@ GIA_EMAIL_ACCOUNTS_JSON=[{"marca":"GOURMET","from_email":"ventas@...","username"
       try{
         const r = await apiJSON(`/gia/email/inbox/${activeMsgId}`);
         const m = r?.message || {};
-        const body = (m.body_text || "").trim() || "(sin cuerpo)";
+        const rawBody = (m.body_text || "").trim() || "(sin cuerpo)";
+        const cleanEmailBody = (txt)=>{
+          let t = String(txt||"").replace(/\r\n/g, "\n");
+          t = t.replace(/<tel:[^>]*>/gi, "");
+          t = t.replace(/\[cid:[^\]]+\]/gi, "");
+          t = t.replace(/^Disclaimer[\s\S]*$/im, ""); // hard cutoff if it starts a disclaimer block
+          const cut = [
+            /The information contained in this communication[\s\S]*$/i,
+            /This email has been scanned[\s\S]*$/i,
+            /Mimecast[\s\S]*$/i,
+          ];
+          for (const rx of cut){
+            t = t.replace(rx, "");
+          }
+          t = t.replace(/\n{3,}/g, "\n\n").trim();
+          return t || "(sin cuerpo)";
+        };
+        const body = cleanEmailBody(rawBody);
         const draft = (m.draft_text || "").trim();
+        const kind = String(m.kind||"").toUpperCase() || "—";
         v.innerHTML = `
           <h2>${esc(m.subject || "(sin asunto)")}</h2>
           <div class="meta">
             <div>De: ${esc(m.from_name || "")} &lt;${esc(m.from_email || "")}&gt;</div>
             <div>${esc(String(m.received_at || m.created_at || "").slice(0,19).replace("T"," "))}</div>
+            <div>Tipo: <b>${esc(kind)}</b></div>
             <div>${m.ack_sent ? "✓ Auto-reply" : "—"}</div>
           </div>
-          <div class="body">${esc(body)}</div>
+          <div class="body" style="position:relative">
+            <div class="muted" style="font-weight:900;margin-bottom:8px">Cuerpo (limpio)</div>
+            ${esc(body)}
+            <details style="margin-top:12px;opacity:.95">
+              <summary class="muted" style="cursor:pointer;font-weight:900">Ver cuerpo completo</summary>
+              <div style="margin-top:10px;white-space:pre-wrap;line-height:1.4">${esc(rawBody)}</div>
+            </details>
+          </div>
           <div class="reply">
             <div class="muted">Responder (puedes editar el draft):</div>
             <textarea id="replyBox" placeholder="Escribe tu respuesta...">${esc(draft)}</textarea>
+            <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+              <button class="btn" type="button" id="btnTpl">Guardar plantilla (admin)</button>
+            </div>
           </div>
         `;
         btn.disabled = false;
+        qs("#btnTpl")?.addEventListener("click", async ()=>{
+          try{
+            const textBody = (qs("#replyBox")?.value || "").trim();
+            if (!textBody) return alert("No hay texto para guardar.");
+            await apiJSON(`/gia/email/templates`, {
+              method:"PUT",
+              headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({ id_marca: m.id_marca, kind: (m.kind||"other"), body_tpl: textBody, active: true })
+            });
+            alert("Plantilla guardada.");
+          }catch(err){
+            alert("No pude guardar plantilla: " + String(err?.message||err));
+          }
+        });
       }catch(err){
         v.innerHTML = `<div class="muted">Error: ${esc(String(err?.message||err))}</div>`;
         btn.disabled = true;
