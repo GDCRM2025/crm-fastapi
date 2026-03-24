@@ -2731,14 +2731,15 @@ async function handleConfirmado(lead, newEstado){
   const hrLine = v?.hr_tbd ? "POR CONFIRMAR" : `${fmtHHMM(evs[0]?.start_at)} a ${fmtHHMM(evs[0]?.end_at)}`;
 
   const EMO = {
-    cal: "\uD83D\uDCC5",     // 📅
-    cart: "\uD83D\uDED2",    // 🛒
-    tools: "\uD83E\uDDF0",   // 🧰
-    ops: "\uD83D\uDC65",     // 👥
-    clock: "\uD83D\uDD52",   // 🕒
-    phone: "\uD83D\uDCDE",   // 📞
-    pin: "\uD83D\uDCCD",     // 📍
-    doc: "\uD83D\uDCC4",     // 📄
+    // Usamos emojis literales (UTF-8) para evitar problemas de surrogates que a veces aparecen como "�".
+    cal: "📅",
+    cart: "🛒",
+    tools: "🧰",
+    ops: "👥",
+    clock: "🕒",
+    phone: "📞",
+    pin: "📍",
+    doc: "📄",
   };
 
   let productosBlock = "";
