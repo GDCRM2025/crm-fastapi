@@ -1173,8 +1173,13 @@ def move_lead_and_maybe_agenda(
 
         monto = float(lead.get("monto_cotizado") or 0) if lead else 0
         num = str(lead.get("num_cotizacion") or "").strip() if lead else ""
-        if not cotizaciones and (monto <= 0 or not num):
-            raise HTTPException(status_code=400, detail="No se puede CONFIRMAR sin monto y número de cotización (cotización externa).")
+        # Importante UX: el `dry_run` se usa para previsualización de agenda (tabs por día).
+        # No bloqueamos el preview por falta de meta manual, pero sí bloqueamos la confirmación real.
+        if not cotizaciones and (not dry_run) and (monto <= 0 or not num):
+            raise HTTPException(
+                status_code=400,
+                detail="No se puede CONFIRMAR sin monto y número de cotización (cotización externa).",
+            )
 
         if agendar is None:
             return {
