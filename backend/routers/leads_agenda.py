@@ -485,6 +485,45 @@ def _find_estado_confirmado_id():
     raise HTTPException(500, detail="No existe estado 'Confirmado' en estados_lead")
 
 
+def _get_estado_nombre(id_estado: int | None) -> str:
+    if not id_estado:
+        return ""
+    try:
+        q = text("SELECT nombre FROM estados_lead WHERE id_estado=:id LIMIT 1")
+        with engine.connect() as cn:
+            r = cn.execute(q, {"id": int(id_estado)}).fetchone()
+        return _as_text(r[0]).strip() if r and r[0] is not None else ""
+    except Exception:
+        return ""
+
+
+def _append_lead_notas(id_lead: int, note: str) -> None:
+    note = _as_text(note).strip()
+    if not note:
+        return
+    try:
+        cols = _cols_for("leads")
+        if "notas" not in cols:
+            return
+        with engine.begin() as cn:
+            cn.execute(
+                text(
+                    """
+                    UPDATE leads
+                    SET notas = CASE
+                      WHEN notas IS NULL OR notas='' THEN :n
+                      ELSE notas || E'\n\n' || :n
+                    END,
+                    updated_at=now()
+                    WHERE id_lead=:id
+                    """
+                ),
+                {"n": note, "id": int(id_lead)},
+            )
+    except Exception:
+        return
+
+
 def _get_lead(id_lead):
     q = text(
         """
@@ -1152,6 +1191,11 @@ def move_lead_and_maybe_agenda(
             raise HTTPException(400, detail="Falta id_estado")
 
         lead = _get_lead(id_lead)
+        old_estado_id = None
+        try:
+            old_estado_id = int(lead.get("id_estado") or 0)
+        except Exception:
+            old_estado_id = None
         confirmado_id = _find_estado_confirmado_id()
         dry_run = bool(payload.get("dry_run", False))
         agendar = payload.get("agendar", None)
@@ -1165,6 +1209,24 @@ def move_lead_and_maybe_agenda(
 
         if should_update_now:
             _update_row("leads", "id_lead", id_lead, {"id_estado": int(id_estado)})
+            # Auditoría: registrar cambio de estado inmediato en historial (notas).
+            if not dry_run:
+                try:
+                    who = str(user.get("username") or user.get("email") or user.get("id") or "").strip() or "CRM"
+                    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    old_name = _get_estado_nombre(old_estado_id) or (str(old_estado_id) if old_estado_id else "")
+                    new_name = _get_estado_nombre(int(id_estado)) or str(id_estado)
+                    if old_name and old_name == new_name:
+                        # no-op
+                        pass
+                    else:
+                        if old_name:
+                            msg = "[ESTADO %s] %s → %s · por %s" % (stamp, old_name, new_name, who)
+                        else:
+                            msg = "[ESTADO %s] %s · por %s" % (stamp, new_name, who)
+                        _append_lead_notas(id_lead, msg)
+                except Exception:
+                    pass
 
         if int(id_estado) != confirmado_id:
             return {"ok": True, "ask_agendar": False}
@@ -1564,29 +1626,13 @@ def move_lead_and_maybe_agenda(
         )
 
         try:
-            cols = _cols_for("leads")
-            if "notas" in cols:
-                stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-                if quote_source == "manual" or not id_cot:
-                    note = "[CONFIRMADO %s] Cotización confirmada: MANUAL" % stamp
-                else:
-                    note = "[CONFIRMADO %s] Cotización confirmada: %s" % (stamp, id_cot)
-
-                with engine.begin() as cn:
-                    cn.execute(
-                        text(
-                            """
-                            UPDATE leads
-                            SET notas = CASE
-                              WHEN notas IS NULL OR notas='' THEN :n
-                              ELSE notas || E'\\n' || :n
-                            END,
-                            updated_at=now()
-                            WHERE id_lead=:id
-                            """
-                        ),
-                        {"n": note, "id": id_lead},
-                    )
+            stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            who = str(user.get("username") or user.get("email") or user.get("id") or "").strip() or "CRM"
+            if quote_source == "manual" or not id_cot:
+                note = "[CONFIRMADO %s] Cotización confirmada: MANUAL · por %s" % (stamp, who)
+            else:
+                note = "[CONFIRMADO %s] Cotización confirmada: %s · por %s" % (stamp, id_cot, who)
+            _append_lead_notas(id_lead, note)
         except Exception:
             pass
 

@@ -1526,76 +1526,15 @@ function renderTable(list){
 	  });
 	}
 
-async function doSeguimiento(lead){
-  const tel = String(lead.telefono || "").replace(/\D/g,"");
-  if (!tel){ toast("Lead sin teléfono", "warning"); return; }
-  const tpls = followupTemplatesFor(lead);
-  const stName = estadoNombre(lead?.id_estado || "") || "SEGUIMIENTO";
-  const opts = tpls.map((t, i) => `<option value="${i}">WSP ${String(i+1).padStart(2,"0")} · ${escapeHtml(stName)}</option>`).join("");
-  const res = await Swal.fire({
-    title:"Mensaje de seguimiento",
-    html: `
-      <div style="text-align:left;display:grid;gap:10px">
-        <label>Plantilla
-          <select id="sw_fu_tpl" class="swInp">${opts}</select>
-        </label>
-        <label>Mensaje (editable)
-          <textarea id="sw_fu_txt" class="swInp" rows="6"></textarea>
-        </label>
-      </div>
-    `,
-    showCancelButton:true,
-    confirmButtonText:"Abrir WhatsApp",
-    cancelButtonText:"Cancelar",
-    showDenyButton:true,
-    denyButtonText:"Copiar",
-    didOpen: () => {
-      const sel = document.getElementById("sw_fu_tpl");
-      const ta = document.getElementById("sw_fu_txt");
-      const apply = () => {
-        const idx = Number(sel?.value || 0);
-        const msg = String(tpls[idx] || "");
-        if (ta) ta.value = msg;
-      };
-      if (sel) sel.addEventListener("change", apply);
-      apply();
-    },
-    preConfirm: () => {
-      const ta = document.getElementById("sw_fu_txt");
-      const v = (ta?.value || "").trim();
-      if (!v) {
-        Swal.showValidationMessage("Mensaje vacío");
-        return false;
-      }
-      const sel = document.getElementById("sw_fu_tpl");
-      const idx = Number(sel?.value || 0);
-      return { msg: v, idx };
-    },
-    preDeny: () => {
-      const ta = document.getElementById("sw_fu_txt");
-      const v = (ta?.value || "").trim();
-      if (!v) return false;
-      try{ navigator.clipboard.writeText(v); }catch(_){}
-      return false;
-    }
-  });
-  if (!res.isConfirmed) return;
-  const msg = String(res.value?.msg || "").trim();
-  const idx = Number(res.value?.idx || 0);
-
-  // Log a historial (backend) para trazabilidad.
-  try{
-    await logLeadActionNote(lead, {
-      kind: "WSP",
-      title: `Seguimiento ${String(idx+1).padStart(2,"0")} · ${stName}`,
-      text: msg,
-    });
-  }catch(_){
-    // No bloquea apertura de WhatsApp si falla el log.
-  }
-  const url = "https://wa.me/" + tel + "?text=" + encodeURIComponent(msg);
-  window.open(url, "_blank", "noopener");
-}
+	async function doSeguimiento(lead){
+	  // Unificamos UX: Seguimiento usa el mismo picker de WhatsApp (buscador + preview + log inmediato),
+	  // evitando diferencias (ej: "Copiar" sin registro) y manteniendo trazabilidad consistente.
+	  try{
+	    return doWhatsApp(lead, { defaultAction: "open" });
+	  }catch(_){
+	    toast("No pude abrir Seguimiento", "error");
+	  }
+	}
 function doCotizar(lead){
   const id = encodeURIComponent(lead.id_lead);
   location.href = `/web/views/cotizador.html?id_lead=${id}&lead_id=${id}`;
