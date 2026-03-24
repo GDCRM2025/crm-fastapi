@@ -10,6 +10,7 @@ from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
 from email.utils import parseaddr
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import imaplib
@@ -581,7 +582,44 @@ def _create_lead_from_email(
 
 
 def _load_accounts() -> List[Dict[str, Any]]:
+    def _read_dotenv_value(var_name: str) -> str:
+        try:
+            candidates = []
+            try:
+                candidates.append(Path(__file__).resolve().parents[2] / ".env")  # /crm/.env
+            except Exception:
+                pass
+            try:
+                candidates.append(Path.cwd() / ".env")
+            except Exception:
+                pass
+            for p in candidates:
+                try:
+                    if not p or not p.exists():
+                        continue
+                    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                        s = line.strip()
+                        if not s or s.startswith("#"):
+                            continue
+                        if not s.startswith(var_name + "="):
+                            continue
+                        v = s.split("=", 1)[1].strip()
+                        # allow quoted
+                        if (len(v) >= 2) and ((v[0] == v[-1]) and v[0] in ("'", '"')):
+                            v = v[1:-1].strip()
+                        return v
+                except Exception:
+                    continue
+        except Exception:
+            return ""
+        return ""
+
     raw = (os.getenv("GIA_EMAIL_ACCOUNTS_JSON") or os.getenv("GIA_EMAIL_ACCOUNTS") or "").strip()
+    if not raw:
+        # Fallback: en algunos hostings Passenger no carga .env a os.environ consistentemente.
+        raw = _read_dotenv_value("GIA_EMAIL_ACCOUNTS_JSON")
+    if not raw:
+        raw = _read_dotenv_value("GIA_EMAIL_ACCOUNTS")
     if not raw:
         return []
     try:
