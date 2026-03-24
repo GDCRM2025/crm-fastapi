@@ -115,7 +115,10 @@
           <div class="ttl">Bandeja</div>
           <div class="muted">Recarga: sincroniza IMAP + auto-respuesta.</div>
         </div>
-        <button class="btn" id="btnReload" type="button">Recargar</button>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="muted" id="syncInfo" style="text-align:right"></div>
+          <button class="btn" id="btnReload" type="button">Recargar</button>
+        </div>
       </div>
       <div class="list" id="msgList"></div>
     </section>
@@ -126,7 +129,7 @@
           <div class="ttl">Mensaje</div>
           <div class="muted">Lectura + respuesta en el mismo lugar.</div>
         </div>
-        <button class="btn primary" id="btnSend" type="button" disabled>Enviar (pronto)</button>
+        <button class="btn primary" id="btnSend" type="button" disabled>Enviar</button>
       </div>
       <div class="viewer" id="viewer">
         <div class="muted">Selecciona un mensaje de la lista para ver y responder.</div>
@@ -304,18 +307,28 @@ GIA_EMAIL_ACCOUNTS_JSON=[{"marca":"GOURMET","from_email":"ventas@...","username"
     async function loadInbox({ sync }){
       const host = qs("#msgList");
       host.innerHTML = `<div class="muted" style="padding:10px">Cargando…</div>`;
+      const info = qs("#syncInfo");
+      if (info) info.textContent = "";
       try{
         if (sync && activeMarca){
-          await apiJSON(`/gia/email/sync?id_marca=${encodeURIComponent(String(activeMarca))}`, { method:"POST" });
+          const sres = await apiJSON(`/gia/email/sync?id_marca=${encodeURIComponent(String(activeMarca))}`, { method:"POST" });
+          const errs = Array.isArray(sres?.errors) ? sres.errors : [];
+          if (info){
+            info.textContent = errs.length ? `Errores: ${errs.length}` : `OK`;
+          }
         }
         const qsMid = activeMarca ? `id_marca=${encodeURIComponent(String(activeMarca))}&` : "";
         const r = await apiJSON(`/gia/email/inbox?${qsMid}limit=60&offset=0`);
         inboxItems = Array.isArray(r?.items) ? r.items : [];
+        if (info){
+          info.textContent = (info.textContent ? (info.textContent + " · ") : "") + `Msgs: ${inboxItems.length}`;
+        }
         renderList();
         await loadViewer();
       }catch(err){
         inboxItems = [];
         host.innerHTML = `<div class="muted" style="padding:10px">Error: ${esc(String(err?.message||err))}</div>`;
+        if (info) info.textContent = "Error";
       }
     }
 

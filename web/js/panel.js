@@ -1805,11 +1805,11 @@ const MENU = [
     ico: "\u{1F9F0}",
     title: "Tools",
     items: [
-      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260317-tools2#correo" },
-      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260317-tools2#instagram" },
-      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260317-tools2#whatsapp" },
-      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260317-tools2#calc" },
-      { id: "tool_wx", label: "Clima (7 días)", url: "/web/views/tools.html?v=20260317-tools2#clima" }
+      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260324-tools3#correo" },
+      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260324-tools3#instagram" },
+      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260324-tools3#whatsapp" },
+      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260324-tools3#calc" },
+      { id: "tool_wx", label: "Clima (7 días)", url: "/web/views/tools.html?v=20260324-tools3#clima" }
     ]
   },
   {
