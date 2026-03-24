@@ -178,6 +178,224 @@ def _resolve_marca_id(conn, marca_name: str) -> Optional[int]:
         return None
 
 
+def _guess_cliente(from_name: str, from_email: str) -> str:
+    n = (from_name or "").strip()
+    if n:
+        return n
+    e = (from_email or "").strip()
+    if not e:
+        return "(Sin nombre)"
+    local = e.split("@")[0].strip()
+    local = re.sub(r"[._\\-]+", " ", local).strip()
+    return local.title() if local else "(Sin nombre)"
+
+
+def _parse_iso_date_any(s: str) -> Optional[str]:
+    s = (s or "").strip()
+    if not s:
+        return None
+    # YYYY-MM-DD
+    m = re.search(r"(20\\d{2}-\\d{2}-\\d{2})", s)
+    if m:
+        return m.group(1)
+    # DD/MM/YYYY
+    m = re.search(r"(\\d{2})/(\\d{2})/(20\\d{2})", s)
+    if m:
+        dd, mm, yy = m.group(1), m.group(2), m.group(3)
+        return f"{yy}-{mm}-{dd}"
+    return None
+
+
+def _find_after_label(body: str, labels: list[str]) -> str:
+    t = (body or "")
+    for lab in labels:
+        # match: "Label: value"
+        m = re.search(rf"(?im)^\\s*{re.escape(lab)}\\s*[:=]\\s*(.+?)\\s*$", t)
+        if m:
+            v = str(m.group(1) or "").strip()
+            if v:
+                return v
+    return ""
+
+
+def _resolve_comuna_id(conn, comuna_name: str) -> Optional[int]:
+    comuna_name = (comuna_name or "").strip()
+    if not comuna_name:
+        return None
+    try:
+        return conn.execute(
+            text(
+                """
+                SELECT id_comuna
+                FROM public.comunas
+                WHERE UPPER(COALESCE(nombre,comuna)) = UPPER(:n)
+                   OR UPPER(COALESCE(nombre,comuna)) LIKE UPPER(:n_like)
+                LIMIT 1
+                """
+            ),
+            {"n": comuna_name, "n_like": comuna_name + "%"},
+        ).scalar()
+    except Exception:
+        return None
+
+
+def _resolve_tipo_cliente_id(conn, body: str) -> Optional[int]:
+    t = (body or "").upper()
+    is_emp = ("EMPRESA" in t) or ("CORPORAT" in t)
+    is_part = ("PARTICULAR" in t) or ("PERSONA" in t) or ("NATURAL" in t)
+    if not (is_emp or is_part):
+        return None
+    try:
+        if is_emp:
+            hit = conn.execute(
+                text("SELECT id_tipo_cliente FROM public.tipos_cliente WHERE UPPER(tipo) LIKE '%EMP%' LIMIT 1")
+            ).scalar()
+            if hit:
+                return int(hit)
+        if is_part:
+            hit = conn.execute(
+                text("SELECT id_tipo_cliente FROM public.tipos_cliente WHERE UPPER(tipo) LIKE '%PART%' LIMIT 1")
+            ).scalar()
+            if hit:
+                return int(hit)
+    except Exception:
+        return None
+    return None
+
+
+def _find_recent_lead_id(conn, *, id_marca: Optional[int], from_email: str) -> Optional[int]:
+    """
+    Best-effort dedupe: si ya existe un lead reciente para el mismo correo+marca,
+    lo reutilizamos para no llenar el CRM de duplicados.
+    """
+    fe = (from_email or "").strip().lower()
+    if not fe:
+        return None
+    try:
+        if id_marca is None:
+            q = text(
+                """
+                SELECT id_lead
+                FROM public.leads
+                WHERE LOWER(COALESCE(email,'')) = LOWER(:e)
+                  AND created_at >= now() - interval '30 days'
+                ORDER BY id_lead DESC
+                LIMIT 1
+                """
+            )
+            r = conn.execute(q, {"e": fe}).scalar()
+            return int(r) if r is not None else None
+        q = text(
+            """
+            SELECT id_lead
+            FROM public.leads
+            WHERE LOWER(COALESCE(email,'')) = LOWER(:e)
+              AND id_marca = :m
+              AND created_at >= now() - interval '30 days'
+            ORDER BY id_lead DESC
+            LIMIT 1
+            """
+        )
+        r = conn.execute(q, {"e": fe, "m": int(id_marca)}).scalar()
+        return int(r) if r is not None else None
+    except Exception:
+        return None
+
+
+def _estado_nuevo_id(conn) -> int:
+    try:
+        x = conn.execute(text("SELECT id_estado FROM public.estados_lead WHERE UPPER(nombre) LIKE '%NUEVO%' LIMIT 1")).scalar()
+        return int(x or 1)
+    except Exception:
+        return 1
+
+
+def _create_lead_from_email(
+    *,
+    conn,
+    id_marca: Optional[int],
+    marca: str,
+    from_name: str,
+    from_email: str,
+    subject: str,
+    body_text: str,
+) -> Optional[int]:
+    """
+    Crea un lead con plataforma=FORMULARIO (el formulario llega por correo).
+    Best-effort: si no podemos parsear campos, igual creamos lead para que el ejecutivo lo trabaje.
+    """
+    try:
+        cols = conn.execute(
+            text(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='leads'
+                """
+            )
+        ).scalars().all()
+        cols = set([str(c) for c in cols])
+    except Exception:
+        cols = set()
+
+    if "cliente" not in cols:
+        return None
+
+    cliente = _guess_cliente(from_name, from_email)
+    telefono = _find_after_label(body_text, ["Telefono", "Teléfono", "Phone", "Celular", "Móvil", "Movil"])
+    comuna = _find_after_label(body_text, ["Comuna", "Ciudad", "Lugar"])
+    fecha = _find_after_label(body_text, ["Fecha", "Fecha evento", "Fecha_evento", "Fecha Evento"])
+    fecha_iso = _parse_iso_date_any(fecha) or _parse_iso_date_any(body_text)
+
+    id_comuna = _resolve_comuna_id(conn, comuna) if comuna else None
+    id_tipo_cliente = _resolve_tipo_cliente_id(conn, body_text)
+    estado_id = _estado_nuevo_id(conn)
+
+    # Nota: guardamos el correo original (preview) en notas para trazabilidad.
+    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+    body_prev = (body_text or "").strip()
+    if len(body_prev) > 1600:
+        body_prev = body_prev[:1600] + "…"
+    notas = "\n".join(
+        [
+            "[GIA][EMAIL] %s" % stamp,
+            f"Marca: {marca}",
+            f"From: {from_email}",
+            f"Asunto: {subject or '(Sin asunto)'}",
+            "",
+            body_prev,
+        ]
+    ).strip()
+
+    data = {
+        "cliente": cliente,
+        "email": from_email or None,
+        "telefono": telefono or None,
+        "direccion": None,
+        "id_marca": int(id_marca) if id_marca is not None and "id_marca" in cols else None,
+        "id_estado": int(estado_id) if "id_estado" in cols else None,
+        "id_comuna": int(id_comuna) if id_comuna is not None and "id_comuna" in cols else None,
+        "id_tipo_cliente": int(id_tipo_cliente) if id_tipo_cliente is not None and "id_tipo_cliente" in cols else None,
+        "fecha_evento": fecha_iso if fecha_iso and "fecha_evento" in cols else None,
+        "monto_cotizado": 0 if "monto_cotizado" in cols else None,
+        "plataforma": "FORMULARIO" if "plataforma" in cols else None,
+        "notas": notas if "notas" in cols else None,
+        "created_at": datetime.now(timezone.utc) if "created_at" in cols else None,
+        "updated_at": datetime.now(timezone.utc) if "updated_at" in cols else None,
+    }
+    # filtra None y columnas inexistentes
+    data = {k: v for k, v in data.items() if (k in cols and v is not None)}
+    if "cliente" not in data:
+        data["cliente"] = cliente
+
+    keys = list(data.keys())
+    cols_sql = ", ".join(keys)
+    vals_sql = ", ".join([f":{k}" for k in keys])
+    q = text(f"INSERT INTO public.leads({cols_sql}) VALUES ({vals_sql}) RETURNING id_lead")
+    new_id = conn.execute(q, data).scalar()
+    return int(new_id) if new_id is not None else None
+
+
 def _load_accounts() -> List[Dict[str, Any]]:
     raw = (os.getenv("GIA_EMAIL_ACCOUNTS_JSON") or os.getenv("GIA_EMAIL_ACCOUNTS") or "").strip()
     if not raw:
@@ -407,7 +625,7 @@ def sync(
                         rowm = conn.execute(
                             text(
                                 """
-                                SELECT id_msg, ack_sent
+                                SELECT id_msg, ack_sent, lead_id
                                 FROM public.gia_email_messages
                                 WHERE account_email=:acc AND imap_uid=:uid
                                 ORDER BY id_msg DESC
@@ -416,6 +634,30 @@ def sync(
                             ),
                             {"acc": account_email, "uid": int(uid)},
                         ).mappings().first()
+
+                        # Crear/adjuntar lead (best-effort) si no existe aún.
+                        try:
+                            if rowm and rowm.get("id_msg") is not None and rowm.get("lead_id") is None:
+                                # Dedupe por email+marca (30 días).
+                                lead_id = _find_recent_lead_id(conn, id_marca=mid, from_email=from_email)
+                                if lead_id is None:
+                                    lead_id = _create_lead_from_email(
+                                        conn=conn,
+                                        id_marca=mid,
+                                        marca=marca,
+                                        from_name=from_name,
+                                        from_email=from_email,
+                                        subject=subject,
+                                        body_text=text_body or "",
+                                    )
+                                if lead_id is not None:
+                                    conn.execute(
+                                        text("UPDATE public.gia_email_messages SET lead_id=:lid, updated_at=now() WHERE id_msg=:id"),
+                                        {"lid": int(lead_id), "id": int(rowm.get("id_msg"))},
+                                    )
+                        except Exception:
+                            pass
+
                         if rowm and not bool(rowm.get("ack_sent")) and from_email:
                             ack_subject = "Re: " + (subject or "Contacto")
                             ack_text = (
@@ -594,4 +836,3 @@ def reply(
         except Exception as e:
             raise HTTPException(500, detail=f"No pude enviar correo: {e}")
         return {"ok": True}
-
