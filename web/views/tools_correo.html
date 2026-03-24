@@ -142,7 +142,15 @@
     });
 
     const qs = (s, el=document)=> el.querySelector(s);
-    function esc(s){ return String(s||"").replace(/[&<>\"']/g, (c)=>({\"&\":\"&amp;\",\"<\":\"&lt;\",\">\":\"&gt;\",\"\\\"\":\"&quot;\",\"'\":\"&#39;\"}[c])); }
+    function esc(s){
+      return String(s ?? "").replace(/[&<>"']/g, (c)=>({
+        "&":"&amp;",
+        "<":"&lt;",
+        ">":"&gt;",
+        "\"":"&quot;",
+        "'":"&#39;"
+      }[c]));
+    }
 
     const API_BASE = (() => {
       try{
@@ -162,8 +170,12 @@
       return (
         localStorage.getItem("token") ||
         localStorage.getItem("gd_token") ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("jwt") ||
         sessionStorage.getItem("token") ||
         sessionStorage.getItem("gd_token") ||
+        sessionStorage.getItem("access_token") ||
+        sessionStorage.getItem("jwt") ||
         ""
       );
     }
@@ -187,23 +199,23 @@
     let activeMsgId = null;
     let inboxItems = [];
 
-	    function renderBrands(){
-	      const host = qs("#folders");
-	      if (!brands.length){
-	        host.innerHTML = `
-	          <div class="item active">
-	            <div class="subj">Sin cuentas configuradas</div>
-	            <div class="prev muted">Configura <b>GIA_EMAIL_ACCOUNTS_JSON</b> en el servidor (<code>~/crm/.env</code>) y reinicia Passenger.</div>
-	            <div class="prev muted" style="margin-top:8px">
-	              Ejemplo (rellena password):<br>
-	              <code style="display:block;white-space:pre-wrap;margin-top:6px;opacity:.9">
+    function renderBrands(){
+      const host = qs("#folders");
+      if (!brands.length){
+        host.innerHTML = `
+          <div class="item active">
+            <div class="subj">Sin cuentas configuradas</div>
+            <div class="prev muted">Configura <b>GIA_EMAIL_ACCOUNTS_JSON</b> en el servidor (<code>~/crm/.env</code>) y reinicia Passenger.</div>
+            <div class="prev muted" style="margin-top:8px">
+              Ejemplo (rellena password):<br>
+              <code style="display:block;white-space:pre-wrap;margin-top:6px;opacity:.9">
 GIA_EMAIL_ACCOUNTS_JSON=[{"marca":"GOURMET","from_email":"ventas@...","username":"ventas@...","password":"***","imap_host":"mail...","imap_port":993,"imap_ssl":true,"smtp_host":"mail...","smtp_port":465,"smtp_ssl":true}]
-	              </code>
-	            </div>
-	          </div>
-	        `;
-	        return;
-	      }
+              </code>
+            </div>
+          </div>
+        `;
+        return;
+      }
       host.innerHTML = brands.map(b => `
         <div class="item ${String(b.id_marca)===String(activeMarca) ? "active":""}" data-mid="${esc(b.id_marca)}">
           <div class="subj">${esc(b.marca || "Marca")}</div>
@@ -259,6 +271,7 @@ GIA_EMAIL_ACCOUNTS_JSON=[{"marca":"GOURMET","from_email":"ventas@...","username"
         const r = await apiJSON(`/gia/email/inbox/${activeMsgId}`);
         const m = r?.message || {};
         const body = (m.body_text || "").trim() || "(sin cuerpo)";
+        const draft = (m.draft_text || "").trim();
         v.innerHTML = `
           <h2>${esc(m.subject || "(sin asunto)")}</h2>
           <div class="meta">
@@ -268,8 +281,8 @@ GIA_EMAIL_ACCOUNTS_JSON=[{"marca":"GOURMET","from_email":"ventas@...","username"
           </div>
           <div class="body">${esc(body)}</div>
           <div class="reply">
-            <div class="muted">Responder:</div>
-            <textarea id="replyBox" placeholder="Escribe tu respuesta..."></textarea>
+            <div class="muted">Responder (puedes editar el draft):</div>
+            <textarea id="replyBox" placeholder="Escribe tu respuesta...">${esc(draft)}</textarea>
           </div>
         `;
         btn.disabled = false;
@@ -295,7 +308,8 @@ GIA_EMAIL_ACCOUNTS_JSON=[{"marca":"GOURMET","from_email":"ventas@...","username"
         if (sync && activeMarca){
           await apiJSON(`/gia/email/sync?id_marca=${encodeURIComponent(String(activeMarca))}`, { method:"POST" });
         }
-        const r = await apiJSON(`/gia/email/inbox?id_marca=${encodeURIComponent(String(activeMarca||\"\"))}&limit=60&offset=0`);
+        const qsMid = activeMarca ? `id_marca=${encodeURIComponent(String(activeMarca))}&` : "";
+        const r = await apiJSON(`/gia/email/inbox?${qsMid}limit=60&offset=0`);
         inboxItems = Array.isArray(r?.items) ? r.items : [];
         renderList();
         await loadViewer();

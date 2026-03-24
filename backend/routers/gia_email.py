@@ -225,13 +225,47 @@ def _extract_rid(body: str) -> str:
     return (m.group(1).strip() if m else "")
 
 
+def _looks_like_form(body_text: str) -> bool:
+    """
+    Heurística: muchos correos de formulario no traen la palabra "FORMULARIO" ni RID,
+    pero sí vienen como un set de campos tipo "Nombre: ... / Email: ... / Teléfono: ...".
+    """
+    t = (body_text or "")
+    labels = [
+        "Nombre",
+        "Nombre y Apellido",
+        "Cliente",
+        "Email",
+        "E-mail",
+        "Correo",
+        "Teléfono",
+        "Telefono",
+        "Celular",
+        "Comuna",
+        "Ciudad",
+        "Dirección",
+        "Direccion",
+        "Fecha",
+        "Fecha evento",
+        "Marca",
+        "Mensaje",
+        "Comentario",
+        "Notas",
+    ]
+    hits = 0
+    for lab in labels:
+        if re.search(rf"(?im)^\\s*{re.escape(lab)}\\s*[:=]\\s*\\S+", t):
+            hits += 1
+    return hits >= 3
+
+
 def _classify_email(subject: str, body_text: str) -> tuple[str, str]:
     s = (subject or "").upper()
     b = (body_text or "").upper()
     bb = s + "\n" + b
 
-    if "FORMULARIO" in bb or _extract_rid(body_text):
-        return ("form", "marker")
+    if "FORMULARIO" in bb or _extract_rid(body_text) or _looks_like_form(body_text):
+        return ("form", "marker/fields")
 
     pay_kw = ("TRANSFER", "COMPROB", "PAGO", "ABONO", "DEPÓSITO", "DEPOSITO", "VOUCHER", "TRX", "TRANSACTION")
     if any(k in bb for k in pay_kw):
@@ -479,7 +513,7 @@ def _create_lead_from_email(
         "id_tipo_cliente": int(id_tipo_cliente) if id_tipo_cliente is not None and "id_tipo_cliente" in cols else None,
         "fecha_evento": fecha_iso if fecha_iso and "fecha_evento" in cols else None,
         "monto_cotizado": 0 if "monto_cotizado" in cols else None,
-        "plataforma": "FORMULARIO" if "plataforma" in cols else None,
+        "plataforma": ("CORREO" if "plataforma" in cols else None),
         "notas": notas if "notas" in cols else None,
         "created_at": datetime.now(timezone.utc) if "created_at" in cols else None,
         "updated_at": datetime.now(timezone.utc) if "updated_at" in cols else None,
@@ -691,6 +725,9 @@ def sync(
                         continue
 
                     kind, kind_reason = _classify_email(subject or "", text_body or "")
+                    # Safety: algunos formularios llegan sin el marker; si parecen formulario, no crear lead.
+                    if kind == "lead" and _looks_like_form(text_body or ""):
+                        kind, kind_reason = ("form", "fields-override")
                     parsed_rid = _extract_rid(text_body or "")
                     parsed_email = _extract_email_from_body(text_body or "")
                     parsed_phone = _extract_phone_from_body(text_body or "")
@@ -966,7 +1003,46 @@ def inbox_get(id_msg: int, user: dict = Depends(get_current_user)):
             mid = row.get("id_marca")
             if mid is None or int(mid) not in mids:
                 raise HTTPException(403, "Sin permiso")
-        return {"ok": True, "message": dict(row)}
+        msg = dict(row)
+        # Draft sugerido (para que el ejecutivo edite y GIA "aprenda" por uso).
+        try:
+            marca = str(msg.get("marca") or "").strip() or "GD"
+            cliente = str(msg.get("parsed_cliente") or msg.get("from_name") or "").strip() or "PRUEBA SISTEMA"
+            fecha = msg.get("parsed_fecha_evento")
+            fecha_txt = str(fecha) if fecha else ""
+            fecha_line = (
+                f"Para ayudarte mejor, ¿me confirmas la fecha ({fecha_txt}) y la cantidad aproximada de personas?"
+                if fecha_txt
+                else "Para ayudarte mejor, ¿me confirmas la fecha y la cantidad aproximada de personas?"
+            )
+            kind = str(msg.get("kind") or "").strip().lower()
+            if kind == "payment":
+                draft = (
+                    f"Hola {cliente}, soy del equipo {marca}.\n\n"
+                    "Gracias por tu mensaje. Ya estamos revisando el pago/transferencia y te confirmaremos a la brevedad.\n\n"
+                    "Saludos.\n"
+                )
+            elif kind == "form":
+                draft = (
+                    f"Hola {cliente}, soy del equipo {marca}.\n\n"
+                    "¡Gracias por tu contacto! Recibimos tu solicitud y te contactaremos a la brevedad.\n\n"
+                    f"{fecha_line}\n\n"
+                    "Gracias, quedo atento(a) a tu confirmación.\n"
+                )
+            else:
+                draft = (
+                    f"Hola {cliente}, soy del equipo {marca}.\n\n"
+                    "¡Gracias por tu contacto! Para ayudarte mejor, ¿me confirmas estos datos?\n"
+                    "- Fecha del evento\n"
+                    "- Comuna\n"
+                    "- Cantidad aproximada de personas\n"
+                    "- Horario (inicio/fin)\n\n"
+                    "Gracias, quedo atento(a).\n"
+                )
+            msg["draft_text"] = draft
+        except Exception:
+            msg["draft_text"] = ""
+        return {"ok": True, "message": msg}
 
 
 @router.post("/inbox/{id_msg}/reply")
