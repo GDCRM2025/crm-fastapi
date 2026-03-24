@@ -46,6 +46,28 @@ def _table_exists(db: Session, table: str) -> bool:
         return False
 
 
+def _fetch_marcas_for_uid(db: Session, uid: int) -> list[int]:
+    """
+    Fallback cuando el token no trae `marcas` (o viene vacío por cuentas legacy).
+    """
+    if not _table_exists(db, "usuarios_marcas"):
+        return []
+    try:
+        rows = db.execute(
+            text("SELECT id_marca FROM public.usuarios_marcas WHERE id_usuario=:u ORDER BY id_marca"),
+            {"u": int(uid)},
+        ).fetchall()
+        out: list[int] = []
+        for r in rows:
+            try:
+                out.append(int(r[0]))
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
+
+
 def _resolve_uid(db: Session, user: dict) -> int:
     """
     Compat: algunos tokens vienen con sub/username string (ej: 'greengd').
@@ -96,13 +118,18 @@ def sync_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_u
     Genera tareas automáticas (idempotente) para el usuario actual.
     """
     uid = _resolve_uid(db, user)
+    marcas_token = list(user.get("marcas") or [])
+    marcas_db = _fetch_marcas_for_uid(db, uid)
+    marcas = marcas_token or marcas_db
+    if not marcas:
+        marcas = _fetch_marcas_for_uid(db, uid)
     try:
         out = upsert_mvp_tasks_for_user(
             db,
             user_id=uid,
             username=_uname(user),
             role=_role(user),
-            marcas=list(user.get("marcas") or []),
+            marcas=marcas,
         )
     except Exception as e:
         # Nunca 500: si no hay permisos DDL o falta alguna tabla, degradar silenciosamente.
@@ -283,6 +310,8 @@ def debug_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_
         "uid": int(uid),
         "username": uname,
         "role": role,
+        "marcas_token": marcas_token,
+        "marcas_db": marcas_db,
         "marcas_ids": marcas_ids,
         "marcas_names": marcas_upper,
         "schema": {"id_usuario": has_id_usuario, "id_marca": has_id_marca, "marca": has_marca_txt},
