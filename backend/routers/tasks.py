@@ -276,13 +276,21 @@ def debug_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_
         marcas_upper = []
 
     try:
-        assigned_sql = core_tasks._assigned_to_user_sql()  # type: ignore[attr-defined]
-        unassigned_sql = core_tasks._unassigned_sql()  # type: ignore[attr-defined]
         brand_sql = core_tasks._brand_filter_sql(db)  # type: ignore[attr-defined]
     except Exception:
-        assigned_sql = "TRUE"
-        unassigned_sql = "FALSE"
         brand_sql = "FALSE"
+
+    # Evita SQL inválido en esquemas legacy sin `leads.id_usuario`.
+    if has_id_usuario is False:
+        assigned_sql = "FALSE"
+        unassigned_sql = "TRUE"
+    else:
+        try:
+            assigned_sql = core_tasks._assigned_to_user_sql()  # type: ignore[attr-defined]
+            unassigned_sql = core_tasks._unassigned_sql()  # type: ignore[attr-defined]
+        except Exception:
+            assigned_sql = "TRUE"
+            unassigned_sql = "FALSE"
 
     scope_sql = assigned_sql
     if marcas_ids or marcas_upper:

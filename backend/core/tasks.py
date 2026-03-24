@@ -271,13 +271,25 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         marcas_upper = []
 
-    assigned_sql = _assigned_to_user_sql()
-    unassigned_sql = _unassigned_sql()
+    # Compat: algunos esquemas legacy no tienen `leads.id_usuario`.
+    # En ese caso, no podemos filtrar por "asignado" y debemos caer a:
+    # - Ejecutivos: solo por marcas (si existen).
+    # - Admin: todos los leads.
+    has_id_usuario = _col_exists(db, "leads", "id_usuario")
+    if has_id_usuario:
+        assigned_sql = _assigned_to_user_sql()
+        unassigned_sql = _unassigned_sql()
+    else:
+        assigned_sql = "FALSE"
+        unassigned_sql = "TRUE"
     brand_sql = _brand_filter_sql(db)
     # Scope: asignado al usuario o (si es ejecutivo con marcas) leads sin asignar de sus marcas.
     scope_sql = assigned_sql
     if marcas_ids or marcas_upper:
         scope_sql = f"({assigned_sql} OR ({unassigned_sql} AND {brand_sql}))"
+    elif is_admin and not has_id_usuario:
+        # Admin sin id_usuario: no podemos asignar por usuario, así que mostramos todo.
+        scope_sql = "TRUE"
 
     # CONTACTAR (ventas): lead NUEVO asignado al usuario (id_usuario)
     # due_at = created_at + 24h

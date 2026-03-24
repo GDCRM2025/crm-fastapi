@@ -355,6 +355,10 @@
         display:grid !important;
         gap:10px !important;
         justify-content:stretch !important;
+        padding:12px !important;
+        border-radius:16px !important;
+        border:1px solid var(--border) !important;
+        background: rgba(0,0,0,.18) !important;
       }
       .gdNeutral .swal2-radio label{
         display:flex !important;
@@ -363,9 +367,10 @@
         padding:10px 12px !important;
         border-radius:14px !important;
         border:1px solid var(--border) !important;
-        background: rgba(255,255,255,.03) !important;
+        background: var(--surface2) !important;
         color: var(--text) !important;
         font-weight:900 !important;
+        text-shadow: 0 1px 0 rgba(0,0,0,.25);
       }
       .gdNeutral .swal2-radio input[type="radio"]{
         transform: scale(1.08);
@@ -1353,19 +1358,43 @@ function renderTable(list){
 }
 
 /* ========= Acciones ========= */
+  // Lead actualmente abierto en modal (para refrescar notas/historial sin recargar).
+  let EDITING_LEAD_ID = null;
+
+  function applyNoteToLeadLocal(lead, block){
+    const b = String(block || "").trim();
+    if (!b) return;
+    const cur = String(lead?.notas || "").trim();
+    lead.notas = cur ? (cur + "\n\n" + b) : b;
+    try{
+      if (EDITING_LEAD_ID != null && Number(lead?.id_lead) === Number(EDITING_LEAD_ID)){
+        const ta = document.getElementById("e_notas");
+        if (ta) ta.value = lead.notas || "";
+      }
+    }catch(_){}
+  }
+
+  async function logLeadActionNote(lead, { kind, title, text }){
+    try{
+      const out = await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ kind, title, text }),
+      });
+      if (out && typeof out === "object" && out.block){
+        applyNoteToLeadLocal(lead, out.block);
+      }
+      return out;
+    }catch(_){
+      return null;
+    }
+  }
+
 	async function doCall(lead){
 	  const tel = String(lead?.telefono || "").trim();
 	  if (!tel){ toast("Lead sin teléfono", "warning"); return; }
 	  try{
-	    await apiJSON(`/leads/${lead.id_lead}/append_note`, {
-	      method: "POST",
-	      headers: { "Content-Type":"application/json" },
-	      body: JSON.stringify({
-	        kind: "CALL",
-	        title: "Llamada iniciada",
-	        text: `Se inicia llamada a ${tel}.`,
-	      }),
-	    });
+	    await logLeadActionNote(lead, { kind:"CALL", title:"Llamada iniciada", text:`Se inicia llamada a ${tel}.` });
 	  }catch(_){}
 	  window.open("tel:" + tel, "_self");
 	}
@@ -1484,14 +1513,10 @@ function renderTable(list){
 	    }
 	    // Log historial (best-effort)
 	    try{
-	      await apiJSON(`/leads/${lead.id_lead}/append_note`, {
-	        method: "POST",
-	        headers: { "Content-Type":"application/json" },
-	        body: JSON.stringify({
-	          kind: "WSP",
-	          title: `WhatsApp ${String(idx+1).padStart(2,"0")} · ${stName} · ${action==="copy" ? "COPIADO" : "ENVIADO"}`,
-	          text: msg,
-	        }),
+	      await logLeadActionNote(lead, {
+	        kind: "WSP",
+	        title: `WhatsApp ${String(idx+1).padStart(2,"0")} · ${stName} · ${action==="copy" ? "COPIADO" : "ENVIADO"}`,
+	        text: msg,
 	      });
 	    }catch(_){}
 
@@ -1560,14 +1585,10 @@ async function doSeguimiento(lead){
 
   // Log a historial (backend) para trazabilidad.
   try{
-    await apiJSON(`/leads/${lead.id_lead}/append_note`, {
-      method: "POST",
-      headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({
-        kind: "WSP",
-        title: `Seguimiento ${String(idx+1).padStart(2,"0")} · ${stName}`,
-        text: msg,
-      }),
+    await logLeadActionNote(lead, {
+      kind: "WSP",
+      title: `Seguimiento ${String(idx+1).padStart(2,"0")} · ${stName}`,
+      text: msg,
     });
   }catch(_){
     // No bloquea apertura de WhatsApp si falla el log.
@@ -2481,7 +2502,9 @@ async function handleConfirmado(lead, newEstado){
 	        if (!okMeta) return;
 	        const okItems = await ensureManualMiceItems();
 	        if (!okItems) return;
-	        await runPreview();
+	        // SweetAlert2 no soporta modales anidados: al abrir el editor se cerró este modal.
+	        // Reabrimos el flujo para que el usuario continúe con los productos ya cargados.
+	        setTimeout(()=>{ try{ handleConfirmado(lead, newEstado); }catch(_){ } }, 50);
 	      });
 
       const updDur = ()=>{
@@ -2568,6 +2591,15 @@ async function handleConfirmado(lead, newEstado){
 	          return false;
 	        }
 	      }
+        // Validación: para agendar (confirm) necesitamos productos cuando es manual.
+        if (quoteSource === "manual"){
+          const hasPrev = Array.isArray(previewEvents) && previewEvents.length > 0;
+          const hasProducts = hasPrev && String((previewEvents[0] || {}).products_text || "").trim();
+          if (!hasProducts){
+            Swal.showValidationMessage("Faltan productos manuales. Usa “Editar productos” antes de agendar.");
+            return false;
+          }
+        }
 	      return {
 	        quote_source: quoteSource,
 	        id_cotizacion: idCot ? Number(idCot) : null,
@@ -2997,6 +3029,7 @@ async function openCreateModal(){
 }
 
 async function openEditModal(lead){
+  try{ EDITING_LEAD_ID = Number(lead?.id_lead) || null; }catch(_){ EDITING_LEAD_ID = null; }
   const marcas = CATS.marcas || [];
   const comunas = CATS.comunas || [];
   const tipos  = CATS.tipos  || [];
@@ -3091,9 +3124,10 @@ async function openEditModal(lead){
 		    confirmButtonText: "Guardar",
 		    cancelButtonText: "Cerrar",
 	    showDenyButton: isAdmin,
-	    denyButtonText: "Borrar lead",
+		    denyButtonText: "Borrar lead",
 	    denyButtonColor: "#ef4444",
 		    willClose: ()=>{
+          try{ EDITING_LEAD_ID = null; }catch(_){}
 		      if (!isEmbed) return;
 		      try{ window.parent?.postMessage({ type:"embed:close", id_lead: lead.id_lead }, "*"); }catch(_){}
 		    },
@@ -3137,13 +3171,7 @@ async function openEditModal(lead){
 	      let isUploadingPdf = false;
 	      let metaSaveT = null;
 	      const logAction = async (kind, title, text)=>{
-	        try{
-	          await apiJSON(`/leads/${lead.id_lead}/append_note`, {
-	            method: "POST",
-	            headers: { "Content-Type":"application/json" },
-	            body: JSON.stringify({ kind, title, text }),
-	          });
-	        }catch(_){}
+	        await logLeadActionNote(lead, { kind, title, text });
 	      };
 
 	      // Quick actions (iconos en labels)

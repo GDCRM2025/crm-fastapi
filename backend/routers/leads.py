@@ -1456,7 +1456,9 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
         except Exception:
             pass
         conn.commit()
-        return {"ok": True}
+        # Importante para UX: devolvemos el bloque generado para que el frontend lo agregue
+        # inmediatamente al historial local (sin esperar recargar/buscar de nuevo).
+        return {"ok": True, "id_lead": int(id_lead), "block": block, "kind": kind, "title": title, "ts": ts, "who": who}
 
 @router.patch("/leads/{id_lead}/estado")
 def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
