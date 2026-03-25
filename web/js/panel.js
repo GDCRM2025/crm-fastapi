@@ -1704,7 +1704,7 @@ const MENU = [
     title: "Reportes",
     items: [
       // Un solo acceso: la vista Reportes maneja tabs internos.
-      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes.html?v=20260325-r1" }
+      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes.html?v=20260325-r2" }
     ]
   },
   {
@@ -1805,7 +1805,7 @@ const MENU = [
     ico: "\u{1F9F0}",
     title: "Tools",
     items: [
-      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260325-tools4#correo" },
+      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260325-tools5#correo" },
       { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260324-tools3#instagram" },
       { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260324-tools3#whatsapp" },
       { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260324-tools3#calc" },

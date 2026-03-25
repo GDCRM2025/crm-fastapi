@@ -93,22 +93,48 @@ def _resolve_uid(conn, user: dict) -> int | None:
 
 
 def _fallback_marcas_ids(conn, user: dict) -> list[int]:
-    if not _table_exists(conn, "usuarios_marcas"):
-        return []
     uid = _resolve_uid(conn, user)
     if uid is None:
         return []
+
+    def _load_from_join(table: str) -> list[int]:
+        try:
+            rows = conn.execute(
+                text(f"SELECT id_marca FROM public.{table} WHERE id_usuario=:u ORDER BY id_marca"),
+                {"u": int(uid)},
+            ).fetchall()
+            out: list[int] = []
+            for r in rows or []:
+                try:
+                    out.append(int(r[0]))
+                except Exception:
+                    pass
+            return out
+        except Exception:
+            return []
+
+    # Prefer join table (newer schema)
+    if _table_exists(conn, "usuarios_marcas"):
+        mids = _load_from_join("usuarios_marcas")
+        if mids:
+            return mids
+
+    # Legacy schema variant
+    if _table_exists(conn, "usuario_marcas"):
+        mids = _load_from_join("usuario_marcas")
+        if mids:
+            return mids
+
+    # Legacy single-brand column in usuarios
     try:
-        rows = conn.execute(text("SELECT id_marca FROM public.usuarios_marcas WHERE id_usuario=:u ORDER BY id_marca"), {"u": int(uid)}).fetchall()
-        out: list[int] = []
-        for r in rows:
-            try:
-                out.append(int(r[0]))
-            except Exception:
-                pass
-        return out
+        if _table_exists(conn, "usuarios"):
+            v = conn.execute(text("SELECT id_marca FROM public.usuarios WHERE id_usuario=:u LIMIT 1"), {"u": int(uid)}).scalar()
+            if v is not None and str(v).isdigit():
+                return [int(v)]
     except Exception:
-        return []
+        pass
+
+    return []
 
 
 def _norm(s: str) -> str:
@@ -1483,7 +1509,7 @@ def inbox(
         params: Dict[str, Any] = {"limit": int(limit), "offset": int(offset)}
 
         if not _is_admin(user):
-            mids = _user_marcas_ids(user)
+            mids = _user_marcas_ids(user) or _fallback_marcas_ids(conn, user)
             if not mids:
                 return {"ok": True, "total": 0, "items": []}
             where.append("id_marca = ANY(:mids)")
@@ -1537,7 +1563,7 @@ def inbox_get(id_msg: int, user: dict = Depends(get_current_user)):
         if not row:
             raise HTTPException(404, "Mensaje no existe")
         if not _is_admin(user):
-            mids = set(_user_marcas_ids(user))
+            mids = set(_user_marcas_ids(user) or _fallback_marcas_ids(conn, user))
             mid = row.get("id_marca")
             if mid is None or int(mid) not in mids:
                 raise HTTPException(403, "Sin permiso")
@@ -1678,7 +1704,7 @@ def create_lead_from_inbox(id_msg: int, user: dict = Depends(get_current_user)):
         if not row:
             raise HTTPException(404, "Mensaje no existe")
         if not _is_admin(user):
-            mids = set(_user_marcas_ids(user))
+            mids = set(_user_marcas_ids(user) or _fallback_marcas_ids(conn, user))
             mid = row.get("id_marca")
             if mid is None or int(mid) not in mids:
                 raise HTTPException(403, "Sin permiso")
@@ -1752,7 +1778,7 @@ def send(
         if not msg:
             raise HTTPException(404, "Mensaje no existe")
         if not _is_admin(user):
-            mids = set(_user_marcas_ids(user))
+            mids = set(_user_marcas_ids(user) or _fallback_marcas_ids(conn, user))
             mid = msg.get("id_marca")
             if mid is None or int(mid) not in mids:
                 raise HTTPException(403, "Sin permiso")

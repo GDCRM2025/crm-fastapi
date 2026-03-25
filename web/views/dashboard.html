@@ -1553,7 +1553,7 @@
 
     $("#btnApply")?.addEventListener("click", () => refreshAll());
 
-    const REPORTES_URL = "/web/views/reportes.html?v=20260325-r1";
+    const REPORTES_URL = "/web/views/reportes.html?v=20260325-r2";
     $("#btnGoReportes")?.addEventListener("click", () => {
       window.parent?.postMessage({ type:"openItem", id:"rep_total", url: REPORTES_URL }, "*");
     });
