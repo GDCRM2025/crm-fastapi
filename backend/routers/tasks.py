@@ -65,11 +65,17 @@ def _fetch_marcas_for_uid(db: Session, uid: int) -> list[int]:
     """
     Fallback cuando el token no trae `marcas` (o viene vacío por cuentas legacy).
     """
-    # 1) Preferir tabla N:N `usuarios_marcas` (si existe).
+    # 1) Preferir tabla N:N `usuarios_marcas` (si existe). (fallback: `usuario_marcas`)
+    join_table = None
     if _table_exists(db, "usuarios_marcas"):
+        join_table = "usuarios_marcas"
+    elif _table_exists(db, "usuario_marcas"):
+        join_table = "usuario_marcas"
+
+    if join_table:
         try:
             rows = db.execute(
-                text("SELECT id_marca FROM public.usuarios_marcas WHERE id_usuario=:u ORDER BY id_marca"),
+                text(f"SELECT id_marca FROM public.{join_table} WHERE id_usuario=:u ORDER BY id_marca"),
                 {"u": int(uid)},
             ).fetchall()
             out: list[int] = []

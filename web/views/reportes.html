@@ -12,6 +12,9 @@
   <style>
     html,body{height:100%;margin:0;}
     body{background:transparent;padding:14px;overflow:auto;}
+    /* Reportes debe verse GD (verde) independiente del theme global */
+    :root{ --accent: #5B974E; }
+    :root.light{ --accent: #5B974E; }
 
     .wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
     .head{

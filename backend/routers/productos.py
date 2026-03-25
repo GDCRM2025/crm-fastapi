@@ -161,21 +161,50 @@ def _fallback_marcas_ids_from_db(user):
             if not id_usuario:
                 return []
 
-            rows = conn.execute(
-                text(
-                    """
-                    SELECT id_marca
-                    FROM public.usuarios_marcas
-                    WHERE id_usuario=:id
-                    """
-                ),
-                {"id": id_usuario},
-            ).fetchall()
+            join_table = None
+            # preferir usuarios_marcas, pero soportar legacy usuario_marcas
+            try:
+                has_um = bool(conn.execute(text("SELECT to_regclass('public.usuarios_marcas') IS NOT NULL")).scalar())
+            except Exception:
+                has_um = False
+            try:
+                has_um_legacy = bool(conn.execute(text("SELECT to_regclass('public.usuario_marcas') IS NOT NULL")).scalar())
+            except Exception:
+                has_um_legacy = False
+            if has_um:
+                join_table = "usuarios_marcas"
+            elif has_um_legacy:
+                join_table = "usuario_marcas"
+
+            rows = []
+            if join_table:
+                rows = conn.execute(
+                    text(
+                        f"""
+                        SELECT id_marca
+                        FROM public.{join_table}
+                        WHERE id_usuario=:id
+                        """
+                    ),
+                    {"id": id_usuario},
+                ).fetchall()
 
             out = []
             for r in rows:
                 try:
                     out.append(int(r[0]))
+                except Exception:
+                    pass
+
+            # Legacy: usuarios.id_marca (si existe y no hay N:N)
+            if not out:
+                try:
+                    mid = conn.execute(
+                        text("SELECT id_marca FROM public.usuarios WHERE id_usuario=:id LIMIT 1"),
+                        {"id": id_usuario},
+                    ).scalar()
+                    if mid is not None:
+                        out.append(int(mid))
                 except Exception:
                     pass
             return sorted(set(out))

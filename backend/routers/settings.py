@@ -216,6 +216,67 @@ def create_producto(payload: ProductoIn, user: dict = Depends(get_current_user))
     with get_connection() as conn:
         role = str(user.get("role") or user.get("rol") or "").strip()
         marcas_ids = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
+        if (not _is_admin(role)) and (not marcas_ids):
+            # Fallback: tokens legacy pueden venir sin `marcas`.
+            # Intentamos leer desde usuarios_marcas / usuario_marcas / usuarios.id_marca.
+            try:
+                uid = user.get("id") or user.get("sub") or user.get("username") or user.get("email")
+                id_usuario = None
+                if str(uid or "").isdigit():
+                    id_usuario = int(str(uid))
+                else:
+                    u = str(uid or "").strip()
+                    if u:
+                        id_usuario = conn.execute(
+                            text(
+                                """
+                                SELECT id_usuario
+                                FROM public.usuarios
+                                WHERE username=:u OR email=:u
+                                LIMIT 1
+                                """
+                            ),
+                            {"u": u},
+                        ).scalar()
+                        if id_usuario is not None:
+                            id_usuario = int(id_usuario)
+                if id_usuario:
+                    join_table = None
+                    try:
+                        has_um = bool(conn.execute(text("SELECT to_regclass('public.usuarios_marcas') IS NOT NULL")).scalar())
+                    except Exception:
+                        has_um = False
+                    try:
+                        has_um_legacy = bool(conn.execute(text("SELECT to_regclass('public.usuario_marcas') IS NOT NULL")).scalar())
+                    except Exception:
+                        has_um_legacy = False
+                    if has_um:
+                        join_table = "usuarios_marcas"
+                    elif has_um_legacy:
+                        join_table = "usuario_marcas"
+                    if join_table:
+                        rows = conn.execute(
+                            text(f"SELECT id_marca FROM public.{join_table} WHERE id_usuario=:id"),
+                            {"id": int(id_usuario)},
+                        ).fetchall()
+                        for r in rows:
+                            try:
+                                marcas_ids.append(int(r[0]))
+                            except Exception:
+                                pass
+                    if not marcas_ids:
+                        try:
+                            mid = conn.execute(
+                                text("SELECT id_marca FROM public.usuarios WHERE id_usuario=:id LIMIT 1"),
+                                {"id": int(id_usuario)},
+                            ).scalar()
+                            if mid is not None:
+                                marcas_ids.append(int(mid))
+                        except Exception:
+                            pass
+                    marcas_ids = sorted(set([int(x) for x in marcas_ids if str(x).isdigit()]))
+            except Exception:
+                marcas_ids = marcas_ids or []
 
         marca_in = str(payload.marca or "").strip()
         if not marca_in:

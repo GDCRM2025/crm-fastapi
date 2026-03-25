@@ -371,10 +371,17 @@ def _fetch_marcas_ids(db: Session, me: dict) -> list[int]:
     if uid is None:
         return []
     # N:N
+    join_table = None
     if _table_exists_pg(db, "usuarios_marcas"):
+        join_table = "usuarios_marcas"
+    elif _table_exists_pg(db, "usuario_marcas"):
+        # legacy/ORM table name
+        join_table = "usuario_marcas"
+
+    if join_table:
         try:
             rows = db.execute(
-                text("SELECT id_marca FROM public.usuarios_marcas WHERE id_usuario=:u ORDER BY id_marca"),
+                text(f"SELECT id_marca FROM public.{join_table} WHERE id_usuario=:u ORDER BY id_marca"),
                 {"u": int(uid)},
             ).fetchall()
             out: list[int] = []
