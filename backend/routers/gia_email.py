@@ -1655,6 +1655,116 @@ def send(
         return {"ok": True}
 
 
+@router.post("/compose/send")
+def compose_send(payload: dict = Body(...), user: dict = Depends(get_current_user)):
+    """
+    Enviar un correo nuevo (composer) desde el CRM y opcionalmente "aprender" como plantilla.
+    payload:
+      - id_marca (int) requerido
+      - inbox_type ("sales"|"payments") opcional (default "sales")
+      - to_email requerido
+      - subject requerido
+      - text requerido
+      - learn (bool) opcional default True
+      - kind (lead|purchase|payment|form|other) opcional (default other) para aprendizaje
+    """
+    _ensure_schema()
+    id_marca = payload.get("id_marca")
+    if not id_marca:
+        raise HTTPException(400, "id_marca requerido")
+    try:
+        id_marca_int = int(id_marca)
+    except Exception:
+        raise HTTPException(400, "id_marca inválido")
+
+    inbox_type = str(payload.get("inbox_type") or "sales").strip().lower()
+    if inbox_type not in ("sales", "payments"):
+        inbox_type = "sales"
+
+    to_email = str(payload.get("to_email") or "").strip()
+    subject = str(payload.get("subject") or "").strip()
+    text_body = str(payload.get("text") or payload.get("text_body") or "").strip()
+    learn = bool(payload.get("learn", True))
+    kind = str(payload.get("kind") or "other").strip().lower()
+    if kind not in ("lead", "purchase", "payment", "form", "other"):
+        kind = "other"
+
+    if not to_email or "@" not in to_email:
+        raise HTTPException(400, "to_email inválido")
+    if not subject:
+        raise HTTPException(400, "subject requerido")
+    if not text_body:
+        raise HTTPException(400, "text requerido")
+
+    accounts = _load_accounts()
+    if not accounts:
+        raise HTTPException(400, "Cuenta no configurada en servidor (.env / accounts file)")
+
+    with get_connection() as conn:
+        allowed = _filter_accounts_for_user(conn, user, accounts)
+        if not allowed:
+            raise HTTPException(403, "Sin permiso")
+
+        # elegir cuenta por id_marca + inbox_type
+        def _acc_mid(a: dict) -> int | None:
+            try:
+                return _resolve_marca_id(conn, str(a.get("marca") or ""))
+            except Exception:
+                return None
+
+        cand = [a for a in allowed if (_acc_mid(a) == id_marca_int and str(a.get("inbox_type") or "sales") == inbox_type)]
+        if not cand and inbox_type == "payments":
+            # fallback: si no hay casilla de pagos separada, usar sales
+            cand = [a for a in allowed if (_acc_mid(a) == id_marca_int and str(a.get("inbox_type") or "sales") == "sales")]
+        acc = cand[0] if cand else None
+        if not acc:
+            raise HTTPException(403, "No hay cuenta configurada para esa marca")
+
+        try:
+            _smtp_send(
+                smtp_host=acc["smtp_host"],
+                smtp_port=int(acc["smtp_port"]),
+                smtp_ssl=bool(acc["smtp_ssl"]),
+                username=acc["username"],
+                password=acc["password"],
+                from_email=str(acc.get("from_email") or acc.get("username") or ""),
+                to_email=to_email,
+                subject=subject,
+                text_body=text_body,
+            )
+        except Exception as e:
+            raise HTTPException(500, detail=f"No pude enviar correo: {e}")
+
+        if learn and kind not in ("other", ""):
+            try:
+                marca = conn.execute(text("SELECT COALESCE(nombre,marca,'') FROM public.marcas WHERE id_marca=:m"), {"m": int(id_marca_int)}).scalar()
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO public.gia_email_templates(id_marca, marca, kind, subject_tpl, body_tpl, active, created_by)
+                        VALUES (:m, :marca, :k, NULL, :b, TRUE, :by)
+                        ON CONFLICT(id_marca, kind)
+                        DO UPDATE SET body_tpl=:b, active=TRUE, updated_at=now(), created_by=:by
+                        """
+                    ),
+                    {
+                        "m": int(id_marca_int),
+                        "marca": str(marca or ""),
+                        "k": kind,
+                        "b": text_body,
+                        "by": str(user.get("username") or ""),
+                    },
+                )
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+        return {"ok": True}
+
+
 @router.put("/templates")
 def templates_upsert(payload: dict = Body(...), user: dict = Depends(get_current_user)):
     """

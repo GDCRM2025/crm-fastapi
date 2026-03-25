@@ -295,6 +295,7 @@
         <div class="hint" id="scopeHint">Ventas · Todas</div>
       </div>
 
+      <button class="btn" id="btnCompose" type="button">Nuevo</button>
       <button class="btn" id="btnReload" type="button">Sincronizar</button>
     </header>
 
@@ -554,6 +555,112 @@
       qs("#viewer").innerHTML = `<div class="muted">Selecciona un correo para leerlo y responder.</div>`;
     }
 
+    function composeHTML(){
+      const optsBrands = (brands || []).map(b => `<option value="${esc(b.id_marca)}" ${String(active.id_marca||"")===String(b.id_marca) ? "selected":""}>${esc(b.marca||"Marca")}</option>`).join("");
+      const it = (active.inbox_type === "payments") ? "payments" : "sales";
+      return `
+        <div>
+          <h2>Nuevo correo</h2>
+          <div class="meta">
+            <div><b>Modo:</b> Composer</div>
+            <div class="muted">Tip: selecciona marca + tipo, redacta y envía. Con “Aprender” se guarda plantilla.</div>
+          </div>
+        </div>
+
+        <div class="actions" style="margin-top:6px">
+          <div class="leftActions">
+            <label class="toggle" title="Marca">
+              <span style="opacity:.85">Marca</span>
+              <select id="cmpMarca" style="margin-left:8px;padding:6px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.45);color:inherit;font-weight:950">
+                ${optsBrands}
+              </select>
+            </label>
+            <label class="toggle" title="Tipo de inbox">
+              <span style="opacity:.85">Inbox</span>
+              <select id="cmpInbox" style="margin-left:8px;padding:6px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.45);color:inherit;font-weight:950">
+                <option value="sales" ${it==="sales"?"selected":""}>Ventas</option>
+                <option value="payments" ${it==="payments"?"selected":""}>Pagos</option>
+              </select>
+            </label>
+          </div>
+          <div class="rightActions">
+            <label class="toggle" title="Guardar como plantilla activa para la marca + tipo">
+              <input type="checkbox" id="cmpLearn" checked />
+              Aprender
+            </label>
+            <label class="toggle" title="Tipo para aprendizaje">
+              <span style="opacity:.85">Tipo</span>
+              <select id="cmpKind" style="margin-left:8px;padding:6px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.45);color:inherit;font-weight:950">
+                <option value="lead">Lead</option>
+                <option value="purchase">OC</option>
+                <option value="payment">Pago</option>
+                <option value="other" selected>Otro</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="body" style="max-height:none">
+          <div class="ttl" style="margin-bottom:8px">Para</div>
+          <input id="cmpTo" type="email" placeholder="cliente@empresa.com" style="width:100%;padding:10px 12px;border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.35);color:inherit;font-weight:950;outline:none" />
+          <div class="ttl" style="margin:12px 0 8px">Asunto</div>
+          <input id="cmpSubj" type="text" placeholder="Asunto..." style="width:100%;padding:10px 12px;border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.35);color:inherit;font-weight:950;outline:none" />
+          <div class="ttl" style="margin:12px 0 8px">Mensaje</div>
+          <textarea id="cmpText" placeholder="Escribe el correo..."></textarea>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+            <button class="btn" id="cmpCancel" type="button">Cancelar</button>
+            <button class="btn primary" id="cmpSend" type="button">Enviar</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function openComposer(){
+      activeMsgId = null;
+      activeMessage = null;
+      qs("#btnSend").disabled = true;
+      qs("#viewer").innerHTML = composeHTML();
+
+      const btnCancel = qs("#cmpCancel");
+      const btnSend = qs("#cmpSend");
+      if (btnCancel){
+        btnCancel.addEventListener("click", ()=>{
+          renderViewerEmpty();
+        });
+      }
+      if (btnSend){
+        btnSend.addEventListener("click", async ()=>{
+          const idMarca = Number(qs("#cmpMarca")?.value || 0) || null;
+          const inboxType = String(qs("#cmpInbox")?.value || "sales");
+          const toEmail = String(qs("#cmpTo")?.value || "").trim();
+          const subj = String(qs("#cmpSubj")?.value || "").trim();
+          const text = String(qs("#cmpText")?.value || "").trim();
+          const learn = !!qs("#cmpLearn")?.checked;
+          const kind = String(qs("#cmpKind")?.value || "other");
+
+          if (!idMarca){ toast("Selecciona marca"); return; }
+          if (!toEmail || !toEmail.includes("@")){ toast("Email destino inválido"); return; }
+          if (!subj){ toast("Falta asunto"); return; }
+          if (!text){ toast("Falta mensaje"); return; }
+
+          btnSend.disabled = true;
+          try{
+            await apiJSON(`/gia/email/compose/send`, {
+              method:"POST",
+              headers:{ "Content-Type":"application/json" },
+              body: JSON.stringify({ id_marca: idMarca, inbox_type: inboxType, to_email: toEmail, subject: subj, text, learn, kind })
+            });
+            toast("Correo enviado");
+            renderViewerEmpty();
+          }catch(e){
+            toast(`Error: ${e.message||e}`);
+          }finally{
+            btnSend.disabled = false;
+          }
+        });
+      }
+    }
+
     function viewerHTML(msg){
       const subj = msg.subject || "(Sin asunto)";
       const fromName = msg.from_name || "";
@@ -760,6 +867,7 @@
     }
 
     // Events
+    qs("#btnCompose").addEventListener("click", openComposer);
     qs("#btnReload").addEventListener("click", ()=> loadInbox({sync:true}));
     qs("#btnClear").addEventListener("click", ()=>{
       qs("#q").value = "";
