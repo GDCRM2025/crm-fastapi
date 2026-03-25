@@ -1704,7 +1704,7 @@ const MENU = [
     title: "Reportes",
     items: [
       // Un solo acceso: la vista Reportes maneja tabs internos.
-      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes.html?v=20260323-2" }
+      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes.html?v=20260325-r1" }
     ]
   },
   {
@@ -1805,7 +1805,7 @@ const MENU = [
     ico: "\u{1F9F0}",
     title: "Tools",
     items: [
-      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260324-tools3#correo" },
+      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260325-tools4#correo" },
       { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260324-tools3#instagram" },
       { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260324-tools3#whatsapp" },
       { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260324-tools3#calc" },
@@ -2956,6 +2956,14 @@ function openDefault() {
       openItem({ id: ev.data.id, url: ev.data.url });
       return;
     }
+    if ((ev == null ? void 0 : ev.data) && ev.data.type === "toast") {
+      const text = String(ev.data.text || ev.data.msg || "").trim();
+      if (!text) return;
+      const kind = String(ev.data.kind || "info");
+      const ms = Number(ev.data.ms || 7e3);
+      toast(text, { kind, ms });
+      return;
+    }
     if (((_d = ev.data) == null ? void 0 : _d.type) === "logout") {
       localStorage.removeItem("token");
       localStorage.removeItem("nombre");
@@ -2964,4 +2972,45 @@ function openDefault() {
       location.href = `${API_BASE}/web/login.html`;
     }
   });
+
+  // ---- Global poll: Correo (GIA) ----
+  // Muestra toast aunque el usuario esté en otra sección.
+  let __giaInit = false;
+  async function pollGiaEmail() {
+    try {
+      if (!getToken()) return;
+      const lastMax = Number(localStorage.getItem("gd_gia_email_max_id") || "0") || 0;
+      const lastOpen = Number(localStorage.getItem("gd_gia_email_open_total") || "0") || 0;
+      const r = await fetch(`${API_BASE}/gia/email/summary`, { headers: authHeaders() });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (!j || j.ok !== true) return;
+      if (!j.configured) return;
+      const maxId = Number(j.max_id || 0) || 0;
+      const openTotal = Number(j.open_total || 0) || 0;
+      if (!__giaInit) {
+        __giaInit = true;
+        localStorage.setItem("gd_gia_email_max_id", String(maxId));
+        localStorage.setItem("gd_gia_email_open_total", String(openTotal));
+        return;
+      }
+      // Toast si llegó correo nuevo (maxId sube), o si sube la cola pendiente.
+      const grew = maxId > lastMax;
+      const grewOpen = openTotal > lastOpen;
+      if (grew || grewOpen) {
+        toast(`Correo: ${openTotal} pendiente(s)`, {
+          kind: "ok",
+          ms: 8e3,
+          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260325-tools4#correo" })
+        });
+      }
+      localStorage.setItem("gd_gia_email_max_id", String(Math.max(lastMax, maxId)));
+      localStorage.setItem("gd_gia_email_open_total", String(openTotal));
+    } catch (_) {
+    }
+  }
+  setInterval(() => {
+    if (document.hidden) return;
+    pollGiaEmail();
+  }, 45e3);
 })();

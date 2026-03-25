@@ -306,11 +306,26 @@ def _marca_id_from_db(marca_in):
 
 
 def _role(user):
-    return (user.get("role") or user.get("rol") or "").upper()
+    raw = str(user.get("role") or user.get("rol") or "").strip()
+    if raw.isdigit():
+        mp = {
+            "1": "ADMIN",
+            "2": "EJECUTIVO DE VENTAS",
+            "3": "JEFE DE OPERACIONES",
+            "4": "BODEGUERO",
+            "5": "COMPRAS",
+            "6": "CONDUCTOR",
+            "7": "OPERADOR",
+            "8": "MICE",
+            "9": "OPERADOR PATIO",
+            "11": "FINANZAS",
+        }
+        return mp.get(raw, raw).upper()
+    return raw.upper()
 
 
 def _is_admin(role):
-    return role in ("ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "OPERACIONES")
+    return role in ("ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "OPERACIONES", "MICE")
 
 
 class ProductoUpsert(BaseModel):

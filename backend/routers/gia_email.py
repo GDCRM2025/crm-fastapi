@@ -959,6 +959,101 @@ def status(user: dict = Depends(get_current_user)):
         return {"ok": True, "configured": bool(accounts), "items": items}
 
 
+@router.get("/summary")
+def summary(user: dict = Depends(get_current_user)):
+    """
+    Resumen liviano (para UI global/toasts).
+    No hace IMAP; solo consulta BD.
+    """
+    _ensure_schema()
+    accounts = _load_accounts()
+    if not accounts:
+        return {"ok": True, "configured": False, "max_id": 0, "open_total": 0, "open_sales": 0, "open_payments": 0, "by_marca": []}
+
+    with get_connection() as conn:
+        allowed = _filter_accounts_for_user(conn, user, accounts)
+        mids: list[int] = []
+        for a in allowed:
+            try:
+                mid = _resolve_marca_id(conn, str(a.get("marca") or ""))
+                if mid and mid not in mids:
+                    mids.append(int(mid))
+            except Exception:
+                continue
+        if not mids:
+            return {"ok": True, "configured": True, "max_id": 0, "open_total": 0, "open_sales": 0, "open_payments": 0, "by_marca": []}
+
+        try:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT
+                      id_marca,
+                      COALESCE(inbox_type,'sales') AS inbox_type,
+                      COUNT(*) FILTER (WHERE COALESCE(reply_sent,false) IS FALSE)::int AS open_count,
+                      MAX(id_msg)::bigint AS max_id
+                    FROM public.gia_email_messages
+                    WHERE id_marca = ANY(CAST(:mids AS int[]))
+                    GROUP BY id_marca, COALESCE(inbox_type,'sales')
+                    """
+                ),
+                {"mids": mids},
+            ).mappings().all()
+        except Exception:
+            rows = []
+
+        by_marca: dict[int, dict] = {}
+        max_id = 0
+        open_total = 0
+        open_sales = 0
+        open_payments = 0
+        for r in rows:
+            try:
+                mid = int(r.get("id_marca") or 0)
+            except Exception:
+                mid = 0
+            it = str(r.get("inbox_type") or "sales").strip().lower()
+            oc = int(r.get("open_count") or 0)
+            mx = int(r.get("max_id") or 0)
+            max_id = max(max_id, mx)
+            open_total += oc
+            if it == "payments":
+                open_payments += oc
+            else:
+                open_sales += oc
+            if mid:
+                if mid not in by_marca:
+                    by_marca[mid] = {"id_marca": mid, "sales": 0, "payments": 0, "open_total": 0}
+                by_marca[mid][it if it in ("sales", "payments") else "sales"] += oc
+                by_marca[mid]["open_total"] += oc
+
+        # nombres de marca (best-effort)
+        try:
+            name_map = {
+                int(r[0]): str(r[1] or "")
+                for r in conn.execute(
+                    text("SELECT id_marca, nombre FROM public.marcas WHERE id_marca = ANY(CAST(:mids AS int[]))"),
+                    {"mids": mids},
+                ).fetchall()
+                if r and r[0] is not None
+            }
+        except Exception:
+            name_map = {}
+        out = []
+        for mid, d in sorted(by_marca.items(), key=lambda x: x[0]):
+            out.append({**d, "marca": name_map.get(mid, "")})
+
+        return {
+            "ok": True,
+            "configured": True,
+            "max_id": int(max_id),
+            "open_total": int(open_total),
+            "open_sales": int(open_sales),
+            "open_payments": int(open_payments),
+            "by_marca": out,
+        }
+
+
 @router.post("/sync")
 def sync(
     id_marca: int | None = Query(default=None, ge=1),

@@ -1553,11 +1553,12 @@
 
     $("#btnApply")?.addEventListener("click", () => refreshAll());
 
+    const REPORTES_URL = "/web/views/reportes.html?v=20260325-r1";
     $("#btnGoReportes")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html" }, "*");
+      window.parent?.postMessage({ type:"openItem", id:"rep_total", url: REPORTES_URL }, "*");
     });
     $("#btnGoFinReportes")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes.html?tab=cxc#cxc" }, "*");
+      window.parent?.postMessage({ type:"openItem", id:"rep_total", url: REPORTES_URL + "&tab=cxc#cxc" }, "*");
     });
     $("#btnGoTasks")?.addEventListener("click", () => {
       window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html" }, "*");

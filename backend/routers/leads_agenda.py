@@ -1662,12 +1662,20 @@ def move_lead_and_maybe_agenda(
             roles = [
                 "ADMIN",
                 "SUPERADMIN",
+                "1",
                 "OPERACIONES",
                 "JEFE DE OPERACIONES",
+                "3",
                 "MICE",
+                "8",
                 "JEFE DE COMPRAS",
                 "BODEGUERO",
+                "4",
                 "COMPRAS",
+                "5",
+                # Operadores (por si usan roles numéricos)
+                "7",
+                "9",
             ]
 
             inserted_roles = _notify_roles_once(

@@ -29,7 +29,22 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 def _role(user: dict) -> str:
-    return str(user.get("role") or user.get("rol") or "").upper()
+    raw = str(user.get("role") or user.get("rol") or "").strip()
+    if raw.isdigit():
+        mp = {
+            "1": "ADMIN",
+            "2": "EJECUTIVO DE VENTAS",
+            "3": "JEFE DE OPERACIONES",
+            "4": "BODEGUERO",
+            "5": "COMPRAS",
+            "6": "CONDUCTOR",
+            "7": "OPERADOR",
+            "8": "MICE",
+            "9": "OPERADOR PATIO",
+            "11": "FINANZAS",
+        }
+        return mp.get(raw, raw).upper()
+    return raw.upper()
 
 
 def _uid(user: dict) -> int:
@@ -81,6 +96,8 @@ def _resolve_uid(db: Session, user: dict) -> int:
         raise HTTPException(401, "Usuario inválido")
     cand = [
         str(user.get("username") or "").strip(),
+        str(user.get("email") or "").strip(),
+        str(user.get("sub") or "").strip(),
         str(user.get("id") or "").strip(),
         str(user.get("name") or "").strip(),
     ]
@@ -108,6 +125,41 @@ def _resolve_uid(db: Session, user: dict) -> int:
     raise HTTPException(401, "Usuario inválido")
 
 
+def _infer_marcas_from_leads(db: Session, user_keys: list[str]) -> list[int]:
+    """
+    Si el usuario no tiene `marcas` en token/usuarios_marcas (o el UID no calza),
+    inferimos marcas desde leads asignados al usuario para no dejar tareas en 0.
+    """
+    try:
+        if not _table_exists(db, "leads"):
+            return []
+        if not core_tasks._col_exists(db, "leads", "id_marca"):  # type: ignore[attr-defined]
+            return []
+        if not core_tasks._col_exists(db, "leads", "id_usuario"):  # type: ignore[attr-defined]
+            return []
+        rows = db.execute(
+            text(
+                """
+                SELECT DISTINCT l.id_marca
+                FROM public.leads l
+                WHERE lower(NULLIF(btrim(COALESCE(l.id_usuario::text,'')) ,'')) = ANY(CAST(:user_keys AS text[]))
+                  AND l.id_marca IS NOT NULL
+                ORDER BY l.id_marca
+                """
+            ),
+            {"user_keys": [str(x).strip().lower() for x in (user_keys or []) if str(x).strip()]},
+        ).fetchall()
+        out: list[int] = []
+        for r in rows:
+            try:
+                out.append(int(r[0]))
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
+
+
 def _uname(user: dict) -> str:
     return str(user.get("username") or user.get("email") or user.get("name") or user.get("id") or "").strip()[:200]
 
@@ -123,6 +175,13 @@ def sync_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_u
     marcas = marcas_token or marcas_db
     if not marcas:
         marcas = _fetch_marcas_for_uid(db, uid)
+    if not marcas:
+        # Último fallback: inferir por leads asignados (evita 0 tareas cuando faltan bindings en usuarios_marcas)
+        try:
+            user_keys = core_tasks._user_match_keys(db, user_id=int(uid), username=_uname(user))  # type: ignore[attr-defined]
+        except Exception:
+            user_keys = [str(uid), _uname(user)]
+        marcas = _infer_marcas_from_leads(db, user_keys)
     try:
         out = upsert_mvp_tasks_for_user(
             db,
@@ -234,7 +293,8 @@ def debug_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_
     uid = _resolve_uid(db, user)
     role = _role(user)
     uname = _uname(user)
-    marcas = list(user.get("marcas") or [])
+    marcas_token = list(user.get("marcas") or [])
+    marcas = list(marcas_token)
 
     # Intenta usar helpers del core (best-effort).
     try:
@@ -319,7 +379,7 @@ def debug_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_
         "username": uname,
         "role": role,
         "marcas_token": marcas_token,
-        "marcas_db": marcas_db,
+        "marcas_db": _fetch_marcas_for_uid(db, int(uid)),
         "marcas_ids": marcas_ids,
         "marcas_names": marcas_upper,
         "schema": {"id_usuario": has_id_usuario, "id_marca": has_id_marca, "marca": has_marca_txt},

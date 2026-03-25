@@ -388,7 +388,7 @@ def confirm_event(
             payload = {"id_lead": int(id_lead), "day": d.isoformat(), "by": who}
 
             # Duplicado por rol_target para cubrir todo el equipo.
-            for rt in ("OPERACIONES", "COMPRAS", "BODEGUERO", "MICE", "ADMIN"):
+            for rt in ("OPERACIONES", "COMPRAS", "BODEGUERO", "MICE", "ADMIN", "5", "4", "8", "1", "7", "9", "3"):
                 push_system_notif(
                     db.connection(),
                     kind=kind,

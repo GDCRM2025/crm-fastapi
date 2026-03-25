@@ -155,10 +155,10 @@
     .chartBox svg{width:100%; height:auto; display:block;}
     .ech{
       width:100%;
-      height:220px;
+      height:260px;
     }
-    .ech.tall{height:260px;}
-    .ech.short{height:180px;}
+    .ech.tall{height:340px;}
+    .ech.short{height:220px;}
   </style>
 </head>
 <body>
@@ -384,6 +384,27 @@
 	      };
 	    }
 
+      // ECharts theme (gratis/OSS) — look BI consistente con GD (oscuro + verdes).
+      (function registerGDTheme(){
+        try{
+          if (!hasECharts()) return;
+          if (window.__GD_ECHARTS_THEME__) return;
+          window.__GD_ECHARTS_THEME__ = true;
+          const c = ecColors();
+          echarts.registerTheme("gd", {
+            color: [c.accent, c.accentDark, c.accentLight, c.cyan, c.warn, c.bad],
+            backgroundColor: "transparent",
+            textStyle: { color: c.axis, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" },
+            title: { textStyle: { color: c.title, fontWeight: 900 }, subtextStyle: { color: c.sub, fontWeight: 800 } },
+            legend: { textStyle: { color: c.axis, fontWeight: 850 } },
+            tooltip: { backgroundColor: "rgba(10,18,28,.92)", borderColor: "rgba(148,163,184,.20)", borderWidth: 1 },
+            axisPointer: { lineStyle: { color: "rgba(148,163,184,.35)" }, crossStyle: { color: "rgba(148,163,184,.35)" } },
+            categoryAxis: { axisLine: { lineStyle: { color: c.grid } }, axisTick: { show: false }, axisLabel: { color: c.axis } },
+            valueAxis: { axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: c.axis }, splitLine: { lineStyle: { color: c.grid, type: "dashed" } } },
+          });
+        }catch(_){}
+      })();
+
 	    function ecWatermark(c){
 	      // Watermark sutil con diamante + GD (sin assets externos)
 	      const op = document.documentElement.classList.contains("light") ? 0.08 : 0.10;
@@ -455,7 +476,7 @@
       const el = ensureECBox(id, cls);
       if (!el) return null;
       destroyEC(id);
-      EC[id] = echarts.init(el, null, { renderer:"canvas" });
+      EC[id] = echarts.init(el, "gd", { renderer:"canvas" });
       return EC[id];
     }
     function fmtAxisMoney(v){
@@ -479,9 +500,16 @@
 	      const maxV = Math.max(1, ...vals.map(v => Number(v||0)));
 	      const back = vals.map(()=> maxV * 1.02);
 	      const fmtV = (v)=> valueFmt ? valueFmt(v) : fmtAxisMoney(v);
-        const needsZoom = labels.length > 10;
+	      const needsZoom = labels.length > 10;
 	      const option = {
 	        title: { text: title, left: 0, top: 0, textStyle:{ color:c.title, fontWeight: 900, fontSize: 12 } },
+          toolbox:{
+            show:true,
+            right: 0,
+            top: 0,
+            iconStyle:{ borderColor: c.grid },
+            feature:{ saveAsImage:{ title:"Guardar PNG", name: (title || "chart").slice(0,32) } }
+          },
 	        grid: { left: 160, right: 24, top: 42, bottom: (needsZoom ? 26 : 10), containLabel: true },
 	        xAxis: {
 	          type: "value",
@@ -763,6 +791,13 @@
 	      chart.setOption({
 	        color: [c.accentDark, c.accent, c.accentLight],
 	        title:{ text:"Venta diaria (semana)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+          toolbox:{
+            show:true,
+            right: 0,
+            top: 0,
+            iconStyle:{ borderColor: c.grid },
+            feature:{ saveAsImage:{ title:"Guardar PNG", name:"venta_diaria" } }
+          },
 	        tooltip:{ trigger:"axis", ...ecTooltipSkin(c), formatter: (p)=> `${esc(p[0].axisValue)}<div style="margin-top:4px">${esc(money(p[0].data))}</div>` },
 	        grid:{ left: 10, right: 10, top: 42, bottom: 10, containLabel:true },
 	        xAxis:{ type:"category", data: labels, axisLabel:{ color:c.axis, fontWeight:800 }, axisTick:{ show:false }, axisLine:{ lineStyle:{ color:c.grid } } },

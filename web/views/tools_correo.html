@@ -386,6 +386,23 @@
       clearTimeout(t._tm);
       t._tm = setTimeout(()=>t.classList.remove("show"), 2200);
     }
+    function ding(){
+      // Sonido best-effort (solo funciona tras gesto del usuario, ej: click en "Recargar").
+      try{
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = 880;
+        g.gain.value = 0.04;
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start();
+        setTimeout(()=>{ try{o.stop();}catch(_){} try{ctx.close();}catch(_){} }, 120);
+      }catch(_){}
+    }
 
     const API_BASE = (() => {
       try{
@@ -767,6 +784,12 @@
           // Sync: siempre refresca últimos correos (re-clasifica y corrige drafts), no depende de inbox_type.
           const rs = await apiJSON(`/gia/email/sync?${mid.replace(/^&/,"")}${mid ? "&" : ""}limit=60&force_recent=1`, { method:"POST" });
           const errs = (rs.errors || []).filter(Boolean);
+          const stored = Number(rs.stored || 0);
+          if (stored > 0){
+            toast(`Llegó(n) ${stored} correo(s) nuevo(s).`);
+            ding();
+            try{ window.parent?.postMessage?.({ type:"toast", text:`Llegó(n) ${stored} correo(s) nuevo(s).`, kind:"ok", ms: 7000 }, "*"); }catch(_){}
+          }
           if (errs.length){
             qs("#syncInfo").textContent = `Sincronizado (errores: ${errs.length})`;
           }else{

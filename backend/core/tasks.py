@@ -93,7 +93,7 @@ def _tasks_table_exists(db: Session) -> bool:
 
 def _is_admin_role(role: str) -> bool:
     r = (role or "").strip().upper()
-    return r in ("ADMIN", "SUPERADMIN")
+    return r in ("ADMIN", "SUPERADMIN", "1")
 
 
 def _lead_name_expr() -> str:
@@ -153,8 +153,46 @@ def _estado_id_like(db: Session, pattern: str, default: int) -> int:
         return default
 
 
+def _lead_notes_expr_db(db: Session) -> str:
+    """
+    Expresión SQL que retorna el "texto de historial/seguimiento" del lead.
+    Compat con esquemas que usan `notas` o `seguimiento`.
+    """
+    cols: list[str] = []
+    try:
+        if _col_exists(db, "leads", "notas"):
+            cols.append("l.notas")
+        if _col_exists(db, "leads", "seguimiento"):
+            cols.append("l.seguimiento")
+    except Exception:
+        cols = ["l.notas"]
+    if not cols:
+        return "''"
+    if len(cols) == 1:
+        return f"COALESCE({cols[0]},'')"
+    return "COALESCE(%s,'')" % ",".join(cols)
+
+
+def _has_contact_sql_db(db: Session) -> str:
+    """
+    MVP: consideramos contacto si en historial/seguimiento existe evidencia de WSP/CALL/EMAIL.
+    Nota: NO depende de una sola columna para evitar 0 tareas por esquemas legacy.
+    """
+    txt = _lead_notes_expr_db(db)
+    # Tags + variantes (evita depender de un formato exacto).
+    return (
+        "("
+        f"{txt} ILIKE '%[WSP]%' OR {txt} ILIKE '%WHATSAPP%' OR {txt} ILIKE '% VIA WSP%' OR {txt} ILIKE '%WSP %' OR "
+        f"{txt} ILIKE '%[CALL]%' OR {txt} ILIKE '%LLAMAD%' OR {txt} ILIKE '% VIA TEL%' OR {txt} ILIKE '%TEL%:%' OR "
+        f"{txt} ILIKE '%[EMAIL]%' OR {txt} ILIKE '%CORREO%' OR {txt} ILIKE '%MAIL%'"
+        ")"
+    )
+
+
 def _has_contact_sql() -> str:
-    # MVP: consideramos contacto si en notas existe WSP/CALL/EMAIL
+    """
+    Back-compat: se mantiene para usos antiguos, pero es preferible `_has_contact_sql_db(db)`.
+    """
     return "(COALESCE(l.notas,'') ILIKE '%[WSP]%' OR COALESCE(l.notas,'') ILIKE '%[CALL]%' OR COALESCE(l.notas,'') ILIKE '%[EMAIL]%')"
 
 
@@ -293,6 +331,9 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
         # Admin sin id_usuario: no podemos asignar por usuario, así que mostramos todo.
         scope_sql = "TRUE"
 
+    has_contact_sql = _has_contact_sql_db(db)
+    notes_expr = _lead_notes_expr_db(db)
+
     # CONTACTAR (ventas): lead NUEVO asignado al usuario (id_usuario)
     # due_at = created_at + 24h
     try:
@@ -314,7 +355,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 FROM public.leads l
                 WHERE l.id_estado = :nuevo
                   AND {scope_sql}
-                  AND ({_has_contact_sql()}) IS FALSE
+                  AND ({has_contact_sql}) IS FALSE
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -355,7 +396,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 FROM public.leads l
                 WHERE l.id_estado = :nuevo
                   AND {scope_sql}
-                  AND ({_has_contact_sql()}) IS FALSE
+                  AND ({has_contact_sql}) IS FALSE
                   AND COALESCE(l.created_at, now()) <= (now() - INTERVAL '5 days')
                 ON CONFLICT DO NOTHING
                 """
@@ -412,7 +453,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     try:
         db.execute(
             text(
-                """
+                f"""
                 INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
                 SELECT
                   'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA' AS kind,
@@ -430,7 +471,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND l.fecha_evento IS NOT NULL
                   AND EXTRACT(YEAR FROM l.fecha_evento) = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND EXTRACT(MONTH FROM l.fecha_evento) = EXTRACT(MONTH FROM CURRENT_DATE)
-                  AND (COALESCE(NULLIF(btrim(l.notas),''), NULL) IS NOT NULL)
+                  AND (COALESCE(NULLIF(btrim({notes_expr}),''), NULL) IS NOT NULL)
                   AND (:is_admin OR {scope_sql})
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '5 days')
                 ON CONFLICT DO NOTHING

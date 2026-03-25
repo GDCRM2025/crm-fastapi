@@ -288,6 +288,8 @@
           <div class="sub" id="subLeft">—</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn" id="btnInstall" type="button" style="display:none">Instalar</button>
+          <button class="btn" id="btnNotifs" type="button" title="Notificaciones del chat">Notifs</button>
           <button class="btn" id="btnNew" type="button">Nuevo</button>
           <button class="btn" id="btnRefresh" type="button">Recargar</button>
         </div>
@@ -936,6 +938,56 @@
     }
 
     if (!EMBED){
+      // PWA install prompt (Chrome/Edge). iOS: se instala manualmente desde Safari.
+      let deferredPrompt = null;
+      window.addEventListener("beforeinstallprompt", (e) => {
+        try{ e.preventDefault(); }catch(_){}
+        deferredPrompt = e;
+        try{ qs("#btnInstall").style.display = ""; }catch(_){}
+      });
+      qs("#btnInstall")?.addEventListener("click", async ()=>{
+        try{
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+        }catch(_){}
+        deferredPrompt = null;
+        try{ qs("#btnInstall").style.display = "none"; }catch(_){}
+      });
+
+      // Notificaciones (solo cuando el navegador lo permite). Se activan tras click.
+      const NOTIFS_KEY = "gd_chat_notifs";
+      function notifEnabled(){ return localStorage.getItem(NOTIFS_KEY)==="1"; }
+      function setNotifEnabled(v){ localStorage.setItem(NOTIFS_KEY, v ? "1" : "0"); }
+      async function ensureNotif(){
+        if (!("Notification" in window)) return false;
+        if (Notification.permission === "granted") return true;
+        if (Notification.permission === "denied") return false;
+        try{
+          const p = await Notification.requestPermission();
+          return p === "granted";
+        }catch(_){ return false; }
+      }
+      function renderNotifBtn(){
+        const b = qs("#btnNotifs");
+        if (!b) return;
+        const on = notifEnabled();
+        b.classList.toggle("primary", on);
+        b.textContent = on ? "Notifs: ON" : "Notifs";
+      }
+      qs("#btnNotifs")?.addEventListener("click", async ()=>{
+        const ok = await ensureNotif();
+        if (!ok){
+          Swal.fire("Info", "El navegador bloqueó notificaciones. Revisa permisos del sitio.", "info");
+          setNotifEnabled(false);
+          renderNotifBtn();
+          return;
+        }
+        setNotifEnabled(!notifEnabled());
+        renderNotifBtn();
+      });
+      renderNotifBtn();
+
       qs("#tabChats").addEventListener("click", () => setMode("chats"));
       qs("#tabUsers").addEventListener("click", () => setMode("users"));
       qs("#btnRefresh").addEventListener("click", () => boot().catch((e) => Swal.fire("Error", String(e?.message || e), "error")));
@@ -1002,7 +1054,40 @@
       }
     });
 
-    setInterval(() => { if (!document.hidden) loadMessages().catch(() => {}); }, 5000);
+    // Alertas: notificación cuando llega un mensaje nuevo (siempre que el usuario haya activado Notifs).
+    const lastMsgByThread = new Map();
+    async function loadMessagesWithAlert(){
+      if (!selectedThread) return;
+      const j = await api(`/chat/threads/${selectedThread}/messages?limit=200`);
+      const items = j.items || [];
+      try{
+        const last = items.length ? items[items.length-1] : null;
+        const lastId = last ? Number(last.id_message || 0) : 0;
+        const prev = Number(lastMsgByThread.get(String(selectedThread)) || 0);
+        if (lastId && lastId > prev){
+          lastMsgByThread.set(String(selectedThread), lastId);
+          const mine = (meId != null) ? (Number(last?.sender_id) === Number(meId)) : (meName && String(last?.sender_name || "") === String(meName));
+          const want = (!mine) && (!document.hidden) ? false : true;
+          if (want && !EMBED){
+            try{
+              if (localStorage.getItem("gd_chat_notifs")==="1" && ("Notification" in window) && Notification.permission==="granted"){
+                new Notification(String(last?.sender_name || "Chat"), { body: String(last?.message || "").slice(0, 140) });
+              }
+            }catch(_){}
+          }
+        } else if (!lastId && prev){
+          // no-op
+        } else if (lastId && !prev){
+          lastMsgByThread.set(String(selectedThread), lastId);
+        }
+      }catch(_){}
+
+      // Re-render UI usando la función existente
+      // (Evita duplicar plantilla; reutiliza loadMessages() que ya pinta el DOM)
+      await loadMessages().catch(()=>{});
+    }
+
+    setInterval(() => { if (!document.hidden) loadMessagesWithAlert().catch(() => {}); }, 5000);
     setInterval(() => { if (!document.hidden) heartbeat().catch(() => {}); }, 30000);
     setInterval(() => { if (!document.hidden) loadPresence().then(() => { if (!EMBED) renderLeft(); }).catch(() => {}); }, 15000);
     setInterval(() => { if (!document.hidden) loadThreads().then(() => { if (!EMBED) renderLeft(); }).catch(() => {}); }, 12000);
