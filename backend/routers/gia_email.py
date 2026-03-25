@@ -1281,9 +1281,12 @@ def inbox(
             params["mid"] = int(id_marca)
         if inbox_type:
             it = str(inbox_type or "").strip().lower()
-            if it in ("sales", "payments"):
-                where.append("COALESCE(inbox_type,'sales')=:it")
-                params["it"] = it
+            if it == "sales":
+                where.append("COALESCE(inbox_type,'sales')='sales'")
+            elif it == "payments":
+                # Compat: si el hosting no tiene casilla separada de pagos,
+                # igual filtramos por emails clasificados como payment.
+                where.append("(COALESCE(inbox_type,'sales')='payments' OR COALESCE(kind,'')='payment')")
         if q:
             qs = str(q or "").strip()
             if qs:

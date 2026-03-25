@@ -440,6 +440,7 @@
     }
 
     let accounts = [];
+    let brands = [];
     let active = { inbox_type: "sales", id_marca: null, marca: "Todas" };
     let items = [];
     let activeMsgId = null;
@@ -464,10 +465,9 @@
     }
 
     function renderFolders(){
-      const sales = accounts.filter(a => String(a.inbox_type||"sales")==="sales");
-      const pay = accounts.filter(a => String(a.inbox_type||"sales")==="payments");
-      qs("#cntSales").textContent = String(sales.length);
-      qs("#cntPay").textContent = String(pay.length);
+      const listBrands = Array.isArray(brands) ? brands : [];
+      qs("#cntSales").textContent = String(listBrands.length);
+      qs("#cntPay").textContent = String(listBrands.length);
 
       function foldersHTML(list, inboxType){
         const allActive = active.inbox_type===inboxType && !active.id_marca;
@@ -475,7 +475,7 @@
           <div class="folder ${allActive ? "active":""}" data-it="${esc(inboxType)}" data-mid="">
             <div>
               <div class="fname">Todas</div>
-              <div class="fmeta">Ver todas las marcas</div>
+              <div class="fmeta">${inboxType==="payments" ? "Pagos detectados por correo" : "Ver todas las marcas"}</div>
             </div>
           </div>
         `;
@@ -493,8 +493,8 @@
         return allRow + rows;
       }
 
-      qs("#foldersSales").innerHTML = foldersHTML(sales, "sales");
-      qs("#foldersPay").innerHTML = foldersHTML(pay, "payments");
+      qs("#foldersSales").innerHTML = foldersHTML(listBrands, "sales");
+      qs("#foldersPay").innerHTML = foldersHTML(listBrands, "payments");
 
       document.querySelectorAll("[data-it][data-mid]").forEach(el=>{
         el.addEventListener("click", async ()=>{
@@ -611,14 +611,22 @@
       qs("#syncInfo").textContent = "Cargando cuentas...";
       try{
         const st = await apiJSON("/gia/email/status");
-        accounts = (st.items || []).map(x=>({
-          ...x,
-          inbox_type: String(x.inbox_type || "sales").toLowerCase()
-        }));
+        accounts = (st.items || []).map(x=>({ ...x, inbox_type: String(x.inbox_type || "sales").toLowerCase() }));
+        // brands únicos por id_marca (sirve para mostrar siempre Ventas/Pagos aunque sea la misma casilla)
+        const map = new Map();
+        accounts.forEach(a=>{
+          const mid = a.id_marca;
+          if (!mid) return;
+          if (!map.has(String(mid))){
+            map.set(String(mid), { id_marca: mid, marca: a.marca, account_email: a.account_email });
+          }
+        });
+        brands = [...map.values()];
         qs("#syncInfo").textContent = st.configured ? "Listo" : "No configurado (ver servidor)";
       }catch(e){
         qs("#syncInfo").textContent = "Error";
         accounts = [];
+        brands = [];
       }
       renderFolders();
       setScopeHint();
@@ -642,7 +650,8 @@
       try{
         if (sync){
           qs("#syncInfo").textContent = "Sincronizando IMAP...";
-          const rs = await apiJSON(`/gia/email/sync?${it}${mid}&limit=60`, { method:"POST" });
+          // Sync: siempre sincroniza la(s) cuenta(s) del usuario/marca, no depende de inbox_type.
+          const rs = await apiJSON(`/gia/email/sync?${mid.replace(/^&/,"")}${mid ? "&" : ""}limit=60`, { method:"POST" });
           const errs = (rs.errors || []).filter(Boolean);
           if (errs.length){
             qs("#syncInfo").textContent = `Sincronizado (errores: ${errs.length})`;
