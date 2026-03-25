@@ -6,9 +6,11 @@ import re
 import ssl
 from datetime import date, datetime, timezone
 from email.header import decode_header
+from email.message import EmailMessage
 from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
+from email.utils import formataddr, formatdate, make_msgid
 from email.utils import parseaddr
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -857,6 +859,7 @@ def _load_accounts() -> List[Dict[str, Any]]:
                 "marca": marca,
                 "inbox_type": inbox_type,
                 "from_email": from_email,
+                "from_name": str(a.get("from_name") or a.get("smtp_from_name") or "").strip(),
                 "username": username,
                 "password": password,
                 "imap_host": imap_host,
@@ -887,28 +890,40 @@ def _filter_accounts_for_user(conn, user: dict, accounts: List[Dict[str, Any]]) 
     return out
 
 
-def _smtp_send(*, smtp_host: str, smtp_port: int, smtp_ssl: bool, username: str, password: str, from_email: str, to_email: str, subject: str, text_body: str) -> None:
-    # Minimal: text/plain
-    msg = (
-        "From: %s\\r\\n"
-        "To: %s\\r\\n"
-        "Subject: %s\\r\\n"
-        "MIME-Version: 1.0\\r\\n"
-        "Content-Type: text/plain; charset=utf-8\\r\\n"
-        "\\r\\n"
-        "%s"
-    ) % (from_email, to_email, subject, text_body)
+def _smtp_send(
+    *,
+    smtp_host: str,
+    smtp_port: int,
+    smtp_ssl: bool,
+    username: str,
+    password: str,
+    from_email: str,
+    from_name: str | None = None,
+    to_email: str,
+    subject: str,
+    text_body: str,
+) -> None:
+    # RFC-ish: EmailMessage + envelope sender = username (reduce 550 relaying/domain issues)
+    m = EmailMessage()
+    fe = (from_email or "").strip()
+    fn = (from_name or "").strip()
+    m["From"] = formataddr((fn, fe)) if fn else f"<{fe}>"
+    m["To"] = to_email
+    m["Subject"] = subject
+    m["Date"] = formatdate(localtime=True)
+    m["Message-ID"] = make_msgid()
+    m.set_content(text_body or "")
 
     context = ssl.create_default_context()
     if smtp_ssl:
         with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=25) as s:
             s.login(username, password)
-            s.sendmail(from_email, [to_email], msg.encode("utf-8", errors="replace"))
+            s.send_message(m, from_addr=(username or fe), to_addrs=[to_email])
     else:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=25) as s:
             s.starttls(context=context)
             s.login(username, password)
-            s.sendmail(from_email, [to_email], msg.encode("utf-8", errors="replace"))
+            s.send_message(m, from_addr=(username or fe), to_addrs=[to_email])
 
 
 def _imap_connect(*, host: str, port: int, use_ssl: bool) -> imaplib.IMAP4:
@@ -1587,6 +1602,7 @@ def send(
                 username=acc["username"],
                 password=acc["password"],
                 from_email=str(acc.get("from_email") or acc.get("username") or ""),
+                from_name=str(acc.get("from_name") or ""),
                 to_email=to_email,
                 subject=subject,
                 text_body=text_body,
@@ -1728,6 +1744,7 @@ def compose_send(payload: dict = Body(...), user: dict = Depends(get_current_use
                 username=acc["username"],
                 password=acc["password"],
                 from_email=str(acc.get("from_email") or acc.get("username") or ""),
+                from_name=str(acc.get("from_name") or ""),
                 to_email=to_email,
                 subject=subject,
                 text_body=text_body,
