@@ -352,13 +352,19 @@
   <script>
     const qs = (s, el=document) => el.querySelector(s);
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+    const __nfCL = (() => {
+      try{ return new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }); }
+      catch(_){ return null; }
+    })();
     const money = (n) => {
       const v = Number(n||0);
-      try{ return v.toLocaleString("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}); }
-      catch(_){ return "$"+Math.round(v); }
+      const vv = isFinite(v) ? Math.round(v) : 0;
+      if (__nfCL) return `$${__nfCL.format(vv)}`;
+      return "$" + String(vv);
     };
     const LAST = { dash:null, rep:null, ini:"", fin:"", mid:"" };
     const ME = { role:"", username:"" };
+    let CURRENT_TAB = "total";
 
     // ---------- charts (ECharts, BI look) ----------
     const EC = {};
@@ -384,26 +390,57 @@
 	      };
 	    }
 
-      // ECharts theme (gratis/OSS) — look BI consistente con GD (oscuro + verdes).
-      (function registerGDTheme(){
+      function __registerGDThemes(){
         try{
           if (!hasECharts()) return;
           if (window.__GD_ECHARTS_THEME__) return;
           window.__GD_ECHARTS_THEME__ = true;
-          const c = ecColors();
-          echarts.registerTheme("gd", {
-            color: [c.accent, c.accentDark, c.accentLight, c.cyan, c.warn, c.bad],
-            backgroundColor: "transparent",
-            textStyle: { color: c.axis, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" },
-            title: { textStyle: { color: c.title, fontWeight: 900 }, subtextStyle: { color: c.sub, fontWeight: 800 } },
-            legend: { textStyle: { color: c.axis, fontWeight: 850 } },
-            tooltip: { backgroundColor: "rgba(10,18,28,.92)", borderColor: "rgba(148,163,184,.20)", borderWidth: 1 },
-            axisPointer: { lineStyle: { color: "rgba(148,163,184,.35)" }, crossStyle: { color: "rgba(148,163,184,.35)" } },
-            categoryAxis: { axisLine: { lineStyle: { color: c.grid } }, axisTick: { show: false }, axisLabel: { color: c.axis } },
-            valueAxis: { axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: c.axis }, splitLine: { lineStyle: { color: c.grid, type: "dashed" } } },
-          });
+
+          const mk = (isLight) => {
+            const c = (()=>{
+              // usa el mismo palette, solo cambia tintes base
+              const g1 = "#587B0D";
+              const g2 = "#5B974E";
+              const g3 = "#96C251";
+              return {
+                axis: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.80)",
+                grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.16)",
+                title: isLight ? "rgba(0,0,0,.85)" : "rgba(255,255,255,.88)",
+                sub: isLight ? "rgba(0,0,0,.60)" : "rgba(255,255,255,.70)",
+                accent: g2,
+                accentDark: g1,
+                accentLight: g3,
+                warn: "#f59e0b",
+                bad: "#ef4444",
+                cyan: "#22d3ee",
+              };
+            })();
+            return {
+              color: [c.accent, c.accentDark, c.accentLight, c.cyan, c.warn, c.bad],
+              backgroundColor: "transparent",
+              textStyle: { color: c.axis, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" },
+              title: { textStyle: { color: c.title, fontWeight: 900 }, subtextStyle: { color: c.sub, fontWeight: 800 } },
+              legend: { textStyle: { color: c.axis, fontWeight: 850 } },
+              tooltip: {
+                backgroundColor: isLight ? "rgba(255,255,255,.94)" : "rgba(10,18,28,.92)",
+                borderColor: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.20)",
+                borderWidth: 1,
+              },
+              axisPointer: { lineStyle: { color: "rgba(148,163,184,.35)" }, crossStyle: { color: "rgba(148,163,184,.35)" } },
+              categoryAxis: { axisLine: { lineStyle: { color: c.grid } }, axisTick: { show: false }, axisLabel: { color: c.axis } },
+              valueAxis: { axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: c.axis }, splitLine: { lineStyle: { color: c.grid, type: "dashed" } } },
+            };
+          };
+
+          echarts.registerTheme("gd-dark", mk(false));
+          echarts.registerTheme("gd-light", mk(true));
         }catch(_){}
-      })();
+      }
+      __registerGDThemes();
+
+      function __ecTheme(){
+        return document.documentElement.classList.contains("light") ? "gd-light" : "gd-dark";
+      }
 
 	    function ecWatermark(c){
 	      // Watermark sutil con diamante + GD (sin assets externos)
@@ -471,14 +508,14 @@
       if (!wrap) return;
       wrap.innerHTML = `<div class="muted">${esc(msg || "Sin datos.")}</div>`;
     }
-    function initEC(id, cls){
-      if (!hasECharts()) return null;
-      const el = ensureECBox(id, cls);
-      if (!el) return null;
-      destroyEC(id);
-      EC[id] = echarts.init(el, "gd", { renderer:"canvas" });
-      return EC[id];
-    }
+	    function initEC(id, cls){
+	      if (!hasECharts()) return null;
+	      const el = ensureECBox(id, cls);
+	      if (!el) return null;
+	      destroyEC(id);
+	      EC[id] = echarts.init(el, __ecTheme(), { renderer:"canvas" });
+	      return EC[id];
+	    }
     function fmtAxisMoney(v){
       const n = Number(v||0);
       if (!isFinite(n)) return "0";
@@ -549,26 +586,26 @@
               textStyle:{ color: c.sub, fontWeight:900, fontSize:10 } }
 	        ] : [],
 	        series: [
-	          {
-	            // barra “ghost” para look BI (background uniforme)
-	            type: "bar",
-	            data: back,
-	            barWidth: 14,
-	            barGap: "-100%",
-	            itemStyle: { color: "rgba(148,163,184,.10)", borderRadius: 999 },
-	            silent: true,
-	            z: 1
-	          },
-	          {
-	            type: "bar",
-	            data: vals,
-	            barWidth: 14,
-	            z: 2,
-	            itemStyle: {
-	              borderRadius: 999,
-	              shadowBlur: 16,
-	              shadowColor: "rgba(0,0,0,.22)",
-	              color: {
+		          {
+		            // barra “ghost” para look BI (background uniforme)
+		            type: "bar",
+		            data: back,
+		            barWidth: 14,
+		            barGap: "-100%",
+		            itemStyle: { color: "rgba(148,163,184,.10)", borderRadius: 8 },
+		            silent: true,
+		            z: 1
+		          },
+		          {
+		            type: "bar",
+		            data: vals,
+		            barWidth: 14,
+		            z: 2,
+		            itemStyle: {
+		              borderRadius: 8,
+		              shadowBlur: 16,
+		              shadowColor: "rgba(0,0,0,.22)",
+		              color: {
 	                type: "linear", x: 0, y: 0, x2: 1, y2: 0,
 	                colorStops: [
 	                  { offset: 0, color: c.accentDark },
@@ -576,20 +613,20 @@
 	                  { offset: 1, color: c.accentLight }
 	                ]
 	              }
-	            },
-	            label: {
-	              show: true,
-	              position: "insideRight",
-	              distance: 8,
-	              color: "rgba(255,255,255,.88)",
-	              fontWeight: 1100,
-	              formatter: (p)=> {
-	                const i = p?.dataIndex ?? 0;
-	                const v = Number(p?.value || 0);
-	                const rank = String(i + 1).padStart(2, "0");
-	                return `#${rank} · ${fmtV(v)}`;
-	              }
-	            },
+		            },
+		            label: {
+		              show: true,
+		              position: "right",
+		              distance: 8,
+		              color: c.axis,
+		              fontWeight: 1100,
+		              formatter: (p)=> {
+		                const i = p?.dataIndex ?? 0;
+		                const v = Number(p?.value || 0);
+		                const rank = String(i + 1).padStart(2, "0");
+		                return `#${rank} · ${fmtV(v)}`;
+		              }
+		            },
 	            emphasis: {
 	              itemStyle: { shadowBlur: 22, shadowColor: "rgba(23,195,125,.25)" }
 	            },
@@ -650,12 +687,8 @@
               const nm = String(d.name||"—");
               const m = money(d.value||0);
               const n = Number(d.cantidad||0);
-              return `{a|${nm}}\\n{b|${m}}{c| · ${n} leads}`;
-            },
-            rich:{
-              a:{ fontWeight:1100, fontSize:12, color:c.title },
-              b:{ fontWeight:1100, fontSize:12, color:c.axis },
-              c:{ fontWeight:900, fontSize:11, color:c.sub },
+              // Evita artefactos de rich-text (|, \n) en algunos navegadores/skins.
+              return `${nm}\n${m} · ${n} leads`;
             }
           },
           labelLine:{ lineStyle:{ color:c.grid } },
@@ -1053,13 +1086,13 @@
     }
 
     async function init(){
-      let CURRENT_TAB = getInitialTab();
+      CURRENT_TAB = getInitialTab();
       // bind tabs
       qs("#tabs")?.addEventListener("click", (ev)=>{
         const b = ev.target?.closest?.(".tab[data-tab]");
         if (!b) return;
         const t = String(b.getAttribute("data-tab") || "");
-        CURRENT_TAB = selectTab(t);
+        CURRENT_TAB = selectTab(t, { setHash:true, render:true });
       });
 
       const now = new Date();
@@ -1108,9 +1141,10 @@
       qs("#btnXlsx")?.addEventListener("click", ()=> doExportXLSX(CURRENT_TAB).catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
       qs("#btnWsp")?.addEventListener("click", ()=> shareWhatsApp(CURRENT_TAB).catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
 
-      // auto
-      qs("#go").click();
-      CURRENT_TAB = selectTab(CURRENT_TAB, { setHash: true });
+      // Mostrar el tab actual ANTES de cargar (evita inicializar ECharts en paneles hidden).
+      CURRENT_TAB = selectTab(CURRENT_TAB, { setHash: true, render:false });
+      // auto-load (await para que el primer render sea del tab visible)
+      await load();
     }
 
     const TAB_IDS = [
@@ -1131,7 +1165,7 @@
       return "total";
     }
 
-    function selectTab(id, { setHash=true } = {}){
+    function selectTab(id, { setHash=true, render=false } = {}){
       const tab = TAB_IDS.includes(id) ? id : "total";
       // activar UI
       document.querySelectorAll("#tabs .tab[data-tab]").forEach(b => {
@@ -1158,7 +1192,30 @@
         setTimeout(()=> { try{ resizeEC(); }catch(_){}
         }, 120);
       }catch(_){}
+      if (render){
+        try{
+          // render on-demand con datos cacheados
+          Promise.resolve(renderTab(tab)).catch(()=>{});
+        }catch(_){}
+      }
       return tab;
+    }
+
+    async function renderTab(tab){
+      const dash = LAST.dash;
+      const rep = LAST.rep;
+      if (!dash || !rep) return;
+      if (tab === "funnel") return void renderFunnel(rep);
+      if (tab === "cierre") return void renderCierre(dash);
+      if (tab === "tipo_cliente") return void renderTipos(rep);
+      if (tab === "total") { renderTotal(dash); return void renderMarcaPie(rep); }
+      if (tab === "comunas") return void renderTop(rep, "comunas");
+      if (tab === "productos") return void renderTop(rep, "productos");
+      if (tab === "clientes") return void renderTop(rep, "clientes");
+      if (tab === "leads_hoy") return void (await renderLeadsHoyList(LAST.mid));
+      if (tab === "venta_diaria") return void renderDaily(dash, LAST.mid);
+      if (tab === "cxc") return void (await renderFinanzas(LAST.ini, LAST.fin, "cxc"));
+      if (tab === "cxp") return void (await renderFinanzas(LAST.ini, LAST.fin, "cxp"));
     }
 
     async function load(){
@@ -1194,15 +1251,7 @@
       LAST.mid = mid;
 
       renderKPIs(dash, ini, fin, mid);
-      renderFunnel(rep);
-      renderTipos(rep);
-      renderTop(rep);
-      renderCierre(dash);
-      await renderLeadsHoyList(mid);
-      renderTotal(dash);
-      renderMarcaPie(rep);
-      renderDaily(dash, mid);
-      await renderFinanzas(ini, fin);
+      await renderTab(CURRENT_TAB);
 
       qs("#st").textContent = `OK · Rango: ${ini} → ${fin}${mid ? (" · Marca ID: " + mid) : ""}`;
     }
@@ -1327,7 +1376,7 @@
       ecDonut("chMarcaPie", "Torta por marca (confirmados)", rows, "monto", "marca");
     }
 
-    function renderTop(rep){
+    function renderTop(rep, only){
       const tp = rep?.top_productos || [];
       const com = rep?.comunas || [];
       const cli = rep?.clientes || [];
@@ -1337,24 +1386,34 @@
         return Math.max(5, Math.min(25, Math.round(n)));
       })();
 
-      ecBarH("chProd", "Top productos (monto)", tp.slice(0,chartN).map(x => ({
-        label: x.producto || "—",
-        value: Number(x.monto||0),
-        tooltip: `${x.marca ? String(x.marca) : ""}${x.marca ? " · " : ""}${Math.round(Number(x.cantidad||0))} uds`,
-      })), money);
-      ecBarH("chCom", "Top comunas (monto)", com.slice(0,chartN).map(x => ({
-        label: x.comuna || "—",
-        value: Number(x.monto||0),
-        tooltip: `${Number(x.cantidad||0)} leads · prom ${money((Number(x.monto||0)/Math.max(1,Number(x.cantidad||0))))}`,
-      })), money);
-      ecBarH("chCli", "Top clientes (monto)", cli.slice(0,chartN).map(x => ({
-        label: x.cliente || "—",
-        value: Number(x.monto||0),
-        tooltip: `${Number(x.cantidad||0)} leads · prom ${money((Number(x.monto||0)/Math.max(1,Number(x.cantidad||0))))}`,
-      })), money);
+      const wantProd = (!only || only === "productos");
+      const wantCom = (!only || only === "comunas");
+      const wantCli = (!only || only === "clientes");
+
+      if (wantProd){
+        ecBarH("chProd", "Top productos (monto)", tp.slice(0,chartN).map(x => ({
+          label: x.producto || "—",
+          value: Number(x.monto||0),
+          tooltip: `${x.marca ? String(x.marca) : ""}${x.marca ? " · " : ""}${Math.round(Number(x.cantidad||0))} uds`,
+        })), money);
+      }
+      if (wantCom){
+        ecBarH("chCom", "Top comunas (monto)", com.slice(0,chartN).map(x => ({
+          label: x.comuna || "—",
+          value: Number(x.monto||0),
+          tooltip: `${Number(x.cantidad||0)} leads · prom ${money((Number(x.monto||0)/Math.max(1,Number(x.cantidad||0))))}`,
+        })), money);
+      }
+      if (wantCli){
+        ecBarH("chCli", "Top clientes (monto)", cli.slice(0,chartN).map(x => ({
+          label: x.cliente || "—",
+          value: Number(x.monto||0),
+          tooltip: `${Number(x.cantidad||0)} leads · prom ${money((Number(x.monto||0)/Math.max(1,Number(x.cantidad||0))))}`,
+        })), money);
+      }
 
       const tbP = qs("#tbProd");
-      if (tbP){
+      if (tbP && wantProd){
         const maxMonto = Math.max(1, ...tp.map(x => Number(x?.monto||0)));
         tbP.innerHTML = tp.length ? tp.map(r => `
           <tr>
@@ -1372,7 +1431,7 @@
       }
 
       const tbC = qs("#tbCom");
-      if (tbC){
+      if (tbC && wantCom){
         const maxMonto = Math.max(1, ...com.map(x => Number(x?.monto||0)));
         tbC.innerHTML = com.length ? com.map(r => `
           <tr>
@@ -1389,7 +1448,7 @@
       }
 
       const tbU = qs("#tbCli");
-      if (tbU){
+      if (tbU && wantCli){
         const maxMonto = Math.max(1, ...cli.map(x => Number(x?.monto||0)));
         tbU.innerHTML = cli.length ? cli.map(r => `
           <tr>
@@ -1555,106 +1614,113 @@
       `;
     }
 
-	    async function renderFinanzas(ini, fin){
-	      const boxCxc = qs("#boxCxc");
-	      const boxCxp = qs("#boxCxp");
-	      if (boxCxc) boxCxc.innerHTML = `<div class="muted">Cargando…</div>`;
-	      if (boxCxp) boxCxp.innerHTML = `<div class="muted">Cargando…</div>`;
-	      try{ LAST.fin = LAST.fin || {}; }catch(_){}
+		    async function renderFinanzas(ini, fin, only){
+		      const boxCxc = qs("#boxCxc");
+		      const boxCxp = qs("#boxCxp");
+          const wantCxc = (!only || only === "cxc");
+          const wantCxp = (!only || only === "cxp");
+
+		      if (boxCxc && wantCxc) boxCxc.innerHTML = `<div class="muted">Cargando…</div>`;
+		      if (boxCxp && wantCxp) boxCxp.innerHTML = `<div class="muted">Cargando…</div>`;
+		      try{ LAST.fin = LAST.fin || {}; }catch(_){}
 
       const ym = (ini && /^\d{4}-\d{2}-\d{2}$/.test(ini)) ? ini.slice(0,7) : "";
       const [yy, mm] = ym ? ym.split("-").map(Number) : [0,0];
       const qp = (mm && yy) ? `?month=${encodeURIComponent(String(mm))}&year=${encodeURIComponent(String(yy))}` : "";
 
-	      try{
-	        const out = await jget(`/finanzas/cxc_resumen${qp}`);
-	        const items = Array.isArray(out?.items) ? out.items : [];
-	        try{ LAST.fin.cxc = items; LAST.fin.cxc_qp = qp; }catch(_){}
-        ecBarH("chCxc", "Top clientes por saldo pendiente", items
-          .slice()
-          .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
-          .slice(0,10)
-          .map(r => ({
-            label: r.cliente || "—",
-            value: Number(r.saldo_pendiente||0),
-            tooltip: r.marca ? String(r.marca) : "",
-          })), money);
-        const total = items.reduce((a,x)=>a+Number(x.saldo_pendiente||0),0);
-        const rows = items.slice(0, 120);
-        if (boxCxc){
-          boxCxc.innerHTML = `
-            <div class="row" style="justify-content:space-between;margin-bottom:10px">
-              <div class="muted">Total pendiente</div>
-              <div style="font-weight:1100">${esc(money(total))}</div>
-            </div>
-            <div style="max-height:420px;overflow:auto">
-              <table class="tbl">
-                <thead><tr><th>Cliente</th><th>Marca</th><th class="right">Saldo</th><th class="right">#</th><th>Último</th></tr></thead>
-                <tbody>
-                  ${rows.map(r => `
-                    <tr>
-                      <td><strong>${esc(r.cliente||"—")}</strong></td>
-                      <td class="muted">${esc(r.marca||"")}</td>
-                      <td class="right">${esc(money(r.saldo_pendiente||0))}</td>
-                      <td class="right">${esc(r.n||0)}</td>
-                      <td>${esc(String(r.ultimo_evento||""))}</td>
-                    </tr>
-                  `).join("") || `<tr><td colspan="5" class="muted">Sin datos.</td></tr>`}
-                </tbody>
-              </table>
-            </div>
-          `;
-        }
-	      }catch(e){
-	        if (boxCxc) boxCxc.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
-	        setChartMsg("chCxc", "No disponible.");
-	        try{ LAST.fin.cxc = []; }catch(_){}
-	      }
+		      if (wantCxc){
+            try{
+              const out = await jget(`/finanzas/cxc_resumen${qp}`);
+              const items = Array.isArray(out?.items) ? out.items : [];
+              try{ LAST.fin.cxc = items; LAST.fin.cxc_qp = qp; }catch(_){}
+              ecBarH("chCxc", "Top clientes por saldo pendiente", items
+                .slice()
+                .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
+                .slice(0,10)
+                .map(r => ({
+                  label: r.cliente || "—",
+                  value: Number(r.saldo_pendiente||0),
+                  tooltip: r.marca ? String(r.marca) : "",
+                })), money);
+              const total = items.reduce((a,x)=>a+Number(x.saldo_pendiente||0),0);
+              const rows = items.slice(0, 120);
+              if (boxCxc){
+                boxCxc.innerHTML = `
+                  <div class="row" style="justify-content:space-between;margin-bottom:10px">
+                    <div class="muted">Total pendiente</div>
+                    <div style="font-weight:1100">${esc(money(total))}</div>
+                  </div>
+                  <div style="max-height:420px;overflow:auto">
+                    <table class="tbl">
+                      <thead><tr><th>Cliente</th><th>Marca</th><th class="right">Saldo</th><th class="right">#</th><th>Último</th></tr></thead>
+                      <tbody>
+                        ${rows.map(r => `
+                          <tr>
+                            <td><strong>${esc(r.cliente||"—")}</strong></td>
+                            <td class="muted">${esc(r.marca||"")}</td>
+                            <td class="right">${esc(money(r.saldo_pendiente||0))}</td>
+                            <td class="right">${esc(r.n||0)}</td>
+                            <td>${esc(String(r.ultimo_evento||""))}</td>
+                          </tr>
+                        `).join("") || `<tr><td colspan="5" class="muted">Sin datos.</td></tr>`}
+                      </tbody>
+                    </table>
+                  </div>
+                `;
+              }
+            }catch(e){
+              if (boxCxc) boxCxc.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+              setChartMsg("chCxc", "No disponible.");
+              try{ LAST.fin.cxc = []; }catch(_){}
+            }
+          }
 
-	      try{
-	        const out = await jget(`/finanzas/cxp_resumen`);
-	        const items = Array.isArray(out?.items) ? out.items : [];
-	        try{ LAST.fin.cxp = items; }catch(_){}
-        ecBarH("chCxp", "Top proveedores por pendiente", items
-          .slice()
-          .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
-          .slice(0,10)
-          .map(r => ({
-            label: r.proveedor || "—",
-            value: Number(r.pendiente||0),
-            tooltip: `pagado ${money(r.pagado||0)}`,
-          })), money);
-        const total = items.reduce((a,x)=>a+Number(x.pendiente||0),0);
-        const rows = items.slice(0, 120);
-        if (boxCxp){
-          boxCxp.innerHTML = `
-            <div class="row" style="justify-content:space-between;margin-bottom:10px">
-              <div class="muted">Total pendiente</div>
-              <div style="font-weight:1100">${esc(money(total))}</div>
-            </div>
-            <div style="max-height:420px;overflow:auto">
-              <table class="tbl">
-                <thead><tr><th>Proveedor</th><th class="right">Pendiente</th><th class="right">Pagado</th><th class="right">#</th></tr></thead>
-                <tbody>
-                  ${rows.map(r => `
-                    <tr>
-                      <td><strong>${esc(r.proveedor||"—")}</strong></td>
-                      <td class="right">${esc(money(r.pendiente||0))}</td>
-                      <td class="right">${esc(money(r.pagado||0))}</td>
-                      <td class="right">${esc(r.n||0)}</td>
-                    </tr>
-                  `).join("") || `<tr><td colspan="4" class="muted">Sin datos.</td></tr>`}
-                </tbody>
-              </table>
-            </div>
-          `;
-        }
-	      }catch(e){
-	        if (boxCxp) boxCxp.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
-	        setChartMsg("chCxp", "No disponible.");
-	        try{ LAST.fin.cxp = []; }catch(_){}
-	      }
-	    }
+		      if (wantCxp){
+            try{
+              const out = await jget(`/finanzas/cxp_resumen`);
+              const items = Array.isArray(out?.items) ? out.items : [];
+              try{ LAST.fin.cxp = items; }catch(_){}
+              ecBarH("chCxp", "Top proveedores por pendiente", items
+                .slice()
+                .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
+                .slice(0,10)
+                .map(r => ({
+                  label: r.proveedor || "—",
+                  value: Number(r.pendiente||0),
+                  tooltip: `pagado ${money(r.pagado||0)}`,
+                })), money);
+              const total = items.reduce((a,x)=>a+Number(x.pendiente||0),0);
+              const rows = items.slice(0, 120);
+              if (boxCxp){
+                boxCxp.innerHTML = `
+                  <div class="row" style="justify-content:space-between;margin-bottom:10px">
+                    <div class="muted">Total pendiente</div>
+                    <div style="font-weight:1100">${esc(money(total))}</div>
+                  </div>
+                  <div style="max-height:420px;overflow:auto">
+                    <table class="tbl">
+                      <thead><tr><th>Proveedor</th><th class="right">Pendiente</th><th class="right">Pagado</th><th class="right">#</th></tr></thead>
+                      <tbody>
+                        ${rows.map(r => `
+                          <tr>
+                            <td><strong>${esc(r.proveedor||"—")}</strong></td>
+                            <td class="right">${esc(money(r.pendiente||0))}</td>
+                            <td class="right">${esc(money(r.pagado||0))}</td>
+                            <td class="right">${esc(r.n||0)}</td>
+                          </tr>
+                        `).join("") || `<tr><td colspan="4" class="muted">Sin datos.</td></tr>`}
+                      </tbody>
+                    </table>
+                  </div>
+                `;
+              }
+            }catch(e){
+              if (boxCxp) boxCxp.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+              setChartMsg("chCxp", "No disponible.");
+              try{ LAST.fin.cxp = []; }catch(_){}
+            }
+          }
+		    }
 
     async function openConfirmedSales(desde, hasta, mid){
       const qs2 = new URLSearchParams({ desde, hasta });
@@ -1679,12 +1745,24 @@
         setChartMsg("chDaily", "Sin datos.");
         return;
       }
+      const dayLabel = (iso) => {
+        try{
+          const d = new Date(String(iso).slice(0,10) + "T00:00:00");
+          const wd = d.toLocaleDateString("es-CL", { weekday:"short" }).replace(/\./g,"");
+          const s = String(iso||"");
+          const ddmm = s.slice(8,10)+"/"+s.slice(5,7);
+          return `${wd.toUpperCase()} ${ddmm}`;
+        }catch(_){
+          const s = String(iso||"");
+          return s.slice(8,10)+"/"+s.slice(5,7);
+        }
+      };
       // chart: totales por día (marca seleccionada o global)
       const totals = days.map(d => {
         const rows = daily.filter(x => x.dia === d && (!mid || String(x.id_marca||"") === String(mid)));
         return rows.reduce((a,x)=>a+Number(x.monto||0),0);
       });
-      const labels = days.map(d => d.slice(8,10)+"/"+d.slice(5,7));
+      const labels = days.map(dayLabel);
       ecDaily("chDaily", labels, totals);
       const brands = [...new Set(daily.map(x => x.marca))];
       box.innerHTML = `
@@ -1692,7 +1770,7 @@
           <thead>
             <tr>
               <th>Marca</th>
-              ${days.map(d => `<th class="right">${esc(d.slice(8,10)+"/"+d.slice(5,7))}</th>`).join("")}
+              ${days.map(d => `<th class="right">${esc(dayLabel(d))}</th>`).join("")}
             </tr>
           </thead>
           <tbody>

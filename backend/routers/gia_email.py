@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import imaplib
 import smtplib
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import Header
 from sqlalchemy import text
 
 from backend.core.db import get_connection
@@ -112,8 +113,53 @@ def _fallback_marcas_ids(conn, user: dict) -> list[int]:
 
 def _norm(s: str) -> str:
     s = (s or "").strip().upper()
-    s = re.sub(r"\\s+", " ", s)
+    s = re.sub(r"\s+", " ", s)
     return s
+
+
+def _read_dotenv_value_simple(var_name: str) -> str:
+    """
+    Best-effort: Passenger a veces no exporta env vars; leemos desde `.env`.
+    (Solo para valores simples de 1 línea).
+    """
+    try:
+        candidates: list[Path] = []
+        try:
+            candidates.append(Path(__file__).resolve().parents[2] / ".env")  # repo root
+        except Exception:
+            pass
+        try:
+            candidates.append(Path.cwd() / ".env")
+        except Exception:
+            pass
+        try:
+            candidates.append(Path.home() / "crm" / ".env")
+        except Exception:
+            pass
+
+        for p in candidates:
+            try:
+                if not p.exists():
+                    continue
+                for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                    s = line.strip()
+                    if not s or s.startswith("#"):
+                        continue
+                    if not s.startswith(var_name + "="):
+                        continue
+                    v = s.split("=", 1)[1].strip()
+                    if (len(v) >= 2) and (v[0] == v[-1]) and v[0] in ("'", '"'):
+                        v = v[1:-1].strip()
+                    return v
+            except Exception:
+                continue
+    except Exception:
+        return ""
+    return ""
+
+
+def _internal_key() -> str:
+    return (os.getenv("GREENI_INTERNAL_KEY") or _read_dotenv_value_simple("GREENI_INTERNAL_KEY") or "").strip()
 
 
 def _ensure_schema() -> None:
@@ -540,7 +586,7 @@ def _resolve_tipo_cliente_id(conn, body: str) -> Optional[int]:
     return None
 
 
-def _find_recent_lead_id(conn, *, id_marca: Optional[int], from_email: str) -> Optional[int]:
+def _find_recent_lead_id(conn, *, id_marca: Optional[int], from_email: str, days: int = 30) -> Optional[int]:
     """
     Best-effort dedupe: si ya existe un lead reciente para el mismo correo+marca,
     lo reutilizamos para no llenar el CRM de duplicados.
@@ -549,18 +595,21 @@ def _find_recent_lead_id(conn, *, id_marca: Optional[int], from_email: str) -> O
     if not fe:
         return None
     try:
+        days_i = int(days or 30)
+        if days_i <= 0:
+            days_i = 30
         if id_marca is None:
             q = text(
                 """
                 SELECT id_lead
                 FROM public.leads
                 WHERE LOWER(COALESCE(email,'')) = LOWER(:e)
-                  AND created_at >= now() - interval '30 days'
+                  AND created_at >= now() - (:days * interval '1 day')
                 ORDER BY id_lead DESC
                 LIMIT 1
                 """
             )
-            r = conn.execute(q, {"e": fe}).scalar()
+            r = conn.execute(q, {"e": fe, "days": days_i}).scalar()
             return int(r) if r is not None else None
         q = text(
             """
@@ -568,12 +617,12 @@ def _find_recent_lead_id(conn, *, id_marca: Optional[int], from_email: str) -> O
             FROM public.leads
             WHERE LOWER(COALESCE(email,'')) = LOWER(:e)
               AND id_marca = :m
-              AND created_at >= now() - interval '30 days'
+              AND created_at >= now() - (:days * interval '1 day')
             ORDER BY id_lead DESC
             LIMIT 1
             """
         )
-        r = conn.execute(q, {"e": fe, "m": int(id_marca)}).scalar()
+        r = conn.execute(q, {"e": fe, "m": int(id_marca), "days": days_i}).scalar()
         return int(r) if r is not None else None
     except Exception:
         return None
@@ -596,6 +645,8 @@ def _create_lead_from_email(
     from_email: str,
     subject: str,
     body_text: str,
+    plataforma: str = "CORREO",
+    rid: str = "",
 ) -> Optional[int]:
     """
     Crea un lead con plataforma=FORMULARIO (el formulario llega por correo).
@@ -633,16 +684,22 @@ def _create_lead_from_email(
     body_prev = (body_text or "").strip()
     if len(body_prev) > 1600:
         body_prev = body_prev[:1600] + "…"
-    notas = "\n".join(
+    rid = (rid or "").strip()
+    notas_lines = [
+        "[GIA][EMAIL] %s" % stamp,
+    ]
+    if rid:
+        notas_lines.append(f"RID: {rid}")
+    notas_lines.extend(
         [
-            "[GIA][EMAIL] %s" % stamp,
             f"Marca: {marca}",
             f"From: {from_email}",
             f"Asunto: {subject or '(Sin asunto)'}",
             "",
             body_prev,
         ]
-    ).strip()
+    )
+    notas = "\n".join(notas_lines).strip()
 
     data = {
         "cliente": cliente,
@@ -655,7 +712,7 @@ def _create_lead_from_email(
         "id_tipo_cliente": int(id_tipo_cliente) if id_tipo_cliente is not None and "id_tipo_cliente" in cols else None,
         "fecha_evento": fecha_iso if fecha_iso and "fecha_evento" in cols else None,
         "monto_cotizado": 0 if "monto_cotizado" in cols else None,
-        "plataforma": ("CORREO" if "plataforma" in cols else None),
+        "plataforma": ((plataforma or "CORREO") if "plataforma" in cols else None),
         "notas": notas if "notas" in cols else None,
         "created_at": datetime.now(timezone.utc) if "created_at" in cols else None,
         "updated_at": datetime.now(timezone.utc) if "updated_at" in cols else None,
@@ -907,7 +964,8 @@ def _smtp_send(
     m = EmailMessage()
     fe = (from_email or "").strip()
     fn = (from_name or "").strip()
-    m["From"] = formataddr((fn, fe)) if fn else f"<{fe}>"
+    # Algunos SMTP rechazan "From: <...>" o dominios vacíos; usa email directo cuando no hay nombre.
+    m["From"] = formataddr((fn, fe)) if (fn and fe) else (fe or (username or ""))
     m["To"] = to_email
     m["Subject"] = subject
     m["Date"] = formatdate(localtime=True)
@@ -915,15 +973,19 @@ def _smtp_send(
     m.set_content(text_body or "")
 
     context = ssl.create_default_context()
+    # Envelope sender: preferir el username autenticado si parece email; si no, usar from_email.
+    env_from = (username or "").strip()
+    if "@" not in env_from:
+        env_from = (fe or env_from).strip()
     if smtp_ssl:
         with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=25) as s:
             s.login(username, password)
-            s.send_message(m, from_addr=(username or fe), to_addrs=[to_email])
+            s.send_message(m, from_addr=(env_from or fe or username), to_addrs=[to_email])
     else:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=25) as s:
             s.starttls(context=context)
             s.login(username, password)
-            s.send_message(m, from_addr=(username or fe), to_addrs=[to_email])
+            s.send_message(m, from_addr=(env_from or fe or username), to_addrs=[to_email])
 
 
 def _imap_connect(*, host: str, port: int, use_ssl: bool) -> imaplib.IMAP4:
@@ -1281,16 +1343,28 @@ def sync(
                         if rowm and rowm.get("id_msg") is not None and rowm.get("lead_id") is None:
                             lead_id = None
 
-                            # Formularios: NO crear duplicados. Solo intentar linkear.
+                            # Formularios: intentar linkear por RID / correo; si no existe, crear 1 lead (idempotente).
                             if kind == "form":
                                 lead_id = _find_lead_by_rid(conn, parsed_rid)
 
                             contact_email = (reply_to_email or parsed_email or from_email or "").strip().lower()
                             if lead_id is None and contact_email:
-                                lead_id = _find_recent_lead_id(conn, id_marca=mid, from_email=contact_email)
+                                lead_id = _find_recent_lead_id(conn, id_marca=mid, from_email=contact_email, days=(3 if kind == "form" else 30))
 
-                            # Importante: NO creamos el lead automáticamente.
-                            # La UI debe pedir confirmación al ejecutivo (botón "Crear lead").
+                            if lead_id is None and kind == "form":
+                                # Fallback: crea el lead desde el correo del formulario (si el pipeline externo falló).
+                                # Dedupe ya se hizo arriba (RID / email+marca reciente).
+                                lead_id = _create_lead_from_email(
+                                    conn=conn,
+                                    id_marca=int(mid) if mid is not None else None,
+                                    marca=marca,
+                                    from_name=str(parsed_cliente or from_name or ""),
+                                    from_email=(contact_email or from_email or ""),
+                                    subject=str(subject or ""),
+                                    body_text=str(text_body or ""),
+                                    plataforma="FORMULARIO",
+                                    rid=str(parsed_rid or ""),
+                                )
 
                             if lead_id is not None:
                                 conn.execute(
@@ -1311,11 +1385,11 @@ def sync(
                                 )
                                 ack_subject = f"Gracias por contactarnos — {marca}"
                                 ack_text = (
-                                    f"Hola {cliente_txt}, soy del equipo {marca}.\\n\\n"
-                                    "¡Gracias por tu contacto! Recibimos tu solicitud y te contactaremos a la brevedad.\\n\\n"
-                                    f"{fecha_line}\\n\\n"
-                                    "Gracias, quedo atento(a) a tu confirmación.\\n\\n"
-                                    "--\\n"
+                                    f"Hola {cliente_txt}, soy del equipo {marca}.\n\n"
+                                    "¡Gracias por tu contacto! Recibimos tu solicitud y te contactaremos a la brevedad.\n\n"
+                                    f"{fecha_line}\n\n"
+                                    "Gracias, quedo atento(a) a tu confirmación.\n\n"
+                                    "--\n"
                                     f"{marca} · Green Diamond"
                                 )
                                 _smtp_send(
@@ -1374,7 +1448,24 @@ def sync(
                     pass
                 errors.append(f"{a.get('marca')}: {str(e)[:160]}")
 
-        return {"ok": True, "synced": synced, "stored": stored, "ack_sent": ack_sent, "errors": errors}
+    return {"ok": True, "synced": synced, "stored": stored, "ack_sent": ack_sent, "errors": errors}
+
+
+@router.post("/cron_sync")
+def cron_sync(
+    limit: int = Query(default=80, ge=1, le=200),
+    force_recent: bool = Query(default=False),
+    x_key: str | None = Header(default=None, alias="X-Greeni-Key"),
+):
+    """
+    Sync para CRON (sin login) — protegido por `X-Greeni-Key: $GREENI_INTERNAL_KEY`.
+    Útil para que el inbox se mantenga actualizado sin depender de que alguien apriete “Recargar”.
+    """
+    want = _internal_key()
+    if not want or not x_key or str(x_key).strip() != want:
+        raise HTTPException(403, "Sin permiso")
+    # Reusa la misma lógica de sync con un user admin sintético.
+    return sync(limit=limit, force_recent=force_recent, user={"role": "ADMIN", "username": "cron", "marcas": []})
 
 
 @router.get("/inbox")
@@ -1548,22 +1639,22 @@ def inbox_get(id_msg: int, user: dict = Depends(get_current_user)):
                 )
             else:
                 if missing:
-                    missing_lines = "\\n".join([f"- {x}" for x in missing])
+                    missing_lines = "\n".join([f"- {x}" for x in missing])
                     draft = (
-                        f"Hola {cliente}, soy del equipo {marca}.\\n\\n"
-                        "¡Gracias por tu contacto! Para ayudarte mejor, ¿me confirmas estos datos?\\n"
-                        f"{missing_lines}\\n\\n"
-                        "Gracias, quedo atento(a).\\n"
+                        f"Hola {cliente}, soy del equipo {marca}.\n\n"
+                        "¡Gracias por tu contacto! Para ayudarte mejor, ¿me confirmas estos datos?\n"
+                        f"{missing_lines}\n\n"
+                        "Gracias, quedo atento(a).\n"
                     )
                 else:
                     draft = (
-                        f"Hola {cliente}, soy del equipo {marca}.\\n\\n"
-                        "¡Gracias por tu correo! Confirmo recepción y quedo atento(a) por cualquier ajuste.\\n\\n"
-                        "Saludos.\\n"
+                        f"Hola {cliente}, soy del equipo {marca}.\n\n"
+                        "¡Gracias por tu correo! Confirmo recepción y quedo atento(a) por cualquier ajuste.\n\n"
+                        "Saludos.\n"
                     )
 
             if tpl and bool(tpl.get("active")) and str(tpl.get("body_tpl") or "").strip():
-                draft = _apply_placeholders(str(tpl.get("body_tpl") or ""), ctx).strip() + "\\n"
+                draft = _apply_placeholders(str(tpl.get("body_tpl") or ""), ctx).strip() + "\n"
 
             msg["draft_text"] = draft
             msg["template_active"] = bool(tpl.get("active")) if tpl else False
@@ -1724,6 +1815,28 @@ def send(
                     """
                 ),
                 {"b": text_body[:200000], "id": int(id_msg)},
+            )
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+        # Si existe task asociada, marcarla como hecha (sin romper si la tabla no existe).
+        try:
+            conn.execute(
+                text(
+                    """
+                    UPDATE public.tasks
+                    SET status='done', completed_at=now(), completed_by=:by, updated_at=now()
+                    WHERE status='open'
+                      AND entity_type='gia_email'
+                      AND entity_id=:eid
+                      AND assigned_username IS NOT NULL
+                    """
+                ),
+                {"eid": int(id_msg), "by": str(user.get("username") or "")[:200]},
             )
             conn.commit()
         except Exception:

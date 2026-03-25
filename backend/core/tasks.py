@@ -261,9 +261,10 @@ def _brand_filter_sql(db: Session) -> str:
         has_id = _col_exists(db, "leads", "id_marca")
         has_txt = _col_exists(db, "leads", "marca")
         if has_id and has_txt:
-            return "((l.id_marca IS NOT NULL AND l.id_marca = ANY(CAST(:marcas_ids AS int[]))) OR (upper(COALESCE(l.marca,'')) = ANY(CAST(:marcas_upper AS text[]))))"
+            # Nota: comparamos `id_marca` como texto para evitar problemas de tipos (algunas BD lo guardan como TEXT).
+            return "((NULLIF(btrim(COALESCE(l.id_marca::text,'')),'') IS NOT NULL AND btrim(COALESCE(l.id_marca::text,'')) = ANY(CAST(:marcas_ids_text AS text[]))) OR (upper(COALESCE(l.marca,'')) = ANY(CAST(:marcas_upper AS text[]))))"
         if has_id:
-            return "(l.id_marca = ANY(CAST(:marcas_ids AS int[])))"
+            return "(btrim(COALESCE(l.id_marca::text,'')) = ANY(CAST(:marcas_ids_text AS text[])))"
         if has_txt:
             return "(upper(COALESCE(l.marca,'')) = ANY(CAST(:marcas_upper AS text[])))"
     except Exception:
@@ -300,6 +301,22 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
             marcas_ids.append(int(m))
         except Exception:
             pass
+    # Comparación robusta: varios deploys guardan `id_marca` como TEXT, por eso también armamos una lista string.
+    marcas_ids_text: list[str] = []
+    seen_mid = set()
+    for m in (marcas or []):
+        s = str(m or "").strip()
+        if not s:
+            continue
+        if s.isdigit():
+            if s not in seen_mid:
+                seen_mid.add(s)
+                marcas_ids_text.append(s)
+    for x in marcas_ids:
+        s = str(x).strip()
+        if s and s not in seen_mid:
+            seen_mid.add(s)
+            marcas_ids_text.append(s)
     marcas_upper: list[str] = []
     try:
         if marcas_ids and _table_exists(db, "marcas"):
@@ -365,6 +382,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "nuevo": int(nuevo_id),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
                 "marcas_upper": marcas_upper or ["__NONE__"],
             },
         )
@@ -407,9 +425,95 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "nuevo": int(nuevo_id),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
                 "marcas_upper": marcas_upper or ["__NONE__"],
             },
         )
+    except Exception:
+        pass
+
+    # SEGUIMIENTO_PENDIENTE: lead sin movimiento por X días (ventas/admin).
+    # Esto NO reemplaza las reglas; solo hace visible la lista.
+    try:
+        db.execute(
+            text(
+                f"""
+                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                SELECT
+                  'SEGUIMIENTO_PENDIENTE' AS kind,
+                  'Registrar seguimiento' AS title,
+                  'Lead sin movimiento hace 3+ días. Registrar contacto o próximo paso.' AS description,
+                  'lead',
+                  l.id_lead,
+                  :uid,
+                  :uname,
+                  (COALESCE(l.updated_at, l.created_at, now()) + INTERVAL '4 days') AS due_at,
+                  12,
+                  jsonb_build_object('rule','stale_any','estado_id',l.id_estado,'last_at',COALESCE(l.updated_at,l.created_at,now()))
+                FROM public.leads l
+                WHERE l.id_estado NOT IN (:decl, :conf)
+                  AND (:is_admin OR {scope_sql})
+                  AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '3 days')
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {
+                "uid": int(user_id),
+                "uname": (username or "").strip()[:200],
+                "is_admin": bool(is_admin),
+                "decl": int(declinado_id),
+                "conf": int(confirmado_id),
+                "user_keys": user_keys,
+                "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
+                "marcas_upper": marcas_upper or ["__NONE__"],
+            },
+        )
+    except Exception:
+        pass
+
+    # EVENTO_PROXIMO_INCOMPLETO: confirmados hoy/mañana con datos faltantes (telefono/direccion/horario)
+    try:
+        if _col_exists(db, "leads", "fecha_evento"):
+            db.execute(
+                text(
+                    f"""
+                    INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                    SELECT
+                      'EVENTO_PROXIMO_INCOMPLETO' AS kind,
+                      'Evento próximo: completar datos' AS title,
+                      'Evento confirmado hoy/mañana con datos faltantes (tel/dir/horario).' AS description,
+                      'lead',
+                      l.id_lead,
+                      :uid,
+                      :uname,
+                      now() + INTERVAL '2 hours',
+                      3,
+                      jsonb_build_object('rule','conf_missing_soon','fecha_evento',l.fecha_evento)
+                    FROM public.leads l
+                    WHERE l.id_estado = :conf
+                      AND l.fecha_evento IS NOT NULL
+                      AND DATE(l.fecha_evento) <= (CURRENT_DATE + INTERVAL '1 day')
+                      AND (:is_admin OR {scope_sql})
+                      AND (
+                        COALESCE(NULLIF(btrim(COALESCE(l.telefono,'')),''), NULL) IS NULL
+                        OR COALESCE(NULLIF(btrim(COALESCE(l.direccion,'')),''), NULL) IS NULL
+                        OR l.pre_start IS NULL OR l.pre_end IS NULL
+                      )
+                    ON CONFLICT DO NOTHING
+                    """
+                ),
+                {
+                    "uid": int(user_id),
+                    "uname": (username or "").strip()[:200],
+                    "is_admin": bool(is_admin),
+                    "conf": int(confirmado_id),
+                    "user_keys": user_keys,
+                    "marcas_ids": marcas_ids or [0],
+                    "marcas_ids_text": marcas_ids_text or ["0"],
+                    "marcas_upper": marcas_upper or ["__NONE__"],
+                },
+            )
     except Exception:
         pass
 
@@ -444,6 +548,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "is_admin": bool(is_admin),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
                 "marcas_upper": marcas_upper or ["__NONE__"],
             },
         )
@@ -484,6 +589,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "is_admin": bool(is_admin),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
                 "marcas_upper": marcas_upper or ["__NONE__"],
             },
         )
@@ -521,6 +627,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "is_admin": bool(is_admin),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
                 "marcas_upper": marcas_upper or ["__NONE__"],
             },
         )
@@ -566,6 +673,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "is_admin": bool(is_admin),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
                 "marcas_upper": marcas_upper or ["__NONE__"],
             },
         )
@@ -599,6 +707,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "is_admin": bool(is_admin),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
                 "marcas_upper": marcas_upper or ["__NONE__"],
             },
         )
@@ -632,6 +741,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "is_admin": bool(is_admin),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
                 "marcas_upper": marcas_upper or ["__NONE__"],
             },
         )
@@ -712,21 +822,21 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                         FROM public.gia_email_messages m
                         WHERE COALESCE(m.reply_sent,false) IS FALSE
                           AND {role_filter}
-                          AND (
-                            :is_admin
-                            OR (
-                              m.id_marca IS NOT NULL
-                              AND m.id_marca = ANY(CAST(:marcas_ids AS int[]))
-                            )
-                          )
-                        ON CONFLICT DO NOTHING
+	                          AND (
+	                            :is_admin
+	                            OR (
+	                              m.id_marca IS NOT NULL
+	                              AND btrim(COALESCE(m.id_marca::text,'')) = ANY(CAST(:marcas_ids_text AS text[]))
+	                            )
+	                          )
+	                        ON CONFLICT DO NOTHING
                         """
                     ),
                     {
                         "uid": int(user_id),
                         "uname": (username or "").strip()[:200],
                         "is_admin": bool(is_admin),
-                        "marcas_ids": marcas_ids or [0],
+                        "marcas_ids_text": marcas_ids_text or ["0"],
                     },
                 )
     except Exception:

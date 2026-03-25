@@ -65,20 +65,44 @@ def _fetch_marcas_for_uid(db: Session, uid: int) -> list[int]:
     """
     Fallback cuando el token no trae `marcas` (o viene vacío por cuentas legacy).
     """
-    if not _table_exists(db, "usuarios_marcas"):
-        return []
+    # 1) Preferir tabla N:N `usuarios_marcas` (si existe).
+    if _table_exists(db, "usuarios_marcas"):
+        try:
+            rows = db.execute(
+                text("SELECT id_marca FROM public.usuarios_marcas WHERE id_usuario=:u ORDER BY id_marca"),
+                {"u": int(uid)},
+            ).fetchall()
+            out: list[int] = []
+            for r in rows:
+                try:
+                    out.append(int(r[0]))
+                except Exception:
+                    pass
+            if out:
+                return out
+        except Exception:
+            pass
+
+    # 2) Legacy: algunos esquemas guardan una sola marca en `usuarios.id_marca`.
+    if _table_exists(db, "usuarios"):
+        try:
+            mid = db.execute(
+                text(
+                    """
+                    SELECT id_marca
+                    FROM public.usuarios
+                    WHERE id_usuario=:u
+                    LIMIT 1
+                    """
+                ),
+                {"u": int(uid)},
+            ).scalar()
+            if mid is not None and str(mid).isdigit() and int(mid) > 0:
+                return [int(mid)]
+        except Exception:
+            pass
     try:
-        rows = db.execute(
-            text("SELECT id_marca FROM public.usuarios_marcas WHERE id_usuario=:u ORDER BY id_marca"),
-            {"u": int(uid)},
-        ).fetchall()
-        out: list[int] = []
-        for r in rows:
-            try:
-                out.append(int(r[0]))
-            except Exception:
-                pass
-        return out
+        return []
     except Exception:
         return []
 

@@ -318,6 +318,89 @@ def _is_admin(role: str) -> bool:
     return role in ("ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "OPERACIONES")
 
 
+def _resolve_uid_for_marcas(db: Session, me: dict) -> int | None:
+    """
+    Compat: algunos tokens traen `id` como username (string) y no como int.
+    Si podemos mapear a public.usuarios.id_usuario, devolvemos int; si no, None.
+    """
+    raw = me.get("id")
+    if str(raw or "").isdigit():
+        return int(raw)
+    if not _table_exists_pg(db, "usuarios"):
+        return None
+    cand = [
+        str(me.get("username") or "").strip(),
+        str(me.get("email") or "").strip(),
+        str(me.get("sub") or "").strip(),
+        str(me.get("id") or "").strip(),
+        str(me.get("name") or "").strip(),
+    ]
+    cand = [c for c in cand if c]
+    if not cand:
+        return None
+    try:
+        for c in cand:
+            v = db.execute(
+                text(
+                    """
+                    SELECT id_usuario
+                    FROM public.usuarios
+                    WHERE email=:u OR username=:u
+                    ORDER BY id_usuario
+                    LIMIT 1
+                    """
+                ),
+                {"u": c},
+            ).scalar()
+            if v is not None and str(v).isdigit():
+                return int(v)
+    except Exception:
+        return None
+    return None
+
+
+def _fetch_marcas_ids(db: Session, me: dict) -> list[int]:
+    """
+    Preferir `me.marcas` del token.
+    Fallback: usuarios_marcas (N:N) o usuarios.id_marca (legacy).
+    """
+    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    if marcas:
+        return marcas
+    uid = _resolve_uid_for_marcas(db, me)
+    if uid is None:
+        return []
+    # N:N
+    if _table_exists_pg(db, "usuarios_marcas"):
+        try:
+            rows = db.execute(
+                text("SELECT id_marca FROM public.usuarios_marcas WHERE id_usuario=:u ORDER BY id_marca"),
+                {"u": int(uid)},
+            ).fetchall()
+            out: list[int] = []
+            for r in rows:
+                try:
+                    out.append(int(r[0]))
+                except Exception:
+                    pass
+            if out:
+                return out
+        except Exception:
+            pass
+    # legacy single brand
+    if _table_exists_pg(db, "usuarios") and _col_exists(db, "usuarios", "id_marca"):
+        try:
+            mid = db.execute(
+                text("SELECT id_marca FROM public.usuarios WHERE id_usuario=:u LIMIT 1"),
+                {"u": int(uid)},
+            ).scalar()
+            if mid is not None and str(mid).isdigit() and int(mid) > 0:
+                return [int(mid)]
+        except Exception:
+            pass
+    return []
+
+
 def _lead_name_expr(db: Session) -> str:
     has_nombre = _col_exists(db, "leads", "nombre_cliente")
     has_cliente = _col_exists(db, "leads", "cliente")
@@ -1041,7 +1124,7 @@ def agenda(db: Session = Depends(get_db), me=Depends(get_current_user)):
     name_expr = _lead_name_expr(db)
     role = (me.get("role") or me.get("rol") or "").upper()
     only_own = not _is_admin(role)
-    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    marcas = _fetch_marcas_ids(db, me)
     marca_sql = ""
     marca_params: dict[str, Any] = {}
     if only_own and marcas:
@@ -1176,7 +1259,7 @@ def dashboard_ops_alertas(
     end_day = today + timedelta(days=days_ahead)
 
     role = (me.get("role") or me.get("rol") or "").upper()
-    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    marcas = _fetch_marcas_ids(db, me)
     only_own = not _is_admin(role)
     if only_own and not marcas:
         return {"ok": True, "range": {"from": str(today), "to": str(end_day)}, "counts": {"tel": 0, "dir": 0, "hr": 0}, "items": {"tel": [], "dir": [], "hr": []}}
@@ -1277,7 +1360,7 @@ def dashboard(
     week_days = [(week_start + timedelta(days=i)).isoformat() for i in range(7)]
 
     role = (me.get("role") or me.get("rol") or "").upper()
-    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    marcas = _fetch_marcas_ids(db, me)
     only_own = not _is_admin(role)
     if only_own and not marcas:
         return {
@@ -1780,7 +1863,7 @@ def dashboard_reportes(
     # (tablas/columnas faltantes o SQL incompatibles), devolvemos payload vacío con ok=true.
     try:
         role = (me.get("role") or me.get("rol") or "").upper()
-        marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+        marcas = _fetch_marcas_ids(db, me)
         only_own = not _is_admin(role)
 
         if _col_exists(db, "leads", "fecha_evento"):
@@ -2074,7 +2157,7 @@ def dashboard_leads_hoy(
     Lista de leads creados hoy (para Reportes). Visible según permisos (admin ve todo; no-admin solo sus marcas).
     """
     role = (me.get("role") or me.get("rol") or "").upper()
-    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    marcas = _fetch_marcas_ids(db, me)
     only_own = not _is_admin(role)
 
     tz = ZoneInfo("America/Santiago")
@@ -2145,7 +2228,7 @@ def dashboard_sales_ids(
     me=Depends(get_current_user),
 ):
     role = (me.get("role") or me.get("rol") or "").upper()
-    marcas = [int(x) for x in (me.get("marcas") or []) if str(x).isdigit()]
+    marcas = _fetch_marcas_ids(db, me)
     only_own = not _is_admin(role)
 
     try:
