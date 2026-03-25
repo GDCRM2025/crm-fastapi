@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
 import getpass
 import json
-import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,7 +34,7 @@ def _upsert_env_var(txt: str, var: str, value: str) -> str:
     return txt + f"{var}={value}\n"
 
 
-def _load_existing_accounts() -> list[dict[str, Any]]:
+def _load_existing_accounts() -> List[Dict[str, Any]]:
     # Prefer existing accounts file if referenced
     txt = _read_env_text()
     m = re.search(r"(?m)^\\s*GIA_EMAIL_ACCOUNTS_PATH\\s*=\\s*(.+)$", txt)
@@ -83,7 +81,7 @@ def main() -> None:
 
     # Normalize minimal schema + ask passwords
     seen = set()
-    out: list[dict[str, Any]] = []
+    out: List[Dict[str, Any]] = []
     for a in accounts:
         marca = str(a.get("marca") or "").strip()
         inbox_type = str(a.get("inbox_type") or "sales").strip().lower()
@@ -140,4 +138,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -402,6 +402,22 @@ def _classify_email(subject: str, body_text: str) -> tuple[str, str]:
     return ("other", "default")
 
 
+def _prefer_kind(existing: str | None, new: str, new_reason: str) -> tuple[str, str]:
+    """
+    Si un mensaje ya fue clasificado, permitimos "subir" a una categoría más específica.
+    Precedencia (más fuerte → más débil):
+      form > payment > purchase > lead > other
+    """
+    pr = {"form": 5, "payment": 4, "purchase": 3, "lead": 2, "other": 1, "": 0, None: 0}
+    e = (existing or "").strip().lower()
+    n = (new or "").strip().lower()
+    if not n:
+        return (e or "other", new_reason)
+    if pr.get(n, 1) > pr.get(e, 1):
+        return (n, new_reason)
+    return (e or n, new_reason)
+
+
 def _find_lead_by_rid(conn, rid: str) -> Optional[int]:
     rid = (rid or "").strip()
     if not rid:
@@ -1018,10 +1034,10 @@ def sync(
                     if from_email and from_email == account_email.lower():
                         continue
 
-                    kind, kind_reason = _classify_email(subject or "", text_body or "")
+                    kind_new, kind_reason_new = _classify_email(subject or "", text_body or "")
                     # Safety: algunos formularios llegan sin el marker; si parecen formulario, no crear lead.
-                    if kind == "lead" and _looks_like_form(text_body or ""):
-                        kind, kind_reason = ("form", "fields-override")
+                    if kind_new == "lead" and _looks_like_form(text_body or ""):
+                        kind_new, kind_reason_new = ("form", "fields-override")
                     parsed_rid = _extract_rid(text_body or "")
                     parsed_email = _extract_email_from_body(text_body or "")
                     parsed_phone = _extract_phone_from_body(text_body or "")
@@ -1067,8 +1083,8 @@ def sync(
                                 "ra": received_at,
                                 "bt": (text_body[:50000] if text_body else None),
                                 "bh": (html_body[:200000] if html_body else None),
-                                "k": kind,
-                                "kr": kind_reason,
+                                "k": kind_new,
+                                "kr": kind_reason_new,
                                 "rt": (reply_to_email or None),
                                 "pe": (parsed_email or None),
                                 "pp": (parsed_phone or None),
@@ -1084,6 +1100,17 @@ def sync(
 
                     # Completar metadata si el registro ya existía (ON CONFLICT DO NOTHING).
                     try:
+                        # mantener/elevar clasificación si ya existe
+                        existing_kind = None
+                        try:
+                            existing_kind = conn.execute(
+                                text("SELECT kind FROM public.gia_email_messages WHERE account_email=:acc AND imap_uid=:uid ORDER BY id_msg DESC LIMIT 1"),
+                                {"acc": account_email, "uid": int(uid)},
+                            ).scalar()
+                        except Exception:
+                            existing_kind = None
+                        kind, kind_reason = _prefer_kind(existing_kind, kind_new, kind_reason_new)
+
                         conn.execute(
                             text(
                                 """
@@ -1091,24 +1118,8 @@ def sync(
                                 SET
                                   inbox_type=COALESCE(inbox_type,:it),
                                   imap_folder=COALESCE(imap_folder,:folder),
-                                  kind=(
-                                    CASE
-                                      WHEN :k='form' THEN 'form'
-                                      WHEN :k='payment' AND COALESCE(kind,'') <> 'form' THEN 'payment'
-                                      WHEN :k='purchase' AND COALESCE(kind,'') NOT IN ('form','payment') THEN 'purchase'
-                                      WHEN kind IS NULL OR COALESCE(kind,'')='' OR COALESCE(kind,'')='other' THEN :k
-                                      ELSE kind
-                                    END
-                                  ),
-                                  kind_reason=(
-                                    CASE
-                                      WHEN :k='form' THEN :kr
-                                      WHEN :k='payment' AND COALESCE(kind,'') <> 'form' THEN :kr
-                                      WHEN :k='purchase' AND COALESCE(kind,'') NOT IN ('form','payment') THEN :kr
-                                      WHEN kind IS NULL OR COALESCE(kind,'')='' OR COALESCE(kind,'')='other' THEN :kr
-                                      ELSE kind_reason
-                                    END
-                                  ),
+                                  kind=:k,
+                                  kind_reason=:kr,
                                   reply_to_email=COALESCE(reply_to_email,:rt),
                                   parsed_email=COALESCE(parsed_email,:pe),
                                   parsed_phone=COALESCE(parsed_phone,:pp),
