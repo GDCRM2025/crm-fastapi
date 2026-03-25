@@ -963,6 +963,7 @@ def status(user: dict = Depends(get_current_user)):
 def sync(
     id_marca: int | None = Query(default=None, ge=1),
     inbox_type: str | None = Query(default=None),
+    force_recent: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=200),
     user: dict = Depends(get_current_user),
 ):
@@ -1009,10 +1010,10 @@ def sync(
                     raise RuntimeError("IMAP search failed")
                 uids = [int(x) for x in (data[0].split() if data and data[0] else [])]
                 uids.sort()
-                if last_uid:
-                    uids = [u for u in uids if u > last_uid]
                 if limit and len(uids) > limit:
                     uids = uids[-limit:]
+                if (not force_recent) and last_uid:
+                    uids = [u for u in uids if u > last_uid]
 
                 max_uid = last_uid
                 for uid in uids:

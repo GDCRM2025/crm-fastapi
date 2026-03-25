@@ -764,8 +764,8 @@
       try{
         if (sync){
           qs("#syncInfo").textContent = "Sincronizando IMAP...";
-          // Sync: siempre sincroniza la(s) cuenta(s) del usuario/marca, no depende de inbox_type.
-          const rs = await apiJSON(`/gia/email/sync?${mid.replace(/^&/,"")}${mid ? "&" : ""}limit=60`, { method:"POST" });
+          // Sync: siempre refresca últimos correos (re-clasifica y corrige drafts), no depende de inbox_type.
+          const rs = await apiJSON(`/gia/email/sync?${mid.replace(/^&/,"")}${mid ? "&" : ""}limit=60&force_recent=1`, { method:"POST" });
           const errs = (rs.errors || []).filter(Boolean);
           if (errs.length){
             qs("#syncInfo").textContent = `Sincronizado (errores: ${errs.length})`;
