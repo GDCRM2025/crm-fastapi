@@ -48,6 +48,66 @@ def _user_marcas_ids(user: dict) -> list[int]:
     return out
 
 
+def _table_exists(conn, table: str) -> bool:
+    try:
+        return bool(conn.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{table}"}).scalar())
+    except Exception:
+        return False
+
+
+def _resolve_uid(conn, user: dict) -> int | None:
+    raw = str(user.get("id") or "").strip()
+    if raw.isdigit():
+        return int(raw)
+    if not _table_exists(conn, "usuarios"):
+        return None
+    cand = [
+        str(user.get("username") or "").strip(),
+        str(user.get("email") or "").strip(),
+        str(user.get("name") or "").strip(),
+        str(user.get("id") or "").strip(),
+    ]
+    cand = [c for c in cand if c]
+    for c in cand:
+        try:
+            v = conn.execute(
+                text(
+                    """
+                    SELECT id_usuario
+                    FROM public.usuarios
+                    WHERE email=:u OR username=:u
+                    ORDER BY id_usuario
+                    LIMIT 1
+                    """
+                ),
+                {"u": c},
+            ).scalar()
+            if v is not None and str(v).isdigit():
+                return int(v)
+        except Exception:
+            continue
+    return None
+
+
+def _fallback_marcas_ids(conn, user: dict) -> list[int]:
+    if not _table_exists(conn, "usuarios_marcas"):
+        return []
+    uid = _resolve_uid(conn, user)
+    if uid is None:
+        return []
+    try:
+        rows = conn.execute(text("SELECT id_marca FROM public.usuarios_marcas WHERE id_usuario=:u ORDER BY id_marca"), {"u": int(uid)}).fetchall()
+        out: list[int] = []
+        for r in rows:
+            try:
+                out.append(int(r[0]))
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
+
+
 def _norm(s: str) -> str:
     s = (s or "").strip().upper()
     s = re.sub(r"\\s+", " ", s)
@@ -799,6 +859,8 @@ def _filter_accounts_for_user(conn, user: dict, accounts: List[Dict[str, Any]]) 
     if _is_admin(user):
         return accounts
     mids = set(_user_marcas_ids(user))
+    if not mids:
+        mids = set(_fallback_marcas_ids(conn, user))
     if not mids:
         return []
     out: List[Dict[str, Any]] = []
