@@ -1058,6 +1058,54 @@ def summary(user: dict = Depends(get_current_user)):
     if not accounts:
         return {"ok": True, "configured": False, "max_id": 0, "open_total": 0, "open_sales": 0, "open_payments": 0, "by_marca": []}
 
+    # Auto-sync global (rate-limited) para que las bandejas se mantengan vivas
+    # sin depender de que alguien apriete "Recargar".
+    # Se gatilla desde el poll del panel (cada ~45s) pero solo sincroniza
+    # si el último sync global fue hace > 90s y con advisory lock para 1 proceso a la vez.
+    try:
+        interval_s = int(os.getenv("GIA_EMAIL_AUTOSYNC_INTERVAL_S") or "90")
+        limit = int(os.getenv("GIA_EMAIL_AUTOSYNC_LIMIT") or "30")
+        if interval_s < 30:
+            interval_s = 30
+        if limit < 10:
+            limit = 10
+        if limit > 80:
+            limit = 80
+        with get_connection() as conn0:
+            locked = bool(conn0.execute(text("SELECT pg_try_advisory_lock(9342501)")).scalar() or False)
+            if locked:
+                try:
+                    last = conn0.execute(text("SELECT MAX(last_sync_at) FROM public.gia_email_state")).scalar()
+                    do_sync = (last is None)
+                    if last is not None:
+                        try:
+                            # last puede venir como datetime o string
+                            if isinstance(last, str):
+                                last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                            else:
+                                last_dt = last
+                            age = (datetime.now(timezone.utc) - last_dt.astimezone(timezone.utc)).total_seconds()
+                            do_sync = age >= float(interval_s)
+                        except Exception:
+                            do_sync = True
+                    if do_sync:
+                        # Sync global admin (no requiere cron externo)
+                        try:
+                            sync(limit=limit, force_recent=False, user={"role": "ADMIN", "username": "autosync", "marcas": []})
+                        except Exception:
+                            pass
+                finally:
+                    try:
+                        conn0.execute(text("SELECT pg_advisory_unlock(9342501)"))
+                    except Exception:
+                        pass
+                    try:
+                        conn0.commit()
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
     with get_connection() as conn:
         allowed = _filter_accounts_for_user(conn, user, accounts)
         mids: list[int] = []
