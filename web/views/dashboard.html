@@ -683,6 +683,16 @@
       if (!lid) return;
       window.parent?.postMessage({ type:"openItem", id:"leads_ver", url:`/web/views/leads.html?open_lead=${encodeURIComponent(lid)}` }, "*");
     }
+    function openCorreoMsg(idMsg, meta={}){
+      const id = String(idMsg || "").trim();
+      if (!id) return;
+      const qs = new URLSearchParams();
+      qs.set("open_msg", id);
+      if (meta && meta.id_marca) qs.set("id_marca", String(meta.id_marca));
+      if (meta && meta.inbox_type) qs.set("inbox_type", String(meta.inbox_type));
+      const url = "/web/views/tools_correo.html" + "?" + qs.toString();
+      window.parent?.postMessage({ type:"openItem", id:"tools_correo", url }, "*");
+    }
 
     function openFilter(params){
       const q = new URLSearchParams(params || {}).toString();
@@ -1011,14 +1021,21 @@
         };
         list.innerHTML = `
           <table class="pipe-table">
-            <thead><tr><th>Tarea</th><th>Lead</th><th class="right">Vence</th><th class="right">Acción</th></tr></thead>
+            <thead><tr><th>Tarea</th><th>Relacionado</th><th class="right">Vence</th><th class="right">Acción</th></tr></thead>
             <tbody>
               ${items.map(t => {
                 const due = t.due_at ? fmtDue(t.due_at) : "—";
-                const lead = t.entity_id ? `#${t.entity_id} ${String(t.lead_cliente||"").slice(0,26)}` : "";
+                const et = String(t.entity_type || "lead");
+                const isLead = (et === "lead");
+                const isEmail = (et === "gia_email");
+                const lead = (isLead && t.entity_id)
+                  ? `#${t.entity_id} ${String(t.lead_cliente||"").slice(0,26)}`
+                  : (isEmail
+                      ? `${String(t?.meta?.marca || "").trim() || ""} ${String(t?.meta?.from || "").trim() ? "· " + String(t.meta.from).trim() : ""}${String(t?.meta?.subject || "").trim() ? " · " + String(t.meta.subject).trim().slice(0,44) : ""}`.trim()
+                      : "");
                 const overdue = t.due_at && (new Date(t.due_at).getTime() < Date.now());
                 return `
-                  <tr data-task="${t.id_task}" data-lead="${t.entity_id||""}" class="rowlink" style="${overdue ? "background: rgba(239,68,68,.06);" : ""}">
+                  <tr data-task="${t.id_task}" data-etype="${String(t.entity_type||"")}" data-eid="${t.entity_id||""}" class="rowlink" style="${overdue ? "background: rgba(239,68,68,.06);" : ""}">
                     <td><strong>${String(t.title||t.kind||"Tarea")}</strong><div class="muted" style="font-size:12px;margin-top:4px">${String(t.description||"")}</div></td>
                     <td class="muted">${lead}</td>
                     <td class="right">${due}</td>
@@ -1031,15 +1048,22 @@
               }).join("")}
             </tbody>
           </table>
-          <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en una fila abre el lead. “Hecho/Omitir” registra en historial.</div>
+          <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en una fila abre el lead (o el correo). “Hecho/Omitir” registra en historial.</div>
         `;
 
         list.querySelectorAll("tr[data-task]").forEach(tr=>{
           tr.addEventListener("click", (ev)=>{
             const actBtn = ev.target?.closest?.("button[data-act]");
             if (actBtn) return;
-            const lid = tr.getAttribute("data-lead");
-            if (lid) openLead(lid);
+            const et = String(tr.getAttribute("data-etype")||"");
+            const eid = String(tr.getAttribute("data-eid")||"");
+            if (!et || !eid) return;
+            if (et === "lead") openLead(eid);
+            if (et === "gia_email"){
+              const tId = String(tr.getAttribute("data-task")||"");
+              const found = items.find(x => String(x.id_task)===tId);
+              openCorreoMsg(eid, found?.meta || {});
+            }
           });
         });
         list.querySelectorAll("button[data-act]").forEach(btn=>{

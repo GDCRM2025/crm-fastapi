@@ -67,6 +67,8 @@ def _ensure_schema() -> None:
                   id_marca INTEGER,
                   marca TEXT,
                   account_email TEXT NOT NULL,
+                  inbox_type TEXT,
+                  imap_folder TEXT,
 
                   imap_uid BIGINT,
                   message_id TEXT,
@@ -93,6 +95,11 @@ def _ensure_schema() -> None:
                   ack_sent_at TIMESTAMPTZ,
                   ack_error TEXT,
 
+                  reply_sent BOOLEAN NOT NULL DEFAULT FALSE,
+                  reply_sent_at TIMESTAMPTZ,
+                  reply_error TEXT,
+                  reply_body TEXT,
+
                   lead_id BIGINT
                 );
                 """
@@ -108,8 +115,15 @@ def _ensure_schema() -> None:
         conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS parsed_fecha_evento DATE;"))
         conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS parsed_cliente TEXT;"))
         conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS parsed_rid TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS inbox_type TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS imap_folder TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS reply_sent BOOLEAN NOT NULL DEFAULT FALSE;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS reply_sent_at TIMESTAMPTZ;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS reply_error TEXT;"))
+        conn.execute(text("ALTER TABLE public.gia_email_messages ADD COLUMN IF NOT EXISTS reply_body TEXT;"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gia_email_messages_marca ON public.gia_email_messages(id_marca, created_at DESC);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gia_email_messages_account_uid ON public.gia_email_messages(account_email, imap_uid DESC);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gia_email_messages_type ON public.gia_email_messages(inbox_type, id_marca, created_at DESC);"))
         conn.execute(
             text(
                 """
@@ -582,6 +596,65 @@ def _create_lead_from_email(
 
 
 def _load_accounts() -> List[Dict[str, Any]]:
+    def _resolve_path(p: str) -> Path | None:
+        s = str(p or "").strip()
+        if not s:
+            return None
+        cand: list[Path] = []
+        try:
+            cand.append(Path(s).expanduser())
+        except Exception:
+            pass
+        try:
+            # repo root (backend/routers/ -> backend -> repo)
+            cand.append(Path(__file__).resolve().parents[2] / s)
+        except Exception:
+            pass
+        try:
+            cand.append(Path.cwd() / s)
+        except Exception:
+            pass
+        try:
+            cand.append(Path.home() / "crm" / s)
+        except Exception:
+            pass
+        for c in cand:
+            try:
+                if c.is_file():
+                    return c
+            except Exception:
+                continue
+        return None
+
+    def _read_accounts_blob() -> str:
+        """
+        Retorna el JSON de cuentas:
+        - preferir `GIA_EMAIL_ACCOUNTS_PATH` (archivo) si existe
+        - si no, `GIA_EMAIL_ACCOUNTS_JSON` / `GIA_EMAIL_ACCOUNTS`
+        - si no existen en env, intentar leer desde `.env` (hosting Passenger)
+        """
+        # 1) archivo configurado
+        path_raw = (os.getenv("GIA_EMAIL_ACCOUNTS_PATH") or "").strip()
+        if not path_raw:
+            path_raw = _read_dotenv_value("GIA_EMAIL_ACCOUNTS_PATH")
+        p = _resolve_path(path_raw) if path_raw else None
+        if p:
+            try:
+                return p.read_text(encoding="utf-8", errors="replace").strip()
+            except Exception:
+                return ""
+
+        # 2) env directo
+        raw = (os.getenv("GIA_EMAIL_ACCOUNTS_JSON") or os.getenv("GIA_EMAIL_ACCOUNTS") or "").strip()
+        if raw:
+            return raw
+
+        # 3) fallback .env
+        raw = _read_dotenv_value("GIA_EMAIL_ACCOUNTS_JSON")
+        if raw:
+            return raw
+        return _read_dotenv_value("GIA_EMAIL_ACCOUNTS")
+
     def _read_dotenv_value(var_name: str) -> str:
         try:
             candidates = []
@@ -677,12 +750,7 @@ def _load_accounts() -> List[Dict[str, Any]]:
             return ""
         return ""
 
-    raw = (os.getenv("GIA_EMAIL_ACCOUNTS_JSON") or os.getenv("GIA_EMAIL_ACCOUNTS") or "").strip()
-    if not raw:
-        # Fallback: en algunos hostings Passenger no carga .env a os.environ consistentemente.
-        raw = _read_dotenv_value("GIA_EMAIL_ACCOUNTS_JSON")
-    if not raw:
-        raw = _read_dotenv_value("GIA_EMAIL_ACCOUNTS")
+    raw = _read_accounts_blob()
     if not raw:
         return []
     try:
@@ -698,6 +766,9 @@ def _load_accounts() -> List[Dict[str, Any]]:
         if not isinstance(a, dict):
             continue
         marca = str(a.get("marca") or "").strip()
+        inbox_type = str(a.get("inbox_type") or a.get("tipo") or "sales").strip().lower()
+        if inbox_type not in ("sales", "payments"):
+            inbox_type = "sales"
         from_email = str(a.get("from_email") or a.get("email") or a.get("username") or "").strip()
         username = str(a.get("username") or from_email or "").strip()
         password = str(a.get("password") or "").strip()
@@ -708,12 +779,14 @@ def _load_accounts() -> List[Dict[str, Any]]:
         out.append(
             {
                 "marca": marca,
+                "inbox_type": inbox_type,
                 "from_email": from_email,
                 "username": username,
                 "password": password,
                 "imap_host": imap_host,
                 "imap_port": int(a.get("imap_port") or 993),
                 "imap_ssl": bool(a.get("imap_ssl", True)),
+                "imap_folder": str(a.get("imap_folder") or a.get("folder") or "INBOX").strip() or "INBOX",
                 "smtp_host": smtp_host,
                 "smtp_port": int(a.get("smtp_port") or 465),
                 "smtp_ssl": bool(a.get("smtp_ssl", True)),
@@ -782,6 +855,8 @@ def status(user: dict = Depends(get_current_user)):
                     "marca": a.get("marca"),
                     "id_marca": mid,
                     "account_email": acc,
+                    "inbox_type": a.get("inbox_type") or "sales",
+                    "imap_folder": a.get("imap_folder") or "INBOX",
                     "imap_host": a.get("imap_host"),
                     "smtp_host": a.get("smtp_host"),
                     "last_uid": int(st.get("last_uid") or 0),
@@ -794,6 +869,7 @@ def status(user: dict = Depends(get_current_user)):
 @router.post("/sync")
 def sync(
     id_marca: int | None = Query(default=None, ge=1),
+    inbox_type: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     user: dict = Depends(get_current_user),
 ):
@@ -810,6 +886,10 @@ def sync(
         allowed = _filter_accounts_for_user(conn, user, accounts)
         if id_marca:
             allowed = [a for a in allowed if (_resolve_marca_id(conn, str(a.get("marca") or "")) == int(id_marca))]
+        if inbox_type:
+            it = str(inbox_type or "").strip().lower()
+            if it in ("sales", "payments"):
+                allowed = [a for a in allowed if str(a.get("inbox_type") or "sales").strip().lower() == it]
 
         synced = 0
         stored = 0
@@ -821,12 +901,14 @@ def sync(
                 marca = str(a.get("marca") or "").strip()
                 mid = _resolve_marca_id(conn, marca)
                 account_email = str(a.get("from_email") or "").strip()
+                acc_type = str(a.get("inbox_type") or "sales").strip().lower()
+                folder = str(a.get("imap_folder") or "INBOX").strip() or "INBOX"
                 st = conn.execute(text("SELECT last_uid FROM public.gia_email_state WHERE account_email=:a"), {"a": account_email}).scalar()
                 last_uid = int(st or 0)
 
                 im = _imap_connect(host=a["imap_host"], port=int(a["imap_port"]), use_ssl=bool(a["imap_ssl"]))
                 im.login(a["username"], a["password"])
-                im.select("INBOX")
+                im.select(folder)
 
                 # Strategy: fetch last `limit` UIDs; dedupe in DB.
                 typ, data = im.uid("search", None, "ALL")
@@ -899,12 +981,12 @@ def sync(
                             text(
                                 """
                                 INSERT INTO public.gia_email_messages(
-                                  id_marca, marca, account_email, imap_uid, message_id,
+                                  id_marca, marca, account_email, inbox_type, imap_folder, imap_uid, message_id,
                                   from_email, from_name, subject, received_at, body_text, body_html,
                                   kind, kind_reason, reply_to_email, parsed_email, parsed_phone, parsed_comuna,
                                   parsed_fecha_evento, parsed_cliente, parsed_rid
                                 )
-                                VALUES (:mid, :marca, :acc, :uid, :msgid, :fe, :fn, :sub, :ra, :bt, :bh,
+                                VALUES (:mid, :marca, :acc, :it, :folder, :uid, :msgid, :fe, :fn, :sub, :ra, :bt, :bh,
                                         :k, :kr, :rt, :pe, :pp, :pc, :pf, :pcli, :prid)
                                 ON CONFLICT DO NOTHING
                                 """
@@ -913,6 +995,8 @@ def sync(
                                 "mid": int(mid) if mid is not None else None,
                                 "marca": marca,
                                 "acc": account_email,
+                                "it": acc_type,
+                                "folder": folder,
                                 "uid": int(uid),
                                 "msgid": msg_id,
                                 "fe": from_email or None,
@@ -943,8 +1027,26 @@ def sync(
                                 """
                                 UPDATE public.gia_email_messages
                                 SET
-                                  kind=COALESCE(kind,:k),
-                                  kind_reason=COALESCE(kind_reason,:kr),
+                                  inbox_type=COALESCE(inbox_type,:it),
+                                  imap_folder=COALESCE(imap_folder,:folder),
+                                  kind=(
+                                    CASE
+                                      WHEN :k='form' THEN 'form'
+                                      WHEN :k='payment' AND COALESCE(kind,'') <> 'form' THEN 'payment'
+                                      WHEN :k='purchase' AND COALESCE(kind,'') NOT IN ('form','payment') THEN 'purchase'
+                                      WHEN kind IS NULL OR COALESCE(kind,'')='' OR COALESCE(kind,'')='other' THEN :k
+                                      ELSE kind
+                                    END
+                                  ),
+                                  kind_reason=(
+                                    CASE
+                                      WHEN :k='form' THEN :kr
+                                      WHEN :k='payment' AND COALESCE(kind,'') <> 'form' THEN :kr
+                                      WHEN :k='purchase' AND COALESCE(kind,'') NOT IN ('form','payment') THEN :kr
+                                      WHEN kind IS NULL OR COALESCE(kind,'')='' OR COALESCE(kind,'')='other' THEN :kr
+                                      ELSE kind_reason
+                                    END
+                                  ),
                                   reply_to_email=COALESCE(reply_to_email,:rt),
                                   parsed_email=COALESCE(parsed_email,:pe),
                                   parsed_phone=COALESCE(parsed_phone,:pp),
@@ -957,6 +1059,8 @@ def sync(
                                 """
                             ),
                             {
+                                "it": acc_type,
+                                "folder": folder,
                                 "k": kind,
                                 "kr": kind_reason,
                                 "rt": (reply_to_email or None),
@@ -1001,17 +1105,8 @@ def sync(
                             if lead_id is None and contact_email:
                                 lead_id = _find_recent_lead_id(conn, id_marca=mid, from_email=contact_email)
 
-                            # Crear lead solo si parece lead real (no formulario/pago).
-                            if lead_id is None and kind == "lead" and contact_email:
-                                lead_id = _create_lead_from_email(
-                                    conn=conn,
-                                    id_marca=mid,
-                                    marca=marca,
-                                    from_name=(parsed_cliente or from_name),
-                                    from_email=contact_email,
-                                    subject=subject,
-                                    body_text=text_body or "",
-                                )
+                            # Importante: NO creamos el lead automáticamente.
+                            # La UI debe pedir confirmación al ejecutivo (botón "Crear lead").
 
                             if lead_id is not None:
                                 conn.execute(
@@ -1101,6 +1196,8 @@ def sync(
 @router.get("/inbox")
 def inbox(
     id_marca: int | None = Query(default=None, ge=1),
+    inbox_type: str | None = Query(default=None),
+    q: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     user: dict = Depends(get_current_user),
@@ -1120,6 +1217,16 @@ def inbox(
         if id_marca:
             where.append("id_marca=:mid")
             params["mid"] = int(id_marca)
+        if inbox_type:
+            it = str(inbox_type or "").strip().lower()
+            if it in ("sales", "payments"):
+                where.append("COALESCE(inbox_type,'sales')=:it")
+                params["it"] = it
+        if q:
+            qs = str(q or "").strip()
+            if qs:
+                where.append("(COALESCE(subject,'') ILIKE :q OR COALESCE(from_email,'') ILIKE :q OR COALESCE(from_name,'') ILIKE :q OR COALESCE(body_text,'') ILIKE :q)")
+                params["q"] = f"%{qs}%"
 
         where_sql = ("WHERE " + " AND ".join(where)) if where else ""
         total = conn.execute(text(f"SELECT COUNT(*) FROM public.gia_email_messages {where_sql}"), params).scalar() or 0
@@ -1128,7 +1235,10 @@ def inbox(
                 f"""
                 SELECT id_msg, created_at, id_marca, marca, account_email,
                        from_email, from_name, subject, received_at,
+                       COALESCE(inbox_type,'sales') AS inbox_type,
+                       COALESCE(kind,'general') AS kind,
                        COALESCE(ack_sent,false) AS ack_sent,
+                       COALESCE(reply_sent,false) AS reply_sent,
                        LEFT(COALESCE(body_text,''), 220) AS preview
                 FROM public.gia_email_messages
                 {where_sql}
@@ -1270,10 +1380,58 @@ def inbox_get(id_msg: int, user: dict = Depends(get_current_user)):
 
             msg["draft_text"] = draft
             msg["template_active"] = bool(tpl.get("active")) if tpl else False
+            msg["suggest_create_lead"] = (kind in ("lead", "purchase") and msg.get("lead_id") is None)
         except Exception:
             msg["draft_text"] = ""
             msg["template_active"] = False
+            msg["suggest_create_lead"] = False
         return {"ok": True, "message": msg}
+
+
+@router.post("/inbox/{id_msg}/create_lead")
+def create_lead_from_inbox(id_msg: int, user: dict = Depends(get_current_user)):
+    """
+    Crea un lead a partir de un correo (solo cuando el ejecutivo lo confirma).
+    No duplica: si el mensaje ya tiene lead_id, lo devuelve.
+    """
+    _ensure_schema()
+    with get_connection() as conn:
+        row = conn.execute(text("SELECT * FROM public.gia_email_messages WHERE id_msg=:id"), {"id": int(id_msg)}).mappings().first()
+        if not row:
+            raise HTTPException(404, "Mensaje no existe")
+        if not _is_admin(user):
+            mids = set(_user_marcas_ids(user))
+            mid = row.get("id_marca")
+            if mid is None or int(mid) not in mids:
+                raise HTTPException(403, "Sin permiso")
+
+        if row.get("lead_id") is not None:
+            return {"ok": True, "id_lead": int(row.get("lead_id"))}
+
+        kind = str(row.get("kind") or "").strip().lower()
+        if kind in ("form", "payment"):
+            raise HTTPException(400, "Este correo no se puede convertir automáticamente en lead (form/pago).")
+
+        mid = row.get("id_marca")
+        marca = str(row.get("marca") or "").strip()
+        contact_email = str(row.get("reply_to_email") or row.get("parsed_email") or row.get("from_email") or "").strip().lower()
+        if not contact_email:
+            raise HTTPException(400, "No pude detectar email de contacto")
+
+        lead_id = _create_lead_from_email(
+            conn=conn,
+            id_marca=int(mid) if mid is not None else None,
+            marca=marca,
+            from_name=str(row.get("parsed_cliente") or row.get("from_name") or ""),
+            from_email=contact_email,
+            subject=str(row.get("subject") or ""),
+            body_text=str(row.get("body_text") or ""),
+        )
+        if lead_id is None:
+            raise HTTPException(500, "No pude crear el lead (verifica schema de leads).")
+        conn.execute(text("UPDATE public.gia_email_messages SET lead_id=:lid, updated_at=now() WHERE id_msg=:id"), {"lid": int(lead_id), "id": int(id_msg)})
+        conn.commit()
+        return {"ok": True, "id_lead": int(lead_id)}
 
 
 @router.post("/inbox/{id_msg}/reply")
@@ -1285,9 +1443,30 @@ def reply(
     """
     Responder manualmente desde CRM (por ahora).
     """
+    # compat: /reply es alias de /send (sin aprendizaje automático configurable desde UI vieja)
+    payload2 = dict(payload or {})
+    if "learn" not in payload2:
+        payload2["learn"] = True
+    return send(id_msg=id_msg, payload=payload2, user=user)
+
+
+@router.post("/inbox/{id_msg}/send")
+def send(
+    id_msg: int,
+    payload: dict = Body(...),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Envía una respuesta y marca el mensaje como respondido.
+    Además, opcionalmente aprende (guarda como plantilla activa por marca+kind).
+    payload: {text, subject?, learn?}
+    """
     text_body = str(payload.get("text") or payload.get("text_body") or "").strip()
     if not text_body:
         raise HTTPException(400, "text requerido")
+    learn = bool(payload.get("learn", True))
+    subject_override = str(payload.get("subject") or "").strip()
+
     _ensure_schema()
     accounts = _load_accounts()
     with get_connection() as conn:
@@ -1301,17 +1480,29 @@ def reply(
                 raise HTTPException(403, "Sin permiso")
 
         acc_email = str(msg.get("account_email") or "").strip().lower()
-        to_email = str(msg.get("from_email") or "").strip()
+        msg_inbox_type = str(msg.get("inbox_type") or "sales").strip().lower()
+        to_email = str(msg.get("reply_to_email") or msg.get("from_email") or "").strip()
         if not to_email:
             raise HTTPException(400, "Mensaje sin from_email")
 
-        # Find account config by from_email
-        acc = next((a for a in accounts if str(a.get("from_email") or "").strip().lower() == acc_email), None)
+        # Find account config by from_email (+ inbox_type si existe)
+        acc = next(
+            (
+                a
+                for a in accounts
+                if str(a.get("from_email") or "").strip().lower() == acc_email
+                and str(a.get("inbox_type") or "sales").strip().lower() == msg_inbox_type
+            ),
+            None,
+        )
         if not acc:
-            raise HTTPException(400, "Cuenta no configurada en servidor (.env)")
+            # compat: si no hay match por inbox_type, intenta solo por email
+            acc = next((a for a in accounts if str(a.get("from_email") or "").strip().lower() == acc_email), None)
+        if not acc:
+            raise HTTPException(400, "Cuenta no configurada en servidor (.env / accounts file)")
 
-        subj_in = str(msg.get("subject") or "").strip() or "Contacto"
-        subject = "Re: " + subj_in if not subj_in.lower().startswith("re:") else subj_in
+        subj_in = subject_override or (str(msg.get("subject") or "").strip() or "Contacto")
+        subject = subj_in if subj_in.lower().startswith("re:") else ("Re: " + subj_in)
         try:
             _smtp_send(
                 smtp_host=acc["smtp_host"],
@@ -1325,7 +1516,66 @@ def reply(
                 text_body=text_body,
             )
         except Exception as e:
+            try:
+                conn.execute(
+                    text("UPDATE public.gia_email_messages SET reply_error=:e, updated_at=now() WHERE id_msg=:id"),
+                    {"e": str(e)[:240], "id": int(id_msg)},
+                )
+                conn.commit()
+            except Exception:
+                pass
             raise HTTPException(500, detail=f"No pude enviar correo: {e}")
+
+        try:
+            conn.execute(
+                text(
+                    """
+                    UPDATE public.gia_email_messages
+                    SET reply_sent=TRUE, reply_sent_at=now(), reply_error=NULL, reply_body=:b, updated_at=now()
+                    WHERE id_msg=:id
+                    """
+                ),
+                {"b": text_body[:200000], "id": int(id_msg)},
+            )
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+        # aprendizaje simple: guardar plantilla activa por marca+kind
+        if learn:
+            try:
+                mid = msg.get("id_marca")
+                kind = str(msg.get("kind") or "other").strip().lower() or "other"
+                if mid is not None and kind not in ("other", ""):
+                    marca = conn.execute(text("SELECT COALESCE(nombre,marca,'') FROM public.marcas WHERE id_marca=:m"), {"m": int(mid)}).scalar()
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO public.gia_email_templates(id_marca, marca, kind, subject_tpl, body_tpl, active, created_by)
+                            VALUES (:m, :marca, :k, :s, :b, TRUE, :by)
+                            ON CONFLICT(id_marca, kind)
+                            DO UPDATE SET subject_tpl=:s, body_tpl=:b, active=TRUE, updated_at=now(), created_by=:by
+                            """
+                        ),
+                        {
+                            "m": int(mid),
+                            "marca": str(marca or ""),
+                            "k": kind,
+                            "s": None,
+                            "b": text_body,
+                            "by": str(user.get("username") or ""),
+                        },
+                    )
+                    conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
         return {"ok": True}
 
 

@@ -245,6 +245,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     if not _tasks_table_exists(db):
         return {"ok": True, "created": 0, "skipped": 0, "disabled": True}
     is_admin = _is_admin_role(role)
+    r_up = (role or "").strip().upper()
+    is_finanzas = r_up in ("FINANZAS", "11")
 
     nuevo_id = _estado_id_like(db, "%NUEV%", 1)
     confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
@@ -624,6 +626,70 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
             )
         except Exception:
             pass
+
+    # RESPONDER_CORREO (Ventas/Finanzas/Admin)
+    # - Ventas: correos "sales" y kind lead/purchase/other (no respondidos)
+    # - Finanzas/Admin: también correos "payments" o kind payment
+    try:
+        if _table_exists(db, "gia_email_messages"):
+            # columnas necesarias
+            has_reply_sent = _col_exists(db, "gia_email_messages", "reply_sent")
+            has_kind = _col_exists(db, "gia_email_messages", "kind")
+            has_inbox_type = _col_exists(db, "gia_email_messages", "inbox_type")
+            if has_reply_sent:
+                inbox_sql = "COALESCE(m.inbox_type,'sales')" if has_inbox_type else "'sales'"
+                kind_sql = "COALESCE(m.kind,'other')" if has_kind else "'other'"
+
+                # filtro por tipo de inbox según rol
+                sales_filter = f"({inbox_sql}='sales' AND {kind_sql} IN ('lead','purchase','other'))"
+                pay_filter = f"(({inbox_sql}='payments') OR ({kind_sql}='payment'))"
+                role_filter = sales_filter if (not is_admin and not is_finanzas) else f"({sales_filter} OR {pay_filter})"
+
+                db.execute(
+                    text(
+                        f"""
+                        INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                        SELECT
+                          'RESPONDER_CORREO' AS kind,
+                          'Responder correo' AS title,
+                          'Correo recibido pendiente de respuesta.' AS description,
+                          'gia_email' AS entity_type,
+                          m.id_msg AS entity_id,
+                          :uid AS assigned_user_id,
+                          :uname AS assigned_username,
+                          (COALESCE(m.received_at, m.created_at, now()) + INTERVAL '6 hours') AS due_at,
+                          CASE WHEN {kind_sql}='payment' OR {inbox_sql}='payments' THEN 15 ELSE 25 END AS priority,
+                          jsonb_build_object(
+                            'rule','gia_email_reply',
+                            'id_marca', m.id_marca,
+                            'marca', COALESCE(m.marca,''),
+                            'inbox_type', {inbox_sql},
+                            'kind', {kind_sql},
+                            'subject', COALESCE(m.subject,''),
+                            'from', COALESCE(m.from_email,'')
+                          ) AS meta
+                        FROM public.gia_email_messages m
+                        WHERE COALESCE(m.reply_sent,false) IS FALSE
+                          AND {role_filter}
+                          AND (
+                            :is_admin
+                            OR (
+                              m.id_marca IS NOT NULL
+                              AND m.id_marca = ANY(CAST(:marcas_ids AS int[]))
+                            )
+                          )
+                        ON CONFLICT DO NOTHING
+                        """
+                    ),
+                    {
+                        "uid": int(user_id),
+                        "uname": (username or "").strip()[:200],
+                        "is_admin": bool(is_admin),
+                        "marcas_ids": marcas_ids or [0],
+                    },
+                )
+    except Exception:
+        pass
 
     summary: Dict[str, Any] = {"ok": True, "counts": {}, "overdue": {}}
     try:
