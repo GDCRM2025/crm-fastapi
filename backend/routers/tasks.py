@@ -354,6 +354,14 @@ def debug_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_
             marcas_ids.append(int(m))
         except Exception:
             pass
+    marcas_ids_text: list[str] = []
+    try:
+        for x in marcas_ids:
+            s = str(x).strip()
+            if s and s not in marcas_ids_text:
+                marcas_ids_text.append(s)
+    except Exception:
+        marcas_ids_text = []
     marcas_upper: list[str] = []
     try:
         if marcas_ids:
@@ -391,6 +399,7 @@ def debug_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_
         "uname": (uname or "").strip()[:200],
         "user_keys": [str(x).strip().lower() for x in (user_keys or []) if str(x).strip()],
         "marcas_ids": marcas_ids or [0],
+        "marcas_ids_text": marcas_ids_text or ["0"],
         "marcas_upper": marcas_upper or ["__NONE__"],
     }
 

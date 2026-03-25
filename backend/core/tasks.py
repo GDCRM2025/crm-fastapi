@@ -350,6 +350,10 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
 
     has_contact_sql = _has_contact_sql_db(db)
     notes_expr = _lead_notes_expr_db(db)
+    # Algunos deploys no tienen `pre_start/pre_end`; no debemos romper la transacción.
+    has_pre_start = _col_exists(db, "leads", "pre_start")
+    has_pre_end = _col_exists(db, "leads", "pre_end")
+    hr_missing_sql = "(l.pre_start IS NULL OR l.pre_end IS NULL)" if (has_pre_start and has_pre_end) else "FALSE"
 
     # CONTACTAR (ventas): lead NUEVO asignado al usuario (id_usuario)
     # due_at = created_at + 24h
@@ -498,7 +502,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                       AND (
                         COALESCE(NULLIF(btrim(COALESCE(l.telefono,'')),''), NULL) IS NULL
                         OR COALESCE(NULLIF(btrim(COALESCE(l.direccion,'')),''), NULL) IS NULL
-                        OR l.pre_start IS NULL OR l.pre_end IS NULL
+                        OR {hr_missing_sql}
                       )
                     ON CONFLICT DO NOTHING
                     """
@@ -520,7 +524,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     try:
         db.execute(
             text(
-                """
+                f"""
                 INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
                 SELECT
                   'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA' AS kind,
@@ -599,7 +603,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     try:
         db.execute(
             text(
-                """
+                f"""
                 INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
                 SELECT
                   'RIESGO_COTIZADO_EVENTO_CERCA' AS kind,
@@ -646,7 +650,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
         # teléfono
         db.execute(
             text(
-                """
+                f"""
                 INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
                 SELECT
                   'COMPLETAR_TELEFONO' AS kind,
@@ -680,7 +684,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
         # dirección
         db.execute(
             text(
-                """
+                f"""
                 INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
                 SELECT
                   'COMPLETAR_DIRECCION' AS kind,
@@ -714,7 +718,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
         # horario (pre_start/pre_end)
         db.execute(
             text(
-                """
+                f"""
                 INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
                 SELECT
                   'COMPLETAR_HORARIO' AS kind,
@@ -729,7 +733,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   jsonb_build_object('rule','mvp_hr')
                 FROM public.leads l
                 WHERE l.id_estado = :conf
-                  AND (l.pre_start IS NULL OR l.pre_end IS NULL)
+                  AND ({hr_missing_sql})
                   AND (:is_admin OR {scope_sql})
                 ON CONFLICT DO NOTHING
                 """
