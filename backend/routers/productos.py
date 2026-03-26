@@ -217,26 +217,35 @@ def _ensure_productos_cols():
     if _ENSURED_PRODUCTOS_COLS:
         return
 
-    with get_connection() as conn:
-        cols = conn.execute(
-            text(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='productos'
-                """
-            )
-        ).fetchall()
-        colset = set([r[0] for r in cols])
+    # OJO: en prod el usuario DB puede NO tener permisos de ALTER TABLE.
+    # Esto NO debe romper el cotizador: si no podemos agregar la columna,
+    # seguimos igual y simplemente devolvemos `ingredientes=NULL`.
+    try:
+        with get_connection() as conn:
+            cols = conn.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='productos'
+                    """
+                )
+            ).fetchall()
+            colset = set([r[0] for r in cols])
 
-        if "ingredientes" not in colset:
-            conn.execute(text("ALTER TABLE public.productos ADD COLUMN IF NOT EXISTS ingredientes TEXT"))
-            conn.commit()
+            if "ingredientes" not in colset:
+                try:
+                    conn.execute(text("ALTER TABLE public.productos ADD COLUMN IF NOT EXISTS ingredientes TEXT"))
+                    conn.commit()
+                    colset.add("ingredientes")
+                except Exception:
+                    # Best-effort: sin permisos o tabla legacy; no bloquear endpoint.
+                    pass
 
-        _PRODUCTOS_COLS_CACHE = set(colset) | set(["ingredientes"])
-        _HAS_ID_MARCA_CACHE = ("id_marca" in _PRODUCTOS_COLS_CACHE)
-
-    _ENSURED_PRODUCTOS_COLS = True
+            _PRODUCTOS_COLS_CACHE = set(colset)
+            _HAS_ID_MARCA_CACHE = ("id_marca" in _PRODUCTOS_COLS_CACHE)
+    finally:
+        _ENSURED_PRODUCTOS_COLS = True
 
 
 def _productos_cols():
