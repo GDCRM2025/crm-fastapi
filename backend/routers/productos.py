@@ -4,8 +4,10 @@ import base64
 import re
 import traceback
 import uuid
+import json
 
 from fastapi import APIRouter, Query, Depends
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -69,6 +71,30 @@ def _safe_float(v: Any) -> float | None:
 
     try:
         return float(s)
+    except Exception:
+        return None
+
+
+def _safe_int(v: Any) -> int | None:
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        try:
+            return int(v)
+        except Exception:
+            return None
+    s = str(v).strip()
+    if not s:
+        return None
+    m = re.search(r"-?\d+", s)
+    if not m:
+        return None
+    try:
+        return int(m.group(0))
     except Exception:
         return None
 
@@ -573,11 +599,11 @@ def list_productos(
                 params,
             ).mappings().all()
 
-        items = []
+        items: list[dict] = []
         for r in rows:
             items.append(
                 {
-                    "id_producto": r["id_producto"],
+                    "id_producto": int(r["id_producto"]) if r.get("id_producto") is not None else None,
                     "producto": _safe_b64_to_text(r.get("producto_b64")),
                     "ingredientes": _safe_b64_to_text(r.get("ingredientes_b64")),
                     "marca": _safe_b64_to_text(r.get("marca_b64")),
@@ -585,11 +611,16 @@ def list_productos(
                     "is_active": bool(r["is_active"]) if r.get("is_active") is not None else True,
                     "activo": "ACTIVO" if r.get("is_active") else "INACTIVO",
                     "descripcion": _safe_b64_to_text(r.get("descripcion_b64")),
-                    "orden": r.get("orden"),
+                    "orden": _safe_int(r.get("orden")),
                 }
             )
 
-        return {"items": items}
+        # Evitar que un encoder (jsonable_encoder/orjson) explote en prod por tipos raros.
+        payload = {"items": items}
+        return Response(
+            content=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            media_type="application/json",
+        )
     except Exception as e:
         print(
             f"=== RID={debug_rid} where=list_productos ===\n"
