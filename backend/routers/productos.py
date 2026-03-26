@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 
 import base64
+import re
 
 from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel, Field
@@ -42,6 +43,32 @@ def _safe_b64_to_text(b64_s: Any) -> str:
             return raw.decode("utf-8", errors="replace")
         except Exception:
             return raw.decode("latin-1", errors="replace")
+
+
+def _safe_float(v: Any) -> float | None:
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if not s:
+        return None
+
+    # Deja solo números + separadores
+    s = re.sub(r"[^0-9.,-]+", "", s)
+    if not s or s in ("-", ".", ","):
+        return None
+
+    # Heurística CL: "." miles y "," decimal
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s and "." not in s:
+        s = s.replace(",", ".")
+
+    try:
+        return float(s)
+    except Exception:
+        return None
 
 
 def _norm_py(s):
@@ -550,7 +577,7 @@ def list_productos(
                 "producto": _safe_b64_to_text(r.get("producto_b64")),
                 "ingredientes": _safe_b64_to_text(r.get("ingredientes_b64")),
                 "marca": _safe_b64_to_text(r.get("marca_b64")),
-                "costo": float(r["costo"]) if r.get("costo") is not None else None,
+                "costo": _safe_float(r.get("costo")),
                 "is_active": bool(r["is_active"]) if r.get("is_active") is not None else True,
                 "activo": "ACTIVO" if r.get("is_active") else "INACTIVO",
                 "descripcion": _safe_b64_to_text(r.get("descripcion_b64")),
