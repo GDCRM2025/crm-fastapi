@@ -695,6 +695,29 @@
       }
     }
 
+    function cleanEmailBody(t){
+      let s = String(t||"");
+      s = s.replace(/\r\n/g, "\n");
+      // corta disclaimers comunes (inglés/español)
+      const cutMarkers = [
+        "\nDisclaimer",
+        "\nDISCLAIMER",
+        "\nThe information contained in this communication",
+        "\nThis email has been scanned",
+        "\nEste mensaje",
+        "\nEste correo",
+        "\nAVISO DE CONFIDENCIALIDAD",
+      ];
+      for (const m of cutMarkers){
+        const idx = s.indexOf(m);
+        if (idx > 0) { s = s.slice(0, idx); break; }
+      }
+      // limpieza de ruido común (tel links)
+      s = s.replace(/<tel:[^>]+>/g, "");
+      s = s.replace(/\n{3,}/g, "\n\n");
+      return s.trim();
+    }
+
     function viewerHTML(msg){
       const subj = msg.subject || "(Sin asunto)";
       const fromName = msg.from_name || "";
@@ -703,6 +726,7 @@
       const kind = String(msg.kind || "other").toLowerCase();
       const kindLbl = KIND_LABEL[kind] || "Otro";
       const body = msg.body_text || "";
+      const bodyClean = cleanEmailBody(body);
       const draft = msg.draft_text || "";
       const replied = !!msg.reply_sent;
       const suggestLead = !!msg.suggest_create_lead;
@@ -720,7 +744,7 @@
           </div>
         </div>
 
-        <div class="body">${esc(body)}</div>
+        <div class="body">${esc(bodyClean || body)}</div>
         <details>
           <summary>Ver contenido completo (raw)</summary>
           <div class="body" style="max-height:22vh;margin-top:10px">${esc(body)}</div>

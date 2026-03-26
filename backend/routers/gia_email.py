@@ -973,6 +973,18 @@ def _filter_accounts_for_user(conn, user: dict, accounts: List[Dict[str, Any]]) 
     return out
 
 
+def _bool_env(name: str, default: bool = False) -> bool:
+    try:
+        v = (os.getenv(name) or "").strip().lower()
+        if v in ("1", "true", "yes", "y", "on"):
+            return True
+        if v in ("0", "false", "no", "n", "off"):
+            return False
+    except Exception:
+        pass
+    return bool(default)
+
+
 def _smtp_send(
     *,
     smtp_host: str,
@@ -1119,6 +1131,7 @@ def summary(user: dict = Depends(get_current_user)):
         if not mids:
             return {"ok": True, "configured": True, "max_id": 0, "open_total": 0, "open_sales": 0, "open_payments": 0, "by_marca": []}
 
+        mids_text = [str(int(x)) for x in mids if str(x).isdigit()] or ["0"]
         try:
             rows = conn.execute(
                 text(
@@ -1129,11 +1142,11 @@ def summary(user: dict = Depends(get_current_user)):
                       COUNT(*) FILTER (WHERE COALESCE(reply_sent,false) IS FALSE)::int AS open_count,
                       MAX(id_msg)::bigint AS max_id
                     FROM public.gia_email_messages
-                    WHERE id_marca = ANY(CAST(:mids AS int[]))
+                    WHERE btrim(COALESCE(id_marca::text,'')) = ANY(CAST(:mids_text AS text[]))
                     GROUP BY id_marca, COALESCE(inbox_type,'sales')
                     """
                 ),
-                {"mids": mids},
+                {"mids_text": mids_text},
             ).mappings().all()
         except Exception:
             rows = []
@@ -1168,8 +1181,8 @@ def summary(user: dict = Depends(get_current_user)):
             name_map = {
                 int(r[0]): str(r[1] or "")
                 for r in conn.execute(
-                    text("SELECT id_marca, nombre FROM public.marcas WHERE id_marca = ANY(CAST(:mids AS int[]))"),
-                    {"mids": mids},
+                    text("SELECT id_marca, nombre FROM public.marcas WHERE btrim(COALESCE(id_marca::text,'')) = ANY(CAST(:mids_text AS text[]))"),
+                    {"mids_text": mids_text},
                 ).fetchall()
                 if r and r[0] is not None
             }
@@ -1425,7 +1438,10 @@ def sync(
                             if lead_id is None and contact_email:
                                 lead_id = _find_recent_lead_id(conn, id_marca=mid, from_email=contact_email, days=(3 if kind == "form" else 30))
 
-                            if lead_id is None and kind == "form":
+                            # Importante: en producción normalmente el FORMULARIO ya crea lead por fuera del CRM
+                            # (ej: Sheets/SMTP). Para evitar duplicados, NO creamos leads por defecto desde GIA.
+                            # Se puede habilitar explícitamente con env `GIA_EMAIL_AUTO_CREATE_FORM_LEADS=1`.
+                            if lead_id is None and kind == "form" and _bool_env("GIA_EMAIL_AUTO_CREATE_FORM_LEADS", False):
                                 # Fallback: crea el lead desde el correo del formulario (si el pipeline externo falló).
                                 # Dedupe ya se hizo arriba (RID / email+marca reciente).
                                 lead_id = _create_lead_from_email(
@@ -1560,8 +1576,9 @@ def inbox(
             mids = _user_marcas_ids(user) or _fallback_marcas_ids(conn, user)
             if not mids:
                 return {"ok": True, "total": 0, "items": []}
-            where.append("id_marca = ANY(:mids)")
-            params["mids"] = mids
+            # Robust: bind list as text[] to avoid psycopg "AmbiguousParameter" / array typing issues.
+            where.append("btrim(COALESCE(id_marca::text,'')) = ANY(CAST(:mids_text AS text[]))")
+            params["mids_text"] = [str(int(x)) for x in mids if str(x).isdigit()] or ["0"]
 
         if id_marca:
             where.append("id_marca=:mid")
@@ -1600,7 +1617,8 @@ def inbox(
             ),
             params,
         ).mappings().all()
-        return {"ok": True, "total": int(total), "items": list(rows)}
+        # dict() para asegurar JSON-serializable aunque cambie la implementación del driver/RowMapping.
+        return {"ok": True, "total": int(total), "items": [dict(r) for r in rows]}
 
 
 @router.get("/inbox/{id_msg}")
@@ -1692,12 +1710,8 @@ def inbox_get(id_msg: int, user: dict = Depends(get_current_user)):
                     f"¡Gracias! Confirmo recepción de la{oc_txt}.\n"
                     + (f"{cot_line}\n" if cot_line else "")
                     + "\n"
-                    "Vamos a coordinar el servicio según lo indicado.\n\n"
-                    "Si necesitas factura, por favor envíame:\n"
-                    "- Razón social / RUT / Giro\n"
-                    "- Dirección de facturación\n"
-                    "- OC (si aplica)\n\n"
-                    "Quedo atento(a).\n"
+                    "En breve te confirmo la coordinación y próximos pasos.\n\n"
+                    "Saludos.\n"
                 )
             elif kind == "form":
                 fecha_line = (

@@ -1051,7 +1051,7 @@ function renderNotifications(data) {
         toast(`${txt2} — click para abrir`, {
           kind: "ok",
           ms: 9000,
-          onClick: () => openItem({ id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html" })
+          onClick: () => openItem({ id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260326-leads1" })
         });
       }catch(_){}
     } else if (staleCount > 0 && (lastStaleCount === null || staleCount > lastStaleCount)) {
@@ -1074,7 +1074,7 @@ function openLeadsFromLock(openId, ids) {
   params.set("stale", "1");
   if (idList.length) params.set("stale_ids", idList.join(","));
   pendingLeadOpen = null;
-  frame.src = viewURL(`/web/views/leads.html?${params.toString()}`);
+  frame.src = viewURL(`/web/views/leads.html?v=20260326-leads1&${params.toString()}`);
 }
 function renderLeadLock(data) {
   var _a, _b;
@@ -1678,7 +1678,7 @@ const MENU = [
     ico: "\u{1F4CC}",
     title: "Leads",
     items: [
-      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html" },
+      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260326-leads1" },
       { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html" }
     ]
   },
@@ -1720,7 +1720,7 @@ const MENU = [
     ico: "\u{1F9FE}",
     title: "Tareas",
     items: [
-      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html" }
+      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260325-tasks2" }
     ]
   },
   {
@@ -2954,6 +2954,18 @@ function openDefault() {
     var _a, _b, _c, _d;
     if (((_a = ev.data) == null ? void 0 : _a.type) === "openItem" && ((_b = ev.data) == null ? void 0 : _b.url) && ((_c = ev.data) == null ? void 0 : _c.id)) {
       openItem({ id: ev.data.id, url: ev.data.url });
+      return;
+    }
+    if ((ev == null ? void 0 : ev.data) && ev.data.type === "openLead") {
+      try {
+        const id = ev.data.id_lead || ev.data.id || ev.data.lead_id;
+        const staleIds = Array.isArray(ev.data.stale_ids) ? ev.data.stale_ids : [];
+        const params = new URLSearchParams();
+        if (id) params.set("open_lead", String(id));
+        if (staleIds.length) params.set("stale_ids", staleIds.map((x) => String(x)).filter(Boolean).join(","));
+        openItem({ id: "leads_ver", label: "Ver Leads", url: `/web/views/leads.html?v=20260326-leads1&${params.toString()}` });
+      } catch (_) {
+      }
       return;
     }
     if ((ev == null ? void 0 : ev.data) && ev.data.type === "toast") {

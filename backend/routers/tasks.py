@@ -247,10 +247,186 @@ def get_tasks(
 
 
 @router.post("/{id_task}/done")
-def mark_done(id_task: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def mark_done(
+    id_task: int,
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     uid = _resolve_uid(db, user)
     who = _uname(user)
     ensure_tasks_table(db)
+
+    # Cargar la tarea (necesario para validar consecuencias / evidencia).
+    task = (
+        db.execute(
+            text(
+                """
+                SELECT id_task, kind, entity_type, entity_id, meta
+                FROM public.tasks
+                WHERE id_task=:id AND assigned_user_id=:uid
+                LIMIT 1
+                """
+            ),
+            {"id": int(id_task), "uid": int(uid)},
+        )
+        .mappings()
+        .first()
+    )
+    if not task:
+        raise HTTPException(404, "Tarea no existe")
+
+    kind = str(task.get("kind") or "").strip().upper()
+    entity_type = str(task.get("entity_type") or "").strip().lower()
+    entity_id = task.get("entity_id")
+
+    # Consecuencia: tareas críticas requieren evidencia (seguimiento / dato efectivamente completado).
+    require_followup = kind in {
+        "CONTACTAR_LEAD",
+        "RIESGO_AUTO_DECLINE_NUEVO",
+        "RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA",
+        "RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA",
+        "RIESGO_COTIZADO_EVENTO_CERCA",
+        "DECLINADO_FECHA_FUTURA",
+    }
+    require_field_check = kind in {"COMPLETAR_TELEFONO", "COMPLETAR_DIRECCION", "COMPLETAR_HORARIO"}
+
+    action = str(payload.get("action") or payload.get("method") or payload.get("tipo") or "").strip().upper()
+    note_text = str(payload.get("text") or payload.get("nota") or payload.get("message") or "").strip()
+
+    if require_followup:
+        if entity_type != "lead" or not str(entity_id or "").isdigit():
+            raise HTTPException(400, "Esta tarea requiere seguimiento sobre un lead válido.")
+        if not action:
+            raise HTTPException(
+                400,
+                "Para cerrar esta tarea debes registrar seguimiento (WhatsApp/Llamada/Email/Nota).",
+            )
+        if action not in ("WSP", "WHATSAPP", "CALL", "LLAMAR", "EMAIL", "MAIL", "NOTE", "NOTA"):
+            raise HTTPException(400, "action inválida (WSP/CALL/EMAIL/NOTE).")
+        if not note_text:
+            raise HTTPException(400, "text requerido (detalle del seguimiento).")
+
+        lead_id = int(entity_id)
+        tag = "NOTE"
+        if action in ("WSP", "WHATSAPP"):
+            tag = "WSP"
+        elif action in ("CALL", "LLAMAR"):
+            tag = "CALL"
+        elif action in ("EMAIL", "MAIL"):
+            tag = "EMAIL"
+
+        # Append note (misma semántica que /leads/{id}/append_note) + cierra la tarea.
+        try:
+            from datetime import datetime
+
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            ts = ""
+        header = f"[{tag}] {ts} · {who}".strip()
+        block = f"{header}\n{note_text}".strip()
+
+        try:
+            cn = db.connection()
+            # Verifica lead
+            ok = bool(cn.execute(text("SELECT 1 FROM public.leads WHERE id_lead=:id LIMIT 1"), {"id": lead_id}).scalar())
+            if not ok:
+                raise HTTPException(404, "Lead no existe")
+            cn.execute(
+                text(
+                    """
+                    UPDATE public.leads
+                    SET notas = CASE
+                      WHEN COALESCE(notas,'') = '' THEN :b
+                      ELSE notas || E'\n\n' || :b
+                    END,
+                    updated_at = now()
+                    WHERE id_lead=:id
+                    """
+                ),
+                {"id": lead_id, "b": block},
+            )
+            # Guardar evidencia en meta de tarea
+            cn.execute(
+                text(
+                    """
+                    UPDATE public.tasks
+                    SET meta = meta || jsonb_build_object('followup_action', :a, 'followup_block', :b),
+                        updated_at=now()
+                    WHERE id_task=:tid
+                    """
+                ),
+                {"tid": int(id_task), "a": tag, "b": block[:2000]},
+            )
+            # Log activity (best-effort)
+            try:
+                log_activity(
+                    cn,
+                    username=who,
+                    user_id=uid,
+                    role=_role(user),
+                    action="LEAD_FOLLOWUP",
+                    entity_type="lead",
+                    entity_id=int(lead_id),
+                    meta={"via": tag, "task_id": int(id_task)},
+                )
+            except Exception:
+                pass
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"No pude registrar seguimiento: {type(e).__name__}: {str(e)[:160]}")
+
+    if require_field_check and entity_type == "lead" and str(entity_id or "").isdigit():
+        lead_id = int(entity_id)
+        cn = db.connection()
+        # Best-effort: algunos deploys no tienen pre_start/pre_end.
+        try:
+            cols = {r[0] for r in cn.execute(text("""
+              SELECT column_name
+              FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='leads'
+                AND column_name IN ('telefono','direccion','pre_start','pre_end','hora_inicio','hora_fin')
+            """)).fetchall()}
+        except Exception:
+            cols = set()
+        sel = ["id_lead"]
+        if "telefono" in cols:
+            sel.append("telefono")
+        if "direccion" in cols:
+            sel.append("direccion")
+        if "pre_start" in cols:
+            sel.append("pre_start")
+        if "pre_end" in cols:
+            sel.append("pre_end")
+        if "hora_inicio" in cols:
+            sel.append("hora_inicio")
+        if "hora_fin" in cols:
+            sel.append("hora_fin")
+        try:
+            lead = cn.execute(text(f"SELECT {', '.join(sel)} FROM public.leads WHERE id_lead=:id"), {"id": lead_id}).mappings().first()
+        except Exception:
+            lead = None
+        if not lead:
+            raise HTTPException(404, "Lead no existe")
+        if kind == "COMPLETAR_TELEFONO":
+            if "telefono" in sel and not str(lead.get("telefono") or "").strip():
+                raise HTTPException(400, "No puedes cerrar: el lead sigue sin teléfono.")
+        if kind == "COMPLETAR_DIRECCION":
+            if "direccion" in sel and not str(lead.get("direccion") or "").strip():
+                raise HTTPException(400, "No puedes cerrar: el lead sigue sin dirección.")
+        if kind == "COMPLETAR_HORARIO":
+            # Acepta cualquier par (pre_start/pre_end) o (hora_inicio/hora_fin) si existen.
+            has_pre = ("pre_start" in sel and "pre_end" in sel)
+            has_hr = ("hora_inicio" in sel and "hora_fin" in sel)
+            ok = False
+            if has_pre and (lead.get("pre_start") is not None and lead.get("pre_end") is not None):
+                ok = True
+            if has_hr and str(lead.get("hora_inicio") or "").strip() and str(lead.get("hora_fin") or "").strip():
+                ok = True
+            if (has_pre or has_hr) and not ok:
+                raise HTTPException(400, "No puedes cerrar: el lead sigue sin horario (inicio/fin).")
+
     out = complete_task(db, id_task=id_task, completed_by=who)
     try:
         db.commit()

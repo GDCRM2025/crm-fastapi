@@ -202,8 +202,9 @@
         const over = (t.status==="open" && isOverdue(t.due_at));
         const pr = Number(t.priority||0);
         const prTxt = (pr <= 10) ? "Alta" : (pr <= 30) ? "Media" : "Baja";
+        const kind = String(t.kind||"").toUpperCase();
         return `
-          <tr data-task="${esc(t.id_task)}" data-lead="${esc(t.entity_id||"")}">
+          <tr data-task="${esc(t.id_task)}" data-lead="${esc(t.entity_id||"")}" data-kind="${esc(kind)}">
             <td><span class="pill ${over ? "bad" : ""}">${esc(prTxt)}</span></td>
             <td><strong>${esc(t.title||t.kind||"—")}</strong><div class="muted">${esc(t.description||"")}</div></td>
             <td><strong>${esc(t.lead_cliente||"—")}</strong><div class="muted">#${esc(t.entity_id||"")}</div></td>
@@ -234,7 +235,51 @@
           const act = btn.getAttribute("data-act");
           try{
             if (act === "done"){
-              await jpost(`/tasks/${idTask}/done`, {});
+              const kind = String(tr?.getAttribute("data-kind")||"").toUpperCase();
+              const requireFollowup = new Set([
+                "CONTACTAR_LEAD",
+                "RIESGO_AUTO_DECLINE_NUEVO",
+                "RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA",
+                "RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA",
+                "RIESGO_COTIZADO_EVENTO_CERCA",
+                "DECLINADO_FECHA_FUTURA",
+              ]);
+              if (requireFollowup.has(kind)){
+                const res = await Swal.fire({
+                  title: "Registrar seguimiento",
+                  html: `
+                    <div style="text-align:left;display:flex;flex-direction:column;gap:10px">
+                      <label style="font-weight:900;font-size:12px;opacity:.85">Vía</label>
+                      <select id="sw_via" class="swal2-input" style="height:42px">
+                        <option value="WSP">WhatsApp</option>
+                        <option value="CALL">Llamada</option>
+                        <option value="EMAIL">Email</option>
+                        <option value="NOTE">Nota</option>
+                      </select>
+                      <label style="font-weight:900;font-size:12px;opacity:.85">Detalle (requerido)</label>
+                      <textarea id="sw_text" class="swal2-textarea" placeholder="Qué hiciste / qué respondió el cliente / próximo paso..." style="min-height:110px"></textarea>
+                      <div style="font-size:12px;opacity:.7;font-weight:850">Esto se guarda en el historial del lead con timestamp y usuario.</div>
+                    </div>
+                  `,
+                  focusConfirm: false,
+                  showCancelButton: true,
+                  confirmButtonText: "Guardar y cerrar tarea",
+                  cancelButtonText: "Cancelar",
+                  preConfirm: () => {
+                    const via = (document.getElementById("sw_via")?.value || "").trim();
+                    const text = (document.getElementById("sw_text")?.value || "").trim();
+                    if (!text) {
+                      Swal.showValidationMessage("Escribe el detalle del seguimiento.");
+                      return null;
+                    }
+                    return { via, text };
+                  }
+                });
+                if (!res.isConfirmed || !res.value) return;
+                await jpost(`/tasks/${idTask}/done`, { action: res.value.via, text: res.value.text });
+              }else{
+                await jpost(`/tasks/${idTask}/done`, {});
+              }
             }else{
               const r = await Swal.fire({
                 title: "Omitir tarea",
@@ -269,4 +314,3 @@
   </script>
 </body>
 </html>
-

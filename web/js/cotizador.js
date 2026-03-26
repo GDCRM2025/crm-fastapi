@@ -65,12 +65,21 @@
   let lead = null;
   let catalogos = { comunas: [], tipos_cliente: [], marcas: [] };
   let productosIndex = [];
+  let productosByKey = new Map();
   let items = [];
   let tipoCliente = "Persona";
   let currentQuoteId = null;
   let currentQuoteNumero = null;
 
   fechaCot.valueAsDate = new Date();
+
+  function normKey(s){
+    return String(s || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "");
+  }
 
   function getToken(){
     return (
@@ -150,6 +159,7 @@
     }catch(_){}
 
     productosIndex = [];
+    productosByKey = new Map();
     const marcaLead = (lead?.marca_nombre || lead?.marca || "").trim();
     // Para performance: preferimos traer todo en 1 request (en este sistema son ~600 items).
     // Evita el loop paginado que a veces se siente "lento" al abrir cotizador.
@@ -186,14 +196,17 @@
     }
 
     for (const p of chunk) {
-      productosIndex.push({
+      const row = {
         id_producto: p.id_producto,
         producto: p.producto || "",
         descripcion: p.descripcion || p.ingredientes || "",
         ingredientes: "",
         costo: +p.costo || 0,
         marca: p.marca || "",
-      });
+      };
+      productosIndex.push(row);
+      const k = normKey(row.producto);
+      if (k && !productosByKey.has(k)) productosByKey.set(k, row);
     }
     dlProductos.innerHTML = "";
     for (const p of productosIndex) {
@@ -206,6 +219,13 @@
     if (!productosIndex.length && cachedArr && cachedArr.length){
       // Si falló el fetch (o filtró todo), mantenemos el cache previo para no dejar cotizador vacío.
       productosIndex = cachedArr;
+      try{
+        productosByKey = new Map();
+        for (const p of productosIndex){
+          const k = normKey(p?.producto || "");
+          if (k && !productosByKey.has(k)) productosByKey.set(k, p);
+        }
+      }catch(_){}
       return;
     }
     try{
@@ -309,8 +329,30 @@
     const price = +precio.value || 0;
     if (!prodName || qty <= 0 || price < 0) return;
 
-    const prod = productosIndex.find(p => p.producto.toLowerCase() === prodName.toLowerCase());
-    if (!prod) { alert("Producto inválido"); return; }
+    let prod = productosIndex.find(p => String(p.producto||"").toLowerCase() === prodName.toLowerCase());
+    if (!prod){
+      const k = normKey(prodName);
+      prod = (k && productosByKey.get(k)) || null;
+    }
+    if (!prod){
+      const k = normKey(prodName);
+      if (k){
+        const sug = [];
+        for (const p of productosIndex){
+          const pk = normKey(p?.producto || "");
+          if (pk && (pk.includes(k) || k.includes(pk))) sug.push(p);
+          if (sug.length >= 8) break;
+        }
+        if (sug.length){
+          alert("Producto no encontrado. ¿Quizás quisiste decir?\n- " + sug.map(x=>x.producto).join("\n- "));
+        } else {
+          alert("Producto inválido");
+        }
+      } else {
+        alert("Producto inválido");
+      }
+      return;
+    }
     const it = {
       id_detalle: Date.now(),
       id_producto: prod.id_producto,

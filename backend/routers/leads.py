@@ -1445,7 +1445,14 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                         UPDATE public.tasks
                         SET status='done', completed_at=now(), completed_by=:by, updated_at=now()
                         WHERE status='open'
-                          AND kind='CONTACTAR_LEAD'
+                          AND kind IN (
+                            'CONTACTAR_LEAD',
+                            'RIESGO_AUTO_DECLINE_NUEVO',
+                            'RIESGO_AUTO_DECLINE_CONTACTADO',
+                            'LEAD_SIN_MOVIMIENTO',
+                            'FALTAN_DATOS_COTIZADO',
+                            'FALTAN_DATOS_CONFIRMADO'
+                          )
                           AND entity_type='lead'
                           AND entity_id=:lid
                           AND assigned_user_id=:uid

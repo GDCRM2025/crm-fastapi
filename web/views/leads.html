@@ -3081,7 +3081,15 @@ async function openEditModal(lead){
      </label>` +
     `<label>Creado<input id="e_created" class="swInp" value="${escapeHtml(String(lead.created_at||"").replace("T"," ").slice(0,16))}" disabled /></label>` +
     `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa" spellcheck="false">${escapeHtml(lead.notas || "")}</textarea></label>` +
-    `<label class="span2">Agregar comentario<textarea id="e_comment" class="swTa" rows="2" placeholder="Nuevo comentario..."></textarea></label>` +
+    `<label class="span2">Agregar comentario
+      <div class="gdQuickRow" style="margin:6px 0 8px">
+        <button type="button" class="gdQBtn" id="qf_wsp" title="Registrar seguimiento WhatsApp">🟢 WSP</button>
+        <button type="button" class="gdQBtn" id="qf_call" title="Registrar seguimiento llamada">📞 Llamada</button>
+        <button type="button" class="gdQBtn" id="qf_email" title="Registrar seguimiento correo">✉️ Email</button>
+        <button type="button" class="gdQBtn secondary" id="qf_no" title="Registrar: cliente no contesta">⏳ No contesta</button>
+      </div>
+      <textarea id="e_comment" class="swTa" rows="2" placeholder="Nuevo comentario..."></textarea>
+    </label>` +
     '</div></div>';
 
 	  const isEmbed = (()=>{
@@ -3134,6 +3142,20 @@ async function openEditModal(lead){
 	            .gdManualHdr::after{ content:"▾"; opacity:.75; margin-left:auto; font-weight:1100; }
 	            details[open] > .gdManualHdr::after{ content:"▴"; }
 	            .gdManualBox{ border:1px solid var(--border); background: var(--surface2); border-radius:14px; padding:10px; }
+	            .gdQuickRow{ display:flex; gap:8px; flex-wrap:wrap; }
+	            .gdQBtn{
+	              height:34px;
+	              border-radius:999px;
+	              border:1px solid var(--border);
+	              background: var(--surface2);
+	              color: var(--text);
+	              font-weight: 1000;
+	              padding:0 12px;
+	              cursor:pointer;
+	              white-space:nowrap;
+	            }
+	            .gdQBtn.secondary{ opacity:.92; }
+	            .gdQBtn:hover{ background: var(--hover-surface); }
 	          `;
 	          document.head.appendChild(st);
 	        }
@@ -3148,6 +3170,36 @@ async function openEditModal(lead){
 	      const logAction = async (kind, title, text)=>{
 	        await logLeadActionNote(lead, { kind, title, text });
 	      };
+
+	      async function quickFollow(kind, title, defaultText){
+	        const res = await Swal.fire({
+	          title,
+	          input: "textarea",
+	          inputValue: defaultText || "",
+	          inputPlaceholder: "Detalle (opcional)…",
+	          showCancelButton: true,
+	          confirmButtonText: "Registrar",
+	          cancelButtonText: "Cancelar",
+	        });
+	        if (!res.isConfirmed) return;
+	        const text = String(res.value || defaultText || "").trim();
+	        if (!text){
+	          toast("Sin texto", "warning");
+	          return;
+	        }
+	        try{
+	          await logAction(kind, title, text);
+	          toast("Seguimiento registrado", "success");
+	          try{ qs("#e_comment").value = ""; }catch(_){}
+	        }catch(_){
+	          toast("No pude registrar seguimiento", "error");
+	        }
+	      }
+
+	      qs("#qf_wsp")?.addEventListener("click", ()=>quickFollow("WSP", "Cliente contactado por WhatsApp", "Cliente contactado por WhatsApp."));
+	      qs("#qf_call")?.addEventListener("click", ()=>quickFollow("CALL", "Cliente contactado por llamada", "Cliente contactado por llamada."));
+	      qs("#qf_email")?.addEventListener("click", ()=>quickFollow("EMAIL", "Cliente contactado por correo", "Cliente contactado por correo."));
+	      qs("#qf_no")?.addEventListener("click", ()=>quickFollow("NOTE", "Cliente no contesta", "Cliente no contesta. Se solicita respuesta para avanzar."));
 
 	      // Quick actions (iconos en labels)
 	      qs("#qa_call")?.addEventListener("click", async ()=>{
