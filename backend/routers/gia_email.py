@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import os
 import re
 import ssl
@@ -31,6 +32,29 @@ except Exception:  # pragma: no cover
 
 
 router = APIRouter(prefix="/gia/email", tags=["gia-email"])
+
+
+def _safe_b64_to_text(b64_s: Any) -> str:
+    """
+    Robust decode for DBs that might contain non-UTF8 bytes in TEXT columns (ej. encoding SQL_ASCII).
+    We fetch values as base64-encoded bytea and then decode best-effort.
+    """
+    if b64_s is None:
+        return ""
+    s = str(b64_s)
+    try:
+        raw = base64.b64decode(s.encode("ascii", errors="ignore"), validate=False)
+    except Exception:
+        raw = b""
+    if not raw:
+        return ""
+    try:
+        return raw.decode("utf-8")
+    except Exception:
+        try:
+            return raw.decode("utf-8", errors="replace")
+        except Exception:
+            return raw.decode("latin-1", errors="replace")
 
 
 def _role(user: dict) -> str:
@@ -473,6 +497,25 @@ def _classify_email(subject: str, body_text: str) -> tuple[str, str]:
     if any(k in bb for k in lead_kw):
         return ("lead", "keywords")
 
+    # Spam / notificaciones no comerciales (conservador).
+    # - Notificaciones de seguridad (IG/FB) que ensucian la bandeja.
+    # - Mensajes vacíos/cortos con contenido "random" (típico spam).
+    try:
+        if re.search(r"(?i)@mail\\.instagram\\.com\\b", body_text or "") or "INSTAGRAM" in bb:
+            if any(k in bb for k in ("NEW LOGIN", "NEW SIGN-IN", "NUEVO INICIO", "CÓDIGO DE SEGURIDAD", "SECURITY CODE")):
+                return ("spam", "social-security")
+        if ("FACEBOOK" in bb or "META" in bb) and any(k in bb for k in ("SECURITY", "LOGIN", "SIGN-IN", "CÓDIGO")):
+            return ("spam", "social-security")
+        if not (subject or "").strip():
+            raw = (body_text or "").strip()
+            if len(raw) <= 60:
+                # Si casi no hay letras, lo tratamos como ruido/spam.
+                letters = sum(1 for ch in raw if ch.isalpha())
+                if letters <= 6:
+                    return ("spam", "short-noise")
+    except Exception:
+        pass
+
     return ("other", "default")
 
 
@@ -482,7 +525,7 @@ def _prefer_kind(existing: str | None, new: str, new_reason: str) -> tuple[str, 
     Precedencia (más fuerte → más débil):
       form > payment > purchase > lead > other
     """
-    pr = {"form": 5, "payment": 4, "purchase": 3, "lead": 2, "other": 1, "": 0, None: 0}
+    pr = {"form": 6, "payment": 5, "purchase": 4, "lead": 3, "other": 2, "spam": 1, "": 0, None: 0}
     e = (existing or "").strip().lower()
     n = (new or "").strip().lower()
     if not n:
@@ -1562,78 +1605,168 @@ def cron_sync(
 def inbox(
     id_marca: int | None = Query(default=None, ge=1),
     inbox_type: str | None = Query(default=None),
+    replied: int | None = Query(default=None),
     q: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     user: dict = Depends(get_current_user),
 ):
-    _ensure_schema()
-    with get_connection() as conn:
-        where = []
-        params: Dict[str, Any] = {"limit": int(limit), "offset": int(offset)}
+    try:
+        _ensure_schema()
+        with get_connection() as conn:
+            where = []
+            params: Dict[str, Any] = {"limit": int(limit), "offset": int(offset)}
 
-        if not _is_admin(user):
-            mids = _user_marcas_ids(user) or _fallback_marcas_ids(conn, user)
-            if not mids:
-                return {"ok": True, "total": 0, "items": []}
-            # Robust: bind list as text[] to avoid psycopg "AmbiguousParameter" / array typing issues.
-            where.append("btrim(COALESCE(id_marca::text,'')) = ANY(CAST(:mids_text AS text[]))")
-            params["mids_text"] = [str(int(x)) for x in mids if str(x).isdigit()] or ["0"]
+            # Oculta spam/archivados si la columna existe (compat con despliegues antiguos).
+            try:
+                has_hidden = bool(
+                    conn.execute(
+                        text(
+                            """
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_schema='public' AND table_name='gia_email_messages' AND column_name='is_hidden'
+                            LIMIT 1
+                            """
+                        )
+                    ).scalar()
+                )
+            except Exception:
+                has_hidden = False
+            if has_hidden:
+                where.append("COALESCE(is_hidden,false) IS FALSE")
 
-        if id_marca:
-            where.append("id_marca=:mid")
-            params["mid"] = int(id_marca)
-        if inbox_type:
-            it = str(inbox_type or "").strip().lower()
-            if it == "sales":
-                where.append("COALESCE(inbox_type,'sales')='sales'")
-            elif it == "payments":
-                # Compat: si el hosting no tiene casilla separada de pagos,
-                # igual filtramos por emails clasificados como payment.
-                where.append("(COALESCE(inbox_type,'sales')='payments' OR COALESCE(kind,'')='payment')")
-        if q:
-            qs = str(q or "").strip()
-            if qs:
-                where.append("(COALESCE(subject,'') ILIKE :q OR COALESCE(from_email,'') ILIKE :q OR COALESCE(from_name,'') ILIKE :q OR COALESCE(body_text,'') ILIKE :q)")
-                params["q"] = f"%{qs}%"
+            if not _is_admin(user):
+                mids = _user_marcas_ids(user) or _fallback_marcas_ids(conn, user)
+                if not mids:
+                    return {"ok": True, "total": 0, "items": []}
+                # Robust: bind list as text[] to avoid psycopg "AmbiguousParameter" / array typing issues.
+                where.append("btrim(COALESCE(id_marca::text,'')) = ANY(CAST(:mids_text AS text[]))")
+                params["mids_text"] = [str(int(x)) for x in mids if str(x).isdigit()] or ["0"]
 
-        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
-        total = conn.execute(text(f"SELECT COUNT(*) FROM public.gia_email_messages {where_sql}"), params).scalar() or 0
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT id_msg, created_at, id_marca, marca, account_email,
-                       from_email, from_name, subject, received_at,
-                       COALESCE(inbox_type,'sales') AS inbox_type,
-                       COALESCE(kind,'general') AS kind,
-                       COALESCE(ack_sent,false) AS ack_sent,
-                       COALESCE(reply_sent,false) AS reply_sent,
-                       LEFT(COALESCE(body_text,''), 220) AS preview
-                FROM public.gia_email_messages
-                {where_sql}
-                ORDER BY COALESCE(received_at, created_at) DESC, id_msg DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
-        # dict() para asegurar JSON-serializable aunque cambie la implementación del driver/RowMapping.
-        return {"ok": True, "total": int(total), "items": [dict(r) for r in rows]}
+            if id_marca:
+                # Compat: algunos deploys guardan id_marca como TEXT.
+                where.append("btrim(COALESCE(id_marca::text,'')) = :mid_text")
+                params["mid_text"] = str(int(id_marca))
+            if inbox_type:
+                it = str(inbox_type or "").strip().lower()
+                if it == "sales":
+                    where.append("COALESCE(inbox_type,'sales')='sales'")
+                elif it == "payments":
+                    # Compat: si el hosting no tiene casilla separada de pagos,
+                    # igual filtramos por emails clasificados como payment.
+                    where.append("(COALESCE(inbox_type,'sales')='payments' OR COALESCE(kind,'')='payment')")
+            if replied is not None:
+                where.append("COALESCE(reply_sent,false) = :rep")
+                params["rep"] = bool(int(replied))
+            if q:
+                qs = str(q or "").strip()
+                if qs:
+                    where.append(
+                        "(COALESCE(subject,'') ILIKE :q OR COALESCE(from_email,'') ILIKE :q OR COALESCE(from_name,'') ILIKE :q OR COALESCE(body_text,'') ILIKE :q)"
+                    )
+                    params["q"] = f"%{qs}%"
+
+            where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+            total = conn.execute(text(f"SELECT COUNT(*) FROM public.gia_email_messages {where_sql}"), params).scalar() or 0
+            # IMPORTANTE:
+            # En algunos hostings el DB puede estar en SQL_ASCII y contener bytes no-UTF8 en columnas TEXT.
+            # NO debemos seleccionar columnas TEXT "crudas" (marca/subject/from_*) porque Postgres intentará
+            # convertirlas a UTF8 para el cliente y puede reventar con:
+            #   invalid byte sequence for encoding "UTF8"
+            # Por eso seleccionamos SOLO versiones base64 (desde ::bytea) y reconstruimos en Python.
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT id_msg, created_at, id_marca,
+                           encode(COALESCE(marca,'')::bytea, 'base64') AS marca_b64,
+                           encode(COALESCE(account_email,'')::bytea, 'base64') AS account_email_b64,
+                           encode(COALESCE(from_email,'')::bytea, 'base64') AS from_email_b64,
+                           encode(COALESCE(from_name,'')::bytea, 'base64') AS from_name_b64,
+                           encode(COALESCE(subject,'')::bytea, 'base64') AS subject_b64,
+                           received_at,
+                           COALESCE(inbox_type,'sales') AS inbox_type,
+                           COALESCE(kind,'general') AS kind,
+                           COALESCE(ack_sent,false) AS ack_sent,
+                           COALESCE(reply_sent,false) AS reply_sent,
+                           encode(LEFT(COALESCE(body_text,''), 220)::bytea, 'base64') AS preview_b64
+                    FROM public.gia_email_messages
+                    {where_sql}
+                    ORDER BY COALESCE(received_at, created_at) DESC, id_msg DESC
+                    LIMIT :limit OFFSET :offset
+                    """
+                ),
+                params,
+            ).mappings().all()
+            items: list[dict] = []
+            for r in rows:
+                d = dict(r)
+                # reconstruye strings robustamente (evita 500 por bytes no-utf8)
+                d["marca"] = _safe_b64_to_text(d.pop("marca_b64", ""))
+                d["account_email"] = _safe_b64_to_text(d.pop("account_email_b64", ""))
+                d["from_email"] = _safe_b64_to_text(d.pop("from_email_b64", ""))
+                d["from_name"] = _safe_b64_to_text(d.pop("from_name_b64", ""))
+                d["subject"] = _safe_b64_to_text(d.pop("subject_b64", ""))
+                d["preview"] = _safe_b64_to_text(d.pop("preview_b64", ""))
+                items.append(d)
+            return {"ok": True, "total": int(total), "items": items}
+    except Exception as e:
+        # Nunca 500 (para poder debugear desde frontend/curl sin bloquear a los usuarios).
+        return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:240]}", "total": 0, "items": []}
 
 
 @router.get("/inbox/{id_msg}")
 def inbox_get(id_msg: int, user: dict = Depends(get_current_user)):
     _ensure_schema()
     with get_connection() as conn:
-        row = conn.execute(text("SELECT * FROM public.gia_email_messages WHERE id_msg=:id"), {"id": int(id_msg)}).mappings().first()
+        # SELECT explícito + base64 para evitar errores de encoding en BD legacy (SQL_ASCII).
+        row = conn.execute(
+            text(
+                """
+                SELECT
+                  id_msg, created_at, updated_at, id_marca, inbox_type, kind, kind_reason,
+                  ack_sent, ack_sent_at, ack_error,
+                  reply_sent, reply_sent_at, reply_error,
+                  lead_id,
+                  parsed_cliente, parsed_email, parsed_phone, parsed_comuna, parsed_fecha_evento,
+                  reply_to_email,
+                  encode(COALESCE(marca,'')::bytea,'base64') AS marca_b64,
+                  encode(COALESCE(account_email,'')::bytea,'base64') AS account_email_b64,
+                  encode(COALESCE(from_email,'')::bytea,'base64') AS from_email_b64,
+                  encode(COALESCE(from_name,'')::bytea,'base64') AS from_name_b64,
+                  encode(COALESCE(subject,'')::bytea,'base64') AS subject_b64,
+                  received_at,
+                  encode(COALESCE(body_text,'')::bytea,'base64') AS body_text_b64,
+                  encode(COALESCE(reply_body,'')::bytea,'base64') AS reply_body_b64
+                FROM public.gia_email_messages
+                WHERE id_msg=:id
+                LIMIT 1
+                """
+            ),
+            {"id": int(id_msg)},
+        ).mappings().first()
         if not row:
             raise HTTPException(404, "Mensaje no existe")
         if not _is_admin(user):
             mids = set(_user_marcas_ids(user) or _fallback_marcas_ids(conn, user))
             mid = row.get("id_marca")
-            if mid is None or int(mid) not in mids:
+            mid_int = None
+            try:
+                s = str(mid or "").strip()
+                if s.isdigit():
+                    mid_int = int(s)
+            except Exception:
+                mid_int = None
+            if mid_int is None or mid_int not in mids:
                 raise HTTPException(403, "Sin permiso")
         msg = dict(row)
+        msg["marca"] = _safe_b64_to_text(msg.pop("marca_b64", ""))
+        msg["account_email"] = _safe_b64_to_text(msg.pop("account_email_b64", ""))
+        msg["from_email"] = _safe_b64_to_text(msg.pop("from_email_b64", ""))
+        msg["from_name"] = _safe_b64_to_text(msg.pop("from_name_b64", ""))
+        msg["subject"] = _safe_b64_to_text(msg.pop("subject_b64", ""))
+        msg["body_text"] = _safe_b64_to_text(msg.pop("body_text_b64", ""))
+        msg["reply_body"] = _safe_b64_to_text(msg.pop("reply_body_b64", ""))
 
         tpl = (
             conn.execute(

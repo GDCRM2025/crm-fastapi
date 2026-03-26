@@ -12,7 +12,14 @@ from backend.core.db import get_connection, table_columns
 from backend.core.email import send_email_group
 from backend.routers.auth import get_current_user
 
-router = APIRouter()
+# IMPORTANTE:
+# Este router es legacy. Históricamente expuso endpoints sin prefijo (ej: `/productos`)
+# y termina pisando rutas modernas (`backend.routers.productos`), rompiendo el cotizador
+# y el filtrado por marcas para ejecutivos.
+#
+# Para mantener compatibilidad sin romper el sistema actual, lo dejamos aislado bajo
+# `/legacy_settings/*`.
+router = APIRouter(prefix="/legacy_settings", tags=["legacy_settings"])
 
 
 def _role_key(role: str) -> str:

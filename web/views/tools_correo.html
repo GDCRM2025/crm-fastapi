@@ -111,7 +111,7 @@
       flex:1;
       min-height:0;
       display:grid;
-      grid-template-columns: 260px 380px 1fr;
+      grid-template-columns: 260px 440px 1fr;
       gap:12px;
     }
     .pane{
@@ -135,6 +135,54 @@
     .ttl{ font-weight:1000; font-size:13px; }
     .muted{ color:var(--muted); font-size:12px; line-height:1.35; }
     .scroll{ overflow:auto; min-height:0; }
+
+    /* bottom actions (tipo Gmail): buscador + acciones rápidas */
+    .sideBottom{
+      padding:10px 10px 12px;
+      border-top:1px solid rgba(148,163,184,.14);
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      background:rgba(0,0,0,.08);
+    }
+    .search2{
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(255,255,255,.025);
+      border-radius:14px;
+      padding:9px 10px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .search2 input{
+      width:100%;
+      border:0;
+      background:transparent;
+      outline:none;
+      color:inherit;
+      font-size:13px;
+      font-weight:950;
+    }
+    .scopeHint{
+      font-size:11px;
+      color:var(--muted);
+      font-weight:1000;
+      white-space:nowrap;
+      padding-left:8px;
+      border-left:1px solid rgba(148,163,184,.14);
+    }
+    .sideBtns{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:space-between;
+    }
+    .btn.icon{
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
 
     .group{ padding:10px 10px 0; }
     .gtitle{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0 4px 8px; }
@@ -203,6 +251,26 @@
     .chip.warn{ background: rgba(234,179,8,.12); border-color: rgba(234,179,8,.35); }
 
     .viewer{ padding:12px; display:flex; flex-direction:column; gap:10px; min-height:0; }
+    .viewerSplit{
+      display:grid;
+      grid-template-columns: 1fr 360px;
+      gap:12px;
+      align-items:start;
+      min-height:0;
+    }
+    .viewerMain{ min-height:0; }
+    .viewerSide{
+      min-height:0;
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.02);
+      border-radius:16px;
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .viewerSide .ttl{ font-size:12px; }
+    .viewerSide textarea{ min-height: 260px; resize:vertical; }
     .viewer h2{ margin:0; font-size:16px; font-weight:1000; }
     .meta{ display:flex; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:12px; font-weight:850; }
     .body{
@@ -223,6 +291,63 @@
       padding:10px 12px;
     }
     summary{ cursor:pointer; font-weight:950; color:rgba(226,232,240,.92); }
+
+    /* folders por marca (colapsables) */
+    details.brandBox{
+      margin:0 0 8px 0;
+      padding:0;
+      border:0;
+      background:transparent;
+    }
+    details.brandBox > summary{
+      list-style:none;
+    }
+    details.brandBox > summary::-webkit-details-marker{ display:none; }
+    .brandSummary{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.02);
+      border-radius:14px;
+      padding:10px 10px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .brandSummary:hover{ background:var(--rowHover); }
+    .brandSummary.active{
+      border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent);
+      background: color-mix(in srgb, var(--accent,#19c37d) 10%, transparent);
+    }
+    .brandLeft{ display:flex; flex-direction:column; gap:2px; }
+    .brandName{ font-weight:1000; font-size:12px; }
+    .brandMeta{ font-size:11px; color:var(--muted); }
+    .subfolders{
+      padding:8px 4px 2px 4px;
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:8px;
+    }
+    .subfolder{
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.02);
+      border-radius:12px;
+      padding:8px 10px;
+      cursor:pointer;
+      font-weight:950;
+      font-size:12px;
+      text-align:center;
+    }
+    .subfolder:hover{ background:var(--rowHover); }
+    .subfolder.active{
+      border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent);
+      background: color-mix(in srgb, var(--accent,#19c37d) 10%, transparent);
+    }
+    @media (max-width: 1240px){
+      .viewerSplit{ grid-template-columns: 1fr; }
+      .viewerSide textarea{ min-height: 180px; }
+    }
     textarea{
       width:100%;
       min-height:140px;
@@ -282,7 +407,7 @@
     .toast.show{ opacity:1; transform: translateY(0); }
 
     @media (max-width: 1240px){
-      .main{ grid-template-columns: 280px 1fr; grid-template-rows: 360px 1fr; }
+      .main{ grid-template-columns: 280px 1fr; grid-template-rows: 380px 1fr; }
       .viewerPane{ grid-column: 1 / -1; }
     }
   </style>
@@ -296,14 +421,7 @@
           <div class="sub" id="syncInfo">Listo</div>
         </div>
       </div>
-
-      <div class="search">
-        <input id="q" type="text" placeholder="Buscar (asunto, remitente, contenido)..." autocomplete="off" />
-        <div class="hint" id="scopeHint">Ventas · Todas</div>
-      </div>
-
-      <button class="btn" id="btnCompose" type="button">Nuevo</button>
-      <button class="btn" id="btnReload" type="button">Sincronizar</button>
+      <div class="sub" style="margin-left:auto;font-weight:950">Inbox tipo Gmail · lectura + draft</div>
     </header>
 
     <main class="main">
@@ -330,6 +448,22 @@
             <div id="foldersPay"></div>
           </div>
         </div>
+        <div class="sideBottom">
+          <div class="search2" title="Buscar en la bandeja (Enter para buscar)">
+            <input id="q" type="text" placeholder="Buscar (asunto, remitente, contenido)..." autocomplete="off" />
+            <div class="scopeHint" id="scopeHint">Ventas · Todas</div>
+          </div>
+          <div class="sideBtns">
+            <button class="btn icon" id="btnCompose" type="button" title="Nuevo correo (composer)">✍️ Nuevo</button>
+            <button class="btn icon" id="btnReload" type="button" title="Sincronizar IMAP ahora">🔄 Sync</button>
+            <button class="btn icon" id="btnClear" type="button" title="Limpiar búsqueda">🧹 Limpiar</button>
+          </div>
+          <label class="toggle" title="Oculta correos clasificados como Spam (ruido/no comercial)">
+            <input type="checkbox" id="hideSpam" checked />
+            Ocultar spam
+          </label>
+          <div class="muted">Auto-sync suave cada ~3 minutos (cuando esta pestaña está visible).</div>
+        </div>
       </aside>
 
       <section class="pane">
@@ -338,7 +472,6 @@
             <div class="ttl">Bandeja</div>
             <div class="muted" id="listHint">Selecciona una marca</div>
           </div>
-          <button class="btn" id="btnClear" type="button">Limpiar</button>
         </div>
         <div class="scroll">
           <div class="rows" id="msgRows"></div>
@@ -453,6 +586,16 @@
         const d = (data && data.detail !== undefined) ? _errDetailToStr(data.detail) : "";
         throw new Error(d ? d : (`HTTP ${r.status}`));
       }
+      // Convención del backend: {ok:false,error:"..."} debe tratarse como error (sin 500).
+      try{
+        if (data && typeof data === "object" && data.ok === false){
+          const e = String(data.error || data.message || data.detail || "Error");
+          throw new Error(e);
+        }
+      }catch(err){
+        // Si err ya es Error, re-throw.
+        throw err;
+      }
       return data;
     }
 
@@ -461,13 +604,14 @@
       "purchase":"OC",
       "payment":"Pago",
       "form":"Formulario",
+      "spam":"Spam",
       "other":"Otro",
       "general":"Otro"
     };
     function kindChip(kind){
       const k = String(kind||"other").toLowerCase();
       const label = KIND_LABEL[k] || "Otro";
-      const cls = (k==="payment") ? "warn" : ((k==="lead"||k==="purchase") ? "ok" : "");
+      const cls = (k==="payment" || k==="spam") ? "warn" : ((k==="lead"||k==="purchase"||k==="form") ? "ok" : "");
       return `<span class="chip ${cls}">${esc(label)}</span>`;
     }
     function boolChip(label, ok){
@@ -476,8 +620,9 @@
 
     let accounts = [];
     let brands = [];
-    let active = { inbox_type: "sales", id_marca: null, marca: "Todas" };
+    let active = { inbox_type: "sales", id_marca: null, marca: "Todas", replied: 0 };
     let items = [];
+    let hideSpam = true;
     let activeMsgId = null;
     let activeMessage = null;
     const INIT = (() => {
@@ -496,7 +641,8 @@
 
     function setScopeHint(){
       const it = active.inbox_type === "payments" ? "Pagos" : "Ventas";
-      qs("#scopeHint").textContent = `${it} · ${active.marca || "Todas"}`;
+      const rep = (active.replied === 1) ? "Enviados" : ((active.replied === 0) ? "Inbox" : "Todos");
+      qs("#scopeHint").textContent = `${it} · ${active.marca || "Todas"} · ${rep}`;
     }
 
     function renderFolders(){
@@ -504,39 +650,72 @@
       qs("#cntSales").textContent = String(listBrands.length);
       qs("#cntPay").textContent = String(listBrands.length);
 
+      function subfolderHTML(inboxType, mid, marca, repliedVal){
+        const isActive = (active.inbox_type===inboxType && String(active.id_marca||"")===String(mid||"") && (active.replied===repliedVal));
+        const label = (repliedVal === 1) ? "Enviados" : ((repliedVal === 0) ? "Inbox" : "Todos");
+        return `<div class="subfolder ${isActive ? "active":""}" data-act="set" data-it="${esc(inboxType)}" data-mid="${esc(mid||"")}" data-marca="${esc(marca||"Todas")}" data-rep="${esc(repliedVal===null ? "" : String(repliedVal))}">${esc(label)}</div>`;
+      }
+
       function foldersHTML(list, inboxType){
-        const allActive = active.inbox_type===inboxType && !active.id_marca;
-        const allRow = `
-          <div class="folder ${allActive ? "active":""}" data-it="${esc(inboxType)}" data-mid="">
-            <div>
-              <div class="fname">Todas</div>
-              <div class="fmeta">${inboxType==="payments" ? "Pagos detectados por correo" : "Ver todas las marcas"}</div>
+        const allOpen = active.inbox_type===inboxType && !active.id_marca;
+        const allActive = allOpen;
+        const allBox = `
+          <details class="brandBox" ${allOpen ? "open":""}>
+            <summary>
+              <div class="brandSummary ${allActive ? "active":""}">
+                <div class="brandLeft">
+                  <div class="brandName">Todas</div>
+                  <div class="brandMeta">${inboxType==="payments" ? "Pagos detectados por correo" : "Todas las marcas"}</div>
+                </div>
+                <div class="badge">${inboxType==="payments" ? "Pagos" : "Ventas"}</div>
+              </div>
+            </summary>
+            <div class="subfolders">
+              ${subfolderHTML(inboxType, "", "Todas", 0)}
+              ${subfolderHTML(inboxType, "", "Todas", 1)}
+              ${subfolderHTML(inboxType, "", "Todas", null)}
             </div>
-          </div>
+          </details>
         `;
         const rows = list.map(a=>{
-          const isActive = (active.inbox_type===inboxType && String(active.id_marca||"")===String(a.id_marca||""));
+          const mid = a.id_marca;
+          const isOpen = (active.inbox_type===inboxType && String(active.id_marca||"")===String(mid||""));
+          const isActive = isOpen;
           return `
-            <div class="folder ${isActive ? "active":""}" data-it="${esc(inboxType)}" data-mid="${esc(a.id_marca)}" data-marca="${esc(a.marca||"")}">
-              <div>
-                <div class="fname">${esc(a.marca||"Marca")}</div>
-                <div class="fmeta">${esc(a.account_email||"")}</div>
+            <details class="brandBox" ${isOpen ? "open":""}>
+              <summary>
+                <div class="brandSummary ${isActive ? "active":""}">
+                  <div class="brandLeft">
+                    <div class="brandName">${esc(a.marca||"Marca")}</div>
+                    <div class="brandMeta">${esc(a.account_email||"")}</div>
+                  </div>
+                  <div class="badge">${inboxType==="payments" ? "Pagos" : "Ventas"}</div>
+                </div>
+              </summary>
+              <div class="subfolders">
+                ${subfolderHTML(inboxType, mid, a.marca||"Marca", 0)}
+                ${subfolderHTML(inboxType, mid, a.marca||"Marca", 1)}
+                ${subfolderHTML(inboxType, mid, a.marca||"Marca", null)}
               </div>
-            </div>
+            </details>
           `;
         }).join("");
-        return allRow + rows;
+        return allBox + rows;
       }
 
       qs("#foldersSales").innerHTML = foldersHTML(listBrands, "sales");
       qs("#foldersPay").innerHTML = foldersHTML(listBrands, "payments");
 
-      document.querySelectorAll("[data-it][data-mid]").forEach(el=>{
-        el.addEventListener("click", async ()=>{
+      document.querySelectorAll("[data-act='set']").forEach(el=>{
+        el.addEventListener("click", async (ev)=>{
+          ev.preventDefault();
+          ev.stopPropagation();
           active.inbox_type = String(el.getAttribute("data-it")||"sales");
           const mid = String(el.getAttribute("data-mid")||"").trim();
           active.id_marca = mid ? Number(mid) : null;
           active.marca = String(el.getAttribute("data-marca")||"Todas") || "Todas";
+          const repRaw = String(el.getAttribute("data-rep")||"").trim();
+          active.replied = (repRaw === "") ? null : (Number(repRaw) ? 1 : 0);
           activeMsgId = null;
           activeMessage = null;
           setScopeHint();
@@ -733,41 +912,44 @@
       const leadId = msg.lead_id || null;
 
       return `
-        <div>
-          <h2>${esc(subj)}</h2>
-          <div class="meta">
-            <div><b>De:</b> ${esc(fromName)} ${fromEmail ? `&lt;${esc(fromEmail)}&gt;` : ""}</div>
-            <div><b>Fecha:</b> ${esc(String(dt).slice(0,19).replace("T"," "))}</div>
-            <div><b>Tipo:</b> ${esc(kindLbl)}</div>
-            <div><b>Inbox:</b> ${esc(msg.inbox_type || active.inbox_type)}</div>
-            ${leadId ? `<div><b>Lead:</b> #${esc(leadId)}</div>` : ``}
-          </div>
-        </div>
+        <div class="viewerSplit">
+          <div class="viewerMain">
+            <div>
+              <h2>${esc(subj)}</h2>
+              <div class="meta">
+                <div><b>De:</b> ${esc(fromName)} ${fromEmail ? `&lt;${esc(fromEmail)}&gt;` : ""}</div>
+                <div><b>Fecha:</b> ${esc(String(dt).slice(0,19).replace("T"," "))}</div>
+                <div><b>Tipo:</b> ${esc(kindLbl)}</div>
+                <div><b>Inbox:</b> ${esc(msg.inbox_type || active.inbox_type)}</div>
+                ${leadId ? `<div><b>Lead:</b> #${esc(leadId)}</div>` : ``}
+              </div>
+            </div>
 
-        <div class="body">${esc(bodyClean || body)}</div>
-        <details>
-          <summary>Ver contenido completo (raw)</summary>
-          <div class="body" style="max-height:22vh;margin-top:10px">${esc(body)}</div>
-        </details>
-
-        <div class="actions">
-          <div class="leftActions">
-            ${suggestLead ? `<button class="btn" id="btnCreateLead">Crear lead</button>` : ``}
-            ${leadId ? `<button class="btn" id="btnOpenLead">Abrir lead</button>` : ``}
-            ${replied ? `<span class="badge">Respondido</span>` : `<span class="badge">Pendiente</span>`}
+            <div class="body">${esc(bodyClean || body)}</div>
+            <details>
+              <summary>Ver contenido completo (raw)</summary>
+              <div class="body" style="max-height:22vh;margin-top:10px">${esc(body)}</div>
+            </details>
           </div>
-          <div class="rightActions">
+
+          <div class="viewerSide">
+            <div class="actions" style="margin-top:0">
+              <div class="leftActions">
+                ${suggestLead ? `<button class="btn" id="btnCreateLead">Crear lead</button>` : ``}
+                ${leadId ? `<button class="btn" id="btnOpenLead">Abrir lead</button>` : ``}
+                ${replied ? `<span class="badge">Respondido</span>` : `<span class="badge">Pendiente</span>`}
+              </div>
+            </div>
+
             <label class="toggle" title="Guardar esta respuesta como plantilla activa para la marca + tipo">
               <input type="checkbox" id="learn" checked />
               Aprender
             </label>
-          </div>
-        </div>
 
-        <div>
-          <div class="ttl" style="margin-bottom:8px">Respuesta (draft)</div>
-          <textarea id="draft" placeholder="Escribe la respuesta...">${esc(draft)}</textarea>
-          <div class="muted" style="margin-top:6px">Tip: ajusta el draft y presiona “Enviar”. Quedará como plantilla (si está activado “Aprender”).</div>
+            <div class="ttl" style="margin-bottom:0">Draft (GIA)</div>
+            <textarea id="draft" placeholder="Escribe la respuesta...">${esc(draft)}</textarea>
+            <div class="muted">Tip: ajusta el draft y presiona “Enviar”. Quedará como plantilla si “Aprender” está activo.</div>
+          </div>
         </div>
       `;
     }
@@ -809,6 +991,7 @@
       qs("#listHint").textContent = "Cargando...";
       const mid = active.id_marca ? `&id_marca=${encodeURIComponent(active.id_marca)}` : "";
       const it = `inbox_type=${encodeURIComponent(active.inbox_type || "sales")}`;
+      const rep = (active.replied === 0 || active.replied === 1) ? `&replied=${encodeURIComponent(active.replied)}` : "";
       const q = String(qs("#q").value||"").trim();
       const qParam = q ? `&q=${encodeURIComponent(q)}` : "";
 
@@ -836,8 +1019,11 @@
       }
 
       try{
-        const data = await apiJSON(`/gia/email/inbox?${it}${mid}${qParam}&limit=80&offset=0`);
+        const data = await apiJSON(`/gia/email/inbox?${it}${mid}${rep}${qParam}&limit=80&offset=0`);
         items = data.items || [];
+        if (hideSpam && (active.inbox_type || "sales") === "sales"){
+          items = items.filter(x => String(x.kind||"").toLowerCase() !== "spam");
+        }
         qs("#listHint").textContent = `Mostrando ${items.length} correo(s)`;
       }catch(e){
         qs("#listHint").textContent = "Error al cargar bandeja: " + String(e?.message||e);
@@ -874,6 +1060,7 @@
         const btnCreateLead = qs("#btnCreateLead");
         if (btnCreateLead){
           btnCreateLead.addEventListener("click", async ()=>{
+            if (!confirm("¿Crear un lead desde este correo?")) return;
             btnCreateLead.disabled = true;
             try{
               const out = await apiJSON(`/gia/email/inbox/${encodeURIComponent(id)}/create_lead`, { method:"POST" });
@@ -939,6 +1126,10 @@
       qs("#q").value = "";
       loadInbox({sync:false});
     });
+    qs("#hideSpam").addEventListener("change", ()=>{
+      hideSpam = !!qs("#hideSpam").checked;
+      loadInbox({sync:false});
+    });
     qs("#btnSend").addEventListener("click", sendActive);
     qs("#q").addEventListener("keydown", (ev)=>{
       if (ev.key === "Enter"){
@@ -967,6 +1158,22 @@
         renderList();
         await openMessage(activeMsgId);
       }
+
+      // Auto-sync suave (evita que el ejecutivo dependa del botón "Sincronizar").
+      // Importante: IMAP puede ser lento, así que lo hacemos con intervalo conservador y solo si la pestaña está visible.
+      let inflight = false;
+      setInterval(async ()=>{
+        try{
+          if (document.visibilityState !== "visible") return;
+          if (inflight) return;
+          inflight = true;
+          await loadInbox({sync:true, forceRecent:false});
+        }catch(_){
+          // silencioso: el usuario siempre puede usar "Sincronizar"
+        }finally{
+          inflight = false;
+        }
+      }, 180000); // 3 min
     })();
   </script>
 </body>

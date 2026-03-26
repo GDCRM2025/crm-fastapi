@@ -388,6 +388,7 @@ def list_productos(
     if only_own and not marcas_ids:
         marcas_ids = _fallback_marcas_ids_from_db(user)
 
+    cols = _productos_cols()
     where = []
     params = {"limit": int(limit), "offset": int(offset)}
     has_id_marca = _has_id_marca()
@@ -402,7 +403,13 @@ def list_productos(
         return mp.get(code)
 
     if q:
-        where.append("(producto ILIKE :q OR COALESCE(marca,'') ILIKE :q)")
+        # Compat: algunos despliegues pueden no tener columna `producto` (p.ej. `nombre`).
+        if "producto" in cols:
+            where.append("(producto ILIKE :q OR COALESCE(marca,'') ILIKE :q)")
+        elif "nombre" in cols:
+            where.append("(nombre ILIKE :q OR COALESCE(marca,'') ILIKE :q)")
+        else:
+            where.append("(COALESCE(marca,'') ILIKE :q)")
         params["q"] = "%%%s%%" % q
 
     if marca:
@@ -460,22 +467,41 @@ def list_productos(
             else:
                 return {"items": []}
 
-    if only_active:
+    # Compat: no todos los esquemas antiguos tienen `is_active`.
+    if only_active and ("is_active" in cols):
         where.append("is_active IS TRUE")
 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
+    # SELECT robusto (evita 500 si faltan columnas en BD legacy).
+    # Importante: el frontend usa `producto` y `marca`.
+    sel_producto = "producto" if ("producto" in cols) else ("nombre" if ("nombre" in cols) else "NULL::text")
+    sel_ingredientes = "ingredientes" if ("ingredientes" in cols) else "NULL::text"
+    sel_marca = "marca" if ("marca" in cols) else "NULL::text"
+    sel_costo = "costo" if ("costo" in cols) else ("precio" if ("precio" in cols) else "NULL::numeric")
+    sel_is_active = "is_active" if ("is_active" in cols) else "TRUE"
+    sel_descripcion = "descripcion" if ("descripcion" in cols) else "NULL::text"
+    sel_orden = "orden" if ("orden" in cols) else "NULL::int"
+
     with get_connection() as conn:
         rows = conn.execute(
             text(
-                """
-                SELECT id_producto, producto, ingredientes, marca, costo, is_active, descripcion, orden, created_at, updated_at
+                f"""
+                SELECT
+                  id_producto,
+                  {sel_producto} AS producto,
+                  {sel_ingredientes} AS ingredientes,
+                  {sel_marca} AS marca,
+                  {sel_costo} AS costo,
+                  {sel_is_active} AS is_active,
+                  {sel_descripcion} AS descripcion,
+                  {sel_orden} AS orden
                 FROM public.productos
                 {where_sql}
-                ORDER BY COALESCE(orden, 999999), producto
+                ORDER BY COALESCE({sel_orden}, 999999), COALESCE({sel_producto}, '')
                 LIMIT :limit
                 OFFSET :offset
-                """.format(where_sql=where_sql)
+                """
             ),
             params,
         ).mappings().all()

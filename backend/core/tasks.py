@@ -638,7 +638,9 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
-    # COMPLETAR_DATOS (confirmados): faltantes (tel/dir/hr)
+    # COMPLETAR_DATOS (calendario): faltantes (tel/dir/hr)
+    # Requisito negocio: esto aplica SOLO para eventos confirmados del calendario (revisión semanal),
+    # no para todos los leads (hay casos donde el cliente no entregó teléfono/correo aún).
     # Nota: pre_start/pre_end existen en algunos deploys; los aseguramos de forma best-effort.
     try:
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_start TIMESTAMPTZ"))
@@ -647,6 +649,9 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
         pass
 
     try:
+        week_start_sql = "date_trunc('week', now())::date"
+        week_end_sql = "(date_trunc('week', now())::date + 6)"
+
         # teléfono
         db.execute(
             text(
@@ -665,6 +670,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   jsonb_build_object('rule','mvp_tel')
                 FROM public.leads l
                 WHERE l.id_estado = :conf
+                  AND l.fecha_evento IS NOT NULL
+                  AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
                   AND (l.telefono IS NULL OR btrim(l.telefono)='')
                   AND (:is_admin OR {scope_sql})
                 ON CONFLICT DO NOTHING
@@ -699,6 +706,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   jsonb_build_object('rule','mvp_dir')
                 FROM public.leads l
                 WHERE l.id_estado = :conf
+                  AND l.fecha_evento IS NOT NULL
+                  AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
                   AND (COALESCE(NULLIF(btrim(l.direccion),''), NULL) IS NULL)
                   AND (:is_admin OR {scope_sql})
                 ON CONFLICT DO NOTHING
@@ -733,6 +742,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   jsonb_build_object('rule','mvp_hr')
                 FROM public.leads l
                 WHERE l.id_estado = :conf
+                  AND l.fecha_evento IS NOT NULL
+                  AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
                   AND ({hr_missing_sql})
                   AND (:is_admin OR {scope_sql})
                 ON CONFLICT DO NOTHING

@@ -479,7 +479,7 @@
     function openLeadEmbed(id){
       const idStr = String(id||"").trim();
       if(!idStr) return;
-      const url = `/web/views/leads.html?embed=1&open_lead=${encodeURIComponent(idStr)}`;
+      const url = `/web/views/leads.html?v=20260326-leads2&embed=1&open_lead=${encodeURIComponent(idStr)}`;
       Swal.fire({
         title: `Lead #${idStr}`,
         html: `<iframe src="${url}" style="width:100%;height:82vh;border:1px solid var(--border);border-radius:16px;background:var(--app-bg)"></iframe>`,

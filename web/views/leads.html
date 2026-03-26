@@ -1374,12 +1374,12 @@ function renderTable(list){
     }catch(_){}
   }
 
-  async function logLeadActionNote(lead, { kind, title, text }){
+  async function logLeadActionNote(lead, { kind, title, text, followup }){
     try{
       const out = await apiJSON(`/leads/${lead.id_lead}/append_note`, {
         method: "POST",
         headers: { "Content-Type":"application/json" },
-        body: JSON.stringify({ kind, title, text }),
+        body: JSON.stringify({ kind, title, text, followup: !!followup }),
       });
       if (out && typeof out === "object" && out.block){
         applyNoteToLeadLocal(lead, out.block);
@@ -3087,6 +3087,7 @@ async function openEditModal(lead){
         <button type="button" class="gdQBtn" id="qf_call" title="Registrar seguimiento llamada">📞 Llamada</button>
         <button type="button" class="gdQBtn" id="qf_email" title="Registrar seguimiento correo">✉️ Email</button>
         <button type="button" class="gdQBtn secondary" id="qf_no" title="Registrar: cliente no contesta">⏳ No contesta</button>
+        <button type="button" class="gdQBtn secondary" id="qf_pick" title="Seguimiento rápido (según estado)">⚡ Seguimiento</button>
       </div>
       <textarea id="e_comment" class="swTa" rows="2" placeholder="Nuevo comentario..."></textarea>
     </label>` +
@@ -3167,9 +3168,9 @@ async function openEditModal(lead){
 	      let localPdfFile = null;
 	      let isUploadingPdf = false;
 	      let metaSaveT = null;
-	      const logAction = async (kind, title, text)=>{
-	        await logLeadActionNote(lead, { kind, title, text });
-	      };
+		      const logAction = async (kind, title, text, followup=false)=>{
+		        await logLeadActionNote(lead, { kind, title, text, followup: !!followup });
+		      };
 
 	      async function quickFollow(kind, title, defaultText){
 	        const res = await Swal.fire({
@@ -3187,19 +3188,200 @@ async function openEditModal(lead){
 	          toast("Sin texto", "warning");
 	          return;
 	        }
-	        try{
-	          await logAction(kind, title, text);
-	          toast("Seguimiento registrado", "success");
-	          try{ qs("#e_comment").value = ""; }catch(_){}
-	        }catch(_){
-	          toast("No pude registrar seguimiento", "error");
-	        }
-	      }
+		        try{
+		          await logAction(kind, title, text, true);
+		          toast("Seguimiento registrado", "success");
+		          try{ qs("#e_comment").value = ""; }catch(_){}
+		        }catch(_){
+		          toast("No pude registrar seguimiento", "error");
+		        }
+		      }
 
-	      qs("#qf_wsp")?.addEventListener("click", ()=>quickFollow("WSP", "Cliente contactado por WhatsApp", "Cliente contactado por WhatsApp."));
-	      qs("#qf_call")?.addEventListener("click", ()=>quickFollow("CALL", "Cliente contactado por llamada", "Cliente contactado por llamada."));
-	      qs("#qf_email")?.addEventListener("click", ()=>quickFollow("EMAIL", "Cliente contactado por correo", "Cliente contactado por correo."));
-	      qs("#qf_no")?.addEventListener("click", ()=>quickFollow("NOTE", "Cliente no contesta", "Cliente no contesta. Se solicita respuesta para avanzar."));
+			      qs("#qf_wsp")?.addEventListener("click", ()=>quickFollow("WSP", "Cliente contactado por WhatsApp", "Cliente contactado por WhatsApp."));
+			      qs("#qf_call")?.addEventListener("click", ()=>quickFollow("CALL", "Cliente contactado por llamada", "Cliente contactado por llamada."));
+			      qs("#qf_email")?.addEventListener("click", ()=>quickFollow("EMAIL", "Cliente contactado por correo", "Cliente contactado por correo."));
+			      qs("#qf_no")?.addEventListener("click", async ()=>{
+		        // "No contesta" igual cuenta como intento de contacto: lo registramos como WSP/CALL/EMAIL
+		        // para que las tareas de contacto puedan cerrarse con evidencia.
+		        const res = await Swal.fire({
+		          title: "Cliente no contesta",
+		          html: `
+		            <div style="text-align:left;display:grid;gap:10px">
+		              <label class="muted" style="font-weight:950">Canal</label>
+		              <select id="sw_no_ch" class="swSel">
+		                <option value="CALL">📞 Llamada</option>
+		                <option value="WSP">🟢 WhatsApp</option>
+		                <option value="EMAIL">✉️ Email</option>
+		              </select>
+		              <label class="muted" style="font-weight:950">Detalle (opcional)</label>
+		              <textarea id="sw_no_txt" class="swTa" rows="3" placeholder="Ej: 2 intentos, pedir confirmación de datos…"></textarea>
+		            </div>
+		          `,
+		          showCancelButton: true,
+		          confirmButtonText: "Registrar",
+		          cancelButtonText: "Cancelar",
+		          focusConfirm: false,
+		          preConfirm: ()=>{
+		            const ch = String(document.getElementById("sw_no_ch")?.value || "CALL").trim().toUpperCase();
+		            const tx = String(document.getElementById("sw_no_txt")?.value || "").trim();
+		            return { ch, tx };
+		          }
+		        });
+		        if (!res.isConfirmed) return;
+		        const ch = String(res.value?.ch || "CALL").trim().toUpperCase();
+		        const tx = String(res.value?.tx || "").trim();
+		        const base = "Cliente no contesta. Se solicita respuesta para avanzar.";
+		        const text = tx ? (base + "\n" + tx) : base;
+		        const title = (ch === "WSP") ? "Cliente no responde WhatsApp" : (ch === "EMAIL") ? "Cliente no responde correo" : "Cliente no contesta llamada";
+			        try{
+			          await logAction(ch, title, text, true);
+			          toast("Seguimiento registrado", "success");
+			        }catch(_){
+			          toast("No pude registrar seguimiento", "error");
+			        }
+			      });
+
+			      // Seguimiento rápido (según estado) — lista curada para registrar movimiento con 1 click.
+			      qs("#qf_pick")?.addEventListener("click", async ()=>{
+			        const st = String(estadoNombre(lead?.id_estado || "") || "").toUpperCase();
+			        const bucket = st.includes("NUEVO") ? "NUEVO"
+			          : st.includes("CONTACT") ? "CONTACTADO"
+			          : st.includes("COTIZ") ? "COTIZADO"
+			          : st.includes("CONFIRM") ? "CONFIRMADO"
+			          : "OTRO";
+
+			        const PRESETS = {
+			          NUEVO: [
+			            { label:"Nuevo ingreso", kind:"NOTE", title:"Nuevo ingreso", text:"Se registra nuevo cliente/oportunidad en CRM pendiente de gestión inicial.", followup:false },
+			            { label:"Lead recibido por formulario", kind:"NOTE", title:"Lead recibido por formulario", text:"Se recibe lead desde formulario web y queda pendiente primer contacto.", followup:false },
+			            { label:"Lead recibido por WhatsApp", kind:"NOTE", title:"Lead recibido por WhatsApp", text:"Se recibe consulta inicial vía WhatsApp pendiente de atención comercial.", followup:false },
+			            { label:"Lead recibido por correo", kind:"NOTE", title:"Lead recibido por correo", text:"Se recibe consulta comercial vía correo electrónico.", followup:false },
+			            { label:"Lead derivado interno", kind:"NOTE", title:"Lead derivado interno", text:"Cliente/oportunidad derivado internamente para gestión comercial.", followup:false },
+			            { label:"Lead referido", kind:"NOTE", title:"Lead referido", text:"Cliente ingresa por recomendación o referido.", followup:false },
+			            { label:"Datos incompletos", kind:"NOTE", title:"Datos incompletos", text:"Registro creado con información parcial del cliente. Pendiente completar.", followup:false },
+			            { label:"Pendiente validación", kind:"NOTE", title:"Pendiente validación", text:"Cliente registrado pendiente de validación comercial o administrativa.", followup:false },
+			            { label:"Sin canal definido", kind:"NOTE", title:"Sin canal definido", text:"Cliente ingresado sin canal de comunicación prioritario definido.", followup:false },
+			            { label:"Pendiente asignación", kind:"NOTE", title:"Pendiente asignación", text:"Oportunidad ingresada pendiente de asignación a ejecutivo responsable.", followup:false },
+			          ],
+			          CONTACTADO: [
+			            { label:"Contactado por WhatsApp", kind:"WSP", title:"Contactado por WhatsApp", text:"Se realiza contacto inicial con el cliente vía WhatsApp.", followup:true },
+			            { label:"Contactado por correo", kind:"EMAIL", title:"Contactado por correo", text:"Se realiza contacto inicial con el cliente vía correo electrónico.", followup:true },
+			            { label:"Contactado por llamada", kind:"CALL", title:"Contactado por llamada", text:"Se realiza contacto telefónico con el cliente para inicio de gestión comercial.", followup:true },
+			            { label:"Cliente responde contacto", kind:"NOTE", title:"Cliente responde contacto", text:"Cliente responde gestión inicial y se establece comunicación.", followup:true },
+			            { label:"Cliente solicita información", kind:"NOTE", title:"Cliente solicita información", text:"Cliente solicita antecedentes adicionales para evaluar la propuesta comercial.", followup:true },
+			            { label:"Cliente solicita llamada posterior", kind:"NOTE", title:"Cliente solicita llamada posterior", text:"Cliente indica disponibilidad para contacto posterior en otra fecha u horario.", followup:true },
+			            { label:"Cliente no contesta llamada", kind:"CALL", title:"Cliente no contesta llamada", text:"Se intenta contacto telefónico sin obtener respuesta del cliente.", followup:true },
+			            { label:"Cliente no responde WhatsApp", kind:"WSP", title:"Cliente no responde WhatsApp", text:"Se envía mensaje por WhatsApp sin respuesta del cliente.", followup:true },
+			            { label:"Cliente no responde correo", kind:"EMAIL", title:"Cliente no responde correo", text:"Se envía correo sin respuesta del cliente.", followup:true },
+			            { label:"Seguimiento activo", kind:"NOTE", title:"Seguimiento activo", text:"Se mantiene gestión comercial activa a la espera de interacción o definición del cliente.", followup:true },
+			          ],
+			          COTIZADO: [
+			            { label:"Cotización enviada", kind:"NOTE", title:"Cotización enviada", text:"Se envía cotización/propuesta comercial al cliente para evaluación.", followup:true },
+			            { label:"Cotización enviada por correo", kind:"EMAIL", title:"Cotización enviada por correo", text:"Se remite cotización al cliente vía correo electrónico.", followup:true },
+			            { label:"Cotización enviada por WhatsApp", kind:"WSP", title:"Cotización enviada por WhatsApp", text:"Se comparte cotización al cliente vía WhatsApp.", followup:true },
+			            { label:"Cliente confirma recepción", kind:"NOTE", title:"Cliente confirma recepción", text:"Cliente confirma recepción de la cotización enviada.", followup:true },
+			            { label:"Cliente revisando propuesta", kind:"NOTE", title:"Cliente revisando propuesta", text:"Cliente indica encontrarse revisando internamente la cotización/propuesta.", followup:true },
+			            { label:"Cliente solicita ajuste de precio", kind:"NOTE", title:"Cliente solicita ajuste de precio", text:"Cliente solicita revisión o ajuste económico de la propuesta.", followup:true },
+			            { label:"Cliente solicita ajuste técnico", kind:"NOTE", title:"Cliente solicita ajuste técnico", text:"Cliente solicita modificación en alcance, especificación o condiciones.", followup:true },
+			            { label:"Pendiente aprobación interna del cliente", kind:"NOTE", title:"Pendiente aprobación interna", text:"Cliente informa que la propuesta está en proceso de validación interna.", followup:true },
+			            { label:"A la espera de respuesta sobre cotización", kind:"NOTE", title:"A la espera de respuesta", text:"Se mantiene seguimiento de cotización enviada pendiente de respuesta del cliente.", followup:true },
+			            { label:"Cliente rechaza cotización", kind:"NOTE", title:"Cliente rechaza cotización", text:"Cliente informa que no continuará con la cotización propuesta.", followup:true },
+			          ],
+			          CONFIRMADO: [
+			            { label:"Cliente confirma interés de avance", kind:"NOTE", title:"Cliente confirma interés de avance", text:"Cliente confirma intención de avanzar con la propuesta presentada.", followup:true },
+			            { label:"Cliente acepta cotización", kind:"NOTE", title:"Cliente acepta cotización", text:"Cliente acepta condiciones comerciales de la cotización enviada.", followup:true },
+			            { label:"Pendiente orden de compra", kind:"NOTE", title:"Pendiente orden de compra", text:"Cliente confirma avance, quedando pendiente emisión de orden de compra.", followup:true },
+			            { label:"Pendiente pago anticipado", kind:"NOTE", title:"Pendiente pago anticipado", text:"Cliente confirma avance, quedando pendiente pago inicial o anticipo.", followup:true },
+			            { label:"Pendiente firma de documentos", kind:"NOTE", title:"Pendiente firma de documentos", text:"Cliente confirma continuidad, pendiente firma de contrato o documentación.", followup:true },
+			            { label:"Fecha de inicio confirmada", kind:"NOTE", title:"Fecha de inicio confirmada", text:"Se confirma fecha de inicio/entrega/implementación con el cliente.", followup:true },
+			            { label:"Confirmado por correo", kind:"EMAIL", title:"Confirmado por correo", text:"Cliente confirma avance formalmente vía correo electrónico.", followup:true },
+			            { label:"Confirmado por WhatsApp", kind:"WSP", title:"Confirmado por WhatsApp", text:"Cliente confirma avance comercial vía WhatsApp.", followup:true },
+			            { label:"Confirmado verbalmente", kind:"CALL", title:"Confirmado verbalmente", text:"Cliente confirma verbalmente intención de avanzar.", followup:true },
+			            { label:"En proceso de cierre", kind:"NOTE", title:"En proceso de cierre", text:"Operación confirmada comercialmente y en proceso de cierre administrativo.", followup:true },
+			          ],
+			          OTRO: [
+			            { label:"Seguimiento", kind:"NOTE", title:"Seguimiento", text:"Seguimiento registrado.", followup:true },
+			          ],
+			        };
+
+			        const options = PRESETS[bucket] || PRESETS.OTRO;
+			        const optBtns = options.map((o, i)=>{
+			          const active = (i===0) ? "fuBtnActive" : "";
+			          return `<button type="button" class="fuBtn ${active}" data-idx="${i}" title="${escapeHtml(o.title || o.label)}">${escapeHtml(o.label)}</button>`;
+			        }).join("");
+
+			        const res = await Swal.fire({
+			          title: "Seguimiento rápido",
+			          html: `
+			            <div style="text-align:left;display:grid;gap:10px">
+			              <div class="muted" style="font-weight:950">Estado: <span style="color:var(--text)">${escapeHtml(st||bucket)}</span></div>
+			              <div class="muted" style="font-weight:950">Tipo</div>
+			              <input type="hidden" id="sw_fu_idx" value="0" />
+			              <div class="fuGrid">${optBtns}</div>
+			              <label class="muted" style="font-weight:950">Detalle (opcional)</label>
+			              <textarea id="sw_fu_txt" class="swTa" rows="3" placeholder="Agrega contexto si aplica…"></textarea>
+			            </div>
+			            <style>
+			              .fuGrid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:8px; }
+			              .fuBtn{
+			                width:100%;
+			                border:1px solid rgba(148,163,184,.22);
+			                background:rgba(255,255,255,.04);
+			                color:inherit;
+			                border-radius:14px;
+			                padding:10px 10px;
+			                font-weight:1000;
+			                cursor:pointer;
+			                text-align:left;
+			                line-height:1.15;
+			              }
+			              .fuBtn:hover{ background:rgba(255,255,255,.08); }
+			              .fuBtnActive{
+			                border-color: color-mix(in srgb, var(--accent,#19c37d) 55%, transparent);
+			                background: color-mix(in srgb, var(--accent,#19c37d) 16%, transparent);
+			              }
+			              @media (max-width: 520px){ .fuGrid{ grid-template-columns: 1fr; } }
+			            </style>
+			          `,
+			          showCancelButton: true,
+			          confirmButtonText: "Registrar",
+			          cancelButtonText: "Cancelar",
+			          focusConfirm: false,
+			          didOpen: ()=>{
+			            try{
+			              const root = Swal.getHtmlContainer();
+			              if (!root) return;
+			              const setIdx = (idx)=>{
+			                try{ document.getElementById("sw_fu_idx").value = String(idx); }catch(_){}
+			                root.querySelectorAll(".fuBtn").forEach(b=> b.classList.toggle("fuBtnActive", String(b.getAttribute("data-idx"))===String(idx)));
+			              };
+			              root.querySelectorAll(".fuBtn").forEach(b=>{
+			                b.addEventListener("click", ()=>{
+			                  const idx = Number(b.getAttribute("data-idx") || 0);
+			                  setIdx(isNaN(idx) ? 0 : idx);
+			                });
+			              });
+			              setIdx(0);
+			            }catch(_){}
+			          },
+			          preConfirm: ()=>{
+			            const idx = Number(document.getElementById("sw_fu_idx")?.value || 0);
+			            const tx = String(document.getElementById("sw_fu_txt")?.value || "").trim();
+			            return { idx, tx };
+			          }
+			        });
+			        if (!res.isConfirmed) return;
+			        const idx = Number(res.value?.idx || 0);
+			        const extra = String(res.value?.tx || "").trim();
+			        const o = options[Math.max(0, Math.min(options.length-1, idx))] || options[0];
+			        const text = extra ? (String(o.text || "") + "\n" + extra) : String(o.text || "");
+			        try{
+			          await logAction(o.kind || "NOTE", o.title || o.label || "Seguimiento", text, !!o.followup);
+			          toast("Seguimiento registrado", "success");
+			        }catch(_){
+			          toast("No pude registrar seguimiento", "error");
+			        }
+			      });
 
 	      // Quick actions (iconos en labels)
 	      qs("#qa_call")?.addEventListener("click", async ()=>{

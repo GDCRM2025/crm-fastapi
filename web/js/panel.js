@@ -1051,7 +1051,7 @@ function renderNotifications(data) {
         toast(`${txt2} — click para abrir`, {
           kind: "ok",
           ms: 9000,
-          onClick: () => openItem({ id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260326-leads1" })
+          onClick: () => openItem({ id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260326-leads2" })
         });
       }catch(_){}
     } else if (staleCount > 0 && (lastStaleCount === null || staleCount > lastStaleCount)) {
@@ -1074,7 +1074,7 @@ function openLeadsFromLock(openId, ids) {
   params.set("stale", "1");
   if (idList.length) params.set("stale_ids", idList.join(","));
   pendingLeadOpen = null;
-  frame.src = viewURL(`/web/views/leads.html?v=20260326-leads1&${params.toString()}`);
+  frame.src = viewURL(`/web/views/leads.html?v=20260326-leads2&${params.toString()}`);
 }
 function renderLeadLock(data) {
   var _a, _b;
@@ -1678,8 +1678,8 @@ const MENU = [
     ico: "\u{1F4CC}",
     title: "Leads",
     items: [
-      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260326-leads1" },
-      { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html" }
+      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260326-leads2" },
+      { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html?v=20260326-fil1" }
     ]
   },
   {
@@ -1800,18 +1800,18 @@ const MENU = [
       { id: "rrhh_solicitudes", label: "Solicitudes", url: "/web/views/rrhh_solicitudes.html" }
     ]
   },
-  {
-    id: "tools",
-    ico: "\u{1F9F0}",
-    title: "Tools",
-    items: [
-      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260325-tools5#correo" },
-      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260324-tools3#instagram" },
-      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260324-tools3#whatsapp" },
-      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260324-tools3#calc" },
-      { id: "tool_wx", label: "Clima (7 días)", url: "/web/views/tools.html?v=20260324-tools3#clima" }
-    ]
-  },
+	  {
+	    id: "tools",
+	    ico: "\u{1F9F0}",
+	    title: "Tools",
+	    items: [
+	      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260326-tools6#correo" },
+	      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260326-tools6#instagram" },
+	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260326-tools6#whatsapp" },
+	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260326-tools6#calc" },
+	      { id: "tool_wx", label: "Clima (7 días)", url: "/web/views/tools.html?v=20260326-tools6#clima" }
+	    ]
+	  },
   {
     id: "settings",
     ico: "\u2699\uFE0F",
@@ -2963,7 +2963,7 @@ function openDefault() {
         const params = new URLSearchParams();
         if (id) params.set("open_lead", String(id));
         if (staleIds.length) params.set("stale_ids", staleIds.map((x) => String(x)).filter(Boolean).join(","));
-        openItem({ id: "leads_ver", label: "Ver Leads", url: `/web/views/leads.html?v=20260326-leads1&${params.toString()}` });
+        openItem({ id: "leads_ver", label: "Ver Leads", url: `/web/views/leads.html?v=20260326-leads2&${params.toString()}` });
       } catch (_) {
       }
       return;
@@ -3013,9 +3013,9 @@ function openDefault() {
         toast(`Correo: ${openTotal} pendiente(s)`, {
           kind: "ok",
           ms: 8e3,
-          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260325-tools4#correo" })
-        });
-      }
+	          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260326-tools6#correo" })
+	        });
+	      }
       localStorage.setItem("gd_gia_email_max_id", String(Math.max(lastMax, maxId)));
       localStorage.setItem("gd_gia_email_open_total", String(openTotal));
     } catch (_) {

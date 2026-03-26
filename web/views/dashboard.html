@@ -696,7 +696,7 @@
 
     function openFilter(params){
       const q = new URLSearchParams(params || {}).toString();
-      const url = "/web/views/filtro_leads.html" + (q ? "?" + q : "");
+      const url = "/web/views/filtro_leads.html?v=20260326-fil1" + (q ? "&" + q : "");
       try{
         window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*");
       }catch(_){

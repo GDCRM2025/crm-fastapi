@@ -1395,6 +1395,7 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
 
     kind = str(payload.get("kind") or payload.get("tipo") or "NOTE").strip().upper()[:24]
     title = str(payload.get("title") or payload.get("titulo") or "").strip()[:120]
+    followup = bool(payload.get("followup") or payload.get("is_followup") or payload.get("seguimiento") or False)
 
     try:
         from datetime import datetime
@@ -1430,36 +1431,71 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             ),
             {"id": int(id_lead), "b": block},
         )
-        # Si el usuario registró contacto/seguimiento, cerrar tarea CONTACTAR_LEAD (si existe).
+        # Si el usuario registró contacto/seguimiento, cerrar tareas relacionadas (si existe).
+        # Importante: NO cerrar por notas genéricas del sistema; solo por evidencia (WSP/CALL/EMAIL)
+        # o cuando el frontend indique explícitamente que es seguimiento (followup=true).
         try:
             uid_raw = user.get("id")
             uid = int(uid_raw) if str(uid_raw or "").isdigit() else None
-            if uid:
+            is_contact = kind in ("WSP", "CALL", "EMAIL")
+            if uid and (is_contact or followup):
                 # Evita fallar si la tabla aún no existe en instalaciones antiguas.
                 has_tasks = bool(conn.execute(text("SELECT to_regclass('public.tasks') IS NOT NULL")).scalar())
                 if not has_tasks:
                     raise Exception("tasks table missing")
-                conn.execute(
-                    text(
-                        """
-                        UPDATE public.tasks
-                        SET status='done', completed_at=now(), completed_by=:by, updated_at=now()
-                        WHERE status='open'
-                          AND kind IN (
-                            'CONTACTAR_LEAD',
-                            'RIESGO_AUTO_DECLINE_NUEVO',
-                            'RIESGO_AUTO_DECLINE_CONTACTADO',
-                            'LEAD_SIN_MOVIMIENTO',
-                            'FALTAN_DATOS_COTIZADO',
-                            'FALTAN_DATOS_CONFIRMADO'
-                          )
-                          AND entity_type='lead'
-                          AND entity_id=:lid
-                          AND assigned_user_id=:uid
-                        """
-                    ),
-                    {"by": who, "lid": int(id_lead), "uid": int(uid)},
-                )
+                # Best-effort: agrega evidencia en meta (si existe).
+                try:
+                    conn.execute(
+                        text(
+                            """
+                            UPDATE public.tasks
+                            SET status='done',
+                                completed_at=now(),
+                                completed_by=:by,
+                                meta = COALESCE(meta,'{}'::jsonb) || jsonb_build_object('followup_action', :k, 'followup_block', :b),
+                                updated_at=now()
+                            WHERE status='open'
+                              AND kind IN (
+                                'CONTACTAR_LEAD',
+                                'RIESGO_AUTO_DECLINE_NUEVO',
+                                'RIESGO_AUTO_DECLINE_CONTACTADO',
+                                'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA',
+                                'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA',
+                                'LEAD_SIN_MOVIMIENTO',
+                                'FALTAN_DATOS_COTIZADO',
+                                'FALTAN_DATOS_CONFIRMADO'
+                              )
+                              AND entity_type='lead'
+                              AND entity_id=:lid
+                              AND assigned_user_id=:uid
+                            """
+                        ),
+                        {"by": who, "k": kind, "b": block[:2000], "lid": int(id_lead), "uid": int(uid)},
+                    )
+                except Exception:
+                    conn.execute(
+                        text(
+                            """
+                            UPDATE public.tasks
+                            SET status='done', completed_at=now(), completed_by=:by, updated_at=now()
+                            WHERE status='open'
+                              AND kind IN (
+                                'CONTACTAR_LEAD',
+                                'RIESGO_AUTO_DECLINE_NUEVO',
+                                'RIESGO_AUTO_DECLINE_CONTACTADO',
+                                'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA',
+                                'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA',
+                                'LEAD_SIN_MOVIMIENTO',
+                                'FALTAN_DATOS_COTIZADO',
+                                'FALTAN_DATOS_CONFIRMADO'
+                              )
+                              AND entity_type='lead'
+                              AND entity_id=:lid
+                              AND assigned_user_id=:uid
+                            """
+                        ),
+                        {"by": who, "lid": int(id_lead), "uid": int(uid)},
+                    )
         except Exception:
             pass
         conn.commit()

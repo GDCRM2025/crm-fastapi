@@ -6,42 +6,81 @@
   <title>Tools</title>
   <link rel="stylesheet" href="/web/styles.css" />
   <style>
-    :root{ --bd:rgba(148,163,184,.18); --card:rgba(8,18,28,.78); --muted:rgba(148,163,184,.88); }
+    :root{ --bd:rgba(148,163,184,.18); --muted:rgba(148,163,184,.88); }
     html,body{height:100%;}
     body{ margin:0; background:transparent; color:inherit; font-family:inherit; }
-    .layout{ height:100%; display:grid; grid-template-columns: 260px 1fr; gap:14px; padding:14px; }
-    .side{
+
+    .layout{
+      height:100%;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      padding:14px;
+    }
+    .topbar{
       border:1px solid var(--bd);
       border-radius:18px;
       background: linear-gradient(135deg, rgba(8,18,28,.78), rgba(10,16,22,.46));
       box-shadow:0 18px 40px rgba(0,0,0,.18);
-      padding:12px;
+      padding:10px 12px;
       display:flex;
-      flex-direction:column;
+      align-items:center;
+      justify-content:space-between;
       gap:10px;
-      min-height:0;
     }
-    .side h1{ margin:4px 6px 0; font-size:18px; font-weight:1000; letter-spacing:.02em; }
-    .side p{ margin:0 6px; font-size:12px; opacity:.80; line-height:1.4; color:var(--muted); }
-    .nav{ display:grid; gap:8px; margin-top:6px; }
-    .nav button{
-      width:100%;
+    .topLeft{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width: 240px;
+    }
+    .menuBtn{
       border:1px solid rgba(148,163,184,.18);
       background:rgba(255,255,255,.04);
       color:inherit;
       border-radius:14px;
-      padding:10px 10px;
-      font-weight:950;
+      padding:10px 12px;
+      font-weight:1000;
+      cursor:pointer;
       display:flex;
       align-items:center;
       gap:10px;
-      cursor:pointer;
-      text-align:left;
+      white-space:nowrap;
     }
-    .nav button:hover{ background:rgba(255,255,255,.08); }
-    .nav button.active{ border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent); background: color-mix(in srgb, var(--accent,#19c37d) 16%, transparent); }
-    .ico{ width:26px; height:26px; border-radius:10px; display:grid; place-items:center; background:rgba(255,255,255,.06); border:1px solid rgba(148,163,184,.18); font-size:14px; }
-    .foot{ margin-top:auto; padding:8px 6px 2px; color:var(--muted); font-size:11px; line-height:1.35; }
+    .menuBtn:hover{ background:rgba(255,255,255,.08); }
+    .crumb{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      line-height:1.1;
+    }
+    .crumb .t{ font-size:14px; font-weight:1100; letter-spacing:.02em; }
+    .crumb .s{ font-size:12px; color:var(--muted); font-weight:900; }
+    .topRight{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .chipBtn{
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(255,255,255,.04);
+      color:inherit;
+      border-radius:999px;
+      padding:8px 12px;
+      font-weight:950;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      white-space:nowrap;
+    }
+    .chipBtn:hover{ background:rgba(255,255,255,.08); }
+    .chipBtn.active{ border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent); background: color-mix(in srgb, var(--accent,#19c37d) 16%, transparent); }
+    .ico{ width:22px; height:22px; border-radius:9px; display:grid; place-items:center; background:rgba(255,255,255,.06); border:1px solid rgba(148,163,184,.18); font-size:13px; }
+
     .main{
       border:1px solid var(--bd);
       border-radius:18px;
@@ -49,31 +88,97 @@
       background:rgba(8,18,28,.35);
       box-shadow:0 18px 40px rgba(0,0,0,.12);
       min-height:0;
+      flex:1;
     }
     iframe{ width:100%; height:100%; border:0; background:transparent; }
-    @media (max-width: 980px){
-      .layout{ grid-template-columns: 1fr; }
-      .side{ order:2; }
-      .main{ order:1; height:70vh; }
+
+    .drawer{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.35);
+      backdrop-filter: blur(3px);
+      display:none;
+      align-items:flex-start;
+      justify-content:center;
+      padding:18px;
+      z-index: 9999;
+    }
+    .drawer.show{ display:flex; }
+    .drawerCard{
+      width:min(720px, calc(100vw - 24px));
+      border:1px solid rgba(148,163,184,.18);
+      background: linear-gradient(135deg, rgba(8,18,28,.92), rgba(10,16,22,.72));
+      border-radius:18px;
+      box-shadow:0 24px 64px rgba(0,0,0,.35);
+      padding:12px;
+      color:inherit;
+    }
+    .drawerHead{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:6px 6px 10px;
+      border-bottom:1px solid rgba(148,163,184,.14);
+      margin-bottom:10px;
+    }
+    .drawerHead .h{ font-weight:1100; font-size:14px; }
+    .drawerGrid{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap:10px;
+      padding:6px;
+    }
+    .drawerGrid button{
+      width:100%;
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(255,255,255,.04);
+      color:inherit;
+      border-radius:16px;
+      padding:12px 12px;
+      font-weight:1000;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      cursor:pointer;
+      text-align:left;
+    }
+    .drawerGrid button:hover{ background:rgba(255,255,255,.08); }
+    .drawerGrid button.active{ border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent); background: color-mix(in srgb, var(--accent,#19c37d) 16%, transparent); }
+    @media (max-width: 720px){
+      .drawerGrid{ grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="layout">
-    <aside class="side">
-      <h1>Tools</h1>
-      <p>Herramientas embebidas (sin abrir mil pestañas). Extensión eliminada.</p>
-
-      <div class="nav" id="nav"></div>
-
-      <div class="foot">
-        Nota: Correo (GIA) aún es placeholder, pero con la UX final (bandeja + respuesta).
+    <header class="topbar">
+      <div class="topLeft">
+        <button class="menuBtn" id="btnMenu" type="button" title="Abrir herramientas">
+          <span class="ico">🧰</span>
+          Tools
+        </button>
+        <div class="crumb">
+          <div class="t" id="activeToolTitle">Correo (GIA)</div>
+          <div class="s">Menú arriba · módulo a pantalla completa</div>
+        </div>
       </div>
-    </aside>
+      <div class="topRight" id="quickNav"></div>
+    </header>
 
     <section class="main">
       <iframe id="toolFrame" title="Tools"></iframe>
     </section>
+  </div>
+
+  <div class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawerCard" role="dialog" aria-modal="true" aria-label="Tools">
+      <div class="drawerHead">
+        <div class="h">Herramientas</div>
+        <button class="chipBtn" id="btnCloseDrawer" type="button" title="Cerrar">Cerrar</button>
+      </div>
+      <div class="drawerGrid" id="drawerNav"></div>
+    </div>
   </div>
 
   <script>
@@ -118,6 +223,10 @@
             if (p.font) document.documentElement.style.setProperty("--font", p.font);
             postToTool({ type:"prefs", prefs:p });
           }
+          if (ev.data?.type === "toast" && ev.data?.text){
+            // el panel principal ya tiene su propia toast; acá no duplicamos.
+            // lo dejamos para compat.
+          }
         });
       }
 
@@ -145,16 +254,27 @@
       }
 
       const ITEMS = [
-        { id:"correo", label:"Correo (GIA)", ico:"✉️", url:"/web/views/tools_correo.html?v=20260325-gia7" },
-        { id:"instagram", label:"Instagram (GIA)", ico:"📷", url:"/web/views/tools_instagram.html?v=20260324-gia1" },
+        { id:"correo", label:"Correo (GIA)", ico:"✉️", url:"/web/views/tools_correo.html?v=20260326-gia-ui2" },
+        { id:"instagram", label:"Instagram (GIA)", ico:"📷", url:"/web/views/tools_instagram.html?v=20260326-gia2" },
         { id:"whatsapp", label:"WhatsApp", ico:"💬", url:"/web/views/tools_whatsapp.html" },
         { id:"clima", label:"Clima", ico:"🌤️", url:"/web/views/clima.html?v=20260317-wxpage1" },
         { id:"calc", label:"Calculadora", ico:"🧮", url:"/web/views/calculadora.html" },
       ];
 
       function setActive(id){
-        const nav = qs("#nav");
-        nav.querySelectorAll("button[data-id]").forEach(b=> b.classList.toggle("active", b.getAttribute("data-id")===id));
+        qs("#quickNav").querySelectorAll("button[data-id]").forEach(b=> b.classList.toggle("active", b.getAttribute("data-id")===id));
+        qs("#drawerNav").querySelectorAll("button[data-id]").forEach(b=> b.classList.toggle("active", b.getAttribute("data-id")===id));
+      }
+
+      function showDrawer(){
+        const d = qs("#drawer");
+        d.classList.add("show");
+        d.setAttribute("aria-hidden", "false");
+      }
+      function hideDrawer(){
+        const d = qs("#drawer");
+        d.classList.remove("show");
+        d.setAttribute("aria-hidden", "true");
       }
 
       function openTool(id){
@@ -167,26 +287,42 @@
         fr().src = viewURL(it.url);
         location.hash = "#" + it.id;
         setActive(it.id);
+        qs("#activeToolTitle").textContent = it.label;
+        hideDrawer();
       }
 
       function bind(){
-        const nav = qs("#nav");
         const list = ITEMS.filter(it => !it.adminOnly || isAdmin());
-        nav.innerHTML = list.map(it => `
+        const quick = qs("#quickNav");
+        const drawer = qs("#drawerNav");
+
+        quick.innerHTML = list.map(it => `
+          <button class="chipBtn" type="button" data-id="${it.id}" title="${it.label}">
+            <span class="ico">${it.ico}</span>
+            <span>${it.label}</span>
+          </button>
+        `).join("");
+        drawer.innerHTML = list.map(it => `
           <button type="button" data-id="${it.id}">
             <span class="ico">${it.ico}</span>
             <span>${it.label}</span>
           </button>
         `).join("");
-        nav.querySelectorAll("button[data-id]").forEach(b=>{
+
+        [...quick.querySelectorAll("button[data-id]"), ...drawer.querySelectorAll("button[data-id]")].forEach(b=>{
           b.addEventListener("click", ()=> openTool(b.getAttribute("data-id")));
         });
+
+        qs("#btnMenu").addEventListener("click", showDrawer);
+        qs("#btnCloseDrawer").addEventListener("click", hideDrawer);
+        qs("#drawer").addEventListener("click", (ev)=>{ if (ev.target === qs("#drawer")) hideDrawer(); });
+        window.addEventListener("keydown", (ev)=>{ if (ev.key === "Escape") hideDrawer(); });
+
         const initial = String(location.hash || "").replace(/^#/, "") || "correo";
         openTool(initial);
       }
 
       applyThemeBootstrap();
-      // Re-envía theme/prefs al tool cuando cambia el src o recarga.
       fr().addEventListener("load", () => {
         postToTool({ type:"theme", mode:lastThemeMode });
         if (lastPrefs) postToTool({ type:"prefs", prefs:lastPrefs });

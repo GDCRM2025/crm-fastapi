@@ -1052,7 +1052,7 @@
     function openFilter(params){
       const usp = new URLSearchParams();
       Object.entries(params||{}).forEach(([k,v]) => { if (v!=null && v!=="") usp.set(k, String(v)); });
-      const url = "/web/views/filtro_leads.html?" + usp.toString();
+      const url = "/web/views/filtro_leads.html?v=20260326-fil1&" + usp.toString();
       try{ window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*"); }catch(_){ location.href = apiURL(url); }
     }
 
