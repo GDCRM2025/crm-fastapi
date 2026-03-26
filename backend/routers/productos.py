@@ -2,6 +2,8 @@ from typing import Any, Dict, List, Optional
 
 import base64
 import re
+import traceback
+import uuid
 
 from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel, Field
@@ -440,149 +442,158 @@ def list_productos(
     offset=Query(0, ge=0),
     user=Depends(get_current_user),
 ):
-    _ensure_productos_cols()
+    debug_rid = uuid.uuid4().hex[:8]
+    try:
+        _ensure_productos_cols()
 
-    role = _role(user)
-    marcas_ids = _extract_user_brand_ids(user)
-    only_own = not _is_admin(role)
+        role = _role(user)
+        marcas_ids = _extract_user_brand_ids(user)
+        only_own = not _is_admin(role)
 
-    if only_own and not marcas_ids:
-        marcas_ids = _fallback_marcas_ids_from_db(user)
+        if only_own and not marcas_ids:
+            marcas_ids = _fallback_marcas_ids_from_db(user)
 
-    cols = _productos_cols()
-    where = []
-    params = {"limit": int(limit), "offset": int(offset)}
-    has_id_marca = _has_id_marca()
+        cols = _productos_cols()
+        where = []
+        params = {"limit": int(limit), "offset": int(offset)}
+        has_id_marca = _has_id_marca()
 
-    def _marca_to_id(marca_in):
-        if not marca_in:
-            return None
-        code = _canon_code_py(str(marca_in))
-        if not code:
-            return None
-        mp = _load_marca_code_map()
-        return mp.get(code)
+        def _marca_to_id(marca_in):
+            if not marca_in:
+                return None
+            code = _canon_code_py(str(marca_in))
+            if not code:
+                return None
+            mp = _load_marca_code_map()
+            return mp.get(code)
 
-    if q:
-        # Compat: algunos despliegues pueden no tener columna `producto` (p.ej. `nombre`).
-        if "producto" in cols:
-            where.append("(producto ILIKE :q OR COALESCE(marca,'') ILIKE :q)")
-        elif "nombre" in cols:
-            where.append("(nombre ILIKE :q OR COALESCE(marca,'') ILIKE :q)")
-        else:
-            where.append("(COALESCE(marca,'') ILIKE :q)")
-        params["q"] = "%%%s%%" % q
-
-    if marca:
-        marca_id = _marca_to_id(marca) if has_id_marca else None
-        if has_id_marca and not marca_id:
-            marca_id = _marca_id_from_db(marca)
-        canon = _canon_code_py(marca)
-        snippet = _code_like_snippet(canon) or _norm_key_py(marca)
-
-        if not snippet:
-            return {"items": []}
-
-        marca_key_expr = _norm_key_sql("COALESCE(marca,'')")
-
-        if marca_id:
-            where.append("(id_marca = :marca_id OR %s LIKE :marca_key_like)" % marca_key_expr)
-            params["marca_id"] = int(marca_id)
-            params["marca_key_like"] = "%%%s%%" % snippet
-        else:
-            where.append("%s LIKE :marca_key_like" % marca_key_expr)
-            params["marca_key_like"] = "%%%s%%" % snippet
-
-    elif only_own:
-        # Ejecutivos: filtrar por marcas asignadas (si existen). Si el usuario no tiene marcas,
-        # no dejamos el cotizador inutilizable: devolvemos todo (respetando only_active si viene).
-        if not marcas_ids:
-            only_own = False
-        else:
-            with get_connection() as conn:
-                rows = conn.execute(
-                    text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
-                    {"m": marcas_ids},
-                ).fetchall()
-
-            marcas = [r[0] or r[1] for r in rows if (r[0] or r[1])]
-            marcas_codes = [_canon_code_py(m) for m in marcas]
-            marcas_snips = []
-            for c in marcas_codes:
-                for s in _code_like_snippets(c):
-                    if s:
-                        marcas_snips.append(s)
-            marcas_like = ["%%%s%%" % s for s in marcas_snips]
-            marca_expr = _norm_key_sql("COALESCE(marca,'')")
-
-            if has_id_marca and marcas_ids and marcas_like:
-                where.append("(id_marca = ANY(:marcas_ids) OR (id_marca IS NULL AND %s LIKE ANY(:marcas_like)))" % marca_expr)
-                params["marcas_ids"] = marcas_ids
-                params["marcas_like"] = marcas_like
-            elif has_id_marca and marcas_ids:
-                where.append("id_marca = ANY(:marcas_ids)")
-                params["marcas_ids"] = marcas_ids
-            elif marcas_like:
-                where.append("%s LIKE ANY(:marcas_like)" % marca_expr)
-                params["marcas_like"] = marcas_like
+        if q:
+            # Compat: algunos despliegues pueden no tener columna `producto` (p.ej. `nombre`).
+            if "producto" in cols:
+                where.append("(producto ILIKE :q OR COALESCE(marca,'') ILIKE :q)")
+            elif "nombre" in cols:
+                where.append("(nombre ILIKE :q OR COALESCE(marca,'') ILIKE :q)")
             else:
+                where.append("(COALESCE(marca,'') ILIKE :q)")
+            params["q"] = "%%%s%%" % q
+
+        if marca:
+            marca_id = _marca_to_id(marca) if has_id_marca else None
+            if has_id_marca and not marca_id:
+                marca_id = _marca_id_from_db(marca)
+            canon = _canon_code_py(marca)
+            snippet = _code_like_snippet(canon) or _norm_key_py(marca)
+
+            if not snippet:
                 return {"items": []}
 
-    # Compat: no todos los esquemas antiguos tienen `is_active`.
-    if only_active and ("is_active" in cols):
-        where.append("is_active IS TRUE")
+            marca_key_expr = _norm_key_sql("COALESCE(marca,'')")
 
-    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+            if marca_id:
+                where.append("(id_marca = :marca_id OR %s LIKE :marca_key_like)" % marca_key_expr)
+                params["marca_id"] = int(marca_id)
+                params["marca_key_like"] = "%%%s%%" % snippet
+            else:
+                where.append("%s LIKE :marca_key_like" % marca_key_expr)
+                params["marca_key_like"] = "%%%s%%" % snippet
 
-    # SELECT robusto (evita 500 si faltan columnas en BD legacy).
-    # Importante: el frontend usa `producto` y `marca`.
-    sel_producto = "producto" if ("producto" in cols) else ("nombre" if ("nombre" in cols) else "NULL::text")
-    sel_ingredientes = "ingredientes" if ("ingredientes" in cols) else "NULL::text"
-    sel_marca = "marca" if ("marca" in cols) else "NULL::text"
-    sel_costo = "costo" if ("costo" in cols) else ("precio" if ("precio" in cols) else "NULL::numeric")
-    sel_is_active = "is_active" if ("is_active" in cols) else "TRUE"
-    sel_descripcion = "descripcion" if ("descripcion" in cols) else "NULL::text"
-    sel_orden = "orden" if ("orden" in cols) else "NULL::int"
+        elif only_own:
+            # Ejecutivos: filtrar por marcas asignadas (si existen). Si el usuario no tiene marcas,
+            # no dejamos el cotizador inutilizable: devolvemos todo (respetando only_active si viene).
+            if not marcas_ids:
+                only_own = False
+            else:
+                with get_connection() as conn:
+                    rows = conn.execute(
+                        text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
+                        {"m": marcas_ids},
+                    ).fetchall()
 
-    with get_connection() as conn:
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT
-                  id_producto,
-                  -- base64 para evitar invalid byte sequence (DB legacy SQL_ASCII)
-                  encode(COALESCE({sel_producto}, '')::bytea, 'base64') AS producto_b64,
-                  encode(COALESCE({sel_ingredientes}, '')::bytea, 'base64') AS ingredientes_b64,
-                  encode(COALESCE({sel_marca}, '')::bytea, 'base64') AS marca_b64,
-                  {sel_costo} AS costo,
-                  {sel_is_active} AS is_active,
-                  encode(COALESCE({sel_descripcion}, '')::bytea, 'base64') AS descripcion_b64,
-                  {sel_orden} AS orden
-                FROM public.productos
-                {where_sql}
-                -- Evitar ORDER BY con tipos ambiguos en esquemas legacy (p.ej. `orden` como texto).
-                ORDER BY id_producto DESC
-                LIMIT :limit
-                OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+                marcas = [r[0] or r[1] for r in rows if (r[0] or r[1])]
+                marcas_codes = [_canon_code_py(m) for m in marcas]
+                marcas_snips = []
+                for c in marcas_codes:
+                    for s in _code_like_snippets(c):
+                        if s:
+                            marcas_snips.append(s)
+                marcas_like = ["%%%s%%" % s for s in marcas_snips]
+                marca_expr = _norm_key_sql("COALESCE(marca,'')")
 
-    items = []
-    for r in rows:
-        items.append(
-            {
-                "id_producto": r["id_producto"],
-                "producto": _safe_b64_to_text(r.get("producto_b64")),
-                "ingredientes": _safe_b64_to_text(r.get("ingredientes_b64")),
-                "marca": _safe_b64_to_text(r.get("marca_b64")),
-                "costo": _safe_float(r.get("costo")),
-                "is_active": bool(r["is_active"]) if r.get("is_active") is not None else True,
-                "activo": "ACTIVO" if r.get("is_active") else "INACTIVO",
-                "descripcion": _safe_b64_to_text(r.get("descripcion_b64")),
-                "orden": r.get("orden"),
-            }
+                if has_id_marca and marcas_ids and marcas_like:
+                    where.append("(id_marca = ANY(:marcas_ids) OR (id_marca IS NULL AND %s LIKE ANY(:marcas_like)))" % marca_expr)
+                    params["marcas_ids"] = marcas_ids
+                    params["marcas_like"] = marcas_like
+                elif has_id_marca and marcas_ids:
+                    where.append("id_marca = ANY(:marcas_ids)")
+                    params["marcas_ids"] = marcas_ids
+                elif marcas_like:
+                    where.append("%s LIKE ANY(:marcas_like)" % marca_expr)
+                    params["marcas_like"] = marcas_like
+                else:
+                    return {"items": []}
+
+        # Compat: no todos los esquemas antiguos tienen `is_active`.
+        if only_active and ("is_active" in cols):
+            where.append("is_active IS TRUE")
+
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
+        # SELECT robusto (evita 500 si faltan columnas en BD legacy).
+        # Importante: el frontend usa `producto` y `marca`.
+        sel_producto = "producto" if ("producto" in cols) else ("nombre" if ("nombre" in cols) else "NULL::text")
+        sel_ingredientes = "ingredientes" if ("ingredientes" in cols) else "NULL::text"
+        sel_marca = "marca" if ("marca" in cols) else "NULL::text"
+        sel_costo = "costo" if ("costo" in cols) else ("precio" if ("precio" in cols) else "NULL::numeric")
+        sel_is_active = "is_active" if ("is_active" in cols) else "TRUE"
+        sel_descripcion = "descripcion" if ("descripcion" in cols) else "NULL::text"
+        sel_orden = "orden" if ("orden" in cols) else "NULL::int"
+
+        with get_connection() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT
+                      id_producto,
+                      -- base64 para evitar invalid byte sequence (DB legacy SQL_ASCII)
+                      encode(COALESCE({sel_producto}, '')::bytea, 'base64') AS producto_b64,
+                      encode(COALESCE({sel_ingredientes}, '')::bytea, 'base64') AS ingredientes_b64,
+                      encode(COALESCE({sel_marca}, '')::bytea, 'base64') AS marca_b64,
+                      {sel_costo} AS costo,
+                      {sel_is_active} AS is_active,
+                      encode(COALESCE({sel_descripcion}, '')::bytea, 'base64') AS descripcion_b64,
+                      {sel_orden} AS orden
+                    FROM public.productos
+                    {where_sql}
+                    -- Evitar ORDER BY con tipos ambiguos en esquemas legacy (p.ej. `orden` como texto).
+                    ORDER BY id_producto DESC
+                    LIMIT :limit
+                    OFFSET :offset
+                    """
+                ),
+                params,
+            ).mappings().all()
+
+        items = []
+        for r in rows:
+            items.append(
+                {
+                    "id_producto": r["id_producto"],
+                    "producto": _safe_b64_to_text(r.get("producto_b64")),
+                    "ingredientes": _safe_b64_to_text(r.get("ingredientes_b64")),
+                    "marca": _safe_b64_to_text(r.get("marca_b64")),
+                    "costo": _safe_float(r.get("costo")),
+                    "is_active": bool(r["is_active"]) if r.get("is_active") is not None else True,
+                    "activo": "ACTIVO" if r.get("is_active") else "INACTIVO",
+                    "descripcion": _safe_b64_to_text(r.get("descripcion_b64")),
+                    "orden": r.get("orden"),
+                }
+            )
+
+        return {"items": items}
+    except Exception as e:
+        print(
+            f"=== RID={debug_rid} where=list_productos ===\n"
+            f"err={type(e).__name__}: {e}\n"
+            f"{traceback.format_exc()}\n"
         )
-
-    return {"items": items}
+        raise HTTPException(status_code=500, detail=f"Internal Server Error (productos). RID={debug_rid} {type(e).__name__}: {str(e)[:200]}")
