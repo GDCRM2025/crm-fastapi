@@ -507,7 +507,8 @@ def list_productos(
                   {sel_orden} AS orden
                 FROM public.productos
                 {where_sql}
-                ORDER BY COALESCE({sel_orden}, 999999), COALESCE({sel_producto}, '')
+                -- Evitar ORDER BY con tipos ambiguos en esquemas legacy (p.ej. `orden` como texto).
+                ORDER BY id_producto DESC
                 LIMIT :limit
                 OFFSET :offset
                 """
