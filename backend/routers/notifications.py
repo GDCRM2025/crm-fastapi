@@ -35,20 +35,47 @@ def _role_targets(role: str) -> list[str]:
     Normaliza targets para system_notifs:
     evita que un usuario no vea notifs porque su rol exacto difiere (p.ej. OPERACIONES vs JEFE DE OPERACIONES).
     """
-    rk = _role_key(role)
+    raw = str(role or "").strip()
+    rk = _role_key(raw)
     out: list[str] = []
     if not rk:
         return []
+
+    # Soporte roles numéricos (según tu matriz):
+    # 1 ADMIN
+    # 2 EJECUTIVO DE VENTAS
+    # 3 JEFE DE OPERACIONES
+    # 4 BODEGUERO
+    # 5 COMPRAS
+    # 6 CONDUCTOR
+    # 7 OPERADOR
+    # 8 MICE
+    # 9 OPERADOR PATIO
+    # 11 FINANZAS
+    if raw.isdigit():
+        mp = {
+            "1": ["ADMIN", "SUPERADMIN", "1"],
+            "2": ["EJECUTIVO DE VENTAS", "2"],
+            "3": ["OPERACIONES", "JEFE DE OPERACIONES", "3"],
+            "4": ["BODEGUERO", "4"],
+            "5": ["COMPRAS", "JEFE DE COMPRAS", "5"],
+            "6": ["CONDUCTOR", "6"],
+            "7": ["OPERADOR", "7"],
+            "8": ["MICE", "8"],
+            "9": ["OPERADOR PATIO", "9"],
+            "11": ["FINANZAS", "11"],
+        }
+        out += mp.get(raw, [raw])
     if "admin" in rk:
-        out += ["ADMIN", "SUPERADMIN"]
+        out += ["ADMIN", "SUPERADMIN", "1"]
     if "operac" in rk:
-        out += ["OPERACIONES", "JEFE DE OPERACIONES"]
+        out += ["OPERACIONES", "JEFE DE OPERACIONES", "3"]
     if "compra" in rk:
-        out += ["COMPRAS", "JEFE DE COMPRAS"]
+        out += ["COMPRAS", "JEFE DE COMPRAS", "5"]
     if "bodeg" in rk:
-        out += ["BODEGUERO"]
+        out += ["BODEGUERO", "4"]
     if "mice" in rk:
-        out += ["MICE"]
+        out += ["MICE", "8"]
     if not out:
         out = [str(role or "").upper().strip()]
     # de-dup manteniendo orden
