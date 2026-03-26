@@ -142,6 +142,16 @@ def _emails_for_roles(roles):
         roles_u = [str(r).upper().strip() for r in roles if str(r).strip()]
         if not roles_u:
             return []
+        role_ids = []
+        role_names = []
+        for r in roles_u:
+            if r.isdigit():
+                try:
+                    role_ids.append(int(r))
+                except Exception:
+                    pass
+            else:
+                role_names.append(r)
         with engine.connect() as cn:
             rows = cn.execute(
                 text(
@@ -152,12 +162,24 @@ def _emails_for_roles(roles):
                     WHERE COALESCE(u.is_active, TRUE) = TRUE
                       AND u.email IS NOT NULL AND u.email <> ''
                       AND (
-                        UPPER(COALESCE(r.nombre,'')) = ANY(:roles)
-                        OR UPPER(COALESCE(u.rol,'')) = ANY(:roles)
+                        (:has_names AND (
+                          UPPER(COALESCE(r.nombre,'')) = ANY(:role_names)
+                          OR UPPER(COALESCE(u.rol,'')) = ANY(:role_names)
+                        ))
+                        OR
+                        (:has_ids AND (
+                          u.id_rol = ANY(:role_ids)
+                          OR r.id_rol = ANY(:role_ids)
+                        ))
                       )
                     """
                 ),
-                {"roles": roles_u},
+                {
+                    "has_names": bool(role_names),
+                    "has_ids": bool(role_ids),
+                    "role_names": role_names or ["__NONE__"],
+                    "role_ids": role_ids or [-1],
+                },
             ).fetchall()
         out = []
         for r in rows:
