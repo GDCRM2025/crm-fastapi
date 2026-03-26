@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional
 
+import base64
+
 from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -17,6 +19,29 @@ _PRODUCTOS_COLS_CACHE = None
 _HAS_ID_MARCA_CACHE = None
 _ENSURED_PRODUCTOS_COLS = False
 _MARCA_CODE_TO_ID = None
+
+
+def _safe_b64_to_text(b64_s: Any) -> str:
+    """
+    Robust decode for DBs that might contain non-UTF8 bytes in TEXT columns (ej. encoding SQL_ASCII).
+    We fetch values as base64-encoded bytea and then decode best-effort.
+    """
+    if b64_s is None:
+        return ""
+    s = str(b64_s)
+    try:
+        raw = base64.b64decode(s.encode("ascii", errors="ignore"), validate=False)
+    except Exception:
+        raw = b""
+    if not raw:
+        return ""
+    try:
+        return raw.decode("utf-8")
+    except Exception:
+        try:
+            return raw.decode("utf-8", errors="replace")
+        except Exception:
+            return raw.decode("latin-1", errors="replace")
 
 
 def _norm_py(s):
@@ -498,12 +523,13 @@ def list_productos(
                 f"""
                 SELECT
                   id_producto,
-                  {sel_producto} AS producto,
-                  {sel_ingredientes} AS ingredientes,
-                  {sel_marca} AS marca,
+                  -- base64 para evitar invalid byte sequence (DB legacy SQL_ASCII)
+                  encode(COALESCE({sel_producto}, '')::bytea, 'base64') AS producto_b64,
+                  encode(COALESCE({sel_ingredientes}, '')::bytea, 'base64') AS ingredientes_b64,
+                  encode(COALESCE({sel_marca}, '')::bytea, 'base64') AS marca_b64,
                   {sel_costo} AS costo,
                   {sel_is_active} AS is_active,
-                  {sel_descripcion} AS descripcion,
+                  encode(COALESCE({sel_descripcion}, '')::bytea, 'base64') AS descripcion_b64,
                   {sel_orden} AS orden
                 FROM public.productos
                 {where_sql}
@@ -521,13 +547,13 @@ def list_productos(
         items.append(
             {
                 "id_producto": r["id_producto"],
-                "producto": r.get("producto"),
-                "ingredientes": r.get("ingredientes"),
-                "marca": r.get("marca"),
+                "producto": _safe_b64_to_text(r.get("producto_b64")),
+                "ingredientes": _safe_b64_to_text(r.get("ingredientes_b64")),
+                "marca": _safe_b64_to_text(r.get("marca_b64")),
                 "costo": float(r["costo"]) if r.get("costo") is not None else None,
                 "is_active": bool(r["is_active"]) if r.get("is_active") is not None else True,
                 "activo": "ACTIVO" if r.get("is_active") else "INACTIVO",
-                "descripcion": r.get("descripcion"),
+                "descripcion": _safe_b64_to_text(r.get("descripcion_b64")),
                 "orden": r.get("orden"),
             }
         )
