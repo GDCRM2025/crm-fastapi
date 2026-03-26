@@ -12,9 +12,12 @@
   <style>
     html,body{height:100%;margin:0;}
     body{background:transparent;padding:14px;overflow:auto;}
-    /* Reportes debe verse GD (verde) independiente del theme global */
-    :root{ --accent: #5B974E; }
-    :root.light{ --accent: #5B974E; }
+    /* Reportes debe verse GD (verde) independiente del theme global (si el panel está en modo claro). */
+    :root, :root.light{
+      color-scheme: dark;
+      --accent: #5B974E;
+      --text: #EAF2FF;
+    }
 
     .wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
     .head{
@@ -30,7 +33,6 @@
       gap:12px;
       flex-wrap:wrap;
     }
-    :root.light .head{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
     .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
     .sub{opacity:.72;font-weight:850;font-size:12px;margin-top:4px;max-width:760px;}
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
@@ -44,7 +46,6 @@
       outline:none;
     }
     .sel{ padding-right: 34px; }
-    :root.light .inp,:root.light .sel{background: rgba(255,255,255,.65); color: rgba(0,0,0,.85);}
     .btn{
       height:36px;border-radius:999px;
       border:1px solid rgba(148,163,184,.20);
@@ -71,7 +72,6 @@
       box-shadow: 0 22px 70px rgba(0,0,0,.18);
       min-height:0;
     }
-    :root.light .card{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
     .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
     .muted{opacity:.72; font-weight:850; font-size:12px;}
 
@@ -85,19 +85,16 @@
       padding:12px;
       cursor:pointer;
     }
-    :root.light .kpi{background: rgba(255,255,255,.62);}
     .kpi .l{font-weight:1000; font-size:11px; letter-spacing:.12em; text-transform:uppercase; opacity:.72;}
     .kpi .v{font-weight:1200; font-size:20px; margin-top:6px;}
     .kpi .s{font-weight:850; font-size:12px; opacity:.70; margin-top:6px;}
 
     .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
     .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:sticky; top:0; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
-    :root.light .tbl th{background: rgba(255,255,255,.92);}
     .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
     .right{text-align:right;}
     .rowlink{cursor:pointer;}
     .rowlink:hover{background: rgba(255,255,255,.04);}
-    :root.light .rowlink:hover{background: rgba(0,0,0,.04);}
 
     /* Barras minimalistas dentro de tablas */
     .barcell{min-width:220px;}
@@ -154,7 +151,6 @@
       padding:10px;
       overflow:hidden;
     }
-    :root.light .chartBox{background: rgba(255,255,255,.62);}
     .chartBox svg{width:100%; height:auto; display:block;}
     .ech{
       width:100%;
@@ -373,7 +369,7 @@
     const EC = {};
     function hasECharts(){ return typeof window.echarts !== "undefined" && !!window.echarts; }
 	    function ecColors(){
-	      const isLight = document.documentElement.classList.contains("light");
+	      const isLight = false; // reportes: siempre GD-dark (evita charts “blancos/rojos” por theme global)
 	      // Brandbook (GD Group) — verdes corporativos aproximados desde el arte compartido
 	      const g1 = "#587B0D"; // Pantone P155-16C (R88 G123 B13)
 	      const g2 = "#5B974E"; // Pantone P145-15C (R91 G151 B78)
@@ -442,12 +438,12 @@
       __registerGDThemes();
 
       function __ecTheme(){
-        return document.documentElement.classList.contains("light") ? "gd-light" : "gd-dark";
+        return "gd-dark";
       }
 
 	    function ecWatermark(c){
 	      // Watermark sutil con diamante + GD (sin assets externos)
-	      const op = document.documentElement.classList.contains("light") ? 0.08 : 0.10;
+	      const op = 0.10;
 	      const x = "92%";
 	      const y = "90%";
 	      return [
@@ -482,7 +478,7 @@
 	      return [...a, ...b];
 	    }
     function ecTooltipSkin(c){
-      const isLight = document.documentElement.classList.contains("light");
+      const isLight = false;
       return {
         backgroundColor: isLight ? "rgba(255,255,255,.92)" : "rgba(10,18,28,.92)",
         borderColor: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.20)",
@@ -540,7 +536,9 @@
 	      const maxV = Math.max(1, ...vals.map(v => Number(v||0)));
 	      const back = vals.map(()=> maxV * 1.02);
 	      const fmtV = (v)=> valueFmt ? valueFmt(v) : fmtAxisMoney(v);
-	      const needsZoom = labels.length > 10;
+	      const windowSize = 10;
+	      const needsZoom = labels.length > windowSize;
+	      const barW = (labels.length > 14 ? 10 : (labels.length > 10 ? 12 : 14));
 	      const option = {
 	        title: { text: title, left: 0, top: 0, textStyle:{ color:c.title, fontWeight: 900, fontSize: 12 } },
           toolbox:{
@@ -550,7 +548,7 @@
             iconStyle:{ borderColor: c.grid },
             feature:{ saveAsImage:{ title:"Guardar PNG", name: (title || "chart").slice(0,32) } }
           },
-	        grid: { left: 160, right: 24, top: 42, bottom: (needsZoom ? 26 : 10), containLabel: true },
+	        grid: { left: 160, right: 24, top: 42, bottom: (needsZoom ? 32 : 10), containLabel: true },
 	        xAxis: {
 	          type: "value",
 	          axisLabel: { color: c.axis, fontWeight: 800, formatter: (v)=> fmtV(v) },
@@ -582,8 +580,8 @@
 	        animationEasingUpdate: "cubicOut",
 	        graphic: ecWatermark(c),
 	        dataZoom: needsZoom ? [
-	          { type:"inside", yAxisIndex:0, zoomOnMouseWheel:true, moveOnMouseWheel:true, moveOnMouseMove:true },
-	          { type:"slider", yAxisIndex:0, height: 16, bottom: 6, right: 20, left: 160,
+	          { type:"inside", yAxisIndex:0, startValue: 0, endValue: windowSize - 1, zoomOnMouseWheel:true, moveOnMouseWheel:true, moveOnMouseMove:true },
+	          { type:"slider", yAxisIndex:0, startValue: 0, endValue: windowSize - 1, height: 16, bottom: 8, right: 20, left: 160,
               borderColor:"rgba(148,163,184,.14)", backgroundColor:"rgba(148,163,184,.10)",
               fillerColor: "rgba(91,151,78,.25)", handleStyle:{ color: c.accent, borderColor:"rgba(0,0,0,0)" },
               textStyle:{ color: c.sub, fontWeight:900, fontSize:10 } }
@@ -593,7 +591,7 @@
 		            // barra “ghost” para look BI (background uniforme)
 		            type: "bar",
 		            data: back,
-		            barWidth: 14,
+		            barWidth: barW,
 		            barGap: "-100%",
 		            itemStyle: { color: "rgba(148,163,184,.10)", borderRadius: 8 },
 		            silent: true,
@@ -602,7 +600,7 @@
 		          {
 		            type: "bar",
 		            data: vals,
-		            barWidth: 14,
+		            barWidth: barW,
 		            z: 2,
 		            itemStyle: {
 		              borderRadius: 8,

@@ -21,6 +21,48 @@
       } catch (_) {}
     })();
   </script>
+  <script>
+    // PWA install prompt (gratis): muestra botón cuando el navegador lo permite.
+    (function(){
+      let deferred = null;
+      function isIOS(){
+        try{
+          const ua = navigator.userAgent || "";
+          return /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+        }catch(_){ return false; }
+      }
+      window.addEventListener("beforeinstallprompt", (e) => {
+        try{
+          e.preventDefault();
+          deferred = e;
+          const btn = document.getElementById("btnInstall");
+          if (btn) btn.style.display = "inline-flex";
+        }catch(_){}
+      });
+      window.addEventListener("appinstalled", () => {
+        deferred = null;
+        const btn = document.getElementById("btnInstall");
+        if (btn) btn.style.display = "none";
+      });
+      window.GDChatInstall = async function(){
+        const btn = document.getElementById("btnInstall");
+        try{
+          if (deferred){
+            await deferred.prompt();
+            await deferred.userChoice;
+            deferred = null;
+            if (btn) btn.style.display = "none";
+            return;
+          }
+          if (isIOS()){
+            Swal.fire("Instalar en iPhone/iPad", "En Safari: Compartir → “Agregar a pantalla de inicio”.", "info");
+            return;
+          }
+          Swal.fire("Instalación", "Tu navegador no mostró el botón de instalar. Prueba en Chrome/Edge.", "info");
+        }catch(_){}
+      };
+    })();
+  </script>
   <style>
     :root{
       --bg:#07131F;
@@ -97,6 +139,11 @@
       border-color: color-mix(in srgb, var(--accent) 55%, transparent);
     }
     .btn:hover{filter:brightness(1.06);}
+    .btn.install{
+      display:none;
+      gap:8px;
+      align-items:center;
+    }
     .search{
       margin:10px 12px 0;
       display:flex;
@@ -288,7 +335,7 @@
           <div class="sub" id="subLeft">—</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn" id="btnInstall" type="button" style="display:none">Instalar</button>
+          <button class="btn install" id="btnInstall" type="button" title="Instalar como app">Instalar</button>
           <button class="btn" id="btnNotifs" type="button" title="Notificaciones del chat">Notifs</button>
           <button class="btn" id="btnNew" type="button">Nuevo</button>
           <button class="btn" id="btnRefresh" type="button">Recargar</button>

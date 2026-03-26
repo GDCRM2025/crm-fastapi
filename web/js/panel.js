@@ -1040,6 +1040,15 @@ function renderNotifications(data) {
     if (CURRENT_ROLE_ID !== 2) {
       if (lastSystemCount !== null && sysCount > lastSystemCount) {
         playNotifSound("event");
+        try{
+          const delta = sysCount - lastSystemCount;
+          const txt2 = delta === 1 ? "Nueva alerta" : `Nuevas alertas (+${delta})`;
+          toast(`${txt2} — click para ver`, {
+            kind: "ok",
+            ms: 9000,
+            onClick: () => openItem({ id: "system_notifs", label: "Alertas", url: "/web/views/system_notifs.html?v=20260326-1" })
+          });
+        }catch(_){}
       }
       lastSystemCount = sysCount;
     }
@@ -1704,7 +1713,7 @@ const MENU = [
     title: "Reportes",
     items: [
       // Un solo acceso: la vista Reportes maneja tabs internos.
-      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes.html?v=20260325-r2" }
+      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes.html?v=20260326-r3" }
     ]
   },
   {

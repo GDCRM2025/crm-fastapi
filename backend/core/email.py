@@ -56,6 +56,26 @@ def _send_via_sendmail(msg: EmailMessage) -> None:
     # -t: read recipients from headers
     subprocess.run([sendmail, "-t", "-i"], input=msg.as_bytes(), check=True)
 
+def _default_from_addr() -> str:
+    """
+    Best-effort fallback from address when SMTP_* isn't configured.
+    Keep it stable to avoid empty From headers (some MTAs reject).
+    """
+    env = _get_env("SMTP_FROM")
+    if env:
+        return env
+    # Try derive from APP_URL
+    app = _get_env("APP_URL")
+    try:
+        if app:
+            from urllib.parse import urlparse
+            host = (urlparse(app).hostname or "").strip()
+            if host and "." in host:
+                return f"no-reply@{host}"
+    except Exception:
+        pass
+    return "no-reply@greendiamond.cl"
+
 def _send_message(msg: EmailMessage) -> None:
     """
     Envío best-effort usando:
@@ -66,22 +86,25 @@ def _send_message(msg: EmailMessage) -> None:
     port = int(_get_env("SMTP_PORT") or "587")
     user = _get_env("SMTP_USER")
     password = _get_env("SMTP_PASS")
-    from_addr = _get_env("SMTP_FROM") or user
+    from_addr = _get_env("SMTP_FROM") or user or _default_from_addr()
 
     # Modo sendmail (cPanel suele tener MTA local). Útil cuando hay bloqueos outbound SMTP.
     force_sendmail = _truthy(_get_env("SMTP_SENDMAIL")) or _truthy(_get_env("SMTP_SENDMAIL_ONLY"))
 
-    if force_sendmail:
-        if not from_addr:
-            raise EmailConfigError("SMTP_FROM requerido para sendmail")
-    else:
-        if not host or not user or not password or not from_addr:
-            raise EmailConfigError("SMTP no configurado (SMTP_HOST/SMTP_USER/SMTP_PASS/SMTP_FROM)")
+    # Si no hay config SMTP completa, intentamos sendmail automáticamente (mejor UX).
+    smtp_ready = bool(host and user and password and from_addr)
+    if force_sendmail or not smtp_ready:
+        try:
+            _send_via_sendmail(msg)
+            return
+        except Exception as e:
+            # Si el usuario pidió sendmail, o SMTP no está listo, reportamos config error.
+            if force_sendmail or not smtp_ready:
+                raise EmailConfigError(f"sendmail falló y SMTP no está configurado: {e}") from e
+            # Si SMTP está listo, seguimos a intento SMTP normal (aunque sendmail falló).
 
-    # Si se fuerza sendmail, no intentamos SMTP.
-    if force_sendmail:
-        _send_via_sendmail(msg)
-        return
+    if not smtp_ready:
+        raise EmailConfigError("SMTP no configurado (SMTP_HOST/SMTP_USER/SMTP_PASS/SMTP_FROM)")
 
     timeout = _smtp_timeout()
     use_ssl = port == 465 or _truthy(_get_env("SMTP_SSL"))
@@ -141,7 +164,7 @@ def _send_message(msg: EmailMessage) -> None:
 
 def send_email(to_addr: str, subject: str, text: str, html: str | None = None) -> None:
     user = _get_env("SMTP_USER")
-    from_addr = _get_env("SMTP_FROM") or user
+    from_addr = _get_env("SMTP_FROM") or user or _default_from_addr()
     msg = EmailMessage()
     msg["From"] = from_addr
     msg["To"] = to_addr
@@ -168,7 +191,7 @@ def send_email_group(
     if not to_list:
         raise ValueError("to_addrs vacío")
     user = _get_env("SMTP_USER")
-    from_addr = _get_env("SMTP_FROM") or user
+    from_addr = _get_env("SMTP_FROM") or user or _default_from_addr()
 
     msg = EmailMessage()
     msg["From"] = from_addr
