@@ -461,11 +461,11 @@ class ProductoUpsert(BaseModel):
 @router.get("/products")
 @router.get("/web/products")
 def list_productos(
-    q=None,
-    only_active=False,
-    marca=None,
-    limit=Query(200, ge=1, le=5000),
-    offset=Query(0, ge=0),
+    q: Optional[str] = None,
+    only_active: bool = False,
+    marca: Optional[str] = None,
+    limit: int = Query(200, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
     user=Depends(get_current_user),
 ):
     debug_rid = uuid.uuid4().hex[:8]
