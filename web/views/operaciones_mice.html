@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Operaciones • Mice and Place</title>
   <link rel="stylesheet" href="../styles.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="../js/iframe-theme.js"></script>
   <style>
-    body{padding:18px;}
+    html,body{height:100%;}
+    body{padding:18px; overflow:auto; -webkit-overflow-scrolling:touch; background:transparent;}
     .topbar{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;}
     .filters{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;}
     .filters select,.filters input{background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px;}
@@ -768,58 +770,99 @@
       $("#weekDetail").scrollIntoView({ behavior:"smooth", block:"start" });
     };
     $("#btnDetClose").onclick = ()=>{ $("#weekDetail").style.display = "none"; };
-    $("#btnDetPrint").onclick = ()=>{
-      const title = ($("#detSub").textContent || "Detalle semanal");
-      const html = $("#detBody").innerHTML || "";
+
+    async function askPrintMode(){
+      try{
+        const r = await Swal.fire({
+          title: "Imprimir",
+          text: "¿Formato de impresión?",
+          showCancelButton: true,
+          showDenyButton: true,
+          confirmButtonText: "Impresora normal (A4)",
+          denyButtonText: "Ticket 80mm",
+          cancelButtonText: "Cancelar",
+        });
+        if (r.isConfirmed) return "a4";
+        if (r.isDenied) return "80mm";
+        return null;
+      }catch(_){
+        return null;
+      }
+    }
+
+    function printWindow({ title, subtitle, bodyHTML, mode, kind }){
       const w = window.open("", "_blank", "noopener");
       if (!w) return;
-      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+      const is80 = mode === "80mm";
+      const page = is80 ? "80mm auto" : "A4";
+      const breaks = (() => {
+        // 80mm: corte por evento (leadSheet)
+        if (is80) return `
+          .dayBlock{break-inside:avoid;}
+          .leadSheet{break-inside:avoid; page-break-inside:avoid; page-break-after:always;}
+        `;
+        // A4: corte por día; eventos dentro fluyen
+        return `
+          .dayBlock{break-after:page; page-break-after:always;}
+          .leadSheet{break-inside:avoid; page-break-inside:avoid;}
+        `;
+      })();
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc2(title||"Impresión")}</title>
         <style>
-          body{font-family: ui-sans-serif, system-ui; padding:18px; color:#0b1220;}
-          .dayLabel{background:#facc15;display:inline-block;padding:6px 10px;border-radius:999px;font-weight:900;border:1px solid rgba(0,0,0,.18);}
-          .leadSheet{border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;margin:10px 0;}
+          @page{ size:${page}; margin:${is80 ? "6mm" : "12mm"}; }
+          *{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          body{font-family: ui-sans-serif, system-ui; padding:0; color:#0b1220;}
+          h2{margin:0 0 4px 0; font-size:${is80 ? "14px" : "18px"};}
+          .muted{color:#475569; font-weight:800; font-size:${is80 ? "11px" : "12px"};}
+          .dayLabel{background:#facc15;display:inline-block;padding:6px 10px;border-radius:999px;font-weight:900;border:1px solid rgba(0,0,0,.18); font-size:${is80 ? "11px" : "12px"};}
+          .leadSheet{border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;margin:10px 0;background:#fff;}
           .hdr{background:#1d4ed8;color:#fff;padding:8px 10px;font-weight:900;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
-          table{width:100%;border-collapse:collapse;font-size:12px;}
-          th,td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top;}
-          thead th{background:#1d4ed8;color:#fff;position:sticky;top:0}
+          table{width:100%;border-collapse:collapse;font-size:${is80 ? "10.5px" : "12px"};}
+          th,td{padding:${is80 ? "5px 6px" : "6px 8px"};border-bottom:1px solid #e2e8f0;vertical-align:top;}
+          thead th{background:#1d4ed8;color:#fff;position:sticky;top:0; text-transform:uppercase; letter-spacing:.12em; font-size:${is80 ? "9px" : "10px"};}
           tr:nth-child(even) td{background:#f8fafc;}
           .right{text-align:right;}
-          .muted{color:#475569;font-weight:800;}
+          .tag{opacity:.92; font-weight:900; font-size:${is80 ? "10px" : "12px"};}
+          ${breaks}
         </style></head><body>
-        <h2 style="margin:0 0 4px 0">${title}</h2>
-        ${html}
+        <h2>${esc2(title||"Impresión")}</h2>
+        ${subtitle ? `<div class="muted">${esc2(subtitle)}</div>` : ``}
+        <div style="margin-top:10px">${bodyHTML||""}</div>
       </body></html>`);
       w.document.close();
       w.focus();
       setTimeout(()=>{ try{ w.print(); }catch(_){ } }, 250);
+    }
+
+    $("#btnDetPrint").onclick = ()=>{
+      (async ()=>{
+        const mode = await askPrintMode();
+        if (!mode) return;
+        const title = "MICE · Detalle semanal";
+        const subtitle = ($("#detSub").textContent || "");
+        const html = $("#detBody").innerHTML || "";
+        printWindow({ title, subtitle, bodyHTML: html, mode, kind:"detail" });
+      })();
     };
 
     $("#btnSumPrint").onclick = ()=>{
-      const title = (weekReport?.start ? `Resumen semanal · ${weekReport.start}` : "Resumen semanal");
-      const sub = $("#sumSub").textContent || "";
-      const p = $("#sumProducts").innerHTML || "";
-      const i = $("#sumIngs").innerHTML || "";
-      const m = ($("#sumMissingBox").style.display !== "none") ? $("#sumMissing").innerHTML : "";
-      const w = window.open("", "_blank", "noopener");
-      if (!w) return;
-      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
-        <style>
-          body{font-family: ui-sans-serif, system-ui; padding:18px; color:#0b1320;}
-          h2{margin:0 0 4px 0} .muted{color:#475569}
-          h3{margin:18px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155}
-          table{width:100%; border-collapse:collapse; font-size:12px;}
-          th,td{padding:7px 7px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top;}
-          th{text-transform:uppercase; font-size:11px; letter-spacing:.12em;}
-          .right{text-align:right;}
-        </style></head><body>
-        <h2>${title}</h2><div class="muted">${sub}</div>
-        <h3>Productos</h3>${p}
-        <h3>Ingredientes</h3>${i}
-        ${m ? `<h3>Faltan Recetas</h3>${m}` : ``}
-        </body></html>`);
-      w.document.close();
-      w.focus();
-      setTimeout(()=>{ try{ w.print(); }catch(_){ } }, 250);
+      (async ()=>{
+        const mode = await askPrintMode();
+        if (!mode) return;
+        const title = "MICE · Resumen semanal";
+        const subtitle = ($("#sumSub").textContent || "");
+        const p = $("#sumProducts").innerHTML || "";
+        const i = $("#sumIngs").innerHTML || "";
+        const m = ($("#sumMissingBox").style.display !== "none") ? $("#sumMissing").innerHTML : "";
+        const body = `
+          <div style="margin-top:10px">
+            <h3 style="margin:14px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155">Productos</h3>${p}
+            <h3 style="margin:14px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155">Ingredientes</h3>${i}
+            ${m ? `<h3 style="margin:14px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155">Faltan Recetas</h3>${m}` : ``}
+          </div>
+        `;
+        printWindow({ title, subtitle, bodyHTML: body, mode, kind:"summary" });
+      })();
     };
 
     window.addEventListener("scroll", ttHide, { passive:true });

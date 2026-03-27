@@ -1817,6 +1817,7 @@ const MENU = [
 	      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260326-tools6#correo" },
 	      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260326-tools6#instagram" },
 	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260326-tools6#whatsapp" },
+	      { id: "tool_chat", label: "Chat (instalable)", url: "/web/views/chat.html?v=20260326-1" },
 	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260326-tools6#calc" },
 	      { id: "tool_wx", label: "Clima (7 días)", url: "/web/views/tools.html?v=20260326-tools6#clima" }
 	    ]
@@ -1945,9 +1946,10 @@ const PERMISSIONS = {
     "inv_uni",
     "inv_prov",
     "inv_mov",
-    "tool_gmail",
-    "tool_wapp",
-    "tool_ig",
+	    "tool_gmail",
+	    "tool_wapp",
+	    "tool_ig",
+      "tool_chat",
     "tool_cal",
     "tool_calc",
     "tool_wx",
@@ -1991,6 +1993,7 @@ const PERMISSIONS = {
     "tool_gmail",
     "tool_wapp",
     "tool_ig",
+    "tool_chat",
     "tool_cal",
     "tool_calc",
     "tool_wx",
@@ -2023,13 +2026,12 @@ const PERMISSIONS = {
     "inv_uni",
     "inv_prov",
     "inv_mov",
-    "tool_gmail",
     "tool_wapp",
-    "tool_ig",
     "tool_cal",
     "tool_calc",
     "tool_wx",
     "tools_hub",
+    "tool_chat",
     "gps",
     "vruta",
     "set_marcas",
@@ -2049,13 +2051,12 @@ const PERMISSIONS = {
     "inv_uni",
     "inv_prov",
     "inv_mov",
-    "tool_gmail",
     "tool_wapp",
-    "tool_ig",
     "tool_cal",
     "tool_calc",
     "tool_wx",
     "tools_hub",
+    "tool_chat",
     "vruta",
     "set_prod"
   ]),
@@ -2085,13 +2086,12 @@ const PERMISSIONS = {
     "inv_uni",
     "inv_prov",
     "inv_mov",
-    "tool_gmail",
     "tool_wapp",
-    "tool_ig",
     "tool_cal",
     "tool_calc",
     "tool_wx",
     "tools_hub",
+    "tool_chat",
     "vruta",
     "gast",
     "set_prod"
@@ -2128,13 +2128,12 @@ const PERMISSIONS = {
     "inv_uni",
     "inv_prov",
     "inv_mov",
-    "tool_gmail",
     "tool_wapp",
-    "tool_ig",
     "tool_cal",
     "tool_calc",
     "tool_wx",
     "tools_hub"
+    ,"tool_chat"
   ])
 };
 function buildMenu() {
@@ -3000,6 +2999,13 @@ function openDefault() {
   async function pollGiaEmail() {
     try {
       if (!getToken()) return;
+      // Solo Admin (1) y Ejecutivos (2) ven GIA (correo/IG).
+      // Además, requiere permiso explícito en el menú (para evitar que otros roles vean toasts).
+      try{
+        const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : null;
+        const can = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 2) && (!!allowed && allowed.has("tool_gmail"));
+        if (!can) return;
+      }catch(_){ return; }
       const lastMax = Number(localStorage.getItem("gd_gia_email_max_id") || "0") || 0;
       const lastOpen = Number(localStorage.getItem("gd_gia_email_open_total") || "0") || 0;
       const r = await fetch(`${API_BASE}/gia/email/summary`, { headers: authHeaders() });

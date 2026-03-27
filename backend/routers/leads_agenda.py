@@ -1695,9 +1695,6 @@ def move_lead_and_maybe_agenda(
                 "4",
                 "COMPRAS",
                 "5",
-                # Operadores (por si usan roles numéricos)
-                "7",
-                "9",
             ]
 
             inserted_roles = _notify_roles_once(
@@ -1718,7 +1715,10 @@ def move_lead_and_maybe_agenda(
 
             if inserted_roles:
                 try:
-                    to = _emails_for_roles(inserted_roles)
+                    # Email SOLO a Operaciones (no a Operadores).
+                    # El resto se notifica via system_notifs en el CRM.
+                    email_roles = ["OPERACIONES", "JEFE DE OPERACIONES", "3"]
+                    to = _emails_for_roles(email_roles)
                     if to:
                         from backend.core.email import send_email_group
                         footer = "\n\n--\nCRM Green Diamond\nMensaje automático (sin montos)\n"

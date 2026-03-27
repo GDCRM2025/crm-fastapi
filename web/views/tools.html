@@ -243,6 +243,17 @@
         const role = String(me.role || me.rol || "").toUpperCase();
         return role === "ADMIN" || role === "SUPERADMIN";
       }
+      function canSeeGIA(){
+        const me = getParentMe();
+        const role = String(me.role || me.rol || "").toUpperCase();
+        // Solo Admin (1) y Ejecutivos (2). MICE NO.
+        return (role === "ADMIN" || role === "SUPERADMIN" || role.includes("EJECUTIVO"));
+      }
+      function canSeeExecOnly(){
+        const me = getParentMe();
+        const role = String(me.role || me.rol || "").toUpperCase();
+        return (role === "ADMIN" || role === "SUPERADMIN" || role.includes("EJECUTIVO"));
+      }
 
       function viewURL(u){
         const s = String(u || "");
@@ -254,11 +265,13 @@
       }
 
       const ITEMS = [
-        { id:"correo", label:"Correo (GIA)", ico:"✉️", url:"/web/views/tools_correo.html?v=20260326-gia-ui2" },
-        { id:"instagram", label:"Instagram (GIA)", ico:"📷", url:"/web/views/tools_instagram.html?v=20260326-gia2" },
+        { id:"correo", label:"Correo (GIA)", ico:"✉️", url:"/web/views/tools_correo.html?v=20260326-gia-ui2", giaOnly:true },
+        { id:"instagram", label:"Instagram (GIA)", ico:"📷", url:"/web/views/tools_instagram.html?v=20260326-gia2", giaOnly:true },
         { id:"whatsapp", label:"WhatsApp", ico:"💬", url:"/web/views/tools_whatsapp.html" },
+        { id:"chat", label:"Chat (instalable)", ico:"💬", url:"/web/views/chat.html?v=20260326-1" },
         { id:"clima", label:"Clima", ico:"🌤️", url:"/web/views/clima.html?v=20260317-wxpage1" },
         { id:"calc", label:"Calculadora", ico:"🧮", url:"/web/views/calculadora.html" },
+        { id:"ext", label:"Descargar extensión (ventas)", ico:"🧩", url:"/web/downloads/LeadSuiteGD-extension.zip", execOnly:true, external:true },
       ];
 
       function setActive(id){
@@ -280,8 +293,22 @@
       function openTool(id){
         const it = ITEMS.find(x=>x.id===id) || ITEMS[0];
         if (!it) return;
+        if (it.giaOnly && !canSeeGIA()){
+          // fallback a un tool permitido
+          openTool("whatsapp");
+          return;
+        }
+        if (it.execOnly && !canSeeExecOnly()){
+          openTool("whatsapp");
+          return;
+        }
         if (it.adminOnly && !isAdmin()){
           openTool("correo");
+          return;
+        }
+        if (it.external){
+          try{ window.open(viewURL(it.url), "_blank", "noopener"); }catch(_){}
+          hideDrawer();
           return;
         }
         fr().src = viewURL(it.url);
@@ -292,7 +319,11 @@
       }
 
       function bind(){
-        const list = ITEMS.filter(it => !it.adminOnly || isAdmin());
+        const list = ITEMS.filter(it =>
+          (!it.adminOnly || isAdmin()) &&
+          (!it.giaOnly || canSeeGIA()) &&
+          (!it.execOnly || canSeeExecOnly())
+        );
         const quick = qs("#quickNav");
         const drawer = qs("#drawerNav");
 

@@ -31,9 +31,6 @@ except Exception:  # pragma: no cover
         return {"role": "ADMIN", "username": "dev", "marcas": []}
 
 
-router = APIRouter(prefix="/gia/email", tags=["gia-email"])
-
-
 def _safe_b64_to_text(b64_s: Any) -> str:
     """
     Robust decode for DBs that might contain non-UTF8 bytes in TEXT columns (ej. encoding SQL_ASCII).
@@ -64,6 +61,21 @@ def _role(user: dict) -> str:
 def _is_admin(user: dict) -> bool:
     return _role(user) in ("ADMIN", "SUPERADMIN")
 
+
+def _is_exec(user: dict) -> bool:
+    r = _role(user)
+    return ("EJECUTIVO" in r) or ("VENTAS" in r)
+
+
+def _require_gia_access(user: dict = Depends(get_current_user)) -> dict:
+    # Solo ADMIN y EJECUTIVO DE VENTAS pueden ver/usar GIA.
+    # (MICE/Operaciones/etc. no deben acceder ni por URL directa.)
+    if _is_admin(user) or _is_exec(user):
+        return user
+    raise HTTPException(status_code=403, detail="Sin permisos para GIA")
+
+
+router = APIRouter(prefix="/gia/email", tags=["gia-email"], dependencies=[Depends(_require_gia_access)])
 
 def _user_marcas_ids(user: dict) -> list[int]:
     out: list[int] = []
