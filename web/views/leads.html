@@ -1128,7 +1128,12 @@ function openLeadFromQuery(){
   if (!id) return;
   const lead = LEADS.find(x => String(x.id_lead) === String(id));
   if (lead){
-    setTimeout(() => openEditModal(lead), 120);
+    const editConfirmed = params.get("edit_confirmed") === "1";
+    if (editConfirmed){
+      setTimeout(() => openConfirmedEventEditor(lead), 120);
+    }else{
+      setTimeout(() => openEditModal(lead), 120);
+    }
   }
 }
 function loadStaleFilterFromQuery(){
@@ -4085,6 +4090,126 @@ async function openEditModal(lead){
     setStatus("Leads: " + LEADS.length);
   }catch(err){
     toast("Error guardando lead: " + String(err.message||err), "error");
+  }
+}
+
+function _tzOffsetHHMM(d){
+  try{
+    const offMin = -d.getTimezoneOffset(); // minutes east of UTC
+    const sign = offMin >= 0 ? "+" : "-";
+    const abs = Math.abs(offMin);
+    const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+    const mm = String(abs % 60).padStart(2, "0");
+    return `${sign}${hh}:${mm}`;
+  }catch(_){
+    return "";
+  }
+}
+function _localISO(dateStr, timeStr){
+  const ds = String(dateStr||"").trim();
+  const ts = String(timeStr||"").trim();
+  if (!ds || !ts) return null;
+  const [y,m,d] = ds.split("-").map(x=>Number(x||0));
+  const [hh,mm] = ts.split(":").map(x=>Number(x||0));
+  if (!y || !m || !d) return null;
+  const dt = new Date(y, (m-1), d, hh||0, mm||0, 0);
+  const off = _tzOffsetHHMM(dt);
+  const pad = (n)=> String(n).padStart(2,"0");
+  return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:00${off}`;
+}
+
+async function openConfirmedEventEditor(lead){
+  const fecha = String(lead?.fecha_evento || "").trim();
+  if (!fecha){
+    toast("Falta fecha_evento para editar agenda.", "error");
+    return;
+  }
+
+  const currentTel = String(lead?.telefono || "").trim();
+  const currentDir = String(lead?.direccion || "").trim();
+  const defaultTitle = (()=>{
+    const marca = String(lead?.marca_nombre || lead?.marca || "").trim();
+    const cli = String(lead?.cliente || "").trim();
+    return [cli, marca].filter(Boolean).join(" - ") || `Lead #${lead?.id_lead}`;
+  })();
+
+  const res = await Swal.fire({
+    title: `Editar evento confirmado (#${lead.id_lead})`,
+    html: `
+      <div style="text-align:left;display:flex;flex-direction:column;gap:10px">
+        <div class="muted">Esto actualiza el lead y re-sincroniza Google Calendar. Se registra en historial y notifica a Operaciones/MICE/Admin.</div>
+
+        <label style="font-weight:950;font-size:12px;opacity:.8;margin-top:6px">Título (Calendar)</label>
+        <input id="ev_title" class="swal2-input" style="height:42px" value="${esc(defaultTitle)}" />
+
+        <label style="font-weight:950;font-size:12px;opacity:.8">Teléfono (solo requerido para eventos de esta semana)</label>
+        <input id="ev_tel" class="swal2-input" style="height:42px" value="${esc(currentTel)}" placeholder="+569..." />
+
+        <label style="font-weight:950;font-size:12px;opacity:.8">Dirección</label>
+        <input id="ev_dir" class="swal2-input" style="height:42px" value="${esc(currentDir)}" placeholder="Dirección completa" />
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label style="font-weight:950;font-size:12px;opacity:.8">Inicio</label>
+            <input id="ev_hi" class="swal2-input" style="height:42px" placeholder="14:30" />
+          </div>
+          <div>
+            <label style="font-weight:950;font-size:12px;opacity:.8">Fin</label>
+            <input id="ev_hf" class="swal2-input" style="height:42px" placeholder="18:30" />
+          </div>
+        </div>
+
+        <label style="font-weight:950;font-size:12px;opacity:.8">Notas (Calendar)</label>
+        <textarea id="ev_desc" class="swal2-textarea" placeholder="Notas para operaciones / cliente (opcional)"></textarea>
+      </div>
+    `,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: "Guardar y sincronizar",
+    cancelButtonText: "Cancelar",
+    preConfirm: ()=>{
+      const title = (document.getElementById("ev_title")?.value || "").trim();
+      const telefono = (document.getElementById("ev_tel")?.value || "").trim() || null;
+      const direccion = (document.getElementById("ev_dir")?.value || "").trim() || null;
+      const hi = (document.getElementById("ev_hi")?.value || "").trim();
+      const hf = (document.getElementById("ev_hf")?.value || "").trim();
+      const desc = (document.getElementById("ev_desc")?.value || "").trim() || null;
+
+      if (!title){
+        Swal.showValidationMessage("Falta título.");
+        return false;
+      }
+      if (!direccion){
+        Swal.showValidationMessage("Falta dirección.");
+        return false;
+      }
+      if (!hi || !/^[0-2]\\d:[0-5]\\d$/.test(hi) || !hf || !/^[0-2]\\d:[0-5]\\d$/.test(hf)){
+        Swal.showValidationMessage("Horario inválido (HH:MM).");
+        return false;
+      }
+
+      const preStart = _localISO(fecha, hi);
+      const preEnd = _localISO(fecha, hf);
+      if (!preStart || !preEnd){
+        Swal.showValidationMessage("No pude construir el horario.");
+        return false;
+      }
+      return { pre_title: title, pre_location: direccion, pre_description: desc, pre_start: preStart, pre_end: preEnd, telefono, direccion };
+    }
+  });
+  if (!res.isConfirmed || !res.value) return;
+
+  try{
+    await apiJSON(`/tools/agenda/${lead.id_lead}/edit_confirmed`, {
+      method: "PUT",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify(res.value),
+    });
+    toast("Evento actualizado y sincronizado", "success");
+    await loadLeads();
+    render();
+  }catch(err){
+    toast("No pude actualizar evento: " + String(err?.message||err), "error");
   }
 }
 

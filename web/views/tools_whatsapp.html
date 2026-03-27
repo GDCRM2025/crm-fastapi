@@ -7,17 +7,14 @@
   <link rel="stylesheet" href="/web/ui_overrides.css" />
   <title>tools_whatsapp</title>
 </head>
-<body style="padding:18px">
+<body style="padding:18px;background:#f6f8fc;color:#0f172a">
   <section class="card" style="max-width: 980px">
     <h2 style="margin:0 0 8px 0">tools_whatsapp</h2>
     <p style="opacity:.85; margin:0">Módulo en construcción. Menú OK, UX OK. Luego enchufamos lógica y permisos por rol.</p>
   </section>
   <script>
-    window.addEventListener("message", (ev) => {
-      if (ev.data?.type === "theme"){
-        document.documentElement.classList.toggle("light", ev.data.mode === "light");
-      }
-    });
+    // Tools fijo claro (no sigue theme del CRM).
+    document.documentElement.classList.add("light");
   </script>
 </body>
 </html>

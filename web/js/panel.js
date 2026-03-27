@@ -1814,11 +1814,11 @@ const MENU = [
 	    ico: "\u{1F9F0}",
 	    title: "Tools",
 	    items: [
-	      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260326-tools6#correo" },
-	      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260326-tools6#instagram" },
-	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260326-tools6#whatsapp" },
-	      { id: "tool_chat", label: "Chat (instalable)", url: "/web/views/chat.html?v=20260326-1" },
-	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260326-tools6#calc" },
+	      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260327-tools7#correo" },
+	      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260327-tools7#instagram" },
+	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260327-tools7#whatsapp" },
+	      { id: "tool_chat", label: "Chat (instalable)", url: "/web/views/tools.html?v=20260327-tools7#chat" },
+	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260327-tools7#calc" },
 	      // Clima removido (Tools unificado). Si lo reactivamos, vuelve como item de Tools.
 	    ]
 	  },
@@ -3028,7 +3028,7 @@ function openDefault() {
         toast(`Correo: ${openTotal} pendiente(s)`, {
           kind: "ok",
           ms: 8e3,
-	          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260326-tools6#correo" })
+	          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260327-tools7#correo" })
 	        });
 	      }
       localStorage.setItem("gd_gia_email_max_id", String(Math.max(lastMax, maxId)));

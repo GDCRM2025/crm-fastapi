@@ -1438,7 +1438,7 @@
             tr.addEventListener("click", ()=>{
               const t = tr.dataset.open || "";
               if (t === "por_aprobar" || t === "agendados"){
-                window.parent?.postMessage({ type:"openItem", id:"tool_cal", url:"/web/views/tools.html#agenda" }, "*");
+                window.parent?.postMessage({ type:"openItem", id:"tool_cal", url:"/web/views/tools.html?v=20260327-tools7#agenda" }, "*");
               } else if (t === "sin_pre"){
                 window.parent?.postMessage({ type:"openItem", id:"leads_ver", url:"/web/views/leads.html" }, "*");
               }

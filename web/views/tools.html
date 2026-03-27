@@ -7,9 +7,18 @@
   <link rel="icon" href="/web/pwa/gd-128.png" />
   <link rel="stylesheet" href="/web/styles.css" />
   <style>
-    :root{ --bd:rgba(148,163,184,.18); --muted:rgba(148,163,184,.88); }
+    /* Tools fijo estilo Gmail (NO sigue toggle día/noche del CRM) */
+    :root{
+      color-scheme: light;
+      --bg:#f6f8fc;
+      --card:#ffffff;
+      --bd:rgba(15,23,42,.12);
+      --muted:rgba(15,23,42,.62);
+      --shadow:0 18px 44px rgba(15,23,42,.10);
+      --shadow2:0 24px 64px rgba(15,23,42,.12);
+    }
     html,body{height:100%;}
-    body{ margin:0; background:transparent; color:inherit; font-family:inherit; }
+    body{ margin:0; background:var(--bg); color:#0f172a; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji","Segoe UI Emoji"; }
 
     .layout{
       height:100%;
@@ -22,8 +31,8 @@
     .topbar{
       border:1px solid var(--bd);
       border-radius:18px;
-      background: linear-gradient(135deg, rgba(8,18,28,.78), rgba(10,16,22,.46));
-      box-shadow:0 18px 40px rgba(0,0,0,.18);
+      background: var(--card);
+      box-shadow: var(--shadow);
       padding:10px 12px;
       display:flex;
       align-items:center;
@@ -38,7 +47,7 @@
     }
     .menuBtn{
       border:1px solid rgba(148,163,184,.18);
-      background:rgba(255,255,255,.04);
+      background:#fff;
       color:inherit;
       border-radius:14px;
       padding:10px 12px;
@@ -49,7 +58,7 @@
       gap:10px;
       white-space:nowrap;
     }
-    .menuBtn:hover{ background:rgba(255,255,255,.08); }
+    .menuBtn:hover{ background:rgba(15,23,42,.03); }
     .crumb{
       display:flex;
       flex-direction:column;
@@ -67,7 +76,7 @@
     }
     .chipBtn{
       border:1px solid rgba(148,163,184,.18);
-      background:rgba(255,255,255,.04);
+      background:#fff;
       color:inherit;
       border-radius:999px;
       padding:8px 12px;
@@ -78,16 +87,16 @@
       gap:8px;
       white-space:nowrap;
     }
-    .chipBtn:hover{ background:rgba(255,255,255,.08); }
-    .chipBtn.active{ border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent); background: color-mix(in srgb, var(--accent,#19c37d) 16%, transparent); }
-    .ico{ width:22px; height:22px; border-radius:9px; display:grid; place-items:center; background:rgba(255,255,255,.06); border:1px solid rgba(148,163,184,.18); font-size:13px; }
+    .chipBtn:hover{ background:rgba(15,23,42,.03); }
+    .chipBtn.active{ border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent); background: color-mix(in srgb, var(--accent,#19c37d) 14%, transparent); }
+    .ico{ width:22px; height:22px; border-radius:9px; display:grid; place-items:center; background:rgba(15,23,42,.04); border:1px solid rgba(148,163,184,.18); font-size:13px; }
 
     .main{
       border:1px solid var(--bd);
       border-radius:18px;
       overflow:hidden;
-      background:rgba(8,18,28,.35);
-      box-shadow:0 18px 40px rgba(0,0,0,.12);
+      background: var(--card);
+      box-shadow: var(--shadow2);
       min-height:0;
       flex:1;
     }
@@ -96,7 +105,7 @@
     .drawer{
       position:fixed;
       inset:0;
-      background:rgba(0,0,0,.35);
+      background:rgba(15,23,42,.25);
       backdrop-filter: blur(3px);
       display:none;
       align-items:flex-start;
@@ -108,9 +117,9 @@
     .drawerCard{
       width:min(720px, calc(100vw - 24px));
       border:1px solid rgba(148,163,184,.18);
-      background: linear-gradient(135deg, rgba(8,18,28,.92), rgba(10,16,22,.72));
+      background: var(--card);
       border-radius:18px;
-      box-shadow:0 24px 64px rgba(0,0,0,.35);
+      box-shadow: var(--shadow2);
       padding:12px;
       color:inherit;
     }
@@ -133,7 +142,7 @@
     .drawerGrid button{
       width:100%;
       border:1px solid rgba(148,163,184,.18);
-      background:rgba(255,255,255,.04);
+      background:#fff;
       color:inherit;
       border-radius:16px;
       padding:12px 12px;
@@ -144,7 +153,7 @@
       cursor:pointer;
       text-align:left;
     }
-    .drawerGrid button:hover{ background:rgba(255,255,255,.08); }
+    .drawerGrid button:hover{ background:rgba(15,23,42,.03); }
     .drawerGrid button.active{ border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent); background: color-mix(in srgb, var(--accent,#19c37d) 16%, transparent); }
     @media (max-width: 720px){
       .drawerGrid{ grid-template-columns: 1fr; }
@@ -197,7 +206,8 @@
         }
       })();
 
-      let lastThemeMode = (localStorage.getItem("gd_theme") || "dark");
+      // Fijo claro: Tools no sigue el toggle día/noche del CRM.
+      let lastThemeMode = "light";
       let lastPrefs = null;
 
       function postToTool(msg){
@@ -209,13 +219,9 @@
       }
 
       function applyThemeBootstrap(){
-        document.documentElement.classList.toggle("light", lastThemeMode === "light");
+        document.documentElement.classList.add("light");
         window.addEventListener("message", (ev) => {
-          if (ev.data?.type === "theme"){
-            lastThemeMode = ev.data.mode || lastThemeMode;
-            document.documentElement.classList.toggle("light", lastThemeMode === "light");
-            postToTool({ type:"theme", mode:lastThemeMode });
-          }
+          // Ignora theme del padre: Tools siempre claro.
           if (ev.data?.type === "prefs"){
             const p = ev.data.prefs || {};
             lastPrefs = p;
@@ -266,7 +272,7 @@
       }
 
       const ITEMS = [
-        { id:"correo", label:"Correo (GIA)", ico:"✉️", url:"/web/views/tools_correo.html?v=20260327-gmail-ui1", giaOnly:true },
+        { id:"correo", label:"Correo (GIA)", ico:"✉️", url:"/web/views/tools_correo.html?v=20260327-gmail-ui2", giaOnly:true },
         { id:"instagram", label:"Instagram (GIA)", ico:"📷", url:"/web/views/tools_instagram.html?v=20260326-gia2", giaOnly:true },
         { id:"whatsapp", label:"WhatsApp", ico:"💬", url:"/web/views/tools_whatsapp.html" },
         { id:"chat", label:"Chat (instalable)", ico:"💬", url:"/web/views/chat.html?v=20260327-1" },
@@ -355,7 +361,6 @@
 
       applyThemeBootstrap();
       fr().addEventListener("load", () => {
-        postToTool({ type:"theme", mode:lastThemeMode });
         if (lastPrefs) postToTool({ type:"prefs", prefs:lastPrefs });
       });
       bind();

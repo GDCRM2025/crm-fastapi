@@ -286,8 +286,10 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     is_admin = _is_admin_role(role)
     r_up = (role or "").strip().upper()
     is_finanzas = r_up in ("FINANZAS", "11")
-    # "Mis tareas" es para ejecutar gestión (ejecutivos). Admin/Finanzas no deben autogenerar miles de tareas de leads.
-    enable_lead_tasks = (not is_admin) and (not is_finanzas)
+    is_exec = ("EJECUTIVO" in r_up) or (r_up == "2")
+    # "Mis tareas" es para ejecutar gestión (ejecutivos). Otros roles no deben autogenerar tareas masivas.
+    enable_lead_tasks = bool(is_exec)
+    enable_calendar_tasks = bool(is_exec)
 
     nuevo_id = _estado_id_like(db, "%NUEV%", 1)
     confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
@@ -357,8 +359,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     has_pre_end = _col_exists(db, "leads", "pre_end")
     hr_missing_sql = "(l.pre_start IS NULL OR l.pre_end IS NULL)" if (has_pre_start and has_pre_end) else "FALSE"
 
-    # Si el usuario no debe recibir tareas de leads (Admin/Finanzas), limpiamos backlog previo (best-effort).
-    if not enable_lead_tasks:
+    # Si el usuario no debe recibir tareas automáticas, limpiamos backlog previo (best-effort).
+    if (not enable_lead_tasks) and (not enable_calendar_tasks):
         try:
             db.execute(
                 text(
@@ -371,19 +373,42 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                         meta = meta || jsonb_build_object('auto_cleanup', true, 'reason', 'role_no_lead_tasks')
                     WHERE assigned_user_id=:uid
                       AND status='open'
-                      AND entity_type='lead'
-                      AND kind IN (
-                        'CONTACTAR_LEAD',
-                        'SEGUIMIENTO_PENDIENTE',
-                        'RIESGO_AUTO_DECLINE_NUEVO',
-                        'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA',
-                        'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA',
-                        'RIESGO_COTIZADO_EVENTO_CERCA',
-                        'COMPLETAR_TELEFONO',
-                        'COMPLETAR_DIRECCION',
-                        'COMPLETAR_HORARIO',
-                        'EVENTO_PROXIMO_INCOMPLETO'
+                      AND (
+                        (entity_type='lead' AND kind IN (
+                          'CONTACTAR_LEAD',
+                          'SEGUIMIENTO_PENDIENTE',
+                          'RIESGO_AUTO_DECLINE_NUEVO',
+                          'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA',
+                          'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA',
+                          'RIESGO_COTIZADO_EVENTO_CERCA',
+                          'COMPLETAR_TELEFONO',
+                          'COMPLETAR_DIRECCION',
+                          'COMPLETAR_HORARIO',
+                          'EVENTO_PROXIMO_INCOMPLETO'
+                        ))
+                        OR (entity_type='gia_email' AND kind='RESPONDER_CORREO')
                       )
+                    """
+                ),
+                {"uid": int(user_id), "uname": (username or "").strip()[:200]},
+            )
+        except Exception:
+            pass
+    else:
+        # Limpieza específica: tarea legacy que ya no usamos.
+        try:
+            db.execute(
+                text(
+                    """
+                    UPDATE public.tasks
+                    SET status='skipped',
+                        updated_at=now(),
+                        completed_at=now(),
+                        completed_by=:uname,
+                        meta = meta || jsonb_build_object('auto_cleanup', true, 'reason', 'deprecated_kind')
+                    WHERE assigned_user_id=:uid
+                      AND status='open'
+                      AND kind='EVENTO_PROXIMO_INCOMPLETO'
                     """
                 ),
                 {"uid": int(user_id), "uname": (username or "").strip()[:200]},
@@ -413,7 +438,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 WHERE l.id_estado = :nuevo
                   AND {scope_sql}
                   AND ({has_contact_sql}) IS FALSE
-                  AND :enable_lead_tasks
+                  AND :enable_calendar_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -421,7 +446,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uid": int(user_id),
                 "uname": (username or "").strip()[:200],
                 "nuevo": int(nuevo_id),
-                "enable_lead_tasks": bool(enable_lead_tasks),
+                "enable_calendar_tasks": bool(enable_calendar_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -458,7 +483,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND {scope_sql}
                   AND ({has_contact_sql}) IS FALSE
                   AND COALESCE(l.created_at, now()) <= (now() - INTERVAL '5 days')
-                  AND :enable_lead_tasks
+                  AND :enable_calendar_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -466,7 +491,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uid": int(user_id),
                 "uname": (username or "").strip()[:200],
                 "nuevo": int(nuevo_id),
-                "enable_lead_tasks": bool(enable_lead_tasks),
+                "enable_calendar_tasks": bool(enable_calendar_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -498,7 +523,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 WHERE l.id_estado NOT IN (:decl, :conf)
                   AND (:is_admin OR {scope_sql})
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '3 days')
-                  AND :enable_lead_tasks
+                  AND :enable_calendar_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -551,7 +576,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uname": (username or "").strip()[:200],
                 "contactado": int(contactado_id),
                 "is_admin": bool(is_admin),
-                "enable_lead_tasks": bool(enable_lead_tasks),
+                "enable_calendar_tasks": bool(enable_calendar_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -879,7 +904,11 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   COUNT(*) FILTER (WHERE status='open')::int AS open_total,
                   COUNT(*) FILTER (WHERE status='open' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_total,
                   COUNT(*) FILTER (WHERE status='open' AND kind='CONTACTAR_LEAD')::int AS open_contactar,
-                  COUNT(*) FILTER (WHERE status='open' AND kind='CONTACTAR_LEAD' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_contactar
+                  COUNT(*) FILTER (WHERE status='open' AND kind='CONTACTAR_LEAD' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_contactar,
+                  COUNT(*) FILTER (WHERE status='open' AND kind LIKE 'COMPLETAR_%')::int AS open_calendario,
+                  COUNT(*) FILTER (WHERE status='open' AND kind LIKE 'COMPLETAR_%' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_calendario,
+                  COUNT(*) FILTER (WHERE status='open' AND kind='RESPONDER_CORREO')::int AS open_correos,
+                  COUNT(*) FILTER (WHERE status='open' AND kind='RESPONDER_CORREO' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_correos
                 FROM public.tasks
                 WHERE assigned_user_id = :uid
                 """
@@ -890,10 +919,14 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
             summary["counts"] = {
                 "open_total": int(row.get("open_total") or 0),
                 "open_contactar": int(row.get("open_contactar") or 0),
+                "open_calendario": int(row.get("open_calendario") or 0),
+                "open_correos": int(row.get("open_correos") or 0),
             }
             summary["overdue"] = {
                 "overdue_total": int(row.get("overdue_total") or 0),
                 "overdue_contactar": int(row.get("overdue_contactar") or 0),
+                "overdue_calendario": int(row.get("overdue_calendario") or 0),
+                "overdue_correos": int(row.get("overdue_correos") or 0),
             }
     except Exception:
         pass
@@ -964,6 +997,7 @@ def list_tasks(
           SELECT t.id_task, t.created_at, t.updated_at, t.status, t.priority,
                  t.kind, t.title, t.description, t.entity_type, t.entity_id,
                  t.due_at, t.completed_at, t.completed_by,
+                 t.meta,
                  {lead_cliente_expr},
                  {lead_marca_expr},
                  {lead_estado_expr},
@@ -991,7 +1025,7 @@ def list_tasks(
             q2 = f"""
               SELECT t.id_task, t.created_at, t.updated_at, t.status, t.priority,
                      t.kind, t.title, t.description, t.entity_type, t.entity_id,
-                     t.due_at, t.completed_at, t.completed_by
+                     t.due_at, t.completed_at, t.completed_by, t.meta
               FROM public.tasks t
               WHERE {where}
               ORDER BY

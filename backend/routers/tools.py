@@ -3444,3 +3444,145 @@ def approve_agenda(
         except Exception:
             pass
         return JSONResponse(status_code=500, content={"ok": False, "where": "tools.approve_agenda", "error": str(e)})
+
+
+@router.put("/agenda/{id_lead}/edit_confirmed")
+def edit_confirmed_event(
+    id_lead: int,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    x_user: str | None = Header(default=None, alias="X-USER"),
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Edita datos de un evento ya confirmado y re-sincroniza Google Calendar.
+    Solo Ejecutivos (y Admin) pueden hacerlo.
+
+    - Deja un rastro mínimo en `leads.notas` (timestamp + usuario + campos).
+    - Crea notificación interna (system_notifs) para Operaciones/MICE/Admin.
+    """
+    from datetime import datetime
+
+    role = str(me.get("role") or me.get("rol") or "").upper().strip()
+    is_admin = ("ADMIN" in role) or (role == "1")
+    is_exec = ("EJECUTIVO" in role) or (role == "2")
+    if not (is_admin or is_exec):
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    _ensure_lead_calendar_cols(db)
+    cols = _cols_pg(db, "leads")
+
+    lead = (
+        db.execute(
+            text(
+                """
+                SELECT id_lead,
+                       COALESCE(calendar_event_id,'') AS calendar_event_id,
+                       COALESCE(calendar_html_link,'') AS calendar_html_link
+                FROM public.leads
+                WHERE id_lead=:id
+                LIMIT 1
+                """
+            ),
+            {"id": int(id_lead)},
+        )
+        .mappings()
+        .first()
+    )
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead no existe")
+    if not str(lead.get("calendar_event_id") or "").strip() and not str(lead.get("calendar_html_link") or "").strip():
+        raise HTTPException(status_code=400, detail="Lead no está agendado en Calendar")
+
+    allowed = [
+        "telefono",
+        "direccion",
+        "pre_title",
+        "pre_location",
+        "pre_description",
+        "pre_start",
+        "pre_end",
+        "pre_events_json",
+    ]
+    sets: list[str] = []
+    params: dict[str, Any] = {"id": int(id_lead)}
+    changes: dict[str, Any] = {}
+    for k in allowed:
+        if k not in payload:
+            continue
+        if k not in cols:
+            continue
+        sets.append(f"{k} = :{k}")
+        params[k] = payload.get(k)
+        changes[k] = payload.get(k)
+    if sets:
+        sets.append("updated_at = now()")
+        db.execute(text(f"UPDATE public.leads SET {', '.join(sets)} WHERE id_lead=:id"), params)
+
+    # Historial (notas)
+    try:
+        who = (x_user or str(me.get("username") or me.get("email") or me.get("name") or me.get("id") or "")).strip()[:120] or "usuario"
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        keys = ", ".join(list(changes.keys()))[:220] if changes else ""
+        line = f"[EVENTO_EDIT] {ts} · {who}" + (f" · {keys}" if keys else "")
+        db.execute(
+            text(
+                """
+                UPDATE public.leads
+                SET notas = CASE
+                  WHEN COALESCE(notas,'') = '' THEN :b
+                  ELSE notas || E'\n\n' || :b
+                END,
+                updated_at = now()
+                WHERE id_lead=:id
+                """
+            ),
+            {"id": int(id_lead), "b": line},
+        )
+    except Exception:
+        pass
+
+    # Re-sync calendar (re-usa el flujo existente). Esto hace commit interno.
+    gcal = approve_agenda(id_lead=id_lead, x_user=x_user, db=db, me=me)
+
+    # Notifs internas
+    try:
+        from backend.core.system_notifs import push_system_notif
+
+        cn = db.connection()
+        title = f"Evento modificado · Lead #{int(id_lead)}"
+        body = f"{(x_user or me.get('username') or me.get('email') or me.get('name') or 'usuario')} modificó un evento confirmado."
+        payload_notif = {"id_lead": int(id_lead), "changes": list(changes.keys()), "calendar_event_id": gcal.get("calendar_event_id")}
+        for rt in ("OPERACIONES", "MICE", "ADMIN"):
+            push_system_notif(cn, kind="EVENTO_MODIFICADO", role_target=rt, id_lead=int(id_lead), title=title, body=body, payload=payload_notif)
+        try:
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Activity log best-effort
+    try:
+        cn = db.connection()
+        log_activity(
+            cn,
+            username=str(me.get("username") or me.get("email") or me.get("name") or me.get("id") or "").strip()[:200],
+            user_id=int(me.get("id") or 0) if str(me.get("id") or "").isdigit() else None,
+            role=role,
+            action="EVENT_MODIFIED",
+            entity_type="lead",
+            entity_id=int(id_lead),
+            meta={"changes": list(changes.keys()), "calendar_event_id": gcal.get("calendar_event_id")},
+        )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+    return {"ok": True, "gcal": gcal, "changes": changes}
