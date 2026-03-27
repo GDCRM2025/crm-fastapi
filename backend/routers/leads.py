@@ -1238,6 +1238,64 @@ def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             if not ok_estado:
                 raise HTTPException(400, "id_estado inválido")
 
+        # Regla negocio: nunca dejar COTIZADO sin respaldo de cotización.
+        # - Si es por sistema: debe existir en tabla `cotizaciones` (o id_cotizacion_vigente si existe).
+        # - Si es manual: debe tener MONTO + NÚMERO (PDF es opcional).
+        try:
+            cotizado_id = conn.execute(
+                text("SELECT id_estado FROM public.estados_lead WHERE UPPER(nombre) LIKE '%COTIZ%' ORDER BY id_estado LIMIT 1")
+            ).scalar()
+            cotizado_id = int(cotizado_id) if cotizado_id is not None else None
+        except Exception:
+            cotizado_id = None
+
+        def _has_system_quote() -> bool:
+            try:
+                # tabla cotizaciones
+                if _table_exists("cotizaciones"):
+                    if conn.execute(text("SELECT 1 FROM public.cotizaciones WHERE id_lead=:id LIMIT 1"), {"id": id_lead}).scalar():
+                        return True
+            except Exception:
+                pass
+            try:
+                cols = _cols_for("leads")
+                if "id_cotizacion_vigente" in cols:
+                    v = conn.execute(text("SELECT id_cotizacion_vigente FROM public.leads WHERE id_lead=:id"), {"id": id_lead}).scalar()
+                    if v is not None and str(v).strip() and str(v).strip() != "0":
+                        return True
+            except Exception:
+                pass
+            return False
+
+        def _has_manual_quote_complete() -> bool:
+            try:
+                cur = conn.execute(
+                    text("SELECT COALESCE(monto_cotizado,0) AS monto, COALESCE(num_cotizacion,'') AS num FROM public.leads WHERE id_lead=:id"),
+                    {"id": id_lead},
+                ).mappings().first()
+                monto = float(cur.get("monto") or 0) if cur else 0.0
+                num = str(cur.get("num") or "").strip() if cur else ""
+                return (monto > 0) and bool(num)
+            except Exception:
+                return False
+
+        def _incoming_manual_quote_complete() -> bool:
+            try:
+                monto_in = payload.get("monto_cotizado")
+                num_in = payload.get("num_cotizacion")
+                monto = float(monto_in) if monto_in not in (None, "", "null") else None
+                num = str(num_in or "").strip() if num_in is not None else None
+                if monto is None and num is None:
+                    return False
+                # Si viene uno solo, igual exigimos ambos (manual completo).
+                return (float(monto or 0) > 0) and bool(num)
+            except Exception:
+                return False
+
+        if cotizado_id and id_estado is not None and int(id_estado) == int(cotizado_id):
+            if not (_has_system_quote() or _has_manual_quote_complete() or _incoming_manual_quote_complete()):
+                raise HTTPException(400, "No se puede dejar en COTIZADO sin monto y número de cotización (manual) o cotización del sistema.")
+
         notas_set = "notas" in payload
         notas_val = payload.get("notas")
         if notas_val == "":
@@ -1305,20 +1363,16 @@ def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
         except Exception:
             pass
 
-        # Regla negocio (consistencia): si el lead ya tiene cotización (monto/num/pdf/cotizaciones),
+        # Regla negocio (consistencia): si el lead ya tiene cotización,
         # NO debe quedarse en NUEVO/CONTACTADO. Lo subimos a COTIZADO automáticamente
         # (salvo estados terminales como CONFIRMADO/DECLINADO).
         try:
-            cotizado_id = conn.execute(
-                text("SELECT id_estado FROM public.estados_lead WHERE UPPER(nombre) LIKE '%COTIZ%' ORDER BY id_estado LIMIT 1")
-            ).scalar()
             confirmado_id = conn.execute(
                 text("SELECT id_estado FROM public.estados_lead WHERE UPPER(nombre) LIKE '%CONFIRM%' ORDER BY id_estado LIMIT 1")
             ).scalar()
             declinado_id = conn.execute(
                 text("SELECT id_estado FROM public.estados_lead WHERE UPPER(nombre) LIKE '%DECLIN%' ORDER BY id_estado LIMIT 1")
             ).scalar()
-            cotizado_id = int(cotizado_id) if cotizado_id is not None else None
             confirmado_id = int(confirmado_id) if confirmado_id is not None else None
             declinado_id = int(declinado_id) if declinado_id is not None else None
 
@@ -1339,19 +1393,11 @@ def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                 cur_estado = int(cur.get("id_estado") or 0) or None
                 is_terminal = (confirmado_id and cur_estado == confirmado_id) or (declinado_id and cur_estado == declinado_id)
 
-                has_quote = (float(cur.get("monto") or 0) > 0) or bool(str(cur.get("num") or "").strip()) or bool(str(cur.get("pdf") or "").strip())
-                if not has_quote and _table_exists("cotizaciones"):
-                    has_quote = bool(
-                        conn.execute(text("SELECT 1 FROM public.cotizaciones WHERE id_lead=:id LIMIT 1"), {"id": id_lead}).scalar()
-                    )
-                # También cuenta como "cotización manual": items MICE cargados para el lead.
-                if not has_quote and _table_exists("lead_mice_items"):
-                    has_quote = bool(
-                        conn.execute(text("SELECT 1 FROM public.lead_mice_items WHERE id_lead=:id LIMIT 1"), {"id": id_lead}).scalar()
-                    )
+                has_system_quote = _has_system_quote()
+                has_manual_complete = (float(cur.get("monto") or 0) > 0) and bool(str(cur.get("num") or "").strip())
 
                 # NUEVO/CONTACTADO -> COTIZADO (si hay cotización)
-                if has_quote and not is_terminal and (cur_estado in (1, 2)) and (cur_estado != cotizado_id):
+                if (has_system_quote or has_manual_complete) and (not is_terminal) and (cur_estado in (1, 2)) and (cur_estado != cotizado_id):
                     conn.execute(
                         text("UPDATE public.leads SET id_estado=:e, updated_at=now() WHERE id_lead=:id"),
                         {"e": cotizado_id, "id": id_lead},

@@ -180,7 +180,8 @@ def auto_decline_stale_leads(
           UNION ALL
 
           -- 3) COTIZADO con fecha del mes, con comentarios, con cotizacion,
-          --    y evento a <= 4 dias (incluye pasado)
+          --    y evento a <= 4 dias. IMPORTANTE: si hay movimiento reciente (comentario/seguimiento),
+          --    no declinamos; el contador se reinicia con updated_at.
           SELECT l.id_lead, 5 AS prio, :motivo_cotizado_evento_cerca AS motivo
           FROM public.leads l
           WHERE l.id_estado = :cotizado_id
@@ -189,6 +190,7 @@ def auto_decline_stale_leads(
             AND ({has_comments_sql}) IS TRUE
             AND ({has_quote_sql}) IS TRUE
             AND l.fecha_evento <= (CURRENT_DATE + 4)
+            AND {last_move_sql} <= (now() - INTERVAL '3 days')
         ),
         dedup AS (
           -- si un lead cae en mas de una regla, nos quedamos con la de menor prioridad

@@ -208,7 +208,7 @@ def _apply_past_event_auto_decline(conn, *, nuevo_id: int | None, contactado_id:
 
 def _apply_quote_state_normalize(conn, *, cotizado_id: int | None, confirmado_id: int | None, declinado_id: int | None) -> int:
     """
-    Si un lead tiene cotización (monto/num/pdf o cotizaciones) y está en NUEVO/CONTACTADO,
+    Si un lead tiene cotización (sistema o manual completo) y está en NUEVO/CONTACTADO,
     lo movemos a COTIZADO.
     """
     if not cotizado_id:
@@ -218,15 +218,17 @@ def _apply_quote_state_normalize(conn, *, cotizado_id: int | None, confirmado_id
       WHERE table_schema='public' AND table_name='leads'
     """)).fetchall()}
 
+    # Regla negocio:
+    # - Sistema: existe registro en `cotizaciones` (o id_cotizacion_vigente).
+    # - Manual: requiere monto_cotizado > 0 Y num_cotizacion no vacío (PDF es opcional).
     parts = []
-    if "monto_cotizado" in cols:
-        parts.append("COALESCE(l.monto_cotizado,0) > 0")
-    if "num_cotizacion" in cols:
-        parts.append("l.num_cotizacion IS NOT NULL AND NULLIF(btrim(l.num_cotizacion::text),'') IS NOT NULL")
-    if "cotizacion_pdf_url" in cols:
-        parts.append("COALESCE(NULLIF(btrim(l.cotizacion_pdf_url),''), NULL) IS NOT NULL")
-    # tabla cotizaciones
+    # manual completo
+    if ("monto_cotizado" in cols) and ("num_cotizacion" in cols):
+        parts.append("(COALESCE(l.monto_cotizado,0) > 0 AND NULLIF(btrim(COALESCE(l.num_cotizacion::text,'')),'') IS NOT NULL)")
+    # sistema
     parts.append("EXISTS (SELECT 1 FROM public.cotizaciones c WHERE c.id_lead=l.id_lead)")
+    if "id_cotizacion_vigente" in cols:
+        parts.append("(l.id_cotizacion_vigente IS NOT NULL AND NULLIF(btrim(l.id_cotizacion_vigente::text),'' ) IS NOT NULL AND btrim(l.id_cotizacion_vigente::text) <> '0')")
     has_quote_sql = "(" + " OR ".join(parts) + ")"
 
     # estados base (tolerante si IDs cambian): NUEVO/CONTACTADO por nombre

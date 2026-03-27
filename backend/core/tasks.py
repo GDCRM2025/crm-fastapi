@@ -638,9 +638,9 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
-    # COMPLETAR_DATOS (calendario): faltantes (dir/hr)
+    # COMPLETAR_DATOS (calendario): faltantes (tel/dir/hr)
     # Requisito negocio: esto aplica SOLO para eventos confirmados del calendario (revisión semanal).
-    # Nota negocio: telefono/email pueden faltar en un lead y NO deben ser alerta.
+    # Nota negocio: telefono/email pueden faltar en un lead, PERO para eventos de la semana (calendario) sí es alerta.
     # Nota: pre_start/pre_end existen en algunos deploys; los aseguramos de forma best-effort.
     try:
         db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_start TIMESTAMPTZ"))
@@ -651,6 +651,43 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     try:
         week_start_sql = "date_trunc('week', now())::date"
         week_end_sql = "(date_trunc('week', now())::date + 6)"
+
+        # teléfono (solo calendario semana)
+        db.execute(
+            text(
+                f"""
+                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                SELECT
+                  'COMPLETAR_TELEFONO' AS kind,
+                  'Completar teléfono' AS title,
+                  'Evento confirmado sin teléfono.' AS description,
+                  'lead',
+                  l.id_lead,
+                  :uid,
+                  :uname,
+                  now() + INTERVAL '2 hours',
+                  30,
+                  jsonb_build_object('rule','mvp_tel')
+                FROM public.leads l
+                WHERE l.id_estado = :conf
+                  AND l.fecha_evento IS NOT NULL
+                  AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
+                  AND (l.telefono IS NULL OR btrim(l.telefono)='')
+                  AND (:is_admin OR {scope_sql})
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {
+                "uid": int(user_id),
+                "uname": (username or "").strip()[:200],
+                "conf": int(confirmado_id),
+                "is_admin": bool(is_admin),
+                "user_keys": user_keys,
+                "marcas_ids": marcas_ids or [0],
+                "marcas_ids_text": marcas_ids_text or ["0"],
+                "marcas_upper": marcas_upper or ["__NONE__"],
+            },
+        )
 
         # dirección
         db.execute(
