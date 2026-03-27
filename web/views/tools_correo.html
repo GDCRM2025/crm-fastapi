@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="icon" href="/web/pwa/gd-128.png" />
   <link rel="stylesheet" href="/web/styles.css" />
   <link rel="stylesheet" href="/web/ui_overrides.css" />
   <title>Tools · Correo (GIA)</title>
@@ -107,13 +108,13 @@
       border-color:rgba(220,38,38,.32);
     }
 
-    .main{
-      flex:1;
-      min-height:0;
-      display:grid;
-      grid-template-columns: 260px 440px 1fr;
-      gap:12px;
-    }
+	    .main{
+	      flex:1;
+	      min-height:0;
+	      display:grid;
+	      grid-template-columns: 260px 520px 1fr;
+	      gap:12px;
+	    }
     .pane{
       border:1px solid var(--bd);
       background: linear-gradient(180deg, var(--pane-bg), var(--pane-bg2));
@@ -132,9 +133,10 @@
       justify-content:space-between;
       gap:10px;
     }
-    .ttl{ font-weight:1000; font-size:13px; }
-    .muted{ color:var(--muted); font-size:12px; line-height:1.35; }
-    .scroll{ overflow:auto; min-height:0; }
+	    .ttl{ font-weight:1000; font-size:13px; }
+	    .muted{ color:var(--muted); font-size:12px; line-height:1.35; }
+	    .scroll{ overflow:auto; min-height:0; }
+	    .ico{ width:22px; height:22px; border-radius:9px; display:grid; place-items:center; background:rgba(255,255,255,.06); border:1px solid rgba(148,163,184,.18); font-size:13px; flex:0 0 auto; }
 
     /* bottom actions (tipo Gmail): buscador + acciones rápidas */
     .sideBottom{
@@ -232,7 +234,7 @@
       outline-offset: -1px;
     }
     .r1{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .from{ font-weight:1000; font-size:12px; max-width: 260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+	    .from{ font-weight:1000; font-size:12px; max-width: 340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
     .date{ font-size:11px; color:var(--muted); white-space:nowrap; }
     .subj{ margin-top:4px; font-weight:950; font-size:12px; }
     .prev{ margin-top:6px; font-size:12px; color:rgba(226,232,240,.85); opacity:.9; line-height:1.35; }
@@ -428,41 +430,31 @@
       <aside class="pane">
         <div class="head">
           <div>
-            <div class="ttl">Inboxes</div>
-            <div class="muted">Ventas y Pagos (por marca)</div>
+            <div class="ttl">Cuenta</div>
+            <div class="muted" id="accHint">Selecciona una casilla</div>
           </div>
+          <button class="btn icon" id="btnReload" type="button" title="Sincronizar carpeta actual">🔄</button>
         </div>
-        <div class="scroll" style="padding-bottom:10px">
-          <div class="group">
-            <div class="gtitle">
-              <div class="ttl">Ventas</div>
-              <span class="badge" id="cntSales">0</span>
-            </div>
-            <div id="foldersSales"></div>
-          </div>
-          <div class="group">
-            <div class="gtitle">
-              <div class="ttl">Pagos</div>
-              <span class="badge" id="cntPay">0</span>
-            </div>
-            <div id="foldersPay"></div>
-          </div>
+        <div class="scroll" style="padding:10px 10px 6px">
+          <div class="muted" style="font-weight:950;margin:0 0 8px">Casillas</div>
+          <div id="accounts"></div>
+          <div class="muted" style="font-weight:950;margin:12px 0 8px">Carpetas</div>
+          <div id="folders"></div>
         </div>
         <div class="sideBottom">
-          <div class="search2" title="Buscar en la bandeja (Enter para buscar)">
+          <div class="search2" title="Buscar en la carpeta (Enter para buscar)">
             <input id="q" type="text" placeholder="Buscar (asunto, remitente, contenido)..." autocomplete="off" />
-            <div class="scopeHint" id="scopeHint">Ventas · Todas</div>
+            <div class="scopeHint" id="scopeHint">—</div>
           </div>
           <div class="sideBtns">
-            <button class="btn icon" id="btnCompose" type="button" title="Nuevo correo (composer)">✍️ Nuevo</button>
-            <button class="btn icon" id="btnReload" type="button" title="Sincronizar IMAP ahora">🔄 Sync</button>
-            <button class="btn icon" id="btnClear" type="button" title="Limpiar búsqueda">🧹 Limpiar</button>
+            <button class="btn icon" id="btnCompose" type="button" title="Nuevo correo (composer)">✍️</button>
+            <button class="btn icon" id="btnClear" type="button" title="Limpiar búsqueda">🧹</button>
           </div>
-          <label class="toggle" title="Oculta correos clasificados como Spam (ruido/no comercial)">
+          <label class="toggle" title="Oculta correos ruido/no deseados (según clasificación)">
             <input type="checkbox" id="hideSpam" checked />
-            Ocultar spam
+            Ocultar ruido
           </label>
-          <div class="muted">Auto-sync suave cada ~3 minutos (cuando esta pestaña está visible).</div>
+          <div class="muted">Tip: al abrir carpeta, hace sync reciente si está vacía.</div>
         </div>
       </aside>
 
@@ -470,7 +462,7 @@
         <div class="head">
           <div>
             <div class="ttl">Bandeja</div>
-            <div class="muted" id="listHint">Selecciona una marca</div>
+            <div class="muted" id="listHint">Entrada</div>
           </div>
         </div>
         <div class="scroll">
@@ -618,109 +610,116 @@
       return `<span class="chip ${ok ? "ok":"warn"}">${esc(label)}</span>`;
     }
 
-    let accounts = [];
-    let brands = [];
-    let active = { inbox_type: "sales", id_marca: null, marca: "Todas", replied: 0 };
+    let accounts = []; // /gia/email/status items
     let items = [];
     let hideSpam = true;
     let activeMsgId = null;
     let activeMessage = null;
-    const INIT = (() => {
-      const p = new URLSearchParams(location.search || "");
-      const it = String(p.get("inbox_type") || "").trim().toLowerCase();
-      const midRaw = String(p.get("id_marca") || "").trim();
-      const openRaw = String(p.get("open_msg") || "").trim();
-      const mid = (/^\d+$/.test(midRaw)) ? Number(midRaw) : null;
-      const openMsg = (/^\d+$/.test(openRaw)) ? Number(openRaw) : null;
-      return {
-        inbox_type: (it === "payments" || it === "sales") ? it : null,
-        id_marca: mid,
-        open_msg: openMsg
-      };
-    })();
+    let activeAccount = null; // {account_email, id_marca, marca, inbox_type, ...}
+    let activeFolder = "INBOX";
+    let activeSpecials = null; // mapping inbox/sent/drafts/spam/trash/archive
 
     function setScopeHint(){
-      const it = active.inbox_type === "payments" ? "Pagos" : "Ventas";
-      const rep = (active.replied === 1) ? "Enviados" : ((active.replied === 0) ? "Inbox" : "Todos");
-      qs("#scopeHint").textContent = `${it} · ${active.marca || "Todas"} · ${rep}`;
+      const acc = (activeAccount?.account_email || "—");
+      const marca = (activeAccount?.marca || "");
+      const folder = (activeFolder || "INBOX");
+      qs("#scopeHint").textContent = `${marca ? (marca + " · ") : ""}${acc} · ${folder}`;
+      qs("#accHint").textContent = marca ? `${marca} · ${acc}` : acc;
+      qs("#listHint").textContent = prettyFolder(folder);
     }
 
-    function renderFolders(){
-      const listBrands = Array.isArray(brands) ? brands : [];
-      qs("#cntSales").textContent = String(listBrands.length);
-      qs("#cntPay").textContent = String(listBrands.length);
+    function prettyFolder(folder){
+      const f = String(folder||"INBOX");
+      const u = f.toUpperCase();
+      if (u === "INBOX") return "Entrada";
+      if (u.includes("DRAFT")) return "Borradores";
+      if (u.includes("SENT")) return "Enviados";
+      if (u.includes("SPAM") || u.includes("JUNK")) return "Spam";
+      if (u.includes("TRASH") || u.includes("DELETED")) return "Papelera";
+      if (u.includes("ARCHIV")) return "Archivo";
+      return f;
+    }
 
-      function subfolderHTML(inboxType, mid, marca, repliedVal){
-        const isActive = (active.inbox_type===inboxType && String(active.id_marca||"")===String(mid||"") && (active.replied===repliedVal));
-        const label = (repliedVal === 1) ? "Enviados" : ((repliedVal === 0) ? "Inbox" : "Todos");
-        return `<div class="subfolder ${isActive ? "active":""}" data-act="set" data-it="${esc(inboxType)}" data-mid="${esc(mid||"")}" data-marca="${esc(marca||"Todas")}" data-rep="${esc(repliedVal===null ? "" : String(repliedVal))}">${esc(label)}</div>`;
+    function renderAccounts(){
+      const host = qs("#accounts");
+      if (!accounts.length){
+        host.innerHTML = `<div class="muted">Sin cuentas configuradas.</div>`;
+        return;
       }
-
-      function foldersHTML(list, inboxType){
-        const allOpen = active.inbox_type===inboxType && !active.id_marca;
-        const allActive = allOpen;
-        const allBox = `
-          <details class="brandBox" ${allOpen ? "open":""}>
-            <summary>
-              <div class="brandSummary ${allActive ? "active":""}">
-                <div class="brandLeft">
-                  <div class="brandName">Todas</div>
-                  <div class="brandMeta">${inboxType==="payments" ? "Pagos detectados por correo" : "Todas las marcas"}</div>
-                </div>
-                <div class="badge">${inboxType==="payments" ? "Pagos" : "Ventas"}</div>
-              </div>
-            </summary>
-            <div class="subfolders">
-              ${subfolderHTML(inboxType, "", "Todas", 0)}
-              ${subfolderHTML(inboxType, "", "Todas", 1)}
-              ${subfolderHTML(inboxType, "", "Todas", null)}
-            </div>
-          </details>
+      host.innerHTML = accounts.map(a=>{
+        const isActive = (activeAccount && String(activeAccount.account_email)===String(a.account_email));
+        const tag = (String(a.inbox_type||"sales").toLowerCase()==="payments") ? "Pagos" : "Ventas";
+        return `
+          <button type="button" class="btn" data-act="acc" data-acc="${esc(a.account_email||"")}" style="width:100%;justify-content:space-between;display:flex;gap:10px;align-items:center;${isActive ? "border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent); background: color-mix(in srgb, var(--accent,#19c37d) 12%, transparent);" : ""}">
+            <span style="display:flex;flex-direction:column;gap:2px;text-align:left">
+              <span style="font-weight:1000">${esc(a.marca||"Marca")}</span>
+              <span class="muted" style="font-weight:900">${esc(a.account_email||"")}</span>
+            </span>
+            <span class="badge">${esc(tag)}</span>
+          </button>
         `;
-        const rows = list.map(a=>{
-          const mid = a.id_marca;
-          const isOpen = (active.inbox_type===inboxType && String(active.id_marca||"")===String(mid||""));
-          const isActive = isOpen;
-          return `
-            <details class="brandBox" ${isOpen ? "open":""}>
-              <summary>
-                <div class="brandSummary ${isActive ? "active":""}">
-                  <div class="brandLeft">
-                    <div class="brandName">${esc(a.marca||"Marca")}</div>
-                    <div class="brandMeta">${esc(a.account_email||"")}</div>
-                  </div>
-                  <div class="badge">${inboxType==="payments" ? "Pagos" : "Ventas"}</div>
-                </div>
-              </summary>
-              <div class="subfolders">
-                ${subfolderHTML(inboxType, mid, a.marca||"Marca", 0)}
-                ${subfolderHTML(inboxType, mid, a.marca||"Marca", 1)}
-                ${subfolderHTML(inboxType, mid, a.marca||"Marca", null)}
-              </div>
-            </details>
-          `;
-        }).join("");
-        return allBox + rows;
-      }
+      }).join("");
 
-      qs("#foldersSales").innerHTML = foldersHTML(listBrands, "sales");
-      qs("#foldersPay").innerHTML = foldersHTML(listBrands, "payments");
+      host.querySelectorAll("[data-act='acc']").forEach(el=>{
+        el.addEventListener("click", async ()=>{
+          const acc = String(el.getAttribute("data-acc")||"").trim();
+          await selectAccount(acc);
+        });
+      });
+    }
 
-      document.querySelectorAll("[data-act='set']").forEach(el=>{
-        el.addEventListener("click", async (ev)=>{
-          ev.preventDefault();
-          ev.stopPropagation();
-          active.inbox_type = String(el.getAttribute("data-it")||"sales");
-          const mid = String(el.getAttribute("data-mid")||"").trim();
-          active.id_marca = mid ? Number(mid) : null;
-          active.marca = String(el.getAttribute("data-marca")||"Todas") || "Todas";
-          const repRaw = String(el.getAttribute("data-rep")||"").trim();
-          active.replied = (repRaw === "") ? null : (Number(repRaw) ? 1 : 0);
-          activeMsgId = null;
-          activeMessage = null;
-          setScopeHint();
-          renderFolders();
-          await loadInbox({ sync:false });
+	    function folderIcon(folder){
+	      const f = String(folder||"INBOX").toUpperCase();
+	      if (f === "INBOX") return "📥";
+	      if (f.includes("DRAFT")) return "📝";
+	      if (f.includes("SENT")) return "📤";
+	      if (f.includes("SPAM") || f.includes("JUNK")) return "🛑";
+	      if (f.includes("TRASH") || f.includes("DELETED")) return "🗑️";
+	      if (f.includes("ARCHIV")) return "🗄️";
+	      return "📁";
+	    }
+
+	    function folderBtnHTML(label, folder){
+	      const isActive = String(activeFolder||"")===String(folder||"");
+	      const ico = folderIcon(folder);
+	      return `
+	        <div class="folder ${isActive ? "active":""}" data-act="folder" data-folder="${esc(folder||"INBOX")}">
+	          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+	            <div class="ico" aria-hidden="true">${esc(ico)}</div>
+	            <div style="min-width:0">
+	              <div class="fname">${esc(label)}</div>
+	              <div class="fmeta">${esc(folder||"INBOX")}</div>
+	            </div>
+	          </div>
+	        </div>
+	      `;
+	    }
+
+	    function renderFolders(){
+	      const host = qs("#folders");
+	      const sp = activeSpecials || {};
+	      const base = [];
+	      base.push(folderBtnHTML("Entrada", sp.inbox || "INBOX"));
+	      if (sp.drafts) base.push(folderBtnHTML("Borradores", sp.drafts));
+	      if (sp.sent) base.push(folderBtnHTML("Enviados", sp.sent));
+	      if (sp.spam) base.push(folderBtnHTML("Spam", sp.spam));
+	      if (sp.trash) base.push(folderBtnHTML("Papelera", sp.trash));
+	      if (sp.archive) base.push(folderBtnHTML("Archivo", sp.archive));
+
+	      // Extras (si hay carpetas adicionales)
+	      const extra = (sp && sp._all && Array.isArray(sp._all)) ? sp._all : [];
+	      const extras = extra.filter(f=>{
+		        const x = String(f||"");
+	        return x && !base.some(r=>r.includes(`data-folder=\"${esc(x)}`));
+	      });
+	      const more = extras.slice(0, 12).map(f => folderBtnHTML(prettyFolder(f), f)).join("");
+
+	      host.innerHTML = base.join("") + (more ? `<div class="muted" style="margin:12px 4px 8px;font-weight:1000">Más</div>${more}` : "");
+
+      host.querySelectorAll("[data-act='folder']").forEach(el=>{
+        el.addEventListener("click", async ()=>{
+          const f = String(el.getAttribute("data-folder")||"INBOX").trim() || "INBOX";
+          await selectFolder(f);
         });
       });
     }
@@ -769,33 +768,21 @@
     }
 
     function composeHTML(){
-      const optsBrands = (brands || []).map(b => `<option value="${esc(b.id_marca)}" ${String(active.id_marca||"")===String(b.id_marca) ? "selected":""}>${esc(b.marca||"Marca")}</option>`).join("");
-      const it = (active.inbox_type === "payments") ? "payments" : "sales";
+      const acc = activeAccount?.account_email || "—";
+      const marca = activeAccount?.marca || "";
+      const it = String(activeAccount?.inbox_type || "sales");
+      const tag = (it === "payments") ? "Pagos" : "Ventas";
       return `
         <div>
           <h2>Nuevo correo</h2>
           <div class="meta">
-            <div><b>Modo:</b> Composer</div>
-            <div class="muted">Tip: selecciona marca + tipo, redacta y envía. Con “Aprender” se guarda plantilla.</div>
+            <div><b>Desde:</b> ${esc(marca ? (marca + " · ") : "")}${esc(acc)} (${esc(tag)})</div>
+            <div class="muted">Tip: redacta y envía. “Aprender” guarda plantilla por marca + tipo.</div>
           </div>
         </div>
 
         <div class="actions" style="margin-top:6px">
-          <div class="leftActions">
-            <label class="toggle" title="Marca">
-              <span style="opacity:.85">Marca</span>
-              <select id="cmpMarca" style="margin-left:8px;padding:6px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.45);color:inherit;font-weight:950">
-                ${optsBrands}
-              </select>
-            </label>
-            <label class="toggle" title="Tipo de inbox">
-              <span style="opacity:.85">Inbox</span>
-              <select id="cmpInbox" style="margin-left:8px;padding:6px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.45);color:inherit;font-weight:950">
-                <option value="sales" ${it==="sales"?"selected":""}>Ventas</option>
-                <option value="payments" ${it==="payments"?"selected":""}>Pagos</option>
-              </select>
-            </label>
-          </div>
+          <div class="leftActions"></div>
           <div class="rightActions">
             <label class="toggle" title="Guardar como plantilla activa para la marca + tipo">
               <input type="checkbox" id="cmpLearn" checked />
@@ -843,15 +830,15 @@
       }
       if (btnSend){
         btnSend.addEventListener("click", async ()=>{
-          const idMarca = Number(qs("#cmpMarca")?.value || 0) || null;
-          const inboxType = String(qs("#cmpInbox")?.value || "sales");
+          const idMarca = Number(activeAccount?.id_marca || 0) || null;
+          const inboxType = String(activeAccount?.inbox_type || "sales");
           const toEmail = String(qs("#cmpTo")?.value || "").trim();
           const subj = String(qs("#cmpSubj")?.value || "").trim();
           const text = String(qs("#cmpText")?.value || "").trim();
           const learn = !!qs("#cmpLearn")?.checked;
           const kind = String(qs("#cmpKind")?.value || "other");
 
-          if (!idMarca){ toast("Selecciona marca"); return; }
+          if (!idMarca){ toast("Cuenta sin marca"); return; }
           if (!toEmail || !toEmail.includes("@")){ toast("Email destino inválido"); return; }
           if (!subj){ toast("Falta asunto"); return; }
           if (!text){ toast("Falta mensaje"); return; }
@@ -897,7 +884,7 @@
       return s.trim();
     }
 
-    function viewerHTML(msg){
+	    function viewerHTML(msg){
       const subj = msg.subject || "(Sin asunto)";
       const fromName = msg.from_name || "";
       const fromEmail = msg.from_email || "";
@@ -911,19 +898,20 @@
       const suggestLead = !!msg.suggest_create_lead;
       const leadId = msg.lead_id || null;
 
-      return `
-        <div class="viewerSplit">
-          <div class="viewerMain">
-            <div>
-              <h2>${esc(subj)}</h2>
-              <div class="meta">
-                <div><b>De:</b> ${esc(fromName)} ${fromEmail ? `&lt;${esc(fromEmail)}&gt;` : ""}</div>
-                <div><b>Fecha:</b> ${esc(String(dt).slice(0,19).replace("T"," "))}</div>
-                <div><b>Tipo:</b> ${esc(kindLbl)}</div>
-                <div><b>Inbox:</b> ${esc(msg.inbox_type || active.inbox_type)}</div>
-                ${leadId ? `<div><b>Lead:</b> #${esc(leadId)}</div>` : ``}
-              </div>
-            </div>
+	      return `
+	        <div class="viewerSplit">
+	          <div class="viewerMain">
+	            <div>
+	              <h2>${esc(subj)}</h2>
+	              <div class="meta">
+	                <div><b>De:</b> ${esc(fromName)} ${fromEmail ? `&lt;${esc(fromEmail)}&gt;` : ""}</div>
+	                <div><b>Fecha:</b> ${esc(String(dt).slice(0,19).replace("T"," "))}</div>
+	                <div><b>Tipo:</b> ${esc(kindLbl)}</div>
+	                <div><b>Cuenta:</b> ${esc(msg.account_email || activeAccount?.account_email || "—")}</div>
+	                <div><b>Carpeta:</b> ${esc(prettyFolder(msg.imap_folder || activeFolder || "INBOX"))}</div>
+	                ${leadId ? `<div><b>Lead:</b> #${esc(leadId)}</div>` : ``}
+	              </div>
+	            </div>
 
             <div class="body">${esc(bodyClean || body)}</div>
             <details>
@@ -959,29 +947,56 @@
       try{
         const st = await apiJSON("/gia/email/status");
         accounts = (st.items || []).map(x=>({ ...x, inbox_type: String(x.inbox_type || "sales").toLowerCase() }));
-        // brands únicos por id_marca (sirve para mostrar siempre Ventas/Pagos aunque sea la misma casilla)
-        const map = new Map();
-        accounts.forEach(a=>{
-          const mid = a.id_marca;
-          if (!mid) return;
-          if (!map.has(String(mid))){
-            map.set(String(mid), { id_marca: mid, marca: a.marca, account_email: a.account_email });
-          }
-        });
-        brands = [...map.values()];
         qs("#syncInfo").textContent = st.configured ? "Listo" : "No configurado (ver servidor)";
       }catch(e){
         qs("#syncInfo").textContent = "Error";
         accounts = [];
-        brands = [];
+      }
+      renderAccounts();
+      if (!activeAccount && accounts.length){
+        await selectAccount(accounts[0].account_email);
+      }else{
+        setScopeHint();
+      }
+    }
+
+    async function selectAccount(accEmail){
+      const want = String(accEmail||"").trim();
+      activeAccount = accounts.find(a => String(a.account_email||"") === want) || null;
+      activeMsgId = null;
+      activeMessage = null;
+      activeSpecials = null;
+      activeFolder = "INBOX";
+      renderAccounts();
+      qs("#folders").innerHTML = `<div class="muted">Cargando carpetas...</div>`;
+      try{
+        const f = await apiJSON(`/gia/email/folders?account_email=${encodeURIComponent(want)}`);
+        const sp = f.specials || {};
+        activeSpecials = { ...sp, _all: (f.folders || []) };
+        activeFolder = sp.inbox || "INBOX";
+      }catch(e){
+        activeSpecials = { inbox:"INBOX", _all:["INBOX"] };
       }
       renderFolders();
       setScopeHint();
+      await loadInbox({ sync:true, forceRecent:true });
+    }
+
+    async function selectFolder(folder){
+      activeFolder = String(folder||"INBOX").trim() || "INBOX";
+      activeMsgId = null;
+      activeMessage = null;
+      renderFolders();
+      setScopeHint();
+      await loadInbox({ sync:false });
+      if (!items.length){
+        await loadInbox({ sync:true, forceRecent:true });
+      }
     }
 
     async function loadInbox({sync=false, forceRecent=false}={}){
-      if (!accounts.length){
-        qs("#listHint").textContent = "Configura cuentas en el servidor";
+      if (!activeAccount){
+        qs("#listHint").textContent = "Selecciona una cuenta";
         items = [];
         renderList();
         renderViewerEmpty();
@@ -989,45 +1004,32 @@
       }
       setScopeHint();
       qs("#listHint").textContent = "Cargando...";
-      const mid = active.id_marca ? `&id_marca=${encodeURIComponent(active.id_marca)}` : "";
-      const it = `inbox_type=${encodeURIComponent(active.inbox_type || "sales")}`;
-      const rep = (active.replied === 0 || active.replied === 1) ? `&replied=${encodeURIComponent(active.replied)}` : "";
-      const q = String(qs("#q").value||"").trim();
-      const qParam = q ? `&q=${encodeURIComponent(q)}` : "";
+      const acc = `account_email=${encodeURIComponent(activeAccount.account_email||"")}`;
+      const fol = `&folder=${encodeURIComponent(activeFolder||"INBOX")}`;
+      const qv = String(qs("#q").value||"").trim();
+      const qParam = qv ? `&q=${encodeURIComponent(qv)}` : "";
 
-      try{
-        if (sync){
-          qs("#syncInfo").textContent = "Sincronizando IMAP...";
-          // Sync: "soft" (solo nuevos) por defecto; "forceRecent" recalcula últimos correos cuando el usuario lo pide.
+      if (sync){
+        try{
+          qs("#syncInfo").textContent = "Sincronizando...";
           const fr = forceRecent ? "&force_recent=1" : "";
-          const rs = await apiJSON(`/gia/email/sync?${mid.replace(/^&/,"")}${mid ? "&" : ""}limit=60${fr}`, { method:"POST" });
-          const errs = (rs.errors || []).filter(Boolean);
-          const stored = Number(rs.stored || 0);
-          if (stored > 0){
-            toast(`Llegó(n) ${stored} correo(s) nuevo(s).`);
-            ding();
-            try{ window.parent?.postMessage?.({ type:"toast", text:`Llegó(n) ${stored} correo(s) nuevo(s).`, kind:"ok", ms: 7000 }, "*"); }catch(_){}
-          }
-          if (errs.length){
-            qs("#syncInfo").textContent = `Sincronizado (errores: ${errs.length})`;
-          }else{
-            qs("#syncInfo").textContent = "Sincronizado";
-          }
+          await apiJSON(`/gia/email/sync?${acc}${fol}&limit=60${fr}`, { method:"POST" });
+          qs("#syncInfo").textContent = "Listo";
+        }catch(e){
+          qs("#syncInfo").textContent = "Error sync";
         }
-      }catch(e){
-        qs("#syncInfo").textContent = "Error al sincronizar";
       }
 
       try{
-        const data = await apiJSON(`/gia/email/inbox?${it}${mid}${rep}${qParam}&limit=80&offset=0`);
+        const data = await apiJSON(`/gia/email/inbox?${acc}${fol}${qParam}&limit=80&offset=0`);
         items = data.items || [];
-        if (hideSpam && (active.inbox_type || "sales") === "sales"){
+        const folderU = String(activeFolder||"INBOX").toUpperCase();
+        if (hideSpam && !(folderU.includes("SPAM") || folderU.includes("JUNK"))){
           items = items.filter(x => String(x.kind||"").toLowerCase() !== "spam");
         }
         qs("#listHint").textContent = `Mostrando ${items.length} correo(s)`;
       }catch(e){
         qs("#listHint").textContent = "Error al cargar bandeja: " + String(e?.message||e);
-        try{ toast("Correo: " + String(e?.message||e)); }catch(_){}
         items = [];
       }
       renderList();
@@ -1138,29 +1140,34 @@
       }
     });
 
-    // Init
-    (async ()=>{
-      await loadAccounts();
-      // apply deep-link (si existe)
-      if (INIT.inbox_type) active.inbox_type = INIT.inbox_type;
-      if (INIT.id_marca) active.id_marca = INIT.id_marca;
-      if (active.id_marca){
-        const found = accounts.find(a => String(a.inbox_type||"sales")===String(active.inbox_type) && String(a.id_marca||"")===String(active.id_marca));
-        active.marca = found?.marca || active.marca;
-      }
-      setScopeHint();
-      renderFolders();
-      renderViewerEmpty();
-      // default: ventas + todas
-      await loadInbox({sync:true, forceRecent:false});
-      if (INIT.open_msg){
-        activeMsgId = INIT.open_msg;
-        renderList();
-        await openMessage(activeMsgId);
-      }
+	    // Init
+	    (async ()=>{
+	      await loadAccounts();
+	      // Deep-link (opcional): ?account_email=...&folder=...&open_msg=...
+	      try{
+	        const p = new URLSearchParams(location.search || "");
+	        const acc = String(p.get("account_email") || "").trim();
+	        const folder = String(p.get("folder") || "").trim();
+	        const openMsg = String(p.get("open_msg") || "").trim();
 
-      // Auto-sync suave (evita que el ejecutivo dependa del botón "Sincronizar").
-      // Importante: IMAP puede ser lento, así que lo hacemos con intervalo conservador y solo si la pestaña está visible.
+	        if (acc && (!activeAccount || String(activeAccount.account_email||"") !== acc)){
+	          await selectAccount(acc);
+	        }
+	        if (folder){
+	          await selectFolder(folder);
+	        }
+	        renderViewerEmpty();
+	        if (openMsg){
+	          activeMsgId = openMsg;
+	          renderList();
+	          await openMessage(activeMsgId);
+	        }
+	      }catch(_){
+	        renderViewerEmpty();
+	      }
+
+	      // Auto-sync suave (evita que el ejecutivo dependa del botón "Sincronizar").
+	      // Importante: IMAP puede ser lento, así que lo hacemos con intervalo conservador y solo si la pestaña está visible.
       let inflight = false;
       setInterval(async ()=>{
         try{

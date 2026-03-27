@@ -1087,6 +1087,123 @@ def _imap_connect(*, host: str, port: int, use_ssl: bool) -> imaplib.IMAP4:
     return imaplib.IMAP4(host, port)
 
 
+def _decode_imap_line(x: Any) -> str:
+    if x is None:
+        return ""
+    if isinstance(x, bytes):
+        try:
+            return x.decode("utf-8")
+        except Exception:
+            return x.decode("latin-1", errors="replace")
+    return str(x)
+
+
+def _imap_list_folders(im: imaplib.IMAP4) -> list[str]:
+    """
+    LIST folders (best-effort). Retorna nombres crudos.
+    """
+    try:
+        typ, data = im.list()
+        if typ != "OK" or not data:
+            return []
+        out: list[str] = []
+        for line in data:
+            s = _decode_imap_line(line)
+            # ejemplo: '(\\HasNoChildren) "/" "INBOX.Sent"'
+            m = re.search(r'\"([^\"]+)\"\\s*$', s.strip())
+            if m:
+                out.append(m.group(1))
+                continue
+            # fallback: ultimo token
+            parts = s.strip().split(" ")
+            if parts:
+                out.append(parts[-1].strip('"'))
+        # de-dup
+        uniq: list[str] = []
+        seen = set()
+        for f in out:
+            ff = str(f or "").strip()
+            if not ff or ff in seen:
+                continue
+            seen.add(ff)
+            uniq.append(ff)
+        return uniq
+    except Exception:
+        return []
+
+
+def _pick_folder(folders: list[str], *keywords: str) -> str | None:
+    """
+    Heurística para mapear carpetas comunes (cPanel: INBOX.Sent, Drafts, Spam, Trash).
+    """
+    if not folders:
+        return None
+    ups = [(f, f.upper()) for f in folders]
+    for kw in keywords:
+        k = (kw or "").upper()
+        for f, u in ups:
+            if u == k:
+                return f
+        for f, u in ups:
+            if k in u:
+                return f
+    return None
+
+
+@router.get("/folders")
+def folders(
+    account_email: str = Query(..., description="Cuenta (from_email)"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Lista carpetas IMAP disponibles para una cuenta.
+    UI: replica look Gmail mostrando Entrada/Borradores/Enviados/SPAM/Papelera/Archivo + extras.
+    """
+    _ensure_schema()
+    accounts = _load_accounts()
+    if not accounts:
+        return {"ok": False, "error": "GIA email no configurado."}
+
+    with get_connection() as conn:
+        allowed = _filter_accounts_for_user(conn, user, accounts)
+        want = str(account_email or "").strip().lower()
+        a = next((x for x in allowed if str(x.get("from_email") or "").strip().lower() == want), None)
+        if not a:
+            raise HTTPException(403, "Sin permiso")
+
+        im = _imap_connect(host=a["imap_host"], port=int(a["imap_port"]), use_ssl=bool(a["imap_ssl"]))
+        try:
+            im.login(a["username"], a["password"])
+            fs = _imap_list_folders(im)
+        finally:
+            try:
+                im.logout()
+            except Exception:
+                pass
+
+    # map specials
+    inbox = _pick_folder(fs, "INBOX") or "INBOX"
+    sent = _pick_folder(fs, "SENT", "INBOX.SENT", "SENT ITEMS")
+    drafts = _pick_folder(fs, "DRAFTS", "INBOX.DRAFTS", "DRAFT")
+    spam = _pick_folder(fs, "SPAM", "JUNK", "INBOX.SPAM", "INBOX.JUNK")
+    trash = _pick_folder(fs, "TRASH", "PAPELERA", "INBOX.TRASH", "DELETED ITEMS")
+    archive = _pick_folder(fs, "ARCHIVE", "ARCHIVO")
+
+    return {
+        "ok": True,
+        "account_email": account_email,
+        "folders": fs,
+        "specials": {
+            "inbox": inbox,
+            "sent": sent,
+            "drafts": drafts,
+            "spam": spam,
+            "trash": trash,
+            "archive": archive,
+        },
+    }
+
+
 @router.get("/status")
 def status(user: dict = Depends(get_current_user)):
     _ensure_schema()
@@ -1262,6 +1379,8 @@ def summary(user: dict = Depends(get_current_user)):
 def sync(
     id_marca: int | None = Query(default=None, ge=1),
     inbox_type: str | None = Query(default=None),
+    account_email: str | None = Query(default=None, description="Filtra por cuenta exacta (from_email)"),
+    folder: str | None = Query(default=None, description="IMAP folder (raw, ej: INBOX, INBOX.Sent)"),
     force_recent: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=200),
     user: dict = Depends(get_current_user),
@@ -1283,6 +1402,9 @@ def sync(
             it = str(inbox_type or "").strip().lower()
             if it in ("sales", "payments"):
                 allowed = [a for a in allowed if str(a.get("inbox_type") or "sales").strip().lower() == it]
+        if account_email:
+            want = str(account_email or "").strip().lower()
+            allowed = [a for a in allowed if str(a.get("from_email") or "").strip().lower() == want]
 
         synced = 0
         stored = 0
@@ -1295,13 +1417,17 @@ def sync(
                 mid = _resolve_marca_id(conn, marca)
                 account_email = str(a.get("from_email") or "").strip()
                 acc_type = str(a.get("inbox_type") or "sales").strip().lower()
-                folder = str(a.get("imap_folder") or "INBOX").strip() or "INBOX"
+                folder = str(folder or a.get("imap_folder") or "INBOX").strip() or "INBOX"
                 st = conn.execute(text("SELECT last_uid FROM public.gia_email_state WHERE account_email=:a"), {"a": account_email}).scalar()
                 last_uid = int(st or 0)
 
                 im = _imap_connect(host=a["imap_host"], port=int(a["imap_port"]), use_ssl=bool(a["imap_ssl"]))
                 im.login(a["username"], a["password"])
-                im.select(folder)
+                try:
+                    im.select(folder)
+                except Exception:
+                    folder = "INBOX"
+                    im.select(folder)
 
                 # Strategy: fetch last `limit` UIDs; dedupe in DB.
                 typ, data = im.uid("search", None, "ALL")
@@ -1569,17 +1695,21 @@ def sync(
                         except Exception:
                             pass
 
-                # state
-                conn.execute(
-                    text(
-                        """
-                        INSERT INTO public.gia_email_state(account_email, last_uid, last_sync_at)
-                        VALUES (:a, :u, now())
-                        ON CONFLICT(account_email) DO UPDATE SET last_uid=:u, last_sync_at=now()
-                        """
-                    ),
-                    {"a": account_email, "u": int(max_uid)},
-                )
+                # state (orientado a INBOX). Para carpetas distintas, usar `force_recent`.
+                try:
+                    if str(folder).upper() == "INBOX":
+                        conn.execute(
+                            text(
+                                """
+                                INSERT INTO public.gia_email_state(account_email, last_uid, last_sync_at)
+                                VALUES (:a, :u, now())
+                                ON CONFLICT(account_email) DO UPDATE SET last_uid=:u, last_sync_at=now()
+                                """
+                            ),
+                            {"a": account_email, "u": int(max_uid)},
+                        )
+                except Exception:
+                    pass
                 conn.commit()
                 try:
                     im.logout()
@@ -1617,6 +1747,8 @@ def cron_sync(
 def inbox(
     id_marca: int | None = Query(default=None, ge=1),
     inbox_type: str | None = Query(default=None),
+    account_email: str | None = Query(default=None),
+    folder: str | None = Query(default=None),
     replied: int | None = Query(default=None),
     q: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
@@ -1660,6 +1792,12 @@ def inbox(
                 # Compat: algunos deploys guardan id_marca como TEXT.
                 where.append("btrim(COALESCE(id_marca::text,'')) = :mid_text")
                 params["mid_text"] = str(int(id_marca))
+            if account_email:
+                where.append("lower(btrim(COALESCE(account_email,''))) = :acc")
+                params["acc"] = str(account_email or "").strip().lower()
+            if folder:
+                where.append("COALESCE(imap_folder,'INBOX') = :folder")
+                params["folder"] = str(folder or "").strip() or "INBOX"
             if inbox_type:
                 it = str(inbox_type or "").strip().lower()
                 if it == "sales":

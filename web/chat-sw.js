@@ -1,9 +1,8 @@
 /* GD Chat - minimal service worker (installable PWA) */
-const CACHE_NAME = "gd-chat-shell-v1";
+const CACHE_NAME = "gd-chat-shell-v2";
 const SHELL_URLS = [
   "./views/chat.html",
   "./styles.css",
-  "./favicon.ico",
   "./chat.manifest.json",
   "./pwa/gd-128.png",
   "./pwa/gd-192.png",
@@ -56,4 +55,3 @@ self.addEventListener("fetch", (event) => {
     caches.match(req).then((cached) => cached || fetch(req).catch(() => cached))
   );
 });
-

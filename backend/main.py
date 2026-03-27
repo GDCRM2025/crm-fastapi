@@ -92,6 +92,12 @@ def web_fallback(path: str):
     return FileResponse(p)
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon_redirect():
+    # Evita 404/errores en consola: el browser siempre pide /favicon.ico.
+    return RedirectResponse(url="/web/pwa/gd-128.png")
+
+
 # Middleware: RID por request + respuesta JSON útil en 500s.
 @app.middleware("http")
 async def rid_middleware(request: Request, call_next):
