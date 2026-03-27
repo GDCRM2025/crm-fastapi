@@ -286,6 +286,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     is_admin = _is_admin_role(role)
     r_up = (role or "").strip().upper()
     is_finanzas = r_up in ("FINANZAS", "11")
+    # "Mis tareas" es para ejecutar gestión (ejecutivos). Admin/Finanzas no deben autogenerar miles de tareas de leads.
+    enable_lead_tasks = (not is_admin) and (not is_finanzas)
 
     nuevo_id = _estado_id_like(db, "%NUEV%", 1)
     confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
@@ -355,6 +357,40 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     has_pre_end = _col_exists(db, "leads", "pre_end")
     hr_missing_sql = "(l.pre_start IS NULL OR l.pre_end IS NULL)" if (has_pre_start and has_pre_end) else "FALSE"
 
+    # Si el usuario no debe recibir tareas de leads (Admin/Finanzas), limpiamos backlog previo (best-effort).
+    if not enable_lead_tasks:
+        try:
+            db.execute(
+                text(
+                    """
+                    UPDATE public.tasks
+                    SET status='skipped',
+                        updated_at=now(),
+                        completed_at=now(),
+                        completed_by=:uname,
+                        meta = meta || jsonb_build_object('auto_cleanup', true, 'reason', 'role_no_lead_tasks')
+                    WHERE assigned_user_id=:uid
+                      AND status='open'
+                      AND entity_type='lead'
+                      AND kind IN (
+                        'CONTACTAR_LEAD',
+                        'SEGUIMIENTO_PENDIENTE',
+                        'RIESGO_AUTO_DECLINE_NUEVO',
+                        'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA',
+                        'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA',
+                        'RIESGO_COTIZADO_EVENTO_CERCA',
+                        'COMPLETAR_TELEFONO',
+                        'COMPLETAR_DIRECCION',
+                        'COMPLETAR_HORARIO',
+                        'EVENTO_PROXIMO_INCOMPLETO'
+                      )
+                    """
+                ),
+                {"uid": int(user_id), "uname": (username or "").strip()[:200]},
+            )
+        except Exception:
+            pass
+
     # CONTACTAR (ventas): lead NUEVO asignado al usuario (id_usuario)
     # due_at = created_at + 24h
     try:
@@ -377,6 +413,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 WHERE l.id_estado = :nuevo
                   AND {scope_sql}
                   AND ({has_contact_sql}) IS FALSE
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -384,6 +421,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uid": int(user_id),
                 "uname": (username or "").strip()[:200],
                 "nuevo": int(nuevo_id),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -420,6 +458,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND {scope_sql}
                   AND ({has_contact_sql}) IS FALSE
                   AND COALESCE(l.created_at, now()) <= (now() - INTERVAL '5 days')
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -427,6 +466,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uid": int(user_id),
                 "uname": (username or "").strip()[:200],
                 "nuevo": int(nuevo_id),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -458,6 +498,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 WHERE l.id_estado NOT IN (:decl, :conf)
                   AND (:is_admin OR {scope_sql})
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '3 days')
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -465,6 +506,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uid": int(user_id),
                 "uname": (username or "").strip()[:200],
                 "is_admin": bool(is_admin),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "decl": int(declinado_id),
                 "conf": int(confirmado_id),
                 "user_keys": user_keys,
@@ -476,50 +518,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
-    # EVENTO_PROXIMO_INCOMPLETO: confirmados hoy/mañana con datos faltantes (direccion/horario)
-    # Nota negocio: telefono/email pueden faltar en un lead y NO deben ser alerta.
-    try:
-        if _col_exists(db, "leads", "fecha_evento"):
-            db.execute(
-                text(
-                    f"""
-                    INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
-                    SELECT
-                      'EVENTO_PROXIMO_INCOMPLETO' AS kind,
-                      'Evento próximo: completar datos' AS title,
-                      'Evento confirmado hoy/mañana con datos faltantes (dir/horario).' AS description,
-                      'lead',
-                      l.id_lead,
-                      :uid,
-                      :uname,
-                      now() + INTERVAL '2 hours',
-                      3,
-                      jsonb_build_object('rule','conf_missing_soon','fecha_evento',l.fecha_evento)
-                    FROM public.leads l
-                    WHERE l.id_estado = :conf
-                      AND l.fecha_evento IS NOT NULL
-                      AND DATE(l.fecha_evento) <= (CURRENT_DATE + INTERVAL '1 day')
-                      AND (:is_admin OR {scope_sql})
-                      AND (
-                        COALESCE(NULLIF(btrim(COALESCE(l.direccion,'')),''), NULL) IS NULL
-                        OR {hr_missing_sql}
-                      )
-                    ON CONFLICT DO NOTHING
-                    """
-                ),
-                {
-                    "uid": int(user_id),
-                    "uname": (username or "").strip()[:200],
-                    "is_admin": bool(is_admin),
-                    "conf": int(confirmado_id),
-                    "user_keys": user_keys,
-                    "marcas_ids": marcas_ids or [0],
-                    "marcas_ids_text": marcas_ids_text or ["0"],
-                    "marcas_upper": marcas_upper or ["__NONE__"],
-                },
-            )
-    except Exception:
-        pass
+    # Nota: se eliminó la tarea "EVENTO_PROXIMO_INCOMPLETO" (hoy/mañana) porque el proceso real es semanal
+    # (confirmados de la semana) y se gestiona con tareas específicas: COMPLETAR_TELEFONO/DIRECCION/HORARIO.
 
     try:
         db.execute(
@@ -542,6 +542,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND l.fecha_evento IS NULL
                   AND (:is_admin OR {scope_sql})
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '3 days')
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -550,6 +551,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uname": (username or "").strip()[:200],
                 "contactado": int(contactado_id),
                 "is_admin": bool(is_admin),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -583,6 +585,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND (COALESCE(NULLIF(btrim({notes_expr}),''), NULL) IS NOT NULL)
                   AND (:is_admin OR {scope_sql})
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '5 days')
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -591,6 +594,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uname": (username or "").strip()[:200],
                 "contactado": int(contactado_id),
                 "is_admin": bool(is_admin),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -621,6 +625,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND l.fecha_evento IS NOT NULL
                   AND l.fecha_evento <= (CURRENT_DATE + 4)
                   AND (:is_admin OR {scope_sql})
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -629,6 +634,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uname": (username or "").strip()[:200],
                 "cotizado": int(cotizado_id),
                 "is_admin": bool(is_admin),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -674,6 +680,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
                   AND (l.telefono IS NULL OR btrim(l.telefono)='')
                   AND (:is_admin OR {scope_sql})
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -682,6 +689,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uname": (username or "").strip()[:200],
                 "conf": int(confirmado_id),
                 "is_admin": bool(is_admin),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -711,6 +719,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
                   AND (COALESCE(NULLIF(btrim(l.direccion),''), NULL) IS NULL)
                   AND (:is_admin OR {scope_sql})
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -719,6 +728,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uname": (username or "").strip()[:200],
                 "conf": int(confirmado_id),
                 "is_admin": bool(is_admin),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -747,6 +757,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
                   AND ({hr_missing_sql})
                   AND (:is_admin OR {scope_sql})
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -755,6 +766,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uname": (username or "").strip()[:200],
                 "conf": int(confirmado_id),
                 "is_admin": bool(is_admin),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],

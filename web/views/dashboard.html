@@ -447,39 +447,53 @@
       </div>
     </section>
 
-    <section class="card" id="tasksCard" style="grid-column: span 12; display:none;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-        <div>
-          <h3 style="margin:0">Mis tareas</h3>
-          <div class="muted" style="margin-top:6px">Seguimiento y datos pendientes. Todo queda registrado. Si se acumula atraso, algunas reglas pueden declinar leads sin movimiento.</div>
-        </div>
-        <button class="btn" id="btnGoTasks" type="button">Abrir Tareas</button>
-      </div>
-      <div class="split" style="margin-top:12px;">
-        <div style="grid-column: span 4;">
-          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
-            <div class="label">Vencidas</div>
-            <div class="value" id="tasksOverdue">0</div>
-            <div class="hint">Requieren acción hoy</div>
-          </div>
-        </div>
-        <div style="grid-column: span 4;">
-          <div class="kpi" data-tone="cold" style="padding:12px 14px;">
-            <div class="label">Abiertas</div>
-            <div class="value" id="tasksOpen">0</div>
-            <div class="hint">Total asignadas</div>
-          </div>
-        </div>
-        <div style="grid-column: span 4;">
-          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
-            <div class="label">Sin contactar</div>
-            <div class="value" id="tasksContactOverdue">0</div>
-            <div class="hint">Leads nuevos vencidos</div>
-          </div>
-        </div>
-      </div>
-      <div id="tasksList" style="margin-top:10px"></div>
-    </section>
+	    <section class="card" id="tasksCard" style="grid-column: span 12; display:none;">
+	      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+	        <div>
+	          <h3 style="margin:0">Mis tareas</h3>
+	          <div class="muted" style="margin-top:6px">Seguimiento + calendario. “Hecho” exige evidencia (WSP/Llamada/Email/Nota) o validar que los datos ya fueron completados.</div>
+	        </div>
+	        <button class="btn" id="btnGoTasks" type="button">Abrir Tareas</button>
+	      </div>
+	      <div class="split" style="margin-top:12px;">
+	        <div style="grid-column: span 4;">
+	          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+	            <div class="label">Seguimiento vencido</div>
+	            <div class="value" id="tasksOverdue">0</div>
+	            <div class="hint">Leads sin acción reciente</div>
+	          </div>
+	        </div>
+	        <div style="grid-column: span 4;">
+	          <div class="kpi" data-tone="cold" style="padding:12px 14px;">
+	            <div class="label">Seguimiento abierto</div>
+	            <div class="value" id="tasksOpen">0</div>
+	            <div class="hint">Acciones pendientes</div>
+	          </div>
+	        </div>
+	        <div style="grid-column: span 4;">
+	          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+	            <div class="label">Sin contactar</div>
+	            <div class="value" id="tasksContactOverdue">0</div>
+	            <div class="hint">Leads nuevos vencidos</div>
+	          </div>
+	        </div>
+	      </div>
+	      <div class="split" style="margin-top:10px;">
+	        <div style="grid-column: span 4;">
+	          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+	            <div class="label">Calendario (semana)</div>
+	            <div class="value" id="tasksCalMissing">0</div>
+	            <div class="hint">Confirmados con faltantes</div>
+	          </div>
+	        </div>
+	        <div style="grid-column: span 8;">
+	          <div class="muted" style="padding:10px 12px;border:1px solid rgba(148,163,184,.14);border-radius:16px;background:rgba(2,6,23,.18);">
+	            Tip: en “Calendario (semana)” se exige <b>teléfono + dirección + horario</b> solo para confirmados de esta semana.
+	          </div>
+	        </div>
+	      </div>
+	      <div id="tasksList" style="margin-top:10px"></div>
+	    </section>
 
     <section class="card" id="eventsCard" style="grid-column: span 12;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
@@ -1001,12 +1015,17 @@
             return;
           }
         }catch(_){}
-        const j = await apiJson("/tasks?status=open&limit=12&offset=0");
+        const j = await apiJson("/tasks?status=open&limit=120&offset=0");
         if (j?.disabled){
           list.innerHTML = `<div class="muted">Tareas no disponibles en este entorno.</div>`;
           return;
         }
         const items = Array.isArray(j?.items) ? j.items : [];
+        const CAL_KINDS = new Set(["COMPLETAR_TELEFONO","COMPLETAR_DIRECCION","COMPLETAR_HORARIO"]);
+        const calItems = items.filter(t => CAL_KINDS.has(String(t?.kind || "").toUpperCase()));
+        const followItems = items.filter(t => !CAL_KINDS.has(String(t?.kind || "").toUpperCase()));
+        const calEl = $("#tasksCalMissing");
+        if (calEl) calEl.textContent = String(calItems.length);
         if (!items.length){
           list.innerHTML = `<div class="muted">No tienes tareas pendientes.</div>`;
           return;
@@ -1019,11 +1038,7 @@
             return d.toLocaleString("es-CL", { hour:"2-digit", minute:"2-digit", day:"2-digit", month:"2-digit" });
           }catch(_){ return raw; }
         };
-        list.innerHTML = `
-          <table class="pipe-table">
-            <thead><tr><th>Tarea</th><th>Relacionado</th><th class="right">Vence</th><th class="right">Acción</th></tr></thead>
-            <tbody>
-              ${items.map(t => {
+        const renderRows = (arr) => (arr || []).slice(0, 10).map(t => {
                 const due = t.due_at ? fmtDue(t.due_at) : "—";
                 const et = String(t.entity_type || "lead");
                 const isLead = (et === "lead");
@@ -1034,8 +1049,9 @@
                       ? `${String(t?.meta?.marca || "").trim() || ""} ${String(t?.meta?.from || "").trim() ? "· " + String(t.meta.from).trim() : ""}${String(t?.meta?.subject || "").trim() ? " · " + String(t.meta.subject).trim().slice(0,44) : ""}`.trim()
                       : "");
                 const overdue = t.due_at && (new Date(t.due_at).getTime() < Date.now());
+                const kind = String(t.kind || "");
                 return `
-                  <tr data-task="${t.id_task}" data-etype="${String(t.entity_type||"")}" data-eid="${t.entity_id||""}" class="rowlink" style="${overdue ? "background: rgba(239,68,68,.06);" : ""}">
+                  <tr data-task="${t.id_task}" data-kind="${kind}" data-etype="${String(t.entity_type||"")}" data-eid="${t.entity_id||""}" class="rowlink" style="${overdue ? "background: rgba(239,68,68,.06);" : ""}">
                     <td><strong>${String(t.title||t.kind||"Tarea")}</strong><div class="muted" style="font-size:12px;margin-top:4px">${String(t.description||"")}</div></td>
                     <td class="muted">${lead}</td>
                     <td class="right">${due}</td>
@@ -1045,10 +1061,22 @@
                     </td>
                   </tr>
                 `;
-              }).join("")}
-            </tbody>
+              }).join("") || `<tr><td colspan="4" class="muted">Sin tareas.</td></tr>`;
+
+        list.innerHTML = `
+          <div class="muted" style="font-weight:1000;margin:0 0 6px">Seguimiento (ventas)</div>
+          <table class="pipe-table">
+            <thead><tr><th>Tarea</th><th>Relacionado</th><th class="right">Vence</th><th class="right">Acción</th></tr></thead>
+            <tbody>${renderRows(followItems)}</tbody>
           </table>
-          <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en una fila abre el lead (o el correo). “Hecho/Omitir” registra en historial.</div>
+
+          <div class="muted" style="font-weight:1000;margin:12px 0 6px">Calendario (semana) · faltantes</div>
+          <table class="pipe-table">
+            <thead><tr><th>Tarea</th><th>Relacionado</th><th class="right">Vence</th><th class="right">Acción</th></tr></thead>
+            <tbody>${renderRows(calItems)}</tbody>
+          </table>
+
+          <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en una fila abre el lead (o el correo). “Hecho” exige evidencia o validar faltantes.</div>
         `;
 
         list.querySelectorAll("tr[data-task]").forEach(tr=>{
@@ -1075,7 +1103,28 @@
             const act = btn.getAttribute("data-act");
             try{
               if (act === "done"){
-                await apiJson(`/tasks/${encodeURIComponent(id)}/done`, { method:"POST" });
+                const kind = String(tr?.getAttribute("data-kind")||"").toUpperCase();
+                const requireFollowup = new Set([
+                  "CONTACTAR_LEAD",
+                  "SEGUIMIENTO_PENDIENTE",
+                  "RIESGO_AUTO_DECLINE_NUEVO",
+                  "RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA",
+                  "RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA",
+                  "RIESGO_COTIZADO_EVENTO_CERCA",
+                  "DECLINADO_FECHA_FUTURA",
+                ]);
+                if (requireFollowup.has(kind)){
+                  const via = prompt("Vía (WSP/CALL/EMAIL/NOTE):", "WSP") || "";
+                  const text = prompt("Detalle (requerido):", "") || "";
+                  if (!via.trim() || !text.trim()) return;
+                  await apiJson(`/tasks/${encodeURIComponent(id)}/done`, {
+                    method:"POST",
+                    headers: { "Content-Type":"application/json" },
+                    body: JSON.stringify({ action: via.trim().toUpperCase(), text: text.trim() })
+                  });
+                }else{
+                  await apiJson(`/tasks/${encodeURIComponent(id)}/done`, { method:"POST" });
+                }
               } else if (act === "skip"){
                 const reason = prompt("Motivo para omitir esta tarea (queda registrado):") || "";
                 if (!reason.trim()) return;
@@ -1167,24 +1216,31 @@
                 ${top.map(ev=>{
                   const marca = (ev.marca || "").toString().trim();
                   const dot = brandColors[marca.toUpperCase()] || "#7ee7b0";
-                  const cliente = (ev.cliente || "").toString().trim() || "—";
-                  const comuna = (ev.comuna || "").toString().trim() || "—";
-                  const ops = (ev.pre_ops != null && String(ev.pre_ops).trim() !== "") ? String(ev.pre_ops) : "—";
-                  const hr = fmtHr(ev);
-                  const productos = productLines(ev.pre_products_text || "", 4) || "• —";
-                  const tip = `📍 ${comuna} · 🕒 ${hr} · 👥 ${ops}\n${productos}`;
-                  const payload = encodeURIComponent(JSON.stringify(ev));
-                  return `
-                    <div class="event-pill" data-evt="${payload}">
-                      <span class="dot" style="background:${dot}"></span>
-                      <div style="min-width:0; flex:1;">
-                        <div class="t1">${cliente}</div>
-                        <div class="t2">${marca || "—"}</div>
-                      </div>
-                      <div class="tip">${tip}</div>
-                    </div>
-                  `;
-                }).join("")}
+	                  const cliente = (ev.cliente || "").toString().trim() || "—";
+	                  const comuna = (ev.comuna || "").toString().trim() || "—";
+	                  const ops = (ev.pre_ops != null && String(ev.pre_ops).trim() !== "") ? String(ev.pre_ops) : "—";
+	                  const hr = fmtHr(ev);
+	                  const productos = productLines(ev.pre_products_text || "", 4) || "• —";
+	                  const dir = String(ev.pre_direccion || ev.direccion || "").trim();
+	                  const tel = String(ev.telefono || "").trim();
+	                  const miss = [];
+	                  if (!tel) miss.push("📞");
+	                  if (!dir) miss.push("📍");
+	                  if (hr === "HR TBD") miss.push("🕒");
+	                  const missTxt = miss.length ? ` ⚠️ Falta ${miss.join(" ")}` : "";
+	                  const tip = `📍 ${comuna} · 🕒 ${hr} · 👥 ${ops}${missTxt}\n${productos}`;
+	                  const payload = encodeURIComponent(JSON.stringify(ev));
+	                  return `
+	                    <div class="event-pill" data-evt="${payload}">
+	                      <span class="dot" style="background:${dot}"></span>
+	                      <div style="min-width:0; flex:1;">
+	                        <div class="t1">${cliente}${miss.length ? ` <span style="opacity:.75;font-weight:900">⚠️</span>` : ""}</div>
+	                        <div class="t2">${marca || "—"}</div>
+	                      </div>
+	                      <div class="tip">${tip}</div>
+	                    </div>
+	                  `;
+	                }).join("")}
                 ${(!top.length) ? `<div class="muted" style="padding:6px 2px; font-weight:900; opacity:.55;">—</div>` : ``}
                 ${arr.length > 3 ? `<button class="event-more" type="button" data-more="${d}">Ver más</button>` : ``}
               </div>
