@@ -3079,7 +3079,7 @@ async function openEditModal(lead){
         </div>
       </details>
      </label>` +
-    `<label>Creado<input id="e_created" class="swInp" value="${escapeHtml(String(lead.created_at||"").replace("T"," ").slice(0,16))}" disabled /></label>` +
+    `<label>Creado<input id="e_created" class="swInp" value="${escapeHtml(String(lead.created_at||lead.fecha_ingreso||"").replace("T"," ").slice(0,16))}" disabled /></label>` +
     `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa" spellcheck="false">${escapeHtml(lead.notas || "")}</textarea></label>` +
     `<label class="span2">Agregar comentario
       <div class="gdQuickRow" style="margin:6px 0 8px">

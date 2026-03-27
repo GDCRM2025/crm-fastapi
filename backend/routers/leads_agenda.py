@@ -1715,9 +1715,9 @@ def move_lead_and_maybe_agenda(
 
             if inserted_roles:
                 try:
-                    # Email SOLO a Operaciones (no a Operadores).
+                    # Email SOLO a Operaciones + MICE (no a Operadores).
                     # El resto se notifica via system_notifs en el CRM.
-                    email_roles = ["OPERACIONES", "JEFE DE OPERACIONES", "3"]
+                    email_roles = ["OPERACIONES", "JEFE DE OPERACIONES", "3", "MICE", "8"]
                     to = _emails_for_roles(email_roles)
                     if to:
                         from backend.core.email import send_email_group
