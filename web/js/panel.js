@@ -1819,7 +1819,7 @@ const MENU = [
 	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260326-tools6#whatsapp" },
 	      { id: "tool_chat", label: "Chat (instalable)", url: "/web/views/chat.html?v=20260326-1" },
 	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260326-tools6#calc" },
-	      { id: "tool_wx", label: "Clima (7 días)", url: "/web/views/tools.html?v=20260326-tools6#clima" }
+	      // Clima removido (Tools unificado). Si lo reactivamos, vuelve como item de Tools.
 	    ]
 	  },
   {
