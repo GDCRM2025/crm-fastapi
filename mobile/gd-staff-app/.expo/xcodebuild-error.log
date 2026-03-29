@@ -1,0 +1,7 @@
+** BUILD FAILED **
+
+
+The following build commands failed:
+	PhaseScriptExecution [CP-User]\ Generate\ Specs /Users/oscarmendoza/Library/Developer/Xcode/DerivedData/GreenDiamondApp-duqkjcaxyeskaebpbvlzpikwrvna/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/React-Codegen.build/Script-46EB2E000194B0.sh (in target 'React-Codegen' from project 'Pods')
+	Building workspace GreenDiamondApp with scheme GreenDiamondApp and configuration Debug
+(2 failures)

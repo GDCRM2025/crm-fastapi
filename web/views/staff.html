@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>GreenDiamond App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#19c37d" />
+    <link rel="manifest" href="../staff.manifest.json" />
+    <link rel="icon" href="../pwa/gd-128.png" />
+    <style>
+      :root{
+        --bg:#F6F8FB;
+        --surface:#fff;
+        --border:rgba(15,23,42,.10);
+        --text:#0F172A;
+        --muted:rgba(15,23,42,.65);
+        --brand:#19c37d;
+        --brandDark:#0f8a57;
+      }
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+        background:var(--bg);
+        color:var(--text);
+      }
+      .app{height:100%; display:flex; flex-direction:column}
+      .top{
+        display:flex; align-items:center; justify-content:space-between;
+        padding:12px 14px; background:var(--surface); border-bottom:1px solid var(--border);
+      }
+      .title{font-weight:900}
+      .me{font-size:12px; color:var(--muted)}
+      .btn{
+        border:1px solid var(--border);
+        background:var(--surface);
+        border-radius:12px;
+        padding:8px 10px;
+        font-weight:800;
+        color:var(--text);
+      }
+      .frameWrap{flex:1; min-height:0}
+      iframe{width:100%; height:100%; border:0; background:var(--bg)}
+      .nav{
+        display:flex;
+        gap:8px;
+        padding:10px 10px calc(10px + env(safe-area-inset-bottom));
+        background:var(--surface);
+        border-top:1px solid var(--border);
+      }
+      .nav button{
+        flex:1;
+        border:1px solid var(--border);
+        background:var(--surface);
+        border-radius:14px;
+        padding:10px 12px;
+        font-weight:900;
+        color:var(--muted);
+      }
+      .nav button.active{
+        color:var(--brandDark);
+        background: rgba(25,195,125,.12);
+        border-color: rgba(25,195,125,.25);
+      }
+      .hint{
+        padding:10px 14px;
+        font-size:12px;
+        color:var(--muted);
+      }
+      .hide{display:none!important}
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="top">
+        <div>
+          <div class="title">GreenDiamond App</div>
+          <div class="me" id="meLine">Cargando…</div>
+        </div>
+        <button class="btn" id="logoutBtn">Salir</button>
+      </div>
+
+      <div class="hint" id="installHint">
+        iPhone/iPad: Safari → Compartir → “Agregar a pantalla de inicio”.<br />
+        Android/Chrome: menú ⋮ → “Instalar app”.
+      </div>
+
+      <div class="frameWrap">
+        <iframe id="mainFrame" title="GD App"></iframe>
+      </div>
+
+      <div class="nav">
+        <button id="tabChat" class="active">Chat</button>
+        <button id="tabNotifs">Alertas</button>
+        <button id="tabOp" class="hide">Operación</button>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = (() => {
+        try {
+          const h = String(location.hostname || "").toLowerCase();
+          const isLocal = h === "localhost" || h === "127.0.0.1";
+          return isLocal ? "" : "/crm";
+        } catch (_) {
+          return "";
+        }
+      })();
+
+      function getToken(){
+        return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+      }
+      function authHeaders(extra={}){
+        const t = getToken();
+        return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+      }
+      function requireAuth(){
+        if(!getToken()){
+          location.href = `${API_BASE}/web/login.html`;
+          return false;
+        }
+        return true;
+      }
+      function hasOperacionAccess(role){
+        const r = String(role || "").toUpperCase();
+        return r.includes("OPERACIONES") || r.includes("OPERACION") || r.includes("OPERADOR") || r.includes("CONDUCTOR") || r.includes("CHOFER");
+      }
+      async function apiJSON(path){
+        const r = await fetch(`${API_BASE}${path}`, { headers: authHeaders({ "Accept":"application/json" }) });
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }
+
+      const frame = document.getElementById("mainFrame");
+      const meLine = document.getElementById("meLine");
+      const tabChat = document.getElementById("tabChat");
+      const tabNotifs = document.getElementById("tabNotifs");
+      const tabOp = document.getElementById("tabOp");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const installHint = document.getElementById("installHint");
+
+      function setTab(active){
+        [tabChat, tabNotifs, tabOp].forEach((b) => b && b.classList.remove("active"));
+        if(active === "chat") tabChat.classList.add("active");
+        if(active === "notifs") tabNotifs.classList.add("active");
+        if(active === "op") tabOp.classList.add("active");
+      }
+
+      function setFrame(src){
+        frame.src = src;
+      }
+
+      function boot(){
+        if(!requireAuth()) return;
+        try{
+          const standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+          if(standalone && installHint) installHint.classList.add("hide");
+        }catch(_){}
+        setFrame(`${API_BASE}/web/views/chat.html`);
+        tabChat.onclick = () => { setTab("chat"); setFrame(`${API_BASE}/web/views/chat.html`); };
+        tabNotifs.onclick = () => { setTab("notifs"); setFrame(`${API_BASE}/web/views/system_notifs.html`); };
+        tabOp.onclick = () => { setTab("op"); setFrame(`${API_BASE}/web/views/operadores.html`); };
+
+        logoutBtn.onclick = async () => {
+          try{
+            await fetch(`${API_BASE}/auth/logout`, { method:"POST", headers: authHeaders({ "Content-Type":"application/json" }), body: JSON.stringify({ reason:"staff_pwa" }) });
+          }catch(_){}
+          try{
+            localStorage.removeItem("token"); localStorage.removeItem("gd_token");
+            sessionStorage.removeItem("token"); sessionStorage.removeItem("gd_token");
+          }catch(_){}
+          location.href = `${API_BASE}/web/login.html`;
+        };
+
+        apiJSON("/me").then((me) => {
+          const name = me?.name || me?.username || "Usuario";
+          const role = me?.role || me?.rol || "";
+          meLine.textContent = `${name} · ${role}`;
+          if(hasOperacionAccess(role)){
+            tabOp.classList.remove("hide");
+          }
+        }).catch(() => {
+          meLine.textContent = "Sesión inválida. Re-ingresa.";
+        });
+      }
+
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("../staff-sw.js").catch(() => {});
+      }
+      boot();
+    </script>
+  </body>
+</html>

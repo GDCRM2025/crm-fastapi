@@ -258,9 +258,18 @@ def _ensure_tables(conn):
     conn.commit()
 
 
-def _ensure_role(me):
-    role = (me.get("role") or me.get("rol") or "").upper()
-    if role not in (
+def _role_upper(me) -> str:
+    return (me.get("role") or me.get("rol") or "").upper()
+
+def _role_allowed(role: str, allowed_exact: tuple[str, ...], allowed_contains: tuple[str, ...] = ()) -> bool:
+    r = (role or "").upper()
+    if r in allowed_exact:
+        return True
+    return any(s and (s in r) for s in allowed_contains)
+
+def _ensure_role_read(me):
+    role = _role_upper(me)
+    allowed_exact = (
         "ADMIN",
         "SUPERADMIN",
         "JEFE DE OPERACIONES",
@@ -268,7 +277,29 @@ def _ensure_role(me):
         "COMPRAS",
         "MICE",
         "BODEGUERO",
-    ):
+    )
+    allowed_contains = (
+        # Operación staff (read-only)
+        "OPERADOR",
+        "CONDUCTOR",
+        "CHOFER",
+    )
+    if not _role_allowed(role, allowed_exact, allowed_contains):
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+
+def _ensure_role_write(me):
+    role = _role_upper(me)
+    allowed_exact = (
+        "ADMIN",
+        "SUPERADMIN",
+        "JEFE DE OPERACIONES",
+        "OPERACIONES",
+        "COMPRAS",
+        "MICE",
+        "BODEGUERO",
+    )
+    if not _role_allowed(role, allowed_exact):
         raise HTTPException(status_code=403, detail="No autorizado")
 
 
@@ -295,39 +326,38 @@ class ItemIn(BaseModel):
 @router.get("")
 def list_recetas(
     q: str = Query("", max_length=120),
+    marca: str = Query("", max_length=80),
+    active_only: bool = Query(False),
     me=Depends(get_current_user),
 ):
-    _ensure_role(me)
+    _ensure_role_read(me)
     with get_connection() as conn:
         _ensure_tables(conn)
+        where = []
+        params = {}
         if q:
-            rows = conn.execute(
-                text(
-                    """
-                    SELECT id_receta, producto, marca, rendimiento, merma_pct, costos_extra, unidad_base, es_sub_receta, is_active
-                    FROM recetas
-                    WHERE producto ILIKE :q OR COALESCE(marca,'') ILIKE :q
-                    ORDER BY producto ASC
-                    """
-                ),
-                {"q": f"%{q}%"},
-            ).mappings().all()
-        else:
-            rows = conn.execute(
-                text(
-                    """
-                    SELECT id_receta, producto, marca, rendimiento, merma_pct, costos_extra, unidad_base, es_sub_receta, is_active
-                    FROM recetas
-                    ORDER BY producto ASC
-                    """
-                )
-            ).mappings().all()
+            where.append("(producto ILIKE :q OR COALESCE(marca,'') ILIKE :q)")
+            params["q"] = f"%{q}%"
+        if marca:
+            where.append("UPPER(COALESCE(marca,'')) = UPPER(:m)")
+            params["m"] = marca.strip()
+        if active_only:
+            where.append("COALESCE(is_active, TRUE) = TRUE")
+
+        where_sql = "WHERE " + " AND ".join(where) if where else ""
+        sql = f"""
+            SELECT id_receta, producto, marca, rendimiento, merma_pct, costos_extra, unidad_base, es_sub_receta, is_active
+            FROM recetas
+            {where_sql}
+            ORDER BY producto ASC
+        """
+        rows = conn.execute(text(sql), params).mappings().all()
     return {"ok": True, "items": list(rows)}
 
 
 @router.get("/{id_receta}")
 def get_receta(id_receta: int, me=Depends(get_current_user)):
-    _ensure_role(me)
+    _ensure_role_read(me)
     with get_connection() as conn:
         _ensure_tables(conn)
         receta = conn.execute(
@@ -354,7 +384,7 @@ def get_receta(id_receta: int, me=Depends(get_current_user)):
 
 @router.post("")
 def create_receta(body: RecetaIn, me=Depends(get_current_user)):
-    _ensure_role(me)
+    _ensure_role_write(me)
     if not body.producto.strip():
         raise HTTPException(status_code=400, detail="producto requerido")
     with get_connection() as conn:
@@ -388,7 +418,7 @@ def create_receta(body: RecetaIn, me=Depends(get_current_user)):
 
 @router.put("/{id_receta}")
 def update_receta(id_receta: int, body: RecetaIn, me=Depends(get_current_user)):
-    _ensure_role(me)
+    _ensure_role_write(me)
     with get_connection() as conn:
         _ensure_tables(conn)
         conn.execute(
@@ -429,7 +459,7 @@ def update_receta(id_receta: int, body: RecetaIn, me=Depends(get_current_user)):
 
 @router.delete("/{id_receta}")
 def delete_receta(id_receta: int, me=Depends(get_current_user)):
-    _ensure_role(me)
+    _ensure_role_write(me)
     with get_connection() as conn:
         _ensure_tables(conn)
         # intenta resetear costo de producto (venta) antes de borrar
@@ -459,7 +489,7 @@ def delete_receta(id_receta: int, me=Depends(get_current_user)):
 
 @router.post("/{id_receta}/items")
 def add_item(id_receta: int, body: ItemIn, me=Depends(get_current_user)):
-    _ensure_role(me)
+    _ensure_role_write(me)
     if not body.ingrediente.strip():
         raise HTTPException(status_code=400, detail="ingrediente requerido")
     with get_connection() as conn:
@@ -497,7 +527,7 @@ def add_item(id_receta: int, body: ItemIn, me=Depends(get_current_user)):
 
 @router.put("/{id_receta}/items/{id_item}")
 def update_item(id_receta: int, id_item: int, body: ItemIn, me=Depends(get_current_user)):
-    _ensure_role(me)
+    _ensure_role_write(me)
     with get_connection() as conn:
         _ensure_tables(conn)
         conn.execute(
@@ -534,7 +564,7 @@ def update_item(id_receta: int, id_item: int, body: ItemIn, me=Depends(get_curre
 
 @router.delete("/{id_receta}/items/{id_item}")
 def delete_item(id_receta: int, id_item: int, me=Depends(get_current_user)):
-    _ensure_role(me)
+    _ensure_role_write(me)
     with get_connection() as conn:
         _ensure_tables(conn)
         conn.execute(

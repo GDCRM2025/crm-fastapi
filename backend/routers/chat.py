@@ -56,9 +56,9 @@ def _role(me) -> str:
 
 def _require_chat_access(me) -> None:
     r = _role(me)
-    # Chat interno: todos excepto Operadores y Conductores/Choferes.
-    if ("OPERADOR" in r) or ("CONDUCTOR" in r) or ("CHOFER" in r):
-        raise HTTPException(status_code=403, detail="Sin permiso para chat")
+    # Chat interno (staff app): permitido para todos los roles.
+    # La visibilidad real se controla por membresía de thread (chat_thread_members) y por UI/permissions.
+    _ = r
 
 
 def _user_id(me) -> int:
@@ -194,6 +194,7 @@ def _ensure_tables(db: Session) -> None:
 def list_users(
     q: str | None = None,
     limit: int = 60,
+    include_staff: int = 0,
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
@@ -209,8 +210,9 @@ def list_users(
     # si existe is_active, filtramos, pero tratamos NULL como TRUE (no queremos esconder usuarios por data incompleta)
     if "is_active" in cols_u:
         where.append("COALESCE(is_active, TRUE) = TRUE")
-    # Excluir operadores/conductores del listado (chat interno)
-    if "rol" in cols_u:
+    # Por defecto el CRM oculta operadores/choferes para no ensuciar el listado.
+    # Staff app puede pedir include_staff=1.
+    if (not int(include_staff)) and ("rol" in cols_u):
         where.append("COALESCE(upper(rol),'') NOT LIKE '%OPERADOR%'")
         where.append("COALESCE(upper(rol),'') NOT LIKE '%CONDUCTOR%'")
         where.append("COALESCE(upper(rol),'') NOT LIKE '%CHOFER%'")

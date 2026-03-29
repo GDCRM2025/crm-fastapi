@@ -75,6 +75,76 @@
     }
     .pill.bad{border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.14);}
     .pill.warn{border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.14);}
+
+    .tabs{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .tab{
+      height:36px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-weight:1100;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      white-space:nowrap;
+    }
+    :root.light .tab{ background: rgba(255,255,255,.88); border-color: rgba(0,0,0,.10); }
+    .tab.active{
+      border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+    }
+    .tab .b{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:22px;
+      height:22px;
+      padding:0 8px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:1100;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+    }
+    :root.light .tab .b{ background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.08); }
+
+    .section{ display:none; }
+    .section.show{ display:block; }
+    .secHead{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:10px;
+    }
+    .secTitle{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-weight:1100;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      font-size:12px;
+      opacity:.92;
+    }
+    .mark{
+      width:10px;
+      height:10px;
+      border-radius:999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+    .mark.cal{ background:#f59e0b; box-shadow: 0 0 0 4px rgba(245,158,11,.18); }
+    .mark.mail{ background:#3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,.18); }
   </style>
 </head>
 <body>
@@ -104,10 +174,21 @@
       <div class="pill" id="pMail">Correos: —</div>
     </div>
 
-    <section class="card">
-      <div class="h2">Tareas · Seguimiento (Leads)</div>
-      <div class="muted">Doble click abre el lead. “Listo” cierra la tarea. “Omitir” requiere motivo (queda log).</div>
-      <div style="max-height:46vh; overflow:auto; margin-top:10px">
+    <div class="tabs" style="margin-top:2px">
+      <button class="tab active" id="tabLeads" type="button">Leads <span class="b" id="bLeads">—</span></button>
+      <button class="tab" id="tabCal" type="button">Calendario <span class="b" id="bCal">—</span></button>
+      <button class="tab" id="tabMail" type="button">Correos <span class="b" id="bMail">—</span></button>
+      <button class="tab" id="tabAll" type="button">Todo</button>
+    </div>
+
+    <section class="card section show" id="secLeads">
+      <div class="secHead">
+        <div>
+          <div class="secTitle"><span class="mark"></span>Seguimiento (Leads)</div>
+          <div class="muted">“Listo” exige evidencia (WSP/Llamada/Email/Nota) en tareas críticas. Doble click abre el lead.</div>
+        </div>
+      </div>
+      <div style="max-height:70vh; overflow:auto">
         <table class="tbl">
           <thead>
             <tr>
@@ -125,10 +206,14 @@
       </div>
     </section>
 
-    <section class="card">
-      <div class="h2">Tareas · Calendario (Semana)</div>
-      <div class="muted">Confirmados de la semana con faltantes (tel/dirección/horario). “Editar” abre el lead para corregir y re-sincronizar Calendar.</div>
-      <div style="max-height:46vh; overflow:auto; margin-top:10px">
+    <section class="card section" id="secCal">
+      <div class="secHead">
+        <div>
+          <div class="secTitle"><span class="mark cal"></span>Calendario (Semana)</div>
+          <div class="muted">Solo confirmados de la semana con faltantes (tel/dirección/horario). “Editar” abre el editor y re-sincroniza Google Calendar.</div>
+        </div>
+      </div>
+      <div style="max-height:70vh; overflow:auto">
         <table class="tbl">
           <thead>
             <tr>
@@ -146,10 +231,14 @@
       </div>
     </section>
 
-    <section class="card">
-      <div class="h2">Tareas · Correos</div>
-      <div class="muted">Correos pendientes de respuesta. “Abrir” lleva a Tools → Correo (GIA).</div>
-      <div style="max-height:46vh; overflow:auto; margin-top:10px">
+    <section class="card section" id="secMail">
+      <div class="secHead">
+        <div>
+          <div class="secTitle"><span class="mark mail"></span>Correos</div>
+          <div class="muted">Pendientes de respuesta. “Abrir” lleva a Tools → Correo (GIA).</div>
+        </div>
+      </div>
+      <div style="max-height:70vh; overflow:auto">
         <table class="tbl">
           <thead>
             <tr>
@@ -243,6 +332,9 @@
       qs("#pContact").textContent = `Contactar: ${j?.counts?.open_contactar ?? "—"}`;
       qs("#pCal").textContent = `Calendario: ${j?.counts?.open_calendario ?? "—"}`;
       qs("#pMail").textContent = `Correos: ${j?.counts?.open_correos ?? "—"}`;
+      qs("#bLeads").textContent = String(j?.counts?.open_total ?? "—");
+      qs("#bCal").textContent = String(j?.counts?.open_calendario ?? "—");
+      qs("#bMail").textContent = String(j?.counts?.open_correos ?? "—");
     }
 
     function prLabel(priority){
@@ -330,6 +422,25 @@
     }
 
     async function init(){
+      const TAB_KEY = "gd_tasks_tab";
+      function setTab(t){
+        const tab = String(t||"leads");
+        try{ localStorage.setItem(TAB_KEY, tab); }catch(_){}
+        qs("#tabLeads").classList.toggle("active", tab==="leads");
+        qs("#tabCal").classList.toggle("active", tab==="cal");
+        qs("#tabMail").classList.toggle("active", tab==="mail");
+        qs("#tabAll").classList.toggle("active", tab==="all");
+        qs("#secLeads").classList.toggle("show", tab==="leads" || tab==="all");
+        qs("#secCal").classList.toggle("show", tab==="cal" || tab==="all");
+        qs("#secMail").classList.toggle("show", tab==="mail" || tab==="all");
+      }
+
+      qs("#tabLeads").onclick = ()=> setTab("leads");
+      qs("#tabCal").onclick = ()=> setTab("cal");
+      qs("#tabMail").onclick = ()=> setTab("mail");
+      qs("#tabAll").onclick = ()=> setTab("all");
+      try{ setTab(localStorage.getItem(TAB_KEY) || "leads"); }catch(_){ setTab("leads"); }
+
       // Delegación global (evita re-binds tras cada render).
       document.addEventListener("dblclick", (ev)=>{
         const tr = ev.target?.closest?.("tr[data-lead]");
