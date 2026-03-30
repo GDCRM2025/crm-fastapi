@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from typing import Any
 
 from sqlalchemy import text
@@ -187,12 +188,24 @@ def send_webpush_to_users(
     Requiere instalar `pywebpush` en el server y configurar VAPID en variables de entorno.
     """
     if webpush is None:
-        return {"sent": 0, "failed": 0, "missing_lib": 1}
+        return {
+            "sent": 0,
+            "failed": 0,
+            "missing_lib": 1,
+            "py": sys.executable,
+            "py_version": sys.version.split()[0],
+        }
 
     pub = _vapid_public_key()
     priv = _vapid_private_key()
     if not pub or not priv:
-        return {"sent": 0, "failed": 0, "missing_vapid": 1}
+        return {
+            "sent": 0,
+            "failed": 0,
+            "missing_vapid": 1,
+            "has_public": bool(pub),
+            "has_private": bool(priv),
+        }
 
     payload = json.dumps(
         {"title": (title or "").strip()[:80], "body": (body or "").strip()[:180], "url": url, "tag": tag},
