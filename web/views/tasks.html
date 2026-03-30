@@ -221,21 +221,68 @@
           <div class="muted">“Listo” exige evidencia (WSP/Llamada/Email/Nota) en tareas críticas. Doble click abre el lead.</div>
         </div>
       </div>
-      <div style="max-height:70vh; overflow:auto">
-        <table class="tbl">
-          <thead>
-            <tr>
-              <th>Prioridad</th>
-              <th>Tarea</th>
-              <th>Lead</th>
-              <th>Marca</th>
-              <th>Estado</th>
-              <th>Vence</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="tbLeads"></tbody>
-        </table>
+      <div class="muted" style="margin-top:-2px">Agrupado por estado del lead: Nuevos / Contactados / Cotizados.</div>
+
+      <div style="max-height:74vh; overflow:auto; display:flex; flex-direction:column; gap:12px; margin-top:10px">
+        <div class="card" style="padding:10px">
+          <div class="secHead" style="margin:0 0 6px 0">
+            <div class="secTitle" style="margin:0"><span class="mark" style="background:#22c55e"></span>Leads nuevos <span class="b" id="bLeadNew" style="margin-left:6px">—</span></div>
+          </div>
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Prioridad</th>
+                <th>Tarea</th>
+                <th>Lead</th>
+                <th>Marca</th>
+                <th>Estado</th>
+                <th>Vence</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbLeadsNew"></tbody>
+          </table>
+        </div>
+
+        <div class="card" style="padding:10px">
+          <div class="secHead" style="margin:0 0 6px 0">
+            <div class="secTitle" style="margin:0"><span class="mark" style="background:#0ea5e9"></span>Leads contactados <span class="b" id="bLeadContact" style="margin-left:6px">—</span></div>
+          </div>
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Prioridad</th>
+                <th>Tarea</th>
+                <th>Lead</th>
+                <th>Marca</th>
+                <th>Estado</th>
+                <th>Vence</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbLeadsContact"></tbody>
+          </table>
+        </div>
+
+        <div class="card" style="padding:10px">
+          <div class="secHead" style="margin:0 0 6px 0">
+            <div class="secTitle" style="margin:0"><span class="mark" style="background:#f59e0b"></span>Leads cotizados <span class="b" id="bLeadQuote" style="margin-left:6px">—</span></div>
+          </div>
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Prioridad</th>
+                <th>Tarea</th>
+                <th>Lead</th>
+                <th>Marca</th>
+                <th>Estado</th>
+                <th>Vence</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbLeadsQuote"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -513,7 +560,28 @@
         else if (kind.startsWith("COMPLETAR_") || kind === "EVENTO_PROXIMO_INCOMPLETO") cal.push(t);
         else leads.push(t);
       }
-      qs("#tbLeads").innerHTML = leads.map(trLead).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
+
+      const norm = (s)=> String(s||"").toUpperCase();
+      const isNew = (t)=> /NUEV/.test(norm(t.lead_estado));
+      const isContact = (t)=> /CONTACT/.test(norm(t.lead_estado));
+      const isQuote = (t)=> /COTIZ/.test(norm(t.lead_estado));
+      const gNew = leads.filter(isNew);
+      const gContact = leads.filter(t => !isNew(t) && isContact(t));
+      const gQuote = leads.filter(t => !isNew(t) && !isContact(t) && isQuote(t));
+      const gOther = leads.filter(t => !isNew(t) && !isContact(t) && !isQuote(t));
+
+      qs("#bLeadNew").textContent = String(gNew.length);
+      qs("#bLeadContact").textContent = String(gContact.length);
+      qs("#bLeadQuote").textContent = String(gQuote.length);
+
+      qs("#tbLeadsNew").innerHTML = gNew.map(trLead).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
+      qs("#tbLeadsContact").innerHTML = gContact.map(trLead).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
+      qs("#tbLeadsQuote").innerHTML = gQuote.map(trLead).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
+      // Si hay otros estados, los anexamos al final de "cotizados" para no perderlos.
+      if (gOther.length){
+        qs("#tbLeadsQuote").innerHTML += gOther.map(trLead).join("");
+      }
+
       qs("#tbCal").innerHTML = cal.map(trCal).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
       qs("#tbMail").innerHTML = mail.map(trMail).join("") || `<tr><td colspan="5" class="muted">Sin tareas.</td></tr>`;
     }
@@ -624,8 +692,13 @@
               });
               if (!res.isConfirmed || !res.value) return;
               await jpost(`/tasks/${idTask}/done`, { action: res.value.via, text: res.value.text });
+              // Abrir lead para continuar seguimiento visual (y verificar que quedó registrado).
+              const leadId = tr?.getAttribute("data-lead");
+              if (leadId) openLead(leadId);
             }else{
               await jpost(`/tasks/${idTask}/done`, {});
+              const leadId = tr?.getAttribute("data-lead");
+              if (leadId) openLead(leadId);
             }
           }else if (act === "skip"){
             const r = await Swal.fire({

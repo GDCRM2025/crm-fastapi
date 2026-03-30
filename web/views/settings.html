@@ -190,6 +190,12 @@
         🔎 <input id="q" placeholder="Buscar..." />
       </div>
 
+      <div class="search" style="min-width:260px" title="Ordenar">
+        <span style="font-weight:900;opacity:.8">⇅</span>
+        <select id="sortCol" style="flex:1;border:0;outline:none;background:transparent;color:var(--text);font-weight:900"></select>
+        <button class="btn" id="sortDir" type="button" style="padding:7px 10px;border-radius:999px">↓</button>
+      </div>
+
       <button class="btn primary" id="btnAdd">+ Crear</button>
       <button class="btn" id="btnReload">Recargar</button>
       <button class="btn" id="btnPwdReq" style="display:none;">Solicitudes clave</button>
@@ -328,6 +334,8 @@
     items:[],
     q:"",
     filterMarca:"",
+    sortCol:"",
+    sortDir:"desc",
     offset:0,
     page:1,
     pageSize:25,
@@ -498,6 +506,45 @@
       .replace(/[\u0300-\u036f]/g, "");
   }
 
+  function _parseSortVal(raw){
+    const s0 = String(raw ?? "").replace(/\u00A0/g," ").trim();
+    if (!s0) return { t:"s", v:"" };
+    const s = s0.replace(/\s+/g," ").trim();
+    // dd/mm/yyyy
+    const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+    if (m1){
+      const dd=Number(m1[1]), mm=Number(m1[2]), yy=Number(m1[3]);
+      const hh=Number(m1[4]||0), mi=Number(m1[5]||0);
+      return { t:"n", v: Date.UTC(yy,mm-1,dd,hh,mi,0) };
+    }
+    // yyyy-mm-dd
+    const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?/);
+    if (m2){
+      const yy=Number(m2[1]), mm=Number(m2[2]), dd=Number(m2[3]);
+      const hh=Number(m2[4]||0), mi=Number(m2[5]||0);
+      return { t:"n", v: Date.UTC(yy,mm-1,dd,hh,mi,0) };
+    }
+    const sNum = s.replace(/[^\d.,-]/g,"");
+    if (sNum && /[\d]/.test(sNum)){
+      let n = sNum;
+      const lastDot = n.lastIndexOf(".");
+      const lastComma = n.lastIndexOf(",");
+      if (lastDot >= 0 && lastComma >= 0){
+        const dec = Math.max(lastDot, lastComma);
+        const intPart = n.slice(0, dec).replace(/[.,]/g, "");
+        const decPart = n.slice(dec + 1).replace(/[.,]/g, "");
+        n = intPart + "." + decPart;
+      } else if (lastComma >= 0 && lastDot < 0){
+        n = n.replace(/\./g, "").replace(",", ".");
+      } else {
+        n = n.replace(/,/g, "");
+      }
+      const v = Number(n);
+      if (Number.isFinite(v)) return { t:"n", v };
+    }
+    return { t:"s", v: s.toLowerCase() };
+  }
+
   function render(){
     const th = qs("#th");
     const body = qs("#body");
@@ -511,6 +558,23 @@
       const s = normStr(JSON.stringify(r));
       return s.includes(q);
     }) : state.items;
+
+    // Orden explícito (no depende de click en headers).
+    const sc = String(state.sortCol || "").trim();
+    const dir = (String(state.sortDir || "desc") === "asc") ? 1 : -1;
+    if (sc){
+      const pairs = items.map((r, idx)=>({ r, idx, k:_parseSortVal(r?.[sc]) }));
+      pairs.sort((a,b)=>{
+        if (a.k.t === "n" && b.k.t === "n"){
+          if (a.k.v === b.k.v) return a.idx - b.idx;
+          return (a.k.v < b.k.v ? -1 : 1) * dir;
+        }
+        const av = String(a.k.v), bv = String(b.k.v);
+        if (av === bv) return a.idx - b.idx;
+        return (av < bv ? -1 : 1) * dir;
+      });
+      items = pairs.map(p=>p.r);
+    }
 
     if (entity === "productos" && state.filterMarca){
       const sel = String(state.filterMarca || "");
@@ -622,6 +686,27 @@
     qs("#title").textContent = `Settings · ${entity}`;
     qs("#subtitle").textContent = `Tabla: ${state.meta.table}`;
 
+    // Setup sort UI
+    try{
+      const cols = orderColumns((state.meta?.columns || []).filter(c=>!isHiddenList(c.column_name)));
+      const sel = qs("#sortCol");
+      if (sel){
+        const prev = String(state.sortCol || "");
+        sel.innerHTML = `<option value="">(sin ordenar)</option>` + cols.map(c=>`<option value="${c.column_name}">${colLabel(c)}</option>`).join("");
+        // default para usuarios: push_ok
+        if (entity === "usuarios" && !prev){
+          const hasPushOk = cols.some(c=>c.column_name==="push_ok");
+          state.sortCol = hasPushOk ? "push_ok" : "";
+          state.sortDir = "desc";
+        }
+        sel.value = String(state.sortCol || "");
+      }
+      const btnDir = qs("#sortDir");
+      if (btnDir){
+        btnDir.textContent = (String(state.sortDir || "desc") === "asc") ? "↑" : "↓";
+      }
+    }catch(_){}
+
     const hasActive = (state.meta?.columns || []).some(c=>c.column_name==="is_active");
     state.activeOnly = hasActive ? true : false;
 
@@ -679,6 +764,20 @@
       }catch(_){}
     }
   }
+
+  // wire sort ui (idempotente)
+  try{
+    qs("#sortCol")?.addEventListener("change", (ev)=>{
+      state.sortCol = String(ev?.target?.value || "");
+      render();
+    });
+    qs("#sortDir")?.addEventListener("click", ()=>{
+      state.sortDir = (String(state.sortDir||"desc") === "asc") ? "desc" : "asc";
+      const btnDir = qs("#sortDir");
+      if (btnDir) btnDir.textContent = (state.sortDir === "asc") ? "↑" : "↓";
+      render();
+    });
+  }catch(_){}
 
   function buildField(col, row, mode){
     const name = col.column_name;
