@@ -166,7 +166,7 @@
         <div class="sub">Lista de eventos agendados en Calendar para tus marcas. Puedes editar y se notifica a Operaciones/MICE/Admin.</div>
       </div>
       <div class="row">
-        <input id="q" class="inp" placeholder="Buscar (cliente, comuna, marca, #lead)" style="min-width:260px" />
+        <input id="q" class="inp" placeholder="Buscar (título/cliente, comuna, marca, #lead)" style="min-width:260px" />
         <select id="brand" class="sel" title="Marca">
           <option value="">Mis marcas</option>
         </select>
@@ -509,11 +509,12 @@
           tb.innerHTML = items.map((r)=>{
             const f = ddmmyyyy(r.fecha_evento || r.start_at || "");
             const hr = (hhmm(r.pre_start) && hhmm(r.pre_end)) ? `${hhmm(r.pre_start)}–${hhmm(r.pre_end)}` : (hhmm(r.start_at) && hhmm(r.end_at) ? `${hhmm(r.start_at)}–${hhmm(r.end_at)}` : "—");
+            const showTitle = String(r.pre_title || r.cliente || "").trim();
             return `
               <tr class="rowlink" data-id="${esc(r.id_lead)}">
                 <td><span class="pill">${esc(f)}</span></td>
                 <td class="muted">${esc(hr)}</td>
-                <td><strong>${esc(r.cliente||"—")}</strong></td>
+                <td><strong>${esc(showTitle || "—")}</strong></td>
                 <td class="muted">${esc(r.comuna||"—")}</td>
                 <td class="muted">${esc(r.marca||"—")}</td>
                 <td class="muted">#${esc(r.id_lead||"")}</td>

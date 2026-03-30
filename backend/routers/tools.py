@@ -2555,6 +2555,7 @@ def calendar_events_list(
             "("
             "CAST(l.id_lead AS text) ILIKE :q "
             f"OR {name_expr} ILIKE :q "
+            f"OR {pre_title_expr} ILIKE :q "
             "OR COALESCE(c.nombre,'') ILIKE :q "
             "OR COALESCE(m.nombre,m.marca,'') ILIKE :q "
             ")"
@@ -3781,15 +3782,43 @@ def edit_confirmed_event(
             except Exception:
                 return None
 
-        title = str(lead.get("pre_title") or "").strip() or f"Evento Lead {id_lead}"
-        loc = str(lead.get("pre_location") or "").strip()
-        details = str(lead.get("pre_description") or "").strip()
-        st0 = _as_dt(lead.get("pre_start"))
-        en0 = _as_dt(lead.get("pre_end"))
+        # Releer el lead tras UPDATE (si solo editas título, el dict `lead` de arriba queda stale).
+        lead2 = (
+            db.execute(
+                text(
+                    """
+                    SELECT id_lead,
+                           COALESCE(calendar_event_id,'') AS calendar_event_id,
+                           COALESCE(calendar_html_link,'') AS calendar_html_link,
+                           COALESCE(calendar_event_ids_json,'') AS calendar_event_ids_json,
+                           COALESCE(calendar_html_links_json,'') AS calendar_html_links_json,
+                           COALESCE(pre_title,'') AS pre_title,
+                           pre_start,
+                           pre_end,
+                           COALESCE(pre_location,'') AS pre_location,
+                           COALESCE(pre_description,'') AS pre_description,
+                           COALESCE(pre_events_json,'') AS pre_events_json
+                    FROM public.leads
+                    WHERE id_lead=:id
+                    LIMIT 1
+                    """
+                ),
+                {"id": int(id_lead)},
+            )
+            .mappings()
+            .first()
+        )
+        lead_used = lead2 or lead
+
+        title = str(lead_used.get("pre_title") or "").strip() or f"Evento Lead {id_lead}"
+        loc = str(lead_used.get("pre_location") or "").strip()
+        details = str(lead_used.get("pre_description") or "").strip()
+        st0 = _as_dt(lead_used.get("pre_start"))
+        en0 = _as_dt(lead_used.get("pre_end"))
 
         plan = None
         try:
-            raw_plan = str(lead.get("pre_events_json") or "").strip()
+            raw_plan = str(lead_used.get("pre_events_json") or "").strip()
             if raw_plan:
                 plan = json.loads(raw_plan)
         except Exception:
@@ -3810,8 +3839,9 @@ def edit_confirmed_event(
                         # Al editar un confirmado, el "título" debe reflejar el lead (pre_title),
                         # aunque `pre_events_json` tenga títulos legacy.
                         "title": title,
-                        "location": str(e.get("location") or loc),
-                        "description": str(e.get("description") or details or ""),
+                        # También forzamos location/description del lead para que el cambio se refleje.
+                        "location": loc,
+                        "description": details or "",
                         "start": st,
                         "end": en,
                     }
@@ -3835,7 +3865,7 @@ def edit_confirmed_event(
         existing_ids: list[str] = []
         existing_links: list[str] = []
         try:
-            raw_ids = str(lead.get("calendar_event_ids_json") or "").strip()
+            raw_ids = str(lead_used.get("calendar_event_ids_json") or "").strip()
             if raw_ids:
                 v = json.loads(raw_ids)
                 if isinstance(v, list):
@@ -3843,7 +3873,7 @@ def edit_confirmed_event(
         except Exception:
             existing_ids = []
         try:
-            raw_ln = str(lead.get("calendar_html_links_json") or "").strip()
+            raw_ln = str(lead_used.get("calendar_html_links_json") or "").strip()
             if raw_ln:
                 v2 = json.loads(raw_ln)
                 if isinstance(v2, list):
@@ -3852,14 +3882,14 @@ def edit_confirmed_event(
             existing_links = []
 
         if not existing_ids:
-            one = str(lead.get("calendar_event_id") or "").strip()
+            one = str(lead_used.get("calendar_event_id") or "").strip()
             if one:
                 existing_ids = [one]
 
         cal_id = os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
         if not existing_ids:
             candidates = []
-            one_link = str(lead.get("calendar_html_link") or "").strip()
+            one_link = str(lead_used.get("calendar_html_link") or "").strip()
             if one_link:
                 candidates.append(one_link)
             candidates.extend(existing_links)

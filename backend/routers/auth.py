@@ -679,6 +679,25 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Dict[s
                             marcas = [int(mid)]
                     except Exception:
                         pass
+                # 3) último fallback: inferir desde leads asignados (evita "Mis marcas" vacío)
+                if not marcas:
+                    try:
+                        rows = conn.execute(
+                            text(
+                                """
+                                SELECT DISTINCT l.id_marca
+                                FROM public.leads l
+                                WHERE l.id_usuario=:u
+                                  AND l.id_marca IS NOT NULL
+                                ORDER BY l.id_marca
+                                LIMIT 50
+                                """
+                            ),
+                            {"u": int(uid)},
+                        ).fetchall()
+                        marcas = [int(r[0]) for r in rows if r and r[0] is not None and str(r[0]).isdigit() and int(r[0]) > 0]
+                    except Exception:
+                        marcas = []
                 if marcas:
                     user["marcas"] = marcas
     except Exception:
