@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Eventos (Calendario)</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:14px;overflow:auto;}
+    .wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .head{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.25);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    :root.light .head{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .sub{opacity:.72;font-weight:850;font-size:12px;margin-top:4px;max-width:760px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .inp,.sel{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 12px;
+      font-weight:900;
+      outline:none;
+    }
+    :root.light .inp,:root.light .sel{background: rgba(255,255,255,.88); border-color: rgba(0,0,0,.10);}
+    .btn{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-weight:1000;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    :root.light .btn{background: rgba(255,255,255,.88); border-color: rgba(0,0,0,.10);}
+    .btn.primary{background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn:hover{filter:brightness(1.06);}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+      min-height:0;
+    }
+    :root.light .card{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
+    .muted{opacity:.72; font-weight:850; font-size:12px;}
+    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:sticky; top:0; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
+    :root.light .tbl th{background: rgba(255,255,255,.92);}
+    .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:4px 10px; border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      font-weight:1000; font-size:12px;
+      white-space:nowrap;
+    }
+    :root.light .pill{background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.08);}
+    .rowlink{cursor:pointer;}
+    .rowlink:hover{background:rgba(255,255,255,.03);}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="head">
+      <div>
+        <div class="ttl">Eventos (Calendario)</div>
+        <div class="sub">Lista de eventos agendados en Calendar para tus marcas. Puedes editar y se notifica a Operaciones/MICE/Admin.</div>
+      </div>
+      <div class="row">
+        <input id="q" class="inp" placeholder="Buscar (cliente, comuna, marca, #lead)" style="min-width:260px" />
+        <input id="from" class="inp" type="date" />
+        <input id="to" class="inp" type="date" />
+        <select id="brand" class="sel" title="Marca">
+          <option value="">Mis marcas</option>
+        </select>
+        <button id="btnReload" class="btn primary" type="button">Buscar</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="h2" style="margin:0">Listado</div>
+        <div class="muted" id="meta">—</div>
+      </div>
+      <div style="max-height:76vh; overflow:auto">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Horario</th>
+              <th>Cliente</th>
+              <th>Comuna</th>
+              <th>Marca</th>
+              <th>Lead</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tb"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = h === "localhost" || h === "127.0.0.1";
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+
+    function getToken(){
+      return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    }
+    function authHeaders(extra={}){
+      const t = getToken();
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+    function apiURL(path){
+      const p = String(path || "");
+      if (p.startsWith("http")) return p;
+      return `${API_BASE}${p.startsWith("/") ? "" : "/"}${p}`;
+    }
+    async function apiJSON(path, opt={}){
+      const r = await fetch(apiURL(path), { ...opt, headers: authHeaders(opt.headers || {}) });
+      const txt = await r.text();
+      let j = null; try{ j = txt ? JSON.parse(txt) : null; }catch(_){}
+      if (!r.ok) throw new Error((j && (j.detail || j.error)) ? (j.detail || j.error) : (txt || String(r.status)));
+      return j;
+    }
+
+    function ddmmyyyy(s){
+      const d = String(s || "").slice(0,10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "—";
+      return `${d.slice(8,10)}/${d.slice(5,7)}/${d.slice(0,4)}`;
+    }
+    function hhmm(iso){
+      const s = String(iso || "");
+      return s.length >= 16 ? s.slice(11,16) : "";
+    }
+
+    function _tzOffsetHHMM(dt){
+      try{
+        const offMin = -dt.getTimezoneOffset();
+        const sign = offMin >= 0 ? "+" : "-";
+        const abs = Math.abs(offMin);
+        const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+        const mm = String(abs % 60).padStart(2, "0");
+        return `${sign}${hh}:${mm}`;
+      }catch(_){
+        return "";
+      }
+    }
+    function _localISO(dateStr, timeStr){
+      const ds = String(dateStr||"").trim();
+      const ts = String(timeStr||"").trim();
+      if (!ds || !ts) return null;
+      const [y,m,d] = ds.split("-").map(x=>Number(x||0));
+      const [hh,mm] = ts.split(":").map(x=>Number(x||0));
+      if (!y || !m || !d) return null;
+      const dt = new Date(y, (m-1), d, hh||0, mm||0, 0);
+      const off = _tzOffsetHHMM(dt);
+      const pad = (n)=> String(n).padStart(2,"0");
+      return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:00${off}`;
+    }
+
+    function openLead(id){
+      const url = "/web/views/leads.html?open_lead=" + encodeURIComponent(String(id));
+      try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+    }
+
+    async function editEvent(row){
+      const fecha = String(row?.fecha_evento || "").slice(0,10);
+      if (!fecha){
+        Swal.fire({ icon:"error", title:"Falta fecha_evento", text:"No se puede editar sin fecha_evento." });
+        return;
+      }
+      const defaultTitle = (() => {
+        const marca = String(row?.marca || "").trim();
+        const cli = String(row?.cliente || "").trim();
+        return [cli, marca].filter(Boolean).join(" - ") || `Lead #${row?.id_lead}`;
+      })();
+
+      const res = await Swal.fire({
+        title: `Editar evento (#${row.id_lead})`,
+        html: `
+          <div style="text-align:left;display:flex;flex-direction:column;gap:10px">
+            <div class="muted">Actualiza el lead y re-sincroniza Google Calendar. Se registra en historial y notifica a Operaciones/MICE/Admin.</div>
+
+            <label style="font-weight:950;font-size:12px;opacity:.8;margin-top:6px">Título (Calendar)</label>
+            <input id="ev_title" class="swal2-input" style="height:42px" value="${esc(defaultTitle)}" />
+
+            <label style="font-weight:950;font-size:12px;opacity:.8">Teléfono</label>
+            <input id="ev_tel" class="swal2-input" style="height:42px" value="${esc(row.telefono||"")}" placeholder="+569..." />
+
+            <label style="font-weight:950;font-size:12px;opacity:.8">Dirección</label>
+            <input id="ev_dir" class="swal2-input" style="height:42px" value="${esc(row.direccion||"")}" placeholder="Dirección completa" />
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div>
+                <label style="font-weight:950;font-size:12px;opacity:.8">Inicio</label>
+                <input id="ev_hi" class="swal2-input" style="height:42px" placeholder="14:30" value="${esc(hhmm(row.pre_start)||'')}" />
+              </div>
+              <div>
+                <label style="font-weight:950;font-size:12px;opacity:.8">Fin</label>
+                <input id="ev_hf" class="swal2-input" style="height:42px" placeholder="18:30" value="${esc(hhmm(row.pre_end)||'')}" />
+              </div>
+            </div>
+
+            <label style="font-weight:950;font-size:12px;opacity:.8">Notas (Calendar)</label>
+            <textarea id="ev_desc" class="swal2-textarea" placeholder="Notas para operaciones / cliente (opcional)">${esc(row.pre_description||"")}</textarea>
+          </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: "Guardar y sincronizar",
+        cancelButtonText: "Cancelar",
+        preConfirm: ()=>{
+          const title = (document.getElementById("ev_title")?.value || "").trim();
+          const telefono = (document.getElementById("ev_tel")?.value || "").trim() || null;
+          const direccion = (document.getElementById("ev_dir")?.value || "").trim() || null;
+          const hi = (document.getElementById("ev_hi")?.value || "").trim();
+          const hf = (document.getElementById("ev_hf")?.value || "").trim();
+          const desc = (document.getElementById("ev_desc")?.value || "").trim() || null;
+
+          if (!title){ Swal.showValidationMessage("Falta título."); return false; }
+          if (!direccion){ Swal.showValidationMessage("Falta dirección."); return false; }
+          if (!hi || !/^[0-2]\\d:[0-5]\\d$/.test(hi) || !hf || !/^[0-2]\\d:[0-5]\\d$/.test(hf)){
+            Swal.showValidationMessage("Horario inválido (HH:MM)."); return false;
+          }
+          const preStart = _localISO(fecha, hi);
+          const preEnd = _localISO(fecha, hf);
+          if (!preStart || !preEnd){ Swal.showValidationMessage("No pude construir el horario."); return false; }
+          return { pre_title: title, pre_location: direccion, pre_description: desc, pre_start: preStart, pre_end: preEnd, telefono, direccion };
+        }
+      });
+      if (!res.isConfirmed || !res.value) return;
+
+      try{
+        await apiJSON(`/tools/agenda/${row.id_lead}/edit_confirmed`, {
+          method: "PUT",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify(res.value),
+        });
+        Swal.fire({ icon:"success", title:"Listo", text:"Evento actualizado y sincronizado." });
+        await load();
+      }catch(err){
+        Swal.fire({ icon:"error", title:"Error", text:"No pude actualizar: " + String(err?.message||err) });
+      }
+    }
+
+    async function loadBrandsForSelect(){
+      const sel = qs("#brand");
+      if (!sel) return;
+      try{
+        const raw = await apiJSON("/marcas?limit=200");
+        const items = Array.isArray(raw) ? raw : (raw.items || []);
+        const clean = (items||[]).map((m)=>({
+          id: Number(m.id_marca || m.id || 0) || 0,
+          nombre: String(m.nombre || m.marca || "").trim()
+        })).filter(x=>x.id>0 && x.nombre);
+        const me = await apiJSON("/me");
+        const role = String(me?.role || me?.rol || "").toUpperCase();
+        const isAdmin = role.includes("ADMIN") || String(me?.id||"") === "1";
+        const myIds = (me?.marcas || []).map(x=>Number(x)).filter(Boolean);
+        const allowed = isAdmin ? clean : clean.filter(x=>myIds.includes(x.id));
+
+        sel.innerHTML = `<option value="">${isAdmin ? "Todas" : "Mis marcas"}</option>` + allowed.map(x=>`<option value="${x.id}">${esc(x.nombre)}</option>`).join("");
+      }catch(_){}
+    }
+
+    async function load(){
+      const meta = qs("#meta");
+      const tb = qs("#tb");
+      if (tb) tb.innerHTML = `<tr><td colspan="7" class="muted">Cargando…</td></tr>`;
+      try{
+        const q = (qs("#q")?.value || "").trim();
+        const from = (qs("#from")?.value || "").trim();
+        const to = (qs("#to")?.value || "").trim();
+        const id_marca = (qs("#brand")?.value || "").trim();
+        const params = new URLSearchParams();
+        if (q) params.set("q", q);
+        if (from) params.set("from_date", from);
+        if (to) params.set("to_date", to);
+        if (id_marca) params.set("id_marca", id_marca);
+        params.set("limit", "500");
+        const j = await apiJSON(`/tools/calendar/events_list?${params.toString()}`);
+        const items = Array.isArray(j.items) ? j.items : [];
+        if (meta) meta.textContent = `${items.length} evento(s)`;
+        if (!items.length){
+          if (tb) tb.innerHTML = `<tr><td colspan="7" class="muted">Sin resultados.</td></tr>`;
+          return;
+        }
+        if (tb){
+          tb.innerHTML = items.map((r)=>{
+            const f = ddmmyyyy(r.fecha_evento || r.start_at || "");
+            const hr = (hhmm(r.pre_start) && hhmm(r.pre_end)) ? `${hhmm(r.pre_start)}–${hhmm(r.pre_end)}` : (hhmm(r.start_at) && hhmm(r.end_at) ? `${hhmm(r.start_at)}–${hhmm(r.end_at)}` : "—");
+            return `
+              <tr class="rowlink" data-id="${esc(r.id_lead)}">
+                <td><span class="pill">${esc(f)}</span></td>
+                <td class="muted">${esc(hr)}</td>
+                <td><strong>${esc(r.cliente||"—")}</strong></td>
+                <td class="muted">${esc(r.comuna||"—")}</td>
+                <td class="muted">${esc(r.marca||"—")}</td>
+                <td class="muted">#${esc(r.id_lead||"")}</td>
+                <td>
+                  <button class="btn" data-act="open" type="button">Abrir</button>
+                  <button class="btn primary" data-act="edit" type="button">Editar</button>
+                </td>
+              </tr>
+            `;
+          }).join("");
+
+          const byId = new Map(items.map(x=>[String(x.id_lead), x]));
+          tb.querySelectorAll("tr[data-id]").forEach((tr)=>{
+            const id = tr.getAttribute("data-id");
+            tr.addEventListener("dblclick", ()=> openLead(id));
+            tr.querySelectorAll("button[data-act]").forEach((b)=>{
+              b.addEventListener("click", (ev)=>{
+                ev.stopPropagation();
+                const act = b.getAttribute("data-act");
+                const row = byId.get(String(id));
+                if (!row) return;
+                if (act === "open") openLead(id);
+                if (act === "edit") editEvent(row);
+              });
+            });
+          });
+        }
+      }catch(err){
+        if (meta) meta.textContent = "—";
+        if (tb) tb.innerHTML = `<tr><td colspan="7" class="muted">Error: ${esc(String(err?.message||err))}</td></tr>`;
+      }
+    }
+
+    function initDefaultDates(){
+      const from = qs("#from");
+      const to = qs("#to");
+      const pad = (n)=> String(n).padStart(2,"0");
+      const today = new Date();
+      const d1 = new Date(today.getTime() - 7*86400000);
+      const d2 = new Date(today.getTime() + 90*86400000);
+      const iso = (d)=> `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+      if (from && !from.value) from.value = iso(d1);
+      if (to && !to.value) to.value = iso(d2);
+    }
+
+    (async function(){
+      if (!getToken()){
+        location.href = `${API_BASE}/web/login.html?next=${encodeURIComponent("/web/views/events_calendar.html")}`;
+        return;
+      }
+      initDefaultDates();
+      await loadBrandsForSelect();
+      qs("#btnReload")?.addEventListener("click", load);
+      qs("#q")?.addEventListener("keydown", (e)=>{ if (e.key === "Enter") load(); });
+      qs("#from")?.addEventListener("change", load);
+      qs("#to")?.addEventListener("change", load);
+      qs("#brand")?.addEventListener("change", load);
+      load();
+    })();
+  </script>
+</body>
+</html>
+

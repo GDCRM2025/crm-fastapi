@@ -1729,7 +1729,8 @@ const MENU = [
     ico: "\u{1F9FE}",
     title: "Tareas",
     items: [
-      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260325-tasks2" }
+      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260325-tasks2" },
+      { id: "events_calendar", label: "Eventos (Calendario)", url: "/web/views/events_calendar.html?v=20260330-1" }
     ]
   },
   {
@@ -1981,10 +1982,11 @@ const PERMISSIONS = {
     "set_roles",
     "set_metas",
 	    "set_bak",
-	    "chk_hoy"
-	    ,"tasks_my"
-	    ,"system_notifs"
-	  ]),
+		    "chk_hoy"
+		    ,"tasks_my"
+		    ,"system_notifs"
+		    ,"events_calendar"
+		  ]),
 	  2: /* @__PURE__ */ new Set([
 	    "dash_home",
 	    "leads_ver",
@@ -2011,18 +2013,20 @@ const PERMISSIONS = {
     "set_prod",
     "set_com",
 	    "set_el",
-	    "chk_hoy"
-	    ,"tasks_my"
-	    ,"system_notifs"
-	  ]),
-	  3: /* @__PURE__ */ new Set([
-	    "dash_home",
-	    "rep_com",
-	    "rep_prod",
-	    "rep_cli",
-	    "op_rec",
-	    "op_mice",
-	    "op_ruta",
+		    "chk_hoy"
+		    ,"tasks_my"
+		    ,"system_notifs"
+		    ,"events_calendar"
+		  ]),
+		  3: /* @__PURE__ */ new Set([
+		    "dash_home",
+		    "rep_com",
+		    "rep_prod",
+		    "rep_cli",
+		    "system_notifs",
+		    "op_rec",
+		    "op_mice",
+		    "op_ruta",
 	    "op_ma_cat",
 	    "op_ma_inv",
     "op_ma_ficha",
@@ -2047,10 +2051,10 @@ const PERMISSIONS = {
 	    "set_marcas",
 	    "set_prod",
 	    "set_com",
-	    "rrhh_staff",
-		    "rrhh_solicitudes",
-		    "chk_hoy"
-	  ]),
+		    "rrhh_staff",
+			    "rrhh_solicitudes",
+			    "chk_hoy"
+		  ]),
 	  4: /* @__PURE__ */ new Set([
 	    "dash_home",
 	    "rep_prod",
@@ -2126,11 +2130,12 @@ const PERMISSIONS = {
     "op_uni",
     "op_vruta2"
   ]),
-	  8: /* @__PURE__ */ new Set([
-	    "dash_home",
-	    "op_rec",
-	    "op_mice",
-	    "op_ruta",
+		  8: /* @__PURE__ */ new Set([
+		    "dash_home",
+		    "system_notifs",
+		    "op_rec",
+		    "op_mice",
+		    "op_ruta",
 	    "inv_tomar",
 	    "inv_stock",
     "inv_prod",

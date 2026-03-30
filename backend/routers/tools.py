@@ -2423,6 +2423,136 @@ def dashboard_events(
     return {"ok": True, "week": {"start": str(week_start), "end": str(week_end), "number": week_num}, "events": events}
 
 
+@router.get("/calendar/events_list")
+def calendar_events_list(
+    from_date: str | None = None,
+    to_date: str | None = None,
+    q: str | None = None,
+    id_marca: int | None = None,
+    limit: int = 500,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Lista "Eventos en Calendar" (para módulo de ejecutivos):
+    - Ejecutivos: solo sus marcas.
+    - Admin: todo (y puede filtrar por marca).
+
+    Devuelve data suficiente para abrir lead y editar confirmado (/tools/agenda/{id}/edit_confirmed).
+    """
+    role = (me.get("role") or me.get("rol") or "").upper().strip()
+    is_admin = _is_admin(role)
+    is_exec = ("EJECUTIVO" in role) or (role == "2")
+    if not (is_admin or is_exec):
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    marcas = _fetch_marcas_ids(db, me)
+    only_own = not is_admin
+    if only_own and not marcas:
+        return {"ok": True, "items": [], "count": 0}
+
+    tz = ZoneInfo("America/Santiago")
+    today = datetime.now(tz).date()
+    try:
+        d1 = date.fromisoformat(str(from_date)[:10]) if from_date else (today - timedelta(days=7))
+    except Exception:
+        raise HTTPException(status_code=400, detail="from_date inválida (YYYY-MM-DD)")
+    try:
+        d2 = date.fromisoformat(str(to_date)[:10]) if to_date else (today + timedelta(days=90))
+    except Exception:
+        raise HTTPException(status_code=400, detail="to_date inválida (YYYY-MM-DD)")
+    if d2 < d1:
+        d1, d2 = d2, d1
+
+    lim = max(50, min(1000, int(limit or 500)))
+    off = max(0, int(offset or 0))
+
+    name_expr = _lead_name_expr(db)
+    tel_expr = _lead_col(db, "telefono")
+    dir_expr = _lead_col(db, "direccion")
+    pre_start_expr = _lead_col(db, "pre_start")
+    pre_end_expr = _lead_col(db, "pre_end")
+    pre_desc_expr = _lead_col(db, "pre_description")
+    cal_start_expr = _lead_col(db, "calendar_start")
+    cal_end_expr = _lead_col(db, "calendar_end")
+    cal_link_expr = _lead_col(db, "calendar_html_link")
+    cal_eid_expr = _lead_col(db, "calendar_event_id")
+    pre_title_expr = _lead_col(db, "pre_title")
+    pre_loc_expr = _lead_col(db, "pre_location")
+    pre_ops_expr = _lead_col(db, "pre_ops")
+
+    where = [
+        "(l.calendar_start IS NOT NULL OR l.calendar_html_link IS NOT NULL OR l.calendar_event_id IS NOT NULL OR l.agenda_approved_at IS NOT NULL)",
+        "l.fecha_evento IS NOT NULL",
+        "l.fecha_evento::date BETWEEN :d1 AND :d2",
+    ]
+    params: dict[str, Any] = {"d1": d1, "d2": d2, "lim": lim, "off": off}
+
+    if only_own and marcas:
+        where.append("l.id_marca = ANY(:marcas)")
+        params["marcas"] = marcas
+
+    if id_marca:
+        try:
+            mid = int(id_marca)
+        except Exception:
+            mid = 0
+        if mid > 0:
+            if only_own and marcas and (mid not in set(marcas)):
+                raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
+            where.append("l.id_marca = :id_marca")
+            params["id_marca"] = mid
+
+    if q and str(q).strip():
+        qq = str(q).strip()
+        params["q"] = f"%{qq}%"
+        where.append(
+            "("
+            "CAST(l.id_lead AS text) ILIKE :q "
+            f"OR {name_expr} ILIKE :q "
+            "OR COALESCE(c.nombre,'') ILIKE :q "
+            "OR COALESCE(m.nombre,m.marca,'') ILIKE :q "
+            ")"
+        )
+
+    where_sql = " AND ".join(where)
+
+    rows = db.execute(
+        text(
+            f"""
+            SELECT
+              l.id_lead::bigint AS id_lead,
+              {name_expr} AS cliente,
+              l.fecha_evento,
+              COALESCE(m.nombre,m.marca,'') AS marca,
+              COALESCE(c.nombre,'') AS comuna,
+              {tel_expr} AS telefono,
+              {dir_expr} AS direccion,
+              {pre_start_expr} AS pre_start,
+              {pre_end_expr} AS pre_end,
+              {pre_desc_expr} AS pre_description,
+              {pre_title_expr} AS pre_title,
+              {pre_loc_expr} AS pre_location,
+              {pre_ops_expr} AS pre_ops,
+              {cal_start_expr} AS start_at,
+              {cal_end_expr} AS end_at,
+              {cal_link_expr} AS calendar_html_link,
+              {cal_eid_expr} AS calendar_event_id
+            FROM public.leads l
+            LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
+            LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
+            WHERE {where_sql}
+            ORDER BY l.fecha_evento ASC, l.calendar_start ASC NULLS LAST, l.id_lead DESC
+            LIMIT :lim OFFSET :off
+            """
+        ),
+        params,
+    ).mappings().all()
+
+    return {"ok": True, "from": str(d1), "to": str(d2), "items": list(rows), "count": len(rows)}
+
+
 # =========================
 # MICE & PLACE (Reporte Cocina/Compras)
 # =========================
