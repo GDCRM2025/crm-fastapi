@@ -104,7 +104,12 @@ try{
   }
 
   document.addEventListener("click", (ev) => {
-    const th = ev.target && ev.target.closest ? ev.target.closest("th") : null;
+    // En algunas tablas el click puede caer sobre un Text node (no tiene closest()).
+    let tgt = ev.target;
+    try{
+      if (tgt && tgt.nodeType === 3) tgt = tgt.parentElement; // TEXT_NODE
+    }catch(_){}
+    const th = tgt && tgt.closest ? tgt.closest("th") : null;
     if (!th) return;
     if (th.closest("[data-nosort='1']")) return;
     const table = th.closest("table");
