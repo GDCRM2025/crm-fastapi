@@ -682,20 +682,37 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Dict[s
                 # 3) último fallback: inferir desde leads asignados (evita "Mis marcas" vacío)
                 if not marcas:
                     try:
+                        # En algunos entornos, leads.id_usuario puede estar guardado como texto
+                        # (email/username o "id" string). Matcheamos por varias llaves.
+                        user_keys = []
+                        for k in [
+                            str(uid),
+                            str(user.get("username") or ""),
+                            str(user.get("email") or ""),
+                            str(user.get("sub") or ""),
+                            str(user.get("name") or ""),
+                        ]:
+                            kk = str(k or "").strip().lower()
+                            if kk:
+                                user_keys.append(kk)
                         rows = conn.execute(
                             text(
                                 """
                                 SELECT DISTINCT l.id_marca
                                 FROM public.leads l
-                                WHERE l.id_usuario=:u
+                                WHERE lower(NULLIF(btrim(COALESCE(l.id_usuario::text,'')) ,'')) = ANY(CAST(:user_keys AS text[]))
                                   AND l.id_marca IS NOT NULL
                                 ORDER BY l.id_marca
                                 LIMIT 50
                                 """
                             ),
-                            {"u": int(uid)},
+                            {"user_keys": user_keys},
                         ).fetchall()
-                        marcas = [int(r[0]) for r in rows if r and r[0] is not None and str(r[0]).isdigit() and int(r[0]) > 0]
+                        marcas = [
+                            int(r[0])
+                            for r in rows
+                            if r and r[0] is not None and str(r[0]).isdigit() and int(r[0]) > 0
+                        ]
                     except Exception:
                         marcas = []
                 if marcas:
