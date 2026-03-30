@@ -308,24 +308,6 @@
 	    .event-pill:hover{ border-color: rgba(255,255,255,.18); }
 	    .event-pill .t1{ font-weight:1100; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 	    .event-pill .t2{ font-size:10px; opacity:.70; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-	    .event-pill .miss-badges{
-	      display:flex;
-	      align-items:center;
-	      gap:4px;
-	      margin-left:auto;
-	    }
-	    .event-pill .miss-badge{
-	      width:20px;
-	      height:20px;
-	      border-radius:999px;
-	      display:inline-flex;
-	      align-items:center;
-	      justify-content:center;
-	      border:1px solid rgba(239,68,68,.35);
-	      background:rgba(239,68,68,.12);
-	      font-size:12px;
-	      line-height:1;
-	    }
 	    .event-pill .tip{
 	      display:none;
 	      position:absolute;
@@ -1239,17 +1221,7 @@
 	                  const ops = (ev.pre_ops != null && String(ev.pre_ops).trim() !== "") ? String(ev.pre_ops) : "—";
 	                  const hr = fmtHr(ev);
 		                  const productos = productLines(ev.pre_products_text || "", 4) || "• —";
-		                  const dir = String(ev.pre_direccion || ev.direccion || "").trim();
-		                  const tel = String(ev.telefono || "").trim();
-		                  const missing = [];
-		                  if (!tel) missing.push({ ico:"📞", label:"Teléfono" });
-		                  if (!dir) missing.push({ ico:"📍", label:"Dirección" });
-		                  if (hr === "HR TBD") missing.push({ ico:"🕒", label:"Horario" });
-		                  const missTip = missing.length ? `\nFaltan: ${missing.map(m=>m.label).join(", ")}` : "";
-		                  const tip = `📍 ${comuna} · 🕒 ${hr} · 👥 ${ops}${missTip}\n${productos}`;
-		                  const missBadges = missing.length
-		                    ? `<div class="miss-badges" title="Faltan datos">${missing.map(m=>`<span class="miss-badge" title="${m.label}">${m.ico}</span>`).join("")}</div>`
-		                    : "";
+		                  const tip = `📍 ${comuna} · 🕒 ${hr} · 👥 ${ops}\n${productos}`;
 		                  const payload = encodeURIComponent(JSON.stringify(ev));
 		                  return `
 		                    <div class="event-pill" data-evt="${payload}">
@@ -1258,7 +1230,6 @@
 		                        <div class="t1">${cliente}</div>
 		                        <div class="t2">${marca || "—"}</div>
 		                      </div>
-		                      ${missBadges}
 		                      <div class="tip">${tip}</div>
 		                    </div>
 		                  `;
@@ -1391,7 +1362,6 @@
 	      const isAdmin = rid === 1;
 	      const isSales = rid === 2;
 	      const isOps = rid === 3;
-	      const isMice = rid === 8;
 	      const isFinance = rid === 11;
 
       const show = (id, on) => { const el = $(id); if (el) el.style.display = on ? "" : "none"; };
@@ -1399,7 +1369,7 @@
 	      // KPIs y ventas: solo Ejecutivos + Admin
 	      show("#kpiCard", (isAdmin || isSales));
 	      show("#salesCard", (isAdmin || isSales));
-	      show("#tasksCard", (isAdmin || isSales || isOps || isMice));
+	      show("#tasksCard", (isAdmin || isSales));
 
       // Eventos confirmados (semana): para TODOS los usuarios
       show("#eventsCard", true);

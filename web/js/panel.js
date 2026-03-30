@@ -2020,7 +2020,6 @@ const PERMISSIONS = {
 	    "rep_com",
 	    "rep_prod",
 	    "rep_cli",
-	    "system_notifs",
 	    "op_rec",
 	    "op_mice",
 	    "op_ruta",
@@ -2045,14 +2044,13 @@ const PERMISSIONS = {
     "tool_chat",
     "gps",
     "vruta",
-    "set_marcas",
-    "set_prod",
-    "set_com",
+	    "set_marcas",
+	    "set_prod",
+	    "set_com",
 	    "rrhh_staff",
 		    "rrhh_solicitudes",
 		    "chk_hoy"
-	    ,"tasks_my"
-		  ]),
+	  ]),
 	  4: /* @__PURE__ */ new Set([
 	    "dash_home",
 	    "rep_prod",
@@ -2071,20 +2069,17 @@ const PERMISSIONS = {
 	    "tool_chat",
 	    "vruta",
 	    "set_prod"
-	    ,"system_notifs"
 	  ]),
 	  9: /* @__PURE__ */ new Set([
 	    "pl",
 	    "gast",
 	    "evt",
 	    "plan_cuentas",
-	    "historial",
-	    "system_notifs"
+	    "historial"
 	  ]),
 	  5: /* @__PURE__ */ new Set([
 	    "dash_home",
 	    "rep_prod",
-	    "system_notifs",
 	    "op_rec",
 	    "op_mice",
 	    "op_ruta",
@@ -2133,8 +2128,6 @@ const PERMISSIONS = {
   ]),
 	  8: /* @__PURE__ */ new Set([
 	    "dash_home",
-	    "system_notifs",
-	    "tasks_my",
 	    "op_rec",
 	    "op_mice",
 	    "op_ruta",
