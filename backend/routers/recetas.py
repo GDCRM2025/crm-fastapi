@@ -278,13 +278,7 @@ def _ensure_role_read(me):
         "MICE",
         "BODEGUERO",
     )
-    allowed_contains = (
-        # Operación staff (read-only)
-        "OPERADOR",
-        "CONDUCTOR",
-        "CHOFER",
-    )
-    if not _role_allowed(role, allowed_exact, allowed_contains):
+    if not _role_allowed(role, allowed_exact):
         raise HTTPException(status_code=403, detail="No autorizado")
 
 

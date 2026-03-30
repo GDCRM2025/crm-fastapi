@@ -563,9 +563,38 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Dict[s
         "name": payload.get("name") or "",
     }
 
+    # Si el token trae sub no-numérico (username/email), resolvemos el id_usuario desde la BD
+    # para que módulos que dependen de user_id (push/chat membership) funcionen.
+    try:
+        sub = str(payload.get("sub") or "").strip()
+        if sub and not sub.isdigit():
+            with get_connection() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT id_usuario, nombre, email, username, avatar_url
+                        FROM usuarios
+                        WHERE lower(email)=lower(:u) OR lower(username)=lower(:u)
+                        LIMIT 1
+                        """
+                    ),
+                    {"u": sub},
+                ).mappings().first()
+                if row and row.get("id_usuario"):
+                    user["id"] = int(row["id_usuario"])
+                    # username usable para logs / filtros (prefiere email).
+                    if row.get("email") or row.get("username"):
+                        user["username"] = row.get("email") or row.get("username")
+                    if not user.get("name") and row.get("nombre"):
+                        user["name"] = row.get("nombre")
+                    if row.get("avatar_url"):
+                        user["avatar_url"] = row.get("avatar_url")
+    except Exception:
+        pass
+
     # enrich with avatar_url if available
     try:
-        uid = int(payload.get("sub")) if str(payload.get("sub","")).isdigit() else None
+        uid = int(user.get("id")) if str(user.get("id") or "").isdigit() else None
         if uid:
             with get_connection() as conn:
                 try:
