@@ -230,13 +230,13 @@
       <div class="pill bad" id="pOver">Vencidas: —</div>
       <div class="pill warn" id="pContact">Contactar: —</div>
       <div class="pill" id="pCal">Calendario: —</div>
-      <div class="pill" id="pMail">Correos: —</div>
+      <!-- Correos removido de tareas (se gestiona fuera) -->
     </div>
 
     <div class="tabs" style="margin-top:2px">
       <button class="tab active" id="tabLeads" type="button">Leads <span class="b" id="bLeads">—</span></button>
       <button class="tab" id="tabCal" type="button">Calendario <span class="b" id="bCal">—</span></button>
-      <button class="tab" id="tabMail" type="button">Correos <span class="b" id="bMail">—</span></button>
+      <!-- Correos removido de tareas (se gestiona fuera) -->
       <button class="tab" id="tabAll" type="button">Todo</button>
     </div>
 
@@ -310,28 +310,7 @@
       </div>
     </section>
 
-    <section class="card section" id="secMail">
-      <div class="secHead">
-        <div>
-          <div class="secTitle"><span class="mark mail"></span>Correos</div>
-          <div class="muted">Pendientes de respuesta. “Abrir” lleva a Tools → Correo (GIA).</div>
-        </div>
-      </div>
-      <div style="max-height:70vh; overflow:auto">
-        <table class="tbl">
-          <thead>
-            <tr>
-              <th>Prioridad</th>
-              <th>Correo</th>
-              <th>Marca</th>
-              <th>Vence</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="tbMail"></tbody>
-        </table>
-      </div>
-    </section>
+    <!-- Correos removido de tareas (se gestiona fuera) -->
   </div>
 
   <script>
@@ -446,7 +425,7 @@
       const d = parseDue(s);
       if (!d) return "—";
       const pad = (n)=> String(n).padStart(2,"0");
-      return `${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
     function isOverdue(s){
@@ -474,10 +453,8 @@
       qs("#pOver").textContent = `Vencidas: ${j?.overdue?.overdue_total ?? "—"}`;
       qs("#pContact").textContent = `Contactar: ${j?.counts?.open_contactar ?? "—"}`;
       qs("#pCal").textContent = `Calendario: ${j?.counts?.open_calendario ?? "—"}`;
-      qs("#pMail").textContent = `Correos: ${j?.counts?.open_correos ?? "—"}`;
       qs("#bLeads").textContent = String(j?.counts?.open_total ?? "—");
       qs("#bCal").textContent = String(j?.counts?.open_calendario ?? "—");
-      qs("#bMail").textContent = String(j?.counts?.open_correos ?? "—");
     }
 
     function prLabel(priority){
@@ -538,45 +515,34 @@
       `;
     }
 
-    function trMail(t){
-      const over = (t.status==="open" && isOverdue(t.due_at));
-      const meta = (t.meta && typeof t.meta === "object") ? t.meta : {};
-      const subj = meta.subject || t.title || "Correo";
-      const from = meta.from || "";
-      const marca = meta.marca || t.lead_marca || "";
-      return `
-        <tr data-task="${esc(t.id_task)}" data-kind="${esc(String(t.kind||""))}" data-etype="${esc(t.entity_type||"")}" data-msg="${esc(t.entity_id||"")}">
-          <td><span class="pill ${over ? "bad" : ""}">${esc(prLabel(t.priority))}</span></td>
-          <td><strong>${esc(subj)}</strong><div class="muted">${esc(from)}</div></td>
-          <td class="muted">${esc(marca)}</td>
-          <td><span class="pill ${over ? "bad" : ""}">${esc(fmtDue(t.due_at))}</span></td>
-          <td>
-            <button class="btn" data-act="open_mail">Abrir</button>
-            <button class="btn primary" data-act="done">Listo</button>
-            <button class="btn danger" data-act="skip">Omitir</button>
-          </td>
-        </tr>
-      `;
-    }
-
     async function load(){
       const st = String(qs("#status")?.value || "open");
       const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0`);
       const items = Array.isArray(j.items) ? j.items : [];
       const cal = [];
-      const mail = [];
       const leads = [];
       for (const t of items){
         const kind = String(t.kind||"").toUpperCase();
-        if (kind === "RESPONDER_CORREO" || String(t.entity_type||"") === "gia_email") mail.push(t);
-        else if (kind.startsWith("COMPLETAR_") || kind === "EVENTO_PROXIMO_INCOMPLETO") cal.push(t);
+        if (kind.startsWith("COMPLETAR_") || kind === "EVENTO_PROXIMO_INCOMPLETO") cal.push(t);
         else leads.push(t);
       }
 
       const norm = (s)=> String(s||"").toUpperCase();
-      const isNew = (t)=> /NUEV/.test(norm(t.lead_estado));
-      const isContact = (t)=> /CONTACT/.test(norm(t.lead_estado));
-      const isQuote = (t)=> /COTIZ/.test(norm(t.lead_estado));
+      const isNew = (t)=> {
+        const k = norm(t.kind);
+        if (k.includes("NUEVO")) return true;
+        return /NUEV/.test(norm(t.lead_estado));
+      };
+      const isContact = (t)=> {
+        const k = norm(t.kind);
+        if (k.includes("CONTACTADO")) return true;
+        return /CONTACT/.test(norm(t.lead_estado));
+      };
+      const isQuote = (t)=> {
+        const k = norm(t.kind);
+        if (k.includes("COTIZADO")) return true;
+        return /COTIZ/.test(norm(t.lead_estado));
+      };
       const gNew = leads.filter(isNew);
       const gContact = leads.filter(t => !isNew(t) && isContact(t));
       const gQuote = leads.filter(t => !isNew(t) && !isContact(t) && isQuote(t));
@@ -584,7 +550,7 @@
 
       qs("#bLeadNew").textContent = String(gNew.length);
       qs("#bLeadContact").textContent = String(gContact.length);
-      qs("#bLeadQuote").textContent = String(gQuote.length);
+      qs("#bLeadQuote").textContent = String(gQuote.length + gOther.length);
 
       qs("#tbLeadsNew").innerHTML = gNew.map(trLead).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
       qs("#tbLeadsContact").innerHTML = gContact.map(trLead).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
@@ -595,7 +561,6 @@
       }
 
       qs("#tbCal").innerHTML = cal.map(trCal).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
-      qs("#tbMail").innerHTML = mail.map(trMail).join("") || `<tr><td colspan="5" class="muted">Sin tareas.</td></tr>`;
     }
 
     async function init(){
@@ -605,21 +570,18 @@
         try{ localStorage.setItem(TAB_KEY, tab); }catch(_){}
         qs("#tabLeads").classList.toggle("active", tab==="leads");
         qs("#tabCal").classList.toggle("active", tab==="cal");
-        qs("#tabMail").classList.toggle("active", tab==="mail");
         qs("#tabAll").classList.toggle("active", tab==="all");
         qs("#secLeads").classList.toggle("show", tab==="leads" || tab==="all");
         qs("#secCal").classList.toggle("show", tab==="cal" || tab==="all");
-        qs("#secMail").classList.toggle("show", tab==="mail" || tab==="all");
       }
 
       qs("#tabLeads").onclick = ()=> setTab("leads");
       qs("#tabCal").onclick = ()=> setTab("cal");
-      qs("#tabMail").onclick = ()=> setTab("mail");
       qs("#tabAll").onclick = ()=> setTab("all");
       try{
         const params = new URLSearchParams(location.search || "");
         const tabQ = String(params.get("tab") || "").trim().toLowerCase();
-        const allowed = new Set(["leads","cal","mail","all"]);
+        const allowed = new Set(["leads","cal","all"]);
         const initial = allowed.has(tabQ) ? tabQ : (localStorage.getItem(TAB_KEY) || "leads");
         setTab(initial);
       }catch(_){
@@ -657,10 +619,6 @@
         if (act === "edit"){
           const id = tr?.getAttribute("data-lead");
           if (id) openLeadEditEvent(id);
-          return;
-        }
-        if (act === "open_mail"){
-          openCorreoTools();
           return;
         }
         if (!idTask) return;

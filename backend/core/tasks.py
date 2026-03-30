@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict
 
@@ -832,11 +833,11 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
         except Exception:
             pass
 
-    # RESPONDER_CORREO (Ventas/Finanzas/Admin)
-    # - Ventas: correos "sales" y kind lead/purchase/other (no respondidos)
-    # - Finanzas/Admin: también correos "payments" o kind payment
+    # RESPONDER_CORREO (DESHABILITADO)
+    # El usuario pidió sacar Correos de tareas (se gestiona fuera del tablero de tareas).
     try:
-        if _table_exists(db, "gia_email_messages") and (is_exec or is_admin):
+        enable_mail_tasks = (str(os.getenv("CRM_ENABLE_MAIL_TASKS", "0")).strip() in ("1", "true", "TRUE", "yes", "YES"))
+        if enable_mail_tasks and _table_exists(db, "gia_email_messages") and (is_exec or is_admin):
             # columnas necesarias
             has_reply_sent = _col_exists(db, "gia_email_messages", "reply_sent")
             has_kind = _col_exists(db, "gia_email_messages", "kind")
@@ -896,6 +897,46 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
+    # AUTO-CLOSE: si el lead ya tiene evidencia de seguimiento, cerramos tareas abiertas que dependen de eso.
+    # Esto cubre el caso donde el ejecutivo registra seguimiento directamente en el lead (no desde la vista de tareas),
+    # y evita que la tarea siga apareciendo por meses.
+    try:
+        followup_kinds = [
+            "CONTACTAR_LEAD",
+            "RIESGO_AUTO_DECLINE_NUEVO",
+            "RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA",
+            "RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA",
+            "RIESGO_COTIZADO_EVENTO_CERCA",
+            "DECLINADO_FECHA_FUTURA",
+            "SEGUIMIENTO_PENDIENTE",
+            "REVISAR_DECLINADO_FUTURO",
+        ]
+        db.execute(
+            text(
+                f"""
+                UPDATE public.tasks t
+                SET status='done',
+                    completed_at=now(),
+                    completed_by='AUTO',
+                    updated_at=now(),
+                    meta = t.meta || jsonb_build_object('auto_closed', true, 'auto_reason', 'has_followup', 'auto_at', now())
+                WHERE t.assigned_user_id = :uid
+                  AND t.status = 'open'
+                  AND t.entity_type = 'lead'
+                  AND t.kind = ANY(CAST(:kinds AS text[]))
+                  AND EXISTS (
+                    SELECT 1
+                    FROM public.leads l
+                    WHERE l.id_lead = t.entity_id
+                      AND ({has_contact_sql}) IS TRUE
+                  )
+                """
+            ),
+            {"uid": int(user_id), "kinds": followup_kinds},
+        )
+    except Exception:
+        pass
+
     summary: Dict[str, Any] = {"ok": True, "counts": {}, "overdue": {}}
     try:
         row = db.execute(
@@ -908,8 +949,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   COUNT(*) FILTER (WHERE status='open' AND kind='CONTACTAR_LEAD' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_contactar,
                   COUNT(*) FILTER (WHERE status='open' AND kind LIKE 'COMPLETAR_%')::int AS open_calendario,
                   COUNT(*) FILTER (WHERE status='open' AND kind LIKE 'COMPLETAR_%' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_calendario,
-                  COUNT(*) FILTER (WHERE status='open' AND kind='RESPONDER_CORREO')::int AS open_correos,
-                  COUNT(*) FILTER (WHERE status='open' AND kind='RESPONDER_CORREO' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_correos
+                  0::int AS open_correos,
+                  0::int AS overdue_correos
                 FROM public.tasks
                 WHERE assigned_user_id = :uid
                 """
@@ -921,13 +962,13 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "open_total": int(row.get("open_total") or 0),
                 "open_contactar": int(row.get("open_contactar") or 0),
                 "open_calendario": int(row.get("open_calendario") or 0),
-                "open_correos": int(row.get("open_correos") or 0),
+                "open_correos": 0,
             }
             summary["overdue"] = {
                 "overdue_total": int(row.get("overdue_total") or 0),
                 "overdue_contactar": int(row.get("overdue_contactar") or 0),
                 "overdue_calendario": int(row.get("overdue_calendario") or 0),
-                "overdue_correos": int(row.get("overdue_correos") or 0),
+                "overdue_correos": 0,
             }
     except Exception:
         pass
