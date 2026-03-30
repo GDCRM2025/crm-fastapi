@@ -281,6 +281,18 @@
       return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:00${off}`;
     }
 
+    function timeOptions(selected){
+      const sel = String(selected || "").trim();
+      let out = `<option value="">—</option>`;
+      for (let h = 0; h <= 23; h++){
+        for (let m = 0; m <= 45; m += 15){
+          const v = String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0");
+          out += `<option value="${v}" ${v === sel ? "selected" : ""}>${v}</option>`;
+        }
+      }
+      return out;
+    }
+
     function openLead(id){
       const url = "/web/views/leads.html?open_lead=" + encodeURIComponent(String(id));
       try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
@@ -350,8 +362,8 @@
                 <button type="button" class="btn" data-toggle="ed_hr">${missHr ? "Ingresar" : "Editar"}</button>
                 <div class="ed ${missHr ? "show" : ""}" id="ed_hr">
                   <div class="minirow">
-                    <input id="ev_hi" class="ipt" type="time" value="${esc(curHi)}" />
-                    <input id="ev_hf" class="ipt" type="time" value="${esc(curHf)}" />
+                    <select id="ev_hi" class="ipt">${timeOptions(curHi)}</select>
+                    <select id="ev_hf" class="ipt">${timeOptions(curHf)}</select>
                   </div>
                 </div>
               </div>
@@ -410,6 +422,13 @@
           const preEnd = hf ? _localISO(fecha, hf) : null;
           if ((hi || hf) && (!preStart || !preEnd)){
             Swal.showValidationMessage("No pude construir el horario."); return false;
+          }
+          if (preStart && preEnd){
+            try{
+              if (new Date(preEnd).getTime() <= new Date(preStart).getTime()){
+                Swal.showValidationMessage("El fin debe ser posterior al inicio."); return false;
+              }
+            }catch(_){}
           }
           const payload = {
             pre_title: title,

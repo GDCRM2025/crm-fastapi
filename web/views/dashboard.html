@@ -457,21 +457,21 @@
 	      </div>
 	      <div class="split" style="margin-top:12px;">
 	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+	          <div class="kpi" data-tone="warn" style="padding:12px 14px; cursor:pointer" id="kpiTaskOver">
 	            <div class="label">Seguimiento vencido</div>
 	            <div class="value" id="tasksOverdue">0</div>
 	            <div class="hint">Leads sin acción reciente</div>
 	          </div>
 	        </div>
 	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="cold" style="padding:12px 14px;">
+	          <div class="kpi" data-tone="cold" style="padding:12px 14px; cursor:pointer" id="kpiTaskOpen">
 	            <div class="label">Seguimiento abierto</div>
 	            <div class="value" id="tasksOpen">0</div>
 	            <div class="hint">Acciones pendientes</div>
 	          </div>
 	        </div>
 	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+	          <div class="kpi" data-tone="warn" style="padding:12px 14px; cursor:pointer" id="kpiTaskContact">
 	            <div class="label">Sin contactar</div>
 	            <div class="value" id="tasksContactOverdue">0</div>
 	            <div class="hint">Leads nuevos vencidos</div>
@@ -480,7 +480,7 @@
 	      </div>
 	      <div class="split" style="margin-top:10px;">
 	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
+	          <div class="kpi" data-tone="warn" style="padding:12px 14px; cursor:pointer" id="kpiTaskCal">
 	            <div class="label">Calendario (semana)</div>
 	            <div class="value" id="tasksCalMissing">0</div>
 	            <div class="hint">Confirmados con faltantes</div>
@@ -492,7 +492,6 @@
 	          </div>
 	        </div>
 	      </div>
-	      <div id="tasksList" style="margin-top:10px"></div>
 	    </section>
 
     <section class="card" id="eventsCard" style="grid-column: span 12;">
@@ -988,160 +987,27 @@
       const card = $("#tasksCard");
       if (!card || card.style.display === "none") return;
 
-      let tasksDisabled = false;
       try{
-        const sum = await apiJson("/tasks/summary");
-        tasksDisabled = !!sum?.disabled;
-        $("#tasksOpen").textContent = String(sum?.open_total ?? 0);
-        $("#tasksOverdue").textContent = String(sum?.overdue_total ?? 0);
-        $("#tasksContactOverdue").textContent = String(sum?.overdue_contactar ?? 0);
+        const s = await apiJson("/tasks/sync", { method:"POST" });
+        if (s?.disabled){
+          $("#tasksOpen").textContent = "0";
+          $("#tasksOverdue").textContent = "0";
+          $("#tasksContactOverdue").textContent = "0";
+          $("#tasksCalMissing").textContent = "0";
+          return;
+        }
+        $("#tasksOpen").textContent = String(s?.counts?.open_total ?? 0);
+        $("#tasksOverdue").textContent = String(s?.overdue?.overdue_total ?? 0);
+        $("#tasksContactOverdue").textContent = String(s?.overdue?.overdue_contactar ?? 0);
+        $("#tasksCalMissing").textContent = String(s?.counts?.open_calendario ?? 0);
       }catch(_){
-        $("#tasksOpen").textContent = "0";
-        $("#tasksOverdue").textContent = "0";
-        $("#tasksContactOverdue").textContent = "0";
-      }
-
-      const list = $("#tasksList");
-      if (!list) return;
-      list.innerHTML = tasksDisabled ? `<div class="muted">Tareas no disponibles en este entorno.</div>` : `<div class="muted">Cargando tareas…</div>`;
-      if (tasksDisabled) return;
-
-      try{
-        // refresca tareas automáticas (idempotente)
+        // Best-effort fallback (no bloquea dashboard).
         try{
-          const s = await apiJson("/tasks/sync", { method:"POST" });
-          if (s?.disabled){
-            list.innerHTML = `<div class="muted">Tareas no disponibles en este entorno.</div>`;
-            return;
-          }
-        }catch(_){}
-        const j = await apiJson("/tasks?status=open&limit=120&offset=0");
-        if (j?.disabled){
-          list.innerHTML = `<div class="muted">Tareas no disponibles en este entorno.</div>`;
-          return;
-        }
-        const items = Array.isArray(j?.items) ? j.items : [];
-        const CAL_KINDS = new Set(["COMPLETAR_TELEFONO","COMPLETAR_DIRECCION","COMPLETAR_HORARIO"]);
-        const calItems = items.filter(t => CAL_KINDS.has(String(t?.kind || "").toUpperCase()));
-        const followItems = items.filter(t => !CAL_KINDS.has(String(t?.kind || "").toUpperCase()));
-        const calEl = $("#tasksCalMissing");
-        if (calEl) calEl.textContent = String(calItems.length);
-        if (!items.length){
-          list.innerHTML = `<div class="muted">No tienes tareas pendientes.</div>`;
-          return;
-        }
-        const fmtDue = (s)=>{
-          const raw = String(s||"");
-          if (!raw) return "—";
-          try{
-            const d = new Date(raw);
-            return d.toLocaleString("es-CL", { hour:"2-digit", minute:"2-digit", day:"2-digit", month:"2-digit" });
-          }catch(_){ return raw; }
-        };
-        const renderRows = (arr) => (arr || []).slice(0, 10).map(t => {
-                const due = t.due_at ? fmtDue(t.due_at) : "—";
-                const et = String(t.entity_type || "lead");
-                const isLead = (et === "lead");
-                const isEmail = (et === "gia_email");
-                const lead = (isLead && t.entity_id)
-                  ? `#${t.entity_id} ${String(t.lead_cliente||"").slice(0,26)}`
-                  : (isEmail
-                      ? `${String(t?.meta?.marca || "").trim() || ""} ${String(t?.meta?.from || "").trim() ? "· " + String(t.meta.from).trim() : ""}${String(t?.meta?.subject || "").trim() ? " · " + String(t.meta.subject).trim().slice(0,44) : ""}`.trim()
-                      : "");
-                const overdue = t.due_at && (new Date(t.due_at).getTime() < Date.now());
-                const kind = String(t.kind || "");
-                return `
-                  <tr data-task="${t.id_task}" data-kind="${kind}" data-etype="${String(t.entity_type||"")}" data-eid="${t.entity_id||""}" class="rowlink" style="${overdue ? "background: rgba(239,68,68,.06);" : ""}">
-                    <td><strong>${String(t.title||t.kind||"Tarea")}</strong><div class="muted" style="font-size:12px;margin-top:4px">${String(t.description||"")}</div></td>
-                    <td class="muted">${lead}</td>
-                    <td class="right">${due}</td>
-                    <td class="right">
-                      <button class="btn" data-act="done" type="button">Hecho</button>
-                      <button class="btn" data-act="skip" type="button">Omitir</button>
-                    </td>
-                  </tr>
-                `;
-              }).join("") || `<tr><td colspan="4" class="muted">Sin tareas.</td></tr>`;
-
-        list.innerHTML = `
-          <div class="muted" style="font-weight:1000;margin:0 0 6px">Seguimiento (ventas)</div>
-          <table class="pipe-table">
-            <thead><tr><th>Tarea</th><th>Relacionado</th><th class="right">Vence</th><th class="right">Acción</th></tr></thead>
-            <tbody>${renderRows(followItems)}</tbody>
-          </table>
-
-          <div class="muted" style="font-weight:1000;margin:12px 0 6px">Calendario (semana) · faltantes</div>
-          <table class="pipe-table">
-            <thead><tr><th>Tarea</th><th>Relacionado</th><th class="right">Vence</th><th class="right">Acción</th></tr></thead>
-            <tbody>${renderRows(calItems)}</tbody>
-          </table>
-
-          <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en una fila abre el lead (o el correo). “Hecho” exige evidencia o validar faltantes.</div>
-        `;
-
-        list.querySelectorAll("tr[data-task]").forEach(tr=>{
-          tr.addEventListener("click", (ev)=>{
-            const actBtn = ev.target?.closest?.("button[data-act]");
-            if (actBtn) return;
-            const et = String(tr.getAttribute("data-etype")||"");
-            const eid = String(tr.getAttribute("data-eid")||"");
-            if (!et || !eid) return;
-            if (et === "lead") openLead(eid);
-            if (et === "gia_email"){
-              const tId = String(tr.getAttribute("data-task")||"");
-              const found = items.find(x => String(x.id_task)===tId);
-              openCorreoMsg(eid, found?.meta || {});
-            }
-          });
-        });
-        list.querySelectorAll("button[data-act]").forEach(btn=>{
-          btn.addEventListener("click", async (ev)=>{
-            ev.preventDefault(); ev.stopPropagation();
-            const tr = btn.closest("tr[data-task]");
-            const id = tr?.getAttribute("data-task");
-            if (!id) return;
-            const act = btn.getAttribute("data-act");
-            try{
-              if (act === "done"){
-                const kind = String(tr?.getAttribute("data-kind")||"").toUpperCase();
-                const requireFollowup = new Set([
-                  "CONTACTAR_LEAD",
-                  "SEGUIMIENTO_PENDIENTE",
-                  "RIESGO_AUTO_DECLINE_NUEVO",
-                  "RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA",
-                  "RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA",
-                  "RIESGO_COTIZADO_EVENTO_CERCA",
-                  "DECLINADO_FECHA_FUTURA",
-                ]);
-                if (requireFollowup.has(kind)){
-                  const via = prompt("Vía (WSP/CALL/EMAIL/NOTE):", "WSP") || "";
-                  const text = prompt("Detalle (requerido):", "") || "";
-                  if (!via.trim() || !text.trim()) return;
-                  await apiJson(`/tasks/${encodeURIComponent(id)}/done`, {
-                    method:"POST",
-                    headers: { "Content-Type":"application/json" },
-                    body: JSON.stringify({ action: via.trim().toUpperCase(), text: text.trim() })
-                  });
-                }else{
-                  await apiJson(`/tasks/${encodeURIComponent(id)}/done`, { method:"POST" });
-                }
-              } else if (act === "skip"){
-                const reason = prompt("Motivo para omitir esta tarea (queda registrado):") || "";
-                if (!reason.trim()) return;
-                await apiJson(`/tasks/${encodeURIComponent(id)}/skip`, {
-                  method:"POST",
-                  headers: { "Content-Type":"application/json" },
-                  body: JSON.stringify({ reason })
-                });
-              }
-              await loadTasks(true);
-            }catch(e){
-              alert(String(e?.message || e));
-            }
-          });
-        });
-      }catch(e){
-        list.innerHTML = `<div class="muted">No disponible: ${String(e?.message||e)}</div>`;
+          const sum = await apiJson("/tasks/summary");
+          $("#tasksOpen").textContent = String(sum?.open_total ?? 0);
+          $("#tasksOverdue").textContent = String(sum?.overdue_total ?? 0);
+          $("#tasksContactOverdue").textContent = String(sum?.overdue_contactar ?? 0);
+        }catch(__){}
       }
     }
 
@@ -1611,6 +1477,17 @@
     $("#btnGoTasks")?.addEventListener("click", () => {
       window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260325-tasks2" }, "*");
     });
+
+    function openTasksTab(tab){
+      const qs = new URLSearchParams();
+      if (tab) qs.set("tab", String(tab));
+      const url = "/web/views/tasks.html?v=20260325-tasks2" + (qs.toString() ? ("&" + qs.toString()) : "");
+      window.parent?.postMessage({ type:"openItem", id:"tasks_my", url }, "*");
+    }
+    $("#kpiTaskOver")?.addEventListener("click", ()=> openTasksTab("leads"));
+    $("#kpiTaskOpen")?.addEventListener("click", ()=> openTasksTab("leads"));
+    $("#kpiTaskContact")?.addEventListener("click", ()=> openTasksTab("leads"));
+    $("#kpiTaskCal")?.addEventListener("click", ()=> openTasksTab("cal"));
 
     (async () => {
       await initFilters();

@@ -527,7 +527,15 @@
       qs("#tabCal").onclick = ()=> setTab("cal");
       qs("#tabMail").onclick = ()=> setTab("mail");
       qs("#tabAll").onclick = ()=> setTab("all");
-      try{ setTab(localStorage.getItem(TAB_KEY) || "leads"); }catch(_){ setTab("leads"); }
+      try{
+        const params = new URLSearchParams(location.search || "");
+        const tabQ = String(params.get("tab") || "").trim().toLowerCase();
+        const allowed = new Set(["leads","cal","mail","all"]);
+        const initial = allowed.has(tabQ) ? tabQ : (localStorage.getItem(TAB_KEY) || "leads");
+        setTab(initial);
+      }catch(_){
+        try{ setTab(localStorage.getItem(TAB_KEY) || "leads"); }catch(__){ setTab("leads"); }
+      }
 
       // Delegación global (evita re-binds tras cada render).
       document.addEventListener("dblclick", (ev)=>{
