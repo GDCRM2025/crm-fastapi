@@ -61,9 +61,32 @@ def _enrich_user(user: dict) -> dict:
                 {"id": uid_int},
             ).mappings().first()
             if row:
-                out["telefono"] = row.get("telefono")
+                tel_db = (row.get("telefono") or "").strip()
+                tel_norm = ""
+                tel_ok = False
+                if tel_db:
+                    try:
+                        tel_norm = _normalize_phone_cl(tel_db)
+                        tel_ok = bool(tel_norm)
+                    except Exception:
+                        tel_ok = False
+                        tel_norm = ""
+
+                # Si el teléfono existe pero viene con espacios/formato raro, lo normalizamos en BD
+                # (best-effort; nunca debe romper /me).
+                try:
+                    if tel_ok and tel_norm and tel_norm != tel_db:
+                        cn.execute(
+                            text("UPDATE public.usuarios SET telefono=:t WHERE id_usuario=:id"),
+                            {"t": tel_norm, "id": uid_int},
+                        )
+                        tel_db = tel_norm
+                except Exception:
+                    pass
+
+                out["telefono"] = tel_db or None
                 out["push_ok"] = bool(row.get("push_ok"))
-                out["needs_phone"] = not bool((row.get("telefono") or "").strip())
+                out["needs_phone"] = not bool(tel_ok)
                 out["needs_push_ok"] = not bool(row.get("push_ok"))
     except Exception:
         pass

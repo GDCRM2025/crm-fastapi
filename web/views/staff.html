@@ -203,6 +203,7 @@
       const savePhoneBtn = document.getElementById("savePhoneBtn");
       const enablePushBtn = document.getElementById("enablePushBtn");
       const onboardStatus = document.getElementById("onboardStatus");
+      const onboardText = document.getElementById("onboardText");
 
       function setTab(active){
         [tabChat, tabNotifs, tabOp].forEach((b) => b && b.classList.remove("active"));
@@ -426,6 +427,16 @@
             phoneInput.value = "";
             phoneInput.placeholder = needsPhone ? "Teléfono: 9 dígitos (sin +56)" : "Teléfono: 9 dígitos (sin +56)";
           }
+          // Si el teléfono ya existe, no mostrar el campo (solo activar push).
+          try{
+            const phoneRow = phoneInput ? phoneInput.closest(".row") : null;
+            if(phoneRow) phoneRow.style.display = needsPhone ? "flex" : "none";
+            if(onboardText){
+              onboardText.textContent = needsPhone
+                ? "Para recibir alertas aunque no estés dentro del CRM, necesitamos tu teléfono y que aceptes notificaciones push."
+                : "Para recibir alertas aunque no estés dentro del CRM, activa las notificaciones push.";
+            }
+          }catch(_){}
         }catch(_){}
 
         async function refreshState(){
@@ -451,6 +462,10 @@
           savePhoneBtn.onclick = async () => {
             try{
               const telDigits = String(phoneInput?.value || "").replace(/\D/g, "").slice(0, 9);
+              if(!needsPhone){
+                // Si ya tenemos teléfono, no lo sobrescribas. Solo push.
+                return;
+              }
               if(needsPhone && !telDigits){
                 alert("Debes ingresar tu teléfono.");
                 return;

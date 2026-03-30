@@ -450,8 +450,27 @@ def register(data: RegisterIn):
 
     if not nombre or not email or not rut or not telefono_in:
         raise HTTPException(status_code=400, detail="Faltan datos requeridos")
-        with get_connection() as conn:
-            _ensure_operadores_allowlist(conn)
+
+    # Normaliza teléfono a E.164 Chile.
+    # UX: usuario ingresa solo 9 dígitos, pero aceptamos espacios, +56 o 56.
+    def _normalize_phone_cl(raw: str) -> str:
+        s = (raw or "").strip()
+        s = s.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace(".", "")
+        if s.startswith("+"):
+            digits = "".join(ch for ch in s[1:] if ch.isdigit())
+        else:
+            digits = "".join(ch for ch in s if ch.isdigit())
+        if digits.startswith("56") and len(digits) == 11:
+            digits = digits[2:]
+        if len(digits) != 9:
+            raise HTTPException(status_code=400, detail="Teléfono inválido. Usa 9 dígitos (sin +56).")
+        return "+56" + digits
+
+    tel_norm = _normalize_phone_cl(telefono_in)
+
+    with get_connection() as conn:
+        _ensure_operadores_allowlist(conn)
+
         # Asegura columnas (deploy idempotente)
         try:
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rut TEXT"))
@@ -462,46 +481,50 @@ def register(data: RegisterIn):
                 conn.rollback()
             except Exception:
                 pass
-            # Allowlist:
-            # - Si hay registros en operadores_allowlist, se exige match por RUT (modo seguro).
-            # - Si está vacía (p.ej. en go-live), permitimos registro libre PERO solo como OPERADOR.
-            enforce_allowlist = (os.getenv("OPERADORES_REQUIRE_ALLOWLIST") or "").strip().lower() in ("1", "true", "yes", "y", "on")
-            try:
-                if not enforce_allowlist:
-                    cnt = conn.execute(text("SELECT COUNT(*) FROM operadores_allowlist")).scalar() or 0
-                    enforce_allowlist = int(cnt) > 0
-            except Exception:
-                enforce_allowlist = False
 
-            cargo = "OPERADOR"
-            if enforce_allowlist:
-                row = conn.execute(
-                    text(
-                        """
-                        SELECT nombre, email, rut, cargo, status
-                        FROM operadores_allowlist
-                        WHERE lower(rut)=:r
-                        LIMIT 1
-                        """
-                    ),
-                    {"r": rut},
-                ).mappings().first()
-                if not row:
-                    raise HTTPException(status_code=403, detail="No estás autorizado para registrarte")
-                status = (row.get("status") or "").upper()
-                if status and status not in ("ACTIVO", "ACTIVE", "OK"):
-                    raise HTTPException(status_code=403, detail="Usuario no activo")
-                cargo = (row.get("cargo") or "OPERADOR").strip().upper()
-                if cargo not in ("OPERADOR", "CHOP", "CHOFER", "CONDUCTOR"):
-                    cargo = "OPERADOR"
+        # Allowlist:
+        # - Si hay registros en operadores_allowlist, se exige match por RUT (modo seguro).
+        # - Si está vacía, permitimos registro libre PERO solo como OPERADOR.
+        enforce_allowlist = (os.getenv("OPERADORES_REQUIRE_ALLOWLIST") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+        try:
+            if not enforce_allowlist:
+                cnt = conn.execute(text("SELECT COUNT(*) FROM operadores_allowlist")).scalar() or 0
+                enforce_allowlist = int(cnt) > 0
+        except Exception:
+            enforce_allowlist = False
+
+        cargo = "OPERADOR"
+        if enforce_allowlist:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT nombre, email, rut, cargo, status
+                    FROM operadores_allowlist
+                    WHERE lower(rut)=:r
+                    LIMIT 1
+                    """
+                ),
+                {"r": rut},
+            ).mappings().first()
+            if not row:
+                raise HTTPException(status_code=403, detail="No estás autorizado para registrarte")
+            status = (row.get("status") or "").upper()
+            if status and status not in ("ACTIVO", "ACTIVE", "OK"):
+                raise HTTPException(status_code=403, detail="Usuario no activo")
+            cargo = (row.get("cargo") or "OPERADOR").strip().upper()
+            if cargo not in ("OPERADOR", "CHOP", "CHOFER", "CONDUCTOR"):
+                cargo = "OPERADOR"
+
         exists = conn.execute(
             text("SELECT id_usuario FROM usuarios WHERE lower(email)=:e OR lower(username)=:u LIMIT 1"),
             {"e": email, "u": username},
         ).first()
         if exists:
             raise HTTPException(status_code=400, detail="Usuario ya existe")
+
         role_id = _role_id_for(conn, cargo)
         hp = hash_password(password)
+
         # avatar genérico (data URI SVG)
         default_avatar = (
             "data:image/svg+xml;utf8,"
@@ -514,11 +537,13 @@ def register(data: RegisterIn):
             "<path d='M48 224c16-44 48-66 80-66s64 22 80 66' fill='rgba(255,255,255,0.92)'/>"
             "</svg>"
         )
-        conn.execute(
+
+        row = conn.execute(
             text(
                 """
                 INSERT INTO usuarios(nombre,email,username,hashed_password,telefono,rut,cargo,id_rol,rol,is_active,avatar_url,created_at,updated_at)
                 VALUES (:n,:e,:u,:hp,:tel,:rut,:cargo,:rid,:rol,TRUE,:av,now(),now())
+                RETURNING id_usuario
                 """
             ),
             {
@@ -526,16 +551,17 @@ def register(data: RegisterIn):
                 "e": email,
                 "u": username,
                 "hp": hp,
-                "tel": telefono_in or None,
+                "tel": tel_norm,
                 "rut": rut,
                 "cargo": cargo,
                 "rid": role_id,
                 "rol": cargo,
                 "av": default_avatar,
             },
-        )
+        ).fetchone()
         conn.commit()
-    return {"ok": True}
+
+    return {"ok": True, "id_usuario": int(row[0]) if row else None}
 
 
 # auth deps (compat con settings_live)
