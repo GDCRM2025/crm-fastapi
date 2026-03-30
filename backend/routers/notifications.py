@@ -619,21 +619,45 @@ def list_system_notifs(
             ),
             {"roles": role_targets, "lim": limit},
         ).mappings().all()
-        items = []
+        # Dedup: un mismo evento suele insertarse por varios role_target (ADMIN/OPERACIONES/MICE...).
+        # La UI no muestra role_target, así que lo colapsamos por (kind + lead + id_evento + fecha_evento + title).
+        dedup: dict[str, dict] = {}
         for r in rows:
-            items.append(
-                {
-                    "id": int(r.get("id") or 0),
-                    "created_at": (r.get("created_at").isoformat() if r.get("created_at") else ""),
-                    "kind": r.get("kind") or "",
-                    "id_lead": int(r.get("id_lead")) if r.get("id_lead") else None,
-                    "title": r.get("title") or "",
-                    "body": r.get("body") or "",
-                    "payload": r.get("payload") or {},
-                    "read_at": (r.get("read_at").isoformat() if r.get("read_at") else None),
-                    "read_by": r.get("read_by") or None,
-                }
-            )
+            payload = r.get("payload") or {}
+            try:
+                if not isinstance(payload, dict):
+                    payload = {}
+            except Exception:
+                payload = {}
+            lid = int(r.get("id_lead")) if r.get("id_lead") else None
+            k = str(r.get("kind") or "")
+            title = str(r.get("title") or "")
+            id_evento = payload.get("id_evento") or payload.get("evento_id") or ""
+            fecha = payload.get("fecha_evento") or payload.get("fecha") or ""
+            key = f"{k}|{lid or ''}|{id_evento}|{fecha}|{title}"
+            cur = {
+                "id": int(r.get("id") or 0),
+                "created_at": (r.get("created_at").isoformat() if r.get("created_at") else ""),
+                "kind": k,
+                "id_lead": lid,
+                "title": title,
+                "body": str(r.get("body") or ""),
+                "payload": payload,
+                "read_at": (r.get("read_at").isoformat() if r.get("read_at") else None),
+                "read_by": r.get("read_by") or None,
+            }
+            prev = dedup.get(key)
+            if not prev:
+                dedup[key] = cur
+            else:
+                # prefer unread; else prefer newest
+                if (prev.get("read_at") and not cur.get("read_at")):
+                    dedup[key] = cur
+                elif (cur.get("created_at") or "") > (prev.get("created_at") or ""):
+                    dedup[key] = cur
+        items = list(dedup.values())
+        items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+        items = items[:limit]
         return {"ok": True, "items": items}
 
 
@@ -641,6 +665,7 @@ def list_system_notifs(
 def mark_system_notif_read(id: int, user=Depends(get_current_user)):
     role = (user.get("role") or user.get("rol") or "").upper()
     who = (user.get("email") or user.get("username") or user.get("name") or str(user.get("id") or "")).strip() or role or "user"
+    role_targets = _role_targets(role) or [role]
     with get_connection() as conn:
         _ensure_system_notifs(conn)
         conn.execute(
@@ -648,10 +673,10 @@ def mark_system_notif_read(id: int, user=Depends(get_current_user)):
                 """
                 UPDATE public.system_notifs
                 SET read_at = now(), read_by = :who
-                WHERE id = :id AND role_target = :r
+                WHERE id = :id AND role_target = ANY(:roles)
                 """
             ),
-            {"id": int(id), "r": role, "who": who},
+            {"id": int(id), "roles": role_targets, "who": who},
         )
         conn.commit()
     return {"ok": True}
@@ -661,6 +686,7 @@ def mark_system_notif_read(id: int, user=Depends(get_current_user)):
 def mark_system_notifs_read_all(user=Depends(get_current_user)):
     role = (user.get("role") or user.get("rol") or "").upper()
     who = (user.get("email") or user.get("username") or user.get("name") or str(user.get("id") or "")).strip() or role or "user"
+    role_targets = _role_targets(role) or [role]
     with get_connection() as conn:
         _ensure_system_notifs(conn)
         conn.execute(
@@ -668,10 +694,10 @@ def mark_system_notifs_read_all(user=Depends(get_current_user)):
                 """
                 UPDATE public.system_notifs
                 SET read_at = now(), read_by = :who
-                WHERE role_target = :r AND read_at IS NULL
+                WHERE role_target = ANY(:roles) AND read_at IS NULL
                 """
             ),
-            {"r": role, "who": who},
+            {"roles": role_targets, "who": who},
         )
         conn.commit()
     return {"ok": True}

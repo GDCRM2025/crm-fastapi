@@ -112,7 +112,10 @@
           <button class="btn" id="btnReload" type="button">Recargar</button>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <button class="btn" id="btnReadAll" type="button">Marcar todo leído</button>
+          <label class="tog" title="Marca todas como leídas">
+            <input id="chkReadAll" type="checkbox" />
+            Todo leído
+          </label>
         </div>
       </div>
     </div>
@@ -266,12 +269,16 @@
 
     $("#btnReload")?.addEventListener("click", () => load().catch(e => alert(String(e?.message||e))));
     $("#unreadOnly")?.addEventListener("change", () => load().catch(e => alert(String(e?.message||e))));
-    $("#btnReadAll")?.addEventListener("click", async () => {
-      if (!confirm("¿Marcar todas como leídas?")) return;
+    $("#chkReadAll")?.addEventListener("change", async (ev) => {
+      const el = ev?.target;
+      const checked = !!el?.checked;
+      if (!checked) return; // no-op al desmarcar
+      if (!confirm("¿Marcar todas como leídas?")){ el.checked = false; return; }
       try{
         await api(`/notifications/system/read_all`, { method:"POST" });
-        load();
+        await load();
       }catch(e){
+        el.checked = false;
         alert(String(e?.message||e));
       }
     });

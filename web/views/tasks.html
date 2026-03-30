@@ -305,9 +305,18 @@
       if (s.startsWith("/")) return API_BASE + s;
       return s;
     }
+    function getToken(){
+      return (
+        localStorage.getItem("token") ||
+        localStorage.getItem("gd_token") ||
+        sessionStorage.getItem("token") ||
+        sessionStorage.getItem("gd_token") ||
+        ""
+      );
+    }
     function authHeaders(extra){
-      const t = localStorage.getItem("token") || "";
-      return Object.assign({ "Authorization": "Bearer " + t }, extra || {});
+      const t = getToken();
+      return t ? Object.assign({ "Authorization": "Bearer " + t }, extra || {}) : Object.assign({}, extra || {});
     }
 
     class ApiError extends Error{
