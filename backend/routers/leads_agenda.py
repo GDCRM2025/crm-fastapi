@@ -1724,21 +1724,9 @@ def move_lead_and_maybe_agenda(
             ).strip()
 
             title = "Nuevo evento agendado · %s · %s" % (marca_txt, cliente)
-            roles = [
-                "ADMIN",
-                "SUPERADMIN",
-                "1",
-                "OPERACIONES",
-                "JEFE DE OPERACIONES",
-                "3",
-                "MICE",
-                "8",
-                "JEFE DE COMPRAS",
-                "BODEGUERO",
-                "4",
-                "COMPRAS",
-                "5",
-            ]
+            # Importante: NO duplicar targets (p.ej. OPERACIONES y "3"),
+            # porque el lector de system_notifs ya expande aliases.
+            roles = ["ADMIN", "OPERACIONES", "MICE", "COMPRAS", "BODEGUERO"]
 
             inserted_roles = _notify_roles_once(
                 "EVENT_AGENDADO",
@@ -1760,18 +1748,7 @@ def move_lead_and_maybe_agenda(
                 try:
                     # Email SOLO a Operaciones + MICE (no a Operadores).
                     # El resto se notifica via system_notifs en el CRM.
-                    email_roles = [
-                        "OPERACIONES",
-                        "JEFE DE OPERACIONES",
-                        "3",
-                        "MICE",
-                        "8",
-                        "JEFE DE COMPRAS",
-                        "COMPRAS",
-                        "5",
-                        "BODEGUERO",
-                        "4",
-                    ]
+                    email_roles = ["OPERACIONES", "MICE", "COMPRAS", "BODEGUERO"]
                     always_to = [
                         "inventario@greendiamond.cl",
                         "bodega@greendiamond.cl",
@@ -1838,20 +1815,23 @@ def move_lead_and_maybe_agenda(
                             title="Evento nuevo",
                             body=f"{cliente} · {comuna_txt} · {fecha_txt} · OPS {ops}",
                             url=url_staff,
-                            tag="gd-evento",
+                            tag=f"gd-evento-{int(id_lead)}",
                         )
 
                     ids_staff = user_ids_by_role_contains(
                         role_contains=["OPERADOR", "CONDUCTOR", "CHOFER", "DRIVER"],
                         include_all_active=False,
                     )
+                    # Evita duplicar push si un usuario calza en ambos grupos por rol mixto.
+                    if ids_staff and ids_ops:
+                        ids_staff = [x for x in ids_staff if x not in set(ids_ops)]
                     if ids_staff:
                         send_webpush_to_users(
                             user_ids=ids_staff,
                             title="Evento nuevo",
                             body=f"{nombre_evento} · {comuna_txt} · {fecha_txt}",
                             url=url_staff,
-                            tag="gd-evento",
+                            tag=f"gd-evento-{int(id_lead)}",
                         )
                 except Exception:
                     pass
