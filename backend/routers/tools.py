@@ -3807,7 +3807,9 @@ def edit_confirmed_event(
                 to_update.append(
                     {
                         "day": str(e.get("day") or st.date().isoformat()),
-                        "title": str(e.get("title") or title),
+                        # Al editar un confirmado, el "título" debe reflejar el lead (pre_title),
+                        # aunque `pre_events_json` tenga títulos legacy.
+                        "title": title,
                         "location": str(e.get("location") or loc),
                         "description": str(e.get("description") or details or ""),
                         "start": st,

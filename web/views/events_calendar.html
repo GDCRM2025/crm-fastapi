@@ -445,12 +445,18 @@
       if (!res.isConfirmed || !res.value) return;
 
       try{
-        await apiJSON(`/tools/agenda/${row.id_lead}/edit_confirmed`, {
+        const out = await apiJSON(`/tools/agenda/${row.id_lead}/edit_confirmed`, {
           method: "PUT",
           headers: { "Content-Type":"application/json" },
           body: JSON.stringify(res.value),
         });
-        Swal.fire({ icon:"success", title:"Listo", text:"Evento actualizado." });
+        const g = out?.gcal || {};
+        const gerr = String(g?.gcal_error || "").trim();
+        if (gerr){
+          Swal.fire({ icon:"warning", title:"Guardado (sin sync)", text:gerr.slice(0, 280) });
+        }else{
+          Swal.fire({ icon:"success", title:"Listo", text:"Evento actualizado y sincronizado en Calendar." });
+        }
         await load();
       }catch(err){
         Swal.fire({ icon:"error", title:"Error", text:"No pude actualizar: " + String(err?.message||err) });

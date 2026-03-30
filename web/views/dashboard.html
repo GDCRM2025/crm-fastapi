@@ -478,20 +478,6 @@
 	          </div>
 	        </div>
 	      </div>
-	      <div class="split" style="margin-top:10px;">
-	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="warn" style="padding:12px 14px; cursor:pointer" id="kpiTaskCal">
-	            <div class="label">Calendario (semana)</div>
-	            <div class="value" id="tasksCalMissing">0</div>
-	            <div class="hint">Confirmados con faltantes</div>
-	          </div>
-	        </div>
-	        <div style="grid-column: span 8;">
-	          <div class="muted" style="padding:10px 12px;border:1px solid rgba(148,163,184,.14);border-radius:16px;background:rgba(2,6,23,.18);">
-	            Tip: en “Calendario (semana)” se exige <b>teléfono + dirección + horario</b> solo para confirmados de esta semana.
-	          </div>
-	        </div>
-	      </div>
 	    </section>
 
     <section class="card" id="eventsCard" style="grid-column: span 12;">
@@ -993,13 +979,11 @@
           $("#tasksOpen").textContent = "0";
           $("#tasksOverdue").textContent = "0";
           $("#tasksContactOverdue").textContent = "0";
-          $("#tasksCalMissing").textContent = "0";
           return;
         }
         $("#tasksOpen").textContent = String(s?.counts?.open_total ?? 0);
         $("#tasksOverdue").textContent = String(s?.overdue?.overdue_total ?? 0);
         $("#tasksContactOverdue").textContent = String(s?.overdue?.overdue_contactar ?? 0);
-        $("#tasksCalMissing").textContent = String(s?.counts?.open_calendario ?? 0);
       }catch(_){
         // Best-effort fallback (no bloquea dashboard).
         try{
@@ -1487,7 +1471,6 @@
     $("#kpiTaskOver")?.addEventListener("click", ()=> openTasksTab("leads"));
     $("#kpiTaskOpen")?.addEventListener("click", ()=> openTasksTab("leads"));
     $("#kpiTaskContact")?.addEventListener("click", ()=> openTasksTab("leads"));
-    $("#kpiTaskCal")?.addEventListener("click", ()=> openTasksTab("cal"));
 
     (async () => {
       await initFilters();
