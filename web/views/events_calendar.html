@@ -78,6 +78,84 @@
     :root.light .pill{background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.08);}
     .rowlink{cursor:pointer;}
     .rowlink:hover{background:rgba(255,255,255,.03);}
+
+    /* SweetAlert modal compacto */
+    .gdmodal{
+      width: min(860px, 96vw) !important;
+      border-radius: 18px !important;
+      padding: 0 !important;
+    }
+    .gdmodal .swal2-title{
+      padding: 14px 18px 0 18px !important;
+      text-align:left !important;
+      font-size: 16px !important;
+      font-weight: 1100 !important;
+      letter-spacing: .02em !important;
+    }
+    .gdmodal .swal2-html-container{
+      margin: 10px 0 0 0 !important;
+      padding: 0 18px 14px 18px !important;
+      text-align:left !important;
+    }
+    .gdform{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      max-height: 64vh;
+      overflow:auto;
+      padding-right: 4px;
+    }
+    .gdgrid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:10px;
+    }
+    @media (min-width: 760px){
+      .gdgrid{ grid-template-columns: 1fr 1fr; }
+      .span2{ grid-column: span 2; }
+    }
+    .fld{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+    :root.light .fld{ background: rgba(255,255,255,.88); border-color: rgba(0,0,0,.10); }
+    .lbl{
+      font-size:11px;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      opacity:.72;
+      font-weight:1100;
+    }
+    .val{
+      margin-top:6px;
+      font-weight:950;
+      word-break:break-word;
+      white-space:pre-wrap;
+    }
+    .ed{
+      margin-top:8px;
+      display:none;
+      gap:8px;
+      flex-direction:column;
+    }
+    .ed.show{ display:flex; }
+    .ipt, .tx{
+      width:100%;
+      box-sizing:border-box;
+      border-radius:12px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.14);
+      color: var(--text);
+      padding: 10px 12px;
+      font-weight: 900;
+      outline:none;
+    }
+    :root.light .ipt, :root.light .tx{ background: rgba(255,255,255,.92); border-color: rgba(0,0,0,.10); }
+    .tx{ min-height: 96px; resize: vertical; }
+    .minirow{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .minirow .ipt{ flex:1; min-width: 160px; }
   </style>
 </head>
 <body>
@@ -89,11 +167,12 @@
       </div>
       <div class="row">
         <input id="q" class="inp" placeholder="Buscar (cliente, comuna, marca, #lead)" style="min-width:260px" />
-        <input id="from" class="inp" type="date" />
-        <input id="to" class="inp" type="date" />
         <select id="brand" class="sel" title="Marca">
           <option value="">Mis marcas</option>
         </select>
+        <button id="btnPrev" class="btn" type="button" title="Semana anterior" disabled>‹</button>
+        <button id="btnNow" class="btn" type="button" title="Semana actual">⟲</button>
+        <button id="btnNext" class="btn" type="button" title="Semana siguiente">›</button>
         <button id="btnReload" class="btn primary" type="button">Buscar</button>
       </div>
     </section>
@@ -102,6 +181,10 @@
       <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
         <div class="h2" style="margin:0">Listado</div>
         <div class="muted" id="meta">—</div>
+      </div>
+      <div class="row" style="justify-content:space-between;align-items:center;margin:-2px 0 10px 0">
+        <div class="pill" id="weekPill">Semana: —</div>
+        <div class="muted" id="hint">Solo eventos futuros (no se muestran ni editan pasados). Prioriza faltantes (dirección/teléfono/horario).</div>
       </div>
       <div style="max-height:76vh; overflow:auto">
         <table class="tbl">
@@ -120,6 +203,10 @@
         </table>
       </div>
     </section>
+
+    <!-- Inputs ocultos para rango actual (semana). El backend igual clampa a hoy para evitar pasados. -->
+    <input id="from" type="date" style="display:none" />
+    <input id="to" type="date" style="display:none" />
   </div>
 
   <script>
@@ -154,6 +241,12 @@
     }
 
     function ddmmyyyy(s){
+      try{
+        if (s instanceof Date && !isNaN(s.getTime())){
+          const pad = (n)=> String(n).padStart(2,"0");
+          return `${pad(s.getDate())}/${pad(s.getMonth()+1)}/${s.getFullYear()}`;
+        }
+      }catch(_){}
       const d = String(s || "").slice(0,10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "—";
       return `${d.slice(8,10)}/${d.slice(5,7)}/${d.slice(0,4)}`;
@@ -205,57 +298,130 @@
         return [cli, marca].filter(Boolean).join(" - ") || `Lead #${row?.id_lead}`;
       })();
 
+      const curTitle = String(row?.pre_title || defaultTitle || "").trim();
+      const curTel = String(row?.telefono || "").trim();
+      const curDir = String(row?.direccion || row?.pre_location || "").trim();
+      const curDesc = String(row?.pre_description || "").trim();
+      const curMont = String(row?.pre_montaje_text || "").trim();
+      const curHi = String(hhmm(row.pre_start) || hhmm(row.start_at) || "").trim();
+      const curHf = String(hhmm(row.pre_end) || hhmm(row.end_at) || "").trim();
+      const missTel = !curTel;
+      const missDir = !curDir;
+      const missHr = !(curHi && curHf);
+
       const res = await Swal.fire({
-        title: `Editar evento (#${row.id_lead})`,
+        title: `Editar evento · Lead #${row.id_lead}`,
+        customClass: { popup: "gdmodal" },
         html: `
-          <div style="text-align:left;display:flex;flex-direction:column;gap:10px">
-            <div class="muted">Actualiza el lead y re-sincroniza Google Calendar. Se registra en historial y notifica a Operaciones/MICE/Admin.</div>
+          <div class="gdform">
+            <div class="muted">Edita solo lo necesario. Si el campo ya está completo, usa “Editar”. Esto actualiza el lead, sincroniza Calendar (sin crear eventos nuevos) y notifica a Operaciones/MICE/Admin.</div>
 
-            <label style="font-weight:950;font-size:12px;opacity:.8;margin-top:6px">Título (Calendar)</label>
-            <input id="ev_title" class="swal2-input" style="height:42px" value="${esc(defaultTitle)}" />
-
-            <label style="font-weight:950;font-size:12px;opacity:.8">Teléfono</label>
-            <input id="ev_tel" class="swal2-input" style="height:42px" value="${esc(row.telefono||"")}" placeholder="+569..." />
-
-            <label style="font-weight:950;font-size:12px;opacity:.8">Dirección</label>
-            <input id="ev_dir" class="swal2-input" style="height:42px" value="${esc(row.direccion||"")}" placeholder="Dirección completa" />
-
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-              <div>
-                <label style="font-weight:950;font-size:12px;opacity:.8">Inicio</label>
-                <input id="ev_hi" class="swal2-input" style="height:42px" placeholder="14:30" value="${esc(hhmm(row.pre_start)||'')}" />
+            <div class="gdgrid">
+              <div class="fld span2">
+                <div class="lbl">Título</div>
+                <div class="val" id="v_title">${esc(curTitle || "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_title">Editar</button>
+                <div class="ed ${missDir ? "" : ""}" id="ed_title">
+                  <input id="ev_title" class="ipt" value="${esc(curTitle)}" />
+                </div>
               </div>
-              <div>
-                <label style="font-weight:950;font-size:12px;opacity:.8">Fin</label>
-                <input id="ev_hf" class="swal2-input" style="height:42px" placeholder="18:30" value="${esc(hhmm(row.pre_end)||'')}" />
+
+              <div class="fld">
+                <div class="lbl">Teléfono</div>
+                <div class="val" id="v_tel">${esc(curTel || "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_tel">${missTel ? "Ingresar" : "Editar"}</button>
+                <div class="ed ${missTel ? "show" : ""}" id="ed_tel">
+                  <input id="ev_tel" class="ipt" value="${esc(curTel)}" placeholder="9 dígitos (ej: 912345678)" />
+                </div>
+              </div>
+
+              <div class="fld">
+                <div class="lbl">Dirección</div>
+                <div class="val" id="v_dir">${esc(curDir || "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_dir">${missDir ? "Ingresar" : "Editar"}</button>
+                <div class="ed ${missDir ? "show" : ""}" id="ed_dir">
+                  <input id="ev_dir" class="ipt" value="${esc(curDir)}" placeholder="Dirección completa" />
+                </div>
+              </div>
+
+              <div class="fld span2">
+                <div class="lbl">Horario</div>
+                <div class="val" id="v_hr">${esc((curHi && curHf) ? (curHi + " – " + curHf) : "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_hr">${missHr ? "Ingresar" : "Editar"}</button>
+                <div class="ed ${missHr ? "show" : ""}" id="ed_hr">
+                  <div class="minirow">
+                    <input id="ev_hi" class="ipt" type="time" value="${esc(curHi)}" />
+                    <input id="ev_hf" class="ipt" type="time" value="${esc(curHf)}" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="fld span2">
+                <div class="lbl">Descripción (Calendar)</div>
+                <div class="val" id="v_desc">${esc(curDesc || "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_desc">Editar</button>
+                <div class="ed" id="ed_desc">
+                  <textarea id="ev_desc" class="tx" placeholder="Notas para operaciones / cliente (opcional)">${esc(curDesc)}</textarea>
+                </div>
+              </div>
+
+              <div class="fld span2">
+                <div class="lbl">Montaje</div>
+                <div class="val" id="v_mont">${esc(curMont || "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_mont">Editar</button>
+                <div class="ed" id="ed_mont">
+                  <textarea id="ev_mont" class="tx" placeholder="Montaje / requerimientos (opcional)">${esc(curMont)}</textarea>
+                </div>
               </div>
             </div>
-
-            <label style="font-weight:950;font-size:12px;opacity:.8">Notas (Calendar)</label>
-            <textarea id="ev_desc" class="swal2-textarea" placeholder="Notas para operaciones / cliente (opcional)">${esc(row.pre_description||"")}</textarea>
           </div>
         `,
+        didOpen: ()=>{
+          document.querySelectorAll("button[data-toggle]").forEach((b)=>{
+            b.addEventListener("click", ()=>{
+              const id = b.getAttribute("data-toggle");
+              const el = document.getElementById(id);
+              if (!el) return;
+              el.classList.toggle("show");
+            });
+          });
+        },
         focusConfirm: false,
         showCancelButton: true,
-        confirmButtonText: "Guardar y sincronizar",
+        confirmButtonText: "Guardar",
         cancelButtonText: "Cancelar",
         preConfirm: ()=>{
-          const title = (document.getElementById("ev_title")?.value || "").trim();
-          const telefono = (document.getElementById("ev_tel")?.value || "").trim() || null;
-          const direccion = (document.getElementById("ev_dir")?.value || "").trim() || null;
-          const hi = (document.getElementById("ev_hi")?.value || "").trim();
-          const hf = (document.getElementById("ev_hf")?.value || "").trim();
-          const desc = (document.getElementById("ev_desc")?.value || "").trim() || null;
+          const title = (document.getElementById("ev_title")?.value || curTitle || "").trim();
+          const telefono = (document.getElementById("ev_tel")?.value || curTel || "").trim() || null;
+          const direccion = (document.getElementById("ev_dir")?.value || curDir || "").trim() || null;
+          const hi = (document.getElementById("ev_hi")?.value || curHi || "").trim();
+          const hf = (document.getElementById("ev_hf")?.value || curHf || "").trim();
+          const desc = (document.getElementById("ev_desc")?.value || curDesc || "").trim() || null;
+          const mont = (document.getElementById("ev_mont")?.value || curMont || "").trim() || null;
 
           if (!title){ Swal.showValidationMessage("Falta título."); return false; }
-          if (!direccion){ Swal.showValidationMessage("Falta dirección."); return false; }
-          if (!hi || !/^[0-2]\\d:[0-5]\\d$/.test(hi) || !hf || !/^[0-2]\\d:[0-5]\\d$/.test(hf)){
-            Swal.showValidationMessage("Horario inválido (HH:MM)."); return false;
+          if (missDir && !direccion){ Swal.showValidationMessage("Falta dirección."); return false; }
+          if (missTel && !telefono){ Swal.showValidationMessage("Falta teléfono."); return false; }
+          if (missHr && (!hi || !hf)){ Swal.showValidationMessage("Falta horario (inicio/fin)."); return false; }
+          if ((hi && !/^[0-2]\\d:[0-5]\\d$/.test(hi)) || (hf && !/^[0-2]\\d:[0-5]\\d$/.test(hf))){
+            Swal.showValidationMessage("Horario inválido."); return false;
           }
-          const preStart = _localISO(fecha, hi);
-          const preEnd = _localISO(fecha, hf);
-          if (!preStart || !preEnd){ Swal.showValidationMessage("No pude construir el horario."); return false; }
-          return { pre_title: title, pre_location: direccion, pre_description: desc, pre_start: preStart, pre_end: preEnd, telefono, direccion };
+          const preStart = hi ? _localISO(fecha, hi) : null;
+          const preEnd = hf ? _localISO(fecha, hf) : null;
+          if ((hi || hf) && (!preStart || !preEnd)){
+            Swal.showValidationMessage("No pude construir el horario."); return false;
+          }
+          const payload = {
+            pre_title: title,
+            telefono,
+            direccion,
+            pre_location: direccion,
+            pre_description: desc,
+            pre_montaje_text: mont,
+          };
+          if (preStart) payload.pre_start = preStart;
+          if (preEnd) payload.pre_end = preEnd;
+          return payload;
         }
       });
       if (!res.isConfirmed || !res.value) return;
@@ -266,7 +432,7 @@
           headers: { "Content-Type":"application/json" },
           body: JSON.stringify(res.value),
         });
-        Swal.fire({ icon:"success", title:"Listo", text:"Evento actualizado y sincronizado." });
+        Swal.fire({ icon:"success", title:"Listo", text:"Evento actualizado." });
         await load();
       }catch(err){
         Swal.fire({ icon:"error", title:"Error", text:"No pude actualizar: " + String(err?.message||err) });
@@ -338,7 +504,11 @@
           const byId = new Map(items.map(x=>[String(x.id_lead), x]));
           tb.querySelectorAll("tr[data-id]").forEach((tr)=>{
             const id = tr.getAttribute("data-id");
-            tr.addEventListener("dblclick", ()=> openLead(id));
+            tr.addEventListener("click", (ev)=>{
+              const btn = ev.target?.closest?.("button");
+              if (btn) return;
+              openLead(id);
+            });
             tr.querySelectorAll("button[data-act]").forEach((b)=>{
               b.addEventListener("click", (ev)=>{
                 ev.stopPropagation();
@@ -357,16 +527,37 @@
       }
     }
 
-    function initDefaultDates(){
-      const from = qs("#from");
-      const to = qs("#to");
+    const state = { weekOffset: 0 };
+    function startOfWeekMon(d){
+      const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const day = x.getDay(); // 0=Sun
+      const diff = (day === 0 ? -6 : 1 - day); // to Monday
+      x.setDate(x.getDate() + diff);
+      return x;
+    }
+    function isoDate(d){
       const pad = (n)=> String(n).padStart(2,"0");
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    }
+    function setWeek(offset){
+      state.weekOffset = Math.max(0, Number(offset||0));
       const today = new Date();
-      const d1 = new Date(today.getTime() - 7*86400000);
-      const d2 = new Date(today.getTime() + 90*86400000);
-      const iso = (d)=> `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-      if (from && !from.value) from.value = iso(d1);
-      if (to && !to.value) to.value = iso(d2);
+      const ws = startOfWeekMon(today);
+      ws.setDate(ws.getDate() + state.weekOffset * 7);
+      const we = new Date(ws.getTime());
+      we.setDate(we.getDate() + 6);
+      // no pasados (clamp visual)
+      const fromD = new Date(Math.max(ws.getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()));
+      const toD = we;
+      const from = qs("#from"); const to = qs("#to");
+      if (from) from.value = isoDate(fromD);
+      if (to) to.value = isoDate(toD);
+      const pill = qs("#weekPill");
+      if (pill){
+        pill.textContent = `Semana: ${ddmmyyyy(ws)} → ${ddmmyyyy(we)}`;
+      }
+      const btnPrev = qs("#btnPrev");
+      if (btnPrev) btnPrev.disabled = state.weekOffset <= 0;
     }
 
     (async function(){
@@ -374,16 +565,16 @@
         location.href = `${API_BASE}/web/login.html?next=${encodeURIComponent("/web/views/events_calendar.html")}`;
         return;
       }
-      initDefaultDates();
+      setWeek(0);
       await loadBrandsForSelect();
       qs("#btnReload")?.addEventListener("click", load);
       qs("#q")?.addEventListener("keydown", (e)=>{ if (e.key === "Enter") load(); });
-      qs("#from")?.addEventListener("change", load);
-      qs("#to")?.addEventListener("change", load);
       qs("#brand")?.addEventListener("change", load);
+      qs("#btnPrev")?.addEventListener("click", ()=>{ setWeek(state.weekOffset - 1); load(); });
+      qs("#btnNow")?.addEventListener("click", ()=>{ setWeek(0); load(); });
+      qs("#btnNext")?.addEventListener("click", ()=>{ setWeek(state.weekOffset + 1); load(); });
       load();
     })();
   </script>
 </body>
 </html>
-

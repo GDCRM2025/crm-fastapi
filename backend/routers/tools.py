@@ -2504,6 +2504,9 @@ def calendar_events_list(
         raise HTTPException(status_code=400, detail="to_date inválida (YYYY-MM-DD)")
     if d2 < d1:
         d1, d2 = d2, d1
+    # No mostramos eventos pasados (y tampoco se deben editar).
+    if d1 < today:
+        d1 = today
 
     lim = max(50, min(1000, int(limit or 500)))
     off = max(0, int(offset or 0))
@@ -2521,6 +2524,7 @@ def calendar_events_list(
     pre_title_expr = _lead_col(db, "pre_title")
     pre_loc_expr = _lead_col(db, "pre_location")
     pre_ops_expr = _lead_col(db, "pre_ops")
+    pre_montaje_expr = _lead_col(db, "pre_montaje_text")
 
     where = [
         "(l.calendar_start IS NOT NULL OR l.calendar_html_link IS NOT NULL OR l.calendar_event_id IS NOT NULL OR l.agenda_approved_at IS NOT NULL)",
@@ -2572,6 +2576,7 @@ def calendar_events_list(
               {pre_start_expr} AS pre_start,
               {pre_end_expr} AS pre_end,
               {pre_desc_expr} AS pre_description,
+              {pre_montaje_expr} AS pre_montaje_text,
               {pre_title_expr} AS pre_title,
               {pre_loc_expr} AS pre_location,
               {pre_ops_expr} AS pre_ops,
@@ -2583,7 +2588,15 @@ def calendar_events_list(
             LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
             LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
             WHERE {where_sql}
-            ORDER BY l.fecha_evento ASC, l.calendar_start ASC NULLS LAST, l.id_lead DESC
+            ORDER BY
+              (
+                (CASE WHEN NULLIF(btrim(COALESCE({dir_expr}::text,'')),'') IS NULL THEN 1 ELSE 0 END)
+                + (CASE WHEN NULLIF(btrim(COALESCE({tel_expr}::text,'')),'') IS NULL THEN 1 ELSE 0 END)
+                + (CASE WHEN ({pre_start_expr} IS NULL OR {pre_end_expr} IS NULL) THEN 1 ELSE 0 END)
+              ) DESC,
+              l.fecha_evento ASC,
+              l.calendar_start ASC NULLS LAST,
+              l.id_lead DESC
             LIMIT :lim OFFSET :off
             """
         ),
@@ -3647,6 +3660,7 @@ def edit_confirmed_event(
             text(
                 """
                 SELECT id_lead,
+                       fecha_evento,
                        COALESCE(calendar_event_id,'') AS calendar_event_id,
                        COALESCE(calendar_html_link,'') AS calendar_html_link,
                        COALESCE(calendar_event_ids_json,'') AS calendar_event_ids_json,
@@ -3672,6 +3686,24 @@ def edit_confirmed_event(
     if not str(lead.get("calendar_event_id") or "").strip() and not str(lead.get("calendar_html_link") or "").strip():
         raise HTTPException(status_code=400, detail="Lead no está agendado en Calendar")
 
+    # No permitir editar eventos pasados.
+    try:
+        tz = ZoneInfo("America/Santiago")
+        fe = lead.get("fecha_evento")
+        fe_date = None
+        if isinstance(fe, datetime):
+            fe_date = fe.astimezone(tz).date() if fe.tzinfo else fe.date()
+        elif isinstance(fe, date):
+            fe_date = fe
+        elif fe:
+            fe_date = date.fromisoformat(str(fe)[:10])
+        if fe_date and fe_date < datetime.now(tz).date():
+            raise HTTPException(status_code=409, detail="No se puede editar un evento pasado.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
     allowed = [
         "telefono",
         "direccion",
@@ -3681,6 +3713,7 @@ def edit_confirmed_event(
         "pre_start",
         "pre_end",
         "pre_events_json",
+        "pre_montaje_text",
     ]
     sets: list[str] = []
     params: dict[str, Any] = {"id": int(id_lead)}
