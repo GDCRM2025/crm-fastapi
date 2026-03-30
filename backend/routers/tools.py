@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import json
 from zoneinfo import ZoneInfo
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qs
 import re
 import unicodedata
 
@@ -122,6 +122,46 @@ def _parse_event_time(raw: dict) -> Tuple[Optional[datetime], Optional[str]]:
         except Exception:
             return None, None
     return None, None
+
+
+def _extract_gcal_event_id_from_link(link: str) -> tuple[str | None, str | None]:
+    """
+    Intenta extraer (eventId, calendarId) desde un htmlLink de Google Calendar.
+
+    Casos comunes:
+    - https://www.google.com/calendar/event?eid=<base64url>
+      donde el decode suele ser: "<eventId> <calendarId>"
+    - Algunas variantes incluyen eventId directo en query.
+    """
+    try:
+        s = (link or "").strip()
+        if not s:
+            return None, None
+        u = urlparse(s)
+        q = parse_qs(u.query or "")
+        # 1) eventId explícito (si apareciera)
+        for k in ("eventId", "eventid", "eidEventId"):
+            if k in q and q[k]:
+                return str(q[k][0]), None
+        # 2) eid base64url (más común)
+        eid = (q.get("eid") or [None])[0]
+        if not eid:
+            return None, None
+        eid = str(eid)
+        # base64url decode con padding
+        pad = "=" * ((4 - (len(eid) % 4)) % 4)
+        raw = base64.urlsafe_b64decode((eid + pad).encode("utf-8"))
+        decoded = raw.decode("utf-8", errors="ignore").strip()
+        if not decoded:
+            return None, None
+        parts = decoded.split()
+        if not parts:
+            return None, None
+        event_id = parts[0].strip() or None
+        cal_id = parts[1].strip() if len(parts) >= 2 else None
+        return event_id, cal_id
+    except Exception:
+        return None, None
 
 
 def _infer_marca_from_text(db: Session, text_in: str) -> Tuple[int, str]:
@@ -3608,7 +3648,15 @@ def edit_confirmed_event(
                 """
                 SELECT id_lead,
                        COALESCE(calendar_event_id,'') AS calendar_event_id,
-                       COALESCE(calendar_html_link,'') AS calendar_html_link
+                       COALESCE(calendar_html_link,'') AS calendar_html_link,
+                       COALESCE(calendar_event_ids_json,'') AS calendar_event_ids_json,
+                       COALESCE(calendar_html_links_json,'') AS calendar_html_links_json,
+                       COALESCE(pre_title,'') AS pre_title,
+                       pre_start,
+                       pre_end,
+                       COALESCE(pre_location,'') AS pre_location,
+                       COALESCE(pre_description,'') AS pre_description,
+                       COALESCE(pre_events_json,'') AS pre_events_json
                 FROM public.leads
                 WHERE id_lead=:id
                 LIMIT 1
@@ -3672,8 +3720,206 @@ def edit_confirmed_event(
     except Exception:
         pass
 
-    # Re-sync calendar (re-usa el flujo existente). Esto hace commit interno.
-    gcal = approve_agenda(id_lead=id_lead, x_user=x_user, db=db, me=me)
+    # Re-sync Calendar (update-only): NO debe crear eventos nuevos.
+    connected = False
+    gcal_error: str | None = None
+    links: list[str] = []
+    event_ids: list[str | None] = []
+    first_link: str | None = None
+    first_eid: str | None = None
+    try:
+        tz = ZoneInfo("America/Santiago")
+
+        def _as_dt(v) -> datetime | None:
+            if v is None:
+                return None
+            if isinstance(v, datetime):
+                return v if v.tzinfo else v.replace(tzinfo=tz)
+            s = str(v).strip()
+            if not s:
+                return None
+            try:
+                if s.endswith("Z"):
+                    s = s[:-1] + "+00:00"
+                d = datetime.fromisoformat(s)
+                if d.tzinfo is None:
+                    d = d.replace(tzinfo=tz)
+                return d.astimezone(tz)
+            except Exception:
+                return None
+
+        title = str(lead.get("pre_title") or "").strip() or f"Evento Lead {id_lead}"
+        loc = str(lead.get("pre_location") or "").strip()
+        details = str(lead.get("pre_description") or "").strip()
+        st0 = _as_dt(lead.get("pre_start"))
+        en0 = _as_dt(lead.get("pre_end"))
+
+        plan = None
+        try:
+            raw_plan = str(lead.get("pre_events_json") or "").strip()
+            if raw_plan:
+                plan = json.loads(raw_plan)
+        except Exception:
+            plan = None
+
+        to_update: list[dict[str, Any]] = []
+        if isinstance(plan, list) and plan:
+            for e in plan:
+                if not isinstance(e, dict):
+                    continue
+                st = _as_dt(e.get("start_at"))
+                en = _as_dt(e.get("end_at"))
+                if not st or not en:
+                    continue
+                to_update.append(
+                    {
+                        "day": str(e.get("day") or st.date().isoformat()),
+                        "title": str(e.get("title") or title),
+                        "location": str(e.get("location") or loc),
+                        "description": str(e.get("description") or details or ""),
+                        "start": st,
+                        "end": en,
+                    }
+                )
+        else:
+            if st0 and en0:
+                to_update = [
+                    {
+                        "day": st0.date().isoformat(),
+                        "title": title,
+                        "location": loc,
+                        "description": details or "",
+                        "start": st0,
+                        "end": en0,
+                    }
+                ]
+        if not to_update:
+            raise HTTPException(status_code=400, detail="No hay pre-agenda válida para re-sincronizar")
+
+        # Determinar eventIds existentes (preferir JSON; fallback: columna + decode desde htmlLink).
+        existing_ids: list[str] = []
+        existing_links: list[str] = []
+        try:
+            raw_ids = str(lead.get("calendar_event_ids_json") or "").strip()
+            if raw_ids:
+                v = json.loads(raw_ids)
+                if isinstance(v, list):
+                    existing_ids = [str(x).strip() for x in v if str(x or "").strip()]
+        except Exception:
+            existing_ids = []
+        try:
+            raw_ln = str(lead.get("calendar_html_links_json") or "").strip()
+            if raw_ln:
+                v2 = json.loads(raw_ln)
+                if isinstance(v2, list):
+                    existing_links = [str(x).strip() for x in v2 if str(x or "").strip()]
+        except Exception:
+            existing_links = []
+
+        if not existing_ids:
+            one = str(lead.get("calendar_event_id") or "").strip()
+            if one:
+                existing_ids = [one]
+
+        cal_id = os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+        if not existing_ids:
+            candidates = []
+            one_link = str(lead.get("calendar_html_link") or "").strip()
+            if one_link:
+                candidates.append(one_link)
+            candidates.extend(existing_links)
+            for lk in candidates:
+                eid2, cal2 = _extract_gcal_event_id_from_link(lk)
+                if eid2 and eid2 not in existing_ids:
+                    existing_ids.append(eid2)
+                if cal2:
+                    cal_id = cal2
+
+        # En edit_confirmed NO creamos eventos nuevos: si no hay eventId suficiente, error claro.
+        if len(existing_ids) != len(to_update):
+            if not (len(existing_ids) == 1 and len(to_update) == 1):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"No se puede actualizar Calendar sin crear eventos nuevos: se requieren {len(to_update)} eventId(s) pero hay {len(existing_ids)}.",
+                )
+
+        svc = _gcal_service(db)
+        if not svc:
+            gcal_error = "Google Calendar no conectado"
+            for ev2 in to_update:
+                links.append(_gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"]))
+                event_ids.append(None)
+        else:
+            connected = True
+            for i, ev2 in enumerate(to_update):
+                eid = existing_ids[i] if len(existing_ids) == len(to_update) else existing_ids[0]
+                body = {
+                    "summary": ev2["title"],
+                    "location": ev2["location"],
+                    "description": ev2.get("description") or "",
+                    "start": {"dateTime": ev2["start"].isoformat(), "timeZone": "America/Santiago"},
+                    "end": {"dateTime": ev2["end"].isoformat(), "timeZone": "America/Santiago"},
+                    "extendedProperties": {"private": {"lead_id": str(id_lead), "lead_key": f"{id_lead}:{ev2.get('day')}"}},
+                }
+                patched = svc.events().patch(calendarId=cal_id, eventId=eid, body=body).execute()
+                event_ids.append(eid)
+                links.append(
+                    patched.get("htmlLink")
+                    or _gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"])
+                )
+
+        first_link = links[0] if links else None
+        first_eid = (event_ids[0] if event_ids else None)
+        if first_link and first_eid:
+            db.execute(
+                text(
+                    """
+                    UPDATE public.leads
+                    SET calendar_start=:s,
+                        calendar_end=:e,
+                        calendar_html_link=:lnk,
+                        calendar_event_id=:eid,
+                        calendar_event_ids_json=:eids,
+                        calendar_html_links_json=:lnks,
+                        updated_at=now()
+                    WHERE id_lead=:id
+                    """
+                ),
+                {
+                    "s": to_update[0]["start"],
+                    "e": to_update[0]["end"],
+                    "lnk": first_link,
+                    "eid": first_eid,
+                    "eids": json.dumps(event_ids, ensure_ascii=False),
+                    "lnks": json.dumps(links, ensure_ascii=False),
+                    "id": int(id_lead),
+                },
+            )
+            try:
+                db.commit()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+    except HTTPException:
+        raise
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        gcal_error = str(e)
+
+    gcal = {
+        "ok": True,
+        "connected": connected,
+        "calendar_html_link": first_link,
+        "calendar_event_id": first_eid,
+        "calendar_html_links": links,
+        "calendar_event_ids": event_ids,
+        "gcal_error": gcal_error,
+    }
 
     # Notifs internas
     try:

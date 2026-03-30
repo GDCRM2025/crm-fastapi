@@ -522,6 +522,22 @@ def register(data: RegisterIn):
         if exists:
             raise HTTPException(status_code=400, detail="Usuario ya existe")
 
+        # Teléfono único (normalizado). Si ya está usado, no registramos otro usuario con el mismo número.
+        try:
+            dup_tel = conn.execute(
+                text("SELECT id_usuario FROM usuarios WHERE telefono=:t LIMIT 1"),
+                {"t": tel_norm},
+            ).first()
+            if dup_tel:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Teléfono ya registrado. Inicia sesión con ese usuario y activa notificaciones desde tu perfil.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
         role_id = _role_id_for(conn, cargo)
         hp = hash_password(password)
 

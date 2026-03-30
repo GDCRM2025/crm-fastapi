@@ -1374,9 +1374,9 @@
       // Eventos confirmados (semana): para TODOS los usuarios
       show("#eventsCard", true);
 
-      // Ops card: Admin + Ventas + Operaciones
+      // Ops card: deshabilitado (las alertas/seguimiento van como tareas de Ejecutivos y notifs por email/push).
       const opsCard = $("#opsCard");
-      if (opsCard) opsCard.style.display = (isAdmin || isSales || isOps) ? "" : "none";
+      if (opsCard) opsCard.style.display = "none";
 
       // Finanzas: Admin + Finanzas
       const finCard = $("#finCard");
@@ -1575,7 +1575,6 @@
         await Promise.allSettled([
           loadTasks(false),
           loadEvents(state.weekOffset || 0),
-          loadOpsCards(false),
           loadFinCards(false),
         ]);
       }finally{

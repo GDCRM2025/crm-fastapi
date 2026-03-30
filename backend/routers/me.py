@@ -129,6 +129,24 @@ def patch_me(data: MePatchIn, me=Depends(get_current_user)):
         sets = []
         params = {"id": uid_int}
         if data.telefono is not None:
+            # Unicidad: un teléfono debe pertenecer a un solo usuario.
+            if telefono_norm:
+                other = cn.execute(
+                    text(
+                        """
+                        SELECT id_usuario
+                        FROM public.usuarios
+                        WHERE telefono=:t AND id_usuario<>:id
+                        LIMIT 1
+                        """
+                    ),
+                    {"t": telefono_norm, "id": uid_int},
+                ).scalar()
+                if other is not None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Teléfono ya registrado por otro usuario. Inicia sesión con ese usuario para activar notificaciones.",
+                    )
             sets.append("telefono=:tel")
             params["tel"] = telefono_norm or None
         if push_ok is True:
