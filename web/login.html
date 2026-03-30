@@ -152,6 +152,20 @@
         document.cookie = base + (isGD ? "; domain=.greendiamond.cl" : "");
       }catch(_){}
     }
+    function normalizeNext() {
+      try {
+        const n0 = new URLSearchParams(location.search || "").get("next") || "";
+        const n = String(n0 || "").trim();
+        if (!n || !n.startsWith("/")) return "";
+        // Allow only same-site internal paths.
+        if (n.startsWith("/crm/")) return n;
+        if (n.startsWith("/web/")) return API_BASE + n;
+        return "";
+      } catch (_) {
+        return "";
+      }
+    }
+
     $('#frm').addEventListener('submit', async (e)=>{
       e.preventDefault();
       const username=$('#user').value.trim(), password=$('#pass').value.trim();
@@ -192,12 +206,13 @@
         }
         (remember?localStorage:sessionStorage).setItem('nombre', data.nombre||username);
         await Swal.fire({icon:'success',title:`¡Bienvenido, ${data.nombre||username}!`,timer:900,showConfirmButton:false});
+        const nextURL = normalizeNext();
         try{
           const me = await fetch(`${API_BASE}/me`, { headers: { Authorization: 'Bearer ' + tok } }).then(r=>r.json());
           const role = String(me.role || me.rol || me.user?.role || '').toUpperCase();
-          location.href=`${WEB_BASE}/index.html`;
+          location.href = nextURL || `${WEB_BASE}/index.html`;
         }catch(_){
-          location.href=`${WEB_BASE}/index.html`;
+          location.href = nextURL || `${WEB_BASE}/index.html`;
         }
       }catch(err){ Swal.fire('Error', err.message||'No se pudo iniciar sesión', 'error'); }
     });

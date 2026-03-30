@@ -231,6 +231,17 @@ def _parse_iso_date(value):
         return None
 
 
+def _fmt_ddmmyyyy(value) -> str:
+    try:
+        d = _parse_iso_date(value)
+        if not d:
+            s = str(value or "").strip()
+            return s
+        return f"{d.day:02d}/{d.month:02d}/{d.year:04d}"
+    except Exception:
+        return str(value or "").strip()
+
+
 def _lead_mice_items_resumen(id_lead):
     _ensure_lead_mice_items()
     q = text(
@@ -1660,23 +1671,55 @@ def move_lead_and_maybe_agenda(
 
         try:
             cliente = str(lead.get("cliente") or lead.get("nombre_cliente") or "").strip()
+            nombre_evento = _as_text(ev.get("title") or lead.get("pre_title") or cliente).strip() or cliente
             marca_txt = _get_marca_nombre(int(lead.get("id_marca") or 0) or 0)
             comuna_txt = _get_comuna_nombre(int(lead.get("id_comuna") or 0) or 0)
-            fecha_txt = str(lead.get("fecha_evento") or "").strip()
+            fecha_txt = _fmt_ddmmyyyy(lead.get("fecha_evento"))
+
+            def _clean_products(s: str) -> str:
+                s = (s or "").strip()
+                if not s:
+                    return ""
+                lines = [ln.rstrip() for ln in s.splitlines()]
+                while lines and not lines[0].strip():
+                    lines.pop(0)
+                # Quitar encabezados redundantes tipo "PRODUCTOS"
+                if lines and lines[0].strip().upper() in ("PRODUCTOS", "PRODUCTO"):
+                    lines = lines[1:]
+                # Si quedó una línea "• ..." ok; si quedó texto suelto, lo dejamos igual.
+                return "\n".join([ln for ln in lines if ln.strip()]).strip()
+
+            def _clean_montaje(s: str) -> str:
+                s = (s or "").strip()
+                if not s:
+                    return ""
+                lines = [ln.rstrip() for ln in s.splitlines()]
+                while lines and not lines[0].strip():
+                    lines.pop(0)
+                # Quitar encabezados redundantes tipo "Montaje sugerido"
+                if lines and lines[0].strip().lower().startswith("montaje"):
+                    # Solo si es una línea corta tipo header (evita borrar info real)
+                    if len(lines[0].strip()) <= 24:
+                        lines = lines[1:]
+                return "\n".join([ln for ln in lines if ln.strip()]).strip()
+
+            products_clean = _clean_products((ev.get("products_text") or "").strip())
+            montaje_clean = _clean_montaje((ev.get("montaje_text") or "").strip())
 
             resumen = "\n".join(
                 [
-                    "Cliente: %s" % cliente,
-                    "Marca: %s" % marca_txt,
-                    "Comuna: %s" % comuna_txt,
-                    "Fecha evento: %s" % fecha_txt,
-                    "OPS: %s" % ops,
+                    f"Cliente: {cliente}",
+                    f"Evento: {nombre_evento}",
+                    f"Marca: {marca_txt}",
+                    f"Comuna: {comuna_txt}",
+                    f"Fecha evento: {fecha_txt}",
+                    f"OPS: {ops}",
                     "",
                     "Productos:",
-                    (ev.get("products_text") or "").strip(),
+                    products_clean or "—",
                     "",
-                    "Montaje / Observaciones:",
-                    (ev.get("montaje_text") or "").strip(),
+                    "Montaje:",
+                    montaje_clean or "—",
                 ]
             ).strip()
 
@@ -1717,15 +1760,99 @@ def move_lead_and_maybe_agenda(
                 try:
                     # Email SOLO a Operaciones + MICE (no a Operadores).
                     # El resto se notifica via system_notifs en el CRM.
-                    email_roles = ["OPERACIONES", "JEFE DE OPERACIONES", "3", "MICE", "8"]
-                    to = _emails_for_roles(email_roles)
+                    email_roles = [
+                        "OPERACIONES",
+                        "JEFE DE OPERACIONES",
+                        "3",
+                        "MICE",
+                        "8",
+                        "JEFE DE COMPRAS",
+                        "COMPRAS",
+                        "5",
+                        "BODEGUERO",
+                        "4",
+                    ]
+                    always_to = [
+                        "inventario@greendiamond.cl",
+                        "bodega@greendiamond.cl",
+                        "abastecimiento@greendiamond.cl",
+                        "rolfisburger325@gmail.com",
+                    ]
+                    to = sorted(set(_emails_for_roles(email_roles) + always_to))
                     if to:
                         from backend.core.email import send_email_group
-                        footer = "\n\n--\nCRM Green Diamond\nMensaje automático (sin montos)\n"
                         try:
-                            send_email_group(to, title, resumen + footer)
+                            send_email_group(to, title, resumen + "\n\n--\nCRM Green Diamond\n")
                         except Exception:
                             pass
+                except Exception:
+                    pass
+
+                try:
+                    # Además del correo + system_notifs, mandamos un aviso tipo "chat" (thread grupal).
+                    # - A todos: aviso reducido (marca + fecha + comuna)
+                    # - A Operaciones/MICE/Admin: detalle completo (resumen)
+                    from backend.core.chat_push import (
+                        add_members_by_role_contains,
+                        ensure_group_thread,
+                        push_system_message,
+                    )
+
+                    with engine.begin() as cn2:
+                        # 1) Aviso reducido (operadores + conductores): solo Nombre Evento, Comuna, Fecha
+                        th_all = ensure_group_thread(cn2, thread_key="group:gd-alertas", title="Alertas GD")
+                        add_members_by_role_contains(
+                            cn2,
+                            id_thread=th_all,
+                            role_contains=["OPERADOR", "CONDUCTOR", "CHOFER", "DRIVER"],
+                            include_all_active=False,
+                        )
+                        msg_all = f"📌 Evento nuevo · {nombre_evento} · {comuna_txt} · {fecha_txt}"
+                        push_system_message(cn2, id_thread=th_all, message=msg_all)
+
+                        # 2) Aviso detalle solo Ops/MICE/Admin
+                        th_ops = ensure_group_thread(cn2, thread_key="group:gd-ops-mice", title="Operaciones + MICE")
+                        add_members_by_role_contains(
+                            cn2,
+                            id_thread=th_ops,
+                            role_contains=["ADMIN", "SUPERADMIN", "OPERACIONES", "JEFE DE OPERACIONES", "MICE"],
+                            include_all_active=False,
+                        )
+                        push_system_message(cn2, id_thread=th_ops, message=title + "\n\n" + resumen)
+                except Exception:
+                    pass
+
+                try:
+                    # Web Push (para recibir alertas sin estar logueado).
+                    # Nota: requiere VAPID configurado en el server + suscripción desde la PWA.
+                    from backend.core.webpush import user_ids_by_role_contains, send_webpush_to_users
+
+                    url_staff = "/crm/web/views/staff.html"
+                    ids_ops = user_ids_by_role_contains(
+                        role_contains=["ADMIN", "SUPERADMIN", "OPERACIONES", "JEFE DE OPERACIONES", "MICE"],
+                        include_all_active=False,
+                    )
+                    if ids_ops:
+                        send_webpush_to_users(
+                            user_ids=ids_ops,
+                            title="Evento nuevo",
+                            body=f"{cliente} · {comuna_txt} · {fecha_txt} · OPS {ops}",
+                            url=url_staff,
+                            tag="gd-evento",
+                        )
+
+                    ids_staff = user_ids_by_role_contains(
+                        role_contains=["OPERADOR", "CONDUCTOR", "CHOFER", "DRIVER"],
+                        include_all_active=False,
+                    )
+                    if ids_staff:
+                        send_webpush_to_users(
+                            user_ids=ids_staff,
+                            title="Evento nuevo",
+                            body=f"{nombre_evento} · {comuna_txt} · {fecha_txt}",
+                            url=url_staff,
+                            tag="gd-evento",
+                        )
                 except Exception:
                     pass
         except Exception:

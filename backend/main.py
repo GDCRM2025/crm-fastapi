@@ -92,6 +92,12 @@ def web_fallback(path: str):
     return FileResponse(p)
 
 
+@app.head("/web/{path:path}", include_in_schema=False)
+def web_fallback_head(path: str):
+    # curl -I usa HEAD; mantenemos el mismo comportamiento que GET para evitar confusiones.
+    return web_fallback(path)
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon_redirect():
     # Evita 404/errores en consola: el browser siempre pide /favicon.ico.
@@ -195,6 +201,7 @@ include_router_safe(app, "backend.routers.finanzas")
 include_router_safe(app, "backend.routers.inventario")
 include_router_safe(app, "backend.routers.rrhh")
 include_router_safe(app, "backend.routers.chat")
+include_router_safe(app, "backend.routers.push")
 include_router_safe(app, "backend.routers.marketing")
 include_router_safe(app, "backend.routers.calendar")
 include_router_safe(app, "backend.routers.me")

@@ -52,3 +52,55 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(caches.match(req).then((cached) => cached || fetch(req).catch(() => cached)));
 });
 
+// Web Push notifications
+self.addEventListener("push", (event) => {
+  event.waitUntil(
+    (async () => {
+      let data = {};
+      try {
+        data = event.data ? event.data.json() : {};
+      } catch (_) {
+        try {
+          data = { body: String(event.data && event.data.text ? event.data.text() : "") };
+        } catch (_) {
+          data = {};
+        }
+      }
+      const title = (data.title || "GreenDiamond").toString();
+      const body = (data.body || "").toString();
+      const url = (data.url || "/crm/web/views/staff.html").toString();
+      const tag = (data.tag || "gd").toString();
+      await self.registration.showNotification(title, {
+        body,
+        tag,
+        data: { url },
+        icon: "./pwa/gd-192.png",
+        badge: "./pwa/gd-128.png",
+      });
+    })()
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification && event.notification.data && event.notification.data.url) || "/crm/web/views/staff.html";
+  event.waitUntil(
+    (async () => {
+      const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const c of allClients) {
+        try {
+          if ("focus" in c) {
+            await c.focus();
+            try {
+              c.navigate(url);
+            } catch (_) {}
+            return;
+          }
+        } catch (_) {}
+      }
+      try {
+        await clients.openWindow(url);
+      } catch (_) {}
+    })()
+  );
+});
