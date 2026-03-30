@@ -1733,6 +1733,14 @@ const MENU = [
     ]
   },
   {
+    id: "alertas",
+    ico: "\u{1F514}",
+    title: "Alertas",
+    items: [
+      { id: "system_notifs", label: "Ver alertas", url: "/web/views/system_notifs.html?v=20260326-1" }
+    ]
+  },
+  {
     id: "operaciones",
     ico: "\u{1F6E0}\uFE0F",
     title: "Operaciones",
@@ -1975,11 +1983,12 @@ const PERMISSIONS = {
 	    "set_bak",
 	    "chk_hoy"
 	    ,"tasks_my"
+	    ,"system_notifs"
 	  ]),
 	  2: /* @__PURE__ */ new Set([
-    "dash_home",
-    "leads_ver",
-    "leads_fil",
+	    "dash_home",
+	    "leads_ver",
+	    "leads_fil",
     "historial",
     "rep_funnel",
     "rep_cierre",
@@ -2004,17 +2013,19 @@ const PERMISSIONS = {
 	    "set_el",
 	    "chk_hoy"
 	    ,"tasks_my"
+	    ,"system_notifs"
 	  ]),
 	  3: /* @__PURE__ */ new Set([
-    "dash_home",
-    "rep_com",
-    "rep_prod",
-    "rep_cli",
-    "op_rec",
-    "op_mice",
-    "op_ruta",
-    "op_ma_cat",
-    "op_ma_inv",
+	    "dash_home",
+	    "rep_com",
+	    "rep_prod",
+	    "rep_cli",
+	    "system_notifs",
+	    "op_rec",
+	    "op_mice",
+	    "op_ruta",
+	    "op_ma_cat",
+	    "op_ma_inv",
     "op_ma_ficha",
     "op_ca_ficha",
     "op_ca_ent",
@@ -2037,13 +2048,14 @@ const PERMISSIONS = {
     "set_marcas",
     "set_prod",
     "set_com",
-    "rrhh_staff",
-	    "rrhh_solicitudes",
-	    "chk_hoy"
-	  ]),
-  4: /* @__PURE__ */ new Set([
-    "dash_home",
-    "rep_prod",
+	    "rrhh_staff",
+		    "rrhh_solicitudes",
+		    "chk_hoy"
+	    ,"tasks_my"
+		  ]),
+	  4: /* @__PURE__ */ new Set([
+	    "dash_home",
+	    "rep_prod",
     "inv_tomar",
     "inv_stock",
     "inv_prod",
@@ -2056,23 +2068,26 @@ const PERMISSIONS = {
     "tool_calc",
     "tool_wx",
     "tools_hub",
-    "tool_chat",
-    "vruta",
-    "set_prod"
-  ]),
-  9: /* @__PURE__ */ new Set([
-    "pl",
-    "gast",
-    "evt",
-    "plan_cuentas",
-    "historial"
-  ]),
-  5: /* @__PURE__ */ new Set([
-    "dash_home",
-    "rep_prod",
-    "op_rec",
-    "op_mice",
-    "op_ruta",
+	    "tool_chat",
+	    "vruta",
+	    "set_prod"
+	    ,"system_notifs"
+	  ]),
+	  9: /* @__PURE__ */ new Set([
+	    "pl",
+	    "gast",
+	    "evt",
+	    "plan_cuentas",
+	    "historial",
+	    "system_notifs"
+	  ]),
+	  5: /* @__PURE__ */ new Set([
+	    "dash_home",
+	    "rep_prod",
+	    "system_notifs",
+	    "op_rec",
+	    "op_mice",
+	    "op_ruta",
     "op_ma_cat",
     "op_ma_inv",
     "op_ma_ficha",
@@ -2092,10 +2107,10 @@ const PERMISSIONS = {
     "tool_wx",
     "tools_hub",
     "tool_chat",
-    "vruta",
-    "gast",
-    "set_prod"
-  ]),
+	    "vruta",
+	    "gast",
+	    "set_prod"
+	  ]),
   6: /* @__PURE__ */ new Set([
     "op_gps",
     "op_vruta",
@@ -2116,13 +2131,15 @@ const PERMISSIONS = {
     "op_uni",
     "op_vruta2"
   ]),
-  8: /* @__PURE__ */ new Set([
-    "dash_home",
-    "op_rec",
-    "op_mice",
-    "op_ruta",
-    "inv_tomar",
-    "inv_stock",
+	  8: /* @__PURE__ */ new Set([
+	    "dash_home",
+	    "system_notifs",
+	    "tasks_my",
+	    "op_rec",
+	    "op_mice",
+	    "op_ruta",
+	    "inv_tomar",
+	    "inv_stock",
     "inv_prod",
     "inv_cat",
     "inv_uni",

@@ -287,9 +287,12 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     r_up = (role or "").strip().upper()
     is_finanzas = r_up in ("FINANZAS", "11")
     is_exec = ("EJECUTIVO" in r_up) or (r_up == "2")
+    is_ops = ("OPERACIONES" in r_up) or ("JEFE DE OPERACIONES" in r_up) or (r_up == "3")
+    is_mice = ("MICE" in r_up) or (r_up == "8")
     # "Mis tareas" es para ejecutar gestión (ejecutivos). Otros roles no deben autogenerar tareas masivas.
     enable_lead_tasks = bool(is_exec)
-    enable_calendar_tasks = bool(is_exec)
+    # Calendario (faltantes en confirmados) también lo necesita Operaciones/MICE.
+    enable_calendar_tasks = bool(is_exec or is_admin or is_ops or is_mice)
 
     nuevo_id = _estado_id_like(db, "%NUEV%", 1)
     confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
@@ -835,7 +838,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     # - Ventas: correos "sales" y kind lead/purchase/other (no respondidos)
     # - Finanzas/Admin: también correos "payments" o kind payment
     try:
-        if _table_exists(db, "gia_email_messages"):
+        if _table_exists(db, "gia_email_messages") and (is_exec or is_admin or is_finanzas):
             # columnas necesarias
             has_reply_sent = _col_exists(db, "gia_email_messages", "reply_sent")
             has_kind = _col_exists(db, "gia_email_messages", "kind")
