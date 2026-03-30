@@ -634,6 +634,56 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Dict[s
     except Exception:
         pass
 
+    # Si el token viene sin `marcas`, intentamos inferirlas desde BD (usuarios_marcas / usuario_marcas / usuarios.id_marca).
+    try:
+        uid = int(user.get("id")) if str(user.get("id") or "").isdigit() else None
+        if uid and not list(user.get("marcas") or []):
+            with get_connection() as conn:
+                # 1) tabla N:N
+                join_table = None
+                try:
+                    v = conn.execute(text("SELECT to_regclass('public.usuarios_marcas') IS NOT NULL")).scalar()
+                    if v:
+                        join_table = "usuarios_marcas"
+                except Exception:
+                    join_table = None
+                if join_table is None:
+                    try:
+                        v = conn.execute(text("SELECT to_regclass('public.usuario_marcas') IS NOT NULL")).scalar()
+                        if v:
+                            join_table = "usuario_marcas"
+                    except Exception:
+                        join_table = None
+                marcas = []
+                if join_table:
+                    try:
+                        rows = conn.execute(
+                            text(f"SELECT id_marca FROM public.{join_table} WHERE id_usuario=:u ORDER BY id_marca"),
+                            {"u": int(uid)},
+                        ).fetchall()
+                        for r in rows:
+                            try:
+                                marcas.append(int(r[0]))
+                            except Exception:
+                                pass
+                    except Exception:
+                        marcas = []
+                # 2) fallback legacy: usuarios.id_marca
+                if not marcas:
+                    try:
+                        mid = conn.execute(
+                            text("SELECT id_marca FROM public.usuarios WHERE id_usuario=:u LIMIT 1"),
+                            {"u": int(uid)},
+                        ).scalar()
+                        if mid is not None and str(mid).isdigit() and int(mid) > 0:
+                            marcas = [int(mid)]
+                    except Exception:
+                        pass
+                if marcas:
+                    user["marcas"] = marcas
+    except Exception:
+        pass
+
     # enrich with avatar_url if available
     try:
         uid = int(user.get("id")) if str(user.get("id") or "").isdigit() else None

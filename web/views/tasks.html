@@ -477,7 +477,7 @@
       const from = meta.from || "";
       const marca = meta.marca || t.lead_marca || "";
       return `
-        <tr data-task="${esc(t.id_task)}" data-kind="${esc(String(t.kind||\"\"))}" data-etype="${esc(t.entity_type||\"\")}" data-msg="${esc(t.entity_id||\"\")}">
+        <tr data-task="${esc(t.id_task)}" data-kind="${esc(String(t.kind||""))}" data-etype="${esc(t.entity_type||"")}" data-msg="${esc(t.entity_id||"")}">
           <td><span class="pill ${over ? "bad" : ""}">${esc(prLabel(t.priority))}</span></td>
           <td><strong>${esc(subj)}</strong><div class="muted">${esc(from)}</div></td>
           <td class="muted">${esc(marca)}</td>

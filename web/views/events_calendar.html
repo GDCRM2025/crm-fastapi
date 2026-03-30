@@ -314,7 +314,6 @@
       const curTel = String(row?.telefono || "").trim();
       const curDir = String(row?.direccion || row?.pre_location || "").trim();
       const curDesc = String(row?.pre_description || "").trim();
-      const curMont = String(row?.pre_montaje_text || "").trim();
       const curHi = String(hhmm(row.pre_start) || hhmm(row.start_at) || "").trim();
       const curHf = String(hhmm(row.pre_end) || hhmm(row.end_at) || "").trim();
       const missTel = !curTel;
@@ -376,15 +375,6 @@
                   <textarea id="ev_desc" class="tx" placeholder="Notas para operaciones / cliente (opcional)">${esc(curDesc)}</textarea>
                 </div>
               </div>
-
-              <div class="fld span2">
-                <div class="lbl">Montaje</div>
-                <div class="val" id="v_mont">${esc(curMont || "—")}</div>
-                <button type="button" class="btn" data-toggle="ed_mont">Editar</button>
-                <div class="ed" id="ed_mont">
-                  <textarea id="ev_mont" class="tx" placeholder="Montaje / requerimientos (opcional)">${esc(curMont)}</textarea>
-                </div>
-              </div>
             </div>
           </div>
         `,
@@ -406,24 +396,30 @@
           const title = (document.getElementById("ev_title")?.value || curTitle || "").trim();
           const telefono = (document.getElementById("ev_tel")?.value || curTel || "").trim() || null;
           const direccion = (document.getElementById("ev_dir")?.value || curDir || "").trim() || null;
-          const hi = (document.getElementById("ev_hi")?.value || curHi || "").trim();
-          const hf = (document.getElementById("ev_hf")?.value || curHf || "").trim();
           const desc = (document.getElementById("ev_desc")?.value || curDesc || "").trim() || null;
-          const mont = (document.getElementById("ev_mont")?.value || curMont || "").trim() || null;
 
           if (!title){ Swal.showValidationMessage("Falta título."); return false; }
           if (missDir && !direccion){ Swal.showValidationMessage("Falta dirección."); return false; }
           if (missTel && !telefono){ Swal.showValidationMessage("Falta teléfono."); return false; }
-          if (missHr && (!hi || !hf)){ Swal.showValidationMessage("Falta horario (inicio/fin)."); return false; }
-          if ((hi && !/^[0-2]\\d:[0-5]\\d$/.test(hi)) || (hf && !/^[0-2]\\d:[0-5]\\d$/.test(hf))){
-            Swal.showValidationMessage("Horario inválido."); return false;
+          const hrBox = document.getElementById("ed_hr");
+          const hrEditing = !!hrBox?.classList?.contains("show");
+          const hi = hrEditing ? String(document.getElementById("ev_hi")?.value || "").trim() : "";
+          const hf = hrEditing ? String(document.getElementById("ev_hf")?.value || "").trim() : "";
+          if (missHr && (!hi || !hf)){
+            Swal.showValidationMessage("Falta horario (inicio/fin)."); return false;
           }
-          const preStart = hi ? _localISO(fecha, hi) : null;
-          const preEnd = hf ? _localISO(fecha, hf) : null;
-          if ((hi || hf) && (!preStart || !preEnd)){
-            Swal.showValidationMessage("No pude construir el horario."); return false;
-          }
-          if (preStart && preEnd){
+          if (hrEditing){
+            if (!hi || !hf){
+              Swal.showValidationMessage("Falta horario (inicio/fin)."); return false;
+            }
+            if ((hi && !/^[0-2]\\d:[0-5]\\d$/.test(hi)) || (hf && !/^[0-2]\\d:[0-5]\\d$/.test(hf))){
+              Swal.showValidationMessage("Horario inválido."); return false;
+            }
+            const preStart = _localISO(fecha, hi);
+            const preEnd = _localISO(fecha, hf);
+            if (!preStart || !preEnd){
+              Swal.showValidationMessage("No pude construir el horario."); return false;
+            }
             try{
               if (new Date(preEnd).getTime() <= new Date(preStart).getTime()){
                 Swal.showValidationMessage("El fin debe ser posterior al inicio."); return false;
@@ -436,10 +432,13 @@
             direccion,
             pre_location: direccion,
             pre_description: desc,
-            pre_montaje_text: mont,
           };
-          if (preStart) payload.pre_start = preStart;
-          if (preEnd) payload.pre_end = preEnd;
+          if (missHr || hrEditing){
+            const ps = _localISO(fecha, hi || curHi);
+            const pe = _localISO(fecha, hf || curHf);
+            if (ps) payload.pre_start = ps;
+            if (pe) payload.pre_end = pe;
+          }
           return payload;
         }
       });
