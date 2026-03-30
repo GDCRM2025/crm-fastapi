@@ -39,6 +39,7 @@ try{
 // - Best-effort: no toca tablas sin <tbody> o con 0/1 filas.
 (function enableTableSort(){
   const state = new WeakMap(); // table -> { col, dir }
+  const wired = new WeakSet(); // th -> true
 
   function norm(s){
     return String(s ?? "").replace(/\s+/g, " ").trim();
@@ -103,13 +104,7 @@ try{
     return parseVal(ds != null ? ds : (td.textContent || ""));
   }
 
-  document.addEventListener("click", (ev) => {
-    // En algunas tablas el click puede caer sobre un Text node (no tiene closest()).
-    let tgt = ev.target;
-    try{
-      if (tgt && tgt.nodeType === 3) tgt = tgt.parentElement; // TEXT_NODE
-    }catch(_){}
-    const th = tgt && tgt.closest ? tgt.closest("th") : null;
+  function sortByHeader(th){
     if (!th) return;
     if (th.closest("[data-nosort='1']")) return;
     const table = th.closest("table");
@@ -140,5 +135,43 @@ try{
       return (av < bv ? -1 : 1) * dir;
     });
     for (const p of pairs) tbody.appendChild(p.r);
-  }, { passive: true });
+  }
+
+  function wireTable(table){
+    try{
+      if (!table || table.getAttribute("data-nosort") === "1") return;
+      const headRow = table.tHead && table.tHead.rows && table.tHead.rows[0];
+      if (!headRow) return;
+      const ths = Array.from(headRow.cells || []);
+      for (const th of ths){
+        if (!th || wired.has(th)) continue;
+        wired.add(th);
+        th.style.cursor = th.style.cursor || "pointer";
+        th.addEventListener("click", (ev)=>{
+          ev.preventDefault();
+          ev.stopPropagation();
+          sortByHeader(th);
+        });
+      }
+    }catch(_){}
+  }
+
+  function scan(){
+    try{
+      document.querySelectorAll("table").forEach(wireTable);
+    }catch(_){}
+  }
+
+  // Initial
+  if (document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", scan, { once: true });
+  }else{
+    scan();
+  }
+
+  // Re-scan when DOM changes (tables are often rendered dynamically).
+  try{
+    const obs = new MutationObserver(()=> scan());
+    obs.observe(document.documentElement, { childList:true, subtree:true });
+  }catch(_){}
 })();

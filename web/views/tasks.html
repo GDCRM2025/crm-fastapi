@@ -10,7 +10,7 @@
   <style>
     html,body{height:100%;margin:0;}
     body{background:transparent;padding:14px;overflow:auto;}
-    .wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .wrap{max-width:1600px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
     .head{
       border:1px solid rgba(148,163,184,.18);
       background: rgba(2,6,23,.32);
@@ -63,7 +63,8 @@
     .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
     .muted{opacity:.72; font-weight:850; font-size:12px;}
     .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
-    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:sticky; top:0; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
+    /* Con múltiples tablas (grupos), sticky se traslapa. */
+    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:static; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
     :root.light .tbl th{background: rgba(255,255,255,.92);}
     .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
     .pill{
@@ -164,6 +165,31 @@
       white-space:pre-wrap;
       word-break:break-word;
     }
+
+    details.grp{
+      border:1px solid rgba(148,163,184,.14);
+      border-radius: 16px;
+      background: rgba(2,6,23,.18);
+      padding: 8px 10px;
+    }
+    details.grp[open]{ box-shadow: 0 18px 60px rgba(0,0,0,.18); }
+    details.grp summary{
+      list-style:none;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      font-weight:1100;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      font-size:12px;
+      padding: 6px 2px;
+      user-select:none;
+    }
+    details.grp summary::-webkit-details-marker{ display:none; }
+    .sumL{ display:flex; align-items:center; gap:10px; }
+    .sumR{ display:flex; align-items:center; gap:10px; }
   </style>
 </head>
 <body>
@@ -218,71 +244,44 @@
       <div class="secHead">
         <div>
           <div class="secTitle"><span class="mark"></span>Seguimiento (Leads)</div>
-          <div class="muted">“Listo” exige evidencia (WSP/Llamada/Email/Nota) en tareas críticas. Doble click abre el lead.</div>
+          <div class="muted">Acción recomendada: “Seguimiento” abre el lead. Para cerrar, registra evidencia o confirma cerrar sin seguimiento.</div>
         </div>
       </div>
       <div class="muted" style="margin-top:-2px">Agrupado por estado del lead: Nuevos / Contactados / Cotizados.</div>
 
-      <div style="max-height:74vh; overflow:auto; display:flex; flex-direction:column; gap:12px; margin-top:10px">
-        <div class="card" style="padding:10px">
-          <div class="secHead" style="margin:0 0 6px 0">
-            <div class="secTitle" style="margin:0"><span class="mark" style="background:#22c55e"></span>Leads nuevos <span class="b" id="bLeadNew" style="margin-left:6px">—</span></div>
-          </div>
+      <div style="max-height:76vh; overflow:auto; display:flex; flex-direction:column; gap:12px; margin-top:10px">
+        <details class="grp" open>
+          <summary>
+            <div class="sumL"><span class="mark" style="background:#22c55e"></span>Leads nuevos</div>
+            <div class="sumR"><span class="pill" id="bLeadNew">—</span></div>
+          </summary>
           <table class="tbl">
-            <thead>
-              <tr>
-                <th>Prioridad</th>
-                <th>Tarea</th>
-                <th>Lead</th>
-                <th>Marca</th>
-                <th>Estado</th>
-                <th>Vence</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Vence</th><th>Acciones</th></tr></thead>
             <tbody id="tbLeadsNew"></tbody>
           </table>
-        </div>
+        </details>
 
-        <div class="card" style="padding:10px">
-          <div class="secHead" style="margin:0 0 6px 0">
-            <div class="secTitle" style="margin:0"><span class="mark" style="background:#0ea5e9"></span>Leads contactados <span class="b" id="bLeadContact" style="margin-left:6px">—</span></div>
-          </div>
+        <details class="grp" open>
+          <summary>
+            <div class="sumL"><span class="mark" style="background:#0ea5e9"></span>Leads contactados</div>
+            <div class="sumR"><span class="pill" id="bLeadContact">—</span></div>
+          </summary>
           <table class="tbl">
-            <thead>
-              <tr>
-                <th>Prioridad</th>
-                <th>Tarea</th>
-                <th>Lead</th>
-                <th>Marca</th>
-                <th>Estado</th>
-                <th>Vence</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Vence</th><th>Acciones</th></tr></thead>
             <tbody id="tbLeadsContact"></tbody>
           </table>
-        </div>
+        </details>
 
-        <div class="card" style="padding:10px">
-          <div class="secHead" style="margin:0 0 6px 0">
-            <div class="secTitle" style="margin:0"><span class="mark" style="background:#f59e0b"></span>Leads cotizados <span class="b" id="bLeadQuote" style="margin-left:6px">—</span></div>
-          </div>
+        <details class="grp" open>
+          <summary>
+            <div class="sumL"><span class="mark" style="background:#f59e0b"></span>Leads cotizados</div>
+            <div class="sumR"><span class="pill" id="bLeadQuote">—</span></div>
+          </summary>
           <table class="tbl">
-            <thead>
-              <tr>
-                <th>Prioridad</th>
-                <th>Tarea</th>
-                <th>Lead</th>
-                <th>Marca</th>
-                <th>Estado</th>
-                <th>Vence</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Vence</th><th>Acciones</th></tr></thead>
             <tbody id="tbLeadsQuote"></tbody>
           </table>
-        </div>
+        </details>
       </div>
     </section>
 
@@ -489,6 +488,18 @@
     function trLead(t){
       const over = (t.status==="open" && isOverdue(t.due_at));
       const kind = String(t.kind||"").toUpperCase();
+      const dueHint = (() => {
+        try{
+          const d = parseDue(t.due_at);
+          if (!d) return "";
+          const diffMs = d.getTime() - Date.now();
+          const abs = Math.abs(diffMs);
+          const days = Math.floor(abs / (24*3600*1000));
+          const hrs = Math.floor((abs % (24*3600*1000)) / (3600*1000));
+          const tail = (days > 0) ? `${days}d` : `${hrs}h`;
+          return diffMs < 0 ? `Vencida hace ${tail}` : `Vence en ${tail}`;
+        }catch(_){ return ""; }
+      })();
       return `
         <tr data-task="${esc(t.id_task)}" data-lead="${esc(t.entity_id||"")}" data-kind="${esc(kind)}" data-etype="${esc(t.entity_type||"")}">
           <td><span class="pill ${over ? "bad" : ""}">${esc(prLabel(t.priority))}</span></td>
@@ -496,9 +507,10 @@
           <td><strong>${esc(t.lead_cliente||"—")}</strong><div class="muted">#${esc(t.entity_id||"")}</div></td>
           <td class="muted">${esc(t.lead_marca||"")}</td>
           <td class="muted">${esc(t.lead_estado||"")}</td>
-          <td><span class="pill ${over ? "bad" : ""}">${esc(fmtDue(t.due_at))}</span></td>
+          <td><span class="pill ${over ? "bad" : ""}">${esc(fmtDue(t.due_at))}</span><div class="muted">${esc(dueHint)}</div></td>
           <td>
-            <button class="btn primary" data-act="done">Listo</button>
+            <button class="btn primary" data-act="go">Seguimiento</button>
+            <button class="btn" data-act="close">Cerrar</button>
             <button class="btn danger" data-act="skip">Omitir</button>
           </td>
         </tr>
@@ -637,6 +649,11 @@
         const tr = btn.closest("tr");
         const idTask = tr?.getAttribute("data-task");
         const act = String(btn.getAttribute("data-act")||"");
+        if (act === "go"){
+          const id = tr?.getAttribute("data-lead");
+          if (id) openLead(id);
+          return;
+        }
         if (act === "edit"){
           const id = tr?.getAttribute("data-lead");
           if (id) openLeadEditEvent(id);
@@ -649,7 +666,7 @@
         if (!idTask) return;
 
         try{
-          if (act === "done"){
+          if (act === "close"){
             const kind = String(tr?.getAttribute("data-kind")||"").toUpperCase();
             const requireFollowup = new Set([
               "CONTACTAR_LEAD",
@@ -660,45 +677,74 @@
               "DECLINADO_FECHA_FUTURA",
             ]);
             if (requireFollowup.has(kind)){
-              const res = await Swal.fire({
-                title: "Registrar seguimiento",
-                html: `
-                  <div style="text-align:left;display:flex;flex-direction:column;gap:10px">
-                    <label style="font-weight:900;font-size:12px;opacity:.85">Vía</label>
-                    <select id="sw_via" class="swal2-input" style="height:42px">
-                      <option value="WSP">WhatsApp</option>
-                      <option value="CALL">Llamada</option>
-                      <option value="EMAIL">Email</option>
-                      <option value="NOTE">Nota</option>
-                    </select>
-                    <label style="font-weight:900;font-size:12px;opacity:.85">Detalle (requerido)</label>
-                    <textarea id="sw_text" class="swal2-textarea" placeholder="Qué hiciste / qué respondió el cliente / próximo paso..." style="min-height:110px"></textarea>
-                    <div style="font-size:12px;opacity:.7;font-weight:850">Esto se guarda en el historial del lead con timestamp y usuario.</div>
-                  </div>
-                `,
-                focusConfirm: false,
+              const step = await Swal.fire({
+                title: "Cerrar tarea",
+                text: "¿Registraste seguimiento en este lead?",
+                icon: "question",
                 showCancelButton: true,
-                confirmButtonText: "Guardar y cerrar tarea",
+                showDenyButton: true,
+                confirmButtonText: "Sí, registrar",
+                denyButtonText: "No, cerrar igual",
                 cancelButtonText: "Cancelar",
-                preConfirm: () => {
-                  const via = (document.getElementById("sw_via")?.value || "").trim();
-                  const text = (document.getElementById("sw_text")?.value || "").trim();
-                  if (!text) {
-                    Swal.showValidationMessage("Escribe el detalle del seguimiento.");
-                    return null;
-                  }
-                  return { via, text };
-                }
               });
-              if (!res.isConfirmed || !res.value) return;
-              await jpost(`/tasks/${idTask}/done`, { action: res.value.via, text: res.value.text });
-              // Abrir lead para continuar seguimiento visual (y verificar que quedó registrado).
-              const leadId = tr?.getAttribute("data-lead");
-              if (leadId) openLead(leadId);
+              if (step.isDismissed) return;
+              if (step.isDenied){
+                const sure = await Swal.fire({
+                  title: "¿Seguro?",
+                  text: "Cerrar sin seguimiento dejará el lead sin evidencia. Esto quedará como “Omitido”.",
+                  icon: "warning",
+                  showCancelButton: true,
+                  confirmButtonText: "Cerrar igual",
+                  cancelButtonText: "Volver",
+                });
+                if (!sure.isConfirmed) return;
+                await jpost(`/tasks/${idTask}/skip`, { reason: "Cerrado sin seguimiento (confirmado)" });
+              }else{
+                const res = await Swal.fire({
+                  title: "Registrar seguimiento",
+                  html: `
+                    <div style="text-align:left;display:flex;flex-direction:column;gap:10px">
+                      <label style="font-weight:900;font-size:12px;opacity:.85">Vía</label>
+                      <select id="sw_via" class="swal2-input" style="height:42px">
+                        <option value="WSP">WhatsApp</option>
+                        <option value="CALL">Llamada</option>
+                        <option value="EMAIL">Email</option>
+                        <option value="NOTE">Nota</option>
+                      </select>
+                      <label style="font-weight:900;font-size:12px;opacity:.85">Detalle (requerido)</label>
+                      <textarea id="sw_text" class="swal2-textarea" placeholder="Qué hiciste / qué respondió el cliente / próximo paso..." style="min-height:110px"></textarea>
+                      <div style="font-size:12px;opacity:.7;font-weight:850">Esto se guarda en el historial del lead con timestamp y usuario.</div>
+                    </div>
+                  `,
+                  focusConfirm: false,
+                  showCancelButton: true,
+                  confirmButtonText: "Guardar",
+                  cancelButtonText: "Cancelar",
+                  preConfirm: () => {
+                    const via = (document.getElementById("sw_via")?.value || "").trim();
+                    const text = (document.getElementById("sw_text")?.value || "").trim();
+                    if (!text) {
+                      Swal.showValidationMessage("Escribe el detalle del seguimiento.");
+                      return null;
+                    }
+                    return { via, text };
+                  }
+                });
+                if (!res.isConfirmed || !res.value) return;
+                await jpost(`/tasks/${idTask}/done`, { action: res.value.via, text: res.value.text });
+              }
             }else{
+              // No requiere evidencia, pero igual confirmamos si quiere cerrar sin abrir.
+              const sure = await Swal.fire({
+                title: "Cerrar tarea",
+                text: "¿Seguro que quieres cerrar esta tarea?",
+                icon: "question",
+                showCancelButton: true,
+                confirmButtonText: "Cerrar",
+                cancelButtonText: "Cancelar",
+              });
+              if (!sure.isConfirmed) return;
               await jpost(`/tasks/${idTask}/done`, {});
-              const leadId = tr?.getAttribute("data-lead");
-              if (leadId) openLead(leadId);
             }
           }else if (act === "skip"){
             const r = await Swal.fire({
