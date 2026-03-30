@@ -268,6 +268,12 @@
         }catch(_){ return false; }
       }
 
+      function isStandalone(){
+        try{
+          return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || (navigator.standalone === true);
+        }catch(_){ return false; }
+      }
+
       function urlBase64ToUint8Array(base64String){
         const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
         const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -317,6 +323,10 @@
 
       async function enablePush(){
         if(!requireAuth()) return;
+        if (isIOS() && !isStandalone()){
+          alert("En iPhone, las alertas push funcionan solo si instalas la app: Safari → Compartir → “Agregar a pantalla de inicio”, y la abres desde el ícono.");
+          return;
+        }
         if(!("serviceWorker" in navigator) || !("PushManager" in window)) {
           if (isIOS()){
             alert("En iPhone, las notificaciones push web no funcionan en Chrome. Ábrelo en Safari y agrégalo a la pantalla de inicio (PWA) para recibir alertas.");
@@ -414,7 +424,7 @@
           if(onboardStatus) onboardStatus.textContent = "";
           if(phoneInput){
             phoneInput.value = "";
-            phoneInput.placeholder = needsPhone ? "Teléfono (obligatorio)" : "Teléfono (opcional)";
+            phoneInput.placeholder = needsPhone ? "Teléfono: 9 dígitos (sin +56)" : "Teléfono: 9 dígitos (sin +56)";
           }
         }catch(_){}
 
@@ -440,15 +450,15 @@
         if(savePhoneBtn){
           savePhoneBtn.onclick = async () => {
             try{
-              const tel = (phoneInput?.value || "").trim();
-              if(needsPhone && !tel){
+              const telDigits = String(phoneInput?.value || "").replace(/\D/g, "").slice(0, 9);
+              if(needsPhone && !telDigits){
                 alert("Debes ingresar tu teléfono.");
                 return;
               }
               await fetch(`${API_BASE}/me`, {
                 method:"PATCH",
                 headers: authHeaders({ "Content-Type":"application/json" }),
-                body: JSON.stringify({ telefono: tel }),
+                body: JSON.stringify({ telefono: telDigits }),
               });
               await refreshState();
             }catch(_){
@@ -456,6 +466,19 @@
             }
           };
         }
+
+        // Formato visual: usuario escribe 9 dígitos; mostramos "9 1234 5678"
+        try{
+          if(phoneInput){
+            phoneInput.oninput = () => {
+              const d = String(phoneInput.value || "").replace(/\D/g, "").slice(0, 9);
+              let v = d;
+              if(d.length > 1 && d.length <= 5) v = d.slice(0,1) + " " + d.slice(1);
+              if(d.length > 5) v = d.slice(0,1) + " " + d.slice(1,5) + " " + d.slice(5);
+              phoneInput.value = v;
+            };
+          }
+        }catch(_){}
         if(enablePushBtn){
           enablePushBtn.onclick = async () => {
             try{
