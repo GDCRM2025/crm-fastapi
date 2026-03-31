@@ -174,6 +174,11 @@
       white-space:nowrap;
     }
     :root.light .cardDate{ background: rgba(0,0,0,.04); }
+    .cardDate.noDate{
+      border-color: rgba(245,158,11,.35);
+      color: color-mix(in srgb, var(--text) 70%, var(--muted));
+    }
+    .cardDate svg{ width:14px; height:14px; vertical-align:-2px; margin-right:6px; opacity:.9; }
 
     .flag{
       width:10px; height:14px; border-radius:3px;
@@ -185,6 +190,7 @@
     .flag.blue{ --c: #60a5fa; }
     .flag.yellow{ --c: #f59e0b; }
     .flag.green{ --c: #22c55e; }
+    .flag.gray{ --c: #64748b; opacity:.75; }
 
     .dots{ display:inline-flex; align-items:center; gap:6px; }
     .dot{
@@ -980,7 +986,10 @@ function daysBetween(a, b){
   }
 }
 
-function followupFlagInfo(lead){
+function followupFlagInfo(lead, estadoUpper=""){
+  if (String(estadoUpper||"").includes("DECLIN")){
+    return { cls:"gray", title:"Declinado" };
+  }
   const last = parseAnyDate(lead?.updated_at) || parseAnyDate(lead?.created_at) || new Date();
   const now = new Date();
   const d = Math.max(0, daysBetween(now, last));
@@ -1368,17 +1377,21 @@ function renderKanban(list){
       row1.className = "cardRow";
       const estObj = (mEstado.get(l.id_estado) || {});
       const estUpper = String(estObj.nombre || l.estado_nombre || "").toUpperCase();
-      const flag = followupFlagInfo(l);
+      const flag = followupFlagInfo(l, estUpper);
       row1.innerHTML = `
         <div class="cardName">
           <span class="flag ${escapeHtml(flag.cls)}" title="${escapeHtml(flag.title)}"></span>
           <span class="nameText">${escapeHtml(l.cliente || "-")}</span>
         </div>
-        <div class="cardDate">${escapeHtml(fmtDate(l.fecha_evento))}</div>
+        <div class="cardDate ${l.fecha_evento ? "" : "noDate"}">${
+          l.fecha_evento
+            ? escapeHtml(fmtDate(l.fecha_evento))
+            : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><path d="M9 14l6 6M15 14l-6 6"/></svg>Sin fecha`
+        }</div>
       `;
 
-      const dotMonto = montoDotInfo(l);
-      const dotUrg = urgenciaDotInfo(l, estUpper);
+      const dotMonto = (estUpper.includes("DECLIN")) ? null : montoDotInfo(l);
+      const dotUrg = (estUpper.includes("DECLIN")) ? null : urgenciaDotInfo(l, estUpper);
       const row2 = document.createElement("div");
       row2.className = "cardRow2";
       row2.innerHTML = `

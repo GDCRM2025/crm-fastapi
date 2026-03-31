@@ -437,6 +437,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   jsonb_build_object('rule','mvp_contactar','estado_id',l.id_estado)
                 FROM public.leads l
                 WHERE l.id_estado = :nuevo
+                  AND l.fecha_evento IS NOT NULL
                   AND {scope_sql}
                   AND ({has_contact_sql}) IS FALSE
                   AND :enable_lead_tasks
@@ -481,6 +482,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   jsonb_build_object('rule','risk_nuevo','estado_id',l.id_estado)
                 FROM public.leads l
                 WHERE l.id_estado = :nuevo
+                  AND l.fecha_evento IS NOT NULL
                   AND {scope_sql}
                   AND ({has_contact_sql}) IS FALSE
                   AND COALESCE(l.created_at, now()) <= (now() - INTERVAL '5 days')
@@ -775,6 +777,40 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
             ),
             {"uid": int(user_id), "kinds": followup_kinds},
         )
+    except Exception:
+        pass
+
+    # AUTO-CLOSE: confirmados/declinados NO deben quedar como tareas abiertas.
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "id_estado"):
+            confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
+            declinado_id = _estado_id_like(db, "%DECLIN%", 5)
+            db.execute(
+                text(
+                    """
+                    UPDATE public.tasks t
+                    SET status='done',
+                        completed_at=now(),
+                        completed_by='AUTO',
+                        updated_at=now(),
+                        meta = COALESCE(t.meta,'{}'::jsonb) || jsonb_build_object(
+                          'auto_closed', true,
+                          'auto_reason', 'lead_confirmed_or_declined',
+                          'auto_at', now()
+                        )
+                    WHERE t.assigned_user_id = :uid
+                      AND t.status = 'open'
+                      AND t.entity_type = 'lead'
+                      AND EXISTS (
+                        SELECT 1
+                        FROM public.leads l
+                        WHERE l.id_lead = t.entity_id
+                          AND l.id_estado = ANY(CAST(:closed_estados AS int[]))
+                      )
+                    """
+                ),
+                {"uid": int(user_id), "closed_estados": [int(confirmado_id), int(declinado_id)]},
+            )
     except Exception:
         pass
 
