@@ -179,6 +179,16 @@
       color: color-mix(in srgb, var(--text) 70%, var(--muted));
     }
     .cardDate svg{ width:14px; height:14px; vertical-align:-2px; margin-right:6px; opacity:.9; }
+    .cardDate svg{ color: rgba(148,163,184,.85); }
+    .cardDate.noDate svg{ color: rgba(245,158,11,.92); }
+    .cardDate.cal-red{ border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.10); }
+    .cardDate.cal-red svg{ color: rgba(239,68,68,.92); }
+    .cardDate.cal-yellow{ border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.10); }
+    .cardDate.cal-yellow svg{ color: rgba(245,158,11,.92); }
+    .cardDate.cal-green{ border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.10); }
+    .cardDate.cal-green svg{ color: rgba(34,197,94,.90); }
+    .cardDate.cal-gray{ border-color: rgba(100,116,139,.35); background: rgba(100,116,139,.10); }
+    .cardDate.cal-gray svg{ color: rgba(100,116,139,.92); }
 
     .flag{
       width:10px; height:14px; border-radius:3px;
@@ -990,7 +1000,11 @@ function followupFlagInfo(lead, estadoUpper=""){
   if (String(estadoUpper||"").includes("DECLIN")){
     return { cls:"gray", title:"Declinado" };
   }
-  const last = parseAnyDate(lead?.updated_at) || parseAnyDate(lead?.created_at) || new Date();
+  const last =
+    parseAnyDate(lead?.updated_at) ||
+    parseAnyDate(lead?.created_at) ||
+    parseAnyDate(lead?.fecha_ingreso) ||
+    new Date();
   const now = new Date();
   const d = Math.max(0, daysBetween(now, last));
   if (d >= 4) return { cls:"red", title:`Seguimiento: ${d} días` };
@@ -1016,6 +1030,19 @@ function urgenciaDotInfo(lead, estadoNombreUpper){
   if (daysTo < 3) return { cls:"red", title:`Vence en ${daysTo} día(s)` };
   if (daysTo <= 5) return { cls:"green", title:`Vence en ${daysTo} día(s)` };
   return { cls:"yellow", title:`Vence en ${daysTo} día(s)` };
+}
+
+function calendarioInfo(lead, estadoUpper=""){
+  const dEv = parseAnyDate(lead?.fecha_evento);
+  if (!dEv) return { cls:"noDate", title:"Sin fecha de evento", daysTo:null };
+  if (String(estadoUpper||"").includes("DECLIN")) return { cls:"gray", title:"Declinado", daysTo:null };
+  const now = new Date();
+  const daysTo = Math.ceil((dEv.getTime() - now.getTime()) / 86400000);
+  if (!isFinite(daysTo)) return { cls:"", title:"", daysTo:null };
+  if (daysTo < 0) return { cls:"gray", title:"Evento vencido", daysTo };
+  if (daysTo < 3) return { cls:"red", title:`Vence en ${daysTo} día(s)`, daysTo };
+  if (daysTo <= 5) return { cls:"green", title:`Vence en ${daysTo} día(s)`, daysTo };
+  return { cls:"yellow", title:`Vence en ${daysTo} día(s)`, daysTo };
 }
 function mapBy(arr, key){
   const m = new Map();
@@ -1104,11 +1131,21 @@ function normLead(l){
     id_estado: Number(l.id_estado ?? 0),
     id_comuna: Number(l.id_comuna ?? 0),
     fecha_evento: l.fecha_evento ?? null,
+    fecha_ingreso: l.fecha_ingreso ?? null,
     monto_cotizado: Number(l.monto_cotizado ?? 0),
     plataforma: l.plataforma ?? null,
     notas: l.notas ?? null,
     codigo_cliente: l.codigo_cliente ?? null,
     id_tipo_cliente: l.id_tipo_cliente ?? null,
+    num_cotizacion: l.num_cotizacion ?? l.numero_cotizacion ?? null,
+    cotizacion_pdf_url: l.cotizacion_pdf_url ?? null,
+    id_cotizacion_vigente: l.id_cotizacion_vigente ?? null,
+    calendar_event_id: l.calendar_event_id ?? null,
+    calendar_html_link: l.calendar_html_link ?? null,
+    agenda_approved_at: l.agenda_approved_at ?? null,
+    agenda_approved_by: l.agenda_approved_by ?? null,
+    created_at: l.created_at ?? null,
+    updated_at: l.updated_at ?? null,
 
     marca_nombre: l.marca ?? l.marca_nombre ?? null,
     comuna_nombre: l.comuna ?? l.comuna_nombre ?? null,
@@ -1378,27 +1415,27 @@ function renderKanban(list){
       const estObj = (mEstado.get(l.id_estado) || {});
       const estUpper = String(estObj.nombre || l.estado_nombre || "").toUpperCase();
       const flag = followupFlagInfo(l, estUpper);
+      const cal = calendarioInfo(l, estUpper);
+      const calClass = (cal?.cls && cal.cls !== "noDate") ? `cal-${cal.cls}` : "";
       row1.innerHTML = `
         <div class="cardName">
           <span class="flag ${escapeHtml(flag.cls)}" title="${escapeHtml(flag.title)}"></span>
           <span class="nameText">${escapeHtml(l.cliente || "-")}</span>
         </div>
-        <div class="cardDate ${l.fecha_evento ? "" : "noDate"}">${
+        <div class="cardDate ${l.fecha_evento ? escapeHtml(calClass) : "noDate"}" title="${escapeHtml(cal?.title || "")}">${
           l.fecha_evento
-            ? escapeHtml(fmtDate(l.fecha_evento))
+            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>${escapeHtml(fmtDate(l.fecha_evento))}`
             : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><path d="M9 14l6 6M15 14l-6 6"/></svg>Sin fecha`
         }</div>
       `;
 
       const dotMonto = (estUpper.includes("DECLIN")) ? null : montoDotInfo(l);
-      const dotUrg = (estUpper.includes("DECLIN")) ? null : urgenciaDotInfo(l, estUpper);
       const row2 = document.createElement("div");
       row2.className = "cardRow2";
       row2.innerHTML = `
         <div class="cardComuna">${escapeHtml(comuna)} · ${escapeHtml(marca)}</div>
         <div class="cardMonto">
           <span class="dots">
-            ${dotUrg ? `<span class="dot ${escapeHtml(dotUrg.cls)}" title="${escapeHtml(dotUrg.title)}"></span>` : ``}
             ${dotMonto ? `<span class="dot ${escapeHtml(dotMonto.cls)}" title="${escapeHtml(dotMonto.title)}"></span>` : ``}
           </span>
           ${escapeHtml(money(l.monto_cotizado))}
@@ -1445,16 +1482,40 @@ function renderTable(list){
     const est = mEstado.get(l.id_estado);
     const estado = est ? est.nombre : (l.estado_nombre || ("#" + (l.id_estado ?? "-")));
     const color = est ? (est.color || "") : (l.estado_color || "");
+    const estUpper = String(estado || "").toUpperCase();
+    const flag = followupFlagInfo(l, estUpper);
+    const cal = calendarioInfo(l, estUpper);
+    const calClass = (cal?.cls && cal.cls !== "noDate") ? `cal-${cal.cls}` : "";
+    const dotMonto = (estUpper.includes("DECLIN")) ? null : montoDotInfo(l);
 
     const marca = l.marca_nombre || (mMarca.get(l.id_marca)||{}).nombre || "-";
     const comuna = l.comuna_nombre || (mComuna.get(l.id_comuna)||{}).nombre || "-";
 
     tr.innerHTML =
-      `<td><strong>${escapeHtml(l.cliente || "-")}</strong><div class="sub col-email">${escapeHtml(l.email || "")}</div></td>` +
+      `<td>` +
+        `<div style="display:flex;align-items:center;gap:10px;min-width:0">` +
+          `<span class="flag ${escapeHtml(flag.cls)}" title="${escapeHtml(flag.title)}"></span>` +
+          `<div style="min-width:0">` +
+            `<strong style="display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(l.cliente || "-")}</strong>` +
+            `<div class="sub col-email" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(l.email || "")}</div>` +
+          `</div>` +
+        `</div>` +
+      `</td>` +
       `<td class="col-marca">${escapeHtml(marca)}</td>` +
       `<td class="col-comuna">${escapeHtml(comuna)}</td>` +
-      `<td>${escapeHtml(fmtDate(l.fecha_evento))}</td>` +
-      `<td>${escapeHtml(money(l.monto_cotizado))}</td>` +
+      `<td>` +
+        `<span class="cardDate ${l.fecha_evento ? escapeHtml(calClass) : "noDate"}" title="${escapeHtml(cal?.title || "")}">` +
+          (l.fecha_evento
+            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>${escapeHtml(fmtDate(l.fecha_evento))}`
+            : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><path d="M9 14l6 6M15 14l-6 6"/></svg>Sin fecha`) +
+        `</span>` +
+      `</td>` +
+      `<td>` +
+        `<span class="dots">` +
+          `${dotMonto ? `<span class="dot ${escapeHtml(dotMonto.cls)}" title="${escapeHtml(dotMonto.title)}"></span>` : ``}` +
+        `</span>` +
+        `<span style="margin-left:8px">${escapeHtml(money(l.monto_cotizado))}</span>` +
+      `</td>` +
       `<td class="col-estado"><span class="statePill" style="--s:${escapeHtml(color)}">${escapeHtml(estado)}</span></td>` +
       `<td class="actions"></td>`;
 
