@@ -2850,16 +2850,43 @@ async function handleConfirmado(lead, newEstado){
     return "$" + new Intl.NumberFormat("es-CL",{maximumFractionDigits:0}).format(x);
   };
   const waDigits = (s)=> String(s || "").replace(/\\D/g,"");
+  const waE164 = (tel)=>{
+    let d = waDigits(tel);
+    if (!d) return "";
+    // Chile: si el usuario puso solo 9 dígitos, agregamos +56 para el enlace.
+    if (d.length === 9) d = "56" + d;
+    return d;
+  };
+  const phoneTextCL = (tel)=>{
+    const d = waDigits(tel);
+    if (!d) return "";
+    // Mostrar 9 dígitos (sin +56) para que sea legible en mensaje.
+    if (d.length === 11 && d.startsWith("56")) return d.slice(2);
+    return d;
+  };
   const fmtDateLong = (d)=>{
     if (!d) return "";
     try{
       const dd = new Date(String(d).slice(0,10) + "T00:00:00");
-      return dd.toLocaleDateString("es-CL",{weekday:"long", day:"2-digit", month:"long"});
+      let s = dd.toLocaleDateString("es-CL",{weekday:"long", day:"2-digit", month:"long"});
+      // Normaliza: "sábado 18 de abril" -> "sábado, 18 de abril"
+      if (s && !s.includes(",")){
+        const i = s.indexOf(" ");
+        if (i > 0) s = s.slice(0,i) + ", " + s.slice(i+1);
+      }
+      return s;
     }catch(_){ return String(d).slice(0,10); }
   };
-  const fmtHHMM = (dt)=>{
+  const fmtTime12 = (dt)=>{
     try{
-      return new Date(dt).toLocaleTimeString("es-CL",{hour:"2-digit", minute:"2-digit"});
+      const d = new Date(dt);
+      if (isNaN(d.getTime())) return "";
+      const h = d.getHours();
+      const m = d.getMinutes();
+      const hh = String(((h % 12) || 12)).padStart(2,"0");
+      const mm = String(m).padStart(2,"0");
+      const suf = (h < 12) ? "a. m." : "p. m.";
+      return `${hh}:${mm} ${suf}`;
     }catch(_){ return ""; }
   };
   const bulletsFrom = (txt)=>{
@@ -2871,31 +2898,66 @@ async function handleConfirmado(lead, newEstado){
       const up = ln.toUpperCase();
       if (up === "PRODUCTOS" || up === "PRODUCTOS:" || up === "MONTAJE" || up === "MONTAJE:" || up === "MONTAJE SUGERIDO") continue;
       if (ln.startsWith("•")) out.push(ln);
-      else if (/^\\d+\\s*x\\s+/i.test(ln)) out.push("• " + ln);
+      else if (ln.startsWith("-")) out.push("• " + ln.replace(/^-\s*/, ""));
+      else out.push("• " + ln);
     }
     return out.length ? out : ["• —"];
   };
 
   // quote meta
   let cotN = (gcalLead?.num_cotizacion || lead?.num_cotizacion || "").toString().trim();
-  let total = (gcalLead?.monto_cotizado != null) ? Number(gcalLead.monto_cotizado) : Number(lead?.monto_cotizado || 0);
+  let neto = (gcalLead?.monto_cotizado != null) ? Number(gcalLead.monto_cotizado) : Number(lead?.monto_cotizado || 0);
+  let ivaVal = null;
+  let total = neto;
   let abono = null;
   if (v?.id_cotizacion){
     try{
       const q = await apiJSON(`/quotes/${Number(v.id_cotizacion)}`);
       const c = q?.cotizacion || {};
       if (c?.numero != null) cotN = String(c.numero);
-      if (c?.total != null) total = Number(c.total);
+      const sub = (c?.subtotal_productos != null) ? Number(c.subtotal_productos) : ((c?.subtotal != null) ? Number(c.subtotal) : null);
+      if (sub != null && Number.isFinite(sub) && sub > 0) neto = sub;
+      if (c?.iva != null && Number.isFinite(Number(c.iva))) ivaVal = Number(c.iva);
+      if (c?.total != null && Number.isFinite(Number(c.total))) total = Number(c.total);
       if (c?.abono != null) abono = Number(c.abono);
     }catch(_){}
   }
 
   const clienteNom = (lead?.nombre_cliente || lead?.cliente || "").toString().trim();
   const marcaNom = (lead?.marca_nombre || lead?.marca || "").toString().trim();
-  const comunaNom = (evs[0]?.location || lead?.comuna_nombre || lead?.comuna || "").toString().trim();
+  const comunaNom = (lead?.comuna_nombre || lead?.comuna || "").toString().trim();
   const telCliente = (v?.telefono || gcalLead?.telefono || lead?.telefono || "").toString().trim();
   const telVentas = (gcalLead?.ventas_telefono || "").toString().trim();
   const dirTxt = (v?.direccion || gcalLead?.direccion || lead?.direccion || "").toString().trim();
+  const dirLine = (()=>{
+    const d = String(dirTxt || "").trim();
+    const c = String(comunaNom || "").trim();
+    if (!d) return "";
+    if (!c) return d;
+    if (d.toUpperCase().includes(c.toUpperCase())) return d;
+    return d + " " + c;
+  })();
+  const tipoName = (()=>{
+    try{
+      const hit = (CATS?.tipos || []).find(t => Number(t.id_tipo_cliente) === Number(lead?.id_tipo_cliente));
+      return String(hit?.nombre || hit?.tipo || "").trim();
+    }catch(_){ return ""; }
+  })();
+  const isEmpresa = /EMPRESA|FACTURA/i.test(tipoName);
+  if (!v?.id_cotizacion){
+    if (isEmpresa){
+      ivaVal = Math.round(Number.isFinite(neto) ? (neto * 0.19) : 0);
+      total = (Number.isFinite(neto) ? neto : 0) + (Number.isFinite(ivaVal) ? ivaVal : 0);
+    }else{
+      ivaVal = 0;
+      total = Number.isFinite(neto) ? neto : 0;
+    }
+  }else{
+    if (ivaVal == null && isEmpresa){
+      const diff = (Number.isFinite(total) ? total : 0) - (Number.isFinite(neto) ? neto : 0);
+      ivaVal = Math.max(0, Math.round(diff));
+    }
+  }
 
   const days = evs.map(e => String(e?.day || e?.start_at || "").slice(0,10)).filter(Boolean);
   const uniqueDays = Array.from(new Set(days));
@@ -2904,7 +2966,7 @@ async function handleConfirmado(lead, newEstado){
     ? `del ${fmtDateLong(uniqueDays[0])} al ${fmtDateLong(uniqueDays[uniqueDays.length-1])}`
     : (uniqueDays[0] ? fmtDateLong(uniqueDays[0]) : "");
 
-  const hrLine = v?.hr_tbd ? "POR CONFIRMAR" : `${fmtHHMM(evs[0]?.start_at)} a ${fmtHHMM(evs[0]?.end_at)}`;
+  const hrLine = v?.hr_tbd ? "POR CONFIRMAR" : `${fmtTime12(evs[0]?.start_at)} a ${fmtTime12(evs[0]?.end_at)}`;
 
   const EMO = {
     // Importante: usamos escapes por codepoint para evitar problemas de encoding en producción
@@ -2941,19 +3003,18 @@ async function handleConfirmado(lead, newEstado){
   let wspText =
 `${EMO.cal} FECHA EVENTO: ${dateLine || "POR CONFIRMAR"}
 NOMBRE CLIENTE: ${[clienteNom, marcaNom].filter(Boolean).join(" - ") || "—"}
-COMUNA: ${comunaNom || "—"}
+COMUNA: ${(comunaNom || "—").toUpperCase()}
 Valor TOTAL: ${moneyCLP(total)}
-Abono: ${abono != null ? moneyCLP(abono) : "—"}
 COT Nº: ${cotN || "—"}
-${EMO.doc} Documento: Sin Documento
+${EMO.doc} Documento: ${isEmpresa ? `Con Documento (IVA: ${moneyCLP(ivaVal || 0)})` : "Sin Documento"}
 ${EMO.clock} HORARIO: ${hrLine}
 
 ${productosBlock}
 
 ${montajeBlock}
 
-${EMO.phone} TELEFONO: ${telCliente || "POR CONFIRMAR"}
-${EMO.pin} DIRECCION: ${dirTxt || "POR CONFIRMAR"}
+${EMO.phone} TELEFONO: ${phoneTextCL(telCliente) || "POR CONFIRMAR"}
+${EMO.pin} DIRECCION: ${dirLine || "POR CONFIRMAR"}
 
 ¿Me confirmas por favor que estos datos están correctos?`;
 
@@ -2980,8 +3041,8 @@ ${EMO.pin} DIRECCION: ${dirTxt || "POR CONFIRMAR"}
       .replaceAll(EMO.doc, ALT.doc);
   }
 
-  const urlClient = telCliente ? `https://wa.me/${waDigits(telCliente)}?text=${encodeURIComponent(wspText)}` : "";
-  const urlVentas = telVentas ? `https://wa.me/${waDigits(telVentas)}?text=${encodeURIComponent(wspText)}` : "";
+  const urlClient = telCliente ? `https://wa.me/${waE164(telCliente)}?text=${encodeURIComponent(wspText)}` : "";
+  const urlVentas = telVentas ? `https://wa.me/${waE164(telVentas)}?text=${encodeURIComponent(wspText)}` : "";
 
   await Swal.fire({
     icon: (gcalLink && gcalEid) ? "success" : "warning",
