@@ -505,7 +505,15 @@
 /* ========= Helpers ========= */
 const qs  = (s, el=document) => el.querySelector(s);
 const qsa = (s, el=document) => Array.from(el.querySelectorAll(s));
-const IS_MOBILE = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+	const IS_MOBILE = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+
+  // Nota: por requerimiento operativo, NO mostramos leads en estado CONFIRMADO o DECLINADO en esta vista.
+  // (Siguen existiendo para reportes/auditoría.)
+  function isClosedLead(lead){
+    const name =
+      (estadoNombre(lead?.id_estado || "") || String(lead?.estado_nombre || lead?.estado || "")).toUpperCase();
+    return name.includes("CONFIRM") || name.includes("DECLIN");
+  }
 
 window.addEventListener("message", (ev) => {
   if (ev.data?.type === "openLead"){
@@ -1286,13 +1294,15 @@ function setView(v){
   openLeadFromQuery();
 }
 
-function getFilteredLeads(){
-  const t = (qs("#q").value || "").trim().toLowerCase();
-  let base = FILTER_MONTH ? LEADS.filter(isInCurrentMonth) : LEADS.slice();
-  if (STALE_IDS && STALE_IDS.size){
-    base = base.filter(l => STALE_IDS.has(String(l.id_lead)));
-  }
-  if (!t) return base;
+	function getFilteredLeads(){
+	  const t = (qs("#q").value || "").trim().toLowerCase();
+	  let base = FILTER_MONTH ? LEADS.filter(isInCurrentMonth) : LEADS.slice();
+    // Oculta confirmados/declinados (lead "cerrado")
+    base = base.filter(l => !isClosedLead(l));
+	  if (STALE_IDS && STALE_IDS.size){
+	    base = base.filter(l => STALE_IDS.has(String(l.id_lead)));
+	  }
+	  if (!t) return base;
 
   const mMarca = mapBy(CATS.marcas,"id_marca");
   const mComuna = mapBy(CATS.comunas,"id_comuna");
@@ -1309,20 +1319,24 @@ function getFilteredLeads(){
   });
 }
 
-function render(){
-  clearError();
-  const list = getFilteredLeads();
-  const total = LEADS.length;
-  const baseTotal = FILTER_MONTH ? MONTH_TOTAL : total;
-  qs("#leadCount").textContent = `Mostrando ${list.length} / ${baseTotal}`;
-  qs("#btnMonth").classList.toggle("active", FILTER_MONTH);
+	function render(){
+	  clearError();
+	  const list = getFilteredLeads();
+	  const total = LEADS.length;
+	  const baseTotal = FILTER_MONTH ? MONTH_TOTAL : total;
+	  qs("#leadCount").textContent = `Mostrando ${list.length} / ${baseTotal}`;
+	  qs("#btnMonth").classList.toggle("active", FILTER_MONTH);
 
-  // columnas visibles, sin scroll lateral
-  qs("#kanbanView").style.setProperty("--cols", String(Math.max(1, (CATS.estados||[]).length)));
+	  // columnas visibles, sin scroll lateral (sin confirmados/declinados)
+    const visibleStates = (CATS.estados||[]).filter(st => {
+      const n = String(st?.nombre || st?.estado || "").toUpperCase();
+      return !(n.includes("CONFIRM") || n.includes("DECLIN"));
+    });
+	  qs("#kanbanView").style.setProperty("--cols", String(Math.max(1, visibleStates.length)));
 
-  if (VIEW==="kanban") renderKanban(list);
-  else renderTable(list);
-}
+	  if (VIEW==="kanban") renderKanban(list, visibleStates);
+	  else renderTable(list);
+	}
 
 /* ========= Icons ========= */
 function svgIcon(name){
@@ -1346,27 +1360,28 @@ function iconButton(title, iconName, handler){
 }
 
 /* ========= Kanban render ========= */
-function renderKanban(list){
-  const mMarca = mapBy(CATS.marcas,"id_marca");
-  const mComuna = mapBy(CATS.comunas,"id_comuna");
-  const mEstado = mapBy(CATS.estados,"id_estado");
+	function renderKanban(list, statesOverride){
+	  const mMarca = mapBy(CATS.marcas,"id_marca");
+	  const mComuna = mapBy(CATS.comunas,"id_comuna");
+	  const mEstado = mapBy(CATS.estados,"id_estado");
 
-  const by = new Map();
-  for (const st of CATS.estados) by.set(st.id_estado, []);
-  for (const l of list){
-    const sid = l.id_estado ?? 0;
-    if (!by.has(sid)) by.set(sid, []);
-    by.get(sid).push(l);
-  }
+    const STATES = Array.isArray(statesOverride) && statesOverride.length ? statesOverride : (CATS.estados || []);
+	  const by = new Map();
+	  for (const st of STATES) by.set(st.id_estado, []);
+	  for (const l of list){
+	    const sid = l.id_estado ?? 0;
+	    if (!by.has(sid)) by.set(sid, []);
+	    by.get(sid).push(l);
+	  }
 
-  const root = qs("#kanbanView");
-  root.innerHTML = "";
+	  const root = qs("#kanbanView");
+	  root.innerHTML = "";
 
-  // SIEMPRE mostrar todos los estados (aunque no haya leads)
-  for (const st of CATS.estados){
-    const col = document.createElement("div");
-    col.className = "column";
-    col.style.setProperty("--col-color", st.color || "transparent");
+	  // SIEMPRE mostrar todos los estados (aunque no haya leads)
+	  for (const st of STATES){
+	    const col = document.createElement("div");
+	    col.className = "column";
+	    col.style.setProperty("--col-color", st.color || "transparent");
 
     const head = document.createElement("div");
     head.className = "colHead";

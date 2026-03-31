@@ -1467,6 +1467,58 @@ def list_tasks(
     except Exception:
         pass
 
+    # Además: si la fecha de evento ya pasó, el lead ya no es "vivo" para tareas.
+    # Esto evita que aparezcan tareas de 2025/meses atrás; esas deben auto-declinarse (sync) y
+    # en cualquier caso no deben mostrarse en la lista.
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "fecha_evento"):
+            # Auto-close best-effort (para limpiar conteos y UI).
+            try:
+                db.execute(
+                    text(
+                        """
+                        UPDATE public.tasks t
+                        SET status='done',
+                            completed_at=now(),
+                            completed_by='AUTO',
+                            updated_at=now(),
+                            meta = COALESCE(t.meta,'{}'::jsonb) || jsonb_build_object(
+                              'auto_closed', true,
+                              'auto_reason', 'event_expired',
+                              'auto_at', now()
+                            )
+                        WHERE t.assigned_user_id = :uid
+                          AND t.status='open'
+                          AND t.entity_type='lead'
+                          AND EXISTS (
+                            SELECT 1
+                            FROM public.leads l
+                            WHERE l.id_lead = t.entity_id
+                              AND l.fecha_evento IS NOT NULL
+                              AND l.fecha_evento < CURRENT_DATE
+                          )
+                        """
+                    ),
+                    {"uid": int(assigned_user_id)},
+                )
+            except Exception:
+                pass
+
+            where += """
+              AND NOT (
+                t.entity_type='lead'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.leads l3
+                  WHERE l3.id_lead = t.entity_id
+                    AND l3.fecha_evento IS NOT NULL
+                    AND l3.fecha_evento < CURRENT_DATE
+                )
+              )
+            """
+    except Exception:
+        pass
+
     # Nunca 500: si hay diferencias de esquema (columnas/tablas), degradar a lista simple.
     try:
         has_leads = _table_exists(db, "leads")
