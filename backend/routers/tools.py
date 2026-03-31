@@ -3540,19 +3540,26 @@ def approve_agenda(
         first_link = links[0] if links else _gcal_link(title, to_create[0]["start"], to_create[0]["end"], details=details, location=loc)
         first_eid = event_ids[0] if event_ids else None
 
+        # Solo marcamos como "agendado" (agenda_approved_at / pendiente_agendar=FALSE) si el evento
+        # quedó efectivamente creado/actualizado en Google Calendar (event_id real).
+        # Si falla, NO persistimos un calendar_html_link de template (fallback), porque eso engaña al
+        # sistema y lo saca de "pendientes".
+        ok_ids = [str(eid).strip() for eid in (event_ids or []) if eid is not None and str(eid).strip()]
+        ok_calendar = bool(connected) and bool(event_ids) and (len(ok_ids) == len(event_ids))
+
         db.execute(
             text(
                 """
                 UPDATE leads
                 SET calendar_start=:s,
                     calendar_end=:e,
-                    calendar_html_link=:lnk,
-                    calendar_event_id=:eid,
+                    calendar_html_link=CASE WHEN :ok THEN :lnk ELSE calendar_html_link END,
+                    calendar_event_id=CASE WHEN :ok THEN :eid ELSE calendar_event_id END,
                     calendar_event_ids_json=:eids,
                     calendar_html_links_json=:lnks,
-                    agenda_approved_by=:by,
-                    agenda_approved_at=now(),
-                    pendiente_agendar=FALSE,
+                    agenda_approved_by=CASE WHEN :ok THEN :by ELSE agenda_approved_by END,
+                    agenda_approved_at=CASE WHEN :ok THEN now() ELSE agenda_approved_at END,
+                    pendiente_agendar=CASE WHEN :ok THEN FALSE ELSE TRUE END,
                     updated_at=now()
                 WHERE id_lead=:id
                 """
@@ -3566,6 +3573,7 @@ def approve_agenda(
                 "lnks": json.dumps(links, ensure_ascii=False),
                 "by": (x_user or me.get("name") or me.get("nombre") or "admin"),
                 "id": id_lead,
+                "ok": bool(ok_calendar),
             },
         )
 

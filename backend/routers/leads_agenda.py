@@ -1641,7 +1641,11 @@ def move_lead_and_maybe_agenda(
             id_lead,
             {
                 "id_estado": int(id_estado),
-                "pendiente_agendar": False,
+                # Importante: mover a CONFIRMADO prepara la pre-agenda, pero el evento en Google Calendar
+                # se crea/actualiza en un segundo paso (/tools/agenda/{id}/approve). Si aquí dejamos
+                # `pendiente_agendar=False` y luego falla el approve (token, red, etc.), el lead puede
+                # quedar "confirmado" sin aparecer como pendiente de agendar.
+                "pendiente_agendar": True,
                 **({"id_cotizacion_vigente": int(id_cot)} if id_cot else {}),
                 **extra_ev_ref,
                 "pre_products_text": ev["products_text"],

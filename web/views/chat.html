@@ -1007,6 +1007,28 @@
       const NOTIFS_KEY = "gd_chat_notifs";
       function notifEnabled(){ return localStorage.getItem(NOTIFS_KEY)==="1"; }
       function setNotifEnabled(v){ localStorage.setItem(NOTIFS_KEY, v ? "1" : "0"); }
+      function isIOS(){
+        try{
+          const ua = String(navigator.userAgent || "");
+          const iDevice = /iPad|iPhone|iPod/i.test(ua);
+          const iPadOS13 = (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+          return iDevice || iPadOS13;
+        }catch(_){
+          return false;
+        }
+      }
+      function isStandalone(){
+        try{
+          // iOS: navigator.standalone. Otros: display-mode.
+          // @ts-ignore
+          if (typeof navigator.standalone === "boolean") return !!navigator.standalone;
+        }catch(_){}
+        try{
+          return !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+        }catch(_){
+          return false;
+        }
+      }
       async function ensureNotif(){
         if (!("Notification" in window)) return false;
         if (Notification.permission === "granted") return true;
@@ -1024,6 +1046,17 @@
         b.textContent = on ? "Notifs: ON" : "Notifs";
       }
       qs("#btnNotifs")?.addEventListener("click", async ()=>{
+        // iPhone/iPad: en Safari (no instalada) suele bloquear notificaciones. Evitamos frustración.
+        if (isIOS() && !isStandalone()){
+          Swal.fire(
+            "Info",
+            "En iPhone/iPad, las notificaciones funcionan en la app instalada (Safari → Compartir → “Agregar a pantalla de inicio”).",
+            "info"
+          );
+          setNotifEnabled(false);
+          renderNotifBtn();
+          return;
+        }
         const ok = await ensureNotif();
         if (!ok){
           Swal.fire("Info", "El navegador bloqueó notificaciones. Revisa permisos del sitio.", "info");
