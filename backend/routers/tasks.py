@@ -193,31 +193,118 @@ def _infer_marcas_from_leads(db: Session, user_keys: list[str]) -> list[int]:
 def _uname(user: dict) -> str:
     return str(user.get("username") or user.get("email") or user.get("name") or user.get("id") or "").strip()[:200]
 
+def _is_admin(user: dict) -> bool:
+    r = _role(user)
+    return r in ("ADMIN", "SUPERADMIN", "1")
+
+
+def _user_info(db: Session, uid: int) -> dict[str, Any]:
+    if not _table_exists(db, "usuarios"):
+        return {"id": int(uid), "username": str(uid), "role": ""}
+    row = db.execute(
+        text(
+            """
+            SELECT id_usuario,
+                   COALESCE(NULLIF(btrim(nombre),''), NULLIF(btrim(name),''), NULLIF(btrim(username),''), NULLIF(btrim(email),''), id_usuario::text) AS display,
+                   COALESCE(NULLIF(btrim(role::text),''), NULLIF(btrim(rol::text),''), '') AS role
+            FROM public.usuarios
+            WHERE id_usuario=:u
+            LIMIT 1
+            """
+        ),
+        {"u": int(uid)},
+    ).mappings().first()
+    if not row:
+        return {"id": int(uid), "username": str(uid), "role": ""}
+    return {"id": int(row.get("id_usuario") or uid), "username": str(row.get("display") or uid), "role": str(row.get("role") or "")}
+
+
+@router.get("/context")
+def context(db: Session = Depends(get_db), user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    uid = _resolve_uid(db, user)
+    return {"ok": True, "uid": int(uid), "role": _role(user), "is_admin": bool(_is_admin(user)), "username": _uname(user)}
+
+
+@router.get("/admin/users")
+def admin_users(db: Session = Depends(get_db), user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    if not _is_admin(user):
+        raise HTTPException(403, "No autorizado")
+    if not _table_exists(db, "usuarios"):
+        return {"ok": True, "items": []}
+    rows = db.execute(
+        text(
+            """
+            SELECT id_usuario,
+                   COALESCE(NULLIF(btrim(nombre),''), NULLIF(btrim(name),''), NULLIF(btrim(username),''), NULLIF(btrim(email),''), id_usuario::text) AS display,
+                   COALESCE(NULLIF(btrim(role::text),''), NULLIF(btrim(rol::text),''), '') AS role
+            FROM public.usuarios
+            WHERE
+              COALESCE(NULLIF(btrim(role::text),''), NULLIF(btrim(rol::text),''), '') = '2'
+              OR upper(COALESCE(NULLIF(btrim(role::text),''), NULLIF(btrim(rol::text),''), '')) LIKE '%EJECUTIV%'
+            ORDER BY display
+            """
+        )
+    ).mappings().all()
+
+    m: dict[int, int] = {}
+    try:
+        ensure_tasks_table(db)
+        if core_tasks._tasks_table_exists(db):  # type: ignore[attr-defined]
+            counts = db.execute(
+                text(
+                    """
+                    SELECT assigned_user_id, COUNT(*)::int AS open_count
+                    FROM public.tasks
+                    WHERE status='open' AND assigned_user_id IS NOT NULL
+                    GROUP BY assigned_user_id
+                    """
+                )
+            ).fetchall()
+            m = {int(r[0]): int(r[1]) for r in counts if r and r[0] is not None}
+    except Exception:
+        m = {}
+
+    items = []
+    for r in rows:
+        uid = int(r.get("id_usuario"))
+        items.append({"id": uid, "name": str(r.get("display") or uid), "role": str(r.get("role") or ""), "open": int(m.get(uid, 0))})
+    return {"ok": True, "items": items}
+
 
 @router.post("/sync")
-def sync_tasks(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def sync_tasks(
+    for_user_id: int | None = Query(default=None, description="(Admin) generar para otro usuario"),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     """
     Genera tareas automáticas (idempotente) para el usuario actual.
     """
     uid = _resolve_uid(db, user)
-    marcas_token = list(user.get("marcas") or [])
-    marcas_db = _fetch_marcas_for_uid(db, uid)
+    target_uid = int(for_user_id) if (for_user_id is not None and _is_admin(user)) else int(uid)
+    if for_user_id is not None and not _is_admin(user):
+        raise HTTPException(403, "No autorizado")
+
+    info = _user_info(db, target_uid)
+
+    marcas_token = list(user.get("marcas") or []) if target_uid == int(uid) else []
+    marcas_db = _fetch_marcas_for_uid(db, target_uid)
     marcas = marcas_token or marcas_db
     if not marcas:
-        marcas = _fetch_marcas_for_uid(db, uid)
+        marcas = _fetch_marcas_for_uid(db, target_uid)
     if not marcas:
         # Último fallback: inferir por leads asignados (evita 0 tareas cuando faltan bindings en usuarios_marcas)
         try:
-            user_keys = core_tasks._user_match_keys(db, user_id=int(uid), username=_uname(user))  # type: ignore[attr-defined]
+            user_keys = core_tasks._user_match_keys(db, user_id=int(target_uid), username=str(info.get("username") or target_uid))  # type: ignore[attr-defined]
         except Exception:
-            user_keys = [str(uid), _uname(user)]
+            user_keys = [str(target_uid), str(info.get("username") or target_uid)]
         marcas = _infer_marcas_from_leads(db, user_keys)
     try:
         out = upsert_mvp_tasks_for_user(
             db,
-            user_id=uid,
-            username=_uname(user),
-            role=_role(user),
+            user_id=int(target_uid),
+            username=str(info.get("username") or target_uid),
+            role=str(info.get("role") or _role(user)),
             marcas=marcas,
         )
     except Exception as e:
@@ -239,11 +326,15 @@ def get_tasks(
     status: str = Query("open"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    for_user_id: int | None = Query(default=None, description="(Admin) ver tareas de otro usuario"),
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
     uid = _resolve_uid(db, user)
-    return list_tasks(db, assigned_user_id=uid, status=status, limit=limit, offset=offset)
+    target_uid = int(for_user_id) if (for_user_id is not None and _is_admin(user)) else int(uid)
+    if for_user_id is not None and not _is_admin(user):
+        raise HTTPException(403, "No autorizado")
+    return list_tasks(db, assigned_user_id=int(target_uid), status=status, limit=limit, offset=offset)
 
 
 @router.post("/{id_task}/done")
@@ -255,6 +346,7 @@ def mark_done(
 ):
     uid = _resolve_uid(db, user)
     who = _uname(user)
+    is_admin = _is_admin(user)
     ensure_tasks_table(db)
 
     # Cargar la tarea (necesario para validar consecuencias / evidencia).
@@ -264,11 +356,11 @@ def mark_done(
                 """
                 SELECT id_task, kind, entity_type, entity_id, meta
                 FROM public.tasks
-                WHERE id_task=:id AND assigned_user_id=:uid
+                WHERE id_task=:id AND (assigned_user_id=:uid OR :is_admin)
                 LIMIT 1
                 """
             ),
-            {"id": int(id_task), "uid": int(uid)},
+            {"id": int(id_task), "uid": int(uid), "is_admin": bool(is_admin)},
         )
         .mappings()
         .first()

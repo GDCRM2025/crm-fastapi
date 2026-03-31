@@ -206,6 +206,7 @@
           <option value="done">Completadas</option>
           <option value="skipped">Omitidas</option>
         </select>
+        <select id="selUser" class="sel" title="Usuario" style="display:none; min-width:260px"></select>
         <button id="btnSync" class="btn primary" type="button">Sincronizar</button>
         <button id="btnReload" class="btn" type="button">Actualizar</button>
       </div>
@@ -447,8 +448,15 @@
       try{ window.parent?.postMessage({ type:"openItem", id:"tools", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
     }
 
+    let CTX = { uid:null, is_admin:false, role:"", username:"" };
+    let TARGET_UID = null; // admin "ver como"
+
+    function qpTarget(){
+      return (TARGET_UID && Number(TARGET_UID) > 0) ? `&for_user_id=${encodeURIComponent(String(TARGET_UID))}` : "";
+    }
+
     async function sync(){
-      const j = await jpost("/tasks/sync", {});
+      const j = await jpost(`/tasks/sync?x=1${qpTarget()}`, {});
       qs("#pOpen").textContent = `Abiertas: ${j?.counts?.open_total ?? "—"}`;
       qs("#pOver").textContent = `Vencidas: ${j?.overdue?.overdue_total ?? "—"}`;
       qs("#pContact").textContent = `Contactar: ${j?.counts?.open_contactar ?? "—"}`;
@@ -517,7 +525,7 @@
 
     async function load(){
       const st = String(qs("#status")?.value || "open");
-      const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0`);
+      const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0${qpTarget()}`);
       const items = Array.isArray(j.items) ? j.items : [];
       const cal = [];
       const leads = [];
@@ -530,18 +538,21 @@
       const norm = (s)=> String(s||"").toUpperCase();
       const isNew = (t)=> {
         const k = norm(t.kind);
-        if (k.includes("NUEVO")) return true;
-        return /NUEV/.test(norm(t.lead_estado));
+        const e = norm(t.lead_estado);
+        if (/NUEV/.test(e)) return true;
+        return k === "CONTACTAR_LEAD" || k === "RIESGO_AUTO_DECLINE_NUEVO";
       };
       const isContact = (t)=> {
         const k = norm(t.kind);
-        if (k.includes("CONTACTADO")) return true;
-        return /CONTACT/.test(norm(t.lead_estado));
+        const e = norm(t.lead_estado);
+        if (/CONTACT/.test(e)) return true;
+        return k.includes("CONTACTADO") || k === "SEGUIMIENTO_PENDIENTE";
       };
       const isQuote = (t)=> {
         const k = norm(t.kind);
-        if (k.includes("COTIZADO")) return true;
-        return /COTIZ/.test(norm(t.lead_estado));
+        const e = norm(t.lead_estado);
+        if (/COTIZ/.test(e)) return true;
+        return k.includes("COTIZ") || k === "RIESGO_COTIZADO_EVENTO_CERCA";
       };
       const gNew = leads.filter(isNew);
       const gContact = leads.filter(t => !isNew(t) && isContact(t));
@@ -745,6 +756,35 @@
         }
       };
       qs("#status").addEventListener("change", ()=> load().catch(e => showErr("load", e)));
+
+      // Contexto + admin selector
+      try{
+        CTX = await jget("/tasks/context");
+      }catch(_){}
+      if (CTX?.is_admin){
+        try{
+          const j = await jget("/tasks/admin/users");
+          const items = Array.isArray(j.items) ? j.items : [];
+          const sel = qs("#selUser");
+          if (sel && items.length){
+            sel.style.display = "";
+            const saved = localStorage.getItem("gd_tasks_for_uid") || "";
+            sel.innerHTML =
+              `<option value="">(Mi usuario)</option>` +
+              items.map(u => `<option value="${esc(u.id)}">${esc(u.name)} · ${esc(u.open||0)} abiertas</option>`).join("");
+            if (saved) sel.value = saved;
+            TARGET_UID = sel.value ? Number(sel.value) : null;
+            sel.addEventListener("change", async ()=>{
+              const v = String(sel.value||"");
+              try{ localStorage.setItem("gd_tasks_for_uid", v); }catch(_){}
+              TARGET_UID = v ? Number(v) : null;
+              clearErr();
+              try{ await sync(); }catch(e){ showErr("sync", e); }
+              try{ await load(); }catch(e){ showErr("load", e); }
+            });
+          }
+        }catch(_){}
+      }
 
       clearErr();
       try{ await sync(); }catch(e){ showErr("sync", e); }
