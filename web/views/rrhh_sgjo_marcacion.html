@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>RRHH · SGJO · Marcación</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:14px;background:transparent;color:var(--text);}
+    .wrap{max-width:780px;margin:0 auto;}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+    }
+    :root.light .card{ background: rgba(255,255,255,.86); border-color: rgba(0,0,0,.10); }
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .big{font-size:22px;font-weight:1200;margin-top:6px;}
+    .muted{opacity:.75;font-weight:850;font-size:12px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:6px 10px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      font-weight:1000;font-size:12px;
+    }
+    .btn{
+      height:42px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;
+      padding:0 14px;
+      font-weight:1100;
+      cursor:pointer;
+      flex:1;
+      min-width:220px;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn:disabled{opacity:.6;cursor:not-allowed;}
+    pre{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.35;margin:10px 0 0 0;opacity:.85}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="ttl">RRHH · SGJO</div>
+      <div class="big">Marcación</div>
+      <div class="muted">QR fijo + geolocalización + dispositivo enrolado + hora servidor.</div>
+
+      <div class="row">
+        <span class="pill" id="pSede">Sede: —</span>
+        <span class="pill" id="pPunto">Punto: —</span>
+        <span class="pill" id="pModo">Modo: —</span>
+      </div>
+
+      <div class="row" style="margin-top:14px">
+        <button class="btn primary" id="btnEnroll" type="button">Enrolar dispositivo</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn primary" id="btnMark" type="button" disabled>Marcar</button>
+      </div>
+
+      <pre id="log">—</pre>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = (()=> {
+      try{
+        const h = String(location.hostname||"").toLowerCase();
+        const isLocal = (h==="localhost" || h==="127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const qs = (s, el=document)=> el.querySelector(s);
+
+    function getToken(){
+      return (
+        localStorage.getItem("token") ||
+        localStorage.getItem("gd_token") ||
+        sessionStorage.getItem("token") ||
+        sessionStorage.getItem("gd_token") ||
+        ""
+      );
+    }
+    function authHeaders(extra={}){
+      const t = getToken();
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+    function apiURL(path){
+      if (String(path||"").startsWith("http")) return path;
+      const p = String(path||"");
+      return `${API_BASE}${p.startsWith("/") ? "" : "/"}${p}`;
+    }
+    async function apiJSON(path, opt={}){
+      const r = await fetch(apiURL(path), { ...opt, headers: authHeaders(opt.headers||{}) });
+      const txt = await r.text();
+      let j = null; try{ j = txt ? JSON.parse(txt) : null; }catch(_){}
+      if (!r.ok){
+        const msg = (j && (j.detail||j.error||j.message)) ? (j.detail||j.error||j.message) : (txt || ("HTTP "+r.status));
+        throw new Error(msg);
+      }
+      return j;
+    }
+
+    function log(s){
+      qs("#log").textContent = String(s||"").trim() || "—";
+    }
+
+    function getDeviceId(){
+      let id = localStorage.getItem("sgjo_device_id") || "";
+      if (!id){
+        id = (crypto?.randomUUID ? crypto.randomUUID() : ("dev-"+Math.random().toString(16).slice(2)+Date.now()));
+        localStorage.setItem("sgjo_device_id", id);
+      }
+      return id;
+    }
+
+    function getPuntoCode(){
+      const u = new URL(location.href);
+      const p = (u.searchParams.get("p") || u.searchParams.get("punto") || "").trim().toUpperCase();
+      return p;
+    }
+
+    async function getLocation(){
+      if (!navigator.geolocation) throw new Error("Geolocalización no disponible.");
+      return await new Promise((resolve, reject)=>{
+        navigator.geolocation.getCurrentPosition(
+          (pos)=>{
+            resolve({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy_m: pos.coords.accuracy
+            });
+          },
+          (err)=> reject(new Error(err?.message || "No pude obtener ubicación.")),
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      });
+    }
+
+    async function init(){
+      const punto_code = getPuntoCode();
+      if (!punto_code){
+        log("Falta parámetro ?p=SGJO-ROLFIS o ?p=SGJO-GREENDIAMOND (desde el QR).");
+        return;
+      }
+      try{
+        const cfg = await apiJSON("/rrhh/sgjo/config");
+        const pt = (cfg.puntos||[]).find(x=>String(x.code||"").toUpperCase()===punto_code);
+        if (!pt){
+          log("Punto no existe: " + punto_code);
+          return;
+        }
+        const sede = (cfg.sedes||[]).find(s=>String(s.id_sede)==String(pt.id_sede));
+        qs("#pSede").textContent = "Sede: " + (sede?.nombre || "—");
+        qs("#pPunto").textContent = "Punto: " + (pt?.nombre || punto_code);
+        const me = await apiJSON("/rrhh/sgjo/me");
+        qs("#pModo").textContent = "Modo: " + String(me?.modality_today || "—");
+        qs("#btnMark").disabled = false;
+        log("Listo. Enrola el dispositivo la primera vez, luego marca.");
+      }catch(e){
+        log("Error: " + (e?.message||e));
+      }
+    }
+
+    qs("#btnEnroll").addEventListener("click", async ()=>{
+      try{
+        const device_id = getDeviceId();
+        await apiJSON("/rrhh/sgjo/device/enroll", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ device_id }) });
+        log("Dispositivo enrolado OK.");
+      }catch(e){
+        log("No pude enrolar: " + (e?.message||e));
+      }
+    });
+
+    qs("#btnMark").addEventListener("click", async ()=>{
+      const punto_code = getPuntoCode();
+      try{
+        qs("#btnMark").disabled = true;
+        const device_id = getDeviceId();
+        const loc = await getLocation();
+        const out = await apiJSON("/rrhh/sgjo/marcar", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ punto_code, device_id, method:"QR", ...loc }),
+        });
+        const dist = (out?.distance_m != null) ? (Number(out.distance_m).toFixed(1) + "m") : "—";
+        log(`OK · ${out.tipo} · ${out.sede}\nDistancia: ${dist}\nFallback: ${out.used_fallback ? "sí" : "no"}\nModo: ${out.modality}`);
+      }catch(e){
+        log("Error: " + (e?.message||e));
+      }finally{
+        qs("#btnMark").disabled = false;
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
+

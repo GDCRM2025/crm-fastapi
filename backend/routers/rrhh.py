@@ -115,6 +115,8 @@ def _ensure_tables(db: Session) -> None:
     # Ensure new columns exist on older installs
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS observaciones TEXT"))
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS ficha JSONB"))
+    db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS presencial_dow SMALLINT"))
+    db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS modalidad_default TEXT"))
     db.execute(
         text(
             """
