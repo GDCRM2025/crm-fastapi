@@ -49,6 +49,26 @@ def _exec_presencial_dow(uid: int, rut: str) -> int:
     return choices[h % len(choices)]
 
 
+def _rrhh_staff_row(db: Session, rut: str) -> dict[str, Any] | None:
+    if not rut:
+        return None
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT rol, presencial_dow, modalidad_default
+                FROM rrhh_staff
+                WHERE lower(rut)=lower(:r) AND is_active IS TRUE
+                LIMIT 1
+                """
+            ),
+            {"r": rut},
+        ).mappings().first()
+        return dict(row) if row else None
+    except Exception:
+        return None
+
+
 def modality_for_user(db: Session, *, uid: int, rut: str, role: str, when: datetime) -> dict[str, Any]:
     """
     Modalidad V1 (guardada en RRHH, con fallback determinístico):
@@ -56,21 +76,23 @@ def modality_for_user(db: Session, *, uid: int, rut: str, role: str, when: datet
     - DISEÑADOR: REMOTO solo miércoles.
     - Resto: PRESENCIAL.
     """
-    r = (role or "").upper()
+    staff = _rrhh_staff_row(db, rut)
+    staff_role = str((staff or {}).get("rol") or "")
+    staff_modality = str((staff or {}).get("modalidad_default") or "").strip().upper()
+    r = (staff_role or role or "").upper()
     wd = int(when.weekday())  # 0=Mon
 
     # RRHH override: rrhh_staff.presencial_dow si existe para el RUT
     presencial_dow = None
     try:
-        if rut:
-            v = db.execute(
-                text("SELECT presencial_dow FROM rrhh_staff WHERE lower(rut)=lower(:r) AND is_active IS TRUE LIMIT 1"),
-                {"r": rut},
-            ).scalar()
-            if v is not None and str(v).strip() != "":
-                presencial_dow = int(v)
+        v = (staff or {}).get("presencial_dow")
+        if v is not None and str(v).strip() != "":
+            presencial_dow = int(v)
     except Exception:
         presencial_dow = None
+
+    if staff_modality in ("PRESENCIAL", "REMOTO"):
+        return {"modality": staff_modality, "presencial_dow": presencial_dow}
 
     if "EJECUTIV" in r:
         if presencial_dow is None:
@@ -330,4 +352,3 @@ def marcar(
         "modality": modality,
         "presencial_dow": mod.get("presencial_dow"),
     }
-
