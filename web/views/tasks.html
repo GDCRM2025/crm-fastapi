@@ -773,6 +773,10 @@
               `<option value="">(Mi usuario)</option>` +
               items.map(u => `<option value="${esc(u.id)}">${esc(u.name)} · ${esc(u.open||0)} abiertas</option>`).join("");
             if (saved) sel.value = saved;
+            if (!sel.value){
+              const best = items.find(u => Number(u.open||0) > 0) || items[0];
+              if (best) sel.value = String(best.id);
+            }
             TARGET_UID = sel.value ? Number(sel.value) : null;
             sel.addEventListener("change", async ()=>{
               const v = String(sel.value||"");

@@ -61,6 +61,25 @@ def _table_exists(db: Session, table: str) -> bool:
         return False
 
 
+def _col_exists(db: Session, table: str, col: str) -> bool:
+    try:
+        return bool(
+            db.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name=:t AND column_name=:c
+                    LIMIT 1
+                    """
+                ),
+                {"t": table, "c": col},
+            ).scalar()
+        )
+    except Exception:
+        return False
+
+
 def _fetch_marcas_for_uid(db: Session, uid: int) -> list[int]:
     """
     Fallback cuando el token no trae `marcas` (o viene vacío por cuentas legacy).
@@ -201,22 +220,33 @@ def _is_admin(user: dict) -> bool:
 def _user_info(db: Session, uid: int) -> dict[str, Any]:
     if not _table_exists(db, "usuarios"):
         return {"id": int(uid), "username": str(uid), "role": ""}
-    row = db.execute(
-        text(
-            """
-            SELECT id_usuario,
-                   COALESCE(NULLIF(btrim(nombre),''), NULLIF(btrim(name),''), NULLIF(btrim(username),''), NULLIF(btrim(email),''), id_usuario::text) AS display,
-                   COALESCE(NULLIF(btrim(role::text),''), NULLIF(btrim(rol::text),''), '') AS role
-            FROM public.usuarios
-            WHERE id_usuario=:u
-            LIMIT 1
-            """
-        ),
-        {"u": int(uid)},
-    ).mappings().first()
-    if not row:
+    try:
+        cols_display = []
+        for c in ("nombre", "name", "username", "email"):
+            if _col_exists(db, "usuarios", c):
+                cols_display.append(f"NULLIF(btrim({c}), '')")
+        display_expr = "COALESCE(" + ", ".join(cols_display + ["id_usuario::text"]) + ") AS display"
+        role_expr = "'' AS role"
+        if _col_exists(db, "usuarios", "role") and _col_exists(db, "usuarios", "rol"):
+            role_expr = "COALESCE(NULLIF(btrim(role::text),''), NULLIF(btrim(rol::text),''), '') AS role"
+        elif _col_exists(db, "usuarios", "role"):
+            role_expr = "COALESCE(NULLIF(btrim(role::text),''), '') AS role"
+        elif _col_exists(db, "usuarios", "rol"):
+            role_expr = "COALESCE(NULLIF(btrim(rol::text),''), '') AS role"
+
+        row = db.execute(
+            text(f"SELECT id_usuario, {display_expr}, {role_expr} FROM public.usuarios WHERE id_usuario=:u LIMIT 1"),
+            {"u": int(uid)},
+        ).mappings().first()
+        if not row:
+            return {"id": int(uid), "username": str(uid), "role": ""}
+        return {
+            "id": int(row.get("id_usuario") or uid),
+            "username": str(row.get("display") or uid),
+            "role": str(row.get("role") or ""),
+        }
+    except Exception:
         return {"id": int(uid), "username": str(uid), "role": ""}
-    return {"id": int(row.get("id_usuario") or uid), "username": str(row.get("display") or uid), "role": str(row.get("role") or "")}
 
 
 @router.get("/context")
@@ -231,20 +261,30 @@ def admin_users(db: Session = Depends(get_db), user: dict = Depends(get_current_
         raise HTTPException(403, "No autorizado")
     if not _table_exists(db, "usuarios"):
         return {"ok": True, "items": []}
-    rows = db.execute(
-        text(
-            """
-            SELECT id_usuario,
-                   COALESCE(NULLIF(btrim(nombre),''), NULLIF(btrim(name),''), NULLIF(btrim(username),''), NULLIF(btrim(email),''), id_usuario::text) AS display,
-                   COALESCE(NULLIF(btrim(role::text),''), NULLIF(btrim(rol::text),''), '') AS role
-            FROM public.usuarios
-            WHERE
-              COALESCE(NULLIF(btrim(role::text),''), NULLIF(btrim(rol::text),''), '') = '2'
-              OR upper(COALESCE(NULLIF(btrim(role::text),''), NULLIF(btrim(rol::text),''), '')) LIKE '%EJECUTIV%'
-            ORDER BY display
-            """
-        )
-    ).mappings().all()
+    try:
+        cols_display = []
+        for c in ("nombre", "name", "username", "email"):
+            if _col_exists(db, "usuarios", c):
+                cols_display.append(f"NULLIF(btrim({c}), '')")
+        display_expr = "COALESCE(" + ", ".join(cols_display + ["id_usuario::text"]) + ") AS display"
+        role_col = "''"
+        if _col_exists(db, "usuarios", "role"):
+            role_col = "role::text"
+        elif _col_exists(db, "usuarios", "rol"):
+            role_col = "rol::text"
+        role_expr = f"COALESCE(NULLIF(btrim({role_col}),''), '') AS role"
+        rows = db.execute(
+            text(
+                f"""
+                SELECT id_usuario, {display_expr}, {role_expr}
+                FROM public.usuarios
+                WHERE ({role_col}='2' OR upper(COALESCE({role_col},'')) LIKE '%EJECUTIV%')
+                ORDER BY display
+                """
+            )
+        ).mappings().all()
+    except Exception:
+        rows = []
 
     m: dict[int, int] = {}
     try:
