@@ -173,6 +173,64 @@ def _lead_notes_expr_db(db: Session) -> str:
         return f"COALESCE({cols[0]},'')"
     return "COALESCE(%s,'')" % ",".join(cols)
 
+def _lead_event_date_expr_db(db: Session, *, alias: str = "l") -> str:
+    """
+    Expresión SQL (DATE) robusta para `fecha_evento`.
+
+    En distintos deploys `fecha_evento` ha sido:
+    - DATE / TIMESTAMPTZ
+    - TEXT 'YYYY-MM-DD' (a veces con hora)
+
+    Importante: esta función NO debe romper la query si el texto viene con otro formato.
+    Si no calza, retorna NULL.
+    """
+    try:
+        if not _col_exists(db, "leads", "fecha_evento"):
+            return "NULL::date"
+    except Exception:
+        return "NULL::date"
+
+    fe_txt = f"NULLIF(btrim(COALESCE({alias}.fecha_evento::text,'')),'')"
+    d10 = f"substring({fe_txt} from 1 for 10)"
+    # Parseo tolerante (no debe romper la query):
+    # - YYYY-MM-DD (ISO)
+    # - YYYY/MM/DD
+    # - DD/MM/YYYY
+    # - DD-MM-YYYY
+    return (
+        f"(CASE"
+        f" WHEN {fe_txt} IS NULL THEN NULL"
+        f" WHEN {d10} ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$' THEN to_date({d10}, 'YYYY-MM-DD')"
+        f" WHEN {d10} ~ '^[0-9]{{4}}/[0-9]{{2}}/[0-9]{{2}}$' THEN to_date({d10}, 'YYYY/MM/DD')"
+        f" WHEN {d10} ~ '^[0-9]{{2}}/[0-9]{{2}}/[0-9]{{4}}$' THEN to_date({d10}, 'DD/MM/YYYY')"
+        f" WHEN {d10} ~ '^[0-9]{{2}}-[0-9]{{2}}-[0-9]{{4}}$' THEN to_date({d10}, 'DD-MM-YYYY')"
+        f" ELSE NULL END)"
+    )
+
+
+def _lead_created_ts_expr_db(db: Session, *, alias: str = "l") -> str:
+    """
+    Expresión SQL (TIMESTAMP) para "fecha de creación" del lead.
+    Usa columnas existentes (created_at / fecha_ingreso / fecha_creacion) sin romper por esquemas legacy.
+    """
+    cols: list[str] = []
+    try:
+        if _col_exists(db, "leads", "created_at"):
+            cols.append(f"{alias}.created_at")
+        if _col_exists(db, "leads", "fecha_ingreso"):
+            cols.append(f"{alias}.fecha_ingreso::timestamp")
+        if _col_exists(db, "leads", "fecha_creacion"):
+            cols.append(f"{alias}.fecha_creacion::timestamp")
+        if _col_exists(db, "leads", "creado_at"):
+            cols.append(f"{alias}.creado_at")
+        if _col_exists(db, "leads", "created"):
+            cols.append(f"{alias}.created")
+    except Exception:
+        cols = [f"{alias}.created_at"]
+    if not cols:
+        return "now()"
+    return "COALESCE(" + ", ".join(cols + ["now()"]) + ")"
+
 
 def _has_contact_sql_db(db: Session) -> str:
     """
@@ -1004,6 +1062,16 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     last_expr = "COALESCE(" + ", ".join([f"l.{c}" for c in updated_cols] + [created_expr, "now()"]) + ")"
 
     has_contact_sql = _has_contact_sql_db(db)
+    ev_date = _lead_event_date_expr_db(db, alias="l")
+    month_start = "date_trunc('month', CURRENT_DATE)::date"
+    month_end = "(date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::date"
+    # Regla negocio (tareas SOLO para leads "del mes"):
+    # - con fecha_evento: solo mes actual (y no vencidos)
+    # - sin fecha_evento: solo si el lead se creó en el mes actual (evita tareas eternas)
+    created_month = f"date_trunc('month', {created_expr})::date"
+    in_scope_with_date = f"({ev_date} IS NOT NULL AND {ev_date} >= CURRENT_DATE AND {ev_date} >= {month_start} AND {ev_date} < {month_end})"
+    in_scope_no_date = f"({ev_date} IS NULL AND {created_month} = {month_start})"
+    ev_in_scope = f"({in_scope_with_date} OR {in_scope_no_date})"
 
     # 1) Auto-declinar vencidos (fecha_evento < hoy) en estados que generan tareas
     try:
@@ -1036,8 +1104,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                     UPDATE public.leads l
                     SET {", ".join(sets)}
                     WHERE l.id_estado = ANY(CAST(:st AS int[]))
-                      AND l.fecha_evento IS NOT NULL
-                      AND l.fecha_evento < CURRENT_DATE
+                      AND ({ev_date}) IS NOT NULL
+                      AND ({ev_date}) < CURRENT_DATE
                       AND (:is_admin OR {scope_sql})
                     """
                 ),
@@ -1058,12 +1126,42 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
         if _table_exists(db, "leads") and _col_exists(db, "leads", "fecha_evento"):
             db.execute(
                 text(
+                    f"""
+	                    UPDATE public.tasks t
+	                    SET status='done', completed_at=now(), completed_by='AUTO', updated_at=now(),
+	                        meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object(
+	                          'auto_closed', true,
+	                          'auto_reason', 'event_expired',
+	                          'auto_at', now()
+	                        )
+                    WHERE t.assigned_user_id=:uid
+                      AND t.status='open'
+                      AND t.entity_type='lead'
+                      AND EXISTS (
+                        SELECT 1
+                        FROM public.leads l
+                        WHERE l.id_lead = t.entity_id
+                          AND ({ev_date}) IS NOT NULL
+                          AND ({ev_date}) < CURRENT_DATE
+                      )
                     """
+                ),
+                {"uid": int(user_id)},
+            )
+    except Exception:
+        pass
+
+    # 1.a2) Auto-close: tareas fuera del mes actual (evita ruido por leads del próximo mes).
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "fecha_evento"):
+            db.execute(
+                text(
+                    f"""
                     UPDATE public.tasks t
                     SET status='done', completed_at=now(), completed_by='AUTO', updated_at=now(),
-                        meta = COALESCE(t.meta,'{}'::jsonb) || jsonb_build_object(
+                        meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object(
                           'auto_closed', true,
-                          'auto_reason', 'event_expired',
+                          'auto_reason', 'out_of_month',
                           'auto_at', now()
                         )
                     WHERE t.assigned_user_id=:uid
@@ -1073,8 +1171,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                         SELECT 1
                         FROM public.leads l
                         WHERE l.id_lead = t.entity_id
-                          AND l.fecha_evento IS NOT NULL
-                          AND l.fecha_evento < CURRENT_DATE
+                          AND ({ev_date}) IS NOT NULL
+                          AND ({ev_date}) >= {month_end}
                       )
                     """
                 ),
@@ -1130,7 +1228,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND l.id_estado NOT IN (:decl, :conf)
                   AND (:is_admin OR {scope_sql})
                   AND ({has_contact_sql}) IS NOT TRUE
-                  AND (l.fecha_evento IS NULL OR l.fecha_evento >= CURRENT_DATE)
+                  AND {ev_in_scope}
                   AND (
                     (l.fecha_evento IS NOT NULL AND {created_expr} <= (now() - INTERVAL '3 days'))
                     OR
@@ -1164,8 +1262,9 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   'LEAD_CONTACTADO_SEGUIMIENTO',
                   'Lead contactado: seguimiento',
                   CASE
-                    WHEN l.fecha_evento IS NULL THEN 'CONTACTADO sin fecha. Seguimiento inmediato.'
-                    ELSE 'Vence en ' || GREATEST(0, (l.fecha_evento - CURRENT_DATE))::int || ' día(s).'
+                    WHEN ({ev_date}) IS NULL THEN 'CONTACTADO sin fecha. Seguimiento inmediato.'
+                    WHEN ({ev_date}) < CURRENT_DATE THEN 'Evento vencido (auto-decline).'
+                    ELSE 'Vence en ' || GREATEST(0, (({ev_date}) - CURRENT_DATE))::int || ' día(s).'
                   END,
                   'lead',
                   l.id_lead,
@@ -1173,16 +1272,16 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   :uname,
                   ({last_expr} + INTERVAL '3 days'),
                   10,
-                  jsonb_build_object('rule','contactado','last_at',{last_expr},'fecha_evento',l.fecha_evento,'days_to_event',CASE WHEN l.fecha_evento IS NULL THEN NULL ELSE (l.fecha_evento - CURRENT_DATE)::int END)
+                  jsonb_build_object('rule','contactado','last_at',{last_expr},'fecha_evento',l.fecha_evento,'days_to_event',CASE WHEN ({ev_date}) IS NULL THEN NULL ELSE (({ev_date}) - CURRENT_DATE)::int END)
                 FROM public.leads l
                 WHERE l.id_estado = :contactado
                   AND l.id_estado NOT IN (:decl, :conf)
                   AND (:is_admin OR {scope_sql})
                   AND {last_expr} <= (now() - INTERVAL '3 days')
                   AND (
-                    (l.fecha_evento IS NULL)
+                    {in_scope_no_date}
                     OR
-                    (l.fecha_evento IS NOT NULL AND l.fecha_evento >= CURRENT_DATE AND l.fecha_evento <= (CURRENT_DATE + INTERVAL '7 days'))
+                    (({ev_date}) IS NOT NULL AND ({ev_date}) >= CURRENT_DATE AND ({ev_date}) < {month_end} AND ({ev_date}) <= (CURRENT_DATE + INTERVAL '7 days'))
                   )
                 ON CONFLICT DO NOTHING
                 """
@@ -1212,22 +1311,23 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   'LEAD_COTIZADO_SEGUIMIENTO',
                   'Lead cotizado: seguimiento',
                   CASE
-                    WHEN l.fecha_evento IS NULL THEN 'COTIZADO sin fecha. Seguimiento pendiente.'
-                    ELSE 'Vence en ' || GREATEST(0, (l.fecha_evento - CURRENT_DATE))::int || ' día(s).'
+                    WHEN ({ev_date}) IS NULL THEN 'COTIZADO sin fecha. Seguimiento pendiente.'
+                    WHEN ({ev_date}) < CURRENT_DATE THEN 'Evento vencido (auto-decline).'
+                    ELSE 'Vence en ' || GREATEST(0, (({ev_date}) - CURRENT_DATE))::int || ' día(s).'
                   END,
                   'lead',
                   l.id_lead,
                   :uid,
                   :uname,
                   ({last_expr} + INTERVAL '3 days'),
-                  CASE WHEN l.fecha_evento IS NOT NULL AND (l.fecha_evento - CURRENT_DATE) <= 2 THEN 6 ELSE 12 END,
-                  jsonb_build_object('rule','cotizado','last_at',{last_expr},'fecha_evento',l.fecha_evento,'days_to_event',CASE WHEN l.fecha_evento IS NULL THEN NULL ELSE (l.fecha_evento - CURRENT_DATE)::int END)
+                  CASE WHEN ({ev_date}) IS NOT NULL AND (({ev_date}) - CURRENT_DATE) <= 2 THEN 6 ELSE 12 END,
+                  jsonb_build_object('rule','cotizado','last_at',{last_expr},'fecha_evento',l.fecha_evento,'days_to_event',CASE WHEN ({ev_date}) IS NULL THEN NULL ELSE (({ev_date}) - CURRENT_DATE)::int END)
                 FROM public.leads l
                 WHERE l.id_estado = :cotizado
                   AND l.id_estado NOT IN (:decl, :conf)
                   AND (:is_admin OR {scope_sql})
                   AND {last_expr} <= (now() - INTERVAL '3 days')
-                  AND (l.fecha_evento IS NULL OR l.fecha_evento >= CURRENT_DATE)
+                  AND {ev_in_scope}
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -1291,7 +1391,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
           AND l.id_estado NOT IN (:decl, :conf)
           AND (:is_admin OR {scope_sql})
           AND ({has_contact_sql}) IS NOT TRUE
-          AND (l.fecha_evento IS NULL OR l.fecha_evento >= CURRENT_DATE)
+          AND {ev_in_scope}
           AND (
             (l.fecha_evento IS NOT NULL AND {created_expr} <= (now() - INTERVAL '3 days'))
             OR
@@ -1307,9 +1407,9 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
           AND (:is_admin OR {scope_sql})
           AND {last_expr} <= (now() - INTERVAL '3 days')
           AND (
-            (l.fecha_evento IS NULL)
+            {in_scope_no_date}
             OR
-            (l.fecha_evento IS NOT NULL AND l.fecha_evento >= CURRENT_DATE AND l.fecha_evento <= (CURRENT_DATE + INTERVAL '7 days'))
+            (({ev_date}) IS NOT NULL AND ({ev_date}) >= CURRENT_DATE AND ({ev_date}) < {month_end} AND ({ev_date}) <= (CURRENT_DATE + INTERVAL '7 days'))
           )
         """,
     )
@@ -1320,7 +1420,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
           AND l.id_estado NOT IN (:decl, :conf)
           AND (:is_admin OR {scope_sql})
           AND {last_expr} <= (now() - INTERVAL '3 days')
-          AND (l.fecha_evento IS NULL OR l.fecha_evento >= CURRENT_DATE)
+          AND {ev_in_scope}
         """,
     )
 
@@ -1476,17 +1576,17 @@ def list_tasks(
             try:
                 db.execute(
                     text(
-                        """
-                        UPDATE public.tasks t
-                        SET status='done',
-                            completed_at=now(),
-                            completed_by='AUTO',
-                            updated_at=now(),
-                            meta = COALESCE(t.meta,'{}'::jsonb) || jsonb_build_object(
-                              'auto_closed', true,
-                              'auto_reason', 'event_expired',
-                              'auto_at', now()
-                            )
+                        f"""
+	                        UPDATE public.tasks t
+	                        SET status='done',
+	                            completed_at=now(),
+	                            completed_by='AUTO',
+	                            updated_at=now(),
+	                            meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object(
+	                              'auto_closed', true,
+	                              'auto_reason', 'event_expired',
+	                              'auto_at', now()
+	                            )
                         WHERE t.assigned_user_id = :uid
                           AND t.status='open'
                           AND t.entity_type='lead'
@@ -1494,8 +1594,8 @@ def list_tasks(
                             SELECT 1
                             FROM public.leads l
                             WHERE l.id_lead = t.entity_id
-                              AND l.fecha_evento IS NOT NULL
-                              AND l.fecha_evento < CURRENT_DATE
+                              AND ({_lead_event_date_expr_db(db, alias="l")}) IS NOT NULL
+                              AND ({_lead_event_date_expr_db(db, alias="l")}) < CURRENT_DATE
                           )
                         """
                     ),
@@ -1511,11 +1611,109 @@ def list_tasks(
                   SELECT 1
                   FROM public.leads l3
                   WHERE l3.id_lead = t.entity_id
-                    AND l3.fecha_evento IS NOT NULL
-                    AND l3.fecha_evento < CURRENT_DATE
+                    AND (%(ev)s) IS NOT NULL
+                    AND (%(ev)s) < CURRENT_DATE
                 )
               )
-            """
+            """ % {"ev": _lead_event_date_expr_db(db, alias="l3")}
+
+            # Además: tareas solo para el mes actual (evita que aparezcan leads del próximo mes).
+            month_end = "(date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::date"
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        UPDATE public.tasks t
+                        SET status='done',
+                            completed_at=now(),
+                            completed_by='AUTO',
+                            updated_at=now(),
+                            meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object(
+                              'auto_closed', true,
+                              'auto_reason', 'out_of_month',
+                              'auto_at', now()
+                            )
+                        WHERE t.assigned_user_id = :uid
+                          AND t.status='open'
+                          AND t.entity_type='lead'
+                          AND EXISTS (
+                            SELECT 1
+                            FROM public.leads l4
+                            WHERE l4.id_lead = t.entity_id
+                              AND ({_lead_event_date_expr_db(db, alias="l4")}) IS NOT NULL
+                              AND ({_lead_event_date_expr_db(db, alias="l4")}) >= {month_end}
+                          )
+                        """
+                    ),
+                    {"uid": int(assigned_user_id)},
+                )
+            except Exception:
+                pass
+
+            where += """
+              AND NOT (
+                t.entity_type='lead'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.leads l4
+                  WHERE l4.id_lead = t.entity_id
+                    AND (%(ev)s) IS NOT NULL
+                    AND (%(ev)s) >= %(month_end)s
+                )
+              )
+            """ % {"ev": _lead_event_date_expr_db(db, alias="l4"), "month_end": month_end}
+
+            # Además (sin fecha): tareas SOLO para leads creados en el mes actual.
+            month_start = "date_trunc('month', CURRENT_DATE)::date"
+            created_expr = _lead_created_ts_expr_db(db, alias="l5")
+            created_month_expr = f"date_trunc('month', {created_expr})::date"
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        UPDATE public.tasks t
+                        SET status='done',
+                            completed_at=now(),
+                            completed_by='AUTO',
+                            updated_at=now(),
+                            meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object(
+                              'auto_closed', true,
+                              'auto_reason', 'no_date_out_of_month',
+                              'auto_at', now()
+                            )
+                        WHERE t.assigned_user_id = :uid
+                          AND t.status='open'
+                          AND t.entity_type='lead'
+                          AND EXISTS (
+                            SELECT 1
+                            FROM public.leads l5
+                            WHERE l5.id_lead = t.entity_id
+                              AND ({_lead_event_date_expr_db(db, alias="l5")}) IS NULL
+                              AND ({created_month_expr}) <> {month_start}
+                          )
+                        """
+                    ),
+                    {"uid": int(assigned_user_id)},
+                )
+            except Exception:
+                pass
+
+            where += """
+              AND NOT (
+                t.entity_type='lead'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.leads l5
+                  WHERE l5.id_lead = t.entity_id
+                    AND (%(ev)s) IS NULL
+                    AND (date_trunc('month', %(created)s)::date) <> %(month_start)s
+                )
+              )
+            """ % {
+                "ev": _lead_event_date_expr_db(db, alias="l5"),
+                "created": _lead_created_ts_expr_db(db, alias="l5"),
+                "month_start": month_start,
+            }
     except Exception:
         pass
 
@@ -1538,7 +1736,7 @@ def list_tasks(
             if _col_exists(db, "leads", "telefono"):
                 lead_tel_expr = "COALESCE(l.telefono,'') AS lead_telefono"
             if _col_exists(db, "leads", "fecha_evento"):
-                lead_fecha_expr = "l.fecha_evento AS lead_fecha_evento"
+                lead_fecha_expr = f"{_lead_event_date_expr_db(db, alias='l')} AS lead_fecha_evento"
 
             if has_marcas and _col_exists(db, "leads", "id_marca") and _col_exists(db, "marcas", "id_marca"):
                 joins += " LEFT JOIN public.marcas m ON m.id_marca = l.id_marca "
@@ -1630,7 +1828,7 @@ def skip_task(db: Session, *, id_task: int, skipped_by: str, reason: str) -> Dic
             UPDATE public.tasks
             SET status='skipped', completed_at=now(), completed_by=:by,
                 updated_at=now(),
-                meta = jsonb_set(meta, '{skip_reason}', to_jsonb(:r::text), true)
+                meta = jsonb_set(COALESCE(meta,'{}'::jsonb), '{skip_reason}', to_jsonb(CAST(:r AS text)), true)
             WHERE id_task=:id
             """
         ),

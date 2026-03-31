@@ -371,44 +371,55 @@ def sync_tasks(
     """
     Genera tareas automáticas (idempotente) para el usuario actual.
     """
-    uid = _resolve_uid(db, user)
-    target_uid = int(for_user_id) if (for_user_id is not None and _is_admin(user)) else int(uid)
-    if for_user_id is not None and not _is_admin(user):
-        raise HTTPException(403, "No autorizado")
+    try:
+        uid = _resolve_uid(db, user)
+        target_uid = int(for_user_id) if (for_user_id is not None and _is_admin(user)) else int(uid)
+        if for_user_id is not None and not _is_admin(user):
+            raise HTTPException(403, "No autorizado")
 
-    info = _user_info(db, target_uid)
+        info = _user_info(db, target_uid)
 
-    marcas_token = list(user.get("marcas") or []) if target_uid == int(uid) else []
-    marcas_db = _fetch_marcas_for_uid(db, target_uid)
-    marcas = marcas_token or marcas_db
-    if not marcas:
-        marcas = _fetch_marcas_for_uid(db, target_uid)
-    if not marcas:
-        # Último fallback: inferir por leads asignados (evita 0 tareas cuando faltan bindings en usuarios_marcas)
+        marcas_token = list(user.get("marcas") or []) if target_uid == int(uid) else []
+        marcas_db = _fetch_marcas_for_uid(db, target_uid)
+        marcas = marcas_token or marcas_db
+        if not marcas:
+            marcas = _fetch_marcas_for_uid(db, target_uid)
+        if not marcas:
+            # Último fallback: inferir por leads asignados (evita 0 tareas cuando faltan bindings en usuarios_marcas)
+            try:
+                user_keys = core_tasks._user_match_keys(db, user_id=int(target_uid), username=str(info.get("username") or target_uid))  # type: ignore[attr-defined]
+            except Exception:
+                user_keys = [str(target_uid), str(info.get("username") or target_uid)]
+            marcas = _infer_marcas_from_leads(db, user_keys)
+
         try:
-            user_keys = core_tasks._user_match_keys(db, user_id=int(target_uid), username=str(info.get("username") or target_uid))  # type: ignore[attr-defined]
+            out = upsert_mvp_tasks_for_user(
+                db,
+                user_id=int(target_uid),
+                username=str(info.get("username") or target_uid),
+                role=str(info.get("role") or _role(user)),
+                marcas=marcas,
+            )
+        except Exception as e:
+            # Nunca 500: si no hay permisos DDL o falta alguna tabla, degradar silenciosamente.
+            return {"ok": True, "created": 0, "skipped": 0, "disabled": True, "error": str(e)[:200]}
+
+        try:
+            db.commit()
         except Exception:
-            user_keys = [str(target_uid), str(info.get("username") or target_uid)]
-        marcas = _infer_marcas_from_leads(db, user_keys)
-    try:
-        out = upsert_mvp_tasks_for_user(
-            db,
-            user_id=int(target_uid),
-            username=str(info.get("username") or target_uid),
-            role=str(info.get("role") or _role(user)),
-            marcas=marcas,
-        )
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        return out
+    except HTTPException:
+        raise
     except Exception as e:
-        # Nunca 500: si no hay permisos DDL o falta alguna tabla, degradar silenciosamente.
-        return {"ok": True, "created": 0, "skipped": 0, "disabled": True, "error": str(e)[:200]}
-    try:
-        db.commit()
-    except Exception:
         try:
             db.rollback()
         except Exception:
             pass
-    return out
+        return {"ok": True, "created": 0, "skipped": 0, "disabled": True, "error": f"{type(e).__name__}: {str(e)[:200]}"}
 
 
 @router.get("")
@@ -465,6 +476,9 @@ def mark_done(
 
     # Consecuencia: tareas críticas requieren evidencia (seguimiento / dato efectivamente completado).
     require_followup = kind in {
+        "LEAD_NUEVO_SEGUIMIENTO",
+        "LEAD_CONTACTADO_SEGUIMIENTO",
+        "LEAD_COTIZADO_SEGUIMIENTO",
         "CONTACTAR_LEAD",
         "RIESGO_AUTO_DECLINE_NUEVO",
         "RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA",
@@ -660,11 +674,31 @@ def mark_done(
 
 
 @router.get("/summary")
-def summary(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def summary(
+    scope: str = Query("me", description="me|all (all solo admin)"),
+    for_user_id: int | None = Query(default=None, description="(Admin) ver conteo como otro usuario"),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     """
     Conteo rápido para UI/badges (no crea tareas).
+    - Solo considera las 3 tareas de seguimiento por estado (NUEVO/CONTACTADO/COTIZADO).
+    - Admin puede pedir `scope=all` para ver global (siempre excluye leads CONFIRMADO/DECLINADO).
     """
     uid = _resolve_uid(db, user)
+    is_admin = _is_admin(user)
+    target_uid = int(for_user_id) if (for_user_id is not None and is_admin) else int(uid)
+    if for_user_id is not None and not is_admin:
+        raise HTTPException(403, "No autorizado")
+
+    scope = (scope or "me").strip().lower()
+    if scope not in ("me", "all"):
+        scope = "me"
+    if scope == "all" and not is_admin:
+        scope = "me"
+
+    kinds = ["LEAD_NUEVO_SEGUIMIENTO", "LEAD_CONTACTADO_SEGUIMIENTO", "LEAD_COTIZADO_SEGUIMIENTO"]
+
     try:
         ensure_tasks_table(db)
     except Exception:
@@ -672,25 +706,74 @@ def summary(db: Session = Depends(get_db), user: dict = Depends(get_current_user
             db.rollback()
         except Exception:
             pass
-        return {"ok": True, "open_total": 0, "overdue_total": 0, "open_contactar": 0, "overdue_contactar": 0, "disabled": True}
+        return {
+            "ok": True,
+            "scope": scope,
+            "open_total": 0,
+            "overdue_total": 0,
+            "open_nuevos": 0,
+            "open_contactados": 0,
+            "open_cotizados": 0,
+            "disabled": True,
+        }
+
+    # Excluir leads cerrados (CONFIRMADO / DECLINADO) para evitar ruido en conteos.
+    closed = []
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "id_estado"):
+            confirmado_id = core_tasks._estado_id_like(db, "CONFIRM%", 4)  # type: ignore[attr-defined]
+            declinado_id = core_tasks._estado_id_like(db, "%DECLIN%", 5)  # type: ignore[attr-defined]
+            closed = [int(confirmado_id), int(declinado_id)]
+    except Exception:
+        closed = []
+
+    where = "t.kind = ANY(CAST(:kinds AS text[]))"
+    params: dict[str, Any] = {"kinds": kinds}
+    if scope == "me":
+        where += " AND t.assigned_user_id=:uid"
+        params["uid"] = int(target_uid)
+
+    if closed:
+        where += """
+          AND NOT (
+            t.entity_type='lead'
+            AND EXISTS (
+              SELECT 1
+              FROM public.leads l
+              WHERE l.id_lead=t.entity_id
+                AND l.id_estado = ANY(CAST(:closed AS int[]))
+            )
+          )
+        """
+        params["closed"] = closed
+
     try:
         row = db.execute(
             text(
-                """
+                f"""
                 SELECT
-                  COUNT(*) FILTER (WHERE status='open')::int AS open_total,
-                  COUNT(*) FILTER (WHERE status='open' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_total,
-                  COUNT(*) FILTER (WHERE status='open' AND kind='CONTACTAR_LEAD')::int AS open_contactar,
-                  COUNT(*) FILTER (WHERE status='open' AND kind='CONTACTAR_LEAD' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_contactar
-                FROM public.tasks
-                WHERE assigned_user_id=:uid
+                  COUNT(*) FILTER (WHERE t.status='open')::int AS open_total,
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.due_at IS NOT NULL AND t.due_at < now())::int AS overdue_total,
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_NUEVO_SEGUIMIENTO')::int AS open_nuevos,
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_CONTACTADO_SEGUIMIENTO')::int AS open_contactados,
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_COTIZADO_SEGUIMIENTO')::int AS open_cotizados
+                FROM public.tasks t
+                WHERE {where}
                 """
             ),
-            {"uid": int(uid)},
+            params,
         ).mappings().first()
-        return {"ok": True, **(dict(row) if row else {})}
+        return {"ok": True, "scope": scope, **(dict(row) if row else {})}
     except Exception:
-        return {"ok": True, "open_total": 0, "overdue_total": 0, "open_contactar": 0, "overdue_contactar": 0}
+        return {
+            "ok": True,
+            "scope": scope,
+            "open_total": 0,
+            "overdue_total": 0,
+            "open_nuevos": 0,
+            "open_contactados": 0,
+            "open_cotizados": 0,
+        }
 
 
 @router.get("/debug")

@@ -451,30 +451,30 @@
 	      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
 	        <div>
 	          <h3 style="margin:0">Mis tareas</h3>
-	          <div class="muted" style="margin-top:6px">Seguimiento + calendario. “Hecho” exige evidencia (WSP/Llamada/Email/Nota) o validar que los datos ya fueron completados.</div>
+	          <div class="muted" style="margin-top:6px">Seguimiento de leads (NUEVO / CONTACTADO / COTIZADO). Al registrar seguimiento, desaparece de tareas.</div>
 	        </div>
 	        <button class="btn" id="btnGoTasks" type="button">Abrir Tareas</button>
 	      </div>
 	      <div class="split" style="margin-top:12px;">
 	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="warn" style="padding:12px 14px; cursor:pointer" id="kpiTaskOver">
-	            <div class="label">Seguimiento vencido</div>
-	            <div class="value" id="tasksOverdue">0</div>
-	            <div class="hint">Leads sin acción reciente</div>
+	          <div class="kpi" data-tone="warn" style="padding:12px 14px; cursor:pointer" id="kpiTaskNew">
+	            <div class="label">Nuevos</div>
+	            <div class="value" id="tasksNew">0</div>
+	            <div class="hint">NUEVO sin seguimiento (3/5 días)</div>
 	          </div>
 	        </div>
 	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="cold" style="padding:12px 14px; cursor:pointer" id="kpiTaskOpen">
-	            <div class="label">Seguimiento abierto</div>
-	            <div class="value" id="tasksOpen">0</div>
-	            <div class="hint">Acciones pendientes</div>
+	          <div class="kpi" data-tone="cold" style="padding:12px 14px; cursor:pointer" id="kpiTaskContact">
+	            <div class="label">Contactados</div>
+	            <div class="value" id="tasksContact">0</div>
+	            <div class="hint">Evento ≤7d o sin fecha (seguimiento 3d)</div>
 	          </div>
 	        </div>
 	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="warn" style="padding:12px 14px; cursor:pointer" id="kpiTaskContact">
-	            <div class="label">Sin contactar</div>
-	            <div class="value" id="tasksContactOverdue">0</div>
-	            <div class="hint">Leads nuevos vencidos</div>
+	          <div class="kpi" data-tone="good" style="padding:12px 14px; cursor:pointer" id="kpiTaskQuote">
+	            <div class="label">Cotizados</div>
+	            <div class="value" id="tasksQuote">0</div>
+	            <div class="hint">Seguimiento 3d (prioriza evento ≤2d)</div>
 	          </div>
 	        </div>
 	      </div>
@@ -973,25 +973,46 @@
       const card = $("#tasksCard");
       if (!card || card.style.display === "none") return;
 
+      const isAdmin = String(state.me?.role || state.me?.rol || "").toUpperCase() === "ADMIN";
+
+      // Admin ve global (conteo existente); ejecutivos: sync + conteo propio.
+      if (isAdmin){
+        try{
+          const sum = await apiJson("/tasks/summary?scope=all");
+          $("#tasksNew").textContent = String(sum?.open_nuevos ?? 0);
+          $("#tasksContact").textContent = String(sum?.open_contactados ?? 0);
+          $("#tasksQuote").textContent = String(sum?.open_cotizados ?? 0);
+        }catch(_){
+          $("#tasksNew").textContent = "0";
+          $("#tasksContact").textContent = "0";
+          $("#tasksQuote").textContent = "0";
+        }
+        return;
+      }
+
       try{
         const s = await apiJson("/tasks/sync", { method:"POST" });
         if (s?.disabled){
-          $("#tasksOpen").textContent = "0";
-          $("#tasksOverdue").textContent = "0";
-          $("#tasksContactOverdue").textContent = "0";
+          $("#tasksNew").textContent = "0";
+          $("#tasksContact").textContent = "0";
+          $("#tasksQuote").textContent = "0";
           return;
         }
-        $("#tasksOpen").textContent = String(s?.counts?.open_total ?? 0);
-        $("#tasksOverdue").textContent = String(s?.overdue?.overdue_total ?? 0);
-        $("#tasksContactOverdue").textContent = String(s?.overdue?.overdue_contactar ?? 0);
+        $("#tasksNew").textContent = String(s?.counts?.open_nuevos ?? 0);
+        $("#tasksContact").textContent = String(s?.counts?.open_contactados ?? 0);
+        $("#tasksQuote").textContent = String(s?.counts?.open_cotizados ?? 0);
       }catch(_){
         // Best-effort fallback (no bloquea dashboard).
         try{
           const sum = await apiJson("/tasks/summary");
-          $("#tasksOpen").textContent = String(sum?.open_total ?? 0);
-          $("#tasksOverdue").textContent = String(sum?.overdue_total ?? 0);
-          $("#tasksContactOverdue").textContent = String(sum?.overdue_contactar ?? 0);
-        }catch(__){}
+          $("#tasksNew").textContent = String(sum?.open_nuevos ?? 0);
+          $("#tasksContact").textContent = String(sum?.open_contactados ?? 0);
+          $("#tasksQuote").textContent = String(sum?.open_cotizados ?? 0);
+        }catch(__){
+          $("#tasksNew").textContent = "0";
+          $("#tasksContact").textContent = "0";
+          $("#tasksQuote").textContent = "0";
+        }
       }
     }
 
@@ -1459,18 +1480,18 @@
       window.parent?.postMessage({ type:"openItem", id:"rep_total", url: REPORTES_URL + "&tab=cxc#cxc" }, "*");
     });
     $("#btnGoTasks")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260325-tasks2" }, "*");
+      window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260331-tasks3" }, "*");
     });
 
     function openTasksTab(tab){
       const qs = new URLSearchParams();
       if (tab) qs.set("tab", String(tab));
-      const url = "/web/views/tasks.html?v=20260325-tasks2" + (qs.toString() ? ("&" + qs.toString()) : "");
+      const url = "/web/views/tasks.html?v=20260331-tasks3" + (qs.toString() ? ("&" + qs.toString()) : "");
       window.parent?.postMessage({ type:"openItem", id:"tasks_my", url }, "*");
     }
-    $("#kpiTaskOver")?.addEventListener("click", ()=> openTasksTab("leads"));
-    $("#kpiTaskOpen")?.addEventListener("click", ()=> openTasksTab("leads"));
+    $("#kpiTaskNew")?.addEventListener("click", ()=> openTasksTab("leads"));
     $("#kpiTaskContact")?.addEventListener("click", ()=> openTasksTab("leads"));
+    $("#kpiTaskQuote")?.addEventListener("click", ()=> openTasksTab("leads"));
 
     (async () => {
       await initFilters();

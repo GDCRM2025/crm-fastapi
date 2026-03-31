@@ -76,6 +76,7 @@
     }
     .pill.bad{border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.14);}
     .pill.warn{border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.14);}
+    .pill.good{border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.14);}
 
     .tabs{
       display:flex;
@@ -197,7 +198,7 @@
     <section class="head">
       <div>
         <div class="ttl">Tareas</div>
-        <div class="sub">MVP: contacto de leads nuevos + faltantes críticos en confirmados + revisión de declinados con fecha futura. Todo queda trazado.</div>
+        <div class="sub">Tareas de seguimiento comercial (solo leads vivos del mes actual). “Seguimiento” abre el lead. Para cerrar, registra evidencia o confirma cerrar sin seguimiento.</div>
       </div>
       <div class="row">
         <select id="status" class="sel" title="Estado">
@@ -254,7 +255,7 @@
             <div class="sumR"><span class="pill" id="bLeadNew">—</span></div>
           </summary>
           <table class="tbl">
-            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Vence</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Evento</th><th>Seguimiento vence</th><th>Acciones</th></tr></thead>
             <tbody id="tbLeadsNew"></tbody>
           </table>
         </details>
@@ -265,7 +266,7 @@
             <div class="sumR"><span class="pill" id="bLeadContact">—</span></div>
           </summary>
           <table class="tbl">
-            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Vence</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Evento</th><th>Seguimiento vence</th><th>Acciones</th></tr></thead>
             <tbody id="tbLeadsContact"></tbody>
           </table>
         </details>
@@ -276,7 +277,7 @@
             <div class="sumR"><span class="pill" id="bLeadQuote">—</span></div>
           </summary>
           <table class="tbl">
-            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Vence</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Evento</th><th>Seguimiento vence</th><th>Acciones</th></tr></thead>
             <tbody id="tbLeadsQuote"></tbody>
           </table>
         </details>
@@ -403,6 +404,25 @@
       return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
+    function fmtDateOnly(s){
+      const d = parseDue(s);
+      if (!d) return "—";
+      const pad = (n)=> String(n).padStart(2,"0");
+      return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+    }
+
+    function calendarTone(s){
+      const d = parseDue(s);
+      if (!d) return { cls:"warn", title:"Sin fecha de evento" };
+      const now = new Date();
+      const daysTo = Math.ceil((d.getTime() - now.getTime()) / 86400000);
+      if (!isFinite(daysTo)) return { cls:"warn", title:"Fecha inválida" };
+      if (daysTo < 0) return { cls:"bad", title:`Evento vencido (${Math.abs(daysTo)}d)` };
+      if (daysTo < 3) return { cls:"bad", title:`Vence en ${daysTo} día(s)` };
+      if (daysTo <= 5) return { cls:"good", title:`Vence en ${daysTo} día(s)` };
+      return { cls:"warn", title:`Vence en ${daysTo} día(s)` };
+    }
+
     function isOverdue(s){
       const d = parseDue(s);
       if (!d) return false;
@@ -447,6 +467,7 @@
     function trLead(t){
       const over = (t.status==="open" && isOverdue(t.due_at));
       const kind = String(t.kind||"").toUpperCase();
+      const cal = calendarTone(t.lead_fecha_evento);
       const dueHint = (() => {
         try{
           const d = parseDue(t.due_at);
@@ -466,6 +487,7 @@
           <td><strong>${esc(t.lead_cliente||"—")}</strong><div class="muted">#${esc(t.entity_id||"")}</div></td>
           <td class="muted">${esc(t.lead_marca||"")}</td>
           <td class="muted">${esc(t.lead_estado||"")}</td>
+          <td><span class="pill ${esc(cal.cls)}" title="${esc(cal.title)}">📅 ${esc(fmtDateOnly(t.lead_fecha_evento))}</span></td>
           <td><span class="pill ${over ? "bad" : ""}">${esc(fmtDue(t.due_at))}</span><div class="muted">${esc(dueHint)}</div></td>
           <td>
             <button class="btn primary" data-act="go">Seguimiento</button>
@@ -504,9 +526,9 @@
       qs("#bLeadContact").textContent = String(gContact.length);
       qs("#bLeadQuote").textContent = String(gQuote.length + gOther.length);
 
-      qs("#tbLeadsNew").innerHTML = gNew.map(trLead).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
-      qs("#tbLeadsContact").innerHTML = gContact.map(trLead).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
-      qs("#tbLeadsQuote").innerHTML = gQuote.map(trLead).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
+      qs("#tbLeadsNew").innerHTML = gNew.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
+      qs("#tbLeadsContact").innerHTML = gContact.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
+      qs("#tbLeadsQuote").innerHTML = gQuote.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
       // Si hay otros estados, los anexamos al final de "cotizados" para no perderlos.
       if (gOther.length){
         qs("#tbLeadsQuote").innerHTML += gOther.map(trLead).join("");
@@ -552,6 +574,9 @@
           if (act === "close"){
             const kind = String(tr?.getAttribute("data-kind")||"").toUpperCase();
             const requireFollowup = new Set([
+              "LEAD_NUEVO_SEGUIMIENTO",
+              "LEAD_CONTACTADO_SEGUIMIENTO",
+              "LEAD_COTIZADO_SEGUIMIENTO",
               "CONTACTAR_LEAD",
               "RIESGO_AUTO_DECLINE_NUEVO",
               "RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA",

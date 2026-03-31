@@ -191,16 +191,50 @@
     .cardDate.cal-gray svg{ color: rgba(100,116,139,.92); }
 
     .flag{
-      width:10px; height:14px; border-radius:3px;
-      background: var(--c, #64748b);
-      box-shadow: 0 0 0 1px rgba(255,255,255,.08) inset, 0 10px 25px rgba(0,0,0,.18);
+      position:relative;
+      width:14px;
+      height:14px;
       flex:0 0 auto;
+    }
+    .flag::before{
+      content:"";
+      position:absolute;
+      left:-3px;
+      top:-1px;
+      width:2px;
+      height:16px;
+      border-radius:2px;
+      background: rgba(148,163,184,.65);
+      box-shadow: 0 10px 25px rgba(0,0,0,.14);
+      opacity:.9;
+    }
+    .flag::after{
+      content:"";
+      position:absolute;
+      left:0;
+      top:0;
+      width:14px;
+      height:14px;
+      background: var(--c, #64748b);
+      clip-path: polygon(0 0, 100% 0, 100% 28%, 72% 50%, 100% 72%, 100% 100%, 0 100%);
+      border-radius:2px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,.10) inset, 0 10px 25px rgba(0,0,0,.16);
     }
     .flag.red{ --c: #ef4444; }
     .flag.blue{ --c: #60a5fa; }
     .flag.yellow{ --c: #f59e0b; }
     .flag.green{ --c: #22c55e; }
     .flag.gray{ --c: #64748b; opacity:.75; }
+
+    .flagIcon{
+      width:16px;
+      height:16px;
+      flex:0 0 auto;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .flagIcon svg{ width:16px; height:16px; display:block; }
 
     .dots{ display:inline-flex; align-items:center; gap:6px; }
     .dot{
@@ -507,11 +541,8 @@ const qs  = (s, el=document) => el.querySelector(s);
 const qsa = (s, el=document) => Array.from(el.querySelectorAll(s));
 	const IS_MOBILE = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
 
-  // Nota: por requerimiento operativo, NO mostramos leads en estado CONFIRMADO o DECLINADO en esta vista.
-  // (Siguen existiendo para reportes/auditoría.)
-  function isClosedLead(lead){
-    const name =
-      (estadoNombre(lead?.id_estado || "") || String(lead?.estado_nombre || lead?.estado || "")).toUpperCase();
+  function isClosedEstadoName(estadoUpper){
+    const name = String(estadoUpper || "").toUpperCase();
     return name.includes("CONFIRM") || name.includes("DECLIN");
   }
 
@@ -983,9 +1014,25 @@ function parseAnyDate(v){
   if (!v) return null;
   try{
     const s = String(v).trim();
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    const s10 = s.slice(0,10);
+    let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s10);
     if (m){
       const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(s10);
+    if (m){
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s10);
+    if (m){
+      const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s10);
+    if (m){
+      const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
       return isNaN(d.getTime()) ? null : d;
     }
     const d = new Date(s);
@@ -1005,9 +1052,7 @@ function daysBetween(a, b){
 }
 
 function followupFlagInfo(lead, estadoUpper=""){
-  if (String(estadoUpper||"").includes("DECLIN")){
-    return { cls:"gray", title:"Declinado" };
-  }
+  if (isClosedEstadoName(estadoUpper)) return null;
   const last =
     parseAnyDate(lead?.updated_at) ||
     parseAnyDate(lead?.created_at) ||
@@ -1042,8 +1087,11 @@ function urgenciaDotInfo(lead, estadoNombreUpper){
 
 function calendarioInfo(lead, estadoUpper=""){
   const dEv = parseAnyDate(lead?.fecha_evento);
+  if (isClosedEstadoName(estadoUpper)){
+    // Mantener fecha visible, pero sin colores/alertas.
+    return dEv ? { cls:"", title:"", daysTo: null } : { cls:"", title:"", daysTo: null };
+  }
   if (!dEv) return { cls:"noDate", title:"Sin fecha de evento", daysTo:null };
-  if (String(estadoUpper||"").includes("DECLIN")) return { cls:"gray", title:"Declinado", daysTo:null };
   const now = new Date();
   const daysTo = Math.ceil((dEv.getTime() - now.getTime()) / 86400000);
   if (!isFinite(daysTo)) return { cls:"", title:"", daysTo:null };
@@ -1061,8 +1109,8 @@ function mapBy(arr, key){
 function isInCurrentMonth(lead){
   const raw = lead?.fecha_evento;
   if (!raw) return true; // sin fecha: mantener visible (formularios)
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return true;
+  const d = parseAnyDate(raw);
+  if (!d) return true;
   const now = new Date();
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
 }
@@ -1297,8 +1345,6 @@ function setView(v){
 	function getFilteredLeads(){
 	  const t = (qs("#q").value || "").trim().toLowerCase();
 	  let base = FILTER_MONTH ? LEADS.filter(isInCurrentMonth) : LEADS.slice();
-    // Oculta confirmados/declinados (lead "cerrado")
-    base = base.filter(l => !isClosedLead(l));
 	  if (STALE_IDS && STALE_IDS.size){
 	    base = base.filter(l => STALE_IDS.has(String(l.id_lead)));
 	  }
@@ -1327,11 +1373,8 @@ function setView(v){
 	  qs("#leadCount").textContent = `Mostrando ${list.length} / ${baseTotal}`;
 	  qs("#btnMonth").classList.toggle("active", FILTER_MONTH);
 
-	  // columnas visibles, sin scroll lateral (sin confirmados/declinados)
-    const visibleStates = (CATS.estados||[]).filter(st => {
-      const n = String(st?.nombre || st?.estado || "").toUpperCase();
-      return !(n.includes("CONFIRM") || n.includes("DECLIN"));
-    });
+	  // columnas visibles
+    const visibleStates = (CATS.estados||[]);
 	  qs("#kanbanView").style.setProperty("--cols", String(Math.max(1, visibleStates.length)));
 
 	  if (VIEW==="kanban") renderKanban(list, visibleStates);
@@ -1348,6 +1391,27 @@ function svgIcon(name){
     quote:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10M7 11h10M7 15h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6 3h12a2 2 0 0 1 2 2v14l-4-2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   };
   return icons[name] || "";
+}
+
+function flagIconHTML(flag){
+  if (!flag) return "";
+  const cls = String(flag.cls || "gray").trim().toLowerCase();
+  const fill = ({
+    red: "#ef4444",
+    blue: "#60a5fa",
+    yellow: "#f59e0b",
+    green: "#22c55e",
+    gray: "#64748b",
+  })[cls] || "#64748b";
+  const title = escapeHtml(flag.title || "");
+  return `
+    <span class="flagIcon" title="${title}">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3 1v14" stroke="rgba(148,163,184,.75)" stroke-width="2" stroke-linecap="round"/>
+        <path d="M5 2h10l-2 3 2 3H5z" fill="${escapeHtml(fill)}"/>
+      </svg>
+    </span>
+  `;
 }
 function iconButton(title, iconName, handler){
   const b = document.createElement("button");
@@ -1429,22 +1493,26 @@ function iconButton(title, iconName, handler){
       row1.className = "cardRow";
       const estObj = (mEstado.get(l.id_estado) || {});
       const estUpper = String(estObj.nombre || l.estado_nombre || "").toUpperCase();
-      const flag = followupFlagInfo(l, estUpper);
+      const isClosed = isClosedEstadoName(estUpper);
+      const flag = isClosed ? null : followupFlagInfo(l, estUpper);
+      const flagHtml = flagIconHTML(flag);
       const cal = calendarioInfo(l, estUpper);
-      const calClass = (cal?.cls && cal.cls !== "noDate") ? `cal-${cal.cls}` : "";
+      const calClass = (!isClosed && cal?.cls && cal.cls !== "noDate") ? `cal-${cal.cls}` : "";
+      const dateClass = isClosed ? "" : (l.fecha_evento ? calClass : "noDate");
+      const dateTitle = isClosed ? "" : (cal?.title || "");
       row1.innerHTML = `
         <div class="cardName">
-          <span class="flag ${escapeHtml(flag.cls)}" title="${escapeHtml(flag.title)}"></span>
+          ${flagHtml}
           <span class="nameText">${escapeHtml(l.cliente || "-")}</span>
         </div>
-        <div class="cardDate ${l.fecha_evento ? escapeHtml(calClass) : "noDate"}" title="${escapeHtml(cal?.title || "")}">${
+        <div class="cardDate ${escapeHtml(dateClass)}" title="${escapeHtml(dateTitle)}">${
           l.fecha_evento
             ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>${escapeHtml(fmtDate(l.fecha_evento))}`
             : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><path d="M9 14l6 6M15 14l-6 6"/></svg>Sin fecha`
         }</div>
       `;
 
-      const dotMonto = (estUpper.includes("DECLIN")) ? null : montoDotInfo(l);
+      const dotMonto = isClosed ? null : montoDotInfo(l);
       const row2 = document.createElement("div");
       row2.className = "cardRow2";
       row2.innerHTML = `
@@ -1498,10 +1566,14 @@ function renderTable(list){
     const estado = est ? est.nombre : (l.estado_nombre || ("#" + (l.id_estado ?? "-")));
     const color = est ? (est.color || "") : (l.estado_color || "");
     const estUpper = String(estado || "").toUpperCase();
-    const flag = followupFlagInfo(l, estUpper);
+    const isClosed = isClosedEstadoName(estUpper);
+    const flag = isClosed ? null : followupFlagInfo(l, estUpper);
+    const flagHtml = flagIconHTML(flag);
     const cal = calendarioInfo(l, estUpper);
-    const calClass = (cal?.cls && cal.cls !== "noDate") ? `cal-${cal.cls}` : "";
-    const dotMonto = (estUpper.includes("DECLIN")) ? null : montoDotInfo(l);
+    const calClass = (!isClosed && cal?.cls && cal.cls !== "noDate") ? `cal-${cal.cls}` : "";
+    const dateClass = isClosed ? "" : (l.fecha_evento ? calClass : "noDate");
+    const dateTitle = isClosed ? "" : (cal?.title || "");
+    const dotMonto = isClosed ? null : montoDotInfo(l);
 
     const marca = l.marca_nombre || (mMarca.get(l.id_marca)||{}).nombre || "-";
     const comuna = l.comuna_nombre || (mComuna.get(l.id_comuna)||{}).nombre || "-";
@@ -1509,7 +1581,7 @@ function renderTable(list){
     tr.innerHTML =
       `<td>` +
         `<div style="display:flex;align-items:center;gap:10px;min-width:0">` +
-          `<span class="flag ${escapeHtml(flag.cls)}" title="${escapeHtml(flag.title)}"></span>` +
+          `${flagHtml}` +
           `<div style="min-width:0">` +
             `<strong style="display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(l.cliente || "-")}</strong>` +
             `<div class="sub col-email" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(l.email || "")}</div>` +
@@ -1519,7 +1591,7 @@ function renderTable(list){
       `<td class="col-marca">${escapeHtml(marca)}</td>` +
       `<td class="col-comuna">${escapeHtml(comuna)}</td>` +
       `<td>` +
-        `<span class="cardDate ${l.fecha_evento ? escapeHtml(calClass) : "noDate"}" title="${escapeHtml(cal?.title || "")}">` +
+        `<span class="cardDate ${escapeHtml(dateClass)}" title="${escapeHtml(dateTitle)}">` +
           (l.fecha_evento
             ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>${escapeHtml(fmtDate(l.fecha_evento))}`
             : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><path d="M9 14l6 6M15 14l-6 6"/></svg>Sin fecha`) +
