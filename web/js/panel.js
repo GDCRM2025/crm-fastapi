@@ -1815,6 +1815,7 @@ const MENU = [
     items: [
       { id: "rrhh_nomina", label: "N\xF3mina", url: "/web/views/rrhh_nomina.html" },
       { id: "rrhh_staff", label: "Colaboradores", url: "/web/views/rrhh_colaboradores.html" },
+      { id: "rrhh_sgjo", label: "SGJO (Marcación)", url: "/web/views/rrhh_sgjo.html" },
       { id: "rrhh_solicitudes", label: "Solicitudes", url: "/web/views/rrhh_solicitudes.html" }
     ]
   },
@@ -1971,6 +1972,7 @@ const PERMISSIONS = {
     "plan_cuentas",
     "rrhh_nomina",
     "rrhh_staff",
+    "rrhh_sgjo",
     "rrhh_solicitudes",
     "set_users",
     "set_marcas",
@@ -2049,9 +2051,10 @@ const PERMISSIONS = {
     "gps",
     "vruta",
 	    "set_marcas",
-	    "set_prod",
-	    "set_com",
+		    "set_prod",
+		    "set_com",
 		    "rrhh_staff",
+        "rrhh_sgjo",
 			    "rrhh_solicitudes",
 			    "chk_hoy"
 		  ]),

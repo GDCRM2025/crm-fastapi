@@ -185,7 +185,8 @@ def _has_contact_sql_db(db: Session) -> str:
         "("
         f"{txt} ILIKE '%[WSP]%' OR {txt} ILIKE '%WHATSAPP%' OR {txt} ILIKE '% VIA WSP%' OR {txt} ILIKE '%WSP %' OR "
         f"{txt} ILIKE '%[CALL]%' OR {txt} ILIKE '%LLAMAD%' OR {txt} ILIKE '% VIA TEL%' OR {txt} ILIKE '%TEL%:%' OR "
-        f"{txt} ILIKE '%[EMAIL]%' OR {txt} ILIKE '%CORREO%' OR {txt} ILIKE '%MAIL%'"
+        f"{txt} ILIKE '%[EMAIL]%' OR {txt} ILIKE '%CORREO%' OR {txt} ILIKE '%MAIL%' OR "
+        f"{txt} ILIKE '%[NOTE]%' OR {txt} ILIKE '%NOTA%'"
         ")"
     )
 
@@ -850,6 +851,487 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# 2026-03: Nueva lógica de tareas (solo NUEVO/CONTACTADO/COTIZADO)
+# Nota: redefinimos `upsert_mvp_tasks_for_user` para no depender del bloque legacy.
+# ---------------------------------------------------------------------------
+def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role: str, marcas: list[int] | None = None) -> Dict[str, Any]:
+    """Genera tareas de seguimiento (idempotente) y devuelve un resumen.
+
+    Reglas (2026-03):
+    - SOLO 3 estados generan tareas: NUEVO / CONTACTADO / COTIZADO.
+    - CONFIRMADO/DECLINADO nunca generan tareas.
+    - Si `fecha_evento` ya pasó (en esos estados), se auto-declina el lead y NO se generan tareas.
+
+    NUEVO:
+      - Con fecha_evento: si no hay seguimiento en 3 días desde creación.
+      - Sin fecha_evento: si no hay seguimiento en 5 días desde creación.
+    CONTACTADO:
+      - Con fecha_evento: si vence <= 7 días y último seguimiento > 3 días.
+      - Sin fecha_evento: si último seguimiento > 3 días (seguimiento inmediato).
+    COTIZADO:
+      - Si último seguimiento > 3 días (con o sin fecha_evento).
+      - Si vence <= 2 días, prioridad alta.
+      - Si fecha_evento ya pasó, se auto-declina.
+    """
+    ensure_tasks_table(db)
+    if not _tasks_table_exists(db):
+        return {"ok": True, "counts": {"open_total": 0}, "overdue": {"overdue_total": 0}, "disabled": True}
+
+    is_admin = _is_admin_role(role)
+    r_up = (role or "").strip().upper()
+
+    # IDs de estados (compat)
+    nuevo_id = _estado_id_like(db, "%NUEV%", 1)
+    contactado_id = _estado_id_like(db, "%CONTACT%", 2)
+    cotizado_id = _estado_id_like(db, "%COTIZ%", 3)
+    confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
+    declinado_id = _estado_id_like(db, "%DECLIN%", 5)
+
+    user_keys = _user_match_keys(db, user_id=int(user_id), username=(username or ""))
+
+    # Marcas (para scope de ejecutivos)
+    marcas = list(marcas or [])
+    marcas_ids: list[int] = []
+    for m in marcas:
+        try:
+            marcas_ids.append(int(m))
+        except Exception:
+            pass
+
+    marcas_ids_text: list[str] = []
+    seen_mid = set()
+    for m in (marcas or []):
+        s = str(m or "").strip()
+        if not s:
+            continue
+        if s.isdigit() and s not in seen_mid:
+            seen_mid.add(s)
+            marcas_ids_text.append(s)
+    for x in marcas_ids:
+        s = str(x).strip()
+        if s and s not in seen_mid:
+            seen_mid.add(s)
+            marcas_ids_text.append(s)
+
+    marcas_upper: list[str] = []
+    try:
+        if marcas_ids and _table_exists(db, "marcas"):
+            col = "nombre" if _col_exists(db, "marcas", "nombre") else ("marca" if _col_exists(db, "marcas", "marca") else "nombre")
+            rows = db.execute(
+                text(f"SELECT {col} FROM public.marcas WHERE id_marca = ANY(CAST(:mids AS int[]))"),
+                {"mids": marcas_ids},
+            ).fetchall()
+            marcas_upper = [str(r[0] or "").strip().upper() for r in rows if r and str(r[0] or "").strip()]
+    except Exception:
+        marcas_upper = []
+
+    # Role puede venir vacío (schemas legacy); inferimos por marcas.
+    is_exec = ("EJECUTIVO" in r_up) or (r_up == "2") or ((not r_up) and bool(marcas_ids_text or marcas_upper))
+    if not is_exec:
+        # No generar masivo para otros roles; limpiar este set.
+        try:
+            db.execute(
+                text(
+                    """
+                    UPDATE public.tasks
+                    SET status='done', completed_at=now(), completed_by='AUTO', updated_at=now(),
+                        meta = COALESCE(meta,'{}'::jsonb) || jsonb_build_object('auto_closed', true, 'auto_reason', 'tasks_disabled', 'auto_at', now())
+                    WHERE assigned_user_id=:uid AND status='open'
+                      AND kind = ANY(CAST(:k AS text[]))
+                    """
+                ),
+                {"uid": int(user_id), "k": ["LEAD_NUEVO_SEGUIMIENTO", "LEAD_CONTACTADO_SEGUIMIENTO", "LEAD_COTIZADO_SEGUIMIENTO"]},
+            )
+        except Exception:
+            pass
+        return {"ok": True, "counts": {"open_total": 0}, "overdue": {"overdue_total": 0}, "disabled": True}
+
+    # Scope por usuario/marcas
+    has_id_usuario = _col_exists(db, "leads", "id_usuario")
+    if has_id_usuario:
+        assigned_sql = _assigned_to_user_sql()
+        unassigned_sql = _unassigned_sql()
+    else:
+        assigned_sql = "FALSE"
+        unassigned_sql = "TRUE"
+    brand_sql = _brand_filter_sql(db)
+    scope_sql = assigned_sql
+    if marcas_ids_text or marcas_upper:
+        scope_sql = f"({assigned_sql} OR ({unassigned_sql} AND {brand_sql}))"
+    elif is_admin and not has_id_usuario:
+        scope_sql = "TRUE"
+
+    # Timestamps (compat)
+    # `fecha_ingreso` es el campo más confiable en el CRM (DATE NOT NULL). Si created_at/updated_at vienen NULL,
+    # NO debemos caer a now() porque mata la generación de tareas (queda todo como "recién creado").
+    created_cols = [c for c in ("created_at", "fecha_ingreso", "fecha_creacion", "creado_at", "created") if _col_exists(db, "leads", c)]
+    created_terms: list[str] = []
+    for c in created_cols:
+        # date + interval funciona, pero lo forzamos a timestamp para comparaciones consistentes con now().
+        if c in ("fecha_ingreso", "fecha_creacion"):
+            created_terms.append(f"l.{c}::timestamp")
+        else:
+            created_terms.append(f"l.{c}")
+    created_expr = "COALESCE(" + ", ".join(created_terms + ["now()"]) + ")"
+    updated_cols = [c for c in ("updated_at", "fecha_modificacion", "modificado_at", "updated") if _col_exists(db, "leads", c)]
+    last_expr = "COALESCE(" + ", ".join([f"l.{c}" for c in updated_cols] + [created_expr, "now()"]) + ")"
+
+    has_contact_sql = _has_contact_sql_db(db)
+
+    # 1) Auto-declinar vencidos (fecha_evento < hoy) en estados que generan tareas
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "fecha_evento") and _col_exists(db, "leads", "id_estado"):
+            sets: list[str] = ["id_estado = :decl"]
+            if _col_exists(db, "leads", "declinado_at"):
+                sets.append("declinado_at = COALESCE(declinado_at, now())")
+            if _col_exists(db, "leads", "declinado_motivo"):
+                sets.append("declinado_motivo = COALESCE(NULLIF(btrim(declinado_motivo),''), 'LEAD PERDIDO')")
+            note_cols: list[str] = []
+            if _col_exists(db, "leads", "notas"):
+                note_cols.append("notas")
+            if _col_exists(db, "leads", "seguimiento"):
+                note_cols.append("seguimiento")
+            if note_cols:
+                reason_sql = f"""
+                  (CASE
+                    WHEN {last_expr} >= (now() - INTERVAL '2 days') THEN 'LEAD PERDIDO · cliente no contestó'
+                    ELSE 'LEAD PERDIDO · no seguimiento/no respuesta'
+                  END)
+                """
+                for col in note_cols:
+                    sets.append(
+                        f"""{col} = COALESCE({col},'') || CASE WHEN COALESCE({col},'')='' THEN '' ELSE E'\\n\\n' END
+                              || '[AUTO] ' || to_char(now(),'YYYY-MM-DD HH24:MI') || E' · Sistema\\n' || {reason_sql}"""
+                    )
+            db.execute(
+                text(
+                    f"""
+                    UPDATE public.leads l
+                    SET {", ".join(sets)}
+                    WHERE l.id_estado = ANY(CAST(:st AS int[]))
+                      AND l.fecha_evento IS NOT NULL
+                      AND l.fecha_evento < CURRENT_DATE
+                      AND (:is_admin OR {scope_sql})
+                    """
+                ),
+                {
+                    "decl": int(declinado_id),
+                    "st": [int(nuevo_id), int(contactado_id), int(cotizado_id)],
+                    "is_admin": bool(is_admin),
+                    "user_keys": user_keys,
+                    "marcas_ids_text": marcas_ids_text or ["0"],
+                    "marcas_upper": marcas_upper or ["__NONE__"],
+                },
+            )
+    except Exception:
+        pass
+
+    # 1.b) Limpieza: el set legacy de tareas ya no aplica (evita conteos desfasados).
+    allowed_kinds = ["LEAD_NUEVO_SEGUIMIENTO", "LEAD_CONTACTADO_SEGUIMIENTO", "LEAD_COTIZADO_SEGUIMIENTO"]
+    try:
+        db.execute(
+            text(
+                """
+                UPDATE public.tasks
+                SET status='done', completed_at=now(), completed_by='AUTO', updated_at=now(),
+                    meta = COALESCE(meta,'{}'::jsonb) || jsonb_build_object('auto_closed', true, 'auto_reason', 'legacy_task_disabled', 'auto_at', now())
+                WHERE assigned_user_id=:uid
+                  AND status='open'
+                  AND kind <> ALL(CAST(:allowed AS text[]))
+                """
+            ),
+            {"uid": int(user_id), "allowed": allowed_kinds},
+        )
+    except Exception:
+        pass
+
+    # 2) Insert NUEVO (sin seguimiento) según umbral 3/5 días
+    try:
+        db.execute(
+            text(
+                f"""
+                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                SELECT
+                  'LEAD_NUEVO_SEGUIMIENTO',
+                  'Lead nuevo: seguimiento',
+                  CASE WHEN l.fecha_evento IS NULL
+                    THEN 'NUEVO sin fecha. Seguimiento (5 días).'
+                    ELSE 'NUEVO con fecha. Seguimiento (3 días).'
+                  END,
+                  'lead',
+                  l.id_lead,
+                  :uid,
+                  :uname,
+                  CASE WHEN l.fecha_evento IS NULL
+                    THEN ({created_expr} + INTERVAL '5 days')
+                    ELSE ({created_expr} + INTERVAL '3 days')
+                  END,
+                  12,
+                  jsonb_build_object('rule','nuevo','created_at',{created_expr},'fecha_evento',l.fecha_evento)
+                FROM public.leads l
+                WHERE l.id_estado = :nuevo
+                  AND l.id_estado NOT IN (:decl, :conf)
+                  AND (:is_admin OR {scope_sql})
+                  AND ({has_contact_sql}) IS NOT TRUE
+                  AND (
+                    (l.fecha_evento IS NOT NULL AND {created_expr} <= (now() - INTERVAL '3 days'))
+                    OR
+                    (l.fecha_evento IS NULL AND {created_expr} <= (now() - INTERVAL '5 days'))
+                  )
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {
+                "uid": int(user_id),
+                "uname": (username or "").strip()[:200],
+                "nuevo": int(nuevo_id),
+                "decl": int(declinado_id),
+                "conf": int(confirmado_id),
+                "is_admin": bool(is_admin),
+                "user_keys": user_keys,
+                "marcas_ids_text": marcas_ids_text or ["0"],
+                "marcas_upper": marcas_upper or ["__NONE__"],
+            },
+        )
+    except Exception:
+        pass
+
+    # 3) Insert CONTACTADO (>3 días sin seguimiento). Con fecha: solo si vence <= 7 días.
+    try:
+        db.execute(
+            text(
+                f"""
+                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                SELECT
+                  'LEAD_CONTACTADO_SEGUIMIENTO',
+                  'Lead contactado: seguimiento',
+                  CASE
+                    WHEN l.fecha_evento IS NULL THEN 'CONTACTADO sin fecha. Seguimiento inmediato.'
+                    ELSE 'Vence en ' || GREATEST(0, (l.fecha_evento - CURRENT_DATE))::int || ' día(s).'
+                  END,
+                  'lead',
+                  l.id_lead,
+                  :uid,
+                  :uname,
+                  ({last_expr} + INTERVAL '3 days'),
+                  10,
+                  jsonb_build_object('rule','contactado','last_at',{last_expr},'fecha_evento',l.fecha_evento,'days_to_event',CASE WHEN l.fecha_evento IS NULL THEN NULL ELSE (l.fecha_evento - CURRENT_DATE)::int END)
+                FROM public.leads l
+                WHERE l.id_estado = :contactado
+                  AND l.id_estado NOT IN (:decl, :conf)
+                  AND (:is_admin OR {scope_sql})
+                  AND {last_expr} <= (now() - INTERVAL '3 days')
+                  AND (
+                    (l.fecha_evento IS NULL)
+                    OR
+                    (l.fecha_evento IS NOT NULL AND l.fecha_evento >= CURRENT_DATE AND l.fecha_evento <= (CURRENT_DATE + INTERVAL '7 days'))
+                  )
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {
+                "uid": int(user_id),
+                "uname": (username or "").strip()[:200],
+                "contactado": int(contactado_id),
+                "decl": int(declinado_id),
+                "conf": int(confirmado_id),
+                "is_admin": bool(is_admin),
+                "user_keys": user_keys,
+                "marcas_ids_text": marcas_ids_text or ["0"],
+                "marcas_upper": marcas_upper or ["__NONE__"],
+            },
+        )
+    except Exception:
+        pass
+
+    # 4) Insert COTIZADO (>3 días sin seguimiento). Prioridad alta si vence <= 2 días.
+    try:
+        db.execute(
+            text(
+                f"""
+                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                SELECT
+                  'LEAD_COTIZADO_SEGUIMIENTO',
+                  'Lead cotizado: seguimiento',
+                  CASE
+                    WHEN l.fecha_evento IS NULL THEN 'COTIZADO sin fecha. Seguimiento pendiente.'
+                    ELSE 'Vence en ' || GREATEST(0, (l.fecha_evento - CURRENT_DATE))::int || ' día(s).'
+                  END,
+                  'lead',
+                  l.id_lead,
+                  :uid,
+                  :uname,
+                  ({last_expr} + INTERVAL '3 days'),
+                  CASE WHEN l.fecha_evento IS NOT NULL AND (l.fecha_evento - CURRENT_DATE) <= 2 THEN 6 ELSE 12 END,
+                  jsonb_build_object('rule','cotizado','last_at',{last_expr},'fecha_evento',l.fecha_evento,'days_to_event',CASE WHEN l.fecha_evento IS NULL THEN NULL ELSE (l.fecha_evento - CURRENT_DATE)::int END)
+                FROM public.leads l
+                WHERE l.id_estado = :cotizado
+                  AND l.id_estado NOT IN (:decl, :conf)
+                  AND (:is_admin OR {scope_sql})
+                  AND {last_expr} <= (now() - INTERVAL '3 days')
+                  AND (l.fecha_evento IS NULL OR l.fecha_evento >= CURRENT_DATE)
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {
+                "uid": int(user_id),
+                "uname": (username or "").strip()[:200],
+                "cotizado": int(cotizado_id),
+                "decl": int(declinado_id),
+                "conf": int(confirmado_id),
+                "is_admin": bool(is_admin),
+                "user_keys": user_keys,
+                "marcas_ids_text": marcas_ids_text or ["0"],
+                "marcas_upper": marcas_upper or ["__NONE__"],
+            },
+        )
+    except Exception:
+        pass
+
+    # 5) Auto-close: tareas que ya no aplican (estado cambió / seguimiento reciente / fecha ya no calza)
+    def _auto_close(kind: str, cond_sql: str) -> None:
+        try:
+            db.execute(
+                text(
+                    f"""
+                    UPDATE public.tasks t
+                    SET status='done', completed_at=now(), completed_by='AUTO', updated_at=now(),
+                        meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object('auto_closed', true, 'auto_reason', 'no_longer_needed', 'auto_at', now())
+                    WHERE t.assigned_user_id = :uid
+                      AND t.status='open'
+                      AND t.entity_type='lead'
+                      AND t.kind=:k
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM public.leads l
+                        WHERE l.id_lead = t.entity_id
+                          AND {cond_sql}
+                      )
+                    """
+                ),
+                {
+                    "uid": int(user_id),
+                    "k": kind,
+                    "nuevo": int(nuevo_id),
+                    "contactado": int(contactado_id),
+                    "cotizado": int(cotizado_id),
+                    "decl": int(declinado_id),
+                    "conf": int(confirmado_id),
+                    "is_admin": bool(is_admin),
+                    "user_keys": user_keys,
+                    "marcas_ids_text": marcas_ids_text or ["0"],
+                    "marcas_upper": marcas_upper or ["__NONE__"],
+                },
+            )
+        except Exception:
+            pass
+
+    _auto_close(
+        "LEAD_NUEVO_SEGUIMIENTO",
+        f"""
+          l.id_estado = :nuevo
+          AND l.id_estado NOT IN (:decl, :conf)
+          AND (:is_admin OR {scope_sql})
+          AND ({has_contact_sql}) IS NOT TRUE
+          AND (
+            (l.fecha_evento IS NOT NULL AND {created_expr} <= (now() - INTERVAL '3 days'))
+            OR
+            (l.fecha_evento IS NULL AND {created_expr} <= (now() - INTERVAL '5 days'))
+          )
+        """,
+    )
+    _auto_close(
+        "LEAD_CONTACTADO_SEGUIMIENTO",
+        f"""
+          l.id_estado = :contactado
+          AND l.id_estado NOT IN (:decl, :conf)
+          AND (:is_admin OR {scope_sql})
+          AND {last_expr} <= (now() - INTERVAL '3 days')
+          AND (
+            (l.fecha_evento IS NULL)
+            OR
+            (l.fecha_evento IS NOT NULL AND l.fecha_evento >= CURRENT_DATE AND l.fecha_evento <= (CURRENT_DATE + INTERVAL '7 days'))
+          )
+        """,
+    )
+    _auto_close(
+        "LEAD_COTIZADO_SEGUIMIENTO",
+        f"""
+          l.id_estado = :cotizado
+          AND l.id_estado NOT IN (:decl, :conf)
+          AND (:is_admin OR {scope_sql})
+          AND {last_expr} <= (now() - INTERVAL '3 days')
+          AND (l.fecha_evento IS NULL OR l.fecha_evento >= CURRENT_DATE)
+        """,
+    )
+
+    # 6) Auto-close: confirmados/declinados (por si queda algo abierto)
+    try:
+        db.execute(
+            text(
+                """
+                UPDATE public.tasks t
+                SET status='done', completed_at=now(), completed_by='AUTO', updated_at=now(),
+                    meta = COALESCE(t.meta,'{}'::jsonb) || jsonb_build_object('auto_closed', true, 'auto_reason', 'lead_confirmed_or_declined', 'auto_at', now())
+                WHERE t.assigned_user_id=:uid AND t.status='open' AND t.entity_type='lead'
+                  AND EXISTS (
+                    SELECT 1 FROM public.leads l WHERE l.id_lead=t.entity_id AND l.id_estado = ANY(CAST(:closed AS int[]))
+                  )
+                """
+            ),
+            {"uid": int(user_id), "closed": [int(confirmado_id), int(declinado_id)]},
+        )
+    except Exception:
+        pass
+
+    # 7) Summary (coherente con list_tasks: excluye leads cerrados)
+    summary: Dict[str, Any] = {"ok": True, "counts": {}, "overdue": {}}
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT
+                  COUNT(*) FILTER (WHERE t.status='open')::int AS open_total,
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.due_at IS NOT NULL AND t.due_at < now())::int AS overdue_total,
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_NUEVO_SEGUIMIENTO')::int AS open_nuevos,
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_CONTACTADO_SEGUIMIENTO')::int AS open_contactados,
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_COTIZADO_SEGUIMIENTO')::int AS open_cotizados
+                FROM public.tasks t
+                WHERE t.assigned_user_id = :uid
+                  AND NOT (
+                    t.entity_type='lead'
+                    AND EXISTS (
+                      SELECT 1 FROM public.leads l2
+                      WHERE l2.id_lead = t.entity_id AND l2.id_estado = ANY(CAST(:closed AS int[]))
+                    )
+                  )
+                """
+            ),
+            {"uid": int(user_id), "closed": [int(confirmado_id), int(declinado_id)]},
+        ).mappings().first()
+        if row:
+            summary["counts"] = {
+                "open_total": int(row.get("open_total") or 0),
+                "open_nuevos": int(row.get("open_nuevos") or 0),
+                "open_contactados": int(row.get("open_contactados") or 0),
+                "open_cotizados": int(row.get("open_cotizados") or 0),
+                # compat (UI vieja)
+                "open_contactar": int(row.get("open_nuevos") or 0),
+                "open_calendario": 0,
+                "open_correos": 0,
+            }
+            summary["overdue"] = {
+                "overdue_total": int(row.get("overdue_total") or 0),
+                "overdue_contactar": 0,
+                "overdue_calendario": 0,
+                "overdue_correos": 0,
+            }
+    except Exception:
+        pass
     return summary
 
 

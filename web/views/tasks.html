@@ -229,16 +229,13 @@
     <div class="row">
       <div class="pill" id="pOpen">Abiertas: —</div>
       <div class="pill bad" id="pOver">Vencidas: —</div>
-      <div class="pill warn" id="pContact">Contactar: —</div>
-      <div class="pill" id="pCal">Calendario: —</div>
-      <!-- Correos removido de tareas (se gestiona fuera) -->
+      <div class="pill warn" id="pNew">Nuevos: —</div>
+      <div class="pill warn" id="pContacted">Contactados: —</div>
+      <div class="pill warn" id="pQuoted">Cotizados: —</div>
     </div>
 
     <div class="tabs" style="margin-top:2px">
       <button class="tab active" id="tabLeads" type="button">Leads <span class="b" id="bLeads">—</span></button>
-      <button class="tab" id="tabCal" type="button">Calendario <span class="b" id="bCal">—</span></button>
-      <!-- Correos removido de tareas (se gestiona fuera) -->
-      <button class="tab" id="tabAll" type="button">Todo</button>
     </div>
 
     <section class="card section show" id="secLeads">
@@ -286,30 +283,7 @@
       </div>
     </section>
 
-    <section class="card section" id="secCal">
-      <div class="secHead">
-        <div>
-          <div class="secTitle"><span class="mark cal"></span>Calendario (Semana)</div>
-          <div class="muted">Solo confirmados de la semana con faltantes (tel/dirección/horario). “Editar” abre el editor y re-sincroniza Google Calendar.</div>
-        </div>
-      </div>
-      <div style="max-height:70vh; overflow:auto">
-        <table class="tbl">
-          <thead>
-            <tr>
-              <th>Prioridad</th>
-              <th>Faltante</th>
-              <th>Lead</th>
-              <th>Marca</th>
-              <th>Fecha</th>
-              <th>Vence</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="tbCal"></tbody>
-        </table>
-      </div>
-    </section>
+    <!-- Calendario removido: tareas solo para ejecutivos (leads). -->
 
     <!-- Correos removido de tareas (se gestiona fuera) -->
   </div>
@@ -459,10 +433,10 @@
       const j = await jpost(`/tasks/sync?x=1${qpTarget()}`, {});
       qs("#pOpen").textContent = `Abiertas: ${j?.counts?.open_total ?? "—"}`;
       qs("#pOver").textContent = `Vencidas: ${j?.overdue?.overdue_total ?? "—"}`;
-      qs("#pContact").textContent = `Contactar: ${j?.counts?.open_contactar ?? "—"}`;
-      qs("#pCal").textContent = `Calendario: ${j?.counts?.open_calendario ?? "—"}`;
+      qs("#pNew").textContent = `Nuevos: ${j?.counts?.open_nuevos ?? j?.counts?.open_contactar ?? "—"}`;
+      qs("#pContacted").textContent = `Contactados: ${j?.counts?.open_contactados ?? "—"}`;
+      qs("#pQuoted").textContent = `Cotizados: ${j?.counts?.open_cotizados ?? "—"}`;
       qs("#bLeads").textContent = String(j?.counts?.open_total ?? "—");
-      qs("#bCal").textContent = String(j?.counts?.open_calendario ?? "—");
     }
 
     function prLabel(priority){
@@ -502,57 +476,24 @@
       `;
     }
 
-    function trCal(t){
-      const over = (t.status==="open" && isOverdue(t.due_at));
-      const kind = String(t.kind||"").toUpperCase();
-      const falt = kind === "COMPLETAR_DIRECCION" ? "Dirección" : kind === "COMPLETAR_HORARIO" ? "Horario" : "Teléfono";
-      return `
-        <tr data-task="${esc(t.id_task)}" data-lead="${esc(t.entity_id||"")}" data-kind="${esc(kind)}" data-etype="${esc(t.entity_type||"")}">
-          <td><span class="pill ${over ? "bad" : ""}">${esc(prLabel(t.priority))}</span></td>
-          <td><strong>${esc(falt)}</strong><div class="muted">${esc(t.description||"")}</div></td>
-          <td><strong>${esc(t.lead_cliente||"—")}</strong><div class="muted">#${esc(t.entity_id||"")}</div></td>
-          <td class="muted">${esc(t.lead_marca||"")}</td>
-          <td class="muted">${esc(String(t.lead_fecha_evento||"—"))}</td>
-          <td><span class="pill ${over ? "bad" : ""}">${esc(fmtDue(t.due_at))}</span></td>
-          <td>
-            <button class="btn" data-act="edit">Editar</button>
-            <button class="btn primary" data-act="done">Listo</button>
-            <button class="btn danger" data-act="skip">Omitir</button>
-          </td>
-        </tr>
-      `;
-    }
-
     async function load(){
       const st = String(qs("#status")?.value || "open");
       const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0${qpTarget()}`);
       const items = Array.isArray(j.items) ? j.items : [];
-      const cal = [];
-      const leads = [];
-      for (const t of items){
-        const kind = String(t.kind||"").toUpperCase();
-        if (kind.startsWith("COMPLETAR_") || kind === "EVENTO_PROXIMO_INCOMPLETO") cal.push(t);
-        else leads.push(t);
-      }
+      const leads = items;
 
       const norm = (s)=> String(s||"").toUpperCase();
       const isNew = (t)=> {
         const k = norm(t.kind);
-        const e = norm(t.lead_estado);
-        if (/NUEV/.test(e)) return true;
-        return k === "CONTACTAR_LEAD" || k === "RIESGO_AUTO_DECLINE_NUEVO";
+        return k === "LEAD_NUEVO_SEGUIMIENTO";
       };
       const isContact = (t)=> {
         const k = norm(t.kind);
-        const e = norm(t.lead_estado);
-        if (/CONTACT/.test(e)) return true;
-        return k.includes("CONTACTADO") || k === "SEGUIMIENTO_PENDIENTE";
+        return k === "LEAD_CONTACTADO_SEGUIMIENTO";
       };
       const isQuote = (t)=> {
         const k = norm(t.kind);
-        const e = norm(t.lead_estado);
-        if (/COTIZ/.test(e)) return true;
-        return k.includes("COTIZ") || k === "RIESGO_COTIZADO_EVENTO_CERCA";
+        return k === "LEAD_COTIZADO_SEGUIMIENTO";
       };
       const gNew = leads.filter(isNew);
       const gContact = leads.filter(t => !isNew(t) && isContact(t));
@@ -570,34 +511,12 @@
       if (gOther.length){
         qs("#tbLeadsQuote").innerHTML += gOther.map(trLead).join("");
       }
-
-      qs("#tbCal").innerHTML = cal.map(trCal).join("") || `<tr><td colspan="7" class="muted">Sin tareas.</td></tr>`;
     }
 
     async function init(){
-      const TAB_KEY = "gd_tasks_tab";
-      function setTab(t){
-        const tab = String(t||"leads");
-        try{ localStorage.setItem(TAB_KEY, tab); }catch(_){}
-        qs("#tabLeads").classList.toggle("active", tab==="leads");
-        qs("#tabCal").classList.toggle("active", tab==="cal");
-        qs("#tabAll").classList.toggle("active", tab==="all");
-        qs("#secLeads").classList.toggle("show", tab==="leads" || tab==="all");
-        qs("#secCal").classList.toggle("show", tab==="cal" || tab==="all");
-      }
-
-      qs("#tabLeads").onclick = ()=> setTab("leads");
-      qs("#tabCal").onclick = ()=> setTab("cal");
-      qs("#tabAll").onclick = ()=> setTab("all");
-      try{
-        const params = new URLSearchParams(location.search || "");
-        const tabQ = String(params.get("tab") || "").trim().toLowerCase();
-        const allowed = new Set(["leads","cal","all"]);
-        const initial = allowed.has(tabQ) ? tabQ : (localStorage.getItem(TAB_KEY) || "leads");
-        setTab(initial);
-      }catch(_){
-        try{ setTab(localStorage.getItem(TAB_KEY) || "leads"); }catch(__){ setTab("leads"); }
-      }
+      // Solo sección Leads (Calendario/Correos se gestionan fuera).
+      try{ qs("#tabLeads")?.classList?.add?.("active"); }catch(_){}
+      try{ qs("#secLeads")?.classList?.add?.("show"); }catch(_){}
 
       // Delegación global (evita re-binds tras cada render).
       document.addEventListener("dblclick", (ev)=>{
@@ -625,11 +544,6 @@
         if (act === "go"){
           const id = tr?.getAttribute("data-lead");
           if (id) openLead(id);
-          return;
-        }
-        if (act === "edit"){
-          const id = tr?.getAttribute("data-lead");
-          if (id) openLeadEditEvent(id);
           return;
         }
         if (!idTask) return;
