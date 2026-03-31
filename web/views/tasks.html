@@ -430,11 +430,11 @@
     }
 
     function openLead(id){
-      const url = "/web/views/leads.html?stale_ids=" + encodeURIComponent(String(id));
+      const url = "/web/views/leads.html?v=20260331-leads3&stale_ids=" + encodeURIComponent(String(id));
       try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
     }
     function openLeadEditEvent(id){
-      const url = "/web/views/leads.html?open_lead=" + encodeURIComponent(String(id)) + "&edit_confirmed=1";
+      const url = "/web/views/leads.html?v=20260331-leads3&open_lead=" + encodeURIComponent(String(id)) + "&edit_confirmed=1";
       try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
     }
     function openCorreoTools(){
