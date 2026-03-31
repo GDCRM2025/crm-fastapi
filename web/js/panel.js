@@ -1687,7 +1687,7 @@ const MENU = [
     ico: "\u{1F4CC}",
     title: "Leads",
     items: [
-      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260326-leads2" },
+      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260331-leads3" },
       { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html?v=20260326-fil1" }
     ]
   },
@@ -1729,7 +1729,7 @@ const MENU = [
     ico: "\u{1F9FE}",
     title: "Tareas",
     items: [
-      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260325-tasks2" },
+      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260331-tasks3" },
       { id: "events_calendar", label: "Eventos (Calendario)", url: "/web/views/events_calendar.html?v=20260330-1" }
     ]
   },

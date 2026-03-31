@@ -261,6 +261,12 @@ def admin_users(db: Session = Depends(get_db), user: dict = Depends(get_current_
         raise HTTPException(403, "No autorizado")
     if not _table_exists(db, "usuarios"):
         return {"ok": True, "items": []}
+    # NOTA: en producción hay cuentas legacy sin `rol/role` o sin `usuarios_marcas`.
+    # Para que Admin pueda "ver como" sin quedar bloqueado, incluimos:
+    # - usuarios con rol EJECUTIVO (o '2')
+    # - usuarios que tienen marcas asignadas (usuarios_marcas/usuario_marcas)
+    # - usuarios que ya tienen tareas abiertas
+    # - usuarios que aparecen como id_usuario en leads (si es numérico)
     try:
         cols_display = []
         for c in ("nombre", "name", "username", "email"):
@@ -278,7 +284,6 @@ def admin_users(db: Session = Depends(get_db), user: dict = Depends(get_current_
                 f"""
                 SELECT id_usuario, {display_expr}, {role_expr}
                 FROM public.usuarios
-                WHERE ({role_col}='2' OR upper(COALESCE({role_col},'')) LIKE '%EJECUTIV%')
                 ORDER BY display
                 """
             )
@@ -304,10 +309,56 @@ def admin_users(db: Session = Depends(get_db), user: dict = Depends(get_current_
     except Exception:
         m = {}
 
+    ids_with_tasks = set(m.keys())
+    ids_with_marcas: set[int] = set()
+    try:
+        join_table = None
+        if _table_exists(db, "usuarios_marcas"):
+            join_table = "usuarios_marcas"
+        elif _table_exists(db, "usuario_marcas"):
+            join_table = "usuario_marcas"
+        if join_table:
+            rows2 = db.execute(text(f"SELECT DISTINCT id_usuario FROM public.{join_table}")).fetchall()
+            for r in rows2:
+                try:
+                    ids_with_marcas.add(int(r[0]))
+                except Exception:
+                    pass
+    except Exception:
+        ids_with_marcas = set()
+
+    ids_with_leads: set[int] = set()
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "id_usuario"):
+            rows3 = db.execute(
+                text(
+                    """
+                    SELECT DISTINCT NULLIF(btrim(COALESCE(id_usuario::text,'')),'') AS u
+                    FROM public.leads
+                    WHERE NULLIF(btrim(COALESCE(id_usuario::text,'')),'') IS NOT NULL
+                    LIMIT 5000
+                    """
+                )
+            ).fetchall()
+            for r in rows3:
+                u = str(r[0] or "").strip()
+                if u.isdigit():
+                    try:
+                        ids_with_leads.add(int(u))
+                    except Exception:
+                        pass
+    except Exception:
+        ids_with_leads = set()
+
     items = []
     for r in rows:
         uid = int(r.get("id_usuario"))
-        items.append({"id": uid, "name": str(r.get("display") or uid), "role": str(r.get("role") or ""), "open": int(m.get(uid, 0))})
+        role_txt = str(r.get("role") or "")
+        role_up = role_txt.strip().upper()
+        is_exec = (role_up == "2") or ("EJECUTIV" in role_up)
+        if not (is_exec or (uid in ids_with_marcas) or (uid in ids_with_tasks) or (uid in ids_with_leads)):
+            continue
+        items.append({"id": uid, "name": str(r.get("display") or uid), "role": role_txt, "open": int(m.get(uid, 0))})
     return {"ok": True, "items": items}
 
 

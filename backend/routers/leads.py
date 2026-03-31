@@ -1489,7 +1489,9 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                 has_tasks = bool(conn.execute(text("SELECT to_regclass('public.tasks') IS NOT NULL")).scalar())
                 if not has_tasks:
                     raise Exception("tasks table missing")
-                # Best-effort: agrega evidencia en meta (si existe).
+                # Cierra todas las tareas abiertas del lead para este usuario.
+                # Esto cumple la regla: si hay seguimiento desde el lead, debe desaparecer de "Tareas".
+                # Best-effort: agrega evidencia en meta (evita errores de tipo en Postgres casteando params).
                 try:
                     conn.execute(
                         text(
@@ -1498,19 +1500,12 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                             SET status='done',
                                 completed_at=now(),
                                 completed_by=:by,
-                                meta = COALESCE(meta,'{}'::jsonb) || jsonb_build_object('followup_action', :k, 'followup_block', :b),
+                                meta = COALESCE(meta,'{}'::jsonb) || jsonb_build_object(
+                                  'followup_action', to_jsonb(CAST(:k AS text)),
+                                  'followup_block', to_jsonb(CAST(:b AS text))
+                                ),
                                 updated_at=now()
                             WHERE status='open'
-                              AND kind IN (
-                                'CONTACTAR_LEAD',
-                                'RIESGO_AUTO_DECLINE_NUEVO',
-                                'RIESGO_AUTO_DECLINE_CONTACTADO',
-                                'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA',
-                                'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA',
-                                'LEAD_SIN_MOVIMIENTO',
-                                'FALTAN_DATOS_COTIZADO',
-                                'FALTAN_DATOS_CONFIRMADO'
-                              )
                               AND entity_type='lead'
                               AND entity_id=:lid
                               AND assigned_user_id=:uid
@@ -1525,16 +1520,6 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                             UPDATE public.tasks
                             SET status='done', completed_at=now(), completed_by=:by, updated_at=now()
                             WHERE status='open'
-                              AND kind IN (
-                                'CONTACTAR_LEAD',
-                                'RIESGO_AUTO_DECLINE_NUEVO',
-                                'RIESGO_AUTO_DECLINE_CONTACTADO',
-                                'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA',
-                                'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA',
-                                'LEAD_SIN_MOVIMIENTO',
-                                'FALTAN_DATOS_COTIZADO',
-                                'FALTAN_DATOS_CONFIRMADO'
-                              )
                               AND entity_type='lead'
                               AND entity_id=:lid
                               AND assigned_user_id=:uid

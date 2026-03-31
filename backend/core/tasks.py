@@ -931,6 +931,26 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
 
     # Role puede venir vacío (schemas legacy); inferimos por marcas.
     is_exec = ("EJECUTIVO" in r_up) or (r_up == "2") or ((not r_up) and bool(marcas_ids_text or marcas_upper))
+    # Último fallback: si el usuario tiene leads asignados, lo tratamos como ejecutivo para no dejar tareas en 0
+    # cuando falta `rol`/`role` o `usuarios_marcas`.
+    if not is_exec:
+        try:
+            if _table_exists(db, "leads") and _col_exists(db, "leads", "id_usuario"):
+                any_assigned = db.execute(
+                    text(
+                        f"""
+                        SELECT 1
+                        FROM public.leads l
+                        WHERE {_assigned_to_user_sql()}
+                        LIMIT 1
+                        """
+                    ),
+                    {"user_keys": user_keys},
+                ).scalar()
+                if any_assigned:
+                    is_exec = True
+        except Exception:
+            pass
     if not is_exec:
         # No generar masivo para otros roles; limpiar este set.
         try:
@@ -976,7 +996,10 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
             created_terms.append(f"l.{c}::timestamp")
         else:
             created_terms.append(f"l.{c}")
-    created_expr = "COALESCE(" + ", ".join(created_terms + ["now()"]) + ")"
+    # COALESCE requiere >=2 argumentos en Postgres; si no hay columnas disponibles, usamos now() directo.
+    created_expr = "now()"
+    if created_terms:
+        created_expr = "COALESCE(" + ", ".join(created_terms + ["now()"]) + ")"
     updated_cols = [c for c in ("updated_at", "fecha_modificacion", "modificado_at", "updated") if _col_exists(db, "leads", c)]
     last_expr = "COALESCE(" + ", ".join([f"l.{c}" for c in updated_cols] + [created_expr, "now()"]) + ")"
 
@@ -1030,6 +1053,36 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
+    # 1.a) Si por alguna razón el lead vencido no cambió de estado, igual no debe quedar como tarea abierta.
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "fecha_evento"):
+            db.execute(
+                text(
+                    """
+                    UPDATE public.tasks t
+                    SET status='done', completed_at=now(), completed_by='AUTO', updated_at=now(),
+                        meta = COALESCE(t.meta,'{}'::jsonb) || jsonb_build_object(
+                          'auto_closed', true,
+                          'auto_reason', 'event_expired',
+                          'auto_at', now()
+                        )
+                    WHERE t.assigned_user_id=:uid
+                      AND t.status='open'
+                      AND t.entity_type='lead'
+                      AND EXISTS (
+                        SELECT 1
+                        FROM public.leads l
+                        WHERE l.id_lead = t.entity_id
+                          AND l.fecha_evento IS NOT NULL
+                          AND l.fecha_evento < CURRENT_DATE
+                      )
+                    """
+                ),
+                {"uid": int(user_id)},
+            )
+    except Exception:
+        pass
+
     # 1.b) Limpieza: el set legacy de tareas ya no aplica (evita conteos desfasados).
     allowed_kinds = ["LEAD_NUEVO_SEGUIMIENTO", "LEAD_CONTACTADO_SEGUIMIENTO", "LEAD_COTIZADO_SEGUIMIENTO"]
     try:
@@ -1077,6 +1130,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND l.id_estado NOT IN (:decl, :conf)
                   AND (:is_admin OR {scope_sql})
                   AND ({has_contact_sql}) IS NOT TRUE
+                  AND (l.fecha_evento IS NULL OR l.fecha_evento >= CURRENT_DATE)
                   AND (
                     (l.fecha_evento IS NOT NULL AND {created_expr} <= (now() - INTERVAL '3 days'))
                     OR
@@ -1237,6 +1291,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
           AND l.id_estado NOT IN (:decl, :conf)
           AND (:is_admin OR {scope_sql})
           AND ({has_contact_sql}) IS NOT TRUE
+          AND (l.fecha_evento IS NULL OR l.fecha_evento >= CURRENT_DATE)
           AND (
             (l.fecha_evento IS NOT NULL AND {created_expr} <= (now() - INTERVAL '3 days'))
             OR

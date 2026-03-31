@@ -667,7 +667,7 @@
 
     async function loadUsers() {
       let j = null;
-      try{ j = await api("/chat/users?limit=200"); }catch(_){ j = { items: [] }; }
+      try{ j = await api("/chat/users?limit=200&include_staff=1"); }catch(_){ j = { items: [] }; }
       USERS = j?.items || [];
     }
 

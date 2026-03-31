@@ -148,6 +148,27 @@ def user_ids_by_role_contains(*, role_contains: list[str], include_all_active: b
         if not sel_rol and not include_all_active:
             return []
 
+        rol_txt = f"btrim(COALESCE({sel_rol}::text,''))" if sel_rol else "''"
+        rol_norm = f"""
+          (CASE
+            WHEN {rol_txt} ~ '^[0-9]+$' THEN
+              (CASE {rol_txt}
+                WHEN '1' THEN 'ADMIN'
+                WHEN '2' THEN 'EJECUTIVO'
+                WHEN '3' THEN 'OPERACIONES'
+                WHEN '4' THEN 'BODEGUERO'
+                WHEN '5' THEN 'COMPRAS'
+                WHEN '6' THEN 'CONDUCTOR'
+                WHEN '7' THEN 'OPERADOR'
+                WHEN '8' THEN 'MICE'
+                WHEN '9' THEN 'OPERADOR PATIO'
+                WHEN '11' THEN 'FINANZAS'
+                ELSE {rol_txt}
+              END)
+            ELSE upper({rol_txt})
+          END)
+        """.strip()
+
         where = ["1=1"]
         params: dict[str, Any] = {}
         if "is_active" in cols:
@@ -157,7 +178,7 @@ def user_ids_by_role_contains(*, role_contains: list[str], include_all_active: b
             for i, r in enumerate(role_contains or []):
                 k = f"r{i}"
                 params[k] = f"%{str(r).upper()}%"
-                parts.append(f"COALESCE(upper({sel_rol}),'') LIKE :{k}")
+                parts.append(f"COALESCE({rol_norm},'') LIKE :{k}")
             if not parts:
                 return []
             where.append("(" + " OR ".join(parts) + ")")
