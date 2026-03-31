@@ -1580,27 +1580,63 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
         if not estado_row:
             raise HTTPException(400, "Estado inválido")
 
-        # No permitir "Cotizado" si no hay monto o cotización
+        # No permitir "Cotizado" si no hay monto + N° cotización.
+        # Si existe una cotización en tabla, intentamos auto-llenar estos campos en el lead para evitar fricción.
         est_name = (estado_row.get("nombre") or "").strip().upper()
         if id_estado == 3 or "COTIZAD" in est_name:
             lead_row = conn.execute(
-                text("SELECT COALESCE(monto_cotizado,0) AS monto FROM public.leads WHERE id_lead=:id"),
+                text("SELECT COALESCE(monto_cotizado,0) AS monto, COALESCE(num_cotizacion,'') AS num FROM public.leads WHERE id_lead=:id"),
                 {"id": id_lead},
             ).mappings().first()
             monto = float(lead_row.get("monto") or 0) if lead_row else 0
-            cot_count = conn.execute(
-                text("SELECT COUNT(*) FROM public.cotizaciones WHERE id_lead=:id"),
-                {"id": id_lead},
-            ).scalar_one()
-            mice_count = 0
-            try:
-                mice_count = int(
-                    conn.execute(text("SELECT COUNT(*) FROM public.lead_mice_items WHERE id_lead=:id"), {"id": id_lead}).scalar() or 0
-                )
-            except Exception:
-                mice_count = 0
-            if monto <= 0 and int(cot_count) == 0 and mice_count == 0:
-                raise HTTPException(400, "No se puede cotizar con monto 0. Debe existir una cotización.")
+            num = (lead_row.get("num") or "").strip() if lead_row else ""
+
+            # Auto-fill desde cotizaciones (si existe)
+            if (monto <= 0 or not num) and _table_exists("cotizaciones"):
+                try:
+                    q = conn.execute(
+                        text(
+                            """
+                            SELECT numero, COALESCE(subtotal_productos,0) AS subtotal
+                            FROM public.cotizaciones
+                            WHERE id_lead=:id
+                            ORDER BY id_cotizacion DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {"id": id_lead},
+                    ).mappings().first()
+                    upd = {}
+                    if q:
+                        if (monto <= 0) and float(q.get("subtotal") or 0) > 0:
+                            monto = float(q.get("subtotal") or 0)
+                            upd["monto_cotizado"] = monto
+                        if (not num) and q.get("numero") is not None:
+                            num = str(q.get("numero")).strip()
+                            if num:
+                                upd["num_cotizacion"] = num
+                    if upd:
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE public.leads
+                                SET monto_cotizado=COALESCE(:monto_cotizado, monto_cotizado),
+                                    num_cotizacion=COALESCE(NULLIF(:num_cotizacion,''), num_cotizacion),
+                                    updated_at=now()
+                                WHERE id_lead=:id
+                                """
+                            ),
+                            {
+                                "id": id_lead,
+                                "monto_cotizado": upd.get("monto_cotizado"),
+                                "num_cotizacion": upd.get("num_cotizacion", ""),
+                            },
+                        )
+                except Exception:
+                    pass
+
+            if monto <= 0 or not num:
+                raise HTTPException(400, "Para pasar a COTIZADO debes tener monto y N° de cotización.")
 
         # No permitir "Confirmado" si no hay monto y número de cotización
         try:
@@ -1679,6 +1715,29 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
               SET id_estado=:e, declinado_motivo=NULL, declinado_at=NULL, updated_at=now()
               WHERE id_lead=:id
             """), {"e": id_estado, "id": id_lead})
+
+        # Si el ejecutivo mueve a CONTACTADO sin registrar nada, dejamos evidencia automática (WSP).
+        # Esto evita que "se mueva estado" sin trazabilidad, y además ayuda a la lógica de tareas.
+        try:
+            if old_estado is not None and int(old_estado) != int(id_estado) and "CONTACT" in est_name:
+                notas_now = str(lead.get("notas") or "").strip()
+                has_note_tbl = False
+                try:
+                    has_note_tbl = bool(
+                        conn.execute(text("SELECT 1 FROM public.lead_notas WHERE id_lead=:id LIMIT 1"), {"id": int(id_lead)}).scalar()
+                    )
+                except Exception:
+                    has_note_tbl = False
+                if not notas_now and not has_note_tbl:
+                    who = (user.get("name") or user.get("username") or user.get("id") or "Usuario")
+                    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    _append_notas(
+                        conn,
+                        id_lead,
+                        f"[WSP] {ts} · {who}\nContacto registrado automáticamente al mover a CONTACTADO.",
+                    )
+        except Exception:
+            pass
 
         # Nota automática de cambio de estado (siempre).
         try:
