@@ -156,6 +156,11 @@
     .cardRow{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
     .cardName{
       font-weight:950; font-size:13px; line-height:1.15;
+      display:flex; align-items:center; gap:8px;
+      flex:1 1 auto; min-width:0;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .cardName .nameText{
       flex:1 1 auto; min-width:0;
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     }
@@ -169,6 +174,28 @@
       white-space:nowrap;
     }
     :root.light .cardDate{ background: rgba(0,0,0,.04); }
+
+    .flag{
+      width:10px; height:14px; border-radius:3px;
+      background: var(--c, #64748b);
+      box-shadow: 0 0 0 1px rgba(255,255,255,.08) inset, 0 10px 25px rgba(0,0,0,.18);
+      flex:0 0 auto;
+    }
+    .flag.red{ --c: #ef4444; }
+    .flag.blue{ --c: #60a5fa; }
+    .flag.yellow{ --c: #f59e0b; }
+    .flag.green{ --c: #22c55e; }
+
+    .dots{ display:inline-flex; align-items:center; gap:6px; }
+    .dot{
+      width:9px; height:9px; border-radius:999px;
+      background: var(--c, transparent);
+      border: 1px solid rgba(148,163,184,.28);
+      box-shadow: 0 0 0 2px rgba(0,0,0,.10);
+    }
+    .dot.red{ --c: rgba(239,68,68,.95); border-color: rgba(239,68,68,.45); }
+    .dot.yellow{ --c: rgba(245,158,11,.95); border-color: rgba(245,158,11,.45); }
+    .dot.green{ --c: rgba(34,197,94,.95); border-color: rgba(34,197,94,.45); }
 
     .cardRow2{
       margin-top:4px;
@@ -184,6 +211,7 @@
       flex:0 0 auto;
       font-weight:950; color:var(--text); opacity:.92;
       white-space:nowrap;
+      display:inline-flex; align-items:center; gap:8px;
     }
 
     .cardActions{ margin-top:6px; display:flex; gap:6px; justify-content:center; }
@@ -926,6 +954,60 @@ function money(n){
   try{ return v.toLocaleString("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}); }
   catch{ return "$" + Math.round(v).toLocaleString("es-CL"); }
 }
+
+function parseAnyDate(v){
+  if (!v) return null;
+  try{
+    const s = String(v).trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m){
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }catch(_){
+    return null;
+  }
+}
+
+function daysBetween(a, b){
+  try{
+    const ms = (a.getTime() - b.getTime());
+    return Math.floor(ms / 86400000);
+  }catch(_){
+    return 0;
+  }
+}
+
+function followupFlagInfo(lead){
+  const last = parseAnyDate(lead?.updated_at) || parseAnyDate(lead?.created_at) || new Date();
+  const now = new Date();
+  const d = Math.max(0, daysBetween(now, last));
+  if (d >= 4) return { cls:"red", title:`Seguimiento: ${d} días` };
+  if (d === 2) return { cls:"blue", title:"Seguimiento: 2 días" };
+  if (d === 1) return { cls:"yellow", title:"Seguimiento: 1 día" };
+  return { cls:"green", title:"Seguimiento: al día" };
+}
+
+function montoDotInfo(lead){
+  const v = Number(lead?.monto_cotizado || 0);
+  if (!isFinite(v) || v < 100000) return null;
+  if (v <= 399999) return { cls:"red", title:"Monto: 100k–399k" };
+  if (v <= 699999) return { cls:"yellow", title:"Monto: 400k–699k" };
+  return { cls:"green", title:"Monto: ≥700k" };
+}
+
+function urgenciaDotInfo(lead, estadoNombreUpper){
+  if (!estadoNombreUpper || !String(estadoNombreUpper).includes("CONTACT")) return null;
+  const dEv = parseAnyDate(lead?.fecha_evento);
+  if (!dEv) return null;
+  const now = new Date();
+  const daysTo = Math.ceil((dEv.getTime() - now.getTime()) / 86400000);
+  if (daysTo < 3) return { cls:"red", title:`Vence en ${daysTo} día(s)` };
+  if (daysTo <= 5) return { cls:"green", title:`Vence en ${daysTo} día(s)` };
+  return { cls:"yellow", title:`Vence en ${daysTo} día(s)` };
+}
 function mapBy(arr, key){
   const m = new Map();
   for (const x of (arr||[])) m.set(x[key], x);
@@ -1221,6 +1303,7 @@ function iconButton(title, iconName, handler){
 function renderKanban(list){
   const mMarca = mapBy(CATS.marcas,"id_marca");
   const mComuna = mapBy(CATS.comunas,"id_comuna");
+  const mEstado = mapBy(CATS.estados,"id_estado");
 
   const by = new Map();
   for (const st of CATS.estados) by.set(st.id_estado, []);
@@ -1280,19 +1363,33 @@ function renderKanban(list){
       const marca = l.marca_nombre || (mMarca.get(l.id_marca)||{}).nombre || "-";
       const comuna = l.comuna_nombre || (mComuna.get(l.id_comuna)||{}).nombre || "-";
 
-      // FICHA CHICA: A + B + iconos
+      // FICHA CHICA: A + B + iconos + badges (seguimiento/monto/urgencia)
       const row1 = document.createElement("div");
       row1.className = "cardRow";
+      const estObj = (mEstado.get(l.id_estado) || {});
+      const estUpper = String(estObj.nombre || l.estado_nombre || "").toUpperCase();
+      const flag = followupFlagInfo(l);
       row1.innerHTML = `
-        <div class="cardName">${escapeHtml(l.cliente || "-")}</div>
+        <div class="cardName">
+          <span class="flag ${escapeHtml(flag.cls)}" title="${escapeHtml(flag.title)}"></span>
+          <span class="nameText">${escapeHtml(l.cliente || "-")}</span>
+        </div>
         <div class="cardDate">${escapeHtml(fmtDate(l.fecha_evento))}</div>
       `;
 
+      const dotMonto = montoDotInfo(l);
+      const dotUrg = urgenciaDotInfo(l, estUpper);
       const row2 = document.createElement("div");
       row2.className = "cardRow2";
       row2.innerHTML = `
         <div class="cardComuna">${escapeHtml(comuna)} · ${escapeHtml(marca)}</div>
-        <div class="cardMonto">${escapeHtml(money(l.monto_cotizado))}</div>
+        <div class="cardMonto">
+          <span class="dots">
+            ${dotUrg ? `<span class="dot ${escapeHtml(dotUrg.cls)}" title="${escapeHtml(dotUrg.title)}"></span>` : ``}
+            ${dotMonto ? `<span class="dot ${escapeHtml(dotMonto.cls)}" title="${escapeHtml(dotMonto.title)}"></span>` : ``}
+          </span>
+          ${escapeHtml(money(l.monto_cotizado))}
+        </div>
       `;
 
       const actions = document.createElement("div");

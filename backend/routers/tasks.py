@@ -351,12 +351,32 @@ def mark_done(
                 text(
                     """
                     UPDATE public.tasks
-                    SET meta = meta || jsonb_build_object('followup_action', :a, 'followup_block', :b),
+                    SET status='done',
+                        completed_at=now(),
+                        completed_by=:by,
+                        meta = COALESCE(meta,'{}'::jsonb) || jsonb_build_object(
+                          'followup_action', to_jsonb(CAST(:a AS text)),
+                          'followup_block', to_jsonb(CAST(:b AS text))
+                        ),
                         updated_at=now()
                     WHERE id_task=:tid
                     """
                 ),
-                {"tid": int(id_task), "a": tag, "b": block[:2000]},
+                {"tid": int(id_task), "a": tag, "b": block[:2000], "by": who},
+            )
+            # Cierra cualquier otra tarea abierta del mismo lead para este usuario (evita que vuelva a aparecer).
+            cn.execute(
+                text(
+                    """
+                    UPDATE public.tasks
+                    SET status='done', completed_at=now(), completed_by=:by, updated_at=now()
+                    WHERE status='open'
+                      AND entity_type='lead'
+                      AND entity_id=:lid
+                      AND assigned_user_id=:uid
+                    """
+                ),
+                {"by": who, "lid": int(lead_id), "uid": int(uid)},
             )
             # Log activity (best-effort)
             try:

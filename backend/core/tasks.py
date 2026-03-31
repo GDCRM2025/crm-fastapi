@@ -276,10 +276,9 @@ def _brand_filter_sql(db: Session) -> str:
 def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role: str, marcas: list[int] | None = None) -> Dict[str, Any]:
     """Genera tareas mínimas (idempotente) y devuelve un resumen.
 
-    MVP (Ventas/Admin):
+    MVP (Ejecutivos):
     - CONTACTAR: leads NUEVO asignados al usuario sin contacto registrado.
-    - COMPLETAR_DATOS: confirmados sin teléfono/dirección/horario (si aplica).
-    - REVISAR_DECLINADO_FUTURO: (Admin) declinados con fecha_evento futura.
+    - RIESGOS / SEGUIMIENTO: leads no-confirmados/no-declinados sin movimiento o cerca de reglas de auto-decline.
     """
     ensure_tasks_table(db)
     if not _tasks_table_exists(db):
@@ -290,8 +289,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     is_exec = ("EJECUTIVO" in r_up) or (r_up == "2")
     # "Mis tareas" es para ejecutar gestión (ejecutivos). Otros roles no deben autogenerar tareas masivas.
     enable_lead_tasks = bool(is_exec)
-    # Calendario (faltantes en confirmados): solo Ejecutivos + Admin.
-    enable_calendar_tasks = bool(is_exec or is_admin)
+    # Nota negocio (2026-03): confirmados/declinados NO deben generar tareas.
+    enable_calendar_tasks = False
 
     nuevo_id = _estado_id_like(db, "%NUEV%", 1)
     confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
@@ -440,7 +439,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 WHERE l.id_estado = :nuevo
                   AND {scope_sql}
                   AND ({has_contact_sql}) IS FALSE
-                  AND :enable_calendar_tasks
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -448,7 +447,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uid": int(user_id),
                 "uname": (username or "").strip()[:200],
                 "nuevo": int(nuevo_id),
-                "enable_calendar_tasks": bool(enable_calendar_tasks),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -485,7 +484,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND {scope_sql}
                   AND ({has_contact_sql}) IS FALSE
                   AND COALESCE(l.created_at, now()) <= (now() - INTERVAL '5 days')
-                  AND :enable_calendar_tasks
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -493,7 +492,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "uid": int(user_id),
                 "uname": (username or "").strip()[:200],
                 "nuevo": int(nuevo_id),
-                "enable_calendar_tasks": bool(enable_calendar_tasks),
+                "enable_lead_tasks": bool(enable_lead_tasks),
                 "user_keys": user_keys,
                 "marcas_ids": marcas_ids or [0],
                 "marcas_ids_text": marcas_ids_text or ["0"],
@@ -525,7 +524,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 WHERE l.id_estado NOT IN (:decl, :conf)
                   AND (:is_admin OR {scope_sql})
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '3 days')
-                  AND :enable_calendar_tasks
+                  AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -671,167 +670,9 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
-    # COMPLETAR_DATOS (calendario): faltantes (tel/dir/hr)
-    # Requisito negocio: esto aplica SOLO para eventos confirmados del calendario (revisión semanal).
-    # Nota negocio: telefono/email pueden faltar en un lead, PERO para eventos de la semana (calendario) sí es alerta.
-    # Nota: pre_start/pre_end existen en algunos deploys; los aseguramos de forma best-effort.
-    try:
-        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_start TIMESTAMPTZ"))
-        db.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS pre_end TIMESTAMPTZ"))
-    except Exception:
-        pass
+    # (2026-03) Se elimina autogeneración "calendario" para confirmados: se gestiona fuera de tareas.
 
-    try:
-        week_start_sql = "date_trunc('week', now())::date"
-        week_end_sql = "(date_trunc('week', now())::date + 6)"
-
-        # teléfono (solo calendario semana)
-        db.execute(
-            text(
-                f"""
-                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
-                SELECT
-                  'COMPLETAR_TELEFONO' AS kind,
-                  'Completar teléfono' AS title,
-                  'Evento confirmado sin teléfono.' AS description,
-                  'lead',
-                  l.id_lead,
-                  :uid,
-                  :uname,
-                  now() + INTERVAL '2 hours',
-                  30,
-                  jsonb_build_object('rule','mvp_tel')
-                FROM public.leads l
-                WHERE l.id_estado = :conf
-                  AND l.fecha_evento IS NOT NULL
-                  AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
-                  AND (l.telefono IS NULL OR btrim(l.telefono)='')
-                  AND (:is_admin OR {scope_sql})
-                  AND :enable_lead_tasks
-                ON CONFLICT DO NOTHING
-                """
-            ),
-            {
-                "uid": int(user_id),
-                "uname": (username or "").strip()[:200],
-                "conf": int(confirmado_id),
-                "is_admin": bool(is_admin),
-                "enable_lead_tasks": bool(enable_lead_tasks),
-                "user_keys": user_keys,
-                "marcas_ids": marcas_ids or [0],
-                "marcas_ids_text": marcas_ids_text or ["0"],
-                "marcas_upper": marcas_upper or ["__NONE__"],
-            },
-        )
-
-        # dirección
-        db.execute(
-            text(
-                f"""
-                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
-                SELECT
-                  'COMPLETAR_DIRECCION' AS kind,
-                  'Completar dirección' AS title,
-                  'Evento confirmado sin dirección.' AS description,
-                  'lead',
-                  l.id_lead,
-                  :uid,
-                  :uname,
-                  now() + INTERVAL '2 hours',
-                  30,
-                  jsonb_build_object('rule','mvp_dir')
-                FROM public.leads l
-                WHERE l.id_estado = :conf
-                  AND l.fecha_evento IS NOT NULL
-                  AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
-                  AND (COALESCE(NULLIF(btrim(l.direccion),''), NULL) IS NULL)
-                  AND (:is_admin OR {scope_sql})
-                  AND :enable_lead_tasks
-                ON CONFLICT DO NOTHING
-                """
-            ),
-            {
-                "uid": int(user_id),
-                "uname": (username or "").strip()[:200],
-                "conf": int(confirmado_id),
-                "is_admin": bool(is_admin),
-                "enable_lead_tasks": bool(enable_lead_tasks),
-                "user_keys": user_keys,
-                "marcas_ids": marcas_ids or [0],
-                "marcas_ids_text": marcas_ids_text or ["0"],
-                "marcas_upper": marcas_upper or ["__NONE__"],
-            },
-        )
-        # horario (pre_start/pre_end)
-        db.execute(
-            text(
-                f"""
-                INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
-                SELECT
-                  'COMPLETAR_HORARIO' AS kind,
-                  'Completar horario' AS title,
-                  'Evento confirmado sin horario.' AS description,
-                  'lead',
-                  l.id_lead,
-                  :uid,
-                  :uname,
-                  now() + INTERVAL '2 hours',
-                  30,
-                  jsonb_build_object('rule','mvp_hr')
-                FROM public.leads l
-                WHERE l.id_estado = :conf
-                  AND l.fecha_evento IS NOT NULL
-                  AND l.fecha_evento BETWEEN {week_start_sql} AND {week_end_sql}
-                  AND ({hr_missing_sql})
-                  AND (:is_admin OR {scope_sql})
-                  AND :enable_lead_tasks
-                ON CONFLICT DO NOTHING
-                """
-            ),
-            {
-                "uid": int(user_id),
-                "uname": (username or "").strip()[:200],
-                "conf": int(confirmado_id),
-                "is_admin": bool(is_admin),
-                "enable_lead_tasks": bool(enable_lead_tasks),
-                "user_keys": user_keys,
-                "marcas_ids": marcas_ids or [0],
-                "marcas_ids_text": marcas_ids_text or ["0"],
-                "marcas_upper": marcas_upper or ["__NONE__"],
-            },
-        )
-    except Exception:
-        pass
-
-    # REVISAR_DECLINADO_FUTURO (Admin)
-    if is_admin:
-        try:
-            db.execute(
-                text(
-                    """
-                    INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
-                    SELECT
-                      'REVISAR_DECLINADO_FUTURO',
-                      'Revisar declinado con fecha futura',
-                      'Lead declinado pero fecha_evento aún no pasa: revisar seguimiento y motivo.',
-                      'lead',
-                      l.id_lead,
-                      :uid,
-                      :uname,
-                      now() + INTERVAL '12 hours',
-                      5,
-                      jsonb_build_object('rule','mvp_declinado_futuro','fecha_evento',l.fecha_evento)
-                    FROM public.leads l
-                    WHERE l.id_estado = :decl
-                      AND l.fecha_evento IS NOT NULL
-                      AND l.fecha_evento >= CURRENT_DATE
-                    ON CONFLICT DO NOTHING
-                    """
-                ),
-                {"uid": int(user_id), "uname": (username or "").strip()[:200], "decl": int(declinado_id)},
-            )
-        except Exception:
-            pass
+    # (2026-03) declinados no generan tareas (ni siquiera Admin).
 
     # RESPONDER_CORREO (DESHABILITADO)
     # El usuario pidió sacar Correos de tareas (se gestiona fuera del tablero de tareas).
@@ -998,6 +839,60 @@ def list_tasks(
     if status != "all":
         where += " AND t.status = :st"
         params["st"] = status
+
+    # No mostrar (ni mantener abiertas) tareas que pertenecen a leads ya CONFIRMADOS/DECLINADOS.
+    # Reduce ruido y evita "tareas vencidas" eternas.
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "id_estado"):
+            confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
+            declinado_id = _estado_id_like(db, "%DECLIN%", 5)
+            closed_estados = [int(confirmado_id), int(declinado_id)]
+            params["closed_estados"] = closed_estados
+
+            # Auto-close best-effort (para que conteos y UI queden limpios).
+            try:
+                db.execute(
+                    text(
+                        """
+                        UPDATE public.tasks t
+                        SET status='done',
+                            completed_at=now(),
+                            completed_by='AUTO',
+                            updated_at=now(),
+                            meta = COALESCE(t.meta,'{}'::jsonb) || jsonb_build_object(
+                              'auto_closed', true,
+                              'auto_reason', 'lead_confirmed_or_declined',
+                              'auto_at', now()
+                            )
+                        WHERE t.assigned_user_id = :uid
+                          AND t.status = 'open'
+                          AND t.entity_type = 'lead'
+                          AND EXISTS (
+                            SELECT 1
+                            FROM public.leads l
+                            WHERE l.id_lead = t.entity_id
+                              AND l.id_estado = ANY(CAST(:closed_estados AS int[]))
+                          )
+                        """
+                    ),
+                    {"uid": int(assigned_user_id), "closed_estados": closed_estados},
+                )
+            except Exception:
+                pass
+
+            where += """
+              AND NOT (
+                t.entity_type = 'lead'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.leads l2
+                  WHERE l2.id_lead = t.entity_id
+                    AND l2.id_estado = ANY(CAST(:closed_estados AS int[]))
+                )
+              )
+            """
+    except Exception:
+        pass
 
     # Nunca 500: si hay diferencias de esquema (columnas/tablas), degradar a lista simple.
     try:
