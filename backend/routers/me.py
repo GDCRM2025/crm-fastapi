@@ -50,6 +50,20 @@ def _enrich_user(user: dict) -> dict:
     try:
         with engine.begin() as cn:
             _ensure_push_ok_col(cn)
+            # Marcas asignadas (para roles acotados por marcas). No dependemos del token.
+            try:
+                has_um = bool(cn.execute(text("SELECT to_regclass('public.usuarios_marcas') IS NOT NULL")).scalar())
+            except Exception:
+                has_um = False
+            if has_um:
+                try:
+                    mids = cn.execute(
+                        text("SELECT id_marca FROM public.usuarios_marcas WHERE id_usuario=:id ORDER BY id_marca"),
+                        {"id": uid_int},
+                    ).fetchall()
+                    out["marcas"] = [int(r[0]) for r in mids if r and str(r[0]).isdigit()]
+                except Exception:
+                    out["marcas"] = out.get("marcas") or []
             row = cn.execute(
                 text(
                     """

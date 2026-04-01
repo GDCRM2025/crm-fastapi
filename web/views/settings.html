@@ -958,6 +958,16 @@
     return false;
   }
 
+  function isBrandScopedRole(role){
+    const r = (role || "").toUpperCase().trim();
+    // SUPERADMIN ve todo (no requiere marcas).
+    if (r.includes("SUPERADMIN") || r.includes("SUPER_ADMIN") || r.includes("SUPER ADMIN")) return false;
+    // ADMIN debe seleccionarse por marcas.
+    if (r === "ADMIN" || r === "1" || (r.includes("ADMIN") && !r.includes("SUPER"))) return true;
+    // Ejecutivos/ventas.
+    return isExecRole(r);
+  }
+
   function getSelectedBrands(){
     return Array.from(document.querySelectorAll("#brandsBox input[type='checkbox']:checked"))
       .map(el => Number(el.value))
@@ -1022,7 +1032,7 @@
 
     if (mode === "edit" && rowId){
       try{
-        const r = await api(`/settings/usuarios/${rowId}/brands`);
+        const r = await api(`/users/${rowId}/brands`);
         setSelectedBrands(r.marcas || []);
       }catch(e){
         // No rompemos el formulario, pero avisamos (si falla, el ejecutivo puede quedar sin leads).
@@ -1068,7 +1078,7 @@
         userInput.value = `${roleCode(roleVal)}_${base}`;
       }
 
-      const showBrands = isExecRole(roleVal);
+      const showBrands = isBrandScopedRole(roleVal);
       if (brandsBox){
         brandsBox.style.display = showBrands ? "" : "none";
       }
@@ -1266,8 +1276,8 @@
       if (entity==="usuarios"){
         const roleVal = qs("#f_rol")?.value || "";
         const brands = getSelectedBrands();
-        if (isExecRole(roleVal) && brands.length === 0){
-          if (window.Swal) Swal.fire("Falta dato", "Selecciona al menos una marca para el Ejecutivo.", "warning");
+        if (isBrandScopedRole(roleVal) && brands.length === 0){
+          if (window.Swal) Swal.fire("Falta dato", "Selecciona al menos una marca para este usuario.", "warning");
           return;
         }
       }
@@ -1285,9 +1295,9 @@
           // Siempre persistimos marcas:
           // - si es ejecutivo: guarda selección
           // - si NO es ejecutivo: limpiamos marcas para que no herede permisos por error
-          const toSave = isExecRole(roleVal) ? brands : [];
+          const toSave = isBrandScopedRole(roleVal) ? brands : [];
           try{
-              await api(`/settings/usuarios/${row[pk]}/brands`, {method:"PUT", body:JSON.stringify({marcas: toSave})});
+              await api(`/users/${row[pk]}/brands`, {method:"PUT", body:JSON.stringify({marcas: toSave})});
           }catch(e){
             if (window.Swal) Swal.fire("Error", "Guardé el usuario, pero NO pude guardar sus marcas. " + (e?.message||""), "error");
             else alert("Guardé el usuario, pero NO pude guardar sus marcas.");
@@ -1440,8 +1450,8 @@
       if (entity==="usuarios"){
         const roleVal = qs("#f_rol")?.value || "";
         const brands = getSelectedBrands();
-        if (isExecRole(roleVal) && brands.length === 0){
-          if (window.Swal) Swal.fire("Falta dato", "Selecciona al menos una marca para el Ejecutivo.", "warning");
+        if (isBrandScopedRole(roleVal) && brands.length === 0){
+          if (window.Swal) Swal.fire("Falta dato", "Selecciona al menos una marca para este usuario.", "warning");
           return;
         }
       }
@@ -1458,10 +1468,10 @@
           const id = resp?.id;
           const roleVal = qs("#f_rol")?.value || "";
           const brands = getSelectedBrands();
-          const toSave = isExecRole(roleVal) ? brands : [];
+          const toSave = isBrandScopedRole(roleVal) ? brands : [];
           if (id){
             try{
-              await api(`/settings/usuarios/${id}/brands`, {method:"PUT", body:JSON.stringify({marcas: toSave})});
+              await api(`/users/${id}/brands`, {method:"PUT", body:JSON.stringify({marcas: toSave})});
             }catch(e){
               if (window.Swal) Swal.fire("Error", "Creé el usuario, pero NO pude guardar sus marcas. " + (e?.message||""), "error");
               else alert("Creé el usuario, pero NO pude guardar sus marcas.");

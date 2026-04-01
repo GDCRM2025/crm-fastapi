@@ -541,21 +541,8 @@
       try{ qs("#tabLeads")?.classList?.add?.("active"); }catch(_){}
       try{ qs("#secLeads")?.classList?.add?.("show"); }catch(_){}
 
-      // Delegación global (evita re-binds tras cada render).
-      document.addEventListener("dblclick", (ev)=>{
-        const tr = ev.target?.closest?.("tr[data-lead]");
-        const id = tr?.getAttribute?.("data-lead");
-        if (id) openLead(id);
-      });
-
-      // Click en fila abre lead (excepto si apretó un botón).
-      document.addEventListener("click", (ev)=>{
-        const btn = ev.target?.closest?.("button, a, input, select, textarea");
-        if (btn) return;
-        const tr = ev.target?.closest?.("tr[data-lead]");
-        const id = tr?.getAttribute?.("data-lead");
-        if (id) openLead(id);
-      });
+      // Importante UX: NO abrir el lead por click/doble click en la fila.
+      // La acción correcta es el botón "Seguimiento" (inline) para no sacar al ejecutivo de Tareas.
 
       document.addEventListener("click", async (ev)=>{
         const btn = ev.target?.closest?.("button[data-act]");
@@ -576,14 +563,14 @@
           ]);
           // Seguimiento inline (sin salir de Tareas).
           try{
-            const lead = await jget(`/leads/${encodeURIComponent(String(idLead))}`);
+            const lead = await jget(`/tasks/${encodeURIComponent(String(idTask))}/lead`);
             const cliente = lead?.cliente || lead?.nombre_cliente || lead?.nombre || "—";
-            const marca = lead?.marca_nombre || lead?.marca || "";
-            const comuna = lead?.comuna_nombre || lead?.comuna || "";
+            const marca = lead?.marca || lead?.marca_nombre || "";
+            const comuna = lead?.comuna || lead?.comuna_nombre || "";
             const fecha = lead?.fecha_evento ? String(lead.fecha_evento).slice(0,10) : "";
             const tel = lead?.telefono || "";
             const dir = lead?.direccion || "";
-            const notes = String(lead?.notas || lead?.seguimiento || "").trim();
+            const notes = String(lead?.notas || "").trim();
 
             const infoBits = [];
             if (marca) infoBits.push(`<div class="muted"><strong>Marca:</strong> ${esc(marca)}</div>`);

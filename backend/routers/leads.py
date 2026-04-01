@@ -84,9 +84,14 @@ def _ensure_cotizaciones_pdf_col() -> None:
         conn.execute(text("ALTER TABLE public.cotizaciones ADD COLUMN IF NOT EXISTS pdf_path TEXT"))
         conn.commit()
 
+def _is_superadmin(role: str) -> bool:
+    r = (role or "").upper()
+    return r in ("SUPERADMIN", "SUPER_ADMIN", "SUPER ADMIN")
+
 def _is_admin(role: str) -> bool:
-    # Leads: solo ADMIN/SUPERADMIN ven todo. Otros roles internos no acceden a la sección.
-    return role in ("ADMIN", "SUPERADMIN")
+    # "ADMIN" (no super) existe, pero queda acotado por marcas (no es global).
+    r = (role or "").upper()
+    return r in ("ADMIN", "1")
 
 
 def _is_sales(role: str) -> bool:
@@ -98,25 +103,49 @@ def _is_sales(role: str) -> bool:
 def _restrict_leads_to_user_marcas(role: str) -> bool:
     """
     Regla:
-    - Ventas/Ejecutivos: restringidos a sus marcas asignadas.
-    - Resto de roles internos (Admin, Compras, Bodega, Ops, etc): ven todo.
+    - SUPERADMIN: ve todo.
+    - ADMIN y Ventas/Ejecutivos: restringidos a sus marcas asignadas (y/o leads asignados).
+    - Resto: sin acceso.
     """
-    if _is_admin(role):
+    if _is_superadmin(role):
         return False
-    return _is_sales(role)
+    return _is_admin(role) or _is_sales(role)
 
 def _can_access_leads(role: str) -> bool:
     """
     Permisos:
-    - ADMIN/SUPERADMIN: acceso completo a leads.
+    - SUPERADMIN: acceso completo a leads.
+    - ADMIN: acceso a leads (filtrado por marcas).
     - VENTAS/EJECUTIVOS: acceso a leads (filtrado por marcas).
     - Resto: NO tiene acceso a la sección leads.
     """
+    if _is_superadmin(role):
+        return True
     if _is_admin(role):
         return True
     if _is_sales(role):
         return True
     return False
+
+def _user_match_keys_for_leads(user: dict) -> list[str]:
+    """
+    Keys para matchear leads.id_usuario (que en varios deploys es TEXT/INT y puede contener id/username/email).
+    """
+    keys: list[str] = []
+    for k in (
+        user.get("id"),
+        user.get("username"),
+        user.get("email"),
+        user.get("sub"),
+        user.get("name"),
+        user.get("nombre"),
+    ):
+        s = str(k or "").strip().lower()
+        if not s:
+            continue
+        if s not in keys:
+            keys.append(s)
+    return keys
 
 
 def _user_marcas(user: dict) -> list[int]:
@@ -170,6 +199,49 @@ def _ensure_leads_delete_cols() -> None:
             conn.commit()
     except Exception:
         pass
+
+def _ensure_leads_followup_cols() -> None:
+    """
+    Último seguimiento real del lead (NO confundir con updated_at).
+    Se usa para:
+    - Tareas: decidir si falta seguimiento
+    - UI: banderas de seguimiento
+    """
+    try:
+        cols = _cols_for("leads")
+    except Exception:
+        cols = set()
+    try:
+        with get_connection() as conn:
+            if "seguimiento_at" not in cols:
+                conn.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS seguimiento_at TIMESTAMPTZ NULL"))
+            conn.commit()
+    except Exception:
+        # Nunca romper en prod por DDL
+        pass
+
+def _phone_cl_e164(value: Any) -> str | None:
+    """
+    Normaliza teléfono Chile para WhatsApp:
+    - Input recomendado: 9 dígitos (incluye 9)
+    - Guarda en DB: +569XXXXXXXX (sin espacios)
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if not digits:
+        return None
+    # Si viene con código país
+    if digits.startswith("56") and len(digits) >= 11:
+        digits = digits[2:]
+    # Mantener últimos 9 dígitos (móvil)
+    if len(digits) > 9:
+        digits = digits[-9:]
+    if len(digits) != 9:
+        # fallback: no tocar si no calza (evita romper teléfonos fijos legacy)
+        return raw
+    return "+56" + digits
 
 def _clear_preagenda_fields(id_lead: int) -> None:
     cols = _cols_for("leads")
@@ -389,6 +461,8 @@ def list_leads(
 
     marcas = _user_marcas(user)
     only_own = _restrict_leads_to_user_marcas(role)
+    user_keys = _user_match_keys_for_leads(user)
+    user_keys = _user_match_keys_for_leads(user)
 
     lead_cols = _cols_for("leads")
     marca_cols = _cols_for("marcas") if _table_exists("marcas") else set()
@@ -400,6 +474,11 @@ def list_leads(
     extra_cols = []
     if "fecha_ingreso" in lead_cols:
         extra_cols.append("l.fecha_ingreso")
+    if "seguimiento_at" in lead_cols:
+        extra_cols.append("l.seguimiento_at")
+    for col in ("pre_start", "pre_end", "calendar_start", "calendar_end", "hora_inicio", "hora_fin"):
+        if col in lead_cols:
+            extra_cols.append(f"l.{col}")
     for col in ("id_cotizacion_vigente", "calendar_html_link", "calendar_event_id", "agenda_approved_at", "agenda_approved_by"):
         if col in lead_cols:
             extra_cols.append(f"l.{col}")
@@ -409,20 +488,33 @@ def list_leads(
         where_parts = ["COALESCE(l.is_deleted,false)=false"]
         params = {"limit": limit, "offset": offset}
         if only_own:
-            if not marcas:
+            clauses: list[str] = []
+            if "id_usuario" in lead_cols and user_keys:
+                clauses.append("lower(NULLIF(btrim(COALESCE(l.id_usuario::text,'')) ,'')) = ANY(:user_keys)")
+                params["user_keys"] = user_keys
+            if marcas:
+                clauses.append("l.id_marca = ANY(:marcas)")
+                params["marcas"] = marcas
+            if not clauses:
                 return {"total": 0, "items": []}
-            where_parts.append("l.id_marca = ANY(:marcas)")
-            params["marcas"] = marcas
+            where_parts.append("(" + " OR ".join(clauses) + ")")
 
         where_sql = "WHERE " + " AND ".join(where_parts)
         total = conn.execute(text(f"SELECT COUNT(*) FROM public.leads l {where_sql}"), params).scalar_one()
+
+        created_expr = "l.created_at"
+        updated_expr = "l.updated_at"
+        if "fecha_ingreso" in lead_cols:
+            created_expr = "COALESCE(l.created_at, l.fecha_ingreso::timestamp)"
+            updated_expr = "COALESCE(l.updated_at, l.fecha_ingreso::timestamp)"
 
         q = f"""
             SELECT
               l.id_lead, l.cliente, l.cliente AS nombre_cliente, l.email, l.telefono, l.direccion,
               l.id_marca, l.id_estado, l.id_comuna, l.id_tipo_cliente,
               l.fecha_evento, l.monto_cotizado, l.plataforma, l.notas, l.num_cotizacion, l.cotizacion_pdf_url,
-              l.created_at, l.updated_at{extra_sql},
+              {created_expr} AS created_at,
+              {updated_expr} AS updated_at{extra_sql},
               COALESCE({marca_name_expr},'Sin Marca') AS marca,
               COALESCE(e.nombre,'') AS estado_nombre,
               COALESCE(e.color,'#64748b') AS estado_color,
@@ -482,6 +574,11 @@ def leads_by_ids(
     extra_cols = []
     if "fecha_ingreso" in lead_cols:
         extra_cols.append("l.fecha_ingreso")
+    if "seguimiento_at" in lead_cols:
+        extra_cols.append("l.seguimiento_at")
+    for col in ("pre_start", "pre_end", "calendar_start", "calendar_end", "hora_inicio", "hora_fin"):
+        if col in lead_cols:
+            extra_cols.append(f"l.{col}")
     for col in ("id_cotizacion_vigente", "calendar_html_link", "calendar_event_id", "agenda_approved_at", "agenda_approved_by"):
         if col in lead_cols:
             extra_cols.append(f"l.{col}")
@@ -491,18 +588,31 @@ def leads_by_ids(
         where_parts = ["COALESCE(l.is_deleted,false)=false", "l.id_lead = ANY(:ids)"]
         params: dict[str, Any] = {"ids": lead_ids}
         if only_own:
-            if not marcas:
+            clauses: list[str] = []
+            if "id_usuario" in lead_cols and user_keys:
+                clauses.append("lower(NULLIF(btrim(COALESCE(l.id_usuario::text,'')) ,'')) = ANY(:user_keys)")
+                params["user_keys"] = user_keys
+            if marcas:
+                clauses.append("l.id_marca = ANY(:marcas)")
+                params["marcas"] = marcas
+            if not clauses:
                 return {"ok": True, "items": []}
-            where_parts.append("l.id_marca = ANY(:marcas)")
-            params["marcas"] = marcas
+            where_parts.append("(" + " OR ".join(clauses) + ")")
 
         where_sql = "WHERE " + " AND ".join(where_parts)
+        created_expr = "l.created_at"
+        updated_expr = "l.updated_at"
+        if "fecha_ingreso" in lead_cols:
+            created_expr = "COALESCE(l.created_at, l.fecha_ingreso::timestamp)"
+            updated_expr = "COALESCE(l.updated_at, l.fecha_ingreso::timestamp)"
+
         q = f"""
             SELECT
               l.id_lead, l.cliente, l.cliente AS nombre_cliente, l.email, l.telefono, l.direccion,
               l.id_marca, l.id_estado, l.id_comuna, l.id_tipo_cliente,
               l.fecha_evento, l.monto_cotizado, l.plataforma, l.notas, l.num_cotizacion, l.cotizacion_pdf_url,
-              l.created_at, l.updated_at{extra_sql},
+              {created_expr} AS created_at,
+              {updated_expr} AS updated_at{extra_sql},
               COALESCE({marca_name_expr},'Sin Marca') AS marca,
               COALESCE(e.nombre,'') AS estado_nombre,
               COALESCE(e.color,'#64748b') AS estado_color,
@@ -563,10 +673,19 @@ def get_lead(id_lead: int, user: dict = Depends(get_current_user)):
             raise HTTPException(404, "Lead no existe")
         data = dict(row)
         role = _role(user)
-        marcas = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
-        if (not _is_admin(role)):
-            if not marcas or int(data.get("id_marca") or 0) not in marcas:
-                raise HTTPException(403, "Sin acceso a esta marca")
+        if not _is_superadmin(role):
+            marcas = _user_marcas(user)
+            user_keys = _user_match_keys_for_leads(user)
+            lead_marca = int(data.get("id_marca") or 0)
+            assigned_ok = False
+            try:
+                raw_owner = str(data.get("id_usuario") or "").strip().lower()
+                if raw_owner and user_keys and raw_owner in set(user_keys):
+                    assigned_ok = True
+            except Exception:
+                assigned_ok = False
+            if (not assigned_ok) and ((not marcas) or (lead_marca not in set(marcas))):
+                raise HTTPException(403, "Sin acceso a este lead")
         if not data.get("logo_url"):
             try:
                 from backend.core.quote_assets import logo_for, normalize_marca
@@ -691,13 +810,13 @@ def create_lead(payload: dict = Body(...), user: dict = Depends(get_current_user
     role = _role(user)
     user_marcas = _user_marcas(user)
     # Marca:
-    # - Admin: puede crear sin marca (0), pero idealmente el frontend la enviará.
-    # - No admin: debe quedar en una marca válida del usuario.
+    # - SUPERADMIN: puede crear sin marca (0), pero idealmente el frontend la enviará.
+    # - ADMIN/Ventas: debe quedar en una marca válida del usuario.
     try:
         id_marca = int(payload.get("id_marca") or 0)
     except Exception:
         id_marca = 0
-    if (not _is_admin(role)):
+    if (not _is_superadmin(role)):
         if id_marca <= 0:
             if user_marcas:
                 id_marca = int(user_marcas[0])
@@ -847,6 +966,7 @@ def create_lead(payload: dict = Body(...), user: dict = Depends(get_current_user
         else:
             notas_in = notas_txt or None
 
+        _ensure_leads_followup_cols()
         new_id = conn.execute(text("""
             INSERT INTO public.leads(
               cliente,email,telefono,direccion,id_marca,id_estado,id_comuna,id_tipo_cliente,
@@ -859,7 +979,7 @@ def create_lead(payload: dict = Body(...), user: dict = Depends(get_current_user
         """), {
             "cliente": cliente,
             "email": payload.get("email"),
-            "telefono": payload.get("telefono"),
+            "telefono": _phone_cl_e164(payload.get("telefono")),
             "direccion": payload.get("direccion"),
             "id_marca": id_marca,
             "id_estado": id_estado,
@@ -1186,6 +1306,7 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
             lines.append(f"RID: {rid}")
         notas = "\n".join([x for x in lines if x is not None]).strip() or None
 
+        _ensure_leads_followup_cols()
         new_id = conn.execute(text("""
             INSERT INTO public.leads(
               cliente,email,telefono,direccion,id_marca,id_estado,id_comuna,id_tipo_cliente,
@@ -1198,7 +1319,7 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
         """), {
             "cliente": cliente,
             "email": email or payload.get("email"),
-            "telefono": telefono or payload.get("telefono"),
+            "telefono": _phone_cl_e164(telefono or payload.get("telefono")),
             "direccion": payload.get("direccion"),
             "id_marca": mrow.get("id_marca"),
             "id_estado": int(estado_nuevo),
@@ -1215,6 +1336,7 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
 
 @router.put("/leads/{id_lead}")
 def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+    _ensure_leads_followup_cols()
     with get_connection() as conn:
         row = conn.execute(
             text("SELECT id_marca, id_estado, notas FROM public.leads WHERE id_lead=:id"),
@@ -1335,7 +1457,7 @@ def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             "id": id_lead,
             "cliente": cliente,
             "email": payload.get("email"),
-            "telefono": payload.get("telefono"),
+            "telefono": _phone_cl_e164(payload.get("telefono")),
             "direccion": payload.get("direccion"),
             "id_marca": new_id_marca,
             "id_estado": payload.get("id_estado"),
@@ -1360,6 +1482,15 @@ def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                     actor = (user.get("name") or user.get("username") or user.get("id") or "Usuario")
                     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
                     _append_notas(conn, id_lead, f"[ESTADO {ts}] {actor}: {old_name} → {new_name}")
+
+                    # Si movieron el lead a CONTACTADO/COTIZADO, registramos seguimiento_at mínimo.
+                    try:
+                        upn = str(new_name or "").upper()
+                        if ("CONTACT" in upn) or ("COTIZ" in upn):
+                            if "seguimiento_at" in _cols_for("leads"):
+                                conn.execute(text("UPDATE public.leads SET seguimiento_at=now() WHERE id_lead=:id"), {"id": int(id_lead)})
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -1459,10 +1590,12 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
     block = f"{header}\n{text_in}".strip()
 
     with get_connection() as conn:
+        _ensure_leads_followup_cols()
         row = conn.execute(text("SELECT 1 FROM public.leads WHERE id_lead=:id"), {"id": int(id_lead)}).first()
         if not row:
             raise HTTPException(404, "Lead no existe")
 
+        is_contact = kind in ("WSP", "CALL", "EMAIL")
         conn.execute(
             text(
                 """
@@ -1477,13 +1610,18 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             ),
             {"id": int(id_lead), "b": block},
         )
+        # Seguimiento real: solo por evidencia (WSP/CALL/EMAIL) o followup explícito.
+        try:
+            if (is_contact or followup) and ("seguimiento_at" in _cols_for("leads")):
+                conn.execute(text("UPDATE public.leads SET seguimiento_at=now() WHERE id_lead=:id"), {"id": int(id_lead)})
+        except Exception:
+            pass
         # Si el usuario registró contacto/seguimiento, cerrar tareas relacionadas (si existe).
         # Importante: NO cerrar por notas genéricas del sistema; solo por evidencia (WSP/CALL/EMAIL)
         # o cuando el frontend indique explícitamente que es seguimiento (followup=true).
         try:
             uid_raw = user.get("id")
             uid = int(uid_raw) if str(uid_raw or "").isdigit() else None
-            is_contact = kind in ("WSP", "CALL", "EMAIL")
             if uid and (is_contact or followup):
                 # Evita fallar si la tabla aún no existe en instalaciones antiguas.
                 has_tasks = bool(conn.execute(text("SELECT to_regclass('public.tasks') IS NOT NULL")).scalar())
@@ -1976,7 +2114,8 @@ def leads_auto_decline(payload: dict = Body(default=None), user: dict = Depends(
       { "dry_run": true }
     """
     role = _role(user)
-    if not _is_admin(role):
+    r = (role or "").upper()
+    if not (_is_superadmin(role) or _is_admin(role) or ("OPERACION" in r) or ("OPERACIONES" in r)):
         raise HTTPException(403, "Solo admin/operaciones")
     dry_run = True
     if isinstance(payload, dict) and "dry_run" in payload:

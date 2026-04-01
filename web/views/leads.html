@@ -1054,7 +1054,8 @@ function daysBetween(a, b){
 function followupFlagInfo(lead, estadoUpper=""){
   if (isClosedEstadoName(estadoUpper)) return null;
   const last =
-    parseAnyDate(lead?.updated_at) ||
+    parseAnyDate(lead?.seguimiento_at) ||
+    parseAnyDate(lead?.followup_at) ||
     parseAnyDate(lead?.created_at) ||
     parseAnyDate(lead?.fecha_ingreso) ||
     new Date();
@@ -1188,6 +1189,7 @@ function normLead(l){
     id_comuna: Number(l.id_comuna ?? 0),
     fecha_evento: l.fecha_evento ?? null,
     fecha_ingreso: l.fecha_ingreso ?? null,
+    seguimiento_at: l.seguimiento_at ?? null,
     monto_cotizado: Number(l.monto_cotizado ?? 0),
     plataforma: l.plataforma ?? null,
     notas: l.notas ?? null,
@@ -1200,6 +1202,12 @@ function normLead(l){
     calendar_html_link: l.calendar_html_link ?? null,
     agenda_approved_at: l.agenda_approved_at ?? null,
     agenda_approved_by: l.agenda_approved_by ?? null,
+    pre_start: l.pre_start ?? null,
+    pre_end: l.pre_end ?? null,
+    calendar_start: l.calendar_start ?? null,
+    calendar_end: l.calendar_end ?? null,
+    hora_inicio: l.hora_inicio ?? null,
+    hora_fin: l.hora_fin ?? null,
     created_at: l.created_at ?? null,
     updated_at: l.updated_at ?? null,
 
@@ -1251,17 +1259,18 @@ async function loadCatalogos(){
   const tiposRaw  = (cat.tipos_cliente || cat.tipos || []);
 
   let marcas = (marcasRaw||[]).map(normMarca).filter(x=>x.is_active);
-  // extra: filtra marcas por usuario (si no es admin)
-  try{
-    const GD = window.parent && window.parent.GD;
-    const me = GD?.me;
-    const role = (me?.role || me?.rol || "").toString().toUpperCase();
-    const isAdmin = ["ADMIN","SUPERADMIN","JEFE DE OPERACIONES","OPERACIONES"].includes(role);
-    const userMarcas = (me?.marcas || []).map(m => Number(m)).filter(n => Number.isFinite(n));
-    if (!isAdmin && userMarcas.length){
-      marcas = marcas.filter(m => userMarcas.includes(Number(m.id_marca)));
-    }
-  }catch(_){}
+	  // extra: filtra marcas por usuario (SUPERADMIN es el único global)
+	  try{
+	    const GD = window.parent && window.parent.GD;
+	    const me = GD?.me;
+	    const role = (me?.role || me?.rol || "").toString().toUpperCase();
+	    const isSuper = role.includes("SUPERADMIN") || role.includes("SUPER_ADMIN") || role.includes("SUPER ADMIN");
+	    const userMarcas = (me?.marcas || []).map(m => Number(m)).filter(n => Number.isFinite(n));
+	    // ADMIN ahora es acotado por marcas (si el token trae marcas).
+	    if (!isSuper && userMarcas.length){
+	      marcas = marcas.filter(m => userMarcas.includes(Number(m.id_marca)));
+	    }
+	  }catch(_){}
   let comunas = (comunasRaw||[]).map(normComuna).filter(x=>x.is_active);
 
   // si no trajo comunas, intentamos endpoints alternativos (si existen)
@@ -1403,7 +1412,8 @@ function flagIconHTML(flag){
   const clsRaw = String(flag.cls || "gray").trim().toLowerCase();
   const cls = ["red","blue","yellow","green","gray"].includes(clsRaw) ? clsRaw : "gray";
   const title = escapeHtml(flag.title || "");
-  return `<span class="flag ${escapeHtml(cls)}" title="${title}" role="img" aria-label="${title}"></span>`;
+  // "Banderita" real (no rectángulo), usando CSS .flag + clip-path.
+  return `<span class="flag ${cls}" title="${title}" role="img" aria-label="${title}"></span>`;
 }
 function iconButton(title, iconName, handler){
   const b = document.createElement("button");
@@ -2406,15 +2416,15 @@ async function handleConfirmado(lead, newEstado){
 
           <div class="agRow">
             <label class="agLabel">
-              <div class="muted">Inicio</div>
-              <input id="ag_hini" class="swInp" type="time" />
+              <div class="muted">Inicio (24h)</div>
+              <select id="ag_hini" class="swSel"></select>
             </label>
             <label class="agLabel">
-              <div class="muted">Fin</div>
-              <input id="ag_hfin" class="swInp" type="time" />
+              <div class="muted">Fin (24h)</div>
+              <select id="ag_hfin" class="swSel"></select>
             </label>
             <label style="display:flex;align-items:center;gap:8px;margin-top:26px">
-              <input id="ag_hrtbd" type="checkbox" checked />
+              <input id="ag_hrtbd" type="checkbox" />
               <span class="muted" style="font-weight:1000">HR TBD</span>
             </label>
             <div class="muted agSmall" id="ag_duracion" style="align-self:center;margin-top:26px">Duración: —</div>
@@ -2635,6 +2645,46 @@ async function handleConfirmado(lead, newEstado){
 	    didOpen: async ()=>{
       const q = qs("#ag_quote");
       if (q) q.value = defaultSel || "manual";
+
+      // Horas (24h) - selector estable en iOS/Android (evita pickers 12h).
+      const TIMES = (() => {
+        const out = [];
+        for (let h = 0; h < 24; h++) {
+          for (const m of [0, 15, 30, 45]) {
+            out.push(String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"));
+          }
+        }
+        return out;
+      })();
+      const fillSel = (id) => {
+        const el = qs(id);
+        if (!el) return;
+        el.innerHTML = `<option value="">—</option>` + TIMES.map((t) => `<option value="${t}">${t}</option>`).join("");
+      };
+      fillSel("#ag_hini");
+      fillSel("#ag_hfin");
+
+      const timeFromDT = (v) => {
+        if (!v) return "";
+        try {
+          const d = new Date(v);
+          if (isNaN(d.getTime())) return "";
+          return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+        } catch (_) {
+          return "";
+        }
+      };
+      const preStart = lead?.pre_start || lead?.calendar_start || lead?.hora_inicio || "";
+      const preEnd = lead?.pre_end || lead?.calendar_end || lead?.hora_fin || "";
+      const hini0 = timeFromDT(preStart) || String(preStart || "").slice(0, 5);
+      const hfin0 = timeFromDT(preEnd) || String(preEnd || "").slice(0, 5);
+      if (hini0 && hfin0) {
+        if (qs("#ag_hini")) qs("#ag_hini").value = TIMES.includes(hini0) ? hini0 : hini0;
+        if (qs("#ag_hfin")) qs("#ag_hfin").value = TIMES.includes(hfin0) ? hfin0 : hfin0;
+        if (qs("#ag_hrtbd")) qs("#ag_hrtbd").checked = false;
+      } else {
+        if (qs("#ag_hrtbd")) qs("#ag_hrtbd").checked = true;
+      }
 
 	      const editManualBtn = qs("#ag_edit_manual");
 	      const refreshManualBtn = ()=>{
@@ -3164,13 +3214,13 @@ ${EMO.pin} DIRECCION: ${dirLine || "POR CONFIRMAR"}
       });
       qs("#sw_ag_cliente")?.addEventListener("click", ()=>{
         const t = getTxt();
-        const u = telCliente ? `https://wa.me/${waDigits(telCliente)}?text=${encodeURIComponent(t)}` : "";
+        const u = telCliente ? `https://wa.me/${waE164(telCliente)}?text=${encodeURIComponent(t)}` : "";
         if (!u) return toast("Lead sin teléfono", "warning");
         window.open(u, "_blank", "noopener,noreferrer");
       });
       qs("#sw_ag_ventas")?.addEventListener("click", ()=>{
         const t = getTxt();
-        const u = telVentas ? `https://wa.me/${waDigits(telVentas)}?text=${encodeURIComponent(t)}` : "";
+        const u = telVentas ? `https://wa.me/${waE164(telVentas)}?text=${encodeURIComponent(t)}` : "";
         if (!u) return toast("Falta teléfono de Ventas (usuario asignado)", "warning");
         window.open(u, "_blank", "noopener,noreferrer");
       });

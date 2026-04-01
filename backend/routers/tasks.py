@@ -216,6 +216,10 @@ def _is_admin(user: dict) -> bool:
     r = _role(user)
     return r in ("ADMIN", "SUPERADMIN", "SUPER_ADMIN", "SUPER ADMIN", "1")
 
+def _is_superadmin(user: dict) -> bool:
+    r = _role(user)
+    return r in ("SUPERADMIN", "SUPER_ADMIN", "SUPER ADMIN")
+
 
 def _user_info(db: Session, uid: int) -> dict[str, Any]:
     if not _table_exists(db, "usuarios"):
@@ -252,12 +256,13 @@ def _user_info(db: Session, uid: int) -> dict[str, Any]:
 @router.get("/context")
 def context(db: Session = Depends(get_db), user: dict = Depends(get_current_user)) -> dict[str, Any]:
     uid = _resolve_uid(db, user)
-    return {"ok": True, "uid": int(uid), "role": _role(user), "is_admin": bool(_is_admin(user)), "username": _uname(user)}
+    # Solo SUPERADMIN puede ver/impersonar tareas de otros usuarios desde este módulo.
+    return {"ok": True, "uid": int(uid), "role": _role(user), "is_admin": bool(_is_superadmin(user)), "username": _uname(user)}
 
 
 @router.get("/admin/users")
 def admin_users(db: Session = Depends(get_db), user: dict = Depends(get_current_user)) -> dict[str, Any]:
-    if not _is_admin(user):
+    if not _is_superadmin(user):
         raise HTTPException(403, "No autorizado")
     if not _table_exists(db, "usuarios"):
         return {"ok": True, "items": []}
@@ -373,8 +378,8 @@ def sync_tasks(
     """
     try:
         uid = _resolve_uid(db, user)
-        target_uid = int(for_user_id) if (for_user_id is not None and _is_admin(user)) else int(uid)
-        if for_user_id is not None and not _is_admin(user):
+        target_uid = int(for_user_id) if (for_user_id is not None and _is_superadmin(user)) else int(uid)
+        if for_user_id is not None and not _is_superadmin(user):
             raise HTTPException(403, "No autorizado")
 
         info = _user_info(db, target_uid)
@@ -433,10 +438,118 @@ def get_tasks(
     user: dict = Depends(get_current_user),
 ):
     uid = _resolve_uid(db, user)
-    target_uid = int(for_user_id) if (for_user_id is not None and _is_admin(user)) else int(uid)
-    if for_user_id is not None and not _is_admin(user):
+    target_uid = int(for_user_id) if (for_user_id is not None and _is_superadmin(user)) else int(uid)
+    if for_user_id is not None and not _is_superadmin(user):
         raise HTTPException(403, "No autorizado")
     return list_tasks(db, assigned_user_id=int(target_uid), status=status, limit=limit, offset=offset)
+
+
+@router.get("/{id_task}/lead")
+def task_lead(
+    id_task: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Devuelve datos mínimos del lead asociado a una tarea.
+    Motivo: en Tareas el seguimiento es inline y no debe fallar por scope de /leads/{id}.
+    Permisos:
+      - asignado al usuario, o
+      - SUPERADMIN
+    """
+    uid = _resolve_uid(db, user)
+    is_admin = _is_superadmin(user)
+    ensure_tasks_table(db)
+
+    task = (
+        db.execute(
+            text(
+                """
+                SELECT id_task, kind, entity_type, entity_id
+                FROM public.tasks
+                WHERE id_task=:id AND (assigned_user_id=:uid OR :is_admin)
+                LIMIT 1
+                """
+            ),
+            {"id": int(id_task), "uid": int(uid), "is_admin": bool(is_admin)},
+        )
+        .mappings()
+        .first()
+    )
+    if not task:
+        raise HTTPException(404, "Tarea no existe")
+    if str(task.get("entity_type") or "").strip().lower() != "lead" or not str(task.get("entity_id") or "").isdigit():
+        raise HTTPException(404, "Tarea no asociada a un lead")
+
+    lead_id = int(task.get("entity_id"))
+
+    # Armamos un SELECT tolerante a esquemas legacy (mismos helpers que tasks core).
+    has_leads = _table_exists(db, "leads")
+    if not has_leads:
+        raise HTTPException(404, "Lead no existe")
+
+    joins = ""
+    marca_expr = "'' AS marca"
+    comuna_expr = "'' AS comuna"
+    if _table_exists(db, "marcas") and core_tasks._col_exists(db, "leads", "id_marca") and core_tasks._col_exists(db, "marcas", "id_marca"):  # type: ignore[attr-defined]
+        joins += " LEFT JOIN public.marcas m ON m.id_marca = l.id_marca "
+        if core_tasks._col_exists(db, "marcas", "nombre") and core_tasks._col_exists(db, "marcas", "marca"):  # type: ignore[attr-defined]
+            marca_expr = "COALESCE(m.nombre, m.marca, '') AS marca"
+        elif core_tasks._col_exists(db, "marcas", "nombre"):  # type: ignore[attr-defined]
+            marca_expr = "COALESCE(m.nombre, '') AS marca"
+        elif core_tasks._col_exists(db, "marcas", "marca"):  # type: ignore[attr-defined]
+            marca_expr = "COALESCE(m.marca, '') AS marca"
+
+    if _table_exists(db, "comunas") and core_tasks._col_exists(db, "leads", "id_comuna") and core_tasks._col_exists(db, "comunas", "id_comuna"):  # type: ignore[attr-defined]
+        joins += " LEFT JOIN public.comunas c ON c.id_comuna = l.id_comuna "
+        if core_tasks._col_exists(db, "comunas", "nombre"):  # type: ignore[attr-defined]
+            comuna_expr = "COALESCE(c.nombre,'') AS comuna"
+
+    name_expr = core_tasks._lead_name_expr_db(db) + " AS cliente"  # type: ignore[attr-defined]
+    notes_expr = core_tasks._lead_notes_expr_db(db) + " AS notas"  # type: ignore[attr-defined]
+    tel_expr = "COALESCE(l.telefono,'') AS telefono" if core_tasks._col_exists(db, "leads", "telefono") else "'' AS telefono"  # type: ignore[attr-defined]
+    dir_expr = "COALESCE(l.direccion,'') AS direccion" if core_tasks._col_exists(db, "leads", "direccion") else "'' AS direccion"  # type: ignore[attr-defined]
+    ev_expr = "NULL::date AS fecha_evento"
+    if core_tasks._col_exists(db, "leads", "fecha_evento"):  # type: ignore[attr-defined]
+        ev_expr = core_tasks._lead_event_date_expr_db(db, alias="l") + " AS fecha_evento"  # type: ignore[attr-defined]
+
+    row = (
+        db.execute(
+            text(
+                f"""
+                SELECT
+                  l.id_lead,
+                  {name_expr},
+                  {marca_expr},
+                  {comuna_expr},
+                  {ev_expr},
+                  {tel_expr},
+                  {dir_expr},
+                  {notes_expr}
+                FROM public.leads l
+                {joins}
+                WHERE l.id_lead=:id
+                LIMIT 1
+                """
+            ),
+            {"id": int(lead_id)},
+        )
+        .mappings()
+        .first()
+    )
+    if not row:
+        raise HTTPException(404, "Lead no existe")
+
+    return {
+        "id_lead": int(row.get("id_lead") or lead_id),
+        "cliente": str(row.get("cliente") or "—"),
+        "marca": str(row.get("marca") or ""),
+        "comuna": str(row.get("comuna") or ""),
+        "fecha_evento": (str(row.get("fecha_evento")) if row.get("fecha_evento") else None),
+        "telefono": str(row.get("telefono") or ""),
+        "direccion": str(row.get("direccion") or ""),
+        "notas": str(row.get("notas") or ""),
+    }
 
 
 @router.post("/{id_task}/done")
@@ -448,7 +561,7 @@ def mark_done(
 ):
     uid = _resolve_uid(db, user)
     who = _uname(user)
-    is_admin = _is_admin(user)
+    is_admin = _is_superadmin(user)
     ensure_tasks_table(db)
 
     # Cargar la tarea (necesario para validar consecuencias / evidencia).
@@ -529,6 +642,23 @@ def mark_done(
             ok = bool(cn.execute(text("SELECT 1 FROM public.leads WHERE id_lead=:id LIMIT 1"), {"id": lead_id}).scalar())
             if not ok:
                 raise HTTPException(404, "Lead no existe")
+            # Si existe la columna seguimiento_at, la actualizamos para reflejar el seguimiento real.
+            has_follow_col = False
+            try:
+                has_follow_col = bool(
+                    cn.execute(
+                        text(
+                            """
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_schema='public' AND table_name='leads' AND column_name='seguimiento_at'
+                            LIMIT 1
+                            """
+                        )
+                    ).scalar()
+                )
+            except Exception:
+                has_follow_col = False
             cn.execute(
                 text(
                     """
@@ -543,6 +673,11 @@ def mark_done(
                 ),
                 {"id": lead_id, "b": block},
             )
+            if has_follow_col:
+                try:
+                    cn.execute(text("UPDATE public.leads SET seguimiento_at=now() WHERE id_lead=:id"), {"id": lead_id})
+                except Exception:
+                    pass
             # Guardar evidencia en meta de tarea
             cn.execute(
                 text(
@@ -686,9 +821,11 @@ def summary(
     - Admin puede pedir `scope=all` para ver global (siempre excluye leads CONFIRMADO/DECLINADO).
     """
     uid = _resolve_uid(db, user)
-    is_admin = _is_admin(user)
+    is_super = _is_superadmin(user)
+    is_admin = _is_admin(user)  # ADMIN o SUPERADMIN
     target_uid = int(for_user_id) if (for_user_id is not None and is_admin) else int(uid)
-    if for_user_id is not None and not is_admin:
+    # Impersonación solo SUPERADMIN
+    if for_user_id is not None and not is_super:
         raise HTTPException(403, "No autorizado")
 
     scope = (scope or "me").strip().lower()
@@ -732,28 +869,56 @@ def summary(
                 ev_date = core_tasks._lead_event_date_expr_db(db, alias="l")  # type: ignore[attr-defined]
                 created_expr = core_tasks._lead_created_ts_expr_db(db, alias="l")  # type: ignore[attr-defined]
 
-                # last_expr (compat, similar a core/tasks.py)
-                updated_cols = [c for c in ("updated_at", "fecha_modificacion", "modificado_at", "updated") if _col_exists(db, "leads", c)]
-                updated_terms = [f"l.{c}" for c in updated_cols]
-                last_expr = "COALESCE(" + ", ".join(updated_terms + [created_expr, "now()"]) + ")"
+                # last_follow_expr: preferimos seguimiento real (seguimiento_at/followup_at),
+                # y si no existe, caemos a created_expr (NO usar updated_at como seguimiento).
+                follow_terms: list[str] = []
+                try:
+                    if _col_exists(db, "leads", "seguimiento_at"):
+                        follow_terms.append("l.seguimiento_at")
+                    elif _col_exists(db, "leads", "followup_at"):
+                        follow_terms.append("l.followup_at")
+                except Exception:
+                    pass
+                follow_expr = "NULL"
+                if follow_terms:
+                    follow_expr = "COALESCE(" + ", ".join(follow_terms) + ")"
+                last_expr = f"COALESCE({follow_expr}, {created_expr})"
 
                 has_contact_sql = core_tasks._has_contact_sql_db(db)  # type: ignore[attr-defined]
 
-                month_start = "date_trunc('month', CURRENT_DATE)::date"
-                month_end = "(date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::date"
-                created_month = f"date_trunc('month', {created_expr})::date"
-                in_scope_with_date = f"(({ev_date}) IS NOT NULL AND ({ev_date}) >= CURRENT_DATE AND ({ev_date}) >= {month_start} AND ({ev_date}) < {month_end})"
-                in_scope_no_date = f"(({ev_date}) IS NULL AND ({created_month}) = {month_start})"
+                today = "(now() AT TIME ZONE 'America/Santiago')::date"
+                month_start = f"date_trunc('month', {today})::date"
+                month_end = f"(date_trunc('month', {today}) + INTERVAL '1 month')::date"
+                in_scope_with_date = f"(({ev_date}) IS NOT NULL AND ({ev_date}) >= {today} AND ({ev_date}) >= {month_start} AND ({ev_date}) < {month_end})"
+                in_scope_no_date = f"(({ev_date}) IS NULL)"
                 ev_in_scope = f"({in_scope_with_date} OR {in_scope_no_date})"
+
+                # ADMIN (no super) es acotado por marcas.
+                where_brand = ""
+                mids: list[int] = []
+                if not is_super and _col_exists(db, "leads", "id_marca"):
+                    try:
+                        mids = [int(x) for x in (list(user.get("marcas") or []) or _fetch_marcas_for_uid(db, int(uid)) or []) if str(x).isdigit()]
+                    except Exception:
+                        mids = []
+                    if not mids:
+                        # último fallback para no quedar siempre en 0 si el token viene sin marcas
+                        try:
+                            user_keys = core_tasks._user_match_keys(db, user_id=int(uid), username=_uname(user))  # type: ignore[attr-defined]
+                        except Exception:
+                            user_keys = [str(uid)]
+                        mids = _infer_marcas_from_leads(db, user_keys)
+                    if mids:
+                        where_brand = " AND l.id_marca = ANY(CAST(:mids AS int[]))"
 
                 cond_nuevo = f"""
                   l.id_estado = :nuevo
                   AND ({has_contact_sql}) IS NOT TRUE
                   AND {ev_in_scope}
                   AND (
-                    (({ev_date}) IS NOT NULL AND {created_expr} <= (now() - INTERVAL '3 days'))
+                    (({ev_date}) IS NOT NULL AND {last_expr} <= (now() - INTERVAL '3 days'))
                     OR
-                    (({ev_date}) IS NULL AND {created_expr} <= (now() - INTERVAL '5 days'))
+                    (({ev_date}) IS NULL AND {last_expr} <= (now() - INTERVAL '5 days'))
                   )
                 """
                 cond_contact = f"""
@@ -762,7 +927,7 @@ def summary(
                   AND (
                     {in_scope_no_date}
                     OR
-                    (({ev_date}) IS NOT NULL AND ({ev_date}) >= CURRENT_DATE AND ({ev_date}) < {month_end} AND ({ev_date}) <= (CURRENT_DATE + INTERVAL '7 days'))
+                    (({ev_date}) IS NOT NULL AND ({ev_date}) >= {today} AND ({ev_date}) < {month_end} AND ({ev_date}) <= ({today} + INTERVAL '7 days'))
                   )
                 """
                 cond_cot = f"""
@@ -780,6 +945,7 @@ def summary(
                           COUNT(*) FILTER (WHERE {cond_cot})::int AS open_cotizados
                         FROM public.leads l
                         WHERE l.id_estado NOT IN (:conf, :decl)
+                        {where_brand}
                         """
                     ),
                     {
@@ -788,6 +954,7 @@ def summary(
                         "cotizado": int(cotizado_id),
                         "conf": int(confirmado_id),
                         "decl": int(declinado_id),
+                        "mids": mids or [0],
                     },
                 ).mappings().first()
 
