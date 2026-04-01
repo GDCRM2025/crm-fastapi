@@ -523,11 +523,60 @@ def list_productos(
                 where.append("%s LIKE :marca_key_like" % marca_key_expr)
                 params["marca_key_like"] = "%%%s%%" % snippet
 
+            # Ejecutivos: aunque pidan `?marca=...`, no deben poder ver marcas que no tengan asignadas.
+            if only_own:
+                if not marcas_ids:
+                    return {"items": []}
+                with get_connection() as conn:
+                    rows = conn.execute(
+                        text(
+                            """
+                            SELECT COALESCE(marca,nombre) AS label, nombre, marca
+                            FROM marcas
+                            WHERE id_marca = ANY(CAST(:m AS int[]))
+                            """
+                        ),
+                        {"m": list(map(int, marcas_ids))},
+                    ).mappings().all()
+
+                keys: list[str] = []
+                for r in rows:
+                    label = str(r.get("label") or "").strip()
+                    for k in (label, r.get("nombre"), r.get("marca")):
+                        kk = _norm_key_py(str(k or ""))
+                        if kk:
+                            keys.append(kk)
+                    canon2 = _canon_code_py(label)
+                    if canon2:
+                        for s in _code_like_snippets(canon2):
+                            kk = _norm_key_py(str(s or ""))
+                            if kk:
+                                keys.append(kk)
+                keys = sorted(set([k for k in keys if k]))
+                marcas_like = ["%%%s%%" % k for k in keys]
+                marca_expr = _norm_key_sql("COALESCE(marca,'')")
+
+                if has_id_marca and marcas_ids and marcas_like:
+                    where.append(
+                        "(id_marca = ANY(CAST(:__marcas_ids AS int[])) OR (%s LIKE ANY(CAST(:__marcas_like AS text[]))))"
+                        % marca_expr
+                    )
+                    params["__marcas_ids"] = list(map(int, marcas_ids))
+                    params["__marcas_like"] = marcas_like
+                elif has_id_marca and marcas_ids:
+                    where.append("id_marca = ANY(CAST(:__marcas_ids AS int[]))")
+                    params["__marcas_ids"] = list(map(int, marcas_ids))
+                elif marcas_like:
+                    where.append("%s LIKE ANY(CAST(:__marcas_like AS text[]))" % marca_expr)
+                    params["__marcas_like"] = marcas_like
+                else:
+                    return {"items": []}
+
         elif only_own:
             # Ejecutivos: filtrar por marcas asignadas (si existen). Si el usuario no tiene marcas,
             # no dejamos el cotizador inutilizable: devolvemos todo (respetando only_active si viene).
             if not marcas_ids:
-                only_own = False
+                return {"items": []}
             else:
                 with get_connection() as conn:
                     rows = conn.execute(
