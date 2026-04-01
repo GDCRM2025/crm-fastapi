@@ -573,11 +573,32 @@ def refresh_drive_assets(payload: Dict[str, Any] = Body(...), user: dict = Depen
     return {"ok": True, "marca": mkey, "folder_id": folder_id, "assets": assets}
 
 def _require_admin(user: dict) -> None:
-    # Si quieres forzar Admin real:
-    # if not user or (user.get("rol") not in ("Admin", "SuperAdmin")):
-    #     raise HTTPException(403, "Solo Admin")
-    # Por ahora: no bloqueo en dev.
-    return
+    """
+    Settings es un panel de administración: solo ADMIN/SUPERADMIN (y equivalentes) pueden entrar.
+    """
+    rk = _role_key(user)
+    if not rk:
+        raise HTTPException(status_code=401, detail="Token requerido")
+    if ("superadmin" in rk) or (rk == "admin") or ("admin" in rk):
+        return
+    raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+
+
+def _is_superadmin(user: dict) -> bool:
+    rk = _role_key(user)
+    return bool(rk and ("superadmin" in rk))
+
+
+def _enforce_admin_entity_scope(user: dict, entity: str) -> None:
+    """
+    Admin (no superadmin) ve solo settings operativos acotados.
+    """
+    if _is_superadmin(user):
+        return
+    # ADMIN: solo productos (venta), comunas y estados del lead.
+    allowed = {"productos", "comunas", "estados", "estados_lead"}
+    if (entity or "").strip().lower() not in allowed:
+        raise HTTPException(status_code=403, detail="Acceso denegado para este módulo de Settings.")
 
 
 def _ensure_usuarios_marcas() -> None:
@@ -1165,6 +1186,7 @@ def _fetch_choices(source: str) -> List[Dict[str, Any]]:
 def meta(entity: str, user: dict = Depends(get_current_user)):
     try:
         _require_admin(user)
+        _enforce_admin_entity_scope(user, entity)
 
         table = _resolve_table(entity)
         if table == "usuarios":
@@ -1231,6 +1253,7 @@ def list_rows(
     user: dict = Depends(get_current_user),
 ):
     _require_admin(user)
+    _enforce_admin_entity_scope(user, entity)
 
     table = _resolve_table(entity)
     if table == "usuarios":
@@ -1313,6 +1336,7 @@ def create_row(
     user: dict = Depends(get_current_user),
 ):
     _require_admin(user)
+    _enforce_admin_entity_scope(user, entity)
 
     table = _resolve_table(entity)
     if table == "usuarios":
@@ -1382,6 +1406,19 @@ def create_row(
                     next_id = cn.execute(text("SELECT COALESCE(MAX(id_rol),0)+1 FROM roles")).scalar()
                 if next_id is not None:
                     data["id_rol"] = int(next_id)
+        except Exception:
+            pass
+
+    # marcas: algunos entornos tienen id_marca NOT NULL sin default/serial.
+    # Fallback seguro (baja concurrencia): max+1.
+    if table == "marcas":
+        try:
+            id_col = next((c for c in cols if c["column_name"] == pk), None)
+            if id_col and not (id_col.get("column_default") or "") and pk not in data:
+                with engine.connect() as cn:
+                    next_id = cn.execute(text("SELECT COALESCE(MAX(id_marca),0)+1 FROM marcas")).scalar()
+                if next_id is not None:
+                    data[pk] = int(next_id)
         except Exception:
             pass
 
@@ -1606,6 +1643,7 @@ def update_row(
     user: dict = Depends(get_current_user),
 ):
     _require_admin(user)
+    _enforce_admin_entity_scope(user, entity)
 
     table = _resolve_table(entity)
     if table == "usuarios":
@@ -1722,6 +1760,7 @@ def delete_row(
     user: dict = Depends(get_current_user),
 ):
     _require_admin(user)
+    _enforce_admin_entity_scope(user, entity)
 
     table = _resolve_table(entity)
     cols = _cols_for(table)

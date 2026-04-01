@@ -1899,10 +1899,10 @@ let TASKS_BADGE = { open_total: 0, overdue_total: 0, open_contactar: 0, overdue_
 let TASKS_POLL_HANDLE = null;
 let TASKS_SYNC_INFLIGHT = false;
 const ROLE_IDS = {
-  "ADMIN": 1,
   "SUPERADMIN": 1,
   "SUPER_ADMIN": 1,
   "SUPER ADMIN": 1,
+  "ADMIN": 10,
   "EJECUTIVO DE VENTAS": 2,
   "VENDEDOR": 2,
   "JEFE DE OPERACIONES": 3,
@@ -1991,6 +1991,21 @@ const PERMISSIONS = {
 		    ,"system_notifs"
 		    ,"events_calendar"
 		  ]),
+	  10: /* @__PURE__ */ new Set([
+	    "dash_home",
+	    "leads_ver",
+	    "leads_fil",
+	    "historial",
+	    "rep_total",
+	    "system_notifs",
+	    "tool_wapp",
+	    "tool_calc",
+	    "tools_hub",
+	    "tool_chat",
+	    "set_prod",
+	    "set_com",
+	    "set_el"
+	  ]),
 	  2: /* @__PURE__ */ new Set([
 	    "dash_home",
 	    "leads_ver",
