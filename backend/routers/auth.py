@@ -115,7 +115,8 @@ def load_users() -> Dict[str, Dict[str, str]]:
     # Defaults: lo que tu UI sugiere + admin clásico
     return {
         "admin": {"password": "admin", "role": "admin"},
-        "greengd": {"password": "green123", "role": "admin"},
+        # Cuenta bootstrap (si NO existe en BD). En prod, idealmente deshabilitar via ENV CRM_USERS.
+        "greengd": {"password": "green123", "role": "superadmin"},
     }
 
 
@@ -273,6 +274,8 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
         return None
 
     # 1) DB usuarios (email o username)
+    # Importante: si el usuario existe en BD, NUNCA hacemos fallback a USERS hardcoded
+    # (evita bypass de contraseña/rol por cuentas bootstrap).
     try:
         with get_connection() as conn:
             try:
@@ -294,8 +297,9 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
                 ),
                 {"u": u},
             ).mappings().first()
-            if row and row.get("hashed_password"):
-                if verify_password(p, row["hashed_password"]):
+            if row:
+                hp = row.get("hashed_password")
+                if hp and verify_password(p, hp):
                     # marcas asignadas
                     marcas = []
                     try:
@@ -314,6 +318,8 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
                         "marcas": marcas,
                         "avatar_url": row.get("avatar_url"),
                     }
+                # Si existe en BD pero no matchea password (o no tiene hash), no permitir fallback.
+                return None
     except Exception:
         pass
 
@@ -631,6 +637,38 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Dict[s
                         user["name"] = row.get("nombre")
                     if row.get("avatar_url"):
                         user["avatar_url"] = row.get("avatar_url")
+    except Exception:
+        pass
+
+    # Rol canónico desde BD (si existe el usuario).
+    # Motivo: cambios de rol (ADMIN/SUPERADMIN) deben reflejarse sin obligar a re-loguear.
+    try:
+        uid = int(user.get("id")) if str(user.get("id") or "").isdigit() else None
+        if uid:
+            with get_connection() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT rol, cargo, is_active, nombre, email, username, avatar_url
+                        FROM public.usuarios
+                        WHERE id_usuario=:id
+                        LIMIT 1
+                        """
+                    ),
+                    {"id": int(uid)},
+                ).mappings().first()
+                if row:
+                    db_role = str(row.get("rol") or row.get("cargo") or "").strip()
+                    if db_role:
+                        user["role"] = db_role
+                    if not user.get("name") and row.get("nombre"):
+                        user["name"] = row.get("nombre")
+                    if row.get("email") or row.get("username"):
+                        user["username"] = row.get("email") or row.get("username")
+                    if row.get("avatar_url"):
+                        user["avatar_url"] = row.get("avatar_url")
+                    if row.get("is_active") is not None:
+                        user["is_active"] = bool(row.get("is_active"))
     except Exception:
         pass
 
