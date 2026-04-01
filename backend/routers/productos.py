@@ -531,29 +531,49 @@ def list_productos(
             else:
                 with get_connection() as conn:
                     rows = conn.execute(
-                        text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
-                        {"m": marcas_ids},
-                    ).fetchall()
+                        text(
+                            """
+                            SELECT COALESCE(marca,nombre) AS label, nombre, marca
+                            FROM marcas
+                            WHERE id_marca = ANY(CAST(:m AS int[]))
+                            """
+                        ),
+                        {"m": list(map(int, marcas_ids))},
+                    ).mappings().all()
 
-                marcas = [r[0] or r[1] for r in rows if (r[0] or r[1])]
-                marcas_codes = [_canon_code_py(m) for m in marcas]
-                marcas_snips = []
-                for c in marcas_codes:
-                    for s in _code_like_snippets(c):
-                        if s:
-                            marcas_snips.append(s)
-                marcas_like = ["%%%s%%" % s for s in marcas_snips]
+                # Arma snippets/keys robustos:
+                # - keys del catálogo (label/nombre/marca)
+                # - alias cortos para las 4 marcas históricas (EXP/CAM/etc)
+                keys: list[str] = []
+                for r in rows:
+                    label = str(r.get("label") or "").strip()
+                    for k in (label, r.get("nombre"), r.get("marca")):
+                        kk = _norm_key_py(str(k or ""))
+                        if kk:
+                            keys.append(kk)
+                    canon = _canon_code_py(label)
+                    if canon:
+                        for s in _code_like_snippets(canon):
+                            kk = _norm_key_py(str(s or ""))
+                            if kk:
+                                keys.append(kk)
+
+                keys = sorted(set([k for k in keys if k]))
+                marcas_like = ["%%%s%%" % k for k in keys]
                 marca_expr = _norm_key_sql("COALESCE(marca,'')")
 
                 if has_id_marca and marcas_ids and marcas_like:
-                    where.append("(id_marca = ANY(:marcas_ids) OR (id_marca IS NULL AND %s LIKE ANY(:marcas_like)))" % marca_expr)
-                    params["marcas_ids"] = marcas_ids
+                    where.append(
+                        "(id_marca = ANY(CAST(:marcas_ids AS int[])) OR (%s LIKE ANY(CAST(:marcas_like AS text[]))))"
+                        % marca_expr
+                    )
+                    params["marcas_ids"] = list(map(int, marcas_ids))
                     params["marcas_like"] = marcas_like
                 elif has_id_marca and marcas_ids:
-                    where.append("id_marca = ANY(:marcas_ids)")
-                    params["marcas_ids"] = marcas_ids
+                    where.append("id_marca = ANY(CAST(:marcas_ids AS int[]))")
+                    params["marcas_ids"] = list(map(int, marcas_ids))
                 elif marcas_like:
-                    where.append("%s LIKE ANY(:marcas_like)" % marca_expr)
+                    where.append("%s LIKE ANY(CAST(:marcas_like AS text[]))" % marca_expr)
                     params["marcas_like"] = marcas_like
                 else:
                     return {"items": []}

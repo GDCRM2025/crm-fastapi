@@ -402,20 +402,17 @@
     return cachedMarcas;
   }
 
-  function canonMarcaCode(s){
-    const v = String(s || "")
+  function marcaLabel(m){
+    return String(m?.marca || m?.nombre || "").trim();
+  }
+
+  function normMarcaKey(s){
+    return String(s || "")
       .trim()
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, "");
-    if (!v) return "";
-    if (v.includes("camaleon")) return "CAMALEON";
-    if (v.includes("delsabor")) return "DEL SABOR";
-    if (v.includes("gourmet")) return "GOURMET";
-    if (v.includes("express")) return "EXPRESS";
-    if (v.includes("brontos")) return "BRONTOS";
-    return "";
   }
 
   function isPrivilegedRole(role){
@@ -430,29 +427,20 @@
     );
   }
 
-  async function getAllowedMarcaCodes(){
-    // Admin/roles privilegiados: todas
-    const all = ["GOURMET","CAMALEON","DEL SABOR","EXPRESS","BRONTOS"];
-    if (!meUser) return all;
-    if (isPrivilegedRole(meUser.role || meUser.rol)) return all;
+  async function getAllowedMarcasForProductos(){
+    // Para productos, la lista de marcas debe ser dinámica (marcas nuevas deben aparecer).
+    const marcas = await getMarcas();
+    const all = (marcas || []).map(m => marcaLabel(m)).filter(Boolean);
+    if (!meUser) return all.map(x=>String(x).toUpperCase());
+    if (isPrivilegedRole(meUser.role || meUser.rol)) return all.map(x=>String(x).toUpperCase());
 
     const ids = Array.isArray(meUser.marcas) ? meUser.marcas.map(Number).filter(n=>Number.isFinite(n)) : [];
     if (!ids.length) return [];
-
-    // Usa /settings/marcas (trae id_marca + nombre) para mapear ids -> nombres
-    try{
-      const r = await api("/settings/marcas?limit=300&offset=0&active_only=true");
-      const items = r.items || [];
-      const idToName = new Map(items.map(m => [Number(m.id_marca), String(m.nombre || m.marca || "")]));
-      const out = [];
-      for (const id of ids){
-        const code = canonMarcaCode(idToName.get(id) || "");
-        if (code) out.push(code);
-      }
-      return Array.from(new Set(out));
-    }catch(_){
-      return [];
-    }
+    const idset = new Set(ids);
+    return (marcas || [])
+      .filter(m => idset.has(Number(m.id_marca)))
+      .map(m => String(marcaLabel(m)).toUpperCase())
+      .filter(Boolean);
   }
 
   function roleCode(role){
@@ -1106,9 +1094,9 @@
     if (entity !== "productos") return;
     const sel = qs("#f_marca");
     if (!sel) return;
-    const allowed = await getAllowedMarcaCodes();
+    const allowed = await getAllowedMarcasForProductos();
     const curRaw = qs("#f_marca_cur")?.value || "";
-    const curCode = canonMarcaCode(curRaw) || String(curRaw || "").trim().toUpperCase();
+    const curKey = normMarcaKey(curRaw);
 
     sel.innerHTML = "";
     if (!allowed.length){
@@ -1123,8 +1111,8 @@
       sel.appendChild(opt);
     }
     // Set current
-    if (allowed.includes(curCode)) sel.value = curCode;
-    else sel.value = allowed[0];
+    const found = allowed.find(x => normMarcaKey(x) === curKey);
+    sel.value = found || allowed[0];
 
     // Si solo hay 1 marca, bloquea (ejecutivo de una marca)
     sel.disabled = (allowed.length === 1);
@@ -1289,6 +1277,7 @@
       }
       try{
         await api(`/settings/${entity}/${row[pk]}`, {method:"PUT", body:JSON.stringify({data})});
+        if (entity==="marcas") cachedMarcas = null;
         if (entity==="usuarios"){
           const roleVal = qs("#f_rol")?.value || "";
           const brands = getSelectedBrands();
@@ -1464,6 +1453,7 @@
       try{
         const password = data.password;
         const resp = await api(`/settings/${entity}`, {method:"POST", body:JSON.stringify({data})});
+        if (entity==="marcas") cachedMarcas = null;
         if (entity==="usuarios" && password){
           const id = resp?.id;
           const roleVal = qs("#f_rol")?.value || "";

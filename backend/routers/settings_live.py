@@ -727,60 +727,110 @@ def _norm_expr(expr: str) -> str:
 def _norm_param(param: str) -> str:
     return f"translate(lower({param}), 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN')"
 
-def _canon_marca_code_py(s: str) -> str | None:
-    """
-    Canoniza nombres de marca a los códigos usados por el CRM (texto en productos/leads).
-    Retorna uno de: CAMALEON | DEL SABOR | GOURMET | EXPRESS
-    """
+def _norm_key_py(s: str) -> str:
     if not s:
-        return None
+        return ""
     key = (
         str(s)
         .strip()
         .lower()
-        .translate(str.maketrans("áéíóúüñ", "aeiouun"))
+        .translate(str.maketrans("áéíóúüñÁÉÍÓÚÜÑ", "aeiouunAEIOUUN"))
     )
-    # Normaliza fuerte: solo alfanumérico
     key = "".join(ch for ch in key if ch.isalnum())
-    if not key:
-        return None
-    # Nota: en data real hemos visto "Camaleón" escrito de muchas formas
-    # (acentos raros, encoding, etc) que terminan en keys tipo "camalen".
-    # Por eso usamos un match más laxo: "camale".
-    if "camale" in key:
-        return "CAMALEON"
-    # Similar: algunos casos quedan como "delsabr" (por tildes/encoding),
-    # usamos "delsab" para capturar variaciones seguras.
-    if "delsab" in key:
-        return "DEL SABOR"
-    if "gourmet" in key:
-        return "GOURMET"
-    if "express" in key:
-        return "EXPRESS"
-    if "brontos" in key:
-        return "BRONTOS"
-    return None
+    return key
+
+
+def _resolve_marca_from_db(marca_in: str, restrict_ids: List[int] | None = None) -> tuple[str | None, int | None]:
+    """
+    Resuelve un texto de marca a una marca existente en DB, tolerando tildes/espacios.
+    Retorna (label_upper, id_marca) o (None, None).
+    """
+    want = _norm_key_py(marca_in)
+    if not want:
+        return (None, None)
+
+    try:
+        with engine.connect() as cn:
+            if restrict_ids:
+                rows = cn.execute(
+                    text(
+                        """
+                        SELECT id_marca, COALESCE(marca,nombre) AS label, nombre, marca
+                        FROM public.marcas
+                        WHERE id_marca = ANY(CAST(:m AS int[]))
+                        """
+                    ),
+                    {"m": list(map(int, restrict_ids))},
+                ).mappings().all()
+            else:
+                rows = cn.execute(
+                    text(
+                        """
+                        SELECT id_marca, COALESCE(marca,nombre) AS label, nombre, marca
+                        FROM public.marcas
+                        WHERE is_active=true
+                        """
+                    )
+                ).mappings().all()
+    except Exception:
+        rows = []
+
+    idx: dict[str, tuple[str, int]] = {}
+    for r in rows:
+        mid = int(r.get("id_marca") or 0)
+        if mid <= 0:
+            continue
+        label = str(r.get("label") or "").strip()
+        if not label:
+            continue
+        canon = label.strip().upper()
+        for k in (r.get("label"), r.get("nombre"), r.get("marca")):
+            kk = _norm_key_py(str(k or ""))
+            if kk:
+                idx.setdefault(kk, (canon, mid))
+
+    got = idx.get(want)
+    if got:
+        return got[0], got[1]
+    return (None, None)
 
 
 def _allowed_marca_codes(user: dict) -> List[str]:
+    """
+    Retorna las marcas permitidas para el usuario (como etiquetas en MAYÚSCULA).
+    Importante: debe ser dinámico (marcas nuevas deben funcionar sin hardcode).
+    """
     role = _role(user)
     if _is_privileged(role) or _is_privileged_user(user):
-        return ["GOURMET", "CAMALEON", "DEL SABOR", "EXPRESS", "BRONTOS"]
+        try:
+            with engine.connect() as cn:
+                rows = cn.execute(
+                    text(
+                        """
+                        SELECT COALESCE(marca,nombre) AS label
+                        FROM public.marcas
+                        WHERE is_active=true
+                        ORDER BY COALESCE(marca,nombre) ASC
+                        """
+                    )
+                ).fetchall()
+            return sorted({str(r[0] or "").strip().upper() for r in rows if (r and (r[0] or "").strip())})
+        except Exception:
+            return []
     ids = _user_marcas_ids(user)
     if not ids:
         return []
     try:
         with engine.connect() as cn:
             rows = cn.execute(
-                text("SELECT nombre, marca FROM marcas WHERE id_marca = ANY(:m)"),
-                {"m": ids},
+                text("SELECT COALESCE(marca,nombre) AS label FROM marcas WHERE id_marca = ANY(CAST(:m AS int[]))"),
+                {"m": list(map(int, ids))},
             ).fetchall()
         out: List[str] = []
         for r in rows:
-            label = (r[0] or r[1] or "")
-            code = _canon_marca_code_py(str(label))
-            if code:
-                out.append(code)
+            label = str((r[0] if r else "") or "").strip()
+            if label:
+                out.append(label.upper())
         return sorted(set(out))
     except Exception:
         return []
@@ -798,16 +848,16 @@ def _normalize_productos_marcas_once() -> None:
 
 def _normalize_productos_marcas(force: bool = False) -> Dict[str, Any]:
     """
-    Normaliza `public.productos.marca` a MAYÚSCULA con los 4 códigos oficiales:
-    GOURMET | CAMALEON | DEL SABOR | EXPRESS
+    Normaliza `public.productos.marca` a MAYÚSCULA usando el catálogo de `public.marcas`.
 
     En entornos reales hay dos causas de “no hay productos para la marca”:
     1) productos.marca viene con textos variados (acentos/puntos/sufijos)
     2) productos.id_marca puede estar (pero marca texto quedó vieja) o viceversa
 
     Este job:
-    - Si existe id_marca en productos: setea marca por el nombre de marcas (robusto).
-    - Siempre intenta normalizar por el texto actual como fallback.
+    - Si existe id_marca en productos: setea marca por el label de `marcas` (robusto).
+    - Si existe id_marca: intenta inferir id_marca por texto cuando falta.
+    - Siempre intenta normalizar por el texto actual como fallback (match contra marcas).
     - En modo normal corre 1 vez por día; force=True lo ejecuta siempre.
     """
     out = {
@@ -876,55 +926,55 @@ def _normalize_productos_marcas(force: bool = False) -> Dict[str, Any]:
                 except Exception:
                     pass
                 if has_id_marca:
-                    mkey = _norm("coalesce(m.nombre, m.marca, '')")
-                    canon_case = (
-                        f"CASE "
-                        f"WHEN {mkey} LIKE '%camale%' THEN 'CAMALEON' "
-                        f"WHEN {mkey} LIKE '%delsab%' THEN 'DEL SABOR' "
-                        f"WHEN {mkey} LIKE '%gourmet%' THEN 'GOURMET' "
-                        f"WHEN {mkey} LIKE '%express%' THEN 'EXPRESS' "
-                        f"ELSE NULL END"
-                    )
                     res = cn.execute(
                         text(
                             f"""
                             UPDATE public.productos p
-                            SET marca = x.canon
-                            FROM (
-                              SELECT m.id_marca, {canon_case} AS canon
-                              FROM public.marcas m
-                            ) x
-                            WHERE p.id_marca = x.id_marca
-                              AND x.canon IS NOT NULL
-                              AND upper(coalesce(p.marca,'')) <> x.canon
+                            SET marca = upper(coalesce(m.marca,m.nombre,''))
+                            FROM public.marcas m
+                            WHERE p.id_marca = m.id_marca
+                              AND btrim(coalesce(m.marca,m.nombre,'')) <> ''
+                              AND upper(coalesce(p.marca,'')) <> upper(coalesce(m.marca,m.nombre,''))
                             """
                         )
                     )
                     out["updated_by_id_marca"] = int(res.rowcount or 0)
 
-                # 2) Fallback por texto actual en productos.marca
-                pkey = _norm("p.marca")
-                rules = [
-                    ("CAMALEON", "camale"),
-                    ("DEL SABOR", "delsab"),
-                    ("GOURMET", "gourmet"),
-                    ("EXPRESS", "express"),
-                ]
-                total_text = 0
-                for canon, key in rules:
+                # 2) Inferir por texto (match contra marcas) + setear id_marca cuando falte (si existe col)
+                try:
                     res = cn.execute(
                         text(
                             f"""
                             UPDATE public.productos p
-                            SET marca=:canon
-                            WHERE {pkey} LIKE ('%' || :key || '%')
-                              AND upper(coalesce(p.marca,'')) <> :canon
+                            SET
+                              marca = upper(coalesce(m.marca,m.nombre,'')),
+                              id_marca = COALESCE(p.id_marca, m.id_marca)
+                            FROM public.marcas m
+                            WHERE {_norm("coalesce(p.marca,'')")} = {_norm("coalesce(m.marca,m.nombre,'')")}
+                              AND btrim(coalesce(m.marca,m.nombre,'')) <> ''
+                              AND (
+                                upper(coalesce(p.marca,'')) <> upper(coalesce(m.marca,m.nombre,''))
+                                OR (p.id_marca IS NULL)
+                              )
                             """
-                        ),
-                        {"canon": canon, "key": key},
+                        )
                     )
-                    total_text += int(res.rowcount or 0)
-                out["updated_by_text"] = total_text
+                    out["updated_by_text"] = int(res.rowcount or 0)
+                except Exception:
+                    # Si no hay id_marca en productos, deja solo marca:
+                    res = cn.execute(
+                        text(
+                            f"""
+                            UPDATE public.productos p
+                            SET marca = upper(coalesce(m.marca,m.nombre,''))
+                            FROM public.marcas m
+                            WHERE {_norm("coalesce(p.marca,'')")} = {_norm("coalesce(m.marca,m.nombre,'')")}
+                              AND btrim(coalesce(m.marca,m.nombre,'')) <> ''
+                              AND upper(coalesce(p.marca,'')) <> upper(coalesce(m.marca,m.nombre,''))
+                            """
+                        )
+                    )
+                    out["updated_by_text"] = int(res.rowcount or 0)
 
                 cn.execute(
                     text(
@@ -1484,15 +1534,20 @@ def create_row(
             raise HTTPException(403, detail="No tienes marcas asignadas para crear productos.")
 
         raw_marca = (raw or {}).get("marca") or data.get("marca") or ""
-        code = _canon_marca_code_py(str(raw_marca)) or (str(raw_marca).strip().upper() if raw_marca else None)
+        restrict_ids = _user_marcas_ids(user) if not _is_privileged(role) else None
+        resolved_label, resolved_id = _resolve_marca_from_db(str(raw_marca or ""), restrict_ids=restrict_ids)
+        code = resolved_label or (str(raw_marca).strip().upper() if raw_marca else None)
 
         if not _is_privileged(role):
             if len(allowed_codes) == 1:
                 code = allowed_codes[0]
+                if restrict_ids:
+                    resolved_id = int(restrict_ids[0])
             else:
                 if not code:
                     raise HTTPException(400, detail="Marca requerida")
-                if code not in allowed_codes:
+                if not resolved_label:
+                    # si no resolvió contra marcas asignadas, se considera no permitido
                     raise HTTPException(403, detail="No puedes crear productos para esa marca.")
         else:
             # Admin: si coincide con nuestras marcas conocidas, la canonizamos; si no, la dejamos en upper.
@@ -1501,6 +1556,8 @@ def create_row(
         if not code:
             raise HTTPException(400, detail="Marca requerida")
         data["marca"] = str(code).upper()
+        if resolved_id and ("id_marca" in allowed):
+            data["id_marca"] = int(resolved_id)
 
     keys = list(data.keys())
     cols_sql = ", ".join([_qident(k) for k in keys])
@@ -1719,21 +1776,27 @@ def update_row(
             raise HTTPException(403, detail="No tienes marcas asignadas para editar productos.")
 
         raw_marca = (raw or {}).get("marca") or data.get("marca") or ""
-        code = _canon_marca_code_py(str(raw_marca)) or (str(raw_marca).strip().upper() if raw_marca else None)
+        restrict_ids = _user_marcas_ids(user) if not _is_privileged(role) else None
+        resolved_label, resolved_id = _resolve_marca_from_db(str(raw_marca or ""), restrict_ids=restrict_ids)
+        code = resolved_label or (str(raw_marca).strip().upper() if raw_marca else None)
 
         if not _is_privileged(role):
             if len(allowed_codes) == 1:
                 code = allowed_codes[0]
+                if restrict_ids:
+                    resolved_id = int(restrict_ids[0])
             else:
                 if not code:
                     raise HTTPException(400, detail="Marca requerida")
-                if code not in allowed_codes:
+                if not resolved_label:
                     raise HTTPException(403, detail="No puedes editar productos para esa marca.")
         else:
             code = code or None
 
         if code:
             data["marca"] = str(code).upper()
+        if resolved_id and ("id_marca" in allowed):
+            data["id_marca"] = int(resolved_id)
 
     sets = ", ".join([f"{_qident(k)}=:{k}" for k in data.keys()])
     data["__id"] = row_id

@@ -279,8 +279,8 @@
           <div>${it.producto}</div>
           <div class="muted" style="font-size:12px;">${it.descripcion || ""}</div>
         </td>
-        <td class="right">${fmt(it.cantidad)}</td>
         <td class="right">$${fmt(it.precio)}</td>
+        <td class="right">${fmt(it.cantidad)}</td>
         <td class="right">$${fmt(it.subtotal)}</td>
         <td class="right">
           <div class="controls" style="justify-content:flex-end">
@@ -385,8 +385,8 @@
           title: "Editar ítem",
           html: `
             <div style="text-align:left;display:grid;gap:10px">
+              <label>Precio <input id="sw_price" class="swal2-input" type="number" min="0" value="${it.precio || 0}"></label>
               <label>Cantidad <input id="sw_qty" class="swal2-input" type="number" min="1" value="${it.cantidad || 1}"></label>
-              <label>Valor unitario <input id="sw_price" class="swal2-input" type="number" min="0" value="${it.precio || 0}"></label>
             </div>
           `,
           showCancelButton: true,
