@@ -747,6 +747,21 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Dict[s
     except Exception:
         pass
 
+    # Canonicaliza rol para que checks sean consistentes en todo el sistema.
+    # Acepta variantes: SUPER_ADMIN / SUPER ADMIN / SUPERADMIN.
+    try:
+        raw_role = str(user.get("role") or user.get("rol") or "").strip()
+        up = raw_role.upper()
+        compact = up.replace(" ", "").replace("_", "").replace("-", "")
+        if compact and ("SUPER" in compact and "ADMIN" in compact):
+            user["role"] = "SUPERADMIN"
+        elif compact == "ADMIN":
+            user["role"] = "ADMIN"
+        elif up:
+            user["role"] = up
+    except Exception:
+        pass
+
     return user
 
 

@@ -973,7 +973,8 @@
       const card = $("#tasksCard");
       if (!card || card.style.display === "none") return;
 
-      const isAdmin = String(state.me?.role || state.me?.rol || "").toUpperCase() === "ADMIN";
+      const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
+      const isAdmin = roleUp.includes("ADMIN"); // ADMIN / SUPER_ADMIN / SUPERADMIN
 
       // Admin ve global (conteo existente); ejecutivos: sync + conteo propio.
       if (isAdmin){

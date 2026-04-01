@@ -1,5 +1,5 @@
 /* GreenDiamond App (PWA shell) - minimal service worker */
-const CACHE_NAME = "gd-staff-shell-v1";
+const CACHE_NAME = "gd-staff-shell-v2";
 const SHELL_URLS = [
   "./views/staff.html",
   "./styles.css",
@@ -39,8 +39,11 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => null);
+          // Nunca cachear 404/500 (evita quedar pegado con {"detail":"Not Found"} en iOS/Safari).
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => null);
+          }
           return res;
         })
         .catch(() => caches.match(req).then((r) => r || caches.match("./views/staff.html")))

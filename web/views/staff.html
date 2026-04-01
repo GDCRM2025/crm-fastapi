@@ -165,6 +165,7 @@
           return "";
         }
       })();
+      const FRAME_V = "20260401-1";
 
       function getToken(){
         return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
@@ -222,10 +223,10 @@
           const standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
           if(standalone && installHint) installHint.classList.add("hide");
         }catch(_){}
-        setFrame(`${API_BASE}/web/views/chat.html?embed=1`);
-        tabChat.onclick = () => { setTab("chat"); setFrame(`${API_BASE}/web/views/chat.html?embed=1`); };
-        tabNotifs.onclick = () => { setTab("notifs"); setFrame(`${API_BASE}/web/views/system_notifs.html`); };
-        tabOp.onclick = () => { setTab("op"); setFrame(`${API_BASE}/web/views/operadores.html`); };
+        setFrame(`${API_BASE}/web/views/chat.html?embed=1&v=${encodeURIComponent(FRAME_V)}`);
+        tabChat.onclick = () => { setTab("chat"); setFrame(`${API_BASE}/web/views/chat.html?embed=1&v=${encodeURIComponent(FRAME_V)}`); };
+        tabNotifs.onclick = () => { setTab("notifs"); setFrame(`${API_BASE}/web/views/system_notifs.html?v=${encodeURIComponent(FRAME_V)}`); };
+        tabOp.onclick = () => { setTab("op"); setFrame(`${API_BASE}/web/views/operadores.html?v=${encodeURIComponent(FRAME_V)}`); };
 
         logoutBtn.onclick = async () => {
           try{

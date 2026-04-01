@@ -214,7 +214,7 @@ def _uname(user: dict) -> str:
 
 def _is_admin(user: dict) -> bool:
     r = _role(user)
-    return r in ("ADMIN", "SUPERADMIN", "1")
+    return r in ("ADMIN", "SUPERADMIN", "SUPER_ADMIN", "SUPER ADMIN", "1")
 
 
 def _user_info(db: Session, uid: int) -> dict[str, Any]:
@@ -717,6 +717,98 @@ def summary(
             "disabled": True,
         }
 
+    # Admin global: conteo directo desde LEADS (no depende de que cada ejecutivo haya hecho /tasks/sync).
+    # Esto evita que Admin/SuperAdmin vea 0 por falta de "prefill" en la tabla tasks.
+    if scope == "all" and is_admin:
+        try:
+            if _table_exists(db, "leads") and _col_exists(db, "leads", "id_estado"):
+                nuevo_id = core_tasks._estado_id_like(db, "%NUEV%", 1)  # type: ignore[attr-defined]
+                contactado_id = core_tasks._estado_id_like(db, "%CONTACT%", 2)  # type: ignore[attr-defined]
+                cotizado_id = core_tasks._estado_id_like(db, "%COTIZ%", 3)  # type: ignore[attr-defined]
+
+                confirmado_id = core_tasks._estado_id_like(db, "CONFIRM%", 4)  # type: ignore[attr-defined]
+                declinado_id = core_tasks._estado_id_like(db, "%DECLIN%", 5)  # type: ignore[attr-defined]
+
+                ev_date = core_tasks._lead_event_date_expr_db(db, alias="l")  # type: ignore[attr-defined]
+                created_expr = core_tasks._lead_created_ts_expr_db(db, alias="l")  # type: ignore[attr-defined]
+
+                # last_expr (compat, similar a core/tasks.py)
+                updated_cols = [c for c in ("updated_at", "fecha_modificacion", "modificado_at", "updated") if _col_exists(db, "leads", c)]
+                updated_terms = [f"l.{c}" for c in updated_cols]
+                last_expr = "COALESCE(" + ", ".join(updated_terms + [created_expr, "now()"]) + ")"
+
+                has_contact_sql = core_tasks._has_contact_sql_db(db)  # type: ignore[attr-defined]
+
+                month_start = "date_trunc('month', CURRENT_DATE)::date"
+                month_end = "(date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::date"
+                created_month = f"date_trunc('month', {created_expr})::date"
+                in_scope_with_date = f"(({ev_date}) IS NOT NULL AND ({ev_date}) >= CURRENT_DATE AND ({ev_date}) >= {month_start} AND ({ev_date}) < {month_end})"
+                in_scope_no_date = f"(({ev_date}) IS NULL AND ({created_month}) = {month_start})"
+                ev_in_scope = f"({in_scope_with_date} OR {in_scope_no_date})"
+
+                cond_nuevo = f"""
+                  l.id_estado = :nuevo
+                  AND ({has_contact_sql}) IS NOT TRUE
+                  AND {ev_in_scope}
+                  AND (
+                    (({ev_date}) IS NOT NULL AND {created_expr} <= (now() - INTERVAL '3 days'))
+                    OR
+                    (({ev_date}) IS NULL AND {created_expr} <= (now() - INTERVAL '5 days'))
+                  )
+                """
+                cond_contact = f"""
+                  l.id_estado = :contactado
+                  AND {last_expr} <= (now() - INTERVAL '3 days')
+                  AND (
+                    {in_scope_no_date}
+                    OR
+                    (({ev_date}) IS NOT NULL AND ({ev_date}) >= CURRENT_DATE AND ({ev_date}) < {month_end} AND ({ev_date}) <= (CURRENT_DATE + INTERVAL '7 days'))
+                  )
+                """
+                cond_cot = f"""
+                  l.id_estado = :cotizado
+                  AND {last_expr} <= (now() - INTERVAL '3 days')
+                  AND {ev_in_scope}
+                """
+
+                row = db.execute(
+                    text(
+                        f"""
+                        SELECT
+                          COUNT(*) FILTER (WHERE {cond_nuevo})::int AS open_nuevos,
+                          COUNT(*) FILTER (WHERE {cond_contact})::int AS open_contactados,
+                          COUNT(*) FILTER (WHERE {cond_cot})::int AS open_cotizados
+                        FROM public.leads l
+                        WHERE l.id_estado NOT IN (:conf, :decl)
+                        """
+                    ),
+                    {
+                        "nuevo": int(nuevo_id),
+                        "contactado": int(contactado_id),
+                        "cotizado": int(cotizado_id),
+                        "conf": int(confirmado_id),
+                        "decl": int(declinado_id),
+                    },
+                ).mappings().first()
+
+                open_n = int((row or {}).get("open_nuevos") or 0)
+                open_c = int((row or {}).get("open_contactados") or 0)
+                open_q = int((row or {}).get("open_cotizados") or 0)
+                open_total = open_n + open_c + open_q
+
+                return {
+                    "ok": True,
+                    "scope": scope,
+                    "open_total": int(open_total),
+                    "overdue_total": int(open_total),
+                    "open_nuevos": int(open_n),
+                    "open_contactados": int(open_c),
+                    "open_cotizados": int(open_q),
+                }
+        except Exception:
+            # Fallback al conteo por tabla tasks (si falla por schema).
+            pass
+
     # Excluir leads cerrados (CONFIRMADO / DECLINADO) para evitar ruido en conteos.
     closed = []
     try:
@@ -746,6 +838,78 @@ def summary(
           )
         """
         params["closed"] = closed
+
+    # Regla: este módulo solo considera tareas asociadas a leads en estados
+    # NUEVO / CONTACTADO / COTIZADO. Si quedó alguna tarea abierta y el lead
+    # cambió a otro estado, la excluimos del conteo para mantener coherencia con el listado.
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "id_estado"):
+            allowed_estados = [
+                int(core_tasks._estado_id_like(db, "%NUEV%", 1)),  # type: ignore[attr-defined]
+                int(core_tasks._estado_id_like(db, "%CONTACT%", 2)),  # type: ignore[attr-defined]
+                int(core_tasks._estado_id_like(db, "%COTIZ%", 3)),  # type: ignore[attr-defined]
+            ]
+            allowed_estados = [x for i, x in enumerate(allowed_estados) if x and x not in allowed_estados[:i]]
+            params["allowed_estados"] = allowed_estados
+            where += """
+              AND NOT (
+                t.entity_type='lead'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.leads l0
+                  WHERE l0.id_lead=t.entity_id
+                    AND l0.id_estado IS NOT NULL
+                    AND NOT (l0.id_estado = ANY(CAST(:allowed_estados AS int[])))
+                )
+              )
+            """
+    except Exception:
+        pass
+
+    # Mis tareas: solo leads "vivos" del mes actual (consistente con UI/listado).
+    try:
+        if _table_exists(db, "leads") and _col_exists(db, "leads", "fecha_evento"):
+            month_start = "date_trunc('month', CURRENT_DATE)::date"
+            month_end = "(date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::date"
+
+            ev = core_tasks._lead_event_date_expr_db(db, alias="l2")  # type: ignore[attr-defined]
+            created = core_tasks._lead_created_ts_expr_db(db, alias="l2")  # type: ignore[attr-defined]
+            created_month = f"date_trunc('month', {created})::date"
+
+            where += f"""
+              AND NOT (
+                t.entity_type='lead'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.leads l2
+                  WHERE l2.id_lead = t.entity_id
+                    AND ({ev}) IS NOT NULL
+                    AND ({ev}) < CURRENT_DATE
+                )
+              )
+              AND NOT (
+                t.entity_type='lead'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.leads l2
+                  WHERE l2.id_lead = t.entity_id
+                    AND ({ev}) IS NOT NULL
+                    AND ({ev}) >= {month_end}
+                )
+              )
+              AND NOT (
+                t.entity_type='lead'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.leads l2
+                  WHERE l2.id_lead = t.entity_id
+                    AND ({ev}) IS NULL
+                    AND ({created_month}) <> {month_start}
+                )
+              )
+            """
+    except Exception:
+        pass
 
     try:
         row = db.execute(

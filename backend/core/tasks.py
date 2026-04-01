@@ -94,7 +94,7 @@ def _tasks_table_exists(db: Session) -> bool:
 
 def _is_admin_role(role: str) -> bool:
     r = (role or "").strip().upper()
-    return r in ("ADMIN", "SUPERADMIN", "1")
+    return r in ("ADMIN", "SUPERADMIN", "SUPER_ADMIN", "SUPER ADMIN", "1")
 
 
 def _lead_name_expr() -> str:
@@ -1181,6 +1181,39 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
+    # 1.a3) Auto-close: leads sin fecha_evento, pero creados en otro mes (evita tareas eternas).
+    try:
+        if _table_exists(db, "leads"):
+            month_start = "date_trunc('month', CURRENT_DATE)::date"
+            created_expr2 = _lead_created_ts_expr_db(db, alias="l5")
+            created_month_expr = f"date_trunc('month', {created_expr2})::date"
+            db.execute(
+                text(
+                    f"""
+                    UPDATE public.tasks t
+                    SET status='done', completed_at=now(), completed_by='AUTO', updated_at=now(),
+                        meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object(
+                          'auto_closed', true,
+                          'auto_reason', 'no_date_out_of_month',
+                          'auto_at', now()
+                        )
+                    WHERE t.assigned_user_id=:uid
+                      AND t.status='open'
+                      AND t.entity_type='lead'
+                      AND EXISTS (
+                        SELECT 1
+                        FROM public.leads l5
+                        WHERE l5.id_lead = t.entity_id
+                          AND ({_lead_event_date_expr_db(db, alias="l5")}) IS NULL
+                          AND ({created_month_expr}) <> {month_start}
+                      )
+                    """
+                ),
+                {"uid": int(user_id)},
+            )
+    except Exception:
+        pass
+
     # 1.b) Limpieza: el set legacy de tareas ya no aplica (evita conteos desfasados).
     allowed_kinds = ["LEAD_NUEVO_SEGUIMIENTO", "LEAD_CONTACTADO_SEGUIMIENTO", "LEAD_COTIZADO_SEGUIMIENTO"]
     try:
@@ -1513,45 +1546,18 @@ def list_tasks(
         where += " AND t.status = :st"
         params["st"] = status
 
-    # No mostrar (ni mantener abiertas) tareas que pertenecen a leads ya CONFIRMADOS/DECLINADOS.
-    # Reduce ruido y evita "tareas vencidas" eternas.
+    # IMPORTANTE: list_tasks es un GET. No debe escribir en BD.
+    # Aquí SOLO filtramos (ocultamos) tareas que ya no son relevantes:
+    # - Leads CONFIRMADOS/DECLINADOS
+    # - Leads con fecha_evento vencida
+    # - Leads con fecha_evento del próximo mes
+    # - Leads sin fecha_evento, pero creados en otro mes
     try:
         if _table_exists(db, "leads") and _col_exists(db, "leads", "id_estado"):
             confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
             declinado_id = _estado_id_like(db, "%DECLIN%", 5)
             closed_estados = [int(confirmado_id), int(declinado_id)]
             params["closed_estados"] = closed_estados
-
-            # Auto-close best-effort (para que conteos y UI queden limpios).
-            try:
-                db.execute(
-                    text(
-                        """
-                        UPDATE public.tasks t
-                        SET status='done',
-                            completed_at=now(),
-                            completed_by='AUTO',
-                            updated_at=now(),
-                            meta = COALESCE(t.meta,'{}'::jsonb) || jsonb_build_object(
-                              'auto_closed', true,
-                              'auto_reason', 'lead_confirmed_or_declined',
-                              'auto_at', now()
-                            )
-                        WHERE t.assigned_user_id = :uid
-                          AND t.status = 'open'
-                          AND t.entity_type = 'lead'
-                          AND EXISTS (
-                            SELECT 1
-                            FROM public.leads l
-                            WHERE l.id_lead = t.entity_id
-                              AND l.id_estado = ANY(CAST(:closed_estados AS int[]))
-                          )
-                        """
-                    ),
-                    {"uid": int(assigned_user_id), "closed_estados": closed_estados},
-                )
-            except Exception:
-                pass
 
             where += """
               AND NOT (
@@ -1564,6 +1570,33 @@ def list_tasks(
                 )
               )
             """
+
+            # Además: por regla de negocio, las tareas del módulo solo aplican a 3 estados
+            # (NUEVO / CONTACTADO / COTIZADO). Si el lead cambió a otro estado y quedó una
+            # tarea abierta "colgada", la ocultamos (el sync la cierra de forma persistente).
+            try:
+                allowed_estados = [
+                    int(_estado_id_like(db, "%NUEV%", 1)),
+                    int(_estado_id_like(db, "%CONTACT%", 2)),
+                    int(_estado_id_like(db, "%COTIZ%", 3)),
+                ]
+                # De-dup defensivo
+                allowed_estados = [x for i, x in enumerate(allowed_estados) if x and x not in allowed_estados[:i]]
+                params["allowed_estados"] = allowed_estados
+                where += """
+                  AND NOT (
+                    t.entity_type='lead'
+                    AND EXISTS (
+                      SELECT 1
+                      FROM public.leads l0
+                      WHERE l0.id_lead = t.entity_id
+                        AND l0.id_estado IS NOT NULL
+                        AND NOT (l0.id_estado = ANY(CAST(:allowed_estados AS int[])))
+                    )
+                  )
+                """
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -1572,38 +1605,6 @@ def list_tasks(
     # en cualquier caso no deben mostrarse en la lista.
     try:
         if _table_exists(db, "leads") and _col_exists(db, "leads", "fecha_evento"):
-            # Auto-close best-effort (para limpiar conteos y UI).
-            try:
-                db.execute(
-                    text(
-                        f"""
-	                        UPDATE public.tasks t
-	                        SET status='done',
-	                            completed_at=now(),
-	                            completed_by='AUTO',
-	                            updated_at=now(),
-	                            meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object(
-	                              'auto_closed', true,
-	                              'auto_reason', 'event_expired',
-	                              'auto_at', now()
-	                            )
-                        WHERE t.assigned_user_id = :uid
-                          AND t.status='open'
-                          AND t.entity_type='lead'
-                          AND EXISTS (
-                            SELECT 1
-                            FROM public.leads l
-                            WHERE l.id_lead = t.entity_id
-                              AND ({_lead_event_date_expr_db(db, alias="l")}) IS NOT NULL
-                              AND ({_lead_event_date_expr_db(db, alias="l")}) < CURRENT_DATE
-                          )
-                        """
-                    ),
-                    {"uid": int(assigned_user_id)},
-                )
-            except Exception:
-                pass
-
             where += """
               AND NOT (
                 t.entity_type='lead'
@@ -1619,36 +1620,6 @@ def list_tasks(
 
             # Además: tareas solo para el mes actual (evita que aparezcan leads del próximo mes).
             month_end = "(date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::date"
-            try:
-                db.execute(
-                    text(
-                        f"""
-                        UPDATE public.tasks t
-                        SET status='done',
-                            completed_at=now(),
-                            completed_by='AUTO',
-                            updated_at=now(),
-                            meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object(
-                              'auto_closed', true,
-                              'auto_reason', 'out_of_month',
-                              'auto_at', now()
-                            )
-                        WHERE t.assigned_user_id = :uid
-                          AND t.status='open'
-                          AND t.entity_type='lead'
-                          AND EXISTS (
-                            SELECT 1
-                            FROM public.leads l4
-                            WHERE l4.id_lead = t.entity_id
-                              AND ({_lead_event_date_expr_db(db, alias="l4")}) IS NOT NULL
-                              AND ({_lead_event_date_expr_db(db, alias="l4")}) >= {month_end}
-                          )
-                        """
-                    ),
-                    {"uid": int(assigned_user_id)},
-                )
-            except Exception:
-                pass
 
             where += """
               AND NOT (
@@ -1667,36 +1638,6 @@ def list_tasks(
             month_start = "date_trunc('month', CURRENT_DATE)::date"
             created_expr = _lead_created_ts_expr_db(db, alias="l5")
             created_month_expr = f"date_trunc('month', {created_expr})::date"
-            try:
-                db.execute(
-                    text(
-                        f"""
-                        UPDATE public.tasks t
-                        SET status='done',
-                            completed_at=now(),
-                            completed_by='AUTO',
-                            updated_at=now(),
-                            meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object(
-                              'auto_closed', true,
-                              'auto_reason', 'no_date_out_of_month',
-                              'auto_at', now()
-                            )
-                        WHERE t.assigned_user_id = :uid
-                          AND t.status='open'
-                          AND t.entity_type='lead'
-                          AND EXISTS (
-                            SELECT 1
-                            FROM public.leads l5
-                            WHERE l5.id_lead = t.entity_id
-                              AND ({_lead_event_date_expr_db(db, alias="l5")}) IS NULL
-                              AND ({created_month_expr}) <> {month_start}
-                          )
-                        """
-                    ),
-                    {"uid": int(assigned_user_id)},
-                )
-            except Exception:
-                pass
 
             where += """
               AND NOT (

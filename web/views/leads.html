@@ -1275,7 +1275,12 @@ async function loadCatalogos(){
 
   // 2) estados: endpoint real
   const est = await apiJSON("/lead-estados");
-  const estados = (est.items || est || []).map(normEstado).filter(x=>x.is_active).sort((a,b)=>a.orden-b.orden);
+  // Importante: CONFIRMADO/DECLINADO pueden venir como inactivos (is_active=false),
+  // pero igual deben mostrarse (solo sin banderas/puntos/colores).
+  const estados = (est.items || est || [])
+    .map(normEstado)
+    .filter(x => x.is_active || isClosedEstadoName(String(x.nombre || "").toUpperCase()))
+    .sort((a,b)=>a.orden-b.orden);
 
   // 3) tipos: opcional
   const tipos = (tiposRaw||[]).map(normTipo).filter(x=>x.is_active);
@@ -1395,23 +1400,10 @@ function svgIcon(name){
 
 function flagIconHTML(flag){
   if (!flag) return "";
-  const cls = String(flag.cls || "gray").trim().toLowerCase();
-  const fill = ({
-    red: "#ef4444",
-    blue: "#60a5fa",
-    yellow: "#f59e0b",
-    green: "#22c55e",
-    gray: "#64748b",
-  })[cls] || "#64748b";
+  const clsRaw = String(flag.cls || "gray").trim().toLowerCase();
+  const cls = ["red","blue","yellow","green","gray"].includes(clsRaw) ? clsRaw : "gray";
   const title = escapeHtml(flag.title || "");
-  return `
-    <span class="flagIcon" title="${title}">
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M3 1v14" stroke="rgba(148,163,184,.75)" stroke-width="2" stroke-linecap="round"/>
-        <path d="M5 2h10l-2 3 2 3H5z" fill="${escapeHtml(fill)}"/>
-      </svg>
-    </span>
-  `;
+  return `<span class="flag ${escapeHtml(cls)}" title="${title}" role="img" aria-label="${title}"></span>`;
 }
 function iconButton(title, iconName, handler){
   const b = document.createElement("button");
