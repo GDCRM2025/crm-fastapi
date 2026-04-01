@@ -197,6 +197,11 @@
         <input class="inp" id="uRol" placeholder="Rol (ej: OPERADOR)" />
         <input class="inp" id="uPass" placeholder="Password" />
       </div>
+      <div id="uBrandsBox" style="display:none;margin-top:10px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.18);border-radius:14px;padding:10px;">
+        <div style="font-weight:950;font-size:12px;opacity:.85;margin-bottom:8px;">Marcas (solo ADMIN)</div>
+        <div id="uBrandsList" style="max-height:180px;overflow:auto;display:grid;gap:6px;"></div>
+        <div style="font-size:12px;opacity:.7;font-weight:850;margin-top:8px;">Si no seleccionas marcas, el ADMIN no verá leads/cotizaciones/reportes.</div>
+      </div>
       <div class="row" style="margin-top:10px;">
         <button class="btn" id="uCreate">Crear</button>
       </div>
@@ -225,8 +230,42 @@
       return n;
     }
     let ROLES = [];
+    let BRANDS = [];
     let AFP_LIST = [];
     let SALUD_LIST = [];
+    function isAdminRoleTxt(v){
+      const s = String(v || "").toUpperCase();
+      return s.includes("ADMIN") && !s.includes("SUPER");
+    }
+    function renderBrandChooser(){
+      const list = qs("#uBrandsList");
+      if (!list) return;
+      if (!BRANDS.length){
+        list.innerHTML = `<div style="opacity:.75;font-weight:850;font-size:12px;">(Sin marcas)</div>`;
+        return;
+      }
+      const selected = new Set(
+        (Array.from(list.querySelectorAll("input[type=checkbox][data-mid]")) || [])
+          .filter((x) => x.checked)
+          .map((x) => String(x.getAttribute("data-mid") || ""))
+      );
+      list.innerHTML = BRANDS.map((m) => {
+        const id = m.id_marca;
+        const name = m.marca || m.nombre || ("Marca " + id);
+        const checked = selected.has(String(id)) ? "checked" : "";
+        return `<label style="display:flex;gap:10px;align-items:center;font-weight:900;font-size:13px;">
+          <input type="checkbox" data-mid="${id}" ${checked} />
+          <span>${name}</span>
+        </label>`;
+      }).join("");
+    }
+    function toggleBrandBox(){
+      const box = qs("#uBrandsBox");
+      if (!box) return;
+      const show = isAdminRoleTxt(qs("#uRol")?.value || "");
+      box.style.display = show ? "" : "none";
+      if (show) renderBrandChooser();
+    }
     async function loadRoles(){
       try{
         const r = await fetch("/settings/roles?limit=200", { headers: headers() });
@@ -240,6 +279,15 @@
           sel.innerHTML = `<option value="">Rol</option>` + ROLES.map(r => `<option>${r}</option>`).join("");
           if (current) sel.value = current;
         }
+      }catch(_){}
+    }
+    async function loadBrands(){
+      try{
+        const r = await fetch("/settings/marcas?solo_activas=true", { headers: headers() });
+        if (!r.ok) return;
+        const data = await r.json();
+        BRANDS = Array.isArray(data) ? data : (data.items || []);
+        renderBrandChooser();
       }catch(_){}
     }
     async function loadAfp(){
@@ -505,16 +553,22 @@
       qs("#uUsername").value = guess;
       qs("#uRol").value = item?.rol || "OPERADOR";
       qs("#uPass").value = "";
+      toggleBrandBox();
       qs("#userModal").style.display = "flex";
     }
     qs("#userClose").onclick = () => qs("#userModal").style.display = "none";
     qs("#uCreate").onclick = async () => {
+      const mids = Array.from(qs("#uBrandsList")?.querySelectorAll?.("input[type=checkbox][data-mid]") || [])
+        .filter((x) => x.checked)
+        .map((x) => Number(x.getAttribute("data-mid")))
+        .filter((n) => Number.isFinite(n));
       const payload = {
         nombre: qs("#uNombre").value,
         email: qs("#uEmail").value,
         username: qs("#uUsername").value,
         rol: qs("#uRol").value,
-        password: qs("#uPass").value
+        password: qs("#uPass").value,
+        marcas: isAdminRoleTxt(qs("#uRol")?.value || "") ? mids : []
       };
       const tempPwd = payload.password || (Math.random().toString(36).slice(2,10) + "A1");
       payload.password = tempPwd;
@@ -528,6 +582,11 @@
       qs("#userModal").style.display = "none";
       alert("Usuario creado. Credenciales enviadas por correo (si SMTP está configurado).");
     };
+
+    qs("#uRol")?.addEventListener("input", toggleBrandBox);
+    qs("#uRol")?.addEventListener("change", toggleBrandBox);
+
+    loadBrands();
   </script>
 </body>
 </html>

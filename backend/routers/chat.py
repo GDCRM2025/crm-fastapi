@@ -190,6 +190,199 @@ def _ensure_tables(db: Session) -> None:
     db.commit()
 
 
+def _ensure_default_groups(db: Session) -> None:
+    """
+    Grupos predeterminados (idempotente) para operación.
+
+    Reglas pedidas:
+    - Operadores/Conductores + Operaciones + Oscar Mendoza
+    - MICE + Operaciones + Super Admin
+    - Operaciones + Ejecutivos de Ventas
+    - Operadores
+    - Conductores
+    """
+    try:
+        ut = _users_table(db)
+        if not ut:
+            return
+
+        cols_u = _cols(db, ut)
+        # Campos mínimos
+        id_col = "id_usuario" if "id_usuario" in cols_u else ("id" if "id" in cols_u else None)
+        if not id_col:
+            return
+
+        sel_name = "COALESCE(NULLIF(nombre,''), NULLIF(username,''), NULLIF(email,''), 'Usuario') AS name" if ("nombre" in cols_u or "username" in cols_u or "email" in cols_u) else "'Usuario' AS name"
+        sel_email = "COALESCE(email,'') AS email" if "email" in cols_u else "'' AS email"
+        sel_username = "COALESCE(username,'') AS username" if "username" in cols_u else "'' AS username"
+        sel_role = "COALESCE(rol,'') AS rol" if "rol" in cols_u else "'' AS rol"
+        sel_avatar = "COALESCE(avatar_url,'') AS avatar_url" if "avatar_url" in cols_u else "'' AS avatar_url"
+        where = ["1=1"]
+        if "is_active" in cols_u:
+            where.append("COALESCE(is_active, TRUE) = TRUE")
+
+        rows = db.execute(
+            text(
+                f"""
+                SELECT
+                  {id_col}::bigint AS id_usuario,
+                  {sel_name},
+                  {sel_email},
+                  {sel_username},
+                  {sel_role},
+                  {sel_avatar}
+                FROM {ut}
+                WHERE {' AND '.join(where)}
+                """
+            )
+        ).mappings().all()
+
+        def role_up(r: str) -> str:
+            return str(r or "").strip().upper()
+
+        def has_any(r: str, keys: list[str]) -> bool:
+            ru = role_up(r)
+            return any(k in ru for k in keys)
+
+        OPS_KEYS = ["OPERACION", "OPERACIONES", "JEFE DE OPERACIONES"]
+        MICE_KEYS = ["MICE"]
+        SALES_KEYS = ["EJECUTIV", "VENTAS"]
+        OPER_KEYS = ["OPERADOR"]
+        COND_KEYS = ["CONDUCTOR", "CHOFER", "CHOP"]
+        SUPER_KEYS = ["SUPERADMIN"]
+
+        all_users = []
+        for r in rows:
+            try:
+                uid = int(r.get("id_usuario"))
+            except Exception:
+                continue
+            all_users.append(
+                {
+                    "id": uid,
+                    "name": str(r.get("name") or "").strip(),
+                    "email": str(r.get("email") or "").strip(),
+                    "username": str(r.get("username") or "").strip().lower(),
+                    "rol": str(r.get("rol") or ""),
+                    "avatar_url": (str(r.get("avatar_url") or "").strip() or None),
+                }
+            )
+
+        def pick_ids(pred) -> set[int]:
+            out: set[int] = set()
+            for u in all_users:
+                if pred(u):
+                    out.add(int(u["id"]))
+            return out
+
+        ops_ids = pick_ids(lambda u: has_any(u["rol"], OPS_KEYS))
+        mice_ids = pick_ids(lambda u: has_any(u["rol"], MICE_KEYS))
+        sales_ids = pick_ids(lambda u: has_any(u["rol"], SALES_KEYS))
+        oper_ids = pick_ids(lambda u: has_any(u["rol"], OPER_KEYS))
+        cond_ids = pick_ids(lambda u: has_any(u["rol"], COND_KEYS))
+        super_ids = pick_ids(lambda u: has_any(u["rol"], SUPER_KEYS))
+
+        # Oscar (por username/email) — siempre incluido en el grupo staff/ops.
+        oscar_ids = pick_ids(lambda u: u["username"] in {"greengd", "oscarmendoza"} or u["email"].lower() == "oscarmendoza@greendiamond.cl")
+
+        groups = [
+            {
+                "key": "grp:staff_ops_oscar",
+                "title": "Operadores/Conductores + Operaciones",
+                "ids": (oper_ids | cond_ids | ops_ids | oscar_ids),
+            },
+            {
+                "key": "grp:mice_ops_super",
+                "title": "MICE + Operaciones",
+                "ids": (mice_ids | ops_ids | super_ids),
+            },
+            {
+                "key": "grp:ops_sales",
+                "title": "Operaciones + Ventas",
+                "ids": (ops_ids | sales_ids),
+            },
+            {
+                "key": "grp:operadores",
+                "title": "Operadores",
+                "ids": (oper_ids | super_ids),
+            },
+            {
+                "key": "grp:conductores",
+                "title": "Conductores",
+                "ids": (cond_ids | super_ids),
+            },
+        ]
+
+        for g in groups:
+            ids = set(int(x) for x in (g.get("ids") or set()) if int(x) > 0)
+            if not ids:
+                continue
+
+            th = db.execute(
+                text("SELECT id_thread FROM chat_threads WHERE thread_key=:k LIMIT 1"),
+                {"k": str(g["key"])},
+            ).scalar()
+            if not th:
+                th = db.execute(
+                    text(
+                        """
+                        INSERT INTO chat_threads(kind,title,thread_key,created_at,updated_at)
+                        VALUES ('group', :t, :k, now(), now())
+                        RETURNING id_thread
+                        """
+                    ),
+                    {"t": str(g["title"]), "k": str(g["key"])},
+                ).scalar()
+
+            id_thread = int(th)
+
+            # Sync membresía: insert faltantes y remover sobrantes.
+            cur = db.execute(
+                text("SELECT user_id FROM chat_thread_members WHERE id_thread=:t"),
+                {"t": id_thread},
+            ).fetchall()
+            cur_ids = {int(r[0]) for r in cur}
+
+            to_add = ids - cur_ids
+            to_del = cur_ids - ids
+
+            if to_del:
+                db.execute(
+                    text("DELETE FROM chat_thread_members WHERE id_thread=:t AND user_id = ANY(CAST(:ids AS bigint[]))"),
+                    {"t": id_thread, "ids": list(to_del)},
+                )
+
+            if to_add:
+                for uid in sorted(to_add):
+                    u = next((x for x in all_users if int(x["id"]) == int(uid)), None)
+                    if not u:
+                        continue
+                    db.execute(
+                        text(
+                            """
+                            INSERT INTO chat_thread_members(id_thread,user_id,name,email,avatar_url,joined_at)
+                            VALUES (:t,:u,:n,:e,:a,now())
+                            ON CONFLICT DO NOTHING
+                            """
+                        ),
+                        {
+                            "t": id_thread,
+                            "u": int(uid),
+                            "n": str(u.get("name") or ""),
+                            "e": str(u.get("email") or ""),
+                            "a": u.get("avatar_url"),
+                        },
+                    )
+
+        db.execute(text("UPDATE chat_threads SET updated_at=now() WHERE kind='group' AND thread_key LIKE 'grp:%'"))
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 @router.get("/users")
 def list_users(
     q: str | None = None,
@@ -275,6 +468,7 @@ def list_users(
 def threads(db: Session = Depends(get_db), me=Depends(get_current_user), limit: int = 60):
     _require_chat_access(me)
     _ensure_tables(db)
+    _ensure_default_groups(db)
     uid = _user_id(me)
     lim = max(1, min(200, int(limit)))
     try:

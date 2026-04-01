@@ -210,6 +210,7 @@
         <select id="selUser" class="sel" title="Usuario" style="display:none; min-width:260px"></select>
         <button id="btnSync" class="btn primary" type="button">Sincronizar</button>
         <button id="btnReload" class="btn" type="button">Actualizar</button>
+        <button id="btnRules" class="btn" type="button">Reglas</button>
       </div>
     </section>
 
@@ -504,7 +505,7 @@
       const items = Array.isArray(j.items) ? j.items : [];
       const leads = items;
 
-      const norm = (s)=> String(s||"").toUpperCase();
+      const norm = (s)=> String(s||"").trim().toUpperCase();
       const isNew = (t)=> {
         const k = norm(t.kind);
         return k === "LEAD_NUEVO_SEGUIMIENTO";
@@ -564,8 +565,89 @@
         const idTask = tr?.getAttribute("data-task");
         const act = String(btn.getAttribute("data-act")||"");
         if (act === "go"){
-          const id = tr?.getAttribute("data-lead");
-          if (id) openLead(id);
+          if (!idTask) return;
+          const idLead = tr?.getAttribute("data-lead");
+          if (!idLead) return;
+          const kind = String(tr?.getAttribute("data-kind")||"").toUpperCase();
+          const requireFollowup = new Set([
+            "LEAD_NUEVO_SEGUIMIENTO",
+            "LEAD_CONTACTADO_SEGUIMIENTO",
+            "LEAD_COTIZADO_SEGUIMIENTO",
+          ]);
+          // Seguimiento inline (sin salir de Tareas).
+          try{
+            const lead = await jget(`/leads/${encodeURIComponent(String(idLead))}`);
+            const cliente = lead?.cliente || lead?.nombre_cliente || lead?.nombre || "—";
+            const marca = lead?.marca_nombre || lead?.marca || "";
+            const comuna = lead?.comuna_nombre || lead?.comuna || "";
+            const fecha = lead?.fecha_evento ? String(lead.fecha_evento).slice(0,10) : "";
+            const tel = lead?.telefono || "";
+            const dir = lead?.direccion || "";
+            const notes = String(lead?.notas || lead?.seguimiento || "").trim();
+
+            const infoBits = [];
+            if (marca) infoBits.push(`<div class="muted"><strong>Marca:</strong> ${esc(marca)}</div>`);
+            if (comuna) infoBits.push(`<div class="muted"><strong>Comuna:</strong> ${esc(comuna)}</div>`);
+            if (fecha) infoBits.push(`<div class="muted"><strong>Evento:</strong> ${esc(fecha)}</div>`);
+            if (tel) infoBits.push(`<div class="muted"><strong>Tel:</strong> ${esc(tel)}</div>`);
+            if (dir) infoBits.push(`<div class="muted"><strong>Dir:</strong> ${esc(dir)}</div>`);
+
+            const res = await Swal.fire({
+              title: "Seguimiento",
+              html: `
+                <div style="text-align:left;display:flex;flex-direction:column;gap:10px">
+                  <div style="font-weight:1100">${esc(cliente)}${marca ? " · " + esc(marca) : ""} <span class="muted">#${esc(idLead)}</span></div>
+                  ${infoBits.join("")}
+                  ${
+                    notes
+                      ? `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-weight:950">Ver historial</summary><pre style="white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;margin:8px 0 0 0;padding:10px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:rgba(2,6,23,.18)">${esc(notes)}</pre></details>`
+                      : ""
+                  }
+                  <hr style="border:none;border-top:1px solid rgba(148,163,184,.14);margin:4px 0 2px" />
+                  <label style="font-weight:900;font-size:12px;opacity:.85">Vía</label>
+                  <select id="sw_via" class="swal2-input" style="height:42px">
+                    <option value="WSP">WhatsApp</option>
+                    <option value="CALL">Llamada</option>
+                    <option value="EMAIL">Email</option>
+                    <option value="NOTE">Nota</option>
+                  </select>
+                  <label style="font-weight:900;font-size:12px;opacity:.85">Detalle (requerido)</label>
+                  <textarea id="sw_text" class="swal2-textarea" placeholder="Qué hiciste / qué respondió el cliente / próximo paso..." style="min-height:110px"></textarea>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px">
+                    <button type="button" class="swal2-styled" id="sw_open_full" style="background:rgba(2,6,23,.22);border:1px solid rgba(148,163,184,.22);color:#fff">Abrir ficha completa</button>
+                  </div>
+                </div>
+              `,
+              focusConfirm: false,
+              showCancelButton: true,
+              confirmButtonText: "Guardar",
+              cancelButtonText: "Cancelar",
+              didOpen: () => {
+                const btnFull = document.getElementById("sw_open_full");
+                if (btnFull){
+                  btnFull.onclick = () => openLead(idLead);
+                }
+              },
+              preConfirm: () => {
+                if (!requireFollowup.has(kind)){
+                  // Igual guardamos seguimiento, pero no bloqueamos por tipo.
+                }
+                const via = (document.getElementById("sw_via")?.value || "").trim();
+                const text = (document.getElementById("sw_text")?.value || "").trim();
+                if (!text) {
+                  Swal.showValidationMessage("Escribe el detalle del seguimiento.");
+                  return null;
+                }
+                return { via, text };
+              }
+            });
+            if (!res.isConfirmed || !res.value) return;
+            await jpost(`/tasks/${encodeURIComponent(String(idTask))}/done`, { action: res.value.via, text: res.value.text });
+            await load();
+            await sync();
+          }catch(e){
+            Swal.fire("Error", String(e.message||e).slice(0,300), "error");
+          }
           return;
         }
         if (!idTask) return;
@@ -693,6 +775,10 @@
           showErr("load", e);
           Swal.fire("Error", String(e.message||e).slice(0,300), "error");
         }
+      };
+      qs("#btnRules").onclick = ()=>{
+        const url = "/web/views/tareas_reglas.html?v=20260401-1";
+        try{ window.parent?.postMessage({ type:"openItem", id:"tareas_reglas", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
       };
       qs("#status").addEventListener("change", ()=> load().catch(e => showErr("load", e)));
 

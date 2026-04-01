@@ -191,19 +191,20 @@ def _lead_event_date_expr_db(db: Session, *, alias: str = "l") -> str:
         return "NULL::date"
 
     fe_txt = f"NULLIF(btrim(COALESCE({alias}.fecha_evento::text,'')),'')"
-    d10 = f"substring({fe_txt} from 1 for 10)"
-    # Parseo tolerante (no debe romper la query):
-    # - YYYY-MM-DD (ISO)
-    # - YYYY/MM/DD
-    # - DD/MM/YYYY
+    # Extrae la primera fecha que aparezca en el string (no necesariamente al inicio),
+    # para soportar valores como "sábado 30/03/2026" o "30/03/2026 10:55".
+    d_any = f"substring({fe_txt} from '([0-9]{{4}}[-/.][0-9]{{2}}[-/.][0-9]{{2}}|[0-9]{{2}}[-/.][0-9]{{2}}[-/.][0-9]{{4}})')"
+    # Normalizamos separadores para evitar que se nos cuelen formatos con "." o "/".
+    # Importante: todo esto debe ser "safe" (sin to_date sobre strings con formato dudoso).
+    norm = f"regexp_replace({d_any}, '[./]', '-', 'g')"
+    # Parseo tolerante (no debe romper la query) con guardias de rango:
+    # - YYYY-MM-DD
     # - DD-MM-YYYY
     return (
         f"(CASE"
         f" WHEN {fe_txt} IS NULL THEN NULL"
-        f" WHEN {d10} ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$' THEN to_date({d10}, 'YYYY-MM-DD')"
-        f" WHEN {d10} ~ '^[0-9]{{4}}/[0-9]{{2}}/[0-9]{{2}}$' THEN to_date({d10}, 'YYYY/MM/DD')"
-        f" WHEN {d10} ~ '^[0-9]{{2}}/[0-9]{{2}}/[0-9]{{4}}$' THEN to_date({d10}, 'DD/MM/YYYY')"
-        f" WHEN {d10} ~ '^[0-9]{{2}}-[0-9]{{2}}-[0-9]{{4}}$' THEN to_date({d10}, 'DD-MM-YYYY')"
+        f" WHEN {norm} ~ '^[0-9]{{4}}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$' THEN to_date({norm}, 'YYYY-MM-DD')"
+        f" WHEN {norm} ~ '^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])-[0-9]{{4}}$' THEN to_date({norm}, 'DD-MM-YYYY')"
         f" ELSE NULL END)"
     )
 
@@ -1548,10 +1549,11 @@ def list_tasks(
 
     # IMPORTANTE: list_tasks es un GET. No debe escribir en BD.
     # Aquí SOLO filtramos (ocultamos) tareas que ya no son relevantes:
+    # - Leads fuera de los 3 estados (NUEVO/CONTACTADO/COTIZADO)
     # - Leads CONFIRMADOS/DECLINADOS
     # - Leads con fecha_evento vencida
-    # - Leads con fecha_evento del próximo mes
-    # - Leads sin fecha_evento, pero creados en otro mes
+    # - Leads con fecha_evento fuera del mes actual
+    # - Leads sin fecha_evento, pero creados fuera del mes actual (evita tareas eternas)
     try:
         if _table_exists(db, "leads") and _col_exists(db, "leads", "id_estado"):
             confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
@@ -1600,9 +1602,8 @@ def list_tasks(
     except Exception:
         pass
 
-    # Además: si la fecha de evento ya pasó, el lead ya no es "vivo" para tareas.
-    # Esto evita que aparezcan tareas de 2025/meses atrás; esas deben auto-declinarse (sync) y
-    # en cualquier caso no deben mostrarse en la lista.
+    # Además: por definición del módulo, las tareas son SOLO para leads "vivos" del mes actual.
+    # Si la fecha de evento ya pasó, ese lead debe auto-declinarse (sync) y NO debe mostrarse aquí.
     try:
         if _table_exists(db, "leads") and _col_exists(db, "leads", "fecha_evento"):
             where += """
@@ -1619,6 +1620,7 @@ def list_tasks(
             """ % {"ev": _lead_event_date_expr_db(db, alias="l3")}
 
             # Además: tareas solo para el mes actual (evita que aparezcan leads del próximo mes).
+            month_start = "date_trunc('month', CURRENT_DATE)::date"
             month_end = "(date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::date"
 
             where += """
@@ -1634,8 +1636,21 @@ def list_tasks(
               )
             """ % {"ev": _lead_event_date_expr_db(db, alias="l4"), "month_end": month_end}
 
+            # Extra defensivo: también excluimos fechas anteriores al mes actual (aunque no estén vencidas por timezone / parse raro).
+            where += """
+              AND NOT (
+                t.entity_type='lead'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.leads l6
+                  WHERE l6.id_lead = t.entity_id
+                    AND (%(ev)s) IS NOT NULL
+                    AND (%(ev)s) < %(month_start)s
+                )
+              )
+            """ % {"ev": _lead_event_date_expr_db(db, alias="l6"), "month_start": month_start}
+
             # Además (sin fecha): tareas SOLO para leads creados en el mes actual.
-            month_start = "date_trunc('month', CURRENT_DATE)::date"
             created_expr = _lead_created_ts_expr_db(db, alias="l5")
             created_month_expr = f"date_trunc('month', {created_expr})::date"
 

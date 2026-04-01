@@ -34,6 +34,7 @@ class CreateUserIn(BaseModel):
     username: str | None = None
     rol: str
     password: str
+    marcas: List[int] = []
 
 def _ensure_admin_like(me):
     role = (me.get("role") or me.get("rol") or "").upper()
@@ -114,5 +115,28 @@ def create_user(body: CreateUserIn, me = Depends(get_current_user)):
             ),
             {"n": nombre, "e": email, "u": username, "hp": hp, "cargo": rol, "rid": rid, "rol": rol},
         ).fetchone()
+        try:
+            new_id = int(row[0]) if row else None
+        except Exception:
+            new_id = None
+
+        # Si se definieron marcas, las guardamos para el usuario (ADMIN scoped / ejecutivos).
+        # SUPERADMIN no requiere marcas (ve todo), pero si el usuario quiere igualmente acotar un ADMIN,
+        # lo soportamos vía usuarios_marcas.
+        if new_id and (body.marcas or []):
+            try:
+                _ensure_usuarios_marcas(conn)
+                conn.execute(text("DELETE FROM usuarios_marcas WHERE id_usuario=:u"), {"u": int(new_id)})
+                for mid in body.marcas or []:
+                    try:
+                        conn.execute(
+                            text("INSERT INTO usuarios_marcas(id_usuario,id_marca) VALUES(:u,:m) ON CONFLICT DO NOTHING"),
+                            {"u": int(new_id), "m": int(mid)},
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                # No romper creación por fallo en tabla puente.
+                pass
         conn.commit()
-    return {"ok": True, "id_usuario": int(row[0]) if row else None}
+    return {"ok": True, "id_usuario": int(row[0]) if row else None, "marcas": list(body.marcas or [])}

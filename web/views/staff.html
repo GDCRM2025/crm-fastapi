@@ -223,8 +223,9 @@
           const standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
           if(standalone && installHint) installHint.classList.add("hide");
         }catch(_){}
-        setFrame(`${API_BASE}/web/views/chat.html?embed=1&v=${encodeURIComponent(FRAME_V)}`);
-        tabChat.onclick = () => { setTab("chat"); setFrame(`${API_BASE}/web/views/chat.html?embed=1&v=${encodeURIComponent(FRAME_V)}`); };
+        // Chat debe abrirse en modo completo (sin embed) para ver lista de chats/usuarios.
+        setFrame(`${API_BASE}/web/views/chat.html?v=${encodeURIComponent(FRAME_V)}`);
+        tabChat.onclick = () => { setTab("chat"); setFrame(`${API_BASE}/web/views/chat.html?v=${encodeURIComponent(FRAME_V)}`); };
         tabNotifs.onclick = () => { setTab("notifs"); setFrame(`${API_BASE}/web/views/system_notifs.html?v=${encodeURIComponent(FRAME_V)}`); };
         tabOp.onclick = () => { setTab("op"); setFrame(`${API_BASE}/web/views/operadores.html?v=${encodeURIComponent(FRAME_V)}`); };
 
