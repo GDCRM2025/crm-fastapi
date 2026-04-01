@@ -1813,6 +1813,7 @@ const MENU = [
     ico: "\u{1F465}",
     title: "RRHH",
     items: [
+      { id: "rrhh_hub", label: "RRHH (Tablero)", url: "/web/views/rrhh.html?v=20260401-1" },
       { id: "rrhh_nomina", label: "N\xF3mina", url: "/web/views/rrhh_nomina.html" },
       { id: "rrhh_staff", label: "Colaboradores", url: "/web/views/rrhh_colaboradores.html" },
       { id: "rrhh_sgjo", label: "SGJO (Marcación)", url: "/web/views/rrhh_sgjo.html" },
@@ -1918,6 +1919,7 @@ const ROLE_IDS = {
 const PERMISSIONS = {
 	  1: /* @__PURE__ */ new Set([
     "dash_home",
+    "rrhh_hub",
     "op_gps",
     "op_vruta",
     "op_cal",
