@@ -75,10 +75,11 @@
     <section class="head">
       <div>
         <div class="ttl">Settings · Metas ventas</div>
-        <div class="sub">Solo Admin. Ingresa venta del año pasado + % crecimiento (default 12). La meta se calcula y se guarda automáticamente.</div>
+        <div class="sub">Solo SUPERADMIN. Metas <strong>mensuales</strong> por marca (año + mes). Ingresa venta base + % crecimiento (default 12). La meta se calcula y se guarda automáticamente.</div>
       </div>
       <div class="row">
         <select id="metaYear" class="sel" title="Año"></select>
+        <select id="metaMonth" class="sel" title="Mes"></select>
         <button class="btn primary" id="btnMetaReload" type="button">Cargar</button>
       </div>
     </section>
@@ -139,6 +140,17 @@
       sel.innerHTML = ys.map(v => `<option value="${esc(v)}"${v===y?" selected":""}>${esc(v)}</option>`).join("");
     }
 
+    function initMonths(){
+      const sel = qs("#metaMonth");
+      if (!sel) return;
+      const m = (new Date()).getMonth() + 1;
+      const names = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+      sel.innerHTML = names.map((n, idx) => {
+        const mm = idx + 1;
+        return `<option value="${mm}"${mm===m?" selected":""}>${esc(n)}</option>`;
+      }).join("");
+    }
+
     function formatNum(n){
       const v = Number(n||0);
       if (!isFinite(v)) return "0";
@@ -148,21 +160,23 @@
     async function loadMetas(){
       const box = qs("#metaBox");
       const sel = qs("#metaYear");
+      const selM = qs("#metaMonth");
       if (!box || !sel) return;
       const year = Number(sel.value || (new Date()).getFullYear());
+      const month = Number(selM?.value || ((new Date()).getMonth()+1));
       box.innerHTML = `<div class="muted">Cargando…</div>`;
 
-      const j = await jget(`/tools/metas?year=${encodeURIComponent(year)}`);
+      const j = await jget(`/tools/metas?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
       const items = Array.isArray(j?.items) ? j.items : [];
       if (!items.length){
         box.innerHTML = `
-          <div class="muted">Aún no hay metas cargadas para ${esc(year)}.</div>
+          <div class="muted">Aún no hay metas cargadas para ${esc(year)}-${String(month).padStart(2,"0")}.</div>
           <div class="row" style="margin-top:10px">
             <button class="btn primary" id="btnMetaInit" type="button">Inicializar desde marcas</button>
           </div>
         `;
         qs("#btnMetaInit")?.addEventListener("click", async ()=>{
-          await fetch(apiURL(`/tools/metas/init?year=${encodeURIComponent(year)}`), { method:"POST", headers: authHeaders() });
+          await fetch(apiURL(`/tools/metas/init?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`), { method:"POST", headers: authHeaders() });
           await loadMetas();
         }, { once:true });
         return;
@@ -170,9 +184,10 @@
 
       const rows = items.map(it => ({
         year: Number(it.year||year),
+        month: Number(it.month||month),
         id_marca: Number(it.id_marca||0),
         marca: String(it.marca||""),
-        venta: Number(it.venta_anio_pasado||0),
+        venta: Number(it.venta_base||0),
         crec: Number(it.crecimiento_pct||12),
         meta: Number(it.meta||0),
         updated_by: String(it.updated_by||""),
@@ -184,7 +199,7 @@
             <thead>
               <tr>
                 <th>Marca</th>
-                <th class="right">Venta año pasado</th>
+                <th class="right">Venta base</th>
                 <th class="right">% crec.</th>
                 <th class="right">Meta (auto)</th>
                 <th>Actualizado por</th>
@@ -221,7 +236,7 @@
         const mid = Number(tr.getAttribute("data-mid")||0);
         if (!mid) return;
         const { venta, crec } = recalcRow(tr);
-        await jput("/tools/metas", { year, id_marca: mid, venta_anio_pasado: venta, crecimiento_pct: crec });
+        await jput("/tools/metas", { year, month, id_marca: mid, venta_base: venta, crecimiento_pct: crec });
       };
 
       let t = null;
@@ -239,11 +254,12 @@
 
     (async ()=>{
       initYears();
+      initMonths();
       qs("#btnMetaReload")?.addEventListener("click", ()=> loadMetas().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
       qs("#metaYear")?.addEventListener("change", ()=> loadMetas().catch(()=>{}));
+      qs("#metaMonth")?.addEventListener("change", ()=> loadMetas().catch(()=>{}));
       await loadMetas();
     })().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
   </script>
 </body>
 </html>
-

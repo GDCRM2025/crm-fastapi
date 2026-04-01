@@ -499,24 +499,25 @@ def _ensure_baseline(db: Session) -> None:
 
 def _ensure_metas(db: Session) -> None:
     """
-    Metas anuales por marca (admin-only).
-    - venta_anio_pasado: base (año anterior)
+    Metas mensuales por marca (admin-only).
+    - venta_base: base para la meta del mes (ej: ventas del mismo mes año anterior)
     - crecimiento_pct: % crecimiento (default 12)
-    - meta: venta_anio_pasado * (1 + crecimiento_pct/100)
+    - meta: venta_base * (1 + crecimiento_pct/100)
     """
     db.execute(
         text(
             """
-            CREATE TABLE IF NOT EXISTS metas_marca_anual (
+            CREATE TABLE IF NOT EXISTS metas_marca_mensual (
               id_meta bigserial PRIMARY KEY,
               year integer NOT NULL,
+              month integer NOT NULL,
               id_marca integer NOT NULL,
-              venta_anio_pasado numeric(16,2) NOT NULL DEFAULT 0,
+              venta_base numeric(16,2) NOT NULL DEFAULT 0,
               crecimiento_pct numeric(8,2) NOT NULL DEFAULT 12,
               meta numeric(16,2) NOT NULL DEFAULT 0,
               updated_at timestamp without time zone NOT NULL DEFAULT now(),
               updated_by text,
-              UNIQUE (year, id_marca)
+              UNIQUE (year, month, id_marca)
             )
             """
         )
@@ -531,6 +532,7 @@ def _is_admin_strict(role: str) -> bool:
 @router.get("/metas")
 def metas_get(
     year: int | None = None,
+    month: int | None = None,
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
@@ -540,24 +542,27 @@ def metas_get(
     _ensure_metas(db)
 
     y = int(year or date.today().year)
+    m = int(month or date.today().month)
+    if m < 1 or m > 12:
+        raise HTTPException(status_code=400, detail="month inválido (1-12)")
     rows = db.execute(
         text(
             """
-            SELECT m.year, m.id_marca, COALESCE(ma.nombre, ma.marca,'') AS marca,
-                   COALESCE(m.venta_anio_pasado,0)::float AS venta_anio_pasado,
+            SELECT m.year, m.month, m.id_marca, COALESCE(ma.nombre, ma.marca,'') AS marca,
+                   COALESCE(m.venta_base,0)::float AS venta_base,
                    COALESCE(m.crecimiento_pct,12)::float AS crecimiento_pct,
                    COALESCE(m.meta,0)::float AS meta,
                    COALESCE(m.updated_by,'') AS updated_by,
                    m.updated_at
-            FROM metas_marca_anual m
+            FROM metas_marca_mensual m
             LEFT JOIN marcas ma ON ma.id_marca=m.id_marca
-            WHERE m.year=:y
+            WHERE m.year=:y AND m.month=:m
             ORDER BY COALESCE(ma.nombre, ma.marca,'') ASC
             """
         ),
-        {"y": y},
+        {"y": y, "m": m},
     ).mappings().all()
-    return {"ok": True, "year": y, "items": list(rows)}
+    return {"ok": True, "year": y, "month": m, "items": list(rows)}
 
 
 @router.put("/metas")
@@ -573,10 +578,18 @@ def metas_upsert(
 
     try:
         y = int(payload.get("year") or date.today().year)
+        m = int(payload.get("month") or date.today().month)
+        if m < 1 or m > 12:
+            raise ValueError("month inválido (1-12)")
         id_marca = int(payload.get("id_marca") or 0)
         if id_marca <= 0:
             raise ValueError("id_marca inválido")
-        venta = float(payload.get("venta_anio_pasado") or 0)
+        venta = float(
+            payload.get("venta_base")
+            or payload.get("venta_mes_pasado")
+            or payload.get("venta_anio_pasado")
+            or 0
+        )
         crec = float(payload.get("crecimiento_pct") or 12)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Payload inválido: {e}")
@@ -587,25 +600,26 @@ def metas_upsert(
     db.execute(
         text(
             """
-            INSERT INTO metas_marca_anual(year, id_marca, venta_anio_pasado, crecimiento_pct, meta, updated_by, updated_at)
-            VALUES (:y, :id_marca, :venta, :crec, :meta, :by, now())
-            ON CONFLICT (year, id_marca) DO UPDATE
-              SET venta_anio_pasado=EXCLUDED.venta_anio_pasado,
+            INSERT INTO metas_marca_mensual(year, month, id_marca, venta_base, crecimiento_pct, meta, updated_by, updated_at)
+            VALUES (:y, :m, :id_marca, :venta, :crec, :meta, :by, now())
+            ON CONFLICT (year, month, id_marca) DO UPDATE
+              SET venta_base=EXCLUDED.venta_base,
                   crecimiento_pct=EXCLUDED.crecimiento_pct,
                   meta=EXCLUDED.meta,
                   updated_by=EXCLUDED.updated_by,
                   updated_at=now()
             """
         ),
-        {"y": y, "id_marca": id_marca, "venta": venta, "crec": crec, "meta": meta, "by": by},
+        {"y": y, "m": m, "id_marca": id_marca, "venta": venta, "crec": crec, "meta": meta, "by": by},
     )
     db.commit()
-    return {"ok": True, "year": y, "id_marca": id_marca, "meta": meta}
+    return {"ok": True, "year": y, "month": m, "id_marca": id_marca, "meta": meta}
 
 
 @router.post("/metas/init")
 def metas_init(
     year: int | None = None,
+    month: int | None = None,
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
@@ -614,6 +628,9 @@ def metas_init(
         raise HTTPException(status_code=403, detail="Solo admin puede inicializar metas")
     _ensure_metas(db)
     y = int(year or date.today().year)
+    m = int(month or date.today().month)
+    if m < 1 or m > 12:
+        raise HTTPException(status_code=400, detail="month inválido (1-12)")
     by = (me.get("username") or me.get("id") or me.get("nombre") or "admin")
 
     marcas = db.execute(text("SELECT id_marca FROM marcas ORDER BY id_marca ASC")).fetchall()
@@ -623,16 +640,16 @@ def metas_init(
         db.execute(
             text(
                 """
-                INSERT INTO metas_marca_anual(year, id_marca, venta_anio_pasado, crecimiento_pct, meta, updated_by, updated_at)
-                VALUES (:y, :id_marca, 0, 12, 0, :by, now())
-                ON CONFLICT (year, id_marca) DO NOTHING
+                INSERT INTO metas_marca_mensual(year, month, id_marca, venta_base, crecimiento_pct, meta, updated_by, updated_at)
+                VALUES (:y, :m, :id_marca, 0, 12, 0, :by, now())
+                ON CONFLICT (year, month, id_marca) DO NOTHING
                 """
             ),
-            {"y": y, "id_marca": mid, "by": by},
+            {"y": y, "m": m, "id_marca": mid, "by": by},
         )
         created += 1
     db.commit()
-    return {"ok": True, "year": y, "created": created}
+    return {"ok": True, "year": y, "month": m, "created": created}
 
 @router.get("/gcal/status")
 def gcal_status(db: Session = Depends(get_db)):
