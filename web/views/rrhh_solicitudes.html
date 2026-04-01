@@ -80,6 +80,22 @@
 
   <script>
     const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){
+        return "";
+      }
+    })();
+    function apiURL(path){
+      const p = String(path || "");
+      if (!p) return p;
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE) return p;
+      return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
     function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
     function fmt(n){
@@ -98,7 +114,7 @@
 
     async function load(){
       const estado = qs("#fEstado").value;
-      const r = await fetch(`/rrhh/solicitudes${estado ? "?estado="+estado : ""}`, { headers: headers() });
+      const r = await fetch(apiURL(`/rrhh/solicitudes${estado ? "?estado="+estado : ""}`), { headers: headers() });
       if (!r.ok){
         const t = await r.text().catch(()=> "");
         qs("#solRows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
@@ -130,7 +146,7 @@
       qs("#solRows").querySelectorAll("[data-ap]").forEach(b => {
         const id = Number(b.dataset.ap || 0);
         b.addEventListener("click", async () => {
-          const r = await fetch(`/rrhh/solicitudes/${id}`, { method:"PUT", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify({ estado: "aprobado" }) });
+          const r = await fetch(apiURL(`/rrhh/solicitudes/${id}`), { method:"PUT", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify({ estado: "aprobado" }) });
           if (!r.ok){ const t = await r.text().catch(()=> ""); toast("No se pudo aprobar: "+(t||r.status)); return; }
           toast("Solicitud aprobada");
           await load();
@@ -139,7 +155,7 @@
       qs("#solRows").querySelectorAll("[data-rj]").forEach(b => {
         const id = Number(b.dataset.rj || 0);
         b.addEventListener("click", async () => {
-          const r = await fetch(`/rrhh/solicitudes/${id}`, { method:"PUT", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify({ estado: "rechazado" }) });
+          const r = await fetch(apiURL(`/rrhh/solicitudes/${id}`), { method:"PUT", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify({ estado: "rechazado" }) });
           if (!r.ok){ const t = await r.text().catch(()=> ""); toast("No se pudo rechazar: "+(t||r.status)); return; }
           toast("Solicitud rechazada");
           await load();
@@ -164,7 +180,7 @@
         motivo: qs("#solMotivo").value || "",
       };
       if (!payload.colaborador || !payload.tipo){ toast("Colaborador y tipo requeridos"); return; }
-      const r = await fetch("/rrhh/solicitudes", { method:"POST", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      const r = await fetch(apiURL("/rrhh/solicitudes"), { method:"POST", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
       if (!r.ok){ const t = await r.text().catch(()=> ""); toast("No se pudo enviar: "+(t||r.status)); return; }
       toast("Solicitud enviada");
       qs("#solMotivo").value = "";

@@ -276,6 +276,22 @@
 
   <script>
     const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){
+        return "";
+      }
+    })();
+    function apiURL(path){
+      const p = String(path || "");
+      if (!p) return p;
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE) return p;
+      return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
     function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
 
@@ -313,7 +329,7 @@
 
     async function loadRoles(){
       try{
-        const r = await fetch("/settings/roles?limit=200", { headers: headers() });
+        const r = await fetch(apiURL("/settings/roles?limit=200"), { headers: headers() });
         if (r.ok){
           const data = await r.json();
           const items = data.items || data || [];
@@ -330,7 +346,7 @@
     }
     async function loadAfp(){
       try{
-        const r = await fetch("/rrhh/afp", { headers: headers() });
+        const r = await fetch(apiURL("/rrhh/afp"), { headers: headers() });
         if (!r.ok) return;
         const data = await r.json();
         AFP_LIST = data.items || [];
@@ -344,7 +360,7 @@
     }
     async function loadSalud(){
       try{
-        const r = await fetch("/rrhh/salud", { headers: headers() });
+        const r = await fetch(apiURL("/rrhh/salud"), { headers: headers() });
         if (!r.ok) return;
         const data = await r.json();
         SALUD_LIST = data.items || [];
@@ -359,7 +375,7 @@
 
     async function loadComunas(){
       try{
-        const r = await fetch("/catalogos", { headers: headers() });
+        const r = await fetch(apiURL("/catalogos"), { headers: headers() });
         if (!r.ok) return;
         const data = await r.json();
         const comunas = data.comunas || [];
@@ -579,7 +595,7 @@
     };
 
     async function loadStaff(){
-      const r = await fetch("/rrhh/staff", { headers: headers() });
+      const r = await fetch(apiURL("/rrhh/staff"), { headers: headers() });
       if (!r.ok){
         const t = await r.text().catch(()=> "");
         qs("#rowsStaff").innerHTML = `<tr><td class=\"muted\">No se pudo cargar: ${t || r.status}</td></tr>`;

@@ -164,6 +164,22 @@
 
   <script>
     const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){
+        return "";
+      }
+    })();
+    function apiURL(path){
+      const p = String(path || "");
+      if (!p) return p;
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE) return p;
+      return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
     function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
 
@@ -186,7 +202,7 @@
     }
 
     async function load(){
-      const r = await fetch("/rrhh/nomina", { headers: headers() });
+      const r = await fetch(apiURL("/rrhh/nomina"), { headers: headers() });
       if (!r.ok){
         const t = await r.text().catch(()=> "");
         qs("#rows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
@@ -352,7 +368,7 @@
         alert("Monto requerido");
         return;
       }
-      const r = await fetch("/rrhh/adelantos", { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      const r = await fetch(apiURL("/rrhh/adelantos"), { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
       if (!r.ok){
         const t = await r.text().catch(()=> "");
         toast("No se pudo guardar: " + (t || r.status));
@@ -435,7 +451,7 @@
         motivo: qs("#absNewMotivo").value || "",
       };
       if (!payload.colaborador || !payload.fecha){ alert("Colaborador y fecha requeridos"); return; }
-      const r = await fetch("/rrhh/inasistencias", { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      const r = await fetch(apiURL("/rrhh/inasistencias"), { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
       if (!r.ok){ alert("No se pudo guardar"); return; }
       await loadAbsences(payload.colaborador);
       await load();
@@ -451,7 +467,7 @@
         observaciones: qs("#vacObs").value || "",
       };
       if (!payload.colaborador || !payload.fecha_inicio || !payload.fecha_fin){ alert("Colaborador y fechas requeridas"); return; }
-      const r = await fetch("/rrhh/vacaciones", { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      const r = await fetch(apiURL("/rrhh/vacaciones"), { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
       if (!r.ok){ alert("No se pudo guardar"); return; }
       qs("#vacModal").style.display = "none";
       await load();

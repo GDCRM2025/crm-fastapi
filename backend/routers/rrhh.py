@@ -315,7 +315,12 @@ def nomina_list(db: Session = Depends(get_db)) -> dict[str, Any]:
                     ficha = {}
             key = str((d.get("colaborador") or "")).lower()
             faltas = float(faltas_map.get(key, 0) or 0)
-            sueldo = _num(ficha.get("renta_liquida") or ficha.get("sueldo_fijo") or 0)
+            sueldo = _num(
+                ficha.get("hh_liquido")
+                or ficha.get("renta_liquida")
+                or ficha.get("sueldo_fijo")
+                or 0
+            )
             adel = float(adel_map.get(key, 0) or 0)
             vac_tomadas = float(vac_map.get(key, 0) or 0)
             fecha_ingreso = d.get("fecha_ingreso")
@@ -337,7 +342,12 @@ def nomina_list(db: Session = Depends(get_db)) -> dict[str, Any]:
                 "colaborador": d.get("colaborador"),
                 "centro_costo": d.get("centro_costo"),
                 "cargo": ficha.get("cargo") or d.get("rol"),
+                "jefe_directo": ficha.get("jefe_directo") or ficha.get("jefe") or None,
+                "situacion_contractual": ficha.get("situacion_contractual") or None,
+                "estado": ficha.get("estado_laboral") or ("VIGENTE" if d.get("is_active") else "INACTIVO"),
                 "sueldo_fijo": sueldo,
+                "hh_liquido": sueldo,
+                "hh_diario": round((sueldo / 30.0), 0) if sueldo else 0,
                 "afp": d.get("afp"),
                 "afp_pct": d.get("afp_pct"),
                 "salud_tipo": d.get("salud_tipo"),
@@ -715,6 +725,155 @@ def staff_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
     except Exception as e:
         db.rollback()
         return {"ok": False, "detail": str(e)}
+
+
+@router.post("/staff/bulk_upsert")
+def staff_bulk_upsert(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """
+    Upsert masivo de colaboradores.
+    - Match principal: lower(colaborador) + centro_costo (si viene).
+    - Datos extra se guardan en rrhh_staff.ficha (JSONB) para evitar migraciones agresivas.
+
+    Payload:
+      { "items": [ { colaborador, centro_costo?, rol?, rut?, email?, telefono?,
+                    fecha_ingreso?, is_active?, afp?, afp_pct?, salud_tipo?, salud_pct?,
+                    ficha?: {...}, hh_liquido?, situacion_contractual?, jefe_directo?, area?, cargo? } ] }
+    """
+    _ensure_tables(db)
+    items = body.get("items") or []
+    if not isinstance(items, list) or not items:
+        return {"ok": False, "detail": "items requerido"}
+
+    def _as_num(v):
+        if v is None or v == "":
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        try:
+            s = str(v).strip()
+            s = s.replace("$", "").replace(".", "").replace(",", ".")
+            return float(s)
+        except Exception:
+            return None
+
+    upserted = 0
+    created = 0
+    updated = 0
+    errors: list[dict[str, Any]] = []
+
+    for it in items:
+        try:
+            if not isinstance(it, dict):
+                continue
+            colaborador = (it.get("colaborador") or "").strip()
+            if not colaborador:
+                continue
+            centro = (it.get("centro_costo") or "").strip() or None
+
+            ficha = it.get("ficha") or {}
+            if isinstance(ficha, str):
+                try:
+                    ficha = json.loads(ficha)
+                except Exception:
+                    ficha = {}
+            if not isinstance(ficha, dict):
+                ficha = {}
+
+            # Campos comunes (se guardan en ficha por defecto)
+            hh_liq = _as_num(it.get("hh_liquido"))
+            if hh_liq is None:
+                hh_liq = _as_num(ficha.get("hh_liquido") or ficha.get("renta_liquida") or ficha.get("sueldo_fijo"))
+            if hh_liq is not None:
+                ficha["hh_liquido"] = hh_liq
+                ficha.setdefault("renta_liquida", hh_liq)
+
+            for k in ("situacion_contractual", "jefe_directo", "area", "cargo"):
+                if it.get(k) is not None and str(it.get(k)).strip() != "":
+                    ficha[k] = it.get(k)
+
+            ficha_json = json.dumps(ficha, ensure_ascii=False)
+
+            # Busca existente
+            row = db.execute(
+                text(
+                    """
+                    SELECT id_staff
+                    FROM rrhh_staff
+                    WHERE lower(colaborador) = lower(:c)
+                      AND (:cc IS NULL OR lower(centro_costo) = lower(:cc))
+                    ORDER BY id_staff DESC
+                    LIMIT 1
+                    """
+                ),
+                {"c": colaborador, "cc": centro},
+            ).mappings().first()
+
+            base = {
+                "colaborador": colaborador,
+                "rut": it.get("rut"),
+                "email": it.get("email"),
+                "telefono": it.get("telefono"),
+                "rol": it.get("rol"),
+                "centro_costo": centro,
+                "fecha_ingreso": it.get("fecha_ingreso"),
+                "afp": it.get("afp"),
+                "afp_pct": _as_num(it.get("afp_pct")),
+                "salud_tipo": it.get("salud_tipo"),
+                "salud_pct": _as_num(it.get("salud_pct")),
+                "is_active": bool(it.get("is_active", True)),
+                "observaciones": it.get("observaciones"),
+                "ficha": ficha_json,
+            }
+
+            if row and row.get("id_staff"):
+                base["id_staff"] = int(row["id_staff"])
+                db.execute(
+                    text(
+                        """
+                        UPDATE rrhh_staff
+                        SET colaborador=:colaborador,
+                            rut=COALESCE(:rut, rut),
+                            email=COALESCE(:email, email),
+                            telefono=COALESCE(:telefono, telefono),
+                            rol=COALESCE(:rol, rol),
+                            centro_costo=COALESCE(:centro_costo, centro_costo),
+                            fecha_ingreso=COALESCE(:fecha_ingreso, fecha_ingreso),
+                            afp=COALESCE(:afp, afp),
+                            afp_pct=COALESCE(:afp_pct, afp_pct),
+                            salud_tipo=COALESCE(:salud_tipo, salud_tipo),
+                            salud_pct=COALESCE(:salud_pct, salud_pct),
+                            is_active=COALESCE(:is_active, is_active),
+                            observaciones=COALESCE(:observaciones, observaciones),
+                            ficha=CAST(:ficha AS JSONB)
+                        WHERE id_staff=:id_staff
+                        """
+                    ),
+                    base,
+                )
+                updated += 1
+            else:
+                db.execute(
+                    text(
+                        """
+                        INSERT INTO rrhh_staff(
+                          colaborador,rut,email,telefono,rol,centro_costo,fecha_ingreso,
+                          afp,afp_pct,salud_tipo,salud_pct,is_active,observaciones,ficha
+                        ) VALUES (
+                          :colaborador,:rut,:email,:telefono,:rol,:centro_costo,:fecha_ingreso,
+                          :afp,:afp_pct,:salud_tipo,:salud_pct,:is_active,:observaciones,CAST(:ficha AS JSONB)
+                        )
+                        """
+                    ),
+                    base,
+                )
+                created += 1
+            upserted += 1
+        except Exception as e:
+            errors.append({"colaborador": (it or {}).get("colaborador"), "detail": str(e)})
+            db.rollback()
+
+    db.commit()
+    return {"ok": True, "upserted": upserted, "created": created, "updated": updated, "errors": errors}
 
 
 @router.put("/staff/{id_staff}")
