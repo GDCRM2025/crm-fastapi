@@ -661,7 +661,8 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Dict[s
                     db_role = str(row.get("rol") or row.get("cargo") or "").strip()
                     if db_role:
                         user["role"] = db_role
-                    if not user.get("name") and row.get("nombre"):
+                    # Preferimos SIEMPRE los datos de BD (evita que "name" quede pegado al token viejo).
+                    if row.get("nombre"):
                         user["name"] = row.get("nombre")
                     if row.get("email") or row.get("username"):
                         user["username"] = row.get("email") or row.get("username")
