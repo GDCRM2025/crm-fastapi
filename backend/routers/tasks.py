@@ -226,7 +226,9 @@ def _user_info(db: Session, uid: int) -> dict[str, Any]:
         return {"id": int(uid), "username": str(uid), "role": ""}
     try:
         cols_display = []
-        for c in ("nombre", "name", "username", "email"):
+        # Importante: en este CRM la columna real es `nombre` (no `name`).
+        # En prod vimos 500 por intentar seleccionar `name` cuando no existe.
+        for c in ("nombre", "username", "email"):
             if _col_exists(db, "usuarios", c):
                 cols_display.append(f"NULLIF(btrim({c}), '')")
         display_expr = "COALESCE(" + ", ".join(cols_display + ["id_usuario::text"]) + ") AS display"

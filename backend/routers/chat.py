@@ -21,6 +21,7 @@ import secrets
 import time
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+_DDL_READY = False
 
 def _cols(db: Session, table: str) -> set[str]:
     rows = db.execute(
@@ -76,118 +77,140 @@ def _user_id(me) -> int:
 
 
 def _ensure_tables(db: Session) -> None:
-    # threads
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS chat_threads (
-              id_thread SERIAL PRIMARY KEY,
-              kind TEXT NOT NULL DEFAULT 'direct',
-              title TEXT,
-              thread_key TEXT UNIQUE,
-              created_at TIMESTAMP DEFAULT now(),
-              updated_at TIMESTAMP DEFAULT now()
-            )
-            """
-        )
-    )
-    # Hardening: si existen tablas antiguas con columnas faltantes, las agregamos.
-    db.execute(text("ALTER TABLE chat_threads ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'direct'"))
-    db.execute(text("ALTER TABLE chat_threads ADD COLUMN IF NOT EXISTS title TEXT"))
-    db.execute(text("ALTER TABLE chat_threads ADD COLUMN IF NOT EXISTS thread_key TEXT"))
-    db.execute(text("ALTER TABLE chat_threads ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT now()"))
-    db.execute(text("ALTER TABLE chat_threads ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT now()"))
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS chat_thread_members (
-              id_thread INT NOT NULL REFERENCES chat_threads(id_thread) ON DELETE CASCADE,
-              user_id BIGINT NOT NULL,
-              name TEXT,
-              email TEXT,
-              avatar_url TEXT,
-              joined_at TIMESTAMP DEFAULT now(),
-              PRIMARY KEY (id_thread, user_id)
-            )
-            """
-        )
-    )
-    db.execute(text("ALTER TABLE chat_thread_members ADD COLUMN IF NOT EXISTS name TEXT"))
-    db.execute(text("ALTER TABLE chat_thread_members ADD COLUMN IF NOT EXISTS email TEXT"))
-    db.execute(text("ALTER TABLE chat_thread_members ADD COLUMN IF NOT EXISTS avatar_url TEXT"))
-    db.execute(text("ALTER TABLE chat_thread_members ADD COLUMN IF NOT EXISTS joined_at TIMESTAMP DEFAULT now()"))
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS chat_thread_messages (
-              id_message SERIAL PRIMARY KEY,
-              id_thread INT NOT NULL REFERENCES chat_threads(id_thread) ON DELETE CASCADE,
-              sender_id BIGINT,
-              sender_name TEXT,
-              sender_email TEXT,
-              message TEXT NOT NULL,
-              created_at TIMESTAMP DEFAULT now()
-            )
-            """
-        )
-    )
-    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS sender_id BIGINT"))
-    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS sender_name TEXT"))
-    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS sender_email TEXT"))
-    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS message TEXT"))
-    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT now()"))
-    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS attachment_url TEXT"))
-    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS attachment_name TEXT"))
-    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS attachment_type TEXT"))
-    db.execute(text("ALTER TABLE chat_thread_messages ADD COLUMN IF NOT EXISTS attachment_size BIGINT"))
-    db.execute(
-        text("CREATE INDEX IF NOT EXISTS chat_thread_messages_thread_id_idx ON chat_thread_messages(id_thread, id_message)")
-    )
+    """
+    DDL idempotente con lock para evitar deadlocks en producción.
 
-    # presence v2 (BIGINT para soportar hash ids)
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS chat_presence2 (
-              user_id BIGINT PRIMARY KEY,
-              name TEXT,
-              email TEXT,
-              avatar_url TEXT,
-              updated_at TIMESTAMP DEFAULT now()
-            )
-            """
-        )
-    )
+    Nota: en el hosting (Passenger) pueden entrar requests concurrentes al arrancar,
+    y los ALTER TABLE con AccessExclusiveLock pueden deadlockear. Por eso:
+    - ejecutamos DDL solo 1 vez por proceso
+    - protegemos con pg_try_advisory_lock
+    - usamos lock_timeout corto y si no podemos, seguimos sin romper la request
+    """
+    global _DDL_READY
+    if _DDL_READY:
+        return
 
-    # legacy board tables (si no existen, las creamos para compat)
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS chat_messages (
-              id_message SERIAL PRIMARY KEY,
-              sender_id INT,
-              sender_name TEXT,
-              sender_email TEXT,
-              message TEXT NOT NULL,
-              created_at TIMESTAMP DEFAULT now()
+    try:
+        got = bool(db.execute(text("SELECT pg_try_advisory_lock(25042026)")).scalar())
+    except Exception:
+        got = False
+    if not got:
+        # Otro worker está migrando; no bloqueamos la request.
+        return
+
+    try:
+        try:
+            db.execute(text("SET LOCAL lock_timeout='2s'"))
+        except Exception:
+            pass
+
+        # threads
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS chat_threads (
+                  id_thread SERIAL PRIMARY KEY,
+                  kind TEXT NOT NULL DEFAULT 'direct',
+                  title TEXT,
+                  thread_key TEXT UNIQUE,
+                  created_at TIMESTAMP DEFAULT now(),
+                  updated_at TIMESTAMP DEFAULT now()
+                )
+                """
             )
-            """
         )
-    )
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS chat_presence (
-              id_user INT,
-              name TEXT,
-              email TEXT,
-              updated_at TIMESTAMP DEFAULT now(),
-              PRIMARY KEY (id_user)
+
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS chat_thread_members (
+                  id_thread INT NOT NULL REFERENCES chat_threads(id_thread) ON DELETE CASCADE,
+                  user_id BIGINT NOT NULL,
+                  name TEXT,
+                  email TEXT,
+                  avatar_url TEXT,
+                  joined_at TIMESTAMP DEFAULT now(),
+                  PRIMARY KEY (id_thread, user_id)
+                )
+                """
             )
-            """
         )
-    )
-    db.commit()
+
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS chat_thread_messages (
+                  id_message SERIAL PRIMARY KEY,
+                  id_thread INT NOT NULL REFERENCES chat_threads(id_thread) ON DELETE CASCADE,
+                  sender_id BIGINT,
+                  sender_name TEXT,
+                  sender_email TEXT,
+                  message TEXT NOT NULL,
+                  created_at TIMESTAMP DEFAULT now(),
+                  attachment_url TEXT,
+                  attachment_name TEXT,
+                  attachment_type TEXT,
+                  attachment_size BIGINT
+                )
+                """
+            )
+        )
+        db.execute(
+            text("CREATE INDEX IF NOT EXISTS chat_thread_messages_thread_id_idx ON chat_thread_messages(id_thread, id_message)")
+        )
+
+        # presence v2 (BIGINT para soportar hash ids)
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS chat_presence2 (
+                  user_id BIGINT PRIMARY KEY,
+                  name TEXT,
+                  email TEXT,
+                  avatar_url TEXT,
+                  updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+
+        # legacy board tables (si no existen, las creamos para compat)
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                  id_message SERIAL PRIMARY KEY,
+                  sender_id INT,
+                  sender_name TEXT,
+                  sender_email TEXT,
+                  message TEXT NOT NULL,
+                  created_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS chat_presence (
+                  id_user INT,
+                  name TEXT,
+                  email TEXT,
+                  updated_at TIMESTAMP DEFAULT now(),
+                  PRIMARY KEY (id_user)
+                )
+                """
+            )
+        )
+
+        db.commit()
+        _DDL_READY = True
+    finally:
+        try:
+            db.execute(text("SELECT pg_advisory_unlock(25042026)"))
+            db.commit()
+        except Exception:
+            pass
 
 
 def _ensure_default_groups(db: Session) -> None:
