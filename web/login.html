@@ -58,6 +58,28 @@
   <script>
   (function(){
     const $=(q,c=document)=>c.querySelector(q);
+    const fire = async (a,b,c)=>{
+      try{
+        if (window.Swal && typeof window.Swal.fire === "function"){
+          return await window.Swal.fire(a,b,c);
+        }
+      }catch(_){}
+      // Fallback (si el CDN de SweetAlert falla, evitamos que “no haga nada”)
+      try{
+        if (typeof a === "object" && a){
+          const title = String(a.title || "Info");
+          const msg = String(a.text || "").trim() || String(a.html || "").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+          if (a.showCancelButton){
+            const ok = confirm(`${title}${msg ? "\n\n" + msg : ""}`);
+            return { isConfirmed: ok };
+          }
+          alert(`${title}${msg ? "\n\n" + msg : ""}`);
+          return { isConfirmed: true };
+        }
+        alert(String(a || b || "Info"));
+      }catch(_){}
+      return { isConfirmed: false };
+    };
     const API_BASE = (location.pathname.startsWith('/crm/') || location.pathname.startsWith('/web/')) ? '/crm' : '';
     const WEB_BASE = API_BASE + '/web';
     const cv=$('#field'),ctx=cv.getContext('2d'); function fit(){cv.width=cv.clientWidth;cv.height=cv.clientHeight} addEventListener('resize',fit);fit();
@@ -103,18 +125,18 @@
         if(!r.ok) throw new Error(await r.text());
         const data = await r.json();
         if (data.email_sent){
-          Swal.fire('OK','Te enviamos un link para cambiar tu clave. Revisa tu correo.','success');
+          fire('OK','Te enviamos un link para cambiar tu clave. Revisa tu correo.','success');
         } else if (data.reset_url){
-          Swal.fire({
+          fire({
             icon:'info',
             title:'Link generado',
             html:`No se pudo enviar correo automáticamente.<br><br><b>Usa este link:</b><br><a href="${data.reset_url}" target="_blank">${data.reset_url}</a>`
           });
         } else {
-          Swal.fire('OK','Si el usuario existe, recibirá un link de cambio.','info');
+          fire('OK','Si el usuario existe, recibirá un link de cambio.','info');
         }
       }catch(err){
-        Swal.fire('Error', err.message||'No se pudo enviar la solicitud', 'error');
+        fire('Error', err.message||'No se pudo enviar la solicitud', 'error');
       }
     });
     // Evita bucle infinito: si hay token guardado pero está vencido/invalid, el index rebota al login.
@@ -170,7 +192,7 @@
       e.preventDefault();
       const username=$('#user').value.trim(), password=$('#pass').value.trim();
       const remember=$('#remember').checked;
-      if(!username||!password){ await Swal.fire('Error','Ingresa usuario y contraseña','error'); return; }
+      if(!username||!password){ await fire('Error','Ingresa usuario y contraseña','error'); return; }
       try{
         const r = await fetch(`${API_BASE}/login`,{
           method:'POST',
@@ -205,7 +227,7 @@
           sessionStorage.removeItem('gd_token');
         }
         (remember?localStorage:sessionStorage).setItem('nombre', data.nombre||username);
-        await Swal.fire({icon:'success',title:`¡Bienvenido, ${data.nombre||username}!`,timer:900,showConfirmButton:false});
+        await fire({icon:'success',title:`¡Bienvenido, ${data.nombre||username}!`,timer:900,showConfirmButton:false});
         const nextURL = normalizeNext();
         try{
           const me = await fetch(`${API_BASE}/me`, { headers: { Authorization: 'Bearer ' + tok } }).then(r=>r.json());
@@ -214,7 +236,7 @@
         }catch(_){
           location.href = nextURL || `${WEB_BASE}/index.html`;
         }
-      }catch(err){ Swal.fire('Error', err.message||'No se pudo iniciar sesión', 'error'); }
+      }catch(err){ fire('Error', err.message||'No se pudo iniciar sesión', 'error'); }
     });
   })();
   </script>

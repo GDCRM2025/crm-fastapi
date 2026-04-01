@@ -13,6 +13,29 @@ const API_BASE = (() => {
     return "";
   }
 })();
+const Swal = (() => {
+  if (window.Swal && typeof window.Swal.fire === "function") return window.Swal;
+  const strip = (s) => String(s || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return {
+    fire: async (a, b, c) => {
+      try {
+        if (typeof a === "object" && a) {
+          const title = String(a.title || "Info");
+          const msg = String(a.text || "").trim() || strip(a.html || "");
+          if (a.showCancelButton) {
+            const ok = confirm(`${title}${msg ? "\n\n" + msg : ""}`);
+            return { isConfirmed: ok };
+          }
+          alert(`${title}${msg ? "\n\n" + msg : ""}`);
+          return { isConfirmed: true };
+        }
+        alert(String(a || b || "Info"));
+      } catch (_) {
+      }
+      return { isConfirmed: false };
+    }
+  };
+})();
 function viewURL(u) {
   const s = String(u || "");
   if (!s) return s;
