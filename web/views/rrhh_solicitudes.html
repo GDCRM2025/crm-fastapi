@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>RRHH · Solicitudes</title>
   <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/rrhh_luna.css" />
   <style>
     body{ margin:0; padding:18px; color:inherit; }
     .card{ border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.12); background:rgba(7,12,16,.45); }
@@ -79,6 +80,8 @@
   </section>
 
   <script>
+    document.documentElement.classList.add("light");
+    document.documentElement.classList.add("rrhh-luna");
     const qs = (s, el=document) => el.querySelector(s);
     const API_BASE = (() => {
       try{

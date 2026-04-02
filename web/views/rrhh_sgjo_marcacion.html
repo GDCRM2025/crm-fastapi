@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>RRHH · SGJO · Marcación</title>
   <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="/web/rrhh_luna.css" />
   <script src="../js/iframe-theme.js"></script>
   <style>
     body{margin:0;padding:14px;background:transparent;color:var(--text);}
@@ -70,6 +71,8 @@
   </div>
 
   <script>
+    document.documentElement.classList.add("light");
+    document.documentElement.classList.add("rrhh-luna");
     const API_BASE = (()=> {
       try{
         const h = String(location.hostname||"").toLowerCase();
@@ -203,4 +206,3 @@
   </script>
 </body>
 </html>
-

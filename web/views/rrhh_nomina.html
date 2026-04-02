@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>RRHH · Nómina</title>
   <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/rrhh_luna.css" />
   <style>
     body{ margin:0; padding:18px; color:inherit; }
     .card{ border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.12); background:rgba(7,12,16,.45); }
@@ -184,11 +185,13 @@
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
 
     function applyThemeBootstrap(){
-      const mode = (localStorage.getItem("gd_theme") || "dark");
-      document.documentElement.classList.toggle("light", mode === "light");
+      // RRHH siempre Luna Azul (claro).
+      document.documentElement.classList.add("light");
+      document.documentElement.classList.add("rrhh-luna");
       window.addEventListener("message", (ev) => {
         if (ev.data?.type === "theme"){
-          document.documentElement.classList.toggle("light", ev.data.mode === "light");
+          document.documentElement.classList.add("light");
+          document.documentElement.classList.add("rrhh-luna");
         }
       });
     }

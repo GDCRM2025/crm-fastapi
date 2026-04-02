@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>RRHH · Mi portal</title>
   <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/rrhh_luna.css" />
   <script src="/web/js/iframe-theme.js"></script>
   <style>
     body{margin:0;padding:14px;background:transparent;color:var(--text);}
@@ -166,6 +167,8 @@
   </div>
 
   <script>
+    document.documentElement.classList.add("light");
+    document.documentElement.classList.add("rrhh-luna");
     const qs = (s, el=document) => el.querySelector(s);
     const API_BASE = (() => {
       try{
@@ -340,4 +343,3 @@
   </script>
 </body>
 </html>
-

@@ -41,8 +41,8 @@ GCAL_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 GCAL_REDIRECT = "http://127.0.0.1:8000/tools/gcal/callback"
 # Calendar default:
 # - Prefer env var GCAL_DEFAULT_CAL (prod)
-# - Else fallback to 'primary' (robusto con el owner del token OAuth)
-GCAL_DEFAULT_CAL = "primary"
+# - Else fallback hard-coded a Operaciones (evita agendar en el calendario equivocado)
+GCAL_DEFAULT_CAL = "simonurrutia.m@gmail.com"
 
 
 def _gcal_default_calendar_id(db: Session, override: str | None = None) -> str:
@@ -3620,7 +3620,10 @@ def approve_agenda(
                     def _do_insert(_cal_id: str):
                         return svc.events().insert(calendarId=_cal_id, body=body).execute()
 
-                    # 2) Patch si existe; si no, insert. Si falla por permisos/404, fallback a 'primary'.
+                    # 2) Patch si existe; si no, insert.
+                    # Importante: NO hacemos fallback a "primary" en producción, porque eso termina
+                    # agendando en el calendario equivocado (ej: el del ejecutivo). Si falla por permisos,
+                    # dejamos el lead como pendiente_agendar=True y reportamos error.
                     if items:
                         eid = items[0].get("id")
                         try:
@@ -3628,12 +3631,9 @@ def approve_agenda(
                             cal_id_used = cal_id
                         except Exception as e_patch:
                             msg = str(e_patch)
-                            if (cal_id != "primary") and (_looks_like_perm_error(msg) or _looks_like_notfound_calendar(msg)):
-                                patched = _do_patch("primary", eid)
-                                cal_id_used = "primary"
-                                gcal_error = f"CalendarId '{cal_id}' sin permisos/no existe. Usé 'primary'."
-                            else:
-                                raise
+                            if _looks_like_perm_error(msg) or _looks_like_notfound_calendar(msg):
+                                raise HTTPException(status_code=400, detail=f"Google Calendar sin permisos o no existe: {msg}")
+                            raise
                         event_ids.append(eid)
                         calendar_ids.append(cal_id_used)
                         links.append(
@@ -3657,12 +3657,9 @@ def approve_agenda(
                                 created = _do_insert(cal_id)
                                 cal_id_used = cal_id
                             except Exception:
-                                if (cal_id != "primary") and (_looks_like_perm_error(msg) or _looks_like_notfound_calendar(msg)):
-                                    created = _do_insert("primary")
-                                    cal_id_used = "primary"
-                                    gcal_error = f"CalendarId '{cal_id}' sin permisos/no existe. Usé 'primary'."
-                                else:
-                                    raise
+                                if _looks_like_perm_error(msg) or _looks_like_notfound_calendar(msg):
+                                    raise HTTPException(status_code=400, detail=f"Google Calendar sin permisos o no existe: {msg}")
+                                raise
                         event_ids.append(created.get("id"))
                         calendar_ids.append(cal_id_used)
                         links.append(

@@ -1,0 +1,73 @@
+:root.rrhh-luna{
+  color-scheme: light;
+}
+:root.rrhh-luna body{
+  margin:0;
+  font-family: Tahoma, Verdana, Segoe UI, system-ui, -apple-system, Arial, sans-serif;
+  color:#0b1d3a;
+  background:
+    radial-gradient(1200px 700px at 20% 0%, #f7fbff 0%, rgba(247,251,255,0) 55%),
+    linear-gradient(180deg, #dfefff 0%, #bcd7ff 45%, #eaf4ff 100%);
+}
+
+:root.rrhh-luna a{ color:#0b63d1; }
+:root.rrhh-luna .muted{ color: rgba(11, 29, 58, .65) !important; }
+
+:root.rrhh-luna .card{
+  background: linear-gradient(180deg, rgba(255,255,255,.92) 0%, rgba(246,250,255,.92) 100%) !important;
+  border: 1px solid rgba(75,135,214,.55) !important;
+  box-shadow:
+    0 10px 30px rgba(11, 99, 209, .12),
+    inset 0 1px 0 rgba(255,255,255,.7) !important;
+  color:#0b1d3a !important;
+}
+
+:root.rrhh-luna .title{
+  color:#0b1d3a !important;
+}
+
+:root.rrhh-luna .btn,
+:root.rrhh-luna button.btn{
+  background: linear-gradient(180deg, #ffffff 0%, #e6f1ff 55%, #cfe4ff 100%) !important;
+  border: 1px solid rgba(57, 117, 200, .85) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.85),
+    0 1px 0 rgba(0,0,0,.08) !important;
+  color:#0b1d3a !important;
+}
+:root.rrhh-luna .btn:hover{
+  filter: brightness(1.02);
+  background: linear-gradient(180deg, #ffffff 0%, #eff7ff 50%, #d8ebff 100%) !important;
+}
+:root.rrhh-luna .btn:active{
+  transform: translateY(1px);
+}
+
+:root.rrhh-luna .inp,
+:root.rrhh-luna input.inp,
+:root.rrhh-luna select.inp,
+:root.rrhh-luna textarea.inp{
+  background: rgba(255,255,255,.85) !important;
+  border: 1px solid rgba(57, 117, 200, .45) !important;
+  color:#0b1d3a !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.06) !important;
+}
+:root.rrhh-luna .inp::placeholder{ color: rgba(11,29,58,.45) !important; }
+
+:root.rrhh-luna .table-wrap{
+  border: 1px solid rgba(57, 117, 200, .45) !important;
+}
+:root.rrhh-luna table th{
+  background: linear-gradient(180deg, rgba(70,140,230,.18) 0%, rgba(70,140,230,.08) 100%);
+  border-bottom: 1px solid rgba(57, 117, 200, .25) !important;
+}
+:root.rrhh-luna table td{
+  border-bottom: 1px solid rgba(57, 117, 200, .18) !important;
+}
+:root.rrhh-luna table tr:nth-child(even) td{
+  background: rgba(11,99,209,.04);
+}
+
+:root.rrhh-luna .modal{
+  background: rgba(11, 29, 58, .45) !important;
+}

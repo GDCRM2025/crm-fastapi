@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>RRHH · SGJO</title>
   <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="/web/rrhh_luna.css" />
   <script src="../js/iframe-theme.js"></script>
   <style>
     body{margin:0;padding:14px;background:transparent;color:var(--text);}
@@ -52,6 +53,8 @@
     </div>
   </div>
   <script>
+    document.documentElement.classList.add("light");
+    document.documentElement.classList.add("rrhh-luna");
     function openInPanel(url){
       try{
         window.parent?.postMessage({ type:"openItem", id:"rrhh_sgjo", url }, "*");
@@ -64,4 +67,3 @@
   </script>
 </body>
 </html>
-
