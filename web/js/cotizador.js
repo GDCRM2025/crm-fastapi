@@ -619,7 +619,7 @@
       // Muestra loader mientras el PDF se genera/abre.
       // No forzar refresh por defecto: si no, regeneramos el PDF/Drive assets cada vez y se vuelve lento.
       // Para refrescar assets manualmente, usa ?refresh=1 (desde Historial/acciones).
-      const pdf = apiURL(`/quotes/${currentQuoteId}/pdf?v=${Date.now()}`);
+      const pdf = apiURL(`/quotes/${currentQuoteId}/pdf?rebuild=1&v=${Date.now()}`);
       const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Abriendo PDF…")}`);
       window.open(wait, "_blank", "noopener,noreferrer");
       return;

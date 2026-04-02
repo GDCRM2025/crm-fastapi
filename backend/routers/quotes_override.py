@@ -319,6 +319,7 @@ def pdf_placeholder(
     strict_assets: int = Query(default=0, ge=0, le=1),
     download: int = Query(default=0, ge=0, le=1),
     refresh: int = Query(default=0, ge=0, le=1),
+    rebuild: int = Query(default=0, ge=0, le=1),
 ):
     try:
         from weasyprint import HTML  # type: ignore
@@ -339,6 +340,7 @@ def pdf_placeholder(
         return f'{kind}; filename="{safe}"'
 
     refresh_assets = int(refresh or 0) == 1
+    force_rebuild = int(rebuild or 0) == 1
 
     # cargar cotización + items + lead
     with get_connection() as cn:
@@ -359,7 +361,7 @@ def pdf_placeholder(
                 p = Path(p0)
                 if not p.is_absolute():
                     p = root / p0
-                if p.exists() and p.is_file() and (not refresh_assets) and (not debug):
+                if p.exists() and p.is_file() and (not refresh_assets) and (not force_rebuild) and (not debug):
                     return FileResponse(
                         str(p),
                         media_type="application/pdf",
@@ -1984,22 +1986,59 @@ def pdf_placeholder(
                     draw.text((x + content_w, y), f"Fecha evento: {fecha_evento}", font=f12b, fill=txt, anchor="ra")
                 y += 78
 
-                cols = [
-                    ("cantidad", "Cantidad", 0.13, "r"),
-                    ("desc", "Descripcion", 0.58, "l"),
-                    ("pu", "Precio", 0.145, "r"),
-                    ("total", "Monto", 0.145, "r"),
-                ]
-                table_top = y
-                table_bottom = cy1 - pad - 8
-                totals_h = 138
-                totals_w = 360
-                totals_y = table_bottom - totals_h - 10
-                rows_area_bottom = totals_y - 10
-                head_h = (34 if compact else 40)
-                row_h = (42 if compact else 56)
-                rows_fit = int(max(1, (rows_area_bottom - (table_top + head_h)) // row_h))
-                max_rows = min(want_rows, rows_fit)
+                if is_petras:
+                    # PETRAS: Descripción/Precio/Cantidad/Monto y totales alineados a la derecha con padding
+                    cols = [
+                        ("desc", "Descripción", 0.52, "l"),
+                        ("pu", "Precio", 0.16, "r"),
+                        ("cantidad", "Cantidad", 0.12, "r"),
+                        ("total", "Monto", 0.20, "r"),
+                    ]
+                    table_top = y
+                    table_bottom = cy1 - pad - 8
+                    totals_h = 138
+                    totals_w = 360
+                    totals_y = table_bottom - totals_h - 10
+                    rows_area_bottom = totals_y - 10
+                    head_h = (34 if compact else 40)
+                    row_h = (42 if compact else 56)
+                    rows_fit = int(max(1, (rows_area_bottom - (table_top + head_h)) // row_h))
+                    max_rows = min(want_rows, rows_fit)
+                elif is_masflow:
+                    # MAS FLOW: totales arriba; tabla usa todo el alto restante
+                    cols = [
+                        ("cantidad", "Cantidad", 0.13, "r"),
+                        ("desc", "Descripción", 0.58, "l"),
+                        ("pu", "Precio", 0.145, "r"),
+                        ("total", "Monto", 0.145, "r"),
+                    ]
+                    table_bottom = cy1 - pad - 8
+                    totals_h = 138
+                    totals_w = 360
+                    totals_y = y
+                    table_top = y + totals_h + 18
+                    rows_area_bottom = table_bottom
+                    head_h = (34 if compact else 40)
+                    row_h = (42 if compact else 56)
+                    rows_fit = int(max(1, (rows_area_bottom - (table_top + head_h)) // row_h))
+                    max_rows = min(want_rows, rows_fit)
+                else:
+                    cols = [
+                        ("cantidad", "Cantidad", 0.13, "r"),
+                        ("desc", "Descripcion", 0.58, "l"),
+                        ("pu", "Precio", 0.145, "r"),
+                        ("total", "Monto", 0.145, "r"),
+                    ]
+                    table_top = y
+                    table_bottom = cy1 - pad - 8
+                    totals_h = 138
+                    totals_w = 360
+                    totals_y = table_bottom - totals_h - 10
+                    rows_area_bottom = totals_y - 10
+                    head_h = (34 if compact else 40)
+                    row_h = (42 if compact else 56)
+                    rows_fit = int(max(1, (rows_area_bottom - (table_top + head_h)) // row_h))
+                    max_rows = min(want_rows, rows_fit)
 
                 y_end = _draw_table(
                     x,
@@ -2018,7 +2057,10 @@ def pdf_placeholder(
 
                 # totals small grid (like template)
                 grid_w, grid_h = totals_w, totals_h
-                gx = x + max(0, int((content_w - grid_w) / 2))
+                if is_petras:
+                    gx = x + max(0, int(content_w - grid_w - 18))
+                else:
+                    gx = x + max(0, int((content_w - grid_w) / 2))
                 gy = totals_y
                 draw.rectangle((gx, gy, gx + grid_w, gy + grid_h), outline=line, width=2, fill=(250, 250, 250))
                 labels = [("SUBTOTAL", subtotal_print)]
