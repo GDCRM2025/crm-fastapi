@@ -16,9 +16,8 @@
     .muted { opacity:.75; }
     table.items { width:100%; border-collapse: collapse; }
     table.items th, table.items td { border-bottom:1px solid #eee; padding:8px; }
-    .totales { max-width:520px; margin-left:auto; padding-right:12px; }
-    .totales table.items th{ text-align:left; font-weight:600; }
-    .ivaLegend { font-size:12px; opacity:.75; margin-top:8px; text-align:right; padding-right:12px; }
+    .totales { max-width:520px; margin-left:auto; }
+    .ivaLegend { font-size:12px; opacity:.75; margin-top:6px; text-align:right; }
     .badge { padding:2px 8px; border:1px solid #ddd; border-radius:12px; font-size:.8rem;}
     #logoMarca{
       max-height: 76px;
@@ -80,46 +79,6 @@
 
     <hr/>
 
-    <section id="totales" class="totales">
-      <table class="items" aria-label="Resumen de cotización">
-        <tbody>
-          <tr>
-            <th class="muted">Total productos</th>
-            <td class="right" id="tProductos">$0</td>
-          </tr>
-          <tr>
-            <th class="muted">Traslado</th>
-            <td class="right"><input id="traslado" type="number" step="1" min="0" value="0"/></td>
-          </tr>
-          <tr>
-            <th class="muted">Descuento</th>
-            <td class="right">
-              <div class="controls" style="justify-content:end">
-                <select id="tipoDesc">
-                  <option value="$">$</option>
-                  <option value="%">%</option>
-                </select>
-                <input id="descuento" type="number" step="1" min="0" value="0"/>
-              </div>
-            </td>
-          </tr>
-          <tr>
-            <th class="muted">Total neto</th>
-            <td class="right" id="tNeto">$0</td>
-          </tr>
-          <tr>
-            <th class="muted">IVA</th>
-            <td class="right" id="tIva">$0</td>
-          </tr>
-          <tr>
-            <th><b>Total cotización</b></th>
-            <td class="right" id="tTotal"><b>$0</b></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="ivaLegend" id="ivaLegend">Esta cotización ha generado $0 de IVA.</div>
-    </section>
-
     <section id="productos">
       <div class="controls">
         <input id="txtProducto" list="dlProductos" placeholder="Buscar producto"/>
@@ -131,15 +90,46 @@
       <table class="items" id="tblItems">
         <thead>
           <tr>
-            <th style="width:55%">Descripción</th>
-            <th class="right">Precio</th>
+            <th style="width:50%">Producto</th>
             <th class="right">Cantidad</th>
-            <th class="right">Monto</th>
+            <th class="right">Valor unitario</th>
+            <th class="right">Total</th>
             <th></th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
+    </section>
+
+    <section id="totales" class="totales">
+      <div class="grid grid-2">
+        <div class="muted">Total productos</div>
+        <div class="right" id="tProductos">$0</div>
+
+        <div class="muted">Traslado</div>
+        <div class="right"><input id="traslado" type="number" step="1" min="0" value="0"/></div>
+
+        <div class="muted">Descuento</div>
+        <div class="right">
+          <div class="controls" style="justify-content:end">
+            <select id="tipoDesc">
+              <option value="$">$</option>
+              <option value="%">%</option>
+            </select>
+            <input id="descuento" type="number" step="1" min="0" value="0"/>
+          </div>
+        </div>
+
+        <div class="muted">Total neto</div>
+        <div class="right" id="tNeto">$0</div>
+
+        <div class="muted">IVA</div>
+        <div class="right" id="tIva">$0</div>
+
+        <div><b>Total cotización</b></div>
+        <div class="right" id="tTotal"><b>$0</b></div>
+        <div class="ivaLegend" id="ivaLegend">Esta cotización ha generado $0 de IVA.</div>
+      </div>
     </section>
 
     <hr/>
