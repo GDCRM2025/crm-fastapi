@@ -34,6 +34,7 @@
       <div class="row">
         <button class="tabbtn active" id="tabNomina">Nómina</button>
         <button class="tabbtn" id="tabStaff">Colaboradores</button>
+        <button class="tabbtn" id="tabSolicitudes" title="Vacaciones / permisos / adelantos">Solicitudes</button>
         <button class="tabbtn" id="tabSGJO" title="Reloj control / marcación">SGJO</button>
       </div>
     </div>
@@ -526,6 +527,9 @@
     };
     qs("#tabSGJO").onclick = () => {
       openInPanel("/web/views/rrhh_sgjo.html");
+    };
+    qs("#tabSolicitudes").onclick = () => {
+      openInPanel("/web/views/rrhh_solicitudes.html");
     };
     qs("#btnReloadStaff").onclick = () => loadStaff();
     qs("#qStaff").oninput = () => loadStaff();

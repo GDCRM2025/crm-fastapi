@@ -1836,11 +1836,7 @@ const MENU = [
     ico: "\u{1F465}",
     title: "RRHH",
     items: [
-      { id: "rrhh_hub", label: "RRHH (Tablero)", url: "/web/views/rrhh.html?v=20260401-1" },
-      { id: "rrhh_nomina", label: "N\xF3mina", url: "/web/views/rrhh_nomina.html" },
-      { id: "rrhh_staff", label: "Colaboradores", url: "/web/views/rrhh_colaboradores.html" },
-      { id: "rrhh_sgjo", label: "SGJO (Marcación)", url: "/web/views/rrhh_sgjo.html" },
-      { id: "rrhh_solicitudes", label: "Solicitudes", url: "/web/views/rrhh_solicitudes.html" }
+      { id: "rrhh_hub", label: "RRHH", url: "/web/views/rrhh.html?v=20260402-1" }
     ]
   },
 	  {
