@@ -275,7 +275,7 @@ def upsert_rrhh_from_nomina(db, items, dry_run=False):
                         SET centro_costo = :cc,
                             rol = COALESCE(NULLIF(:rol,''), rol),
                             fecha_ingreso = COALESCE(:fi, fecha_ingreso),
-                            ficha = COALESCE(ficha,'{}'::jsonb) || :ficha::jsonb
+                            ficha = COALESCE(ficha,'{}'::jsonb) || CAST(:ficha AS JSONB)
                         WHERE id_staff=:id
                         """
                     ),
@@ -293,7 +293,7 @@ def upsert_rrhh_from_nomina(db, items, dry_run=False):
                     text(
                         """
                         INSERT INTO rrhh_staff(colaborador, centro_costo, rol, fecha_ingreso, ficha, is_active)
-                        VALUES (:c,:cc,:rol,:fi,:ficha::jsonb, TRUE)
+                        VALUES (:c,:cc,:rol,:fi,CAST(:ficha AS JSONB), TRUE)
                         """
                     ),
                     {
@@ -330,7 +330,7 @@ def upsert_rrhh_from_nomina(db, items, dry_run=False):
                             sueldo_fijo = COALESCE(:sf, sueldo_fijo),
                             hh_liquido = COALESCE(:hh, hh_liquido),
                             fecha_inicio = COALESCE(:fi, fecha_inicio),
-                            raw = COALESCE(raw,'{}'::jsonb) || :raw::jsonb
+                            raw = COALESCE(raw,'{}'::jsonb) || CAST(:raw AS JSONB)
                         WHERE id_nomina=:id
                         """
                     ),
@@ -349,7 +349,7 @@ def upsert_rrhh_from_nomina(db, items, dry_run=False):
                     text(
                         """
                         INSERT INTO rrhh_nomina(colaborador, centro_costo, situacion_contractual, sueldo_fijo, hh_liquido, fecha_inicio, raw)
-                        VALUES (:c,:cc,:situ,:sf,:hh,:fi,:raw::jsonb)
+                        VALUES (:c,:cc,:situ,:sf,:hh,:fi,CAST(:raw AS JSONB))
                         """
                     ),
                     {
