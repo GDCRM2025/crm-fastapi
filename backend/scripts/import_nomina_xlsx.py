@@ -25,6 +25,15 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 from datetime import date
+import os
+import sys
+
+
+# Permite ejecutar el script desde cualquier CWD (en server o local).
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
