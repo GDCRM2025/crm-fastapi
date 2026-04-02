@@ -999,12 +999,32 @@ def pdf_placeholder(
           </tr>
         """
 
+    # Overrides de layout por marca (SOLO PDF)
+    # - PETRAS: tabla ítems: Descripción/Precio/Cantidad/Monto + totales alineados a la derecha con padding
+    # - MAS FLOW: totales arriba en tabla más formal
+    def _norm_marca_pdf(s: str) -> str:
+        try:
+            import unicodedata
+
+            x = unicodedata.normalize("NFD", str(s or ""))
+            x = "".join(ch for ch in x if unicodedata.category(ch) != "Mn")
+        except Exception:
+            x = str(s or "")
+        x = x.upper()
+        x = "".join(ch for ch in x if ch.isalnum())
+        return x
+
+    marca_norm = _norm_marca_pdf(marca_key or marca_raw or cot.get("marca") or (mrow or {}).get("nombre") or (mrow or {}).get("marca"))
+    is_petras = marca_norm.startswith("PETRAS")
+    is_masflow = ("MASFLOW" in marca_norm) or (marca_norm == "MAS")
 
     # colores por marca (fondos claros necesitan texto oscuro)
     text_color = "#fff"
     border_color = "rgba(255,255,255,0.25)"
+
     def _simple_key(k: str) -> str:
         return (k or "").replace(" ", "").replace("_", "").replace("-", "")
+
     key_simple = _simple_key(marca_key).upper()
     raw_upper = (marca_raw or "").upper()
     cot_upper = (str(cot.get("marca") or "")).upper()
@@ -1014,6 +1034,139 @@ def pdf_placeholder(
         # negro/oliva (DEL SABOR usa paleta oscura sobre fondo claro)
         text_color = "#2f3a16"
         border_color = "rgba(47,58,22,0.25)"
+
+    def _money(n: float) -> str:
+        return f"${int(round(float(n or 0))):,}"
+
+    def _build_totals_rows_override() -> list[str]:
+        rows: list[str] = []
+        rows.append(f"<tr><td>Subtotal productos</td><td style='text-align:right'>{_money(subtotal_bruto)}</td></tr>")
+        if show_desc and descuento_abs > 0:
+            rows.append(f"<tr><td>{desc_label}</td><td style='text-align:right'>- {_money(descuento_abs)}</td></tr>")
+        rows.append(f"<tr><td>Neto</td><td style='text-align:right'>{_money(neto_val)}</td></tr>")
+        rows.append(f"<tr><td>IVA</td><td style='text-align:right'>{_money(iva_val if is_empresa else 0)}</td></tr>")
+        rows.append(f"<tr><td>Traslado</td><td style='text-align:right'>{_money(traslado_val)}</td></tr>")
+        rows.append(f"<tr><td><b>Total</b></td><td style='text-align:right'><b>{_money(total_val)}</b></td></tr>")
+        return rows
+
+    items_table_html = ""
+    totals_table_html = ""
+    extra_css = ""
+    if is_petras:
+        rows_html_petras = ""
+        for it in (items or []):
+            prod = (it.get("producto") or "").strip()
+            desc = (it.get("descripcion") or "").strip()
+            if desc:
+                desc_html = f"{prod}<div class=\"desc\" style=\"opacity:.8\">{desc}</div>"
+            else:
+                desc_html = prod
+            rows_html_petras += f"""
+              <tr>
+                <td class="desc">{desc_html}</td>
+                <td style="text-align:right">{_money(float(it.get('precio_unitario') or 0))}</td>
+                <td style="text-align:right">{int(it.get('cantidad') or 0)}</td>
+                <td style="text-align:right">{_money(float(it.get('total_linea') or 0))}</td>
+              </tr>
+            """
+        items_table_html = f"""
+          <table style="margin-top:6mm;">
+            <colgroup>
+              <col style="width:52%"/>
+              <col style="width:16%"/>
+              <col style="width:12%"/>
+              <col style="width:20%"/>
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Descripción</th>
+                <th style="text-align:right">Precio</th>
+                <th style="text-align:right">Cantidad</th>
+                <th style="text-align:right">Monto</th>
+              </tr>
+            </thead>
+            <tbody>{rows_html_petras}</tbody>
+          </table>
+        """
+        totals_table_html = f"""
+          <table class="totals totals-right">
+            {''.join(_build_totals_rows_override())}
+          </table>
+        """
+        extra_css = f"""
+        .totals-right {{ width:50%; margin-left:auto; margin-top:6mm; padding-right:6mm; }}
+        .totals-right td {{ border:none; padding:2px 0; }}
+        """
+    elif is_masflow:
+        # Totales arriba (más formal) + tabla ítems normal
+        totals_table_html = f"""
+          <table class="totals totals-box">
+            {''.join(_build_totals_rows_override())}
+          </table>
+        """
+        items_table_html = f"""
+          <table style="margin-top:6mm;">
+            <colgroup>
+              <col style="width:26%"/>
+              <col style="width:38%"/>
+              <col style="width:8%"/>
+              <col style="width:12%"/>
+              <col style="width:16%"/>
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Descripción</th>
+                <th style="text-align:right">Cant</th>
+                <th style="text-align:right">Precio</th>
+                <th style="text-align:right">Total</th>
+              </tr>
+            </thead>
+            <tbody>{rows_html}</tbody>
+          </table>
+        """
+        extra_css = f"""
+        .totals-box {{
+          width:56%;
+          margin-left:auto;
+          margin-top:6mm;
+          padding:4mm 5mm;
+          border:1px solid {border_color};
+          border-radius:10px;
+        }}
+        .totals-box td {{ border:none; padding:2px 0; }}
+        """
+    else:
+        # Default: mantener salida actual (incluye filas extra de IVA/Traslado/Total)
+        items_table_html = f"""
+          <table style="margin-top:6mm;">
+            <colgroup>
+              <col style="width:26%"/>
+              <col style="width:38%"/>
+              <col style="width:8%"/>
+              <col style="width:12%"/>
+              <col style="width:16%"/>
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Descripción</th>
+                <th style="text-align:right">Cant</th>
+                <th style="text-align:right">Precio</th>
+                <th style="text-align:right">Total</th>
+              </tr>
+            </thead>
+            <tbody>{rows_html}</tbody>
+          </table>
+        """
+        totals_table_html = f"""
+          <table class="totals">
+            {''.join(totals_rows)}
+            <tr><td>IVA</td><td style="text-align:right">${int(iva_val):,}</td></tr>
+            <tr><td>Traslado</td><td style="text-align:right">${int(traslado_val):,}</td></tr>
+            <tr><td><b>Total</b></td><td style="text-align:right"><b>${int(total_val):,}</b></td></tr>
+          </table>
+        """
 
     html = f"""
     <html>
@@ -1044,6 +1197,7 @@ def pdf_placeholder(
         }}
         .totals {{ margin-top:8mm; width:100%; font-size:12px; }}
         .totals td {{ border:none; padding:2px 0; }}
+        {extra_css}
       </style>
     </head>
     <body>
@@ -1066,31 +1220,9 @@ def pdf_placeholder(
             <div><b>Dirección:</b> {direccion}</div>
             <div><b>Teléfono:</b> {telefono}</div>
           </div>
-          <table style="margin-top:6mm;">
-            <colgroup>
-              <col style="width:26%"/>
-              <col style="width:38%"/>
-              <col style="width:8%"/>
-              <col style="width:12%"/>
-              <col style="width:16%"/>
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th>Descripción</th>
-                <th style="text-align:right">Cant</th>
-                <th style="text-align:right">Precio</th>
-                <th style="text-align:right">Total</th>
-              </tr>
-            </thead>
-            <tbody>{rows_html}</tbody>
-          </table>
-          <table class="totals">
-            {''.join(totals_rows)}
-            <tr><td>IVA</td><td style="text-align:right">${int(iva_val):,}</td></tr>
-            <tr><td>Traslado</td><td style="text-align:right">${int(traslado_val):,}</td></tr>
-            <tr><td><b>Total</b></td><td style="text-align:right"><b>${int(total_val):,}</b></td></tr>
-          </table>
+          {totals_table_html if is_masflow else ""}
+          {items_table_html}
+          {totals_table_html if not is_masflow else ""}
         </div>
       </div>
       <div class="page">
