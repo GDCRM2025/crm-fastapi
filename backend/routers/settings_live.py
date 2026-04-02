@@ -1895,11 +1895,17 @@ def import_brochures(payload: Dict[str, Any] = Body(...), user: dict = Depends(g
     has_id_marca = _has_col(cols, "id_marca")
     has_cat = _has_col(cols, "categoria")
     has_ing = _has_col(cols, "ingredientes")
+    marcas_cols = _cols_for("marcas")
+    marcas_has_id = _has_col(marcas_cols, "id_marca")
+    marcas_has_nombre = _has_col(marcas_cols, "nombre")
+    marcas_has_marca = _has_col(marcas_cols, "marca")
+    marcas_has_active = _has_col(marcas_cols, "is_active")
 
     created = 0
     updated = 0
     skipped = 0
     errors: List[Dict[str, Any]] = []
+    ensured_brands: set[str] = set()
 
     with engine.begin() as cn:
         for it in items:
@@ -1915,6 +1921,47 @@ def import_brochures(payload: Dict[str, Any] = Body(...), user: dict = Depends(g
 
                 resolved_label, resolved_id = _resolve_marca_from_db(raw_marca, restrict_ids=None)
                 code = (resolved_label or raw_marca).strip().upper()
+
+                # Si la marca no existe en DB, la creamos (mínimo) para que:
+                # - aparezca en Settings / productos
+                # - podamos setear id_marca si existe la FK
+                if not resolved_id and code and code not in ensured_brands and marcas_has_id and (marcas_has_nombre or marcas_has_marca):
+                    ensured_brands.add(code)
+                    try:
+                        exists = cn.execute(
+                            text(
+                                """
+                                SELECT id_marca
+                                FROM public.marcas
+                                WHERE UPPER(COALESCE(marca,nombre,''))=UPPER(:c)
+                                LIMIT 1
+                                """
+                            ),
+                            {"c": code},
+                        ).scalar()
+                        if not exists:
+                            cols_i = []
+                            vals_i = []
+                            ins = {}
+                            if marcas_has_marca:
+                                cols_i.append("marca")
+                                vals_i.append(":m")
+                                ins["m"] = code
+                            if marcas_has_nombre:
+                                cols_i.append("nombre")
+                                vals_i.append(":n")
+                                ins["n"] = code
+                            if marcas_has_active:
+                                cols_i.append("is_active")
+                                vals_i.append("TRUE")
+                            if cols_i:
+                                cn.execute(text(f"INSERT INTO public.marcas({', '.join(cols_i)}) VALUES ({', '.join(vals_i)})"), ins)
+                    except Exception:
+                        pass
+
+                    # re-resolver para obtener id_marca si quedó creada
+                    resolved_label, resolved_id = _resolve_marca_from_db(code, restrict_ids=None)
+                    code = (resolved_label or code).strip().upper()
 
                 desc = str(it.get("descripcion") or "").strip()
                 cat = str(it.get("categoria") or "").strip()
