@@ -23,6 +23,18 @@ except Exception:  # pragma: no cover
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
+def _ensure_productos_brochure_cols() -> None:
+    """
+    Para menú/brochures: algunos productos necesitan categoría e ingredientes.
+    Se agregan como columnas opcionales (no rompen entornos legacy).
+    """
+    try:
+        with engine.begin() as cn:
+            cn.execute(text("ALTER TABLE public.productos ADD COLUMN IF NOT EXISTS categoria TEXT"))
+            cn.execute(text("ALTER TABLE public.productos ADD COLUMN IF NOT EXISTS ingredientes TEXT"))
+    except Exception:
+        return
+
 def _ensure_comunas_bruto_once() -> None:
     """
     Requisito: al editar el monto neto de comunas, debe quedar el bruto automáticamente.
@@ -582,6 +594,22 @@ def _require_admin(user: dict) -> None:
     if ("superadmin" in rk) or (rk == "admin") or ("admin" in rk):
         return
     raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+
+def _require_settings_access(user: dict, entity: str) -> None:
+    """
+    Acceso a /settings:
+    - Por defecto: ADMIN/SUPERADMIN.
+    - Excepción: entity=productos (productos de venta) lo puede usar cualquier usuario autenticado,
+      pero siempre se aplica scope por marcas en list/create/update/delete.
+    """
+    table = _resolve_table(entity)
+    rk = _role_key(user)
+    if not rk:
+        raise HTTPException(status_code=401, detail="Token requerido")
+    if table == "productos":
+        return
+    _require_admin(user)
+    _enforce_admin_entity_scope(user, entity)
 
 
 def _is_superadmin(user: dict) -> bool:
@@ -1235,8 +1263,7 @@ def _fetch_choices(source: str) -> List[Dict[str, Any]]:
 @router.get("/meta/{entity}")
 def meta(entity: str, user: dict = Depends(get_current_user)):
     try:
-        _require_admin(user)
-        _enforce_admin_entity_scope(user, entity)
+        _require_settings_access(user, entity)
 
         table = _resolve_table(entity)
         if table == "usuarios":
@@ -1302,8 +1329,7 @@ def list_rows(
     active_only: bool = Query(False),
     user: dict = Depends(get_current_user),
 ):
-    _require_admin(user)
-    _enforce_admin_entity_scope(user, entity)
+    _require_settings_access(user, entity)
 
     table = _resolve_table(entity)
     if table == "usuarios":
@@ -1311,6 +1337,7 @@ def list_rows(
     if table == "productos":
         # Esto evita que ejecutivos pierdan catálogos por marcas escritas distinto.
         _normalize_productos_marcas_once()
+        _ensure_productos_brochure_cols()
     if table == "comunas":
         # Backfill bruto 1 vez por día (idempotente).
         _ensure_comunas_bruto_once()
@@ -1385,8 +1412,7 @@ def create_row(
     payload: Dict[str, Any] = Body(...),
     user: dict = Depends(get_current_user),
 ):
-    _require_admin(user)
-    _enforce_admin_entity_scope(user, entity)
+    _require_settings_access(user, entity)
 
     table = _resolve_table(entity)
     if table == "usuarios":
@@ -1528,6 +1554,7 @@ def create_row(
 
     # productos: marca debe ser elegible para el usuario + canonizada a MAYÚSCULA
     if table == "productos":
+        _ensure_productos_brochure_cols()
         allowed_codes = _allowed_marca_codes(user)
         role = _role(user)
         if not _is_privileged(role) and not allowed_codes:
@@ -1699,8 +1726,7 @@ def update_row(
     payload: Dict[str, Any] = Body(...),
     user: dict = Depends(get_current_user),
 ):
-    _require_admin(user)
-    _enforce_admin_entity_scope(user, entity)
+    _require_settings_access(user, entity)
 
     table = _resolve_table(entity)
     if table == "usuarios":
@@ -1770,6 +1796,7 @@ def update_row(
 
     # productos: marca debe ser elegible para el usuario + canonizada a MAYÚSCULA
     if table == "productos":
+        _ensure_productos_brochure_cols()
         allowed_codes = _allowed_marca_codes(user)
         role = _role(user)
         if not _is_privileged(role) and not allowed_codes:
@@ -1822,12 +1849,14 @@ def delete_row(
     row_id: str = Path(...),
     user: dict = Depends(get_current_user),
 ):
-    _require_admin(user)
-    _enforce_admin_entity_scope(user, entity)
+    _require_settings_access(user, entity)
 
     table = _resolve_table(entity)
     cols = _cols_for(table)
     pk = _pk_for(table)
+    if table == "productos":
+        _ensure_productos_brochure_cols()
+        _normalize_productos_marcas_once()
 
     with engine.begin() as cn:
         if _has_col(cols, "is_active"):
@@ -1843,6 +1872,102 @@ def delete_row(
             raise HTTPException(404, detail="No existe")
 
     return {"ok": True}
+
+
+@router.post("/import/brochures")
+def import_brochures(payload: Dict[str, Any] = Body(...), user: dict = Depends(get_current_user)):
+    """
+    Import batch para productos/menú desde brochure (Petras/Mas Flow).
+    Requiere SUPERADMIN.
+    """
+    rk = _role_key(user)
+    if not rk:
+        raise HTTPException(status_code=401, detail="Token requerido")
+    if "superadmin" not in rk:
+        raise HTTPException(status_code=403, detail="Solo SuperAdmin.")
+
+    items = payload.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="items requerido")
+
+    _ensure_productos_brochure_cols()
+    cols = _cols_for("productos")
+    has_id_marca = _has_col(cols, "id_marca")
+    has_cat = _has_col(cols, "categoria")
+    has_ing = _has_col(cols, "ingredientes")
+
+    created = 0
+    updated = 0
+    skipped = 0
+    errors: List[Dict[str, Any]] = []
+
+    with engine.begin() as cn:
+        for it in items:
+            try:
+                if not isinstance(it, dict):
+                    skipped += 1
+                    continue
+                raw_marca = str(it.get("marca") or "").strip()
+                prod = str(it.get("producto") or "").strip()
+                if not raw_marca or not prod:
+                    skipped += 1
+                    continue
+
+                resolved_label, resolved_id = _resolve_marca_from_db(raw_marca, restrict_ids=None)
+                code = (resolved_label or raw_marca).strip().upper()
+
+                desc = str(it.get("descripcion") or "").strip()
+                cat = str(it.get("categoria") or "").strip()
+                ing = str(it.get("ingredientes") or "").strip()
+
+                params = {"p": prod, "m": code}
+                where = "LOWER(producto)=LOWER(:p) AND UPPER(COALESCE(marca,''))=UPPER(:m)"
+                if has_id_marca and resolved_id:
+                    where = "LOWER(producto)=LOWER(:p) AND id_marca=:id_marca"
+                    params["id_marca"] = int(resolved_id)
+
+                existing = cn.execute(
+                    text(f"SELECT id_producto FROM public.productos WHERE {where} ORDER BY id_producto DESC LIMIT 1"),
+                    params,
+                ).scalar()
+
+                if existing:
+                    sets = ["marca=:m", "producto=:p", "descripcion=:d", "is_active=TRUE"]
+                    upd = {"id": int(existing), "m": code, "p": prod, "d": desc}
+                    if has_id_marca and resolved_id:
+                        sets.append("id_marca=:id_marca")
+                        upd["id_marca"] = int(resolved_id)
+                    if has_cat:
+                        sets.append("categoria=:c")
+                        upd["c"] = cat
+                    if has_ing:
+                        sets.append("ingredientes=:i")
+                        upd["i"] = ing
+                    cn.execute(text(f"UPDATE public.productos SET {', '.join(sets)} WHERE id_producto=:id"), upd)
+                    updated += 1
+                else:
+                    cols_i = ["marca", "producto", "descripcion", "is_active"]
+                    vals_i = [":m", ":p", ":d", "TRUE"]
+                    ins = {"m": code, "p": prod, "d": desc}
+                    if has_id_marca and resolved_id:
+                        cols_i.append("id_marca")
+                        vals_i.append(":id_marca")
+                        ins["id_marca"] = int(resolved_id)
+                    if has_cat:
+                        cols_i.append("categoria")
+                        vals_i.append(":c")
+                        ins["c"] = cat
+                    if has_ing:
+                        cols_i.append("ingredientes")
+                        vals_i.append(":i")
+                        ins["i"] = ing
+                    q = f"INSERT INTO public.productos({', '.join(cols_i)}) VALUES ({', '.join(vals_i)})"
+                    cn.execute(text(q), ins)
+                    created += 1
+            except Exception as e:
+                errors.append({"item": it, "error": f"{type(e).__name__}: {str(e)[:200]}"})
+
+    return {"ok": True, "created": created, "updated": updated, "skipped": skipped, "errors": errors[:50]}
 
 
 @router.post("/usuarios/{user_id}/reset_password")
