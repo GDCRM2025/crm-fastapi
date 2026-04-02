@@ -142,7 +142,10 @@
 
     <div class="modalMask hide" id="onboardMask" aria-hidden="true">
       <div class="modal">
-        <h3>Activar alertas</h3>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <h3 style="margin:0">Activar alertas</h3>
+          <button class="btn" id="onboardCloseBtn" type="button">Más tarde</button>
+        </div>
         <p id="onboardText">Para recibir alertas aunque no estés dentro del CRM, necesitamos tu teléfono y que aceptes notificaciones push.</p>
         <div class="row" style="margin:10px 0 12px 0">
           <input id="phoneInput" inputmode="tel" placeholder="Teléfono (obligatorio)" />
@@ -203,8 +206,10 @@
       const phoneInput = document.getElementById("phoneInput");
       const savePhoneBtn = document.getElementById("savePhoneBtn");
       const enablePushBtn = document.getElementById("enablePushBtn");
+      const onboardCloseBtn = document.getElementById("onboardCloseBtn");
       const onboardStatus = document.getElementById("onboardStatus");
       const onboardText = document.getElementById("onboardText");
+      let meCache = null;
 
       function setTab(active){
         [tabChat, tabNotifs, tabOp].forEach((b) => b && b.classList.remove("active"));
@@ -241,6 +246,7 @@
         };
 
         apiJSON("/me").then((me) => {
+          meCache = me || null;
           const name = me?.name || me?.username || "Usuario";
           const role = me?.role || me?.rol || "";
           meLine.textContent = `${name} · ${role}`;
@@ -254,6 +260,7 @@
               showOnboarding({ needsPhone, needsPush });
             }
           }catch(_){}
+          updatePushUI().catch(()=>{});
         }).catch(() => {
           meLine.textContent = "Sesión inválida. Re-ingresa.";
         });
@@ -312,19 +319,28 @@
           }
           pushBtn.style.display = "inline-flex";
           const sub = await getPushSubscription();
-          if(sub){
+          const needsPush = !!(meCache && meCache.needs_push_ok);
+          const pushOk = !!(meCache && meCache.push_ok === true && !needsPush);
+          if(sub && pushOk){
             pushBtn.textContent = "Alertas activadas";
             pushBtn.disabled = true;
             pushBtn.classList.add("primary");
-          }else{
-            pushBtn.textContent = "Activar alertas";
+            return;
+          }
+          if(sub && !pushOk){
+            pushBtn.textContent = "Reparar alertas";
             pushBtn.disabled = false;
             pushBtn.classList.remove("primary");
+            return;
           }
+          pushBtn.textContent = "Activar alertas";
+          pushBtn.disabled = false;
+          pushBtn.classList.remove("primary");
         }catch(_){}
       }
 
-      async function enablePush(){
+      async function enablePush(opts={}){
+        const forceResync = !!opts.forceResync;
         if(!requireAuth()) return;
         if (isIOS() && !isStandalone()){
           alert("En iPhone, las alertas push funcionan solo si instalas la app: Safari → Compartir → “Agregar a pantalla de inicio”, y la abres desde el ícono.");
@@ -338,6 +354,12 @@
           }
           return;
         }
+        try{
+          if (typeof Notification !== "undefined" && Notification.permission === "denied"){
+            alert("Notificaciones bloqueadas. En iPhone: Ajustes → Notificaciones → GreenDiamond App (o el nombre de la app) → Permitir notificaciones.");
+            return;
+          }
+        }catch(_){}
         const perm = await Notification.requestPermission();
         if(perm !== "granted"){
           alert("Debes permitir notificaciones para recibir alertas.");
@@ -345,9 +367,8 @@
         }
         const reg = await navigator.serviceWorker.ready;
         const existing = await reg.pushManager.getSubscription();
-        if(existing){
-          alert("Listo: ya tienes activadas las alertas.");
-          return;
+        if(existing && !forceResync){
+          // No retornamos: re-sincronizamos contra el backend para marcar push_ok=TRUE.
         }
         let vapidKey = null;
         try{
@@ -361,7 +382,7 @@
           alert("Push aún no está configurado en el servidor (VAPID).");
           return;
         }
-        const sub = await reg.pushManager.subscribe({
+        const sub = existing || await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(String(vapidKey)),
         });
@@ -415,13 +436,18 @@
           const supported = ("Notification" in window) && ("serviceWorker" in navigator) && ("PushManager" in window);
           if(!supported) return;
           pushBtn.style.display = "inline-flex";
-          pushBtn.onclick = () => enablePush().catch(() => alert("No se pudo activar push. Intenta nuevamente."));
+          pushBtn.onclick = () => enablePush({ forceResync: true }).catch(() => alert("No se pudo activar push. Intenta nuevamente."));
         }catch(_){}
       })();
 
       function showOnboarding({needsPhone, needsPush}){
         if(!onboardMask) return;
         try{
+          // No bloqueamos la app si el usuario no puede activar push en el momento.
+          try{
+            const until = Number(localStorage.getItem("gd_onboard_hide_until") || "0") || 0;
+            if (until && Date.now() < until) return;
+          }catch(_){}
           onboardMask.classList.remove("hide");
           onboardMask.setAttribute("aria-hidden","false");
           if(onboardStatus) onboardStatus.textContent = "";
@@ -499,11 +525,20 @@
         if(enablePushBtn){
           enablePushBtn.onclick = async () => {
             try{
-              await enablePush();
+              await enablePush({ forceResync: true });
               await refreshState();
             }catch(_){
               alert("No se pudo activar push.");
             }
+          };
+        }
+        if(onboardCloseBtn){
+          onboardCloseBtn.onclick = () => {
+            try{
+              localStorage.setItem("gd_onboard_hide_until", String(Date.now() + 60*60*1000));
+            }catch(_){}
+            onboardMask.classList.add("hide");
+            onboardMask.setAttribute("aria-hidden","true");
           };
         }
 
