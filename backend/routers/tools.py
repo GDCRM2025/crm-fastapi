@@ -49,14 +49,17 @@ def _gcal_default_calendar_id(db: Session, override: str | None = None) -> str:
     """
     Determina a qué calendarId escribir/leer:
     1) override explícito
-    2) gcal_tokens.calendar_id (último token guardado)
-    3) env var GCAL_DEFAULT_CAL
+    2) env var GCAL_DEFAULT_CAL (config canonical en server)
+    3) gcal_tokens.calendar_id (último token guardado)
     4) GCAL_DEFAULT_CAL (primary)
     """
     if override:
         v = str(override).strip()
         if v:
             return v
+    env_v = (os.getenv("GCAL_DEFAULT_CAL") or "").strip()
+    if env_v:
+        return env_v
     try:
         row = db.execute(text("SELECT calendar_id FROM gcal_tokens ORDER BY id_token DESC LIMIT 1")).fetchone()
         v = (row[0] if row else None)
@@ -830,9 +833,12 @@ def gcal_events(
 
 
 @router.get("/gcal/start")
-def gcal_start(db: Session = Depends(get_db)):
+def gcal_start(db: Session = Depends(get_db), me=Depends(get_current_user)):
     if Flow is None:
         raise HTTPException(status_code=500, detail="Google OAuth no disponible")
+    role = (me.get("role") or me.get("rol") or "").upper()
+    if role != "SUPERADMIN":
+        raise HTTPException(status_code=403, detail="Solo SUPERADMIN puede conectar Google Calendar")
     client_file = _gcal_client_file()
     if not os.path.exists(client_file):
         raise HTTPException(status_code=400, detail="Archivo OAuth no encontrado")
@@ -851,10 +857,43 @@ def gcal_start(db: Session = Depends(get_db)):
     return {"ok": True, "auth_url": auth_url}
 
 
+def _consume_gcal_state(db: Session, state: str) -> bool:
+    """
+    Valida que el callback sea consecuencia de un /gcal/start reciente (SUPERADMIN).
+    Guardamos el state en gcal_tokens.creds_json como {"state": "..."}.
+    """
+    _ensure_gcal_tables(db)
+    try:
+        rows = db.execute(
+            text("SELECT id_token, creds_json FROM gcal_tokens ORDER BY id_token DESC LIMIT 25")
+        ).fetchall()
+    except Exception:
+        return False
+    ok_id = None
+    for rid, raw in rows:
+        try:
+            data = json.loads(raw or "")
+            if isinstance(data, dict) and str(data.get("state") or "") == str(state or ""):
+                ok_id = int(rid)
+                break
+        except Exception:
+            continue
+    if not ok_id:
+        return False
+    try:
+        db.execute(text("DELETE FROM gcal_tokens WHERE id_token=:id"), {"id": ok_id})
+        db.commit()
+    except Exception:
+        pass
+    return True
+
+
 @router.get("/gcal/callback")
 def gcal_callback(code: str, state: str | None = None, db: Session = Depends(get_db)):
     if Flow is None:
         raise HTTPException(status_code=500, detail="Google OAuth no disponible")
+    if not state or not _consume_gcal_state(db, state):
+        raise HTTPException(status_code=400, detail="Callback inválido o expirado. Reintenta conectar desde SUPERADMIN.")
     client_file = _gcal_client_file()
     flow = Flow.from_client_secrets_file(
         client_file, scopes=GCAL_SCOPES, redirect_uri=_gcal_redirect_uri()

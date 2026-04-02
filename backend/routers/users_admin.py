@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List
+import os
 from sqlalchemy import text
 from backend.core.db import get_connection
 from backend.routers.auth import get_current_user, hash_password, _role_id_for
+from backend.core.email import send_email, EmailConfigError
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -96,6 +98,10 @@ def create_user(body: CreateUserIn, me = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Faltan datos")
     if rol not in ("ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "OPERACIONES", "EJECUTIVO", "VENTAS", "FINANZAS", "OPERADOR", "CHOP", "CHOFER", "CONDUCTOR"):
         rol = "OPERADOR"
+    caller_role = (me.get("role") or me.get("rol") or "").upper()
+    # Solo SUPERADMIN puede asignar marcas al crear (admin scoped).
+    marcas_in = list(body.marcas or []) if caller_role == "SUPERADMIN" else []
+
     with get_connection() as conn:
         exists = conn.execute(
             text("SELECT 1 FROM usuarios WHERE lower(email)=:e OR lower(username)=:u"),
@@ -123,11 +129,11 @@ def create_user(body: CreateUserIn, me = Depends(get_current_user)):
         # Si se definieron marcas, las guardamos para el usuario (ADMIN scoped / ejecutivos).
         # SUPERADMIN no requiere marcas (ve todo), pero si el usuario quiere igualmente acotar un ADMIN,
         # lo soportamos vía usuarios_marcas.
-        if new_id and (body.marcas or []):
+        if new_id and marcas_in:
             try:
                 _ensure_usuarios_marcas(conn)
                 conn.execute(text("DELETE FROM usuarios_marcas WHERE id_usuario=:u"), {"u": int(new_id)})
-                for mid in body.marcas or []:
+                for mid in marcas_in:
                     try:
                         conn.execute(
                             text("INSERT INTO usuarios_marcas(id_usuario,id_marca) VALUES(:u,:m) ON CONFLICT DO NOTHING"),
@@ -139,4 +145,32 @@ def create_user(body: CreateUserIn, me = Depends(get_current_user)):
                 # No romper creación por fallo en tabla puente.
                 pass
         conn.commit()
-    return {"ok": True, "id_usuario": int(row[0]) if row else None, "marcas": list(body.marcas or [])}
+
+    # Envío de credenciales por correo (mejor esfuerzo).
+    # OJO: esto manda password en texto plano (el usuario luego lo cambia).
+    email_notice = None
+    try:
+        login_url = (os.getenv("APP_URL") or "").rstrip("/") + "/crm/web/login.html"
+        if login_url.startswith("/"):
+            login_url = "/crm/web/login.html"
+        subject = "Acceso CRM Green Diamond"
+        text_body = (
+            f"Hola {nombre},\n\n"
+            f"Se creó tu acceso al CRM.\n\n"
+            f"Usuario: {username}\n"
+            f"Email: {email}\n"
+            f"Contraseña: {password}\n\n"
+            f"Ingreso: {login_url}\n\n"
+            f"Importante: al ingresar, cambia tu contraseña.\n\n"
+            f"--\nCRM Green Diamond\n"
+        )
+        send_email(email, subject, text_body)
+    except EmailConfigError as e:
+        email_notice = f"SMTP no configurado: {e}"
+    except Exception as e:
+        email_notice = f"No se pudo enviar correo: {e}"
+
+    out = {"ok": True, "id_usuario": int(row[0]) if row else None, "marcas": list(marcas_in)}
+    if email_notice:
+        out["email_notice"] = email_notice
+    return out

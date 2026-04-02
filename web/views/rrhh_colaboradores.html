@@ -364,6 +364,15 @@
           <button class="btn" id="btnCreateUser">Crear usuario</button>
         </div>
       </div>
+
+      <div id="uMarcasWrap" style="display:none; margin-top:10px;">
+        <div class="field">
+          <div class="field-label">Marcas (solo SuperAdmin)</div>
+          <select class="inp" id="uMarcas" multiple style="height:120px;">
+          </select>
+          <div class="muted" style="margin-top:6px;">Ctrl/Cmd para seleccionar varias.</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -419,6 +428,24 @@
     let AFP_LIST = [];
     let SALUD_LIST = [];
     let staffEditing = null;
+    let ME = null;
+    let MARCAS = [];
+
+    async function loadMe(){
+      try{
+        const r = await fetch(apiURL("/me"), { headers: headers() });
+        if (!r.ok) return;
+        ME = await r.json();
+      }catch(_){}
+    }
+    async function loadMarcas(){
+      try{
+        const r = await fetch(apiURL("/catalogos/marcas?limit=200"), { headers: headers() });
+        if (!r.ok) return;
+        const data = await r.json();
+        MARCAS = (data.items || data || []).map(x => ({ id_marca: x.id_marca, nombre: x.nombre || x.marca || "" })).filter(x => x.id_marca && x.nombre);
+      }catch(_){}
+    }
 
     async function loadRoles(){
       try{
@@ -781,17 +808,34 @@
       qs("#uRol").value = String(staffItem.rol || "OPERADOR").toUpperCase() || "OPERADOR";
       qs("#uPass").value = "";
       qs("#userHint").textContent = `Colaborador: ${nombre || ("#"+staffItem.id_staff)} · Esto crea un usuario en el CRM.`;
+      // selector marcas solo para SUPERADMIN
+      const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
+      const wrap = qs("#uMarcasWrap");
+      if (wrap){
+        wrap.style.display = isSuper ? "block" : "none";
+        const sel = qs("#uMarcas");
+        if (sel){
+          sel.innerHTML = (MARCAS || []).map(m => `<option value="${m.id_marca}">${m.nombre}</option>`).join("");
+        }
+      }
       showUserModal(true);
     }
     qs("#btnGenPass").addEventListener("click", ()=>{ qs("#uPass").value = genPass(); });
     qs("#btnCreateUser").addEventListener("click", async ()=>{
+      const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
+      const selectedMarcas = (() => {
+        if (!isSuper) return [];
+        const sel = qs("#uMarcas");
+        if (!sel) return [];
+        return Array.from(sel.selectedOptions || []).map(o => Number(o.value)).filter(n => Number.isFinite(n) && n > 0);
+      })();
       const payload = {
         nombre: (qs("#uNombre").value || "").trim(),
         email: (qs("#uEmail").value || "").trim(),
         username: (qs("#uUsername").value || "").trim(),
         rol: (qs("#uRol").value || "").trim(),
         password: (qs("#uPass").value || "").trim(),
-        marcas: [],
+        marcas: selectedMarcas,
       };
       if (!payload.nombre || !payload.email || !payload.password){
         toast("Falta nombre/email/password");
@@ -831,6 +875,8 @@
     }
 
     async function init(){
+      await loadMe();
+      await loadMarcas();
       await loadRoles();
       await loadAfp();
       await loadSalud();
