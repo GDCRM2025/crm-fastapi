@@ -39,7 +39,43 @@ except Exception:  # pragma: no cover
 
 GCAL_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 GCAL_REDIRECT = "http://127.0.0.1:8000/tools/gcal/callback"
-GCAL_DEFAULT_CAL = "simonurrutia.m@gmail.com"
+# Calendar default:
+# - Prefer env var GCAL_DEFAULT_CAL (prod)
+# - Else fallback to 'primary' (robusto con el owner del token OAuth)
+GCAL_DEFAULT_CAL = "primary"
+
+
+def _gcal_default_calendar_id(db: Session, override: str | None = None) -> str:
+    """
+    Determina a qué calendarId escribir/leer:
+    1) override explícito
+    2) gcal_tokens.calendar_id (último token guardado)
+    3) env var GCAL_DEFAULT_CAL
+    4) GCAL_DEFAULT_CAL (primary)
+    """
+    if override:
+        v = str(override).strip()
+        if v:
+            return v
+    try:
+        row = db.execute(text("SELECT calendar_id FROM gcal_tokens ORDER BY id_token DESC LIMIT 1")).fetchone()
+        v = (row[0] if row else None)
+        v = str(v or "").strip()
+        if v:
+            return v
+    except Exception:
+        pass
+    return (os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL).strip() or "primary"
+
+
+def _looks_like_perm_error(msg: str) -> bool:
+    s = (msg or "").lower()
+    return ("httperror 403" in s) or ("insufficientpermissions" in s) or ("forbidden" in s) or ("not have permission" in s)
+
+
+def _looks_like_notfound_calendar(msg: str) -> bool:
+    s = (msg or "").lower()
+    return ("httperror 404" in s) or ("notfound" in s) or ("not found" in s)
 
 
 def _gcal_client_file() -> str:
@@ -695,7 +731,7 @@ def gcal_stats(
     time_min = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     time_max = (now + timedelta(days=days)).replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
 
-    cal_id = calendar_id or os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+    cal_id = _gcal_default_calendar_id(db, calendar_id)
     evs = svc.events().list(
         calendarId=cal_id,
         timeMin=time_min,
@@ -747,7 +783,7 @@ def gcal_events(
     else:
         time_max = (now + timedelta(days=45)).replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
 
-    cal_id = calendar_id or os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+    cal_id = _gcal_default_calendar_id(db, calendar_id)
     try:
         evs = svc.events().list(
             calendarId=cal_id,
@@ -3505,21 +3541,30 @@ def approve_agenda(
         svc = _gcal_service(db)
         if svc:
             connected = True
-            cal_id = os.getenv("GCAL_DEFAULT_CAL") or GCAL_DEFAULT_CAL
+            cal_id = _gcal_default_calendar_id(db, None)
+            cal_id_used = cal_id
             for ev2 in to_create:
                 lead_key = f"{id_lead}:{ev2.get('day')}"
                 try:
-                    found = (
-                        svc.events()
-                        .list(
-                            calendarId=cal_id,
-                            privateExtendedProperty=f"lead_key={lead_key}",
-                            maxResults=1,
-                            singleEvents=True,
+                    # 1) Intento encontrar evento existente (idempotencia).
+                    items = []
+                    try:
+                        found = (
+                            svc.events()
+                            .list(
+                                calendarId=cal_id,
+                                privateExtendedProperty=f"lead_key={lead_key}",
+                                maxResults=1,
+                                singleEvents=True,
+                            )
+                            .execute()
                         )
-                        .execute()
-                    )
-                    items = found.get("items") or []
+                        items = found.get("items") or []
+                    except Exception as e_list:
+                        # Si falla el query, seguimos con insert/patch directo.
+                        gcal_error = f"{type(e_list).__name__}: {e_list}"
+                        items = []
+
                     body = {
                         "summary": ev2["title"],
                         "location": ev2["location"],
@@ -3528,9 +3573,27 @@ def approve_agenda(
                         "end": {"dateTime": ev2["end"].isoformat(), "timeZone": "America/Santiago"},
                         "extendedProperties": {"private": {"lead_id": str(id_lead), "lead_key": lead_key}},
                     }
+
+                    def _do_patch(_cal_id: str, _eid: str):
+                        return svc.events().patch(calendarId=_cal_id, eventId=_eid, body=body).execute()
+
+                    def _do_insert(_cal_id: str):
+                        return svc.events().insert(calendarId=_cal_id, body=body).execute()
+
+                    # 2) Patch si existe; si no, insert. Si falla por permisos/404, fallback a 'primary'.
                     if items:
                         eid = items[0].get("id")
-                        patched = svc.events().patch(calendarId=cal_id, eventId=eid, body=body).execute()
+                        try:
+                            patched = _do_patch(cal_id, eid)
+                            cal_id_used = cal_id
+                        except Exception as e_patch:
+                            msg = str(e_patch)
+                            if (cal_id != "primary") and (_looks_like_perm_error(msg) or _looks_like_notfound_calendar(msg)):
+                                patched = _do_patch("primary", eid)
+                                cal_id_used = "primary"
+                                gcal_error = f"CalendarId '{cal_id}' sin permisos/no existe. Usé 'primary'."
+                            else:
+                                raise
                         event_ids.append(eid)
                         links.append(
                             patched.get("htmlLink")
@@ -3538,14 +3601,34 @@ def approve_agenda(
                             or _gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"])
                         )
                     else:
-                        created = svc.events().insert(calendarId=cal_id, body=body).execute()
+                        try:
+                            created = _do_insert(cal_id)
+                            cal_id_used = cal_id
+                        except Exception as e_ins:
+                            msg = str(e_ins)
+                            # Retry simple (transitorio) 1 vez
+                            try:
+                                import time as _t
+                                _t.sleep(0.8)
+                            except Exception:
+                                pass
+                            try:
+                                created = _do_insert(cal_id)
+                                cal_id_used = cal_id
+                            except Exception:
+                                if (cal_id != "primary") and (_looks_like_perm_error(msg) or _looks_like_notfound_calendar(msg)):
+                                    created = _do_insert("primary")
+                                    cal_id_used = "primary"
+                                    gcal_error = f"CalendarId '{cal_id}' sin permisos/no existe. Usé 'primary'."
+                                else:
+                                    raise
                         event_ids.append(created.get("id"))
                         links.append(
                             created.get("htmlLink")
                             or _gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"])
                         )
                 except Exception as e:
-                    gcal_error = str(e)
+                    gcal_error = f"calendarId={_gcal_default_calendar_id(db, None)} :: {str(e)}"
                     event_ids.append(None)
                     links.append(_gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"]))
         else:
