@@ -1,16 +1,21 @@
 """
 Importa productos/ingredientes desde `listado_ingredientes_brochures.xlsx`.
 
-Este archivo NO usa pandas/openpyxl. Lee el XLSX como ZIP (XML) con stdlib.
+Este script NO usa pandas/openpyxl. Lee el XLSX como ZIP (XML) con stdlib.
+
+Compatibilidad:
+- Funciona con Python 3.6+ (en el server `python3` suele ser 3.6).
+- No requiere librerías externas (no usa `requests`).
 
 Qué hace:
 - Lee 2 sheets:
   - "Petras Box"          -> marca "PETRAS"
   - "Carritos Mas Flow"   -> marca "MAS FLOW"
 - Extrae columnas: Categoria, Producto, Descripcion, Ingredientes
-- Genera un JSON listo para importar vía API (/settings/productos) o para convertir a SQL.
+- Importa por API en batch: POST /settings/import/brochures (recomendado)
+  o fallback 1x1 a /settings/productos.
 
-Uso (recomendado, vía API):
+Uso:
   python3 backend/scripts/import_brochures_products.py \
     --xlsx data/listado_ingredientes_brochures.xlsx \
     --api https://greendiamond.cl/crm \
@@ -20,40 +25,35 @@ Uso (recomendado, vía API):
 Luego sin --dry-run para ejecutar.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import zipfile
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Tuple
+import urllib.request
+import urllib.error
+import ssl
 
 
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 
-@dataclass(frozen=True)
-class BrochureRow:
-    marca: str
-    categoria: str
-    producto: str
-    descripcion: str
-    ingredientes: str
-
-
-def _load_shared_strings(z: zipfile.ZipFile) -> List[str]:
-    root = ET.fromstring(z.read("xl/sharedStrings.xml"))
-    out: List[str] = []
+def _load_shared_strings(z):
+    # sharedStrings.xml puede no existir si el XLSX no usa strings compartidos
+    try:
+        raw = z.read("xl/sharedStrings.xml")
+    except Exception:
+        return []
+    root = ET.fromstring(raw)
+    out = []
     for si in root.findall("s:si", NS):
-        parts: List[str] = []
+        parts = []
         for t in si.findall(".//s:t", NS):
             parts.append(t.text or "")
         out.append("".join(parts))
     return out
 
 
-def _cell_to_colrow(cellref: str) -> Tuple[int, int]:
+def _cell_to_colrow(cellref):
     col = "".join([c for c in cellref if c.isalpha()])
     row = int("".join([c for c in cellref if c.isdigit()]) or 0)
     n = 0
@@ -62,16 +62,16 @@ def _cell_to_colrow(cellref: str) -> Tuple[int, int]:
     return n, row
 
 
-def _sheet_name_map(z: zipfile.ZipFile) -> Dict[str, str]:
+def _sheet_name_map(z):
     # workbook.xml defines sheet name -> r:id ; workbook.xml.rels maps r:id -> sheetX.xml
     wb = ET.fromstring(z.read("xl/workbook.xml"))
     rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
     nsr = {"r": "http://schemas.openxmlformats.org/package/2006/relationships"}
-    rid_to_target: Dict[str, str] = {}
+    rid_to_target = {}
     for rel in rels.findall("r:Relationship", nsr):
         rid_to_target[rel.get("Id") or ""] = rel.get("Target") or ""
 
-    out: Dict[str, str] = {}
+    out = {}
     for sh in wb.findall(".//s:sheets/s:sheet", NS):
         name = sh.get("name") or ""
         rid = sh.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id") or ""
@@ -82,14 +82,14 @@ def _sheet_name_map(z: zipfile.ZipFile) -> Dict[str, str]:
 
 
 def _read_sheet_rows(
-    z: zipfile.ZipFile,
-    sheet_path: str,
-    shared: List[str],
-    max_cols: int = 4,
-    max_rows: int = 5000,
-) -> List[List[str]]:
+    z,
+    sheet_path,
+    shared,
+    max_cols=4,
+    max_rows=5000,
+):
     root = ET.fromstring(z.read(sheet_path))
-    cells: Dict[Tuple[int, int], str] = {}
+    cells = {}
     for c in root.findall(".//s:c", NS):
         r = c.get("r")
         if not r:
@@ -101,14 +101,14 @@ def _read_sheet_rows(
         if v is None:
             continue
         val = v.text or ""
-        if c.get("t") == "s":
+        if c.get("t") == "s" and shared:
             try:
                 val = shared[int(val)]
             except Exception:
                 pass
         cells[(rn, cn)] = val
 
-    rows: List[List[str]] = []
+    rows = []
     for rn in range(1, max_rows + 1):
         row = [str(cells.get((rn, cn), "") or "").strip() for cn in range(1, max_cols + 1)]
         if any(x for x in row):
@@ -116,7 +116,7 @@ def _read_sheet_rows(
     return rows
 
 
-def load_brochure_rows(xlsx_path: str) -> List[BrochureRow]:
+def load_brochure_rows(xlsx_path):
     with zipfile.ZipFile(xlsx_path) as z:
         shared = _load_shared_strings(z)
         sheets = _sheet_name_map(z)
@@ -124,7 +124,7 @@ def load_brochure_rows(xlsx_path: str) -> List[BrochureRow]:
             "Petras Box": "PETRAS",
             "Carritos Mas Flow": "MAS FLOW",
         }
-        out: List[BrochureRow] = []
+        out = []
         for sheet_name, marca in want.items():
             sheet_path = sheets.get(sheet_name)
             if not sheet_path:
@@ -140,50 +140,71 @@ def load_brochure_rows(xlsx_path: str) -> List[BrochureRow]:
                 if not producto:
                     continue
                 out.append(
-                    BrochureRow(
-                        marca=marca,
-                        categoria=categoria.strip(),
-                        producto=producto.strip(),
-                        descripcion=descripcion.strip(),
-                        ingredientes=ingredientes.strip(),
-                    )
+                    {
+                        "marca": marca,
+                        "categoria": (categoria or "").strip(),
+                        "producto": (producto or "").strip(),
+                        "descripcion": (descripcion or "").strip(),
+                        "ingredientes": (ingredientes or "").strip(),
+                    }
                 )
         return out
 
 
-def _as_payload_items(rows: Iterable[BrochureRow]) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
+def _as_payload_items(rows):
+    items = []
     for r in rows:
         items.append(
             {
-                "marca": r.marca,
-                "producto": r.producto,
-                "descripcion": r.descripcion,
+                "marca": r.get("marca", ""),
+                "producto": r.get("producto", ""),
+                "descripcion": r.get("descripcion", ""),
                 # Estos campos pueden existir o no en DB. Si no existen, el endpoint los ignora.
-                "categoria": r.categoria,
-                "ingredientes": r.ingredientes,
+                "categoria": r.get("categoria", ""),
+                "ingredientes": r.get("ingredientes", ""),
                 "is_active": True,
             }
         )
     return items
 
 
-def _post_json(url: str, token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    import requests
-
-    r = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        timeout=60,
-    )
+def _post_json(url, token, payload):
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Authorization": "Bearer {}".format(token),
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    ctx = None
     try:
-        data = r.json()
+        ctx = ssl.create_default_context()
     except Exception:
-        data = {"raw": r.text}
-    if r.status_code >= 400:
-        raise RuntimeError(f"HTTP {r.status_code}: {data}")
-    return data
+        ctx = None
+
+    req = urllib.request.Request(url, data=body, headers=headers)
+    # método POST (Python 3.6 no expone "method" como param en Request en todos los builds)
+    req.get_method = lambda: "POST"
+    try:
+        if ctx is not None:
+            resp = urllib.request.urlopen(req, timeout=60, context=ctx)
+        else:
+            resp = urllib.request.urlopen(req, timeout=60)
+        raw = resp.read().decode("utf-8", "ignore")
+        try:
+            return json.loads(raw)
+        except Exception:
+            return {"raw": raw}
+    except urllib.error.HTTPError as e:
+        raw = ""
+        try:
+            raw = e.read().decode("utf-8", "ignore")
+        except Exception:
+            raw = str(e)
+        try:
+            data = json.loads(raw) if raw else {"detail": str(e)}
+        except Exception:
+            data = {"raw": raw, "detail": str(e)}
+        raise RuntimeError("HTTP {}: {}".format(getattr(e, "code", "?"), data))
 
 
 def main() -> int:
@@ -242,4 +263,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

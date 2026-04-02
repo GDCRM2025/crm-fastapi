@@ -34,6 +34,7 @@
       <div class="row">
         <button class="tabbtn active" id="tabNomina">Nómina</button>
         <button class="tabbtn" id="tabStaff">Colaboradores</button>
+        <button class="tabbtn" id="tabSGJO" title="Reloj control / marcación">SGJO</button>
       </div>
     </div>
 
@@ -262,6 +263,14 @@
       if (/^https?:\/\//i.test(p)) return p;
       if (!API_BASE) return p;
       return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
+
+    function openInPanel(url){
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"rrhh_sgjo", url }, "*");
+      }catch(_){
+        location.href = url;
+      }
     }
     function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
@@ -514,6 +523,9 @@
       qs("#tabStaff").classList.add("active");
       qs("#tabNomina").classList.remove("active");
       loadStaff();
+    };
+    qs("#tabSGJO").onclick = () => {
+      openInPanel("/web/views/rrhh_sgjo.html");
     };
     qs("#btnReloadStaff").onclick = () => loadStaff();
     qs("#qStaff").oninput = () => loadStaff();
