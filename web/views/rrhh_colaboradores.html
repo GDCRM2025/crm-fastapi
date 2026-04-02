@@ -27,6 +27,8 @@
     .modal{ display:none; align-items:center; justify-content:center; position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.6); }
     .modal .card{ width:min(840px,92vw); }
     .modal h4{ margin:0 0 8px 0; font-size:13px; letter-spacing:.08em; text-transform:uppercase; opacity:.8; }
+    .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    @media (max-width: 860px){ .grid2{ grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -44,7 +46,10 @@
           <input class="inp" id="qStaff" placeholder="Buscar colaborador..." />
           <button class="btn" id="btnReloadStaff">Actualizar</button>
         </div>
-        <button class="btn" id="btnNewStaff">Nuevo colaborador</button>
+        <div class="row">
+          <button class="btn" id="btnOpenNomina">Ver nómina</button>
+          <button class="btn" id="btnNewStaff">Nuevo colaborador</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
@@ -270,6 +275,94 @@
       <div class="row" style="margin-top:12px; justify-content:flex-end;">
         <button class="btn" id="back6">Atrás</button>
         <button class="btn" id="saveStaff">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="userModal">
+    <div class="card" style="width:min(560px,92vw);">
+      <div class="row" style="justify-content:space-between;">
+        <strong>Crear usuario CRM</strong>
+        <button class="btn" id="userClose">Cerrar</button>
+      </div>
+      <div class="muted" style="margin-top:6px;">Crea acceso al CRM para el colaborador.</div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="uNombre" placeholder="Nombre" style="flex:1;min-width:240px;" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="uEmail" placeholder="Email (obligatorio)" style="flex:1;min-width:240px;" />
+        <input class="inp" id="uUsername" placeholder="Username" style="flex:1;min-width:240px;" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <select class="inp" id="uRol" style="min-width:240px;">
+          <option value="OPERADOR">OPERADOR</option>
+          <option value="CONDUCTOR">CONDUCTOR</option>
+          <option value="OPERACIONES">OPERACIONES</option>
+          <option value="MICE">MICE</option>
+          <option value="EJECUTIVO">EJECUTIVO</option>
+          <option value="VENTAS">VENTAS</option>
+          <option value="ADMIN">ADMIN</option>
+          <option value="SUPERADMIN">SUPERADMIN</option>
+        </select>
+        <input class="inp" id="uPass" placeholder="Password (vacío = auto)" style="flex:1;min-width:220px;" />
+      </div>
+      <div class="row" style="margin-top:12px; justify-content:flex-end;">
+        <button class="btn" id="uCreate">Crear usuario</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Usuario CRM (crear acceso desde RRHH) -->
+  <div class="modal" id="mUser">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <strong>Usuario CRM</strong>
+        <button class="btn" data-close-user>Cerrar</button>
+      </div>
+      <div class="muted" id="userHint" style="margin-top:6px;">Crea el acceso al CRM desde RRHH.</div>
+
+      <div class="grid2" style="margin-top:12px;">
+        <div class="field">
+          <div class="field-label">Nombre</div>
+          <input class="inp" id="uNombre" placeholder="Nombre" />
+        </div>
+        <div class="field">
+          <div class="field-label">Rol</div>
+          <select class="inp" id="uRol">
+            <option value="OPERADOR">OPERADOR</option>
+            <option value="CONDUCTOR">CONDUCTOR</option>
+            <option value="CHOFER">CHOFER</option>
+            <option value="CHOP">CHOP</option>
+            <option value="EJECUTIVO">EJECUTIVO</option>
+            <option value="VENTAS">VENTAS</option>
+            <option value="OPERACIONES">OPERACIONES</option>
+            <option value="JEFE DE OPERACIONES">JEFE DE OPERACIONES</option>
+            <option value="ADMIN">ADMIN</option>
+            <option value="SUPERADMIN">SUPERADMIN</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <div class="field">
+          <div class="field-label">Email</div>
+          <input class="inp" id="uEmail" placeholder="email@empresa.cl" />
+        </div>
+        <div class="field">
+          <div class="field-label">Username</div>
+          <input class="inp" id="uUsername" placeholder="usuario" />
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <div class="field">
+          <div class="field-label">Password</div>
+          <input class="inp" id="uPass" placeholder="Password" />
+        </div>
+        <div class="row" style="align-items:end; justify-content:flex-end;">
+          <button class="btn" id="btnGenPass">Generar</button>
+          <button class="btn" id="btnCreateUser">Crear usuario</button>
+        </div>
       </div>
     </div>
   </div>
@@ -583,7 +676,7 @@
       };
       const url = staffEditing ? `/rrhh/staff/${staffEditing.id_staff}` : "/rrhh/staff";
       const method = staffEditing ? "PUT" : "POST";
-      const r = await fetch(url, { method, headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      const r = await fetch(apiURL(url), { method, headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
       if (!r.ok){ 
         const t = await r.text().catch(()=> "");
         toast("No se pudo guardar: " + (t || r.status));
@@ -598,15 +691,10 @@
       const r = await fetch(apiURL("/rrhh/staff"), { headers: headers() });
       if (!r.ok){
         const t = await r.text().catch(()=> "");
-        qs("#rowsStaff").innerHTML = `<tr><td class=\"muted\">No se pudo cargar: ${t || r.status}</td></tr>`;
-        return;
-}
-const data = await r.json();
-      if (!r.ok){
-        const t = await r.text().catch(()=> "");
         qs("#rowsStaff").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
         return;
       }
+      const data = await r.json().catch(()=>({}));
       let items = data.items || [];
       const q = (qs("#qStaff").value || "").trim().toLowerCase();
       if (q){ items = items.filter(i => String(i.colaborador || "").toLowerCase().includes(q)); }
@@ -621,6 +709,7 @@ const data = await r.json();
           <td>
             <button class="btn" data-edit="${i.id_staff}">Editar</button>
             <button class="btn" data-ficha="${i.id_staff}">Ficha PDF</button>
+            <button class="btn" data-user="${i.id_staff}">Usuario CRM</button>
             <button class="btn" data-del="${i.id_staff}">Eliminar</button>
           </td>
         </tr>
@@ -634,7 +723,7 @@ const data = await r.json();
         const id = Number(b.dataset.del || 0);
         b.addEventListener("click", async () => {
           if (!confirm("¿Eliminar colaborador?")) return;
-          const r = await fetch(`/rrhh/staff/${id}`, { method:"DELETE", headers: headers() });
+          const r = await fetch(apiURL(`/rrhh/staff/${id}`), { method:"DELETE", headers: headers() });
           if (!r.ok){ toast("No se pudo eliminar"); return; }
           toast("Colaborador eliminado");
           await loadStaff();
@@ -643,14 +732,85 @@ const data = await r.json();
       qs("#rowsStaff").querySelectorAll("[data-ficha]").forEach(b => {
         const id = Number(b.dataset.ficha || 0);
         b.addEventListener("click", () => {
-          window.open(`/rrhh/staff/${id}/ficha`, "_blank");
+          window.open(apiURL(`/rrhh/staff/${id}/ficha`), "_blank");
         });
+      });
+      qs("#rowsStaff").querySelectorAll("[data-user]").forEach(b => {
+        const id = Number(b.dataset.user || 0);
+        const item = items.find(x => Number(x.id_staff) === id);
+        b.addEventListener("click", () => openUserModal(item));
       });
     }
 
     qs("#btnReloadStaff").addEventListener("click", () => loadStaff());
     qs("#qStaff").addEventListener("input", () => loadStaff());
     qs("#btnNewStaff").addEventListener("click", () => openStaffModal(null));
+    qs("#btnOpenNomina").addEventListener("click", () => {
+      // Nómina vive en su propia vista (por ahora). La abrimos en una pestaña.
+      window.open(apiURL("/web/views/rrhh_nomina.html?v=20260402-2"), "_blank");
+    });
+
+    function showUserModal(on){
+      qs("#mUser").style.display = on ? "flex" : "none";
+    }
+    qs("[data-close-user]")?.addEventListener("click", ()=> showUserModal(false));
+    qs("#mUser").addEventListener("click", (e)=>{ if (e.target === qs("#mUser")) showUserModal(false); });
+
+    function genPass(){
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%";
+      let out = "";
+      for (let i=0;i<14;i++){ out += chars[Math.floor(Math.random()*chars.length)]; }
+      return out;
+    }
+    function guessUsername(email){
+      const e = String(email||"").trim().toLowerCase();
+      if (!e) return "";
+      const at = e.indexOf("@");
+      return (at > 0 ? e.slice(0, at) : e).replace(/[^a-z0-9._-]/g,"").slice(0, 40);
+    }
+    async function openUserModal(staffItem){
+      if (!staffItem || !staffItem.id_staff){
+        toast("Selecciona un colaborador");
+        return;
+      }
+      const nombre = String(staffItem.colaborador || "").trim();
+      const email = String(staffItem.email || "").trim().toLowerCase();
+      qs("#uNombre").value = nombre || "";
+      qs("#uEmail").value = email || "";
+      qs("#uUsername").value = guessUsername(email) || "";
+      qs("#uRol").value = String(staffItem.rol || "OPERADOR").toUpperCase() || "OPERADOR";
+      qs("#uPass").value = "";
+      qs("#userHint").textContent = `Colaborador: ${nombre || ("#"+staffItem.id_staff)} · Esto crea un usuario en el CRM.`;
+      showUserModal(true);
+    }
+    qs("#btnGenPass").addEventListener("click", ()=>{ qs("#uPass").value = genPass(); });
+    qs("#btnCreateUser").addEventListener("click", async ()=>{
+      const payload = {
+        nombre: (qs("#uNombre").value || "").trim(),
+        email: (qs("#uEmail").value || "").trim(),
+        username: (qs("#uUsername").value || "").trim(),
+        rol: (qs("#uRol").value || "").trim(),
+        password: (qs("#uPass").value || "").trim(),
+        marcas: [],
+      };
+      if (!payload.nombre || !payload.email || !payload.password){
+        toast("Falta nombre/email/password");
+        return;
+      }
+      if (!payload.username) payload.username = guessUsername(payload.email);
+      const r = await fetch(apiURL("/users/create"), {
+        method: "POST",
+        headers: { "Content-Type":"application/json", ...headers() },
+        body: JSON.stringify(payload),
+      });
+      const txt = await r.text().catch(()=> "");
+      if (!r.ok){
+        toast("No se pudo crear: " + (txt || r.status));
+        return;
+      }
+      toast("Usuario creado");
+      showUserModal(false);
+    });
 
     function applyLabels(){
       document.querySelectorAll('.modal .row').forEach(row => {

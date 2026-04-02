@@ -1836,7 +1836,7 @@ const MENU = [
     ico: "\u{1F465}",
     title: "RRHH",
     items: [
-      { id: "rrhh_hub", label: "RRHH", url: "/web/views/rrhh.html?v=20260402-1" }
+      { id: "rrhh_hub", label: "RRHH", url: "/web/views/rrhh.html?v=20260402-2" }
     ]
   },
 	  {

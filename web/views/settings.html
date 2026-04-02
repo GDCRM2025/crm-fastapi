@@ -1764,8 +1764,13 @@
     const head = qs(".head");
     if (!head || qs("#marcaFilter")) return;
     try{
-      const r = await api("/settings/marcas?limit=200&offset=0&active_only=true");
-      const marcas = r.items || [];
+      // Importante: este filtro debe funcionar para ejecutivos (sin acceso a Settings/Marcas).
+      // Usamos /catalogos (público) y luego filtramos por marcas asignadas vía /me.
+      const marcasRaw = await getMarcas();
+      const allowed = await getAllowedMarcasForProductos();
+      const allowedSet = new Set((allowed || []).map(s => String(s||"").toUpperCase()));
+      const marcas = (marcasRaw || [])
+        .filter(m => allowedSet.size ? allowedSet.has(String(marcaLabel(m)).toUpperCase()) : true);
       state.marcasMap = new Map(
         marcas.map(m => [String(m.nombre || m.marca || ""), (m.nombre || m.marca || "")])
       );
@@ -1796,6 +1801,17 @@
 
   (async ()=>{
     try{ meUser = await api("/me"); }catch(_){ meUser = null; }
+    try{
+      // Ejecutivos/usuarios no-admin solo deben usar Settings para Productos (venta) de sus marcas.
+      const roleUp = String(meUser?.role || meUser?.rol || "").toUpperCase();
+      const isAdminLike = roleUp.includes("SUPERADMIN") || roleUp === "ADMIN" || roleUp.includes("ADMIN");
+      if (!isAdminLike && entity !== "productos"){
+        const sp = new URLSearchParams(location.search || "");
+        sp.set("entity", "productos");
+        location.search = sp.toString();
+        return;
+      }
+    }catch(_){}
     try{
       await load();
       await ensureMarcaFilter();

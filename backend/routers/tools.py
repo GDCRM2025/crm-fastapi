@@ -3533,8 +3533,9 @@ def approve_agenda(
             en = _as_dt(end) or (st + timedelta(hours=2))
             to_create = [{"day": st.date().isoformat(), "title": title, "location": loc, "description": details or "", "start": st, "end": en}]
 
-        links = []
-        event_ids = []
+        links: list[str] = []
+        event_ids: list[str | None] = []
+        calendar_ids: list[str] = []
         connected = False
         gcal_error = None
 
@@ -3542,9 +3543,9 @@ def approve_agenda(
         if svc:
             connected = True
             cal_id = _gcal_default_calendar_id(db, None)
-            cal_id_used = cal_id
             for ev2 in to_create:
                 lead_key = f"{id_lead}:{ev2.get('day')}"
+                cal_id_used = cal_id
                 try:
                     # 1) Intento encontrar evento existente (idempotencia).
                     items = []
@@ -3595,6 +3596,7 @@ def approve_agenda(
                             else:
                                 raise
                         event_ids.append(eid)
+                        calendar_ids.append(cal_id_used)
                         links.append(
                             patched.get("htmlLink")
                             or items[0].get("htmlLink")
@@ -3623,6 +3625,7 @@ def approve_agenda(
                                 else:
                                     raise
                         event_ids.append(created.get("id"))
+                        calendar_ids.append(cal_id_used)
                         links.append(
                             created.get("htmlLink")
                             or _gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"])
@@ -3630,12 +3633,14 @@ def approve_agenda(
                 except Exception as e:
                     gcal_error = f"calendarId={_gcal_default_calendar_id(db, None)} :: {str(e)}"
                     event_ids.append(None)
+                    calendar_ids.append(cal_id_used)
                     links.append(_gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"]))
         else:
             gcal_error = "Google Calendar no conectado"
             for ev2 in to_create:
                 links.append(_gcal_link(ev2["title"], ev2["start"], ev2["end"], details=ev2.get("description") or "", location=ev2["location"]))
                 event_ids.append(None)
+                calendar_ids.append("")
 
         first_link = links[0] if links else _gcal_link(title, to_create[0]["start"], to_create[0]["end"], details=details, location=loc)
         first_eid = event_ids[0] if event_ids else None
@@ -3714,6 +3719,7 @@ def approve_agenda(
             "calendar_event_id": first_eid,
             "calendar_html_links": links,
             "calendar_event_ids": event_ids,
+            "calendar_ids": calendar_ids,
             "gcal_error": gcal_error,
             "lead": {
                 "id_lead": int(id_lead),

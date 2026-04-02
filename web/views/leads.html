@@ -2960,6 +2960,7 @@ async function handleConfirmado(lead, newEstado){
   const gcalLink = String(gcal?.calendar_html_link || "");
   const gcalEid = String(gcal?.calendar_event_id || "");
   const gcalErr = String(gcal?.gcal_error || "");
+  const gcalCalId = (Array.isArray(gcal?.calendar_ids) && gcal.calendar_ids.length) ? String(gcal.calendar_ids[0] || "") : "";
   const gcalLead = (gcal && typeof gcal === "object" && gcal.lead && typeof gcal.lead === "object") ? gcal.lead : {};
 
   const fmtDT = (s)=>{
@@ -3180,6 +3181,7 @@ ${EMO.pin} DIRECCION: ${dirLine || "POR CONFIRMAR"}
       <div style="text-align:left;display:grid;gap:10px">
         <div style="font-weight:1000;font-size:14px">${escapeHtml(ev.title||"")}</div>
         <div style="opacity:.7">${escapeHtml(fmtDT(ev.start_at))} → ${escapeHtml(fmtDT(ev.end_at))}</div>
+        ${gcalCalId ? `<div class="muted" style="opacity:.7">CalendarId: <b>${escapeHtml(gcalCalId)}</b></div>` : ``}
         ${gcalLink ? `<div><a href="${escapeHtml(gcalLink)}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:1000">Abrir en Google Calendar</a></div>` : ``}
         ${(!gcalLink || !gcalEid) ? `<div style="padding:10px 12px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);border-radius:12px">
           <div style="font-weight:1000">No se creó el evento en Google Calendar.</div>

@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>RRHH · Mi portal</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="/web/js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:14px;background:transparent;color:var(--text);}
+    .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:12px;}
+    @media (max-width: 980px){ .grid{grid-template-columns:1fr;} }
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+    }
+    :root.light .card{ background: rgba(255,255,255,.86); border-color: rgba(0,0,0,.10); }
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .big{font-size:20px;font-weight:1200;margin-top:6px;}
+    .muted{opacity:.75;font-weight:850;font-size:12px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;}
+    .btn{
+      height:40px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;
+      padding:0 14px;
+      font-weight:1100;
+      cursor:pointer;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .inp, select, textarea{
+      height:40px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.10);
+      color:inherit;
+      padding:0 12px;
+      font-weight:950;
+      outline:none;
+    }
+    textarea{height:auto;min-height:92px;padding:10px 12px;resize:vertical;}
+    table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px;}
+    th,td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.18);text-align:left;white-space:nowrap;}
+    th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.7;}
+    .table{overflow:auto;max-height:52vh;border:1px solid rgba(148,163,184,.18);border-radius:14px;}
+    .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.18);border-radius:999px;padding:6px 10px;font-weight:1000;font-size:12px;}
+    .ok{ color: color-mix(in srgb, #22c55e 85%, white); }
+    .bad{ color: color-mix(in srgb, #fb7185 85%, white); }
+    .secTitle{font-weight:1100;margin:0;}
+    .split{display:flex;gap:10px;flex-wrap:wrap;}
+    .split > *{flex:1;min-width:180px;}
+    .hint{font-size:12px;opacity:.75;font-weight:850;margin-top:8px;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="ttl">RRHH</div>
+      <div class="big">Mi portal</div>
+      <div class="muted">Mis marcaciones · mi turno · solicitudes.</div>
+      <div class="row" style="justify-content:space-between;">
+        <div class="pill" id="who">Cargando…</div>
+        <div class="row" style="margin-top:0">
+          <select id="selSede" class="inp" style="min-width:220px">
+            <option value="SGJO-GREENDIAMOND">GreenDiamond</option>
+            <option value="SGJO-ROLFIS">Rolfis</option>
+          </select>
+          <button class="btn primary" id="btnMarcar">Marcar (QR/Geo)</button>
+        </div>
+      </div>
+      <div class="hint">Tip: si el navegador bloqueó notificaciones, entra a Ajustes del sitio y habilítalas (PWA instalada).</div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3 class="secTitle">Turno de hoy</h3>
+        <div class="muted" id="turnoTxt" style="margin-top:6px">Cargando…</div>
+        <div class="row" id="turnoPills" style="display:none">
+          <span class="pill" id="pillEntrada"></span>
+          <span class="pill" id="pillSalida"></span>
+          <span class="pill" id="pillColacion"></span>
+        </div>
+
+        <h3 class="secTitle" style="margin-top:16px">Mis marcaciones</h3>
+        <div class="table" style="margin-top:10px">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Método</th>
+                <th>OK</th>
+                <th>Distancia</th>
+              </tr>
+            </thead>
+            <tbody id="rowsMarc">
+              <tr><td class="muted">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="secTitle">Solicitud</h3>
+        <div class="muted" style="margin-top:6px">Vacaciones / Permiso / Adelanto / Documento / Regularización.</div>
+
+        <div class="row">
+          <select id="tipo" class="inp" style="min-width:240px">
+            <option value="adelanto">Adelanto / Quincena</option>
+            <option value="vacaciones">Vacaciones</option>
+            <option value="permiso">Permiso</option>
+            <option value="documento">Documento</option>
+            <option value="regularizacion">Regularización</option>
+          </select>
+          <button class="btn" id="btnEnviar">Enviar</button>
+        </div>
+
+        <div id="form">
+          <div class="split" style="margin-top:10px">
+            <input id="fecha_ini" class="inp" type="date" />
+            <input id="fecha_fin" class="inp" type="date" />
+          </div>
+          <div class="split" style="margin-top:10px">
+            <input id="dias" class="inp" placeholder="Días (opcional)" />
+            <input id="monto" class="inp" placeholder="Monto (solo adelanto)" />
+          </div>
+          <div class="row" id="docRow" style="display:none">
+            <select id="doc_tipo" class="inp" style="min-width:100%">
+              <option value="">Documento…</option>
+              <option value="Certificado laboral">Certificado laboral</option>
+              <option value="Contrato">Contrato</option>
+              <option value="Anexo">Anexo</option>
+              <option value="Liquidación">Liquidación</option>
+              <option value="Autorización">Autorización</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+          <div class="row">
+            <textarea id="motivo" placeholder="Motivo / detalle (obligatorio para regularización y recomendado para todos)"></textarea>
+          </div>
+        </div>
+
+        <h3 class="secTitle" style="margin-top:16px">Mis solicitudes</h3>
+        <div class="table" style="margin-top:10px;max-height:44vh">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Detalle</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="rowsSol">
+              <tr><td class="muted">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(path){
+      const p = String(path || "");
+      if (!p) return p;
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE) return p;
+      return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
+    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+    function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+    function toast(msg){
+      const t = document.createElement("div");
+      t.textContent = msg;
+      Object.assign(t.style,{position:"fixed",right:"16px",bottom:"16px",background:"rgba(0,0,0,.85)",color:"#fff",padding:"10px 14px",borderRadius:"10px",zIndex:99,fontWeight:"950",maxWidth:"80vw"});
+      document.body.appendChild(t);
+      setTimeout(()=> t.remove(), 2600);
+    }
+    function fmtDT(v){
+      try{
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) return String(v||"");
+        return d.toLocaleString("es-CL", { hour12:false });
+      }catch(_){ return String(v||""); }
+    }
+
+    function setSedeDefault(staff){
+      const cc = String(staff?.centro_costo || "").toLowerCase();
+      if (cc.includes("rolfi")) qs("#selSede").value = "SGJO-ROLFIS";
+      else if (cc.includes("green")) qs("#selSede").value = "SGJO-GREENDIAMOND";
+    }
+
+    qs("#btnMarcar").addEventListener("click", ()=>{
+      const p = qs("#selSede").value || "SGJO-GREENDIAMOND";
+      const url = `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(p)}`;
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"rrhh_sgjo_marcacion", url }, "*");
+      }catch(_){
+        window.location.href = url;
+      }
+    });
+
+    function syncForm(){
+      const t = String(qs("#tipo").value||"");
+      qs("#docRow").style.display = (t === "documento") ? "flex" : "none";
+      qs("#monto").style.display = (t === "adelanto") ? "block" : "none";
+    }
+    qs("#tipo").addEventListener("change", syncForm);
+    syncForm();
+
+    async function loadPortal(){
+      const r = await fetch(apiURL("/rrhh/portal/me"), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      if (!r.ok || !data.ok){
+        qs("#who").textContent = "No pude cargar RRHH (" + (data.detail || r.status) + ")";
+        return;
+      }
+      const staff = data.staff || {};
+      const who = [
+        staff?.colaborador || data.user?.username || data.user?.email || "Usuario",
+        staff?.centro_costo ? ("· " + staff.centro_costo) : "",
+      ].filter(Boolean).join(" ");
+      qs("#who").textContent = who;
+      setSedeDefault(staff);
+
+      // turno hoy
+      const sh = data.turno_hoy;
+      if (!sh){
+        qs("#turnoTxt").textContent = "Sin turno asignado para hoy.";
+        qs("#turnoPills").style.display = "none";
+      }else{
+        qs("#turnoTxt").textContent = `${sh.nombre || "Turno"} · ${sh.hora_entrada || "??:??"}–${sh.hora_salida || "??:??"} (tol ${Number(sh.tolerancia_min||0)}m)`;
+        qs("#turnoPills").style.display = "flex";
+        qs("#pillEntrada").textContent = "Entrada: " + (sh.hora_entrada || "—");
+        qs("#pillSalida").textContent = "Salida: " + (sh.hora_salida || "—");
+        qs("#pillColacion").textContent = (sh.colacion_auto ? ("Colación: " + (sh.colacion_ini||"13:30") + "–" + (sh.colacion_fin||"14:30")) : "Colación: manual");
+      }
+    }
+
+    async function loadMarcaciones(){
+      const r = await fetch(apiURL("/rrhh/marcaciones/me?limit=60"), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      if (!r.ok || !data.ok){
+        qs("#rowsMarc").innerHTML = `<tr><td class="muted">Error: ${(data.detail||r.status)}</td></tr>`;
+        return;
+      }
+      const items = data.items || [];
+      qs("#rowsMarc").innerHTML = items.map(m=>{
+        const ok = !!m.ok;
+        const dist = (m.distance_m == null) ? "—" : (Number(m.distance_m||0).toFixed(0) + " m");
+        return `
+          <tr>
+            <td>${fmtDT(m.created_at)}</td>
+            <td><strong>${String(m.tipo||"").toUpperCase()}</strong></td>
+            <td>${String(m.method||"—")}</td>
+            <td class="${ok ? "ok":"bad"}">${ok ? "OK":"NO"}</td>
+            <td>${dist}</td>
+          </tr>
+        `;
+      }).join("") || `<tr><td class="muted">Sin marcaciones.</td></tr>`;
+    }
+
+    async function loadSolicitudes(){
+      const r = await fetch(apiURL("/rrhh/solicitudes/me"), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      if (!r.ok || !data.ok){
+        qs("#rowsSol").innerHTML = `<tr><td class="muted">Error: ${(data.detail||r.status)}</td></tr>`;
+        return;
+      }
+      const items = data.items || [];
+      qs("#rowsSol").innerHTML = items.map(s=>{
+        const det = [
+          s.doc_tipo ? ("📄 " + s.doc_tipo) : "",
+          s.monto ? ("$" + Number(s.monto).toLocaleString("es-CL")) : "",
+          s.fecha_inicio ? String(s.fecha_inicio).slice(0,10) : "",
+          s.fecha_fin ? ("→ " + String(s.fecha_fin).slice(0,10)) : "",
+        ].filter(Boolean).join(" ");
+        return `
+          <tr>
+            <td>${fmtDT(s.created_at)}</td>
+            <td><strong>${String(s.tipo||"").toUpperCase()}</strong></td>
+            <td title="${String(s.motivo||"")?.replaceAll('"','&quot;')}">${det || (s.motivo ? String(s.motivo).slice(0,28) : "—")}</td>
+            <td>${String(s.estado||"pendiente").toUpperCase()}</td>
+          </tr>
+        `;
+      }).join("") || `<tr><td class="muted">Sin solicitudes.</td></tr>`;
+    }
+
+    qs("#btnEnviar").addEventListener("click", async ()=>{
+      const tipo = String(qs("#tipo").value||"").trim();
+      const payload = {
+        tipo,
+        fecha_inicio: qs("#fecha_ini").value || null,
+        fecha_fin: qs("#fecha_fin").value || null,
+        dias: qs("#dias").value || null,
+        monto: qs("#monto").value || null,
+        doc_tipo: (tipo === "documento") ? (qs("#doc_tipo").value || "") : null,
+        motivo: (qs("#motivo").value || "").trim() || null,
+      };
+      if (tipo === "documento" && !payload.doc_tipo){
+        toast("Selecciona el tipo de documento");
+        return;
+      }
+      if (tipo === "regularizacion" && !payload.motivo){
+        toast("Motivo requerido para regularización");
+        return;
+      }
+      const r = await fetch(apiURL("/rrhh/solicitudes/me"), {
+        method:"POST",
+        headers: { "Content-Type":"application/json", ...headers() },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json().catch(()=>({}));
+      if (!r.ok || !data.ok){
+        toast("No pude enviar: " + (data.detail || r.status));
+        return;
+      }
+      qs("#motivo").value = "";
+      toast("Solicitud enviada");
+      await loadSolicitudes();
+    });
+
+    loadPortal();
+    loadMarcaciones();
+    loadSolicitudes();
+  </script>
+</body>
+</html>
+

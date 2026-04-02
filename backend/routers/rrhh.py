@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ import json
 import datetime
 
 from backend.db import get_db
+from backend.routers.auth import get_current_user
 
 router = APIRouter(prefix="/rrhh", tags=["rrhh"])
 
@@ -156,8 +157,52 @@ def _ensure_tables(db: Session) -> None:
               dias NUMERIC,
               monto NUMERIC,
               motivo TEXT,
+              doc_tipo TEXT,
+              id_usuario INTEGER,
+              rut TEXT,
               estado TEXT DEFAULT 'pendiente',
               created_at TIMESTAMP DEFAULT now()
+            )
+            """
+        )
+    )
+    # Extend (idempotente)
+    db.execute(text("ALTER TABLE rrhh_solicitudes ADD COLUMN IF NOT EXISTS doc_tipo TEXT"))
+    db.execute(text("ALTER TABLE rrhh_solicitudes ADD COLUMN IF NOT EXISTS id_usuario INTEGER"))
+    db.execute(text("ALTER TABLE rrhh_solicitudes ADD COLUMN IF NOT EXISTS rut TEXT"))
+
+    # Turnos (plantillas) + horarios teóricos
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS rrhh_turnos (
+              id_turno SERIAL PRIMARY KEY,
+              nombre TEXT UNIQUE NOT NULL,
+              hora_entrada TEXT NOT NULL, -- HH:MM (24h)
+              hora_salida TEXT NOT NULL,  -- HH:MM (24h)
+              tolerancia_min INTEGER DEFAULT 0,
+              colacion_auto BOOLEAN DEFAULT TRUE,
+              colacion_ini TEXT DEFAULT '13:30',
+              colacion_fin TEXT DEFAULT '14:30',
+              is_active BOOLEAN DEFAULT TRUE,
+              created_at TIMESTAMPTZ DEFAULT now(),
+              updated_at TIMESTAMPTZ DEFAULT now()
+            )
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS rrhh_horarios (
+              id_horario SERIAL PRIMARY KEY,
+              id_staff INTEGER NOT NULL REFERENCES rrhh_staff(id_staff) ON DELETE CASCADE,
+              id_turno INTEGER NOT NULL REFERENCES rrhh_turnos(id_turno) ON DELETE RESTRICT,
+              desde DATE NOT NULL,
+              hasta DATE,
+              dow_mask INTEGER, -- bitmask 0=Mon..6=Sun. NULL=todos los días
+              is_active BOOLEAN DEFAULT TRUE,
+              created_at TIMESTAMPTZ DEFAULT now()
             )
             """
         )
@@ -230,10 +275,141 @@ def _ensure_tables(db: Session) -> None:
     except Exception:
         db.rollback()
 
+def _role_key(user: dict) -> str:
+    raw = str(user.get("role") or user.get("rol") or "").strip().upper()
+    return raw
+
+def _is_rrhh_admin(user: dict) -> bool:
+    r = _role_key(user)
+    return ("SUPERADMIN" in r) or (r == "ADMIN") or (r == "SUPER ADMIN") or (r == "SUPER_ADMIN")
+
+def _require_rrhh_admin(user: dict) -> None:
+    if not _is_rrhh_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+
+def _user_id(user: dict) -> int | None:
+    uid = user.get("id") or user.get("id_usuario") or user.get("user_id")
+    try:
+        return int(uid) if str(uid).isdigit() else None
+    except Exception:
+        return None
+
+def _user_rut(db: Session, user: dict) -> str:
+    uid = _user_id(user)
+    if not uid:
+        return ""
+    try:
+        cols = db.execute(text("""
+          SELECT column_name FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='usuarios'
+        """)).fetchall()
+        colset = {c[0] for c in cols}
+        if "rut" not in colset:
+            return ""
+        v = db.execute(text("SELECT COALESCE(rut,'') FROM public.usuarios WHERE id_usuario=:id LIMIT 1"), {"id": uid}).scalar()
+        return str(v or "").strip()
+    except Exception:
+        return ""
+
+def _staff_for_user(db: Session, user: dict) -> dict[str, Any] | None:
+    rut = _user_rut(db, user)
+    email = str(user.get("email") or "").strip()
+    username = str(user.get("username") or "").strip()
+    try:
+        if rut:
+            row = db.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM rrhh_staff
+                    WHERE is_active IS TRUE AND lower(rut)=lower(:r)
+                    ORDER BY id_staff DESC
+                    LIMIT 1
+                    """
+                ),
+                {"r": rut},
+            ).mappings().first()
+            if row:
+                return dict(row)
+        if email:
+            row = db.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM rrhh_staff
+                    WHERE is_active IS TRUE AND lower(email)=lower(:e)
+                    ORDER BY id_staff DESC
+                    LIMIT 1
+                    """
+                ),
+                {"e": email},
+            ).mappings().first()
+            if row:
+                return dict(row)
+        # fallback suave por nombre usuario (último recurso)
+        if username:
+            row = db.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM rrhh_staff
+                    WHERE is_active IS TRUE AND lower(colaborador)=lower(:c)
+                    ORDER BY id_staff DESC
+                    LIMIT 1
+                    """
+                ),
+                {"c": username},
+            ).mappings().first()
+            if row:
+                return dict(row)
+    except Exception:
+        return None
+    return None
+
+def _dow_mask_allows(mask: int | None, dow: int) -> bool:
+    if mask is None:
+        return True
+    try:
+        m = int(mask)
+    except Exception:
+        return True
+    if dow < 0 or dow > 6:
+        return True
+    return bool(m & (1 << dow))
+
+def _today_theoretical_shift(db: Session, staff_id: int, on_date: datetime.date) -> dict[str, Any] | None:
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT h.id_horario, h.desde, h.hasta, h.dow_mask,
+                       t.id_turno, t.nombre, t.hora_entrada, t.hora_salida, t.tolerancia_min,
+                       t.colacion_auto, t.colacion_ini, t.colacion_fin
+                FROM rrhh_horarios h
+                JOIN rrhh_turnos t ON t.id_turno=h.id_turno
+                WHERE h.is_active IS TRUE
+                  AND t.is_active IS TRUE
+                  AND h.id_staff=:s
+                  AND h.desde <= :d
+                  AND (h.hasta IS NULL OR h.hasta >= :d)
+                ORDER BY h.desde DESC, h.id_horario DESC
+                """
+            ),
+            {"s": int(staff_id), "d": on_date},
+        ).mappings().all()
+        dow = int(on_date.weekday())
+        for r in rows:
+            if _dow_mask_allows(r.get("dow_mask"), dow):
+                return dict(r)
+        return None
+    except Exception:
+        return None
+
 
 @router.get("/nomina")
-def nomina_list(db: Session = Depends(get_db)) -> dict[str, Any]:
+def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     try:
         # Base: colaboradores activos (rrhh_staff)
         staff_rows = db.execute(
@@ -367,14 +543,322 @@ def nomina_list(db: Session = Depends(get_db)) -> dict[str, Any]:
         return {"ok": False, "detail": str(e)}
 
 
+# -----------------------------
+# RRHH Portal (colaborador)
+# -----------------------------
+
+@router.get("/portal/me")
+def rrhh_portal_me(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    staff = _staff_for_user(db, me)
+    on = datetime.date.today()
+    shift = None
+    if staff and staff.get("id_staff"):
+        shift = _today_theoretical_shift(db, int(staff["id_staff"]), on)
+    return {
+        "ok": True,
+        "user": {
+            "id_usuario": _user_id(me),
+            "email": me.get("email"),
+            "username": me.get("username"),
+            "role": me.get("role") or me.get("rol"),
+            "rut": _user_rut(db, me) or None,
+        },
+        "staff": staff,
+        "today": on.isoformat(),
+        "turno_hoy": shift,
+    }
+
+
+@router.get("/marcaciones/me")
+def marcaciones_me(
+    limit: int = 60,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    uid = _user_id(me)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Usuario inválido")
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT id_marcacion, created_at, tipo, method, id_sede, id_punto, distance_m, within_radius, used_fallback, ok, error
+                FROM public.sgjo_marcaciones
+                WHERE id_usuario=:u
+                ORDER BY created_at DESC
+                LIMIT :lim
+                """
+            ),
+            {"u": int(uid), "lim": max(1, min(500, int(limit)))},
+        ).mappings().all()
+        return {"ok": True, "items": [dict(r) for r in rows]}
+    except Exception as e:
+        db.rollback()
+        return {"ok": False, "detail": str(e)}
+
+
+@router.get("/solicitudes/me")
+def solicitudes_me(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    uid = _user_id(me)
+    rut = _user_rut(db, me)
+    staff = _staff_for_user(db, me)
+    colab = (staff or {}).get("colaborador") or me.get("name") or me.get("nombre") or me.get("username") or ""
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT id_solicitud, colaborador, tipo, doc_tipo, fecha_inicio, fecha_fin, dias, monto, motivo, estado, created_at
+                FROM rrhh_solicitudes
+                WHERE (id_usuario=:u)
+                   OR (:r <> '' AND lower(rut)=lower(:r))
+                   OR (lower(colaborador)=lower(:c))
+                ORDER BY created_at DESC, id_solicitud DESC
+                LIMIT 200
+                """
+            ),
+            {"u": int(uid or 0), "r": str(rut or ""), "c": str(colab or "")},
+        ).mappings().all()
+        return {"ok": True, "items": [dict(r) for r in rows]}
+    except Exception as e:
+        db.rollback()
+        return {"ok": False, "detail": str(e)}
+
+
+@router.post("/solicitudes/me")
+def solicitudes_me_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    uid = _user_id(me)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Usuario inválido")
+    staff = _staff_for_user(db, me) or {}
+    colaborador = (staff.get("colaborador") or me.get("name") or me.get("nombre") or me.get("username") or "").strip()
+    tipo = (body.get("tipo") or "").strip().lower()
+    if tipo not in ("adelanto", "vacaciones", "permiso", "documento", "regularizacion"):
+        raise HTTPException(status_code=400, detail="tipo inválido")
+    doc_tipo = (body.get("doc_tipo") or "").strip() if tipo == "documento" else None
+    if tipo == "documento" and not doc_tipo:
+        raise HTTPException(status_code=400, detail="doc_tipo requerido")
+    data = {
+        "colaborador": colaborador or "Colaborador",
+        "tipo": tipo,
+        "doc_tipo": doc_tipo,
+        "fecha_inicio": body.get("fecha_inicio"),
+        "fecha_fin": body.get("fecha_fin"),
+        "dias": body.get("dias"),
+        "monto": body.get("monto"),
+        "motivo": body.get("motivo"),
+        "id_usuario": int(uid),
+        "rut": _user_rut(db, me) or None,
+        "estado": "pendiente",
+    }
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO rrhh_solicitudes(
+                  colaborador,tipo,doc_tipo,fecha_inicio,fecha_fin,dias,monto,motivo,id_usuario,rut,estado,created_at
+                ) VALUES (
+                  :colaborador,:tipo,:doc_tipo,:fecha_inicio,:fecha_fin,:dias,:monto,:motivo,:id_usuario,:rut,:estado,now()
+                )
+                """
+            ),
+            data,
+        )
+        db.commit()
+        return {"ok": True}
+    except Exception as e:
+        db.rollback()
+        return {"ok": False, "detail": str(e)}
+
+
+# -----------------------------
+# Turnos (admin)
+# -----------------------------
+
+@router.get("/turnos")
+def turnos_list(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    rows = db.execute(
+        text("SELECT * FROM rrhh_turnos WHERE is_active IS TRUE ORDER BY nombre ASC, id_turno ASC")
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.post("/turnos")
+def turnos_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    nombre = (body.get("nombre") or "").strip()
+    hora_entrada = (body.get("hora_entrada") or "").strip()
+    hora_salida = (body.get("hora_salida") or "").strip()
+    if not nombre or not hora_entrada or not hora_salida:
+        raise HTTPException(status_code=400, detail="nombre/hora_entrada/hora_salida requeridos")
+    db.execute(
+        text(
+            """
+            INSERT INTO rrhh_turnos(nombre,hora_entrada,hora_salida,tolerancia_min,colacion_auto,colacion_ini,colacion_fin,is_active,updated_at)
+            VALUES (:n,:he,:hs,:tol,:ca,:ci,:cf,TRUE,now())
+            ON CONFLICT (nombre) DO UPDATE
+              SET hora_entrada=EXCLUDED.hora_entrada,
+                  hora_salida=EXCLUDED.hora_salida,
+                  tolerancia_min=EXCLUDED.tolerancia_min,
+                  colacion_auto=EXCLUDED.colacion_auto,
+                  colacion_ini=EXCLUDED.colacion_ini,
+                  colacion_fin=EXCLUDED.colacion_fin,
+                  is_active=TRUE,
+                  updated_at=now()
+            """
+        ),
+        {
+            "n": nombre,
+            "he": hora_entrada,
+            "hs": hora_salida,
+            "tol": int(body.get("tolerancia_min") or 0),
+            "ca": bool(body.get("colacion_auto", True)),
+            "ci": (body.get("colacion_ini") or "13:30"),
+            "cf": (body.get("colacion_fin") or "14:30"),
+        },
+    )
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/horarios")
+def horarios_assign(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        id_staff = int(body.get("id_staff"))
+        id_turno = int(body.get("id_turno"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_staff/id_turno requeridos")
+    desde = body.get("desde")
+    if not desde:
+        raise HTTPException(status_code=400, detail="desde requerido")
+    hasta = body.get("hasta")
+    dow_mask = body.get("dow_mask")
+    try:
+        dow_mask = int(dow_mask) if dow_mask is not None and str(dow_mask).strip() != "" else None
+    except Exception:
+        dow_mask = None
+    db.execute(
+        text(
+            """
+            INSERT INTO rrhh_horarios(id_staff,id_turno,desde,hasta,dow_mask,is_active)
+            VALUES (:s,:t,:d,:h,:m,TRUE)
+            """
+        ),
+        {"s": id_staff, "t": id_turno, "d": desde, "h": hasta, "m": dow_mask},
+    )
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/horarios")
+def horarios_list(id_staff: int | None = None, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    if id_staff:
+        rows = db.execute(
+            text(
+                """
+                SELECT h.*, t.nombre AS turno_nombre, t.hora_entrada, t.hora_salida
+                FROM rrhh_horarios h
+                JOIN rrhh_turnos t ON t.id_turno=h.id_turno
+                WHERE h.is_active IS TRUE AND h.id_staff=:s
+                ORDER BY h.desde DESC, h.id_horario DESC
+                """
+            ),
+            {"s": int(id_staff)},
+        ).mappings().all()
+    else:
+        rows = db.execute(
+            text(
+                """
+                SELECT h.*, t.nombre AS turno_nombre, t.hora_entrada, t.hora_salida
+                FROM rrhh_horarios h
+                JOIN rrhh_turnos t ON t.id_turno=h.id_turno
+                WHERE h.is_active IS TRUE
+                ORDER BY h.desde DESC, h.id_horario DESC
+                LIMIT 500
+                """
+            )
+        ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.get("/marcaciones")
+def marcaciones_list(
+    from_date: str | None = None,
+    to_date: str | None = None,
+    id_usuario: int | None = None,
+    rut: str | None = None,
+    tipo: str | None = None,
+    ok: int | None = None,
+    limit: int = 300,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    where = []
+    params: dict[str, Any] = {"lim": max(1, min(2000, int(limit)))}
+    if from_date:
+        where.append("m.created_at::date >= :fd")
+        params["fd"] = from_date
+    if to_date:
+        where.append("m.created_at::date <= :td")
+        params["td"] = to_date
+    if id_usuario is not None:
+        try:
+            params["uid"] = int(id_usuario)
+            where.append("m.id_usuario = :uid")
+        except Exception:
+            pass
+    if rut:
+        params["rut"] = str(rut).strip()
+        if params["rut"]:
+            where.append("COALESCE(m.rut,'') = :rut")
+    if tipo:
+        t = str(tipo).strip().upper()
+        if t:
+            params["tipo"] = t
+            where.append("upper(COALESCE(m.tipo,'')) = :tipo")
+    if ok is not None:
+        try:
+            params["ok"] = bool(int(ok))
+            where.append("COALESCE(m.ok,FALSE) = :ok")
+        except Exception:
+            pass
+    w = ("WHERE " + " AND ".join(where)) if where else ""
+    rows = db.execute(
+        text(
+            f"""
+            SELECT m.id_marcacion, m.created_at, m.id_usuario, m.rut, m.tipo, m.method, m.ok, m.error, m.distance_m, m.within_radius, m.used_fallback
+            FROM public.sgjo_marcaciones m
+            {w}
+            ORDER BY m.created_at DESC
+            LIMIT :lim
+            """
+        ),
+        params,
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
 @router.get("/nomina/fields")
 def nomina_fields() -> dict[str, Any]:
     return {"ok": True, "fields": NOMINA_FIELDS}
 
 
 @router.post("/nomina")
-def nomina_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def nomina_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     data = {k: body.get(k) for k in NOMINA_FIELDS if k in body}
     if not data.get("colaborador"):
         return {"ok": False, "detail": "colaborador requerido"}
@@ -387,8 +871,9 @@ def nomina_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.put("/nomina/{id_nomina}")
-def nomina_update(id_nomina: int, body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def nomina_update(id_nomina: int, body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     data = {k: body.get(k) for k in NOMINA_FIELDS if k in body}
     if not data:
         return {"ok": False, "detail": "sin cambios"}
@@ -400,46 +885,54 @@ def nomina_update(id_nomina: int, body: dict, db: Session = Depends(get_db)) -> 
 
 
 @router.delete("/nomina/{id_nomina}")
-def nomina_delete(id_nomina: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def nomina_delete(id_nomina: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     db.execute(text("DELETE FROM rrhh_nomina WHERE id_nomina=:id"), {"id": id_nomina})
     db.commit()
     return {"ok": True}
 
 
 @router.post("/nomina/clear")
-def nomina_clear(db: Session = Depends(get_db)) -> dict[str, Any]:
+def nomina_clear(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     db.execute(text("DELETE FROM rrhh_nomina"))
     db.commit()
     return {"ok": True}
 
 
 @router.get("/adelantos")
-def adelantos(colaborador: str | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
+def adelantos_list(colaborador: str | None = None, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
-    params = {}
-    where = ""
-    if colaborador:
-        where = "WHERE colaborador ILIKE :c"
-        params["c"] = f"%{colaborador}%"
-    rows = db.execute(
-        text(
-            f"""
-            SELECT id_adelanto, colaborador, monto, fecha, motivo
-            FROM rrhh_adelantos
-            {where}
-            ORDER BY fecha DESC, id_adelanto DESC
-            """
-        ),
-        params,
-    ).mappings().all()
-    return {"ok": True, "items": [dict(r) for r in rows]}
+    _require_rrhh_admin(me)
+    try:
+        params: dict[str, Any] = {}
+        where = ""
+        if colaborador:
+            where = "WHERE colaborador ILIKE :c"
+            params["c"] = f"%{colaborador}%"
+        rows = db.execute(
+            text(
+                f"""
+                SELECT id_adelanto, colaborador, monto, fecha, motivo
+                FROM rrhh_adelantos
+                {where}
+                ORDER BY fecha DESC, id_adelanto DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+        return {"ok": True, "items": [dict(r) for r in rows]}
+    except Exception as e:
+        db.rollback()
+        return {"ok": False, "detail": str(e)}
 
 
 @router.post("/adelantos")
-def adelanto_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def adelanto_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     colaborador = (body.get("colaborador") or "").strip()
     monto = body.get("monto")
     fecha = body.get("fecha")
@@ -461,41 +954,10 @@ def adelanto_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]
     return {"ok": True}
 
 
-@router.get("/adelantos")
-def adelanto_list(colaborador: str | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
-    _ensure_tables(db)
-    try:
-        if colaborador:
-            rows = db.execute(
-                text(
-                    """
-                    SELECT id_adelanto, colaborador, monto, fecha, motivo
-                    FROM rrhh_adelantos
-                    WHERE lower(colaborador) = lower(:c)
-                    ORDER BY fecha DESC, id_adelanto DESC
-                    """
-                ),
-                {"c": colaborador},
-            ).mappings().all()
-        else:
-            rows = db.execute(
-                text(
-                    """
-                    SELECT id_adelanto, colaborador, monto, fecha, motivo
-                    FROM rrhh_adelantos
-                    ORDER BY fecha DESC, id_adelanto DESC
-                    """
-                )
-            ).mappings().all()
-        return {"ok": True, "items": [dict(r) for r in rows]}
-    except Exception as e:
-        db.rollback()
-        return {"ok": False, "detail": str(e)}
-
-
 @router.put("/adelantos/{id_adelanto}")
-def adelanto_update(id_adelanto: int, body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def adelanto_update(id_adelanto: int, body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     try:
         db.execute(
             text(
@@ -522,16 +984,18 @@ def adelanto_update(id_adelanto: int, body: dict, db: Session = Depends(get_db))
 
 
 @router.delete("/adelantos/{id_adelanto}")
-def adelanto_delete(id_adelanto: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def adelanto_delete(id_adelanto: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     db.execute(text("DELETE FROM rrhh_adelantos WHERE id_adelanto=:id"), {"id": id_adelanto})
     db.commit()
     return {"ok": True}
 
 
 @router.get("/staff")
-def staff_list(db: Session = Depends(get_db)) -> dict[str, Any]:
+def staff_list(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     try:
         rows = db.execute(
             text(
@@ -559,8 +1023,9 @@ def staff_list(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.get("/staff/{id_staff}/ficha")
-def staff_ficha(id_staff: int, db: Session = Depends(get_db)) -> HTMLResponse:
+def staff_ficha(id_staff: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> HTMLResponse:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     row = db.execute(
         text(
             """
@@ -662,8 +1127,9 @@ def staff_ficha(id_staff: int, db: Session = Depends(get_db)) -> HTMLResponse:
 
 
 @router.get("/afp")
-def afp_list(db: Session = Depends(get_db)) -> dict[str, Any]:
+def afp_list(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     rows = db.execute(
         text("SELECT id_afp, nombre, pct_comision FROM rrhh_afp WHERE is_active IS TRUE ORDER BY nombre")
     ).mappings().all()
@@ -671,8 +1137,9 @@ def afp_list(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.get("/salud")
-def salud_list(db: Session = Depends(get_db)) -> dict[str, Any]:
+def salud_list(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     rows = db.execute(
         text("SELECT id_salud, tipo, nombre, pct_base FROM rrhh_salud WHERE is_active IS TRUE ORDER BY tipo, nombre")
     ).mappings().all()
@@ -680,8 +1147,9 @@ def salud_list(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.post("/staff")
-def staff_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def staff_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     colaborador = (body.get("colaborador") or "").strip()
     if not colaborador:
         return {"ok": False, "detail": "colaborador requerido"}
@@ -728,7 +1196,7 @@ def staff_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.post("/staff/bulk_upsert")
-def staff_bulk_upsert(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def staff_bulk_upsert(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     """
     Upsert masivo de colaboradores.
     - Match principal: lower(colaborador) + centro_costo (si viene).
@@ -740,6 +1208,7 @@ def staff_bulk_upsert(body: dict, db: Session = Depends(get_db)) -> dict[str, An
                     ficha?: {...}, hh_liquido?, situacion_contractual?, jefe_directo?, area?, cargo? } ] }
     """
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     items = body.get("items") or []
     if not isinstance(items, list) or not items:
         return {"ok": False, "detail": "items requerido"}
@@ -877,8 +1346,9 @@ def staff_bulk_upsert(body: dict, db: Session = Depends(get_db)) -> dict[str, An
 
 
 @router.put("/staff/{id_staff}")
-def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     ficha = body.get("ficha")
     if isinstance(ficha, (dict, list)):
         ficha = json.dumps(ficha, ensure_ascii=False)
@@ -931,16 +1401,18 @@ def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db)) -> di
 
 
 @router.delete("/staff/{id_staff}")
-def staff_delete(id_staff: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def staff_delete(id_staff: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     db.execute(text("DELETE FROM rrhh_staff WHERE id_staff=:id"), {"id": id_staff})
     db.commit()
     return {"ok": True}
 
 
 @router.post("/inasistencias")
-def inasistencia_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def inasistencia_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     colaborador = (body.get("colaborador") or "").strip()
     fecha = body.get("fecha")
     dias = body.get("dias") or 1
@@ -961,8 +1433,9 @@ def inasistencia_create(body: dict, db: Session = Depends(get_db)) -> dict[str, 
 
 
 @router.get("/inasistencias")
-def inasistencia_list(colaborador: str | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
+def inasistencia_list(colaborador: str | None = None, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     try:
         if colaborador:
             rows = db.execute(
@@ -993,8 +1466,9 @@ def inasistencia_list(colaborador: str | None = None, db: Session = Depends(get_
 
 
 @router.put("/inasistencias/{id_inasistencia}")
-def inasistencia_update(id_inasistencia: int, body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def inasistencia_update(id_inasistencia: int, body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     try:
         db.execute(
             text(
@@ -1021,8 +1495,9 @@ def inasistencia_update(id_inasistencia: int, body: dict, db: Session = Depends(
 
 
 @router.delete("/inasistencias/{id_inasistencia}")
-def inasistencia_delete(id_inasistencia: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def inasistencia_delete(id_inasistencia: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     db.execute(text("DELETE FROM rrhh_inasistencias WHERE id_inasistencia=:id"), {"id": id_inasistencia})
     db.commit()
     return {"ok": True}
@@ -1033,8 +1508,10 @@ def solicitudes_list(
     estado: str | None = None,
     colaborador: str | None = None,
     db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     try:
         where = []
         params: dict[str, Any] = {}
@@ -1063,8 +1540,9 @@ def solicitudes_list(
 
 
 @router.post("/solicitudes")
-def solicitudes_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def solicitudes_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     colaborador = (body.get("colaborador") or "").strip()
     tipo = (body.get("tipo") or "").strip()
     if not colaborador or not tipo:
@@ -1095,8 +1573,9 @@ def solicitudes_create(body: dict, db: Session = Depends(get_db)) -> dict[str, A
 
 
 @router.put("/solicitudes/{id_solicitud}")
-def solicitudes_update(id_solicitud: int, body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def solicitudes_update(id_solicitud: int, body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     try:
         db.execute(
             text(
@@ -1117,8 +1596,9 @@ def solicitudes_update(id_solicitud: int, body: dict, db: Session = Depends(get_
 
 
 @router.get("/solicitudes/{id_solicitud}/pdf")
-def solicitud_pdf(id_solicitud: int, db: Session = Depends(get_db)) -> HTMLResponse:
+def solicitud_pdf(id_solicitud: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> HTMLResponse:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     row = db.execute(
         text(
             """
@@ -1170,8 +1650,9 @@ def solicitud_pdf(id_solicitud: int, db: Session = Depends(get_db)) -> HTMLRespo
 
 
 @router.post("/vacaciones")
-def vacaciones_create(body: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+def vacaciones_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
+    _require_rrhh_admin(me)
     colaborador = (body.get("colaborador") or "").strip()
     fi = body.get("fecha_inicio")
     ff = body.get("fecha_fin")
