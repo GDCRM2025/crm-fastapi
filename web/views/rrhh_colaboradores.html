@@ -927,7 +927,16 @@
         toast("No se pudo crear: " + (txt || r.status));
         return;
       }
-      toast("Usuario creado");
+      try{
+        const j = JSON.parse(txt || "{}");
+        if (j?.email_notice){
+          toast("Usuario creado. " + String(j.email_notice));
+        }else{
+          toast("Usuario creado (correo enviado si SMTP está ok)");
+        }
+      }catch(_){
+        toast("Usuario creado");
+      }
       showUserModal(false);
     });
 
