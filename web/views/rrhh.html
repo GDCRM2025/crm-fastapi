@@ -72,6 +72,7 @@
       </div>
       <div class="tabs" id="tabs"></div>
       <div class="tabs">
+        <button class="btn" id="btnBack" style="display:none;">Volver</button>
         <button class="btn" id="btnReload">Recargar</button>
       </div>
     </div>
@@ -82,7 +83,7 @@
   </div>
 
   <script>
-    // RRHH siempre en tema claro Luna Azul (Windows XP).
+    // RRHH fuera del tema día/noche: siempre Luna Azul.
     document.documentElement.classList.add("light");
     document.documentElement.classList.add("rrhh-luna");
 
@@ -110,10 +111,29 @@
       portal: `/web/views/rrhh_portal.html?v=${V}`,
       colab: `/web/views/rrhh_colaboradores.html?v=${V}`,
       turnos: `/web/views/rrhh_turnos.html?v=${V}`,
+      nomina: `/web/views/rrhh_nomina.html?v=${V}`,
       marc: `/web/views/rrhh_marcaciones.html?v=${V}`,
       sol: `/web/views/rrhh_solicitudes.html?v=${V}`,
       sgjo: `/web/views/rrhh_sgjo.html?v=${V}`,
     };
+
+    const historyStack = [];
+    function setFrame(url, push=true){
+      const fr = qs("#frame");
+      if (!fr) return;
+      const next = apiURL(url);
+      try{
+        const cur = fr.getAttribute("src") || "";
+        if (push && cur && cur !== next) historyStack.push(cur);
+      }catch(_){}
+      fr.setAttribute("src", next);
+      qs("#btnBack").style.display = historyStack.length ? "" : "none";
+    }
+    qs("#btnBack").addEventListener("click", ()=>{
+      const prev = historyStack.pop();
+      if (prev) setFrame(prev, false);
+      qs("#btnBack").style.display = historyStack.length ? "" : "none";
+    });
 
     function isAdminRole(role){
       const r = String(role||"").toUpperCase();
@@ -127,6 +147,7 @@
       if (isAdmin){
         tabs.push(
           { id:"colab", label:"Colaboradores", url: URLS.colab },
+          { id:"nomina", label:"Nómina", url: URLS.nomina },
           { id:"turnos", label:"Turnos + horarios", url: URLS.turnos },
           { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
           { id:"sol", label:"Solicitudes (admin)", url: URLS.sol },
@@ -143,7 +164,7 @@
       const t = TABS.find(x=>x.id===id) || TABS[0];
       if (!t) return;
       activeId = t.id;
-      qs("#frame").src = t.url;
+      setFrame(t.url, true);
       for (const b of Array.from(qs("#tabs").querySelectorAll("button[data-tab]"))){
         b.classList.toggle("active", b.getAttribute("data-tab") === activeId);
       }
@@ -169,6 +190,18 @@
     qs("#btnReload").addEventListener("click", ()=>{
       const fr = qs("#frame");
       try{ fr.contentWindow?.location?.reload?.(); }catch(_){ fr.src = fr.src; }
+    });
+
+    // Navegación embebida desde sub-vistas RRHH
+    window.addEventListener("message", (ev)=>{
+      const d = ev.data || {};
+      if (d.type === "openItem" && d.url){
+        setFrame(String(d.url), true);
+      }
+      if (d.type === "rrhh:navigate" && d.tab){
+        const tab = String(d.tab);
+        if (URLS[tab]) openTab(tab);
+      }
     });
 
     boot();

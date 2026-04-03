@@ -377,6 +377,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--xlsx", required=True)
     ap.add_argument("--sheet", default="nomina")
+    ap.add_argument(
+        "--db-url",
+        default="",
+        help=(
+            "Opcional. SQLAlchemy DATABASE_URL para conectar directo (evita depender de backend.db/.env). "
+            "Ej: postgresql+psycopg://USER:PASS@127.0.0.1:5432/DB"
+        ),
+    )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -409,9 +417,20 @@ def main():
             )
         return 0
 
-    from backend.db import SessionLocal  # type: ignore
+    db = None
+    if args.db_url:
+        # Conexión directa (útil en server si .env tiene cosas raras o si quieres forzar credenciales).
+        from sqlalchemy import create_engine  # type: ignore
+        from sqlalchemy.orm import sessionmaker  # type: ignore
 
-    db = SessionLocal()
+        engine = create_engine(args.db_url, future=True, pool_pre_ping=True)
+        Session = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+        db = Session()
+    else:
+        # Fallback: usa la config del CRM (backend.db -> DATABASE_URL).
+        from backend.db import SessionLocal  # type: ignore
+
+        db = SessionLocal()
     try:
         res = upsert_rrhh_from_nomina(db, items, dry_run=False)
         db.commit()

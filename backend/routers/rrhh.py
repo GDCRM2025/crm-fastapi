@@ -1022,6 +1022,26 @@ def staff_list(db: Session = Depends(get_db), me: dict = Depends(get_current_use
         return {"ok": False, "detail": str(e)}
 
 
+@router.get("/staff/{id_staff}")
+def staff_get(id_staff: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    row = db.execute(
+        text("SELECT * FROM rrhh_staff WHERE id_staff=:id LIMIT 1"),
+        {"id": int(id_staff)},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Colaborador no existe")
+    d = dict(row)
+    ficha = d.get("ficha")
+    if isinstance(ficha, str):
+        try:
+            d["ficha"] = json.loads(ficha)
+        except Exception:
+            d["ficha"] = {}
+    return {"ok": True, "item": d}
+
+
 @router.get("/staff/{id_staff}/ficha")
 def staff_ficha(id_staff: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> HTMLResponse:
     _ensure_tables(db)

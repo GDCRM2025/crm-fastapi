@@ -5,6 +5,12 @@
    - { type:"theme", mode:"light"|"dark" }
 */
 function _apply(theme){
+  // RRHH "Luna Azul" debe mantenerse fijo (fuera del toggle día/noche).
+  if (document.documentElement.classList.contains("rrhh-luna")){
+    document.documentElement.classList.add("light");
+    document.documentElement.setAttribute("data-theme", "day");
+    return;
+  }
   const isDay = (theme === "day" || theme === "light");
   document.documentElement.classList.toggle("light", isDay);
   document.documentElement.setAttribute("data-theme", isDay ? "day" : "night");

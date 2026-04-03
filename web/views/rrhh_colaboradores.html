@@ -6,6 +6,11 @@
   <title>RRHH · Colaboradores</title>
   <link rel="stylesheet" href="/web/styles.css" />
   <link rel="stylesheet" href="/web/rrhh_luna.css" />
+  <script>
+    // RRHH fuera del tema día/noche: siempre Luna Azul.
+    document.documentElement.classList.add("light");
+    document.documentElement.classList.add("rrhh-luna");
+  </script>
   <style>
     body{ margin:0; padding:18px; color:inherit; }
     .card{ border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.12); background:rgba(7,12,16,.45); }
@@ -164,6 +169,7 @@
         <strong>3. Antecedentes familiares</strong>
         <button class="btn" data-close>Cancelar</button>
       </div>
+      <div class="muted" style="margin-top:6px;">Puedes agregar 1 o más familiares, o omitir.</div>
       <div class="row" style="margin-top:10px;">
         <input class="inp" id="stFamPar" placeholder="Parentesco" />
         <input class="inp" id="stFamNombre" placeholder="Nombre" />
@@ -173,6 +179,29 @@
         <input class="inp" id="stFamNac" type="date" />
         <input class="inp" id="stFamCarga" placeholder="Carga" />
         <input class="inp" id="stFamAct" placeholder="Actividad/Profesión" />
+      </div>
+      <div class="row" style="margin-top:10px; justify-content:flex-end;">
+        <button class="btn" id="famAdd">Agregar familiar</button>
+        <button class="btn" id="famClear">Limpiar</button>
+      </div>
+      <div class="table-wrap" style="max-height:22vh;margin-top:10px;">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Parentesco</th>
+              <th>Nombre</th>
+              <th>RUT</th>
+              <th>Nac.</th>
+              <th>Carga</th>
+              <th>Actividad</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="famRows">
+            <tr><td class="muted" colspan="8">Sin familiares.</td></tr>
+          </tbody>
+        </table>
       </div>
       <div class="row" style="margin-top:12px; justify-content:flex-end;">
         <button class="btn" id="back3">Atrás</button>
@@ -379,8 +408,6 @@
 
   <script>
     const qs = (s, el=document) => el.querySelector(s);
-    document.documentElement.classList.add("light");
-    document.documentElement.classList.add("rrhh-luna");
     const API_BASE = (() => {
       try{
         const h = String(location.hostname || "").toLowerCase();
@@ -399,17 +426,6 @@
     }
     function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
-
-    function applyThemeBootstrap(){
-      const mode = (localStorage.getItem("gd_theme") || "dark");
-      document.documentElement.classList.toggle("light", mode === "light");
-      window.addEventListener("message", (ev) => {
-        if (ev.data?.type === "theme"){
-          document.documentElement.classList.toggle("light", ev.data.mode === "light");
-        }
-      });
-    }
-    applyThemeBootstrap();
 
     function fmt(n){
       if (n == null || n === "") return "—";
@@ -431,6 +447,7 @@
     let AFP_LIST = [];
     let SALUD_LIST = [];
     let staffEditing = null;
+    let FAMILIARES = [];
     let ME = null;
     let MARCAS = [];
 
@@ -536,6 +553,27 @@
     function openStaffModal(item){
       staffEditing = item || null;
       const ficha = item?.ficha || {};
+
+      // Familiares: modelo nuevo (array) + compat con legacy fam_*.
+      try{
+        FAMILIARES = Array.isArray(ficha.familiares) ? ficha.familiares : [];
+        if (!FAMILIARES.length){
+          const legacy = {
+            parentesco: ficha.fam_parentesco || "",
+            nombre: ficha.fam_nombre || "",
+            rut: ficha.fam_rut || "",
+            nacimiento: ficha.fam_nacimiento || "",
+            carga: ficha.fam_carga || "",
+            actividad: ficha.fam_actividad || "",
+          };
+          if (Object.values(legacy).some(v => String(v||"").trim())){
+            FAMILIARES = [legacy];
+          }
+        }
+      }catch(_){
+        FAMILIARES = [];
+      }
+
       qs("#stArea").value = ficha.area || "";
       qs("#stCargo").value = ficha.cargo || "";
       qs("#stRenta").value = ficha.renta_liquida || "";
@@ -563,12 +601,13 @@
       qs("#stEmergenciaTel").value = ficha.emergencia_telefono || "";
       qs("#stAlergico").value = ficha.alergico || "";
       qs("#stEnfermedad").value = ficha.enfermedad || "";
-      qs("#stFamPar").value = ficha.fam_parentesco || "";
-      qs("#stFamNombre").value = ficha.fam_nombre || "";
-      qs("#stFamRut").value = ficha.fam_rut || "";
-      qs("#stFamNac").value = ficha.fam_nacimiento || "";
-      qs("#stFamCarga").value = ficha.fam_carga || "";
-      qs("#stFamAct").value = ficha.fam_actividad || "";
+      // inputs de familiares quedan limpios; se agregan con "Agregar familiar"
+      qs("#stFamPar").value = "";
+      qs("#stFamNombre").value = "";
+      qs("#stFamRut").value = "";
+      qs("#stFamNac").value = "";
+      qs("#stFamCarga").value = "";
+      qs("#stFamAct").value = "";
       qs("#stPantalon").value = ficha.talla_pantalon || "";
       qs("#stChaqueta").value = ficha.talla_chaqueta || "";
       qs("#stPolera").value = ficha.talla_polera || "";
@@ -587,6 +626,68 @@
       qs("#stActivo").value = String(item?.is_active ?? true);
       openModal('#m1');
     }
+
+    function renderFamiliares(){
+      const tb = qs("#famRows");
+      if (!tb) return;
+      const items = Array.isArray(FAMILIARES) ? FAMILIARES : [];
+      if (!items.length){
+        tb.innerHTML = `<tr><td class="muted" colspan="8">Sin familiares.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = items.map((f, idx)=>`
+        <tr>
+          <td>${idx+1}</td>
+          <td>${f.parentesco || "—"}</td>
+          <td>${f.nombre || "—"}</td>
+          <td>${f.rut || "—"}</td>
+          <td>${f.nacimiento || "—"}</td>
+          <td>${f.carga || "—"}</td>
+          <td>${f.actividad || "—"}</td>
+          <td><button class="btn" data-fam-del="${idx}">Quitar</button></td>
+        </tr>
+      `).join("");
+      tb.querySelectorAll("[data-fam-del]").forEach(b=>{
+        b.addEventListener("click", ()=>{
+          const i = Number(b.getAttribute("data-fam-del") || -1);
+          if (!Number.isFinite(i) || i < 0) return;
+          FAMILIARES.splice(i, 1);
+          renderFamiliares();
+        });
+      });
+    }
+    function famPayloadFromInputs(){
+      return {
+        parentesco: (qs("#stFamPar").value || "").trim(),
+        nombre: (qs("#stFamNombre").value || "").trim(),
+        rut: (qs("#stFamRut").value || "").trim(),
+        nacimiento: (qs("#stFamNac").value || "").trim(),
+        carga: (qs("#stFamCarga").value || "").trim(),
+        actividad: (qs("#stFamAct").value || "").trim(),
+      };
+    }
+    function famClearInputs(){
+      qs("#stFamPar").value = "";
+      qs("#stFamNombre").value = "";
+      qs("#stFamRut").value = "";
+      qs("#stFamNac").value = "";
+      qs("#stFamCarga").value = "";
+      qs("#stFamAct").value = "";
+    }
+    qs("#famAdd")?.addEventListener("click", ()=>{
+      const f = famPayloadFromInputs();
+      if (!Object.values(f).some(v => String(v||"").trim())){
+        toast("Completa al menos un campo para agregar.");
+        return;
+      }
+      if (!Array.isArray(FAMILIARES)) FAMILIARES = [];
+      FAMILIARES.push(f);
+      famClearInputs();
+      renderFamiliares();
+    });
+    qs("#famClear")?.addEventListener("click", ()=>{
+      famClearInputs();
+    });
 
     function requiredOk(){
       const required = [
@@ -673,12 +774,7 @@
         emergencia_telefono: qs("#stEmergenciaTel").value,
         alergico: qs("#stAlergico").value,
         enfermedad: qs("#stEnfermedad").value,
-        fam_parentesco: qs("#stFamPar").value,
-        fam_nombre: qs("#stFamNombre").value,
-        fam_rut: qs("#stFamRut").value,
-        fam_nacimiento: qs("#stFamNac").value,
-        fam_carga: qs("#stFamCarga").value,
-        fam_actividad: qs("#stFamAct").value,
+        familiares: Array.isArray(FAMILIARES) ? FAMILIARES : [],
         talla_pantalon: qs("#stPantalon").value,
         talla_chaqueta: qs("#stChaqueta").value,
         talla_polera: qs("#stPolera").value,
@@ -762,7 +858,12 @@
       qs("#rowsStaff").querySelectorAll("[data-ficha]").forEach(b => {
         const id = Number(b.dataset.ficha || 0);
         b.addEventListener("click", () => {
-          window.open(apiURL(`/rrhh/staff/${id}/ficha`), "_blank");
+          const url = `/web/views/rrhh_ficha.html?id_staff=${encodeURIComponent(String(id))}`;
+          try{
+            window.parent?.postMessage({ type:"openItem", id:"rrhh_ficha", url }, "*");
+          }catch(_){
+            window.open(apiURL(url), "_blank");
+          }
         });
       });
       qs("#rowsStaff").querySelectorAll("[data-user]").forEach(b => {
@@ -776,8 +877,12 @@
     qs("#qStaff").addEventListener("input", () => loadStaff());
     qs("#btnNewStaff").addEventListener("click", () => openStaffModal(null));
     qs("#btnOpenNomina").addEventListener("click", () => {
-      // Nómina vive en su propia vista (por ahora). La abrimos en una pestaña.
-      window.open(apiURL("/web/views/rrhh_nomina.html?v=20260402-2"), "_blank");
+      // Navegación embebida dentro de RRHH (iframe padre).
+      try{
+        window.parent?.postMessage({ type:"rrhh:navigate", tab:"nomina" }, "*");
+      }catch(_){
+        window.location.href = apiURL("/web/views/rrhh_nomina.html?v=20260402-2");
+      }
     });
 
     function showUserModal(on){

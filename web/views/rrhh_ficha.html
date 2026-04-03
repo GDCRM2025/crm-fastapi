@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>RRHH · Ficha</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/rrhh_luna.css" />
+  <script>
+    // RRHH fuera del tema día/noche: siempre Luna Azul.
+    document.documentElement.classList.add("light");
+    document.documentElement.classList.add("rrhh-luna");
+  </script>
+  <style>
+    body{ margin:0; padding:16px; background:transparent; color:var(--text); overflow:auto; }
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    :root.light .card{ background: rgba(255,255,255,.86); border-color: rgba(0,0,0,.10); }
+    .row{ display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .ttl{ font-weight:1200; font-size:18px; }
+    .muted{ opacity:.75; font-weight:850; font-size:12px; }
+    .btn{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;
+      padding:0 12px;
+      font-weight:1100;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    :root.light .btn{ background: rgba(255,255,255,.75); }
+    table{ width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+    td{ padding:7px 10px; border-bottom:1px solid rgba(148,163,184,.18); vertical-align:top; }
+    :root.light td{ border-bottom:1px solid rgba(0,0,0,.10); }
+    h3{ margin:14px 0 6px 0; font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.8; }
+    @media print{
+      body{ padding:0; }
+      .btn{ display:none !important; }
+      .card{ box-shadow:none; border:none; background:#fff; color:#111; }
+      table td{ border-bottom:1px solid #ddd; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="row">
+      <div>
+        <div class="ttl" id="name">Ficha</div>
+        <div class="muted" id="sub">Cargando…</div>
+      </div>
+      <div class="row" style="justify-content:flex-end;">
+        <button class="btn" id="btnPrint">Imprimir PDF</button>
+      </div>
+    </div>
+
+    <div id="content"></div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(path){
+      const p = String(path || "");
+      if (!p) return p;
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE) return p;
+      return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
+    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+    function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+    function esc(s){ return String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('\"',"&quot;"); }
+
+    function getParam(name){
+      try{ return new URLSearchParams(location.search).get(name); }catch(_){ return null; }
+    }
+
+    function cell(label, value){
+      return `<tr><td style="width:220px;font-weight:1100;opacity:.85">${esc(label)}</td><td>${esc(value ?? "—")}</td></tr>`;
+    }
+
+    function render(item){
+      const ficha = item?.ficha || {};
+      const colab = item?.colaborador || "Colaborador";
+      qs("#name").textContent = "Ficha · " + colab;
+      qs("#sub").textContent = [item?.rut, item?.centro_costo, item?.rol].filter(Boolean).join(" · ") || "—";
+
+      const fams = Array.isArray(ficha?.familiares) ? ficha.familiares : [];
+      const famBlock = fams.length ? `
+        <h3>Familiares</h3>
+        <table>
+          <tbody>
+            ${fams.map((f, idx)=>`
+              <tr><td colspan="2" style="font-weight:1200;opacity:.8">Familiar ${idx+1}</td></tr>
+              ${cell("Parentesco", f.parentesco)}
+              ${cell("Nombre", f.nombre)}
+              ${cell("RUT", f.rut)}
+              ${cell("Fecha nac.", f.nacimiento)}
+              ${cell("Carga", f.carga)}
+              ${cell("Actividad", f.actividad)}
+            `).join("")}
+          </tbody>
+        </table>
+      ` : `
+        <h3>Familiares</h3>
+        <div class="muted">Sin información.</div>
+      `;
+
+      qs("#content").innerHTML = `
+        <h3>Antecedentes cargo</h3>
+        <table><tbody>
+          ${cell("Área", ficha.area)}
+          ${cell("Cargo", ficha.cargo)}
+          ${cell("Renta líquida", ficha.renta_liquida)}
+          ${cell("Entrevistador", ficha.entrevistador)}
+          ${cell("Fecha entrevista", ficha.fecha_entrevista)}
+          ${cell("Fecha ingreso", item?.fecha_ingreso)}
+        </tbody></table>
+
+        <h3>Personales</h3>
+        <table><tbody>
+          ${cell("Nombres", ficha.nombres)}
+          ${cell("Apellido paterno", ficha.apellido_paterno)}
+          ${cell("Apellido materno", ficha.apellido_materno)}
+          ${cell("Fecha nacimiento", ficha.fecha_nacimiento)}
+          ${cell("Nacionalidad", ficha.nacionalidad)}
+          ${cell("Género", ficha.genero)}
+          ${cell("Estado civil", ficha.estado_civil)}
+          ${cell("Teléfono", item?.telefono)}
+          ${cell("Email", item?.email)}
+          ${cell("Dirección", [ficha.calle, ficha.numero, ficha.depto, ficha.direccion_extra, ficha.comuna, ficha.ciudad, ficha.pais].filter(Boolean).join(" "))}
+          ${cell("Emergencia", ficha.emergencia_contacto)}
+          ${cell("Tel. emergencia", ficha.emergencia_telefono)}
+          ${cell("Alérgico", ficha.alergico)}
+          ${cell("Enfermedad", ficha.enfermedad)}
+        </tbody></table>
+
+        ${famBlock}
+
+        <h3>Tallas</h3>
+        <table><tbody>
+          ${cell("Pantalón", ficha.talla_pantalon)}
+          ${cell("Chaqueta", ficha.talla_chaqueta)}
+          ${cell("Polera", ficha.talla_polera)}
+          ${cell("Calzado", ficha.talla_calzado)}
+          ${cell("Guantes", ficha.talla_guantes)}
+        </tbody></table>
+
+        <h3>Afiliaciones</h3>
+        <table><tbody>
+          ${cell("AFP", item?.afp ? (item?.afp + (item?.afp_pct != null ? ` (${item.afp_pct}%)` : "")) : "")}
+          ${cell("Salud", item?.salud_tipo ? (item?.salud_tipo + (item?.salud_pct != null ? ` (${item.salud_pct}%)` : "")) : "")}
+        </tbody></table>
+
+        <h3>Bancarios</h3>
+        <table><tbody>
+          ${cell("Banco", ficha.banco)}
+          ${cell("Tipo cuenta", ficha.tipo_cuenta)}
+          ${cell("N° cuenta", ficha.cuenta_numero)}
+        </tbody></table>
+      `;
+    }
+
+    async function load(){
+      const id = Number(getParam("id_staff") || 0) || 0;
+      if (!id){
+        qs("#sub").textContent = "Falta id_staff";
+        return;
+      }
+      const r = await fetch(apiURL(`/rrhh/staff/${id}`), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      if (!r.ok || data?.ok === false){
+        qs("#sub").textContent = "No se pudo cargar: " + (data?.detail || r.status);
+        return;
+      }
+      render(data.item || {});
+    }
+
+    qs("#btnPrint").addEventListener("click", ()=> window.print());
+    load();
+  </script>
+</body>
+</html>
