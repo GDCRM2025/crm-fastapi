@@ -1,0 +1,129 @@
+/* Windows XP Royale (día) + Royale Noir (noche)
+   Objetivo: transformar TODO el CRM vía variables + overrides livianos.
+
+   Toggle:
+   - Noche (default): html:not(.light)
+   - Día: html.light
+*/
+
+:root{
+  /* Fuente tipo XP */
+  --font: "Tahoma","Verdana","Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+
+  /* Radio más “cuadrado” */
+  --radius: 10px;
+  --radius-sm: 8px;
+
+  /* Sombra estilo panel */
+  --shadow: 0 10px 24px rgba(0,0,0,.35);
+}
+
+/* =========================
+   NOIR (NOCHE) — Royale Noir
+========================= */
+html:not(.light){
+  --app-bg: #091a2b;
+  --surface: #0c2337;
+  --surface-2: #0a1c2e;
+  --border: #24435c;
+
+  --text: #eaf2ff;
+  --muted: #b7c6d8;
+
+  --accent: #31c58b;
+  --hover-surface: #12314c;
+  --hover-border: #2f5b78;
+}
+
+/* =========================
+   DÍA — Royale (azul/plateado)
+========================= */
+html.light{
+  --app-bg: #c7d9ee;
+  --surface: #f3f7fd;
+  --surface-2: #e9f1fb;
+  --border: #7aa0c6;
+
+  --text: #0b1b2b;
+  --muted: #2b3f56;
+
+  --accent: #1d7fe6;
+  --hover-surface: #e1ebf8;
+  --hover-border: #5b87b2;
+}
+
+/* =========================
+   Overrides globales
+========================= */
+html, body{
+  font-family: var(--font) !important;
+}
+
+/* Fondos tipo XP */
+body{
+  background:
+    radial-gradient(1400px 800px at 12% 8%, rgba(255,255,255,.14), transparent 60%),
+    radial-gradient(1200px 800px at 82% 18%, rgba(45,164,255,.16), transparent 62%),
+    linear-gradient(180deg, color-mix(in srgb, var(--app-bg) 92%, #000 8%), var(--app-bg)) !important;
+}
+
+/* Botones */
+button, .btn, .chip, .pill{
+  border-radius: 999px !important;
+}
+button, .btn{
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent) !important;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--surface) 92%, #fff 8%),
+      color-mix(in srgb, var(--surface) 88%, #000 12%)
+    ) !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,.35) inset;
+}
+html.light button, html.light .btn{
+  box-shadow: 0 1px 0 rgba(255,255,255,.85) inset;
+}
+button:hover, .btn:hover{
+  filter: brightness(1.05);
+}
+
+/* Inputs */
+input, select, textarea, .inp{
+  border-radius: 12px !important;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent) !important;
+  background: color-mix(in srgb, var(--surface) 92%, transparent) !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,.25) inset;
+}
+html.light input, html.light select, html.light textarea, html.light .inp{
+  box-shadow: 0 1px 0 rgba(255,255,255,.9) inset;
+}
+
+/* Tarjetas/paneles */
+.card, .panel, .box, .modal-card, .wrap, .tile{
+  border-radius: var(--radius) !important;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent) !important;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--surface) 96%, #fff 4%),
+      color-mix(in srgb, var(--surface) 90%, #000 10%)
+    ) !important;
+  box-shadow: var(--shadow);
+}
+html.light .card, html.light .panel, html.light .box, html.light .modal-card, html.light .wrap, html.light .tile{
+  box-shadow: 0 12px 22px rgba(11,27,43,.16);
+}
+
+/* Tablas */
+table{
+  border-radius: 12px;
+  overflow: hidden;
+}
+th{
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--surface-2) 94%, #fff 6%),
+      color-mix(in srgb, var(--surface-2) 86%, #000 14%)
+    ) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
+}
+
