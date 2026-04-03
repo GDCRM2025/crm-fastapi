@@ -59,6 +59,43 @@ html, body{
   font-family: var(--font) !important;
 }
 
+/* =========================
+   TOPBAR / ICON BUTTONS (forzar XP)
+========================= */
+.topbar,
+.topbar.gcp{
+  background:
+    radial-gradient(820px 160px at 80% -30%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 62%),
+    radial-gradient(520px 180px at 15% -40%, color-mix(in srgb, #ffffff 16%, transparent), transparent 70%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--surface) 88%, #ffffff 12%),
+      color-mix(in srgb, var(--surface) 90%, #000000 10%)
+    ) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent) !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,.25) !important;
+  backdrop-filter: blur(10px);
+  animation: none !important;
+}
+.topbar::after{ display:none !important; }
+
+.iconbtn,
+.sys-iconbtn,
+.um-btn,
+.wx-close{
+  transition: transform .12s ease, filter .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease !important;
+}
+.iconbtn:hover,
+.sys-iconbtn:hover{
+  filter: brightness(1.06);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 75%, transparent), 0 0 18px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.iconbtn:active,
+.sys-iconbtn:active,
+button:active,
+.btn:active{
+  transform: translateY(1px) scale(.99);
+}
+
 /* Fondos tipo XP */
 body{
   background:
@@ -85,6 +122,16 @@ html.light button, html.light .btn{
 }
 button:hover, .btn:hover{
   filter: brightness(1.05);
+}
+
+/* Animación “snappy” y liviana (respeta reduced motion) */
+@media (prefers-reduced-motion: no-preference){
+  button, .btn, .menu-item, .menu-group-head{
+    transition: transform .12s ease, filter .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease !important;
+  }
+  .menu-item:hover{
+    transform: translateY(-1px);
+  }
 }
 
 /* Inputs */
@@ -127,3 +174,14 @@ th{
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
 }
 
+/* =========================
+   MENU glow hover (sidebar)
+========================= */
+.menu-item:hover{
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--hover-border) 70%, transparent),
+    0 0 22px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.menu-group-head:hover{
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hover-border) 65%, transparent);
+}
