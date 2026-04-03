@@ -209,6 +209,14 @@
       if (q){
         items = items.filter(i => norm(i.colaborador || "").includes(q));
       }
+      // Orden por defecto: alfabético, luego cargo, luego centro costo.
+      items.sort((a,b) => {
+        const c1 = norm(a.colaborador).localeCompare(norm(b.colaborador), "es");
+        if (c1) return c1;
+        const c2 = norm(a.cargo).localeCompare(norm(b.cargo), "es");
+        if (c2) return c2;
+        return norm(a.centro_costo).localeCompare(norm(b.centro_costo), "es");
+      });
       qs("#rows").innerHTML = items.map(i => {
         const adel = Number(i.adelantos_total || 0) || 0;
         const base = Number(i.total_pagar ?? i.a_pagar_liquido ?? i.sueldo_fijo ?? 0) || 0;

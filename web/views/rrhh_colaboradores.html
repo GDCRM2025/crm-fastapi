@@ -786,6 +786,15 @@
       let items = data.items || [];
       const q = (qs("#qStaff").value || "").trim().toLowerCase();
       if (q){ items = items.filter(i => String(i.colaborador || "").toLowerCase().includes(q)); }
+      // Orden por defecto: alfabético, luego rol, luego centro.
+      const norm = (v) => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      items.sort((a,b) => {
+        const c1 = norm(a.colaborador).localeCompare(norm(b.colaborador), "es");
+        if (c1) return c1;
+        const c2 = norm(a.rol).localeCompare(norm(b.rol), "es");
+        if (c2) return c2;
+        return norm(a.centro_costo).localeCompare(norm(b.centro_costo), "es");
+      });
       qs("#rowsStaff").innerHTML = items.map(i => `
         <tr>
           <td><strong>${i.colaborador || "—"}</strong></td>

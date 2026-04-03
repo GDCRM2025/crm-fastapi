@@ -27,12 +27,15 @@ html:not(.light){
   --surface-2: #081a2f;
   --border: #1c4a7a;
 
-  --text: #eaf2ff;
-  --muted: #b7c7dd;
+  --text: #f4f9ff;
+  --muted: #d2deef;
 
   --accent: #4aa3ff;
   --hover-surface: #103255;
   --hover-border: #2a6aa3;
+
+  /* Noche: fuente más legible */
+  --font: "Segoe UI Variable Text","Segoe UI","Tahoma","Verdana",system-ui,-apple-system,Arial,sans-serif;
 }
 
 /* =========================
@@ -57,6 +60,12 @@ html.light{
 ========================= */
 html, body{
   font-family: var(--font) !important;
+}
+html{
+  /* Importante: muchas vistas ponen `body{color:inherit}`; esto evita texto negro en noir */
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .iconbtn,
