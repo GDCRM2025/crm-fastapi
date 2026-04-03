@@ -1,4 +1,4 @@
-/* Windows XP Royale (día) + Royale Noir (noche)
+/* Windows XP Luna (azul) (día) + XP Noir (noche)
    Objetivo: transformar TODO el CRM vía variables + overrides livianos.
 
    Toggle:
@@ -19,37 +19,37 @@
 }
 
 /* =========================
-   NOIR (NOCHE) — Royale Noir
+   NOIR (NOCHE) — XP Noir
 ========================= */
 html:not(.light){
-  --app-bg: #091a2b;
-  --surface: #0c2337;
-  --surface-2: #0a1c2e;
-  --border: #24435c;
+  --app-bg: #071428;
+  --surface: #0a213a;
+  --surface-2: #081a2f;
+  --border: #1c4a7a;
 
   --text: #eaf2ff;
-  --muted: #b7c6d8;
+  --muted: #b7c7dd;
 
-  --accent: #31c58b;
-  --hover-surface: #12314c;
-  --hover-border: #2f5b78;
+  --accent: #4aa3ff;
+  --hover-surface: #103255;
+  --hover-border: #2a6aa3;
 }
 
 /* =========================
-   DÍA — Royale (azul/plateado)
+   DÍA — XP Luna (azul)
 ========================= */
 html.light{
-  --app-bg: #c7d9ee;
-  --surface: #f3f7fd;
-  --surface-2: #e9f1fb;
-  --border: #7aa0c6;
+  --app-bg: #8fb0d6;
+  --surface: #f2f7ff;
+  --surface-2: #dfeeff;
+  --border: #3c79b7;
 
-  --text: #0b1b2b;
-  --muted: #2b3f56;
+  --text: #07213a;
+  --muted: #1b3b5c;
 
-  --accent: #1d7fe6;
-  --hover-surface: #e1ebf8;
-  --hover-border: #5b87b2;
+  --accent: #1f6fd7;
+  --hover-surface: #d3e7ff;
+  --hover-border: #2d77bd;
 }
 
 /* =========================
@@ -58,25 +58,6 @@ html.light{
 html, body{
   font-family: var(--font) !important;
 }
-
-/* =========================
-   TOPBAR / ICON BUTTONS (forzar XP)
-========================= */
-.topbar,
-.topbar.gcp{
-  background:
-    radial-gradient(820px 160px at 80% -30%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 62%),
-    radial-gradient(520px 180px at 15% -40%, color-mix(in srgb, #ffffff 16%, transparent), transparent 70%),
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--surface) 88%, #ffffff 12%),
-      color-mix(in srgb, var(--surface) 90%, #000000 10%)
-    ) !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent) !important;
-  box-shadow: 0 2px 10px rgba(0,0,0,.25) !important;
-  backdrop-filter: blur(10px);
-  animation: none !important;
-}
-.topbar::after{ display:none !important; }
 
 .iconbtn,
 .sys-iconbtn,
@@ -99,9 +80,9 @@ button:active,
 /* Fondos tipo XP */
 body{
   background:
-    radial-gradient(1400px 800px at 12% 8%, rgba(255,255,255,.14), transparent 60%),
-    radial-gradient(1200px 800px at 82% 18%, rgba(45,164,255,.16), transparent 62%),
-    linear-gradient(180deg, color-mix(in srgb, var(--app-bg) 92%, #000 8%), var(--app-bg)) !important;
+    radial-gradient(1400px 900px at 12% 10%, color-mix(in srgb, #ffffff 18%, transparent), transparent 60%),
+    radial-gradient(1200px 900px at 82% 18%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 62%),
+    linear-gradient(180deg, color-mix(in srgb, var(--app-bg) 94%, #000 6%), var(--app-bg)) !important;
 }
 
 /* Botones */
