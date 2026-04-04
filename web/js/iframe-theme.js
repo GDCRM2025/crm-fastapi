@@ -20,12 +20,36 @@ addEventListener("message", (ev) => {
   }
   if (d.type === "prefs" && d.prefs){
     const p = d.prefs;
-    if (p.font) document.documentElement.style.setProperty("--font", p.font);
-    if (p.accent) document.documentElement.style.setProperty("--accent", p.accent);
-    if (p.text) document.documentElement.style.setProperty("--text", p.text);
+    // No aplicamos overrides persistidos de color/fuente (tema XP global).
+    document.documentElement.style.removeProperty("--font");
+    document.documentElement.style.removeProperty("--accent");
+    document.documentElement.style.removeProperty("--text");
     if (p.fontSize) document.documentElement.style.setProperty("font-size", `${p.fontSize}px`);
+    if (p.theme) _apply(p.theme);
   }
 });
+
+// Cache-bust de styles.css dentro de iframes (muchas vistas linkean /web/styles.css sin ?v=).
+// Esto evita “hard refresh y sigue igual” por caché agresiva del browser/CDN.
+(function ensureStylesVersion(){
+  try{
+    const V = "20260404-2";
+    const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
+    for (const l of links){
+      const href = String(l.getAttribute("href") || "");
+      if (!href) continue;
+      // Solo tocar styles.css (no fonts externas).
+      const isStyles = href.includes("/styles.css") || href.endsWith("/styles.css") || href.endsWith("styles.css");
+      if (!isStyles) continue;
+      if (href.includes("://")) continue;
+      const u = new URL(href, location.href);
+      // Siempre agrega un cache-buster adicional (aunque ya exista `v=` en la vista).
+      u.searchParams.set("cv", V);
+      if (!u.searchParams.has("v")) u.searchParams.set("v", V);
+      l.setAttribute("href", u.pathname + "?" + u.searchParams.toString());
+    }
+  }catch(_){}
+})();
 
 // Bootstrap por si el iframe se abre directo (sin padre)
 try{

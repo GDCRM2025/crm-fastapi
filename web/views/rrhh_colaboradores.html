@@ -313,6 +313,33 @@
       </div>
       <div class="muted" id="userHint" style="margin-top:6px;">Crea el acceso al CRM desde RRHH.</div>
 
+      <div style="margin-top:12px; padding:12px; border-radius:14px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.10);">
+        <div class="field-label">Vincular usuario existente</div>
+        <div class="row" style="margin-top:8px;">
+          <input class="inp" id="uSearch" placeholder="Buscar usuario (nombre/email/username)..." style="flex:1;min-width:260px;" />
+          <button class="btn" id="btnUSearch">Buscar</button>
+          <button class="btn" id="btnUUnlink" style="display:none;">Desvincular</button>
+        </div>
+        <div class="table-wrap" style="margin-top:10px; max-height:34vh;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Usuario</th>
+                <th>Rol</th>
+                <th>Email</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="uRows">
+              <tr><td class="muted">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="muted" style="margin-top:6px;">Si el usuario ya existe, <strong>vincúlalo</strong> (no crees duplicados).</div>
+      </div>
+
+      <div class="muted" style="margin-top:12px;">O crear usuario nuevo:</div>
       <div class="grid2" style="margin-top:12px;">
         <div class="field">
           <div class="field-label">Nombre</div>
@@ -389,6 +416,12 @@
     function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
 
+    function escapeHtml(s){
+      return String(s ?? "").replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[c]));
+    }
+
     function fmt(n){
       if (n == null || n === "") return "—";
       const v = Number(n);
@@ -412,6 +445,8 @@
     let FAMILIARES = [];
     let ME = null;
     let MARCAS = [];
+    let USER_LINK_STAFF_ID = null;
+    let USER_LINK_CURRENT_USER_ID = null;
 
     async function loadMe(){
       try{
@@ -881,12 +916,14 @@
       }
       const nombre = String(staffItem.colaborador || "").trim();
       const email = String(staffItem.email || "").trim().toLowerCase();
+      USER_LINK_STAFF_ID = Number(staffItem.id_staff || 0) || null;
+      USER_LINK_CURRENT_USER_ID = Number(staffItem.id_usuario || 0) || null;
       qs("#uNombre").value = nombre || "";
       qs("#uEmail").value = email || "";
       qs("#uUsername").value = guessUsername(email) || "";
       qs("#uRol").value = String(staffItem.rol || "OPERADOR").toUpperCase() || "OPERADOR";
       qs("#uPass").value = "";
-      qs("#userHint").textContent = `Colaborador: ${nombre || ("#"+staffItem.id_staff)} · Esto crea un usuario en el CRM.`;
+      qs("#userHint").textContent = `Colaborador: ${nombre || ("#"+staffItem.id_staff)} · Puedes vincular un usuario existente o crear uno nuevo.`;
       // selector marcas solo para SUPERADMIN
       const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
       const wrap = qs("#uMarcasWrap");
@@ -898,6 +935,15 @@
         }
       }
       showUserModal(true);
+
+      // Bootstrap búsqueda usuarios existentes
+      if (qs("#uSearch")){
+        qs("#uSearch").value = email || nombre || "";
+      }
+      if (qs("#btnUUnlink")){
+        qs("#btnUUnlink").style.display = USER_LINK_CURRENT_USER_ID ? "" : "none";
+      }
+      await loadUserCandidates();
     }
     qs("#btnGenPass").addEventListener("click", ()=>{ qs("#uPass").value = genPass(); });
     qs("#btnCreateUser").addEventListener("click", async ()=>{
@@ -942,6 +988,74 @@
         toast("Usuario creado");
       }
       showUserModal(false);
+    });
+
+    async function loadUserCandidates(){
+      const q = (qs("#uSearch")?.value || "").trim();
+      const url = `/rrhh/users?q=${encodeURIComponent(q)}&limit=60&offset=0`;
+      let data = null;
+      try{
+        const r = await fetch(apiURL(url), { headers: headers() });
+        if (!r.ok){
+          const t = await r.text().catch(()=> "");
+          throw new Error(t || String(r.status));
+        }
+        data = await r.json();
+      }catch(err){
+        qs("#uRows").innerHTML = `<tr><td class="muted">No se pudo cargar usuarios: ${escapeHtml(String(err?.message||err))}</td></tr>`;
+        return;
+      }
+      const items = data?.items || [];
+      qs("#uRows").innerHTML = (items.map(u => {
+        const idu = Number(u.id_usuario || 0) || 0;
+        const linked = USER_LINK_CURRENT_USER_ID && idu === USER_LINK_CURRENT_USER_ID;
+        const btn = linked
+          ? `<button class="btn" disabled>Vinculado</button>`
+          : `<button class="btn" data-link-user="${idu}">Vincular</button>`;
+        return `
+          <tr>
+            <td>${idu || "—"}</td>
+            <td><strong>${escapeHtml(u.display || u.username || u.email || String(idu))}</strong></td>
+            <td>${escapeHtml(u.rol || "—")}</td>
+            <td>${escapeHtml(u.email || "—")}</td>
+            <td>${btn}</td>
+          </tr>
+        `;
+      }).join("")) || `<tr><td class="muted">Sin usuarios.</td></tr>`;
+      qs("#uRows").querySelectorAll("[data-link-user]").forEach(b => {
+        b.addEventListener("click", async ()=>{
+          const idu = Number(b.getAttribute("data-link-user") || 0) || 0;
+          if (!USER_LINK_STAFF_ID || !idu) return;
+          const r = await fetch(apiURL(`/rrhh/staff/${USER_LINK_STAFF_ID}/link_user`), {
+            method: "POST",
+            headers: { "Content-Type":"application/json", ...headers() },
+            body: JSON.stringify({ id_usuario: idu }),
+          });
+          const t = await r.text().catch(()=> "");
+          if (!r.ok){
+            toast("No se pudo vincular: " + (t || r.status), "error");
+            return;
+          }
+          toast("Usuario vinculado");
+          showUserModal(false);
+          await loadStaff();
+        });
+      });
+    }
+    qs("#btnUSearch")?.addEventListener("click", ()=> loadUserCandidates());
+    qs("#uSearch")?.addEventListener("keydown", (e)=>{ if (e.key === "Enter") { e.preventDefault(); loadUserCandidates(); } });
+    qs("#btnUUnlink")?.addEventListener("click", async ()=>{
+      if (!USER_LINK_STAFF_ID) return;
+      if (!confirm("¿Desvincular usuario de este colaborador?")) return;
+      const r = await fetch(apiURL(`/rrhh/staff/${USER_LINK_STAFF_ID}/link_user`), { method:"DELETE", headers: headers() });
+      const t = await r.text().catch(()=> "");
+      if (!r.ok){
+        toast("No se pudo desvincular: " + (t || r.status), "error");
+        return;
+      }
+      toast("Usuario desvinculado");
+      showUserModal(false);
+      await loadStaff();
     });
 
     function applyLabels(){

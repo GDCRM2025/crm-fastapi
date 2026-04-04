@@ -2027,8 +2027,10 @@ async function handleConfirmado(lead, newEstado){
     catch(_){ hist = await apiJSON(`/crm/quotes/history?id_lead=${lead.id_lead}`); }
     qItems = Array.isArray(hist) ? hist : (hist?.items || []);
   }catch(err){
-    await Swal.fire("Error", "No pude cargar las cotizaciones del CRM para este lead. " + String(err?.message||err), "error");
-    return false;
+    // Best-effort: si falla el historial del cotizador, seguimos en modo "Manual" para no bloquear confirmación.
+    // (Esto evita el modal de error "Failed to fetch" al pasar a CONFIRMADO).
+    console.warn("[confirmado] No pude cargar quotes/history. Continuo en modo manual.", err);
+    qItems = [];
   }
 
   // Manual/MICE items (si existen)

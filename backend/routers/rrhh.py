@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -99,6 +100,7 @@ def _ensure_tables(db: Session) -> None:
               rut TEXT,
               email TEXT,
               telefono TEXT,
+              id_usuario INTEGER,
               rol TEXT,
               centro_costo TEXT,
               fecha_ingreso DATE,
@@ -116,6 +118,7 @@ def _ensure_tables(db: Session) -> None:
     # Ensure new columns exist on older installs
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS observaciones TEXT"))
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS ficha JSONB"))
+    db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS id_usuario INTEGER"))
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS presencial_dow SMALLINT"))
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS modalidad_default TEXT"))
     db.execute(
@@ -286,6 +289,10 @@ def _is_rrhh_admin(user: dict) -> bool:
 def _require_rrhh_admin(user: dict) -> None:
     if not _is_rrhh_admin(user):
         raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+
+
+class LinkUserIn(BaseModel):
+    id_usuario: int
 
 def _user_id(user: dict) -> int | None:
     uid = user.get("id") or user.get("id_usuario") or user.get("user_id")
@@ -1040,6 +1047,127 @@ def staff_get(id_staff: int, db: Session = Depends(get_db), me: dict = Depends(g
         except Exception:
             d["ficha"] = {}
     return {"ok": True, "item": d}
+
+
+@router.get("/users")
+def users_list(
+    q: str = "",
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Lista usuarios del sistema para vincularlos a RRHH.
+    Solo Admin/SuperAdmin.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    limit = max(1, min(int(limit or 50), 200))
+    offset = max(0, int(offset or 0))
+    q0 = (q or "").strip()
+    where = ""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if q0:
+        where = "WHERE (COALESCE(u.nombre,'') ILIKE :q OR COALESCE(u.email,'') ILIKE :q OR COALESCE(u.username,'') ILIKE :q)"
+        params["q"] = f"%{q0}%"
+    rows = db.execute(
+        text(
+            f"""
+            SELECT
+              u.id_usuario,
+              COALESCE(NULLIF(btrim(u.nombre),''), NULLIF(btrim(u.username),''), NULLIF(btrim(u.email),''), u.id_usuario::text) AS display,
+              COALESCE(u.nombre,'') AS nombre,
+              COALESCE(u.email,'') AS email,
+              COALESCE(u.username,'') AS username,
+              COALESCE(u.rol,'') AS rol,
+              COALESCE(u.telefono,'') AS telefono,
+              COALESCE(u.is_active, TRUE) AS is_active
+            FROM public.usuarios u
+            {where}
+            ORDER BY u.id_usuario DESC
+            LIMIT :limit OFFSET :offset
+            """
+        ),
+        params,
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.post("/staff/{id_staff}/link_user")
+def staff_link_user(
+    id_staff: int,
+    body: LinkUserIn,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Vincula un usuario CRM existente a un colaborador RRHH y sincroniza datos básicos.
+    Solo Admin/SuperAdmin.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    row_staff = db.execute(
+        text("SELECT id_staff FROM rrhh_staff WHERE id_staff=:id LIMIT 1"),
+        {"id": int(id_staff)},
+    ).fetchone()
+    if not row_staff:
+        raise HTTPException(status_code=404, detail="Colaborador no existe")
+
+    u = db.execute(
+        text(
+            """
+            SELECT
+              id_usuario,
+              COALESCE(nombre,'') AS nombre,
+              COALESCE(email,'') AS email,
+              COALESCE(username,'') AS username,
+              COALESCE(rol,'') AS rol,
+              COALESCE(telefono,'') AS telefono
+            FROM public.usuarios
+            WHERE id_usuario=:u
+            LIMIT 1
+            """
+        ),
+        {"u": int(body.id_usuario)},
+    ).mappings().first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuario no existe")
+
+    db.execute(
+        text(
+            """
+            UPDATE rrhh_staff
+            SET id_usuario=:u,
+                email = COALESCE(NULLIF(:email,''), email),
+                telefono = COALESCE(NULLIF(:tel,''), telefono),
+                rol = COALESCE(NULLIF(:rol,''), rol)
+            WHERE id_staff=:id
+            """
+        ),
+        {
+            "id": int(id_staff),
+            "u": int(u["id_usuario"]),
+            "email": str(u.get("email") or "").strip(),
+            "tel": str(u.get("telefono") or "").strip(),
+            "rol": str(u.get("rol") or "").strip(),
+        },
+    )
+    db.commit()
+    return {"ok": True, "id_staff": int(id_staff), "id_usuario": int(u["id_usuario"])}
+
+
+@router.delete("/staff/{id_staff}/link_user")
+def staff_unlink_user(
+    id_staff: int,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    db.execute(text("UPDATE rrhh_staff SET id_usuario=NULL WHERE id_staff=:id"), {"id": int(id_staff)})
+    db.commit()
+    return {"ok": True, "id_staff": int(id_staff)}
 
 
 @router.get("/staff/{id_staff}/ficha")

@@ -522,16 +522,12 @@ function savePrefs(p) {
 function applyPrefs(p) {
   var _a, _b;
   if (!p) return;
-  const fontVal = p.font && FONT_MAP[p.font] ? FONT_MAP[p.font] : p.font;
-  if (fontVal) {
-    document.documentElement.style.setProperty("--font", fontVal);
-  }
-  if (p.accent) {
-    document.documentElement.style.setProperty("--accent", p.accent);
-  }
-  if (p.text) {
-    document.documentElement.style.setProperty("--text", p.text);
-  }
+  // Importante: el CRM usa tema global estilo Windows XP Royale.
+  // Para evitar problemas de legibilidad (especialmente en Noir/noche),
+  // NO aplicamos overrides persistidos de font/accent/text.
+  document.documentElement.style.removeProperty("--font");
+  document.documentElement.style.removeProperty("--accent");
+  document.documentElement.style.removeProperty("--text");
   if (p.fontSize) {
     document.documentElement.style.setProperty("font-size", `${p.fontSize}px`);
   }
@@ -540,12 +536,12 @@ function applyPrefs(p) {
   }
   try {
     const fr = qs("#mainFrame");
-    (_a = fr == null ? void 0 : fr.contentWindow) == null ? void 0 : _a.postMessage({ type: "prefs", prefs: { ...p, font: fontVal } }, "*");
+    (_a = fr == null ? void 0 : fr.contentWindow) == null ? void 0 : _a.postMessage({ type: "prefs", prefs: { theme: p.theme, fontSize: p.fontSize } }, "*");
     const doc = (_b = fr == null ? void 0 : fr.contentDocument) == null ? void 0 : _b.documentElement;
     if (doc) {
-      if (fontVal) doc.style.setProperty("--font", fontVal);
-      if (p.accent) doc.style.setProperty("--accent", p.accent);
-      if (p.text) doc.style.setProperty("--text", p.text);
+      doc.style.removeProperty("--font");
+      doc.style.removeProperty("--accent");
+      doc.style.removeProperty("--text");
       if (p.fontSize) doc.style.setProperty("font-size", `${p.fontSize}px`);
       if (p.theme) doc.classList.toggle("light", p.theme === "light");
     }
@@ -557,13 +553,9 @@ function applyPrefs(p) {
         st.id = "gd-pref-style";
         iframeDoc.head.appendChild(st);
       }
-      const fontCss = fontVal ? `--font:${fontVal};` : "";
-      const accentCss = p.accent ? `--accent:${p.accent};` : "";
-      const textCss = p.text ? `--text:${p.text};` : "";
       const sizeCss = p.fontSize ? `font-size:${p.fontSize}px;` : "";
       st.textContent = `
-        :root{${fontCss}${accentCss}${textCss}${sizeCss}}
-        body{font-family:var(--font) !important; color:var(--text) !important;}
+        :root{${sizeCss}}
       `;
     }
   } catch (_) {
