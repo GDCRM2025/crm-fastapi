@@ -69,6 +69,9 @@ html{
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+body{
+  color: var(--text) !important;
+}
 
 /* Links */
 a{
@@ -116,6 +119,7 @@ button, .btn{
       color-mix(in srgb, var(--surface) 88%, #000 12%)
     ) !important;
   box-shadow: 0 1px 0 rgba(255,255,255,.35) inset;
+  color: var(--text) !important;
 }
 html.light button, html.light .btn{
   box-shadow: 0 1px 0 rgba(255,255,255,.85) inset;
@@ -172,6 +176,7 @@ html.light input, html.light select, html.light textarea, html.light .inp{
       color-mix(in srgb, var(--surface) 90%, #000 10%)
     ) !important;
   box-shadow: var(--shadow);
+  color: var(--text) !important; /* evita texto negro heredado en Noir */
 }
 html.light .card, html.light .panel, html.light .box, html.light .modal-card, html.light .wrap, html.light .tile{
   box-shadow: 0 12px 22px rgba(11,27,43,.16);

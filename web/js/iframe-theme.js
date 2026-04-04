@@ -33,7 +33,7 @@ addEventListener("message", (ev) => {
 // Esto evita “hard refresh y sigue igual” por caché agresiva del browser/CDN.
 (function ensureStylesVersion(){
   try{
-    const V = "20260404-3";
+    const V = "20260404-4";
     const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
     for (const l of links){
       const href = String(l.getAttribute("href") || "");
