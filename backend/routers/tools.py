@@ -50,7 +50,7 @@ def _gcal_default_calendar_id(db: Session, override: str | None = None) -> str:
     Determina a qué calendarId escribir/leer:
     1) override explícito
     2) env var GCAL_DEFAULT_CAL (config canonical en server)
-    3) gcal_tokens.calendar_id (último token guardado)
+    3) gcal_tokens.calendar_id (último token guardado) si NO es "primary"
     4) GCAL_DEFAULT_CAL (primary)
     """
     if override:
@@ -64,7 +64,9 @@ def _gcal_default_calendar_id(db: Session, override: str | None = None) -> str:
         row = db.execute(text("SELECT calendar_id FROM gcal_tokens ORDER BY id_token DESC LIMIT 1")).fetchone()
         v = (row[0] if row else None)
         v = str(v or "").strip()
-        if v:
+        # Evitar que un token viejo con default 'primary' nos mande al calendario equivocado
+        # (ej: el del ejecutivo que conectó OAuth).
+        if v and v.lower() != "primary":
             return v
     except Exception:
         pass
