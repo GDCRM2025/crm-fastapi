@@ -4,7 +4,7 @@
 ========================= */
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Fraunces:wght@500;700&family=JetBrains+Mono:wght@400;600&family=Manrope:wght@400;600;700&family=Sora:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=Rubik:wght@400;600;700&family=DM+Sans:wght@400;600;700&family=Playfair+Display:wght@500;700&family=Poppins:wght@400;600;700&family=Nunito:wght@400;600;700&family=Montserrat:wght@400;600;700&family=Urbanist:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
 /* Tema global: Windows XP Royale (día) + Royale Noir (noche) */
-@import url('./xp_royale.css?v=20260404-2');
+@import url('./xp_royale.css?v=20260404-3');
 
 :root{
   /* Layout (no pisa colores del tema XP) */

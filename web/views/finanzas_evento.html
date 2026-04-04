@@ -8,7 +8,7 @@
   <title>Finanzas • Registrar evento</title>
   <style>
     body{padding:18px;}
-    .wrap{max-width:1100px; margin:0 auto;}
+    .wrap{max-width:none; margin:0 auto;}
     .grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
     .grid .full{grid-column:1 / -1;}
     .card{margin-bottom:14px;}
@@ -141,7 +141,15 @@
           </div>
           <div>
             <div class="label">Método</div>
-            <input id="pMetodo" placeholder="Transferencia / Efectivo / OC" />
+            <select id="pMetodo">
+              <option value="TRANSFERENCIA">Transferencia</option>
+              <option value="WEBPAY">Webpay</option>
+              <option value="CHEQUE">Cheque</option>
+              <option value="EFECTIVO">Efectivo</option>
+              <option value="TRANSBANK">Transbank</option>
+              <option value="BANCHILE">Banchile</option>
+              <option value="OTRO">Otro</option>
+            </select>
           </div>
           <div>
             <div class="label">Documento</div>
@@ -169,6 +177,21 @@
     const $ = (s, el=document) => el.querySelector(s);
     const fmt = new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
 
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const apiURL = (p) => {
+      const s = String(p || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    };
+
     function authHeaders(extra={}){
       const GD = window.parent && window.parent.GD;
       if (GD && GD.authHeaders) return GD.authHeaders(extra);
@@ -177,14 +200,14 @@
     }
 
     async function api(url, opts={}){
-      const r = await fetch(url, { ...opts, headers: authHeaders({ "Content-Type":"application/json", ...(opts.headers||{}) }) });
+      const r = await fetch(apiURL(url), { ...opts, headers: authHeaders({ "Content-Type":"application/json", ...(opts.headers||{}) }) });
       const data = await r.json().catch(()=>null);
       if (!r.ok) throw new Error((data && (data.detail||data.message)) || "Error");
       return data;
     }
 
     function parseCL(v){
-      const s = String(v||"").replace(/\\./g,"").replace(/,/g,".").trim();
+      const s = String(v||"").replace(/[^\d.,-]/g,"").replace(/\\./g,"").replace(/,/g,".").trim();
       const n = Number(s);
       return Number.isFinite(n) ? n : 0;
     }
@@ -217,12 +240,36 @@
       return { neto: round(neto), iva: round(iva), saldo: round(saldo), comision: round(comision), bruto, traslado, abono };
     }
 
+    let eventosByLead = new Map(); // id_lead -> evento
     async function loadLeads(){
+      // 1) Eventos (para filtrar los completamente pagados)
+      try{
+        const ev = await api("/finanzas/eventos");
+        const itemsEv = ev.items || [];
+        eventosByLead = new Map();
+        for (const e of itemsEv){
+          const idl = Number(e.id_lead || 0) || 0;
+          if (!idl) continue;
+          if (!eventosByLead.has(idl)) eventosByLead.set(idl, e);
+        }
+      }catch(_){ eventosByLead = new Map(); }
+
+      // 2) Leads confirmados
       const res = await api("/leads?limit=2000");
       const items = res.items || [];
       const conf = items.filter(l => (l.estado_nombre||"" ).toUpperCase().includes("CONFIRM"));
+      // por defecto, no mostrar leads ya completamente pagados (saldo <= 0)
+      const usable = conf.filter(l => {
+        const e = eventosByLead.get(Number(l.id_lead || 0));
+        if (!e) return true;
+        return Number(e.saldo || 0) > 0;
+      });
       $("#leadSelect").innerHTML = `<option value="">— Selecciona lead confirmado —</option>` +
-        conf.map(l => `<option value="${l.id_lead}" data-cliente="${l.cliente||""}" data-marca="${l.marca||""}" data-comuna="${l.comuna||""}" data-fecha="${l.fecha_evento||""}" data-tipo="${l.tipo_cliente||""}" data-monto="${l.monto_cotizado||0}" data-cot="${l.num_cotizacion||""}">${l.id_lead} · ${l.cliente||""} · ${l.marca||""}</option>`).join("");
+        usable.map(l => {
+          const e = eventosByLead.get(Number(l.id_lead || 0));
+          const saldoTxt = e ? ` · Saldo ${fmt.format(Number(e.saldo||0))}` : "";
+          return `<option value="${l.id_lead}" data-cliente="${l.cliente||""}" data-marca="${l.marca||""}" data-comuna="${l.comuna||""}" data-fecha="${l.fecha_evento||""}" data-tipo="${l.tipo_cliente||""}" data-monto="${l.monto_cotizado||0}" data-cot="${l.num_cotizacion||""}">${l.id_lead} · ${l.cliente||""} · ${l.marca||""}${saldoTxt}</option>`;
+        }).join("");
     }
 
     let comisiones = [];
@@ -240,9 +287,15 @@
       return any ? Number(any.porcentaje || 0) : 3;
     }
 
+    let SHOW_PAGADOS = false;
     async function loadEventos(){
       const res = await api("/finanzas/eventos");
-      const items = res.items || [];
+      let items = res.items || [];
+      if (!SHOW_PAGADOS){
+        items = items.filter(i => Number(i.saldo || 0) > 0);
+      }
+      // “últimos 50”
+      items = items.slice(0, 50);
       $("#rows").innerHTML = items.map(i => `
         <tr>
           <td>${i.id_evento}</td>
@@ -280,6 +333,42 @@
         $("#fBruto").value = lead.monto_cotizado || 0;
         $("#fCot").value = lead.num_cotizacion || "";
         $("#fComPct").value = pickComision(lead.marca || "");
+        let finItem = null;
+        // Traer evento finanzas existente (si ya fue registrado) para que saldo/abonos sean reales.
+        try{
+          const ev = await api(`/finanzas/eventos/by_lead?id_lead=${id}`);
+          const it = ev.item;
+          finItem = it || null;
+          if (it && it.id_evento){
+            $("#fCot").value = it.num_cotizacion || $("#fCot").value || "";
+            $("#fBruto").value = Number(it.monto_bruto || 0);
+            $("#fTraslado").value = Number(it.traslado || 0);
+            $("#fComPct").value = Number(it.comision_pct || $("#fComPct").value || 0);
+            $("#fAbono").value = Number(it.abono || 0);
+            // En eventos ya existentes, el abono se gestiona en "Pagos"
+            $("#fAbono").disabled = true;
+          }else{
+            $("#fAbono").disabled = false;
+          }
+        }catch(_){
+          $("#fAbono").disabled = false;
+        }
+
+        // Traslado: si no viene en finanzas (o está en 0), intenta leerlo desde la cotización del sistema.
+        try{
+          const curTras = Number($("#fTraslado").value || 0) || 0;
+          if (curTras <= 0){
+            const idCot = Number(lead.id_cotizacion_vigente || lead.id_cotizacion || lead.id_cotizacion_id || 0) || 0;
+            if (idCot > 0){
+              const q = await api(`/quotes/${idCot}`);
+              const c = (q && (q.cotizacion || q.item)) || {};
+              const t = Number(c.traslado || 0) || 0;
+              if (t > 0){
+                $("#fTraslado").value = t;
+              }
+            }
+          }
+        }catch(_){}
       }catch(_){
         const opt = e.target.selectedOptions?.[0];
         if (!opt) return;
@@ -292,6 +381,7 @@
         $("#fBruto").value = opt.dataset.monto || "0";
         $("#fCot").value = opt.dataset.cot || "";
         $("#fComPct").value = pickComision(opt.dataset.marca || "");
+        $("#fAbono").disabled = false;
       }
       calc();
     });
@@ -332,8 +422,9 @@
       currentEvento = evento;
       $("#mTitle").textContent = `Pagos · Evento #${evento.id_evento}`;
       $("#pFecha").value = new Date().toISOString().slice(0,10);
-      $("#pMonto").value = "";
-      $("#pMetodo").value = "";
+      // Por defecto, sugerir el monto pendiente (saldo actual).
+      $("#pMonto").value = String(Math.max(0, Number(evento.saldo || 0) || 0));
+      $("#pMetodo").value = "TRANSFERENCIA";
       $("#pDoc").value = "";
       $("#pRef").value = "";
       $("#modal").classList.add("open");
@@ -356,7 +447,7 @@
     $("#pAdd").addEventListener("click", async () => {
       if (!currentEvento) return;
       const payload = {
-        monto: Number($("#pMonto").value || 0),
+        monto: round(parseCL($("#pMonto").value || 0)),
         metodo: $("#pMetodo").value || null,
         referencia: $("#pRef").value || null,
         doc_num: $("#pDoc").value || null,

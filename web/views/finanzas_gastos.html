@@ -8,7 +8,7 @@
   <title>Finanzas • Gastos</title>
   <style>
     body{padding:18px;}
-    .wrap{max-width:1100px; margin:0 auto;}
+    .wrap{max-width:none; margin:0 auto;}
     .grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
     .grid .full{grid-column:1 / -1;}
     .card{margin-bottom:14px;}
@@ -144,6 +144,12 @@
       return data;
     }
 
+    function parseCL(v){
+      const s = String(v||"").replace(/[^\d.,-]/g,"").replace(/\./g,"").replace(/,/g,".").trim();
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    }
+
     async function loadCatalogos(){
       // Proveedores desde inventario (ops)
       try{
@@ -191,7 +197,9 @@
 
     async function loadGastos(){
       const res = await api("/finanzas/gastos");
-      const items = res.items || [];
+      let items = res.items || [];
+      // “últimos 50”
+      items = items.slice(0, 50);
       $("#rows").innerHTML = items.map(i => `
         <tr>
           <td>${i.id_gasto}</td>
@@ -208,7 +216,7 @@
       const payload = {
         fecha: $("#fFecha").value,
         cuenta_code: $("#fCuenta").value,
-        monto: Number($("#fMonto").value || 0),
+        monto: parseCL($("#fMonto").value || 0),
         descripcion: $("#fDesc").value,
         proveedor: $("#fProveedor").value,
         marca: $("#fMarca").value,

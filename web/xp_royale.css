@@ -22,6 +22,7 @@
    NOIR (NOCHE) — XP Noir
 ========================= */
 html:not(.light){
+  color-scheme: dark;
   --app-bg: #071428;
   --surface: #0a213a;
   --surface-2: #081a2f;
@@ -42,6 +43,7 @@ html:not(.light){
    DÍA — XP Luna (azul)
 ========================= */
 html.light{
+  color-scheme: light;
   --app-bg: #8fb0d6;
   --surface: #f2f7ff;
   --surface-2: #dfeeff;
@@ -66,6 +68,14 @@ html{
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Links */
+a{
+  color: var(--accent) !important;
+}
+a:hover{
+  text-decoration: underline;
 }
 
 .iconbtn,
@@ -114,6 +124,14 @@ button:hover, .btn:hover{
   filter: brightness(1.05);
 }
 
+/* Headings/tablas: forzar legibilidad (muchas vistas legacy pintan texto negro) */
+h1,h2,h3,h4,h5,h6{
+  color: var(--text) !important;
+}
+table, th, td{
+  color: var(--text) !important;
+}
+
 /* Animación “snappy” y liviana (respeta reduced motion) */
 @media (prefers-reduced-motion: no-preference){
   button, .btn, .menu-item, .menu-group-head{
@@ -135,6 +153,15 @@ html.light input, html.light select, html.light textarea, html.light .inp{
   box-shadow: 0 1px 0 rgba(255,255,255,.9) inset;
 }
 
+/* Labels/hints y placeholders legibles */
+.field-label, .gd-swal-label, label, small, .help, .hint{
+  color: var(--muted) !important;
+}
+::placeholder{
+  color: color-mix(in srgb, var(--muted) 70%, transparent) !important;
+  opacity: 1 !important;
+}
+
 /* Tarjetas/paneles */
 .card, .panel, .box, .modal-card, .wrap, .tile{
   border-radius: var(--radius) !important;
@@ -150,6 +177,14 @@ html.light .card, html.light .panel, html.light .box, html.light .modal-card, ht
   box-shadow: 0 12px 22px rgba(11,27,43,.16);
 }
 
+/* Usar el ancho disponible (evita vistas “centradas/pegadas”) */
+.wrap{
+  max-width: none !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
 /* Tablas */
 table{
   border-radius: 12px;
@@ -163,6 +198,10 @@ th{
     ) !important;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
 }
+
+/* Labels + muted siempre legibles */
+.muted{ color: var(--muted) !important; }
+.label{ opacity: 1 !important; color: var(--muted) !important; }
 
 /* =========================
    MENU glow hover (sidebar)

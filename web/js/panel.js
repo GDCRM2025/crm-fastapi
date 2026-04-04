@@ -566,10 +566,12 @@ function initThemeToggle() {
   if (!tgl) return;
   const p = getPrefs();
   const mode = p.theme || getTheme();
-  tgl.checked = mode === "light";
+  // UI: ☀️ (izq) → 🌙 (der). El knob se mueve a la derecha cuando está "checked",
+  // por lo que checked = NOCHE (dark).
+  tgl.checked = mode === "dark";
   setTheme(mode);
   tgl.addEventListener("change", () => {
-    const m = tgl.checked ? "light" : "dark";
+    const m = tgl.checked ? "dark" : "light";
     setTheme(m);
   });
   qs("#mainFrame").addEventListener("load", () => {

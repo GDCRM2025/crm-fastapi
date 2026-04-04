@@ -410,21 +410,150 @@ def create_evento(body: EventoIn, me=Depends(get_current_user)):
     _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
     with get_connection() as conn:
         _ensure_tables(conn)
-        conn.execute(
+        payload = body.dict()
+
+        # Upsert por id_lead (si ya está registrado, actualiza el último evento del lead).
+        id_evento = None
+        if payload.get("id_lead"):
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id_evento
+                    FROM fin_eventos
+                    WHERE id_lead=:id
+                    ORDER BY id_evento DESC
+                    LIMIT 1
+                    """
+                ),
+                {"id": int(payload["id_lead"])},
+            ).mappings().first()
+            if row:
+                id_evento = int(row["id_evento"])
+
+        if id_evento:
+            conn.execute(
+                text(
+                    """
+                    UPDATE fin_eventos
+                    SET num_cotizacion=:num_cotizacion,
+                        id_cotizacion=:id_cotizacion,
+                        cliente=:cliente,
+                        comuna=:comuna,
+                        marca=:marca,
+                        tipo_cliente=:tipo_cliente,
+                        fecha_evento=:fecha_evento,
+                        monto_bruto=:monto_bruto,
+                        monto_neto=:monto_neto,
+                        iva=:iva,
+                        traslado=:traslado,
+                        comision_pct=:comision_pct,
+                        comision_monto=:comision_monto
+                    WHERE id_evento=:id_evento
+                    """
+                ),
+                {**payload, "id_evento": id_evento},
+            )
+        else:
+            # Canon: abono/saldo se derivan de fin_pagos.
+            abono_inicial = float(payload.get("abono") or 0)
+            payload["abono"] = 0
+            payload["saldo"] = float(payload.get("monto_bruto") or 0)
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO fin_eventos
+                    (id_lead, num_cotizacion, id_cotizacion, cliente, comuna, marca, tipo_cliente, fecha_evento, monto_bruto, monto_neto, iva,
+                     traslado, abono, saldo, comision_pct, comision_monto)
+                    VALUES
+                    (:id_lead, :num_cotizacion, :id_cotizacion, :cliente, :comuna, :marca, :tipo_cliente, :fecha_evento, :monto_bruto, :monto_neto, :iva,
+                     :traslado, :abono, :saldo, :comision_pct, :comision_monto)
+                    RETURNING id_evento
+                    """
+                ),
+                payload,
+            ).fetchone()
+            id_evento = int(row[0]) if row else None
+
+            # Si el UI mandó "abono" al registrar el evento, lo guardamos como pago inicial.
+            if id_evento and abono_inicial and abono_inicial > 0:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO fin_pagos(id_evento, fecha, monto, metodo, referencia, doc_num)
+                        VALUES (:id, now(), :m, 'ABONO INICIAL', 'Registro evento', NULL)
+                        """
+                    ),
+                    {"id": id_evento, "m": abono_inicial},
+                )
+
+        # Recalcular abono/saldo desde pagos (para que el saldo sea real siempre).
+        if id_evento:
+            # Backward-compat: si había `abono` legacy en fin_eventos pero aún no existen pagos,
+            # lo migramos 1 vez a fin_pagos para que el saldo no se “reseteé” a 0.
+            try:
+                n_pagos = conn.execute(
+                    text("SELECT COUNT(*) FROM fin_pagos WHERE id_evento=:id"),
+                    {"id": id_evento},
+                ).scalar()
+                if int(n_pagos or 0) == 0:
+                    legacy = conn.execute(
+                        text("SELECT COALESCE(abono,0) AS abono FROM fin_eventos WHERE id_evento=:id"),
+                        {"id": id_evento},
+                    ).mappings().first()
+                    legacy_ab = float((legacy or {}).get("abono") or 0)
+                    if legacy_ab > 0:
+                        conn.execute(
+                            text(
+                                """
+                                INSERT INTO fin_pagos(id_evento, fecha, monto, metodo, referencia, doc_num)
+                                VALUES (:id, now(), :m, 'MIGRADO', 'Migración abono legacy', NULL)
+                                """
+                            ),
+                            {"id": id_evento, "m": legacy_ab},
+                        )
+            except Exception:
+                # no bloquear creación por migración
+                pass
+            total = conn.execute(
+                text("SELECT COALESCE(SUM(monto),0) FROM fin_pagos WHERE id_evento=:id"),
+                {"id": id_evento},
+            ).scalar()
+            conn.execute(
+                text(
+                    """
+                    UPDATE fin_eventos
+                    SET abono=:ab, saldo=COALESCE(monto_bruto,0) - :ab
+                    WHERE id_evento=:id
+                    """
+                ),
+                {"ab": total, "id": id_evento},
+            )
+        conn.commit()
+    return {"ok": True, "id_evento": id_evento}
+
+
+@router.get("/eventos/by_lead")
+def get_evento_by_lead(
+    id_lead: int = Query(..., ge=1),
+    me=Depends(get_current_user),
+):
+    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        row = conn.execute(
             text(
                 """
-                INSERT INTO fin_eventos
-                (id_lead, num_cotizacion, id_cotizacion, cliente, comuna, marca, tipo_cliente, fecha_evento, monto_bruto, monto_neto, iva,
-                 traslado, abono, saldo, comision_pct, comision_monto)
-                VALUES
-                (:id_lead, :num_cotizacion, :id_cotizacion, :cliente, :comuna, :marca, :tipo_cliente, :fecha_evento, :monto_bruto, :monto_neto, :iva,
-                 :traslado, :abono, :saldo, :comision_pct, :comision_monto)
+                SELECT id_evento, id_lead, num_cotizacion, id_cotizacion, cliente, comuna, marca, tipo_cliente, fecha_evento,
+                       monto_bruto, monto_neto, iva, traslado, abono, saldo, comision_pct, comision_monto, created_at
+                FROM fin_eventos
+                WHERE id_lead=:id
+                ORDER BY id_evento DESC
+                LIMIT 1
                 """
             ),
-            body.dict(),
-        )
-        conn.commit()
-    return {"ok": True}
+            {"id": int(id_lead)},
+        ).mappings().first()
+    return {"ok": True, "item": dict(row) if row else None}
 
 
 @router.get("/eventos")

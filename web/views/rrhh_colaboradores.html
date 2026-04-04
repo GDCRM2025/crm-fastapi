@@ -430,13 +430,21 @@
     }
 
     let ROLES = [
+      "SUPERADMIN",
       "ADMIN",
       "EJECUTIVO DE VENTAS",
       "JEFE DE OPERACIONES",
+      "OPERACIONES",
+      "FINANZAS",
+      "RRHH",
       "BODEGUERO",
       "COMPRAS",
+      "CONDUCTOR",
       "CONDUCTOR (CHOP)",
+      "CHOFER",
+      "CHOP",
       "OPERADOR",
+      "OPERADOR DE PATIO",
       "MICE",
     ];
     let AFP_LIST = [];
@@ -470,16 +478,33 @@
         if (r.ok){
           const data = await r.json();
           const items = data.items || data || [];
-          const fromDb = items.map(x => (x.nombre || x.rol || x.role || "")).filter(Boolean);
-          if (fromDb.length) ROLES = fromDb;
+          const fromDb = items.map(x => (x.nombre || x.rol || x.role || x.name || "")).filter(Boolean);
+          if (fromDb.length){
+            // Normaliza y dedup (mantén orden original)
+            const seen = new Set();
+            ROLES = fromDb.map(s => String(s).trim()).filter(Boolean).filter(s => {
+              const k = s.toUpperCase();
+              if (seen.has(k)) return false;
+              seen.add(k);
+              return true;
+            });
+          }
         }
       }catch(_){ }
-      const sel = qs("#stRol");
-      if (sel){
+      const fill = (selId, placeholder) => {
+        const sel = qs(selId);
+        if (!sel) return;
         const current = sel.value;
-        sel.innerHTML = `<option value="">Rol (obligatorio)</option>` + ROLES.map(r => `<option>${r}</option>`).join("");
-        if (current) sel.value = current;
-      }
+        sel.innerHTML = `<option value="">${placeholder}</option>` + ROLES.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
+        if (current){
+          // re-selecciona si existe (match exact o por upper)
+          const want = String(current || "").trim();
+          const opt = Array.from(sel.options || []).find(o => o.value === want) || Array.from(sel.options || []).find(o => (o.value || "").toUpperCase() === want.toUpperCase());
+          if (opt) sel.value = opt.value;
+        }
+      };
+      fill("#stRol", "Rol (obligatorio)");
+      fill("#uRol", "Rol");
     }
     async function loadAfp(){
       try{
@@ -841,7 +866,7 @@
           <td>
             <button class="btn" data-edit="${i.id_staff}">Editar</button>
             <button class="btn" data-ficha="${i.id_staff}">Ficha PDF</button>
-            <button class="btn" data-user="${i.id_staff}">Usuario CRM</button>
+            <button class="btn" data-user="${i.id_staff}" title="${i.id_usuario ? `Vinculado (usuario #${i.id_usuario})` : "Crear o vincular usuario"}">${i.id_usuario ? "Usuario CRM ✓" : "Usuario CRM"}</button>
             <button class="btn" data-del="${i.id_staff}">Eliminar</button>
           </td>
         </tr>
@@ -875,6 +900,12 @@
       qs("#rowsStaff").querySelectorAll("[data-user]").forEach(b => {
         const id = Number(b.dataset.user || 0);
         const item = items.find(x => Number(x.id_staff) === id);
+        const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
+        if (item?.id_usuario && !isSuper){
+          b.disabled = true;
+          b.title = `Ya vinculado (usuario #${item.id_usuario}). Solo SuperAdmin puede cambiarlo.`;
+          return;
+        }
         b.addEventListener("click", () => openUserModal(item));
       });
     }
@@ -909,6 +940,56 @@
       const at = e.indexOf("@");
       return (at > 0 ? e.slice(0, at) : e).replace(/[^a-z0-9._-]/g,"").slice(0, 40);
     }
+
+    function normAscii(s){
+      return String(s||"")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+    }
+    function slugNameCore(nombre){
+      const parts = normAscii(nombre).toLowerCase().trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return "";
+      const first = parts[0] || "";
+      const last = (parts.length > 1 ? parts[parts.length - 1] : "");
+      const last4 = last.slice(0, 4);
+      const core = (first + last4).replace(/[^a-z0-9]/g, "");
+      return core.slice(0, 24);
+    }
+    function rolePrefix(role){
+      const r = String(role||"").toUpperCase();
+      if (r.includes("EJECUTIVO") || r.includes("VENTAS")) return "ejv_";
+      if (r.includes("COMPRAS")) return "compras_";
+      if (r.includes("BODEG")) return "bodega_";
+      if (r.includes("OPERADOR")) return "op_";
+      if (r.includes("CONDUCTOR") || r.includes("CHOFER") || r.includes("CHOP")) return "chop_";
+      if (r.includes("OPERACIONES")) return "ops_";
+      if (r.includes("MICE")) return "mice_";
+      if (r.includes("FINAN")) return "fin_";
+      if (r.includes("RRHH")) return "rrhh_";
+      if (r.includes("SUPERADMIN")) return "sa_";
+      if (r.includes("ADMIN")) return "admin_";
+      return "";
+    }
+    function suggestUsername(role, nombre, email){
+      const pref = rolePrefix(role);
+      const core = slugNameCore(nombre);
+      const fromName = (pref + core).replace(/_+$/,"");
+      const fromEmail = guessUsername(email);
+      // Preferimos patrón por rol+nombre; fallback email.
+      const out = (fromName && fromName.length >= 4) ? fromName : fromEmail;
+      return String(out || "").slice(0, 40);
+    }
+
+    let USERNAME_AUTO = true;
+    function refreshUsernameSuggestion(){
+      if (!USERNAME_AUTO) return;
+      const nombre = (qs("#uNombre")?.value || "").trim();
+      const email = (qs("#uEmail")?.value || "").trim();
+      const rol = (qs("#uRol")?.value || "").trim();
+      const u = qs("#uUsername");
+      if (!u) return;
+      u.value = suggestUsername(rol, nombre, email) || "";
+    }
     async function openUserModal(staffItem){
       if (!staffItem || !staffItem.id_staff){
         toast("Selecciona un colaborador");
@@ -920,8 +1001,17 @@
       USER_LINK_CURRENT_USER_ID = Number(staffItem.id_usuario || 0) || null;
       qs("#uNombre").value = nombre || "";
       qs("#uEmail").value = email || "";
-      qs("#uUsername").value = guessUsername(email) || "";
-      qs("#uRol").value = String(staffItem.rol || "OPERADOR").toUpperCase() || "OPERADOR";
+      USERNAME_AUTO = true;
+      // Rol: intenta match con opciones cargadas
+      const desiredRole = String(staffItem.rol || "OPERADOR").trim();
+      const roleSel = qs("#uRol");
+      if (roleSel){
+        const opt = Array.from(roleSel.options || []).find(o => o.value === desiredRole)
+          || Array.from(roleSel.options || []).find(o => (o.value || "").toUpperCase() === desiredRole.toUpperCase());
+        if (opt) roleSel.value = opt.value;
+        else roleSel.value = desiredRole.toUpperCase();
+      }
+      refreshUsernameSuggestion();
       qs("#uPass").value = "";
       qs("#userHint").textContent = `Colaborador: ${nombre || ("#"+staffItem.id_staff)} · Puedes vincular un usuario existente o crear uno nuevo.`;
       // selector marcas solo para SUPERADMIN
@@ -946,6 +1036,17 @@
       await loadUserCandidates();
     }
     qs("#btnGenPass").addEventListener("click", ()=>{ qs("#uPass").value = genPass(); });
+    // Auto-username: si el usuario edita manualmente, no seguimos autogenerando
+    (function wireUsernameAuto(){
+      const u = qs("#uUsername");
+      if (u){
+        u.addEventListener("input", ()=>{ USERNAME_AUTO = false; });
+      }
+      const touch = () => refreshUsernameSuggestion();
+      qs("#uNombre")?.addEventListener("input", touch);
+      qs("#uEmail")?.addEventListener("input", touch);
+      qs("#uRol")?.addEventListener("change", touch);
+    })();
     qs("#btnCreateUser").addEventListener("click", async ()=>{
       const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
       const selectedMarcas = (() => {
