@@ -11,22 +11,12 @@
   <script src="../js/iframe-theme.js"></script>
   <style>
     html,body{height:100%;margin:0;}
-    body{background:transparent;padding:14px;overflow:auto;}
-    /* Reportes debe verse GD (verde) independiente del theme global (si el panel está en modo claro). */
-    :root, :root.light{
-      color-scheme: dark;
-      --accent: #5B974E;
-      --text: #EAF2FF;
-    }
+    body{background:transparent;padding:18px;overflow:auto;}
+    /* Reportes usa tema global (XP). Solo mantenemos acento GD para gráficos. */
+    :root{ --accent: #5B974E; }
 
-    .wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .rwrap{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
     .head{
-      border:1px solid rgba(148,163,184,.18);
-      background: rgba(2,6,23,.32);
-      backdrop-filter: blur(10px);
-      border-radius:18px;
-      padding:12px;
-      box-shadow: 0 22px 70px rgba(0,0,0,.25);
       display:flex;
       align-items:flex-start;
       justify-content:space-between;
@@ -38,9 +28,6 @@
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
     .inp,.sel{
       height:36px;border-radius:999px;
-      border:1px solid rgba(148,163,184,.18);
-      background: rgba(2,6,23,.18);
-      color: var(--text);
       padding:0 12px;
       font-weight:900;
       outline:none;
@@ -48,9 +35,6 @@
     .sel{ padding-right: 34px; }
     .btn{
       height:36px;border-radius:999px;
-      border:1px solid rgba(148,163,184,.20);
-      background: rgba(2,6,23,.18);
-      color: var(--text);
       padding:0 14px;
       font-weight:1000;
       cursor:pointer;
@@ -64,12 +48,6 @@
     @media (max-width: 900px){ .grid{grid-template-columns:1fr;} }
 
     .card{
-      border:1px solid rgba(148,163,184,.18);
-      background: rgba(2,6,23,.32);
-      backdrop-filter: blur(10px);
-      border-radius:18px;
-      padding:12px;
-      box-shadow: 0 22px 70px rgba(0,0,0,.18);
       min-height:0;
     }
     .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
@@ -79,9 +57,7 @@
     @media (max-width:1200px){ .kpis{grid-template-columns:repeat(3, minmax(0,1fr));} }
     @media (max-width:900px){ .kpis{grid-template-columns:1fr;} }
     .kpi{
-      border:1px solid rgba(148,163,184,.16);
       border-radius:16px;
-      background: rgba(2,6,23,.16);
       padding:12px;
       cursor:pointer;
     }
@@ -90,8 +66,8 @@
     .kpi .s{font-weight:850; font-size:12px; opacity:.70; margin-top:6px;}
 
     .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
-    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:sticky; top:0; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
-    .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
+    .tbl th{opacity:.78; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid color-mix(in srgb, var(--border) 55%, transparent); position:sticky; top:0; background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 92%, transparent), color-mix(in srgb, var(--surface-2) 72%, transparent)); z-index:2;}
+    .tbl td{padding:8px 10px; border-bottom:1px solid color-mix(in srgb, var(--border) 40%, transparent); vertical-align:top;}
     .right{text-align:right;}
     .rowlink{cursor:pointer;}
     .rowlink:hover{background: rgba(255,255,255,.04);}
@@ -122,9 +98,8 @@
       gap:8px;
       padding:0 12px;
       border-radius:999px;
-      background: rgba(2,6,23,.18);
-      border: 1px solid rgba(148,163,184,.22);
-      color: var(--text);
+      background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+      border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
       cursor:pointer;
       font-size:12px;
       font-weight:1000;
@@ -145,9 +120,9 @@
 
     .chartBox{
       margin-top:10px;
-      border:1px solid rgba(148,163,184,.16);
+      border:1px solid color-mix(in srgb, var(--border) 45%, transparent);
       border-radius:16px;
-      background: rgba(2,6,23,.16);
+      background: color-mix(in srgb, var(--surface) 70%, transparent);
       padding:10px;
       overflow:hidden;
     }
@@ -161,8 +136,8 @@
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <section class="head">
+  <div class="rwrap">
+    <section class="card head">
       <div>
         <div class="ttl">Reportes</div>
         <div class="sub">Funnel + cierre + ventas + top productos/comunas/clientes + finanzas. Todo sale del backend: `/tools/dashboard` y `/tools/dashboard/reportes`.</div>

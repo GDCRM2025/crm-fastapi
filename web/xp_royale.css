@@ -177,6 +177,11 @@ html.light .card, html.light .panel, html.light .box, html.light .modal-card, ht
   box-shadow: 0 12px 22px rgba(11,27,43,.16);
 }
 
+/* Padding base (evita contenido pegado a los bordes en vistas legacy) */
+.card, .panel, .box, .modal-card{
+  padding: 14px !important;
+}
+
 /* Usar el ancho disponible (evita vistas “centradas/pegadas”) */
 .wrap{
   max-width: none !important;
