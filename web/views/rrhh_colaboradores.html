@@ -464,12 +464,26 @@
       }catch(_){}
     }
     async function loadMarcas(){
+      async function tryGetFirstJSON(paths){
+        for (const p of (paths || [])){
+          try{
+            const r = await fetch(apiURL(p), { headers: headers() });
+            if (!r.ok) continue;
+            const j = await r.json().catch(()=>null);
+            if (j) return j;
+          }catch(_){}
+        }
+        return null;
+      }
       try{
-        const r = await fetch(apiURL("/catalogos/marcas?limit=200"), { headers: headers() });
-        if (!r.ok) return;
-        const data = await r.json();
-        MARCAS = (data.items || data || []).map(x => ({ id_marca: x.id_marca, nombre: x.nombre || x.marca || "" })).filter(x => x.id_marca && x.nombre);
-      }catch(_){}
+        // Nota: el backend expone marcas dentro de /catalogos (no existe /catalogos/marcas).
+        const data = await tryGetFirstJSON(["/catalogos", "/leads/catalogos", "/cotizador/catalogos"]);
+        const marcas = data?.marcas || data?.items || data || [];
+        MARCAS = (Array.isArray(marcas) ? marcas : []).map(x => ({
+          id_marca: x.id_marca,
+          nombre: x.nombre || x.marca || "",
+        })).filter(x => x.id_marca && x.nombre);
+      }catch(_){ MARCAS = []; }
     }
 
     async function loadRoles(){
