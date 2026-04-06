@@ -168,7 +168,7 @@
           return "";
         }
       })();
-      const FRAME_V = "20260406-1";
+      const FRAME_V = "20260406-2";
 
       function getToken(){
         return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
@@ -186,7 +186,9 @@
       }
       function hasOperacionAccess(role){
         const r = String(role || "").toUpperCase();
-        return r.includes("OPERACIONES") || r.includes("OPERACION") || r.includes("OPERADOR") || r.includes("CONDUCTOR") || r.includes("CHOFER");
+        return r.includes("SUPERADMIN") || r === "ADMIN"
+          || r.includes("OPERACIONES") || r.includes("OPERACION")
+          || r.includes("OPERADOR") || r.includes("CONDUCTOR") || r.includes("CHOFER");
       }
       async function apiJSON(path){
         const r = await fetch(`${API_BASE}${path}`, { headers: authHeaders({ "Accept":"application/json" }) });
@@ -228,11 +230,29 @@
           const standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
           if(standalone && installHint) installHint.classList.add("hide");
         }catch(_){}
+        const u = new URL(location.href);
+        const deepTab = String(u.searchParams.get("tab") || "").trim().toLowerCase();
+        const deepLead = String(u.searchParams.get("lead") || "").trim();
+
         // Chat debe abrirse en modo completo (sin embed) para ver lista de chats/usuarios.
-        setFrame(`${API_BASE}/web/views/chat.html?v=${encodeURIComponent(FRAME_V)}`);
-        tabChat.onclick = () => { setTab("chat"); setFrame(`${API_BASE}/web/views/chat.html?v=${encodeURIComponent(FRAME_V)}`); };
-        tabNotifs.onclick = () => { setTab("notifs"); setFrame(`${API_BASE}/web/views/system_notifs.html?v=${encodeURIComponent(FRAME_V)}`); };
-        tabOp.onclick = () => { setTab("op"); setFrame(`${API_BASE}/web/views/operadores.html?v=${encodeURIComponent(FRAME_V)}`); };
+        const urlChat = `${API_BASE}/web/views/chat.html?v=${encodeURIComponent(FRAME_V)}`;
+        const urlNotifs = `${API_BASE}/web/views/system_notifs.html?v=${encodeURIComponent(FRAME_V)}`;
+        const urlOp = `${API_BASE}/web/views/staff_ops.html?v=${encodeURIComponent(FRAME_V)}${deepLead ? `&lead=${encodeURIComponent(deepLead)}` : ""}`;
+
+        const openTab = (t)=>{
+          if (t === "op"){
+            setTab("op"); setFrame(urlOp);
+          } else if (t === "notifs"){
+            setTab("notifs"); setFrame(urlNotifs);
+          } else {
+            setTab("chat"); setFrame(urlChat);
+          }
+        };
+
+        openTab(deepTab);
+        tabChat.onclick = () => openTab("chat");
+        tabNotifs.onclick = () => openTab("notifs");
+        tabOp.onclick = () => openTab("op");
 
         logoutBtn.onclick = async () => {
           try{

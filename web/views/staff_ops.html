@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>GD · Eventos (postulación)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <style>
+      :root{
+        --bg:#F6F8FB;
+        --surface:#ffffff;
+        --border:rgba(15,23,42,.12);
+        --text:#0F172A;
+        --muted:rgba(15,23,42,.68);
+        --brand:#19c37d;
+        --brandDark:#0f8a57;
+        --danger:#ef4444;
+        --warn:#f59e0b;
+      }
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+        background:var(--bg);
+        color:var(--text);
+      }
+      .wrap{padding:14px 14px 24px 14px}
+      .top{
+        display:flex; align-items:center; justify-content:space-between; gap:10px;
+        padding:12px 12px;
+        border:1px solid var(--border);
+        border-radius:16px;
+        background:var(--surface);
+        box-shadow: 0 8px 24px rgba(15,23,42,.06);
+      }
+      .h1{font-weight:1000; letter-spacing:.2px}
+      .sub{font-size:12px; color:var(--muted); margin-top:2px}
+      .btn{
+        border:1px solid var(--border);
+        background:var(--surface);
+        border-radius:12px;
+        padding:9px 10px;
+        font-weight:900;
+        color:var(--text);
+        cursor:pointer;
+      }
+      .btn.primary{
+        background: rgba(25,195,125,.12);
+        border-color: rgba(25,195,125,.28);
+        color: var(--brandDark);
+      }
+      .btn.danger{
+        background: rgba(239,68,68,.10);
+        border-color: rgba(239,68,68,.22);
+        color: #991b1b;
+      }
+      .btn.warn{
+        background: rgba(245,158,11,.12);
+        border-color: rgba(245,158,11,.22);
+        color: #92400e;
+      }
+      .grid{display:grid; gap:12px; margin-top:12px}
+      .day{
+        border:1px solid var(--border);
+        border-radius:18px;
+        background:var(--surface);
+        padding:12px;
+      }
+      .dayTitle{display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:10px}
+      .dayTitle b{font-weight:1000}
+      .dayTitle span{font-size:12px; color:var(--muted)}
+      .ev{
+        border:1px solid var(--border);
+        border-radius:16px;
+        padding:12px;
+        background: linear-gradient(180deg, rgba(25,195,125,.06), transparent 46%);
+        display:grid;
+        gap:8px;
+        margin-top:10px;
+      }
+      .evRow{display:flex; align-items:flex-start; justify-content:space-between; gap:10px}
+      .evTitle{font-weight:1000; line-height:1.05}
+      .evMeta{font-size:12px; color:var(--muted); margin-top:2px}
+      .pill{
+        display:inline-flex; align-items:center; gap:6px;
+        border:1px solid var(--border);
+        background: rgba(2,6,23,.04);
+        padding:6px 8px;
+        border-radius:999px;
+        font-weight:900;
+        font-size:12px;
+        color: rgba(15,23,42,.86);
+        white-space:nowrap;
+      }
+      .pill.bad{ border-color: rgba(239,68,68,.25); background: rgba(239,68,68,.08); color:#7f1d1d; }
+      .pill.good{ border-color: rgba(25,195,125,.30); background: rgba(25,195,125,.12); color: var(--brandDark); }
+      .actions{display:flex; gap:8px; flex-wrap:wrap}
+      details{border:1px dashed rgba(15,23,42,.18); border-radius:14px; padding:8px 10px; background: rgba(2,6,23,.02)}
+      summary{cursor:pointer; font-weight:1000; color: rgba(15,23,42,.88)}
+      .list{margin-top:8px; display:grid; gap:6px}
+      .chk{display:flex; align-items:center; gap:8px; font-size:13px}
+      .muted{color:var(--muted); font-size:12px}
+      .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+      .toast{
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: calc(14px + env(safe-area-inset-bottom));
+        background: rgba(15,23,42,.92);
+        color: #fff;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,.12);
+        box-shadow: 0 12px 40px rgba(0,0,0,.25);
+        font-weight: 900;
+        font-size: 12px;
+        opacity: 0;
+        pointer-events:none;
+        transition: opacity .18s ease, transform .18s ease;
+        z-index: 100;
+      }
+      .toast.show{opacity:1; transform: translateX(-50%) translateY(-6px);}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="top">
+        <div>
+          <div class="h1">Eventos de la semana</div>
+          <div class="sub" id="weekLine">Cargando…</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="btn" id="prevBtn">←</button>
+          <button class="btn" id="nextBtn">→</button>
+          <button class="btn primary" id="reloadBtn">Actualizar</button>
+        </div>
+      </div>
+
+      <div class="grid" id="days"></div>
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <script>
+      const API_BASE = (() => {
+        try {
+          const h = String(location.hostname || "").toLowerCase();
+          const isLocal = h === "localhost" || h === "127.0.0.1";
+          return isLocal ? "" : "/crm";
+        } catch (_) {
+          return "";
+        }
+      })();
+
+      function getToken(){
+        return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+      }
+      function authHeaders(extra={}){
+        const t = getToken();
+        return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+      }
+      async function apiJSON(path, opts={}){
+        const r = await fetch(`${API_BASE}${path}`, { ...opts, headers: authHeaders({ "Accept":"application/json", ...(opts.headers||{}) }) });
+        let j = null;
+        try{ j = await r.json(); }catch(_){ j = null; }
+        if(!r.ok){
+          const msg = (j && j.detail) ? String(j.detail) : `HTTP ${r.status}`;
+          throw new Error(msg);
+        }
+        return j;
+      }
+
+      const qs = (s)=>document.querySelector(s);
+      const elDays = qs("#days");
+      const weekLine = qs("#weekLine");
+      const toastEl = qs("#toast");
+      const prevBtn = qs("#prevBtn");
+      const nextBtn = qs("#nextBtn");
+      const reloadBtn = qs("#reloadBtn");
+      let weekOffset = 0;
+
+      function toast(msg){
+        try{
+          toastEl.textContent = String(msg || "");
+          toastEl.classList.add("show");
+          clearTimeout(toastEl._t);
+          toastEl._t = setTimeout(()=>toastEl.classList.remove("show"), 1600);
+        }catch(_){}
+      }
+
+      function fmtDayHeader(iso){
+        try{
+          const d = new Date(String(iso).slice(0,10) + "T00:00:00");
+          return d.toLocaleDateString("es-CL",{weekday:"long", day:"2-digit", month:"2-digit"});
+        }catch(_){ return String(iso||"").slice(0,10); }
+      }
+      function fmtTime(iso){
+        if(!iso) return "—";
+        try{
+          const d = new Date(iso);
+          if (isNaN(d.getTime())) return "—";
+          return d.toLocaleTimeString("es-CL",{hour:"2-digit", minute:"2-digit"});
+        }catch(_){ return "—"; }
+      }
+
+      function groupByDay(events){
+        const by = {};
+        for (const e of (events||[])){
+          const d = String(e.fecha_evento || "").slice(0,10) || (String(e.start_at||"").slice(0,10));
+          if(!d) continue;
+          (by[d] ||= []).push(e);
+        }
+        const days = Object.keys(by).sort();
+        return days.map(d => ({ day:d, events: by[d] }));
+      }
+
+      function pillCounts(e){
+        const need = Number(e.ops_required||1);
+        const conf = Number(e.confirmed_count||0);
+        const asg = Number(e.assigned_count||0);
+        const ok = conf >= need;
+        const label = `OPS: ${conf}/${need}` + (asg ? ` (+${asg} pend.)` : "");
+        return `<span class="pill ${ok?"good":"bad"}">${label}</span>`;
+      }
+
+      function renderEvent(e, adminExtra){
+        const lid = Number(e.id_lead||0);
+        const title = String(e.title||"Lead").trim();
+        const meta = `${String(e.marca||"").trim()} · ${String(e.comuna||"").trim()} · ${fmtTime(e.start_at)}–${fmtTime(e.end_at)}`;
+        const need = Number(e.ops_required||1);
+        const conf = Number(e.confirmed_count||0);
+        const asg = Number(e.assigned_count||0);
+        const iSigned = !!e.i_signed_up;
+        const mySt = String(e.my_assignment_status||"").toUpperCase();
+        const needsConfirm = (mySt === "ASSIGNED");
+
+        let right = pillCounts(e);
+        if (needsConfirm) right += ` <span class="pill warn">Confirmación pendiente</span>`;
+
+        const btnSignup = iSigned
+          ? `<button class="btn danger" data-act="unsign" data-lead="${lid}">Quitar</button>`
+          : `<button class="btn primary" data-act="sign" data-lead="${lid}">Postular</button>`;
+
+        const btnConfirm = needsConfirm
+          ? `<button class="btn primary" data-act="confirm" data-lead="${lid}">Confirmar</button>
+             <button class="btn danger" data-act="decline" data-lead="${lid}">Rechazar</button>`
+          : ``;
+
+        let adminBlock = "";
+        if (adminExtra && adminExtra.isSuper){
+          const signups = Array.isArray(adminExtra.signups) ? adminExtra.signups : [];
+          const asgs = Array.isArray(adminExtra.assignments) ? adminExtra.assignments : [];
+          const signHtml = signups.length ? signups.map(s=>{
+            const uid = Number(s.id_usuario||0);
+            const disp = String(s.display||uid);
+            return `<label class="chk"><input type="checkbox" data-assign-lead="${lid}" value="${uid}"/> ${escapeHtml(disp)} <span class="muted">${escapeHtml(String(s.staff_role||\"\"))}</span></label>`;
+          }).join("") : `<div class="muted">Sin postulaciones.</div>`;
+          const asgHtml = asgs.length ? asgs.map(a=>{
+            const disp = String(a.display||a.id_usuario);
+            const st = String(a.status||"").toUpperCase();
+            return `<div class="muted">• ${escapeHtml(disp)} — <b>${escapeHtml(st)}</b></div>`;
+          }).join("") : `<div class="muted">Sin asignaciones.</div>`;
+          adminBlock = `
+            <details>
+              <summary>Admin: postulaciones/asignaciones</summary>
+              <div class="list">${signHtml}</div>
+              <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn primary" data-act="assign" data-lead="${lid}">Asignar seleccionados</button>
+                <span class="muted">Necesarios: <b>${need}</b> · Confirmados: <b>${conf}</b></span>
+              </div>
+              <div style="margin-top:10px">${asgHtml}</div>
+            </details>
+          `;
+        }
+
+        return `
+          <div class="ev" id="lead_${lid}">
+            <div class="evRow">
+              <div style="min-width:0">
+                <div class="evTitle">${escapeHtml(title)}</div>
+                <div class="evMeta">${escapeHtml(meta)}</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${right}</div>
+            </div>
+            <div class="actions">
+              ${btnSignup}
+              ${btnConfirm}
+              <button class="btn" data-act="openLead" data-lead="${lid}">Abrir Lead</button>
+            </div>
+            ${adminBlock}
+          </div>
+        `;
+      }
+
+      function escapeHtml(s){
+        return String(s||"").replace(/[&<>\"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]||c));
+      }
+
+      async function load(){
+        elDays.innerHTML = `<div class="muted">Cargando…</div>`;
+        let base = null;
+        try{
+          base = await apiJSON(`/staffing/week?week_offset=${encodeURIComponent(String(weekOffset))}`);
+        }catch(err){
+          elDays.innerHTML = `<div class="muted">Error: ${escapeHtml(err.message||err)}</div>`;
+          return;
+        }
+        const wk = base && base.week ? base.week : {};
+        weekLine.textContent = `Semana: ${String(wk.start||"").slice(0,10)} → ${String(wk.end||"").slice(0,10)}`;
+        const me = base && base.me ? base.me : {};
+        const isSuper = String(me.role||"").toUpperCase().includes("SUPERADMIN");
+
+        let adminMap = {};
+        if (isSuper){
+          try{
+            const adm = await apiJSON(`/staffing/week_admin?week_offset=${encodeURIComponent(String(weekOffset))}`);
+            for (const e of (adm.events||[])){
+              adminMap[Number(e.id_lead||0)] = { signups: e.signups||[], assignments: e.assignments||[] };
+            }
+          }catch(_){}
+        }
+
+        const grouped = groupByDay(base.events||[]);
+        if (!grouped.length){
+          elDays.innerHTML = `<div class="muted">No hay eventos confirmados para esta semana.</div>`;
+          return;
+        }
+        const html = grouped.map(d=>{
+          const evs = d.events || [];
+          const inner = evs.map(e => renderEvent(e, { isSuper, ...(adminMap[Number(e.id_lead||0)]||{}) })).join("");
+          return `
+            <div class="day">
+              <div class="dayTitle">
+                <b>${escapeHtml(fmtDayHeader(d.day))}</b>
+                <span class="mono">${escapeHtml(String(d.day||\"\"))}</span>
+              </div>
+              ${inner}
+            </div>
+          `;
+        }).join("");
+        elDays.innerHTML = html;
+
+        // handlers
+        elDays.querySelectorAll("button[data-act]").forEach(btn=>{
+          btn.addEventListener("click", async ()=>{
+            const act = btn.getAttribute("data-act");
+            const lid = Number(btn.getAttribute("data-lead")||0);
+            if (!lid) return;
+            try{
+              if (act === "sign"){
+                await apiJSON(`/staffing/signup`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id_lead: lid }) });
+                toast("Postulación enviada");
+                await load();
+              } else if (act === "unsign"){
+                await apiJSON(`/staffing/unsignup`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id_lead: lid }) });
+                toast("Postulación quitada");
+                await load();
+              } else if (act === "confirm"){
+                await apiJSON(`/staffing/respond`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id_lead: lid, status:"CONFIRMED" }) });
+                toast("Confirmado");
+                await load();
+              } else if (act === "decline"){
+                await apiJSON(`/staffing/respond`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id_lead: lid, status:"DECLINED" }) });
+                toast("Rechazado");
+                await load();
+              } else if (act === "assign"){
+                const chks = [...elDays.querySelectorAll(`input[type=checkbox][data-assign-lead='${lid}']:checked`)];
+                const ids = chks.map(c=>Number(c.value||0)).filter(Boolean);
+                if(!ids.length){ toast("Selecciona postulaciones"); return; }
+                await apiJSON(`/staffing/assign`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id_lead: lid, user_ids: ids }) });
+                toast("Asignado");
+                await load();
+              } else if (act === "openLead"){
+                // Abrimos el lead en el CRM completo (nueva pestaña)
+                const url = `${API_BASE}/web/views/leads.html#lead=${encodeURIComponent(String(lid))}`;
+                try{ window.open(url, "_blank"); }catch(_){ location.href = url; }
+              }
+            }catch(err){
+              toast(err.message || String(err||"Error"));
+            }
+          });
+        });
+
+        // deep-link highlight
+        try{
+          const u = new URL(location.href);
+          const lead = (u.searchParams.get("lead")||"").trim();
+          if(lead){
+            const el = document.getElementById("lead_" + lead);
+            if(el){
+              el.scrollIntoView({ block:"center", behavior:"smooth" });
+              el.style.boxShadow = "0 0 0 3px rgba(25,195,125,.25), 0 20px 60px rgba(2,6,23,.12)";
+              setTimeout(()=>{ try{ el.style.boxShadow = \"\"; }catch(_){} }, 1800);
+            }
+          }
+        }catch(_){}
+      }
+
+      prevBtn.onclick = ()=>{ weekOffset -= 1; load(); };
+      nextBtn.onclick = ()=>{ weekOffset += 1; load(); };
+      reloadBtn.onclick = ()=>load();
+
+      // init
+      load();
+    </script>
+  </body>
+</html>
+
