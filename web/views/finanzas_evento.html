@@ -462,6 +462,15 @@
     (async () => {
       await loadComisiones();
       await loadLeads();
+      // Deep-link from Tareas: /finanzas_evento.html?lead=<id_lead>
+      try{
+        const sp = new URLSearchParams(location.search || "");
+        const idLead = Number(sp.get("lead") || 0) || 0;
+        if (idLead && $("#leadSelect")){
+          $("#leadSelect").value = String(idLead);
+          $("#leadSelect").dispatchEvent(new Event("change"));
+        }
+      }catch(_){}
       await loadEventos();
     })();
     try{ $("#fFecha").value = new Date().toISOString().slice(0,10); }catch(_){}

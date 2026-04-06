@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
 from backend.routers.auth import get_current_user
 from backend.core.database import engine
-from backend.core.webpush import save_subscription, deactivate_subscription, send_webpush_to_users
+from backend.core.webpush import (
+    save_subscription,
+    deactivate_subscription,
+    send_webpush_to_users,
+    get_vapid_public_key,
+)
 
 
 router = APIRouter(prefix="/push", tags=["push"])
@@ -30,13 +34,11 @@ class PushTestIn(BaseModel):
     url: str | None = None
 
 
-def _vapid_public_key() -> str | None:
-    return os.getenv("CRM_VAPID_PUBLIC_KEY") or os.getenv("VAPID_PUBLIC_KEY") or os.getenv("VAPID_PUBLIC")
-
-
 @router.get("/vapid_public_key")
-def vapid_public_key(_me=Depends(get_current_user)):
-    k = _vapid_public_key()
+def vapid_public_key():
+    # VAPID public key is safe to expose (it's public) and it avoids false errors on Safari
+    # when the session token is missing/expired.
+    k = get_vapid_public_key()
     if not k:
         raise HTTPException(status_code=503, detail="VAPID not configured")
     return {"publicKey": k}

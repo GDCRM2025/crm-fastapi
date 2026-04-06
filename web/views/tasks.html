@@ -234,10 +234,12 @@
       <div class="pill warn" id="pNew">Nuevos: —</div>
       <div class="pill warn" id="pContacted">Contactados: —</div>
       <div class="pill warn" id="pQuoted">Cotizados: —</div>
+      <div class="pill" id="pCobros">Cobros: —</div>
     </div>
 
     <div class="tabs" style="margin-top:2px">
       <button class="tab active" id="tabLeads" type="button">Leads <span class="b" id="bLeads">—</span></button>
+      <button class="tab" id="tabCobros" type="button">Cobros <span class="b" id="bCobros">—</span></button>
     </div>
 
     <section class="card section show" id="secLeads">
@@ -280,6 +282,27 @@
           <table class="tbl">
             <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Evento</th><th>Seguimiento vence</th><th>Acciones</th></tr></thead>
             <tbody id="tbLeadsQuote"></tbody>
+          </table>
+        </details>
+      </div>
+    </section>
+
+    <section class="card section" id="secCobros">
+      <div class="secHead">
+        <div>
+          <div class="secTitle"><span class="mark" style="background:#a855f7; box-shadow:0 0 0 4px rgba(168,85,247,.18)"></span>Cobros pendientes</div>
+          <div class="muted">Eventos confirmados con abono y saldo pendiente. Acción recomendada: “Cobrar” abre Finanzas → Registrar evento/pagos.</div>
+        </div>
+      </div>
+      <div style="max-height:76vh; overflow:auto; display:flex; flex-direction:column; gap:12px; margin-top:10px">
+        <details class="grp" open>
+          <summary>
+            <div class="sumL"><span class="mark" style="background:#a855f7; box-shadow:0 0 0 4px rgba(168,85,247,.18)"></span>Pendientes de cobro</div>
+            <div class="sumR"><span class="pill" id="bCobrosInner">—</span></div>
+          </summary>
+          <table class="tbl">
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Evento</th><th>Saldo</th><th>Acciones</th></tr></thead>
+            <tbody id="tbCobros"></tbody>
           </table>
         </details>
       </div>
@@ -452,12 +475,17 @@
 
     async function sync(){
       const j = await jpost(`/tasks/sync?x=1${qpTarget()}`, {});
+      const leadsCount = Number(j?.counts?.open_nuevos || 0) + Number(j?.counts?.open_contactados || 0) + Number(j?.counts?.open_cotizados || 0);
+      const cobrosCount = Number(j?.counts?.open_cobros || 0);
       qs("#pOpen").textContent = `Abiertas: ${j?.counts?.open_total ?? "—"}`;
       qs("#pOver").textContent = `Vencidas: ${j?.overdue?.overdue_total ?? "—"}`;
       qs("#pNew").textContent = `Nuevos: ${j?.counts?.open_nuevos ?? j?.counts?.open_contactar ?? "—"}`;
       qs("#pContacted").textContent = `Contactados: ${j?.counts?.open_contactados ?? "—"}`;
       qs("#pQuoted").textContent = `Cotizados: ${j?.counts?.open_cotizados ?? "—"}`;
-      qs("#bLeads").textContent = String(j?.counts?.open_total ?? "—");
+      qs("#pCobros").textContent = `Cobros: ${j?.counts?.open_cobros ?? "—"}`;
+      qs("#bLeads").textContent = String(leadsCount || 0);
+      qs("#bCobros").textContent = String(cobrosCount || 0);
+      try{ qs("#bCobrosInner").textContent = String(cobrosCount || 0); }catch(_){}
     }
 
     function prLabel(priority){
@@ -499,13 +527,39 @@
       `;
     }
 
+    const money = new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
+    function trCobro(t){
+      const over = (t.status==="open" && isOverdue(t.due_at));
+      const meta = t.meta || {};
+      const idLead = meta.id_lead || meta.lead_id || "";
+      const saldo = Number(meta.saldo || 0) || 0;
+      const cal = calendarTone(t.lead_fecha_evento);
+      return `
+        <tr data-task="${esc(t.id_task)}" data-lead="${esc(idLead)}" data-kind="${esc(String(t.kind||""))}" data-etype="${esc(t.entity_type||"")}" data-eid="${esc(t.entity_id||"")}">
+          <td><span class="pill ${over ? "bad" : ""}">${esc(prLabel(t.priority))}</span></td>
+          <td><strong>${esc(t.title||t.kind||"—")}</strong><div class="muted">${esc(t.description||"")}</div></td>
+          <td><strong>${esc(t.lead_cliente||"—")}</strong><div class="muted">#${esc(idLead||"—")}</div></td>
+          <td class="muted">${esc(t.lead_marca||"")}</td>
+          <td><span class="pill ${esc(cal.cls)}" title="${esc(cal.title)}">📅 ${esc(fmtDateOnly(t.lead_fecha_evento))}</span></td>
+          <td><span class="pill ${over ? "bad" : ""}">${esc(money.format(saldo))}</span></td>
+          <td>
+            <button class="btn primary" data-act="go">Cobrar</button>
+            <button class="btn" data-act="close">Cerrar</button>
+            <button class="btn danger" data-act="skip">Omitir</button>
+          </td>
+        </tr>
+      `;
+    }
+
     async function load(){
       const st = String(qs("#status")?.value || "open");
       const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0${qpTarget()}`);
       const items = Array.isArray(j.items) ? j.items : [];
-      const leads = items;
-
       const norm = (s)=> String(s||"").trim().toUpperCase();
+      const isCobro = (t)=> norm(t.kind) === "COBRO_PENDIENTE";
+      const cobros = items.filter(isCobro);
+      const leads = items.filter(t => !isCobro(t));
+
       const isNew = (t)=> {
         const k = norm(t.kind);
         return k === "LEAD_NUEVO_SEGUIMIENTO";
@@ -526,6 +580,7 @@
       qs("#bLeadNew").textContent = String(gNew.length);
       qs("#bLeadContact").textContent = String(gContact.length);
       qs("#bLeadQuote").textContent = String(gQuote.length + gOther.length);
+      try{ qs("#bCobrosInner").textContent = String(cobros.length); }catch(_){}
 
       qs("#tbLeadsNew").innerHTML = gNew.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
       qs("#tbLeadsContact").innerHTML = gContact.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
@@ -534,12 +589,30 @@
       if (gOther.length){
         qs("#tbLeadsQuote").innerHTML += gOther.map(trLead).join("");
       }
+
+      qs("#tbCobros").innerHTML = cobros.map(trCobro).join("") || `<tr><td colspan="7" class="muted">Sin cobros pendientes.</td></tr>`;
     }
 
     async function init(){
-      // Solo sección Leads (Calendario/Correos se gestionan fuera).
-      try{ qs("#tabLeads")?.classList?.add?.("active"); }catch(_){}
-      try{ qs("#secLeads")?.classList?.add?.("show"); }catch(_){}
+      function showTab(which){
+        try{
+          qs("#tabLeads")?.classList?.remove?.("active");
+          qs("#tabCobros")?.classList?.remove?.("active");
+          qs("#secLeads")?.classList?.remove?.("show");
+          qs("#secCobros")?.classList?.remove?.("show");
+          if (which === "cobros"){
+            qs("#tabCobros")?.classList?.add?.("active");
+            qs("#secCobros")?.classList?.add?.("show");
+          }else{
+            qs("#tabLeads")?.classList?.add?.("active");
+            qs("#secLeads")?.classList?.add?.("show");
+          }
+        }catch(_){}
+      }
+
+      qs("#tabLeads")?.addEventListener("click", ()=> showTab("leads"));
+      qs("#tabCobros")?.addEventListener("click", ()=> showTab("cobros"));
+      showTab("leads");
 
       // Importante UX: NO abrir el lead por click/doble click en la fila.
       // La acción correcta es el botón "Seguimiento" (inline) para no sacar al ejecutivo de Tareas.
@@ -551,10 +624,16 @@
         const tr = btn.closest("tr");
         const idTask = tr?.getAttribute("data-task");
         const act = String(btn.getAttribute("data-act")||"");
+        const etype = String(tr?.getAttribute("data-etype")||"").toLowerCase();
         if (act === "go"){
           if (!idTask) return;
           const idLead = tr?.getAttribute("data-lead");
           if (!idLead) return;
+          if (etype === "fin_evento"){
+            const url = `/web/views/finanzas_evento.html?lead=${encodeURIComponent(String(idLead))}`;
+            try{ window.parent?.postMessage({ type:"openItem", id:"evt", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+            return;
+          }
           const kind = String(tr?.getAttribute("data-kind")||"").toUpperCase();
           const requireFollowup = new Set([
             "LEAD_NUEVO_SEGUIMIENTO",

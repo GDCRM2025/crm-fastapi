@@ -168,7 +168,7 @@
           return "";
         }
       })();
-      const FRAME_V = "20260401-1";
+      const FRAME_V = "20260406-1";
 
       function getToken(){
         return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
@@ -371,15 +371,30 @@
           // No retornamos: re-sincronizamos contra el backend para marcar push_ok=TRUE.
         }
         let vapidKey = null;
+        let vapidErr = "";
         try{
-          const r = await fetch(`${API_BASE}/push/vapid_public_key`, { headers: authHeaders({ "Accept":"application/json" }) });
+          // VAPID public key is public. We fetch it without auth to avoid false errors if the token expired.
+          const r = await fetch(`${API_BASE}/push/vapid_public_key`, { headers: { "Accept":"application/json" } });
           if(r.ok){
-            const j = await r.json();
+            const j = await r.json().catch(() => null);
             vapidKey = j && j.publicKey;
+          }else{
+            try{
+              const j = await r.json().catch(() => null);
+              vapidErr = (j && j.detail) ? String(j.detail) : `HTTP ${r.status}`;
+            }catch(_){
+              vapidErr = `HTTP ${r.status}`;
+            }
           }
-        }catch(_){}
+        }catch(e){
+          vapidErr = (e && e.message) ? String(e.message) : "network";
+        }
         if(!vapidKey){
-          alert("Push aún no está configurado en el servidor (VAPID).");
+          if(String(vapidErr || "").toLowerCase().includes("network") || String(vapidErr || "").toLowerCase().includes("fetch")){
+            alert("No se pudo conectar al servidor. Revisa tu internet e intenta nuevamente.");
+          }else{
+            alert("Push aún no está configurado en el servidor (VAPID).");
+          }
           return;
         }
         const sub = existing || await reg.pushManager.subscribe({

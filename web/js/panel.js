@@ -1746,7 +1746,7 @@ const MENU = [
     ico: "\u{1F9FE}",
     title: "Tareas",
     items: [
-      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260331-tasks3" },
+      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260406-tasks4" },
       { id: "events_calendar", label: "Eventos (Calendario)", url: "/web/views/events_calendar.html?v=20260330-1" }
     ]
   },

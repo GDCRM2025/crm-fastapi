@@ -1406,6 +1406,62 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
+    # 4b) Insert COBRO PENDIENTE (Finanzas): eventos confirmados con abono y saldo pendiente (2do pago).
+    # Nota: esto NO es una tarea de lead, porque los leads confirmados se ocultan del módulo de tareas.
+    # Usamos entity_type='fin_evento' (fin_eventos.id_evento) para mantenerlo visible.
+    try:
+        if _table_exists(db, "fin_eventos") and _col_exists(db, "fin_eventos", "id_evento") and _col_exists(db, "fin_eventos", "id_lead"):
+            db.execute(
+                text(
+                    f"""
+                    INSERT INTO public.tasks(kind,title,description,entity_type,entity_id,assigned_user_id,assigned_username,due_at,priority,meta)
+                    SELECT
+                      'COBRO_PENDIENTE',
+                      'Cobro pendiente',
+                      CASE
+                        WHEN fe.fecha_evento < {today} THEN 'Cobro atrasado (evento pasado). Saldo pendiente: $' || to_char(COALESCE(fe.saldo,0), 'FM999G999G999G999')
+                        WHEN fe.fecha_evento = {today} THEN 'Cobro pendiente hoy. Saldo pendiente: $' || to_char(COALESCE(fe.saldo,0), 'FM999G999G999G999')
+                        ELSE 'Cobro pendiente. Evento en ' || GREATEST(0, (fe.fecha_evento - {today}))::int || ' día(s). Saldo: $' || to_char(COALESCE(fe.saldo,0), 'FM999G999G999G999')
+                      END,
+                      'fin_evento',
+                      fe.id_evento,
+                      :uid,
+                      :uname,
+                      (fe.fecha_evento::timestamp + INTERVAL '23 hours 59 minutes'),
+                      CASE WHEN fe.fecha_evento <= {today} THEN 6 ELSE 14 END,
+                      jsonb_build_object(
+                        'rule','cobro_pendiente',
+                        'id_lead', fe.id_lead,
+                        'marca', COALESCE(NULLIF(btrim(fe.marca),''), NULL),
+                        'fecha_evento', fe.fecha_evento,
+                        'abono', COALESCE(fe.abono,0),
+                        'saldo', COALESCE(fe.saldo,0)
+                      )
+                    FROM public.fin_eventos fe
+                    JOIN public.leads l ON l.id_lead = fe.id_lead
+                    WHERE COALESCE(fe.fecha_evento, NULL) IS NOT NULL
+                      AND fe.fecha_evento >= {month_start} AND fe.fecha_evento < {month_end}
+                      AND COALESCE(fe.abono,0) > 0
+                      AND COALESCE(fe.saldo,0) > 0
+                      AND l.id_estado = :conf
+                      -- Cobros: siempre por dueño del lead (no por marca).
+                      AND (:is_admin OR {assigned_sql})
+                    ON CONFLICT DO NOTHING
+                    """
+                ),
+                {
+                    "uid": int(user_id),
+                    "uname": (username or "").strip()[:200],
+                    "conf": int(confirmado_id),
+                    "is_admin": bool(is_admin),
+                    "user_keys": user_keys,
+                    "marcas_ids_text": marcas_ids_text or ["0"],
+                    "marcas_upper": marcas_upper or ["__NONE__"],
+                },
+            )
+    except Exception:
+        pass
+
     # 5) Auto-close: tareas que ya no aplican (estado cambió / seguimiento reciente / fecha ya no calza)
     def _auto_close(kind: str, cond_sql: str) -> None:
         try:
@@ -1503,6 +1559,43 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
+    # 6b) Auto-close: cobros que ya no aplican (saldo pagado / fuera de mes / lead no confirmado / no asignado)
+    try:
+        if _table_exists(db, "fin_eventos") and _col_exists(db, "fin_eventos", "id_evento"):
+            db.execute(
+                text(
+                    f"""
+                    UPDATE public.tasks t
+                    SET status='done', completed_at=now(), completed_by='AUTO', updated_at=now(),
+                        meta = COALESCE(t.meta,'{{}}'::jsonb) || jsonb_build_object('auto_closed', true, 'auto_reason', 'cobro_no_longer_needed', 'auto_at', now())
+                    WHERE t.assigned_user_id=:uid
+                      AND t.status='open'
+                      AND t.entity_type='fin_evento'
+                      AND t.kind='COBRO_PENDIENTE'
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM public.fin_eventos fe
+                        JOIN public.leads l ON l.id_lead = fe.id_lead
+                        WHERE fe.id_evento = t.entity_id
+                          AND fe.fecha_evento IS NOT NULL
+                          AND fe.fecha_evento >= {month_start} AND fe.fecha_evento < {month_end}
+                          AND COALESCE(fe.abono,0) > 0
+                          AND COALESCE(fe.saldo,0) > 0
+                          AND l.id_estado = :conf
+                          AND (:is_admin OR {assigned_sql})
+                      )
+                    """
+                ),
+                {
+                    "uid": int(user_id),
+                    "conf": int(confirmado_id),
+                    "is_admin": bool(is_admin),
+                    "user_keys": user_keys,
+                },
+            )
+    except Exception:
+        pass
+
     # 7) Summary (coherente con list_tasks: excluye leads cerrados)
     summary: Dict[str, Any] = {"ok": True, "counts": {}, "overdue": {}}
     try:
@@ -1514,7 +1607,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   COUNT(*) FILTER (WHERE t.status='open' AND t.due_at IS NOT NULL AND t.due_at < now())::int AS overdue_total,
                   COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_NUEVO_SEGUIMIENTO')::int AS open_nuevos,
                   COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_CONTACTADO_SEGUIMIENTO')::int AS open_contactados,
-                  COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_COTIZADO_SEGUIMIENTO')::int AS open_cotizados
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.kind='LEAD_COTIZADO_SEGUIMIENTO')::int AS open_cotizados,
+                  COUNT(*) FILTER (WHERE t.status='open' AND t.kind='COBRO_PENDIENTE')::int AS open_cobros
                 FROM public.tasks t
                 WHERE t.assigned_user_id = :uid
                   AND NOT (
@@ -1534,6 +1628,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 "open_nuevos": int(row.get("open_nuevos") or 0),
                 "open_contactados": int(row.get("open_contactados") or 0),
                 "open_cotizados": int(row.get("open_cotizados") or 0),
+                "open_cobros": int(row.get("open_cobros") or 0),
                 # compat (UI vieja)
                 "open_contactar": int(row.get("open_nuevos") or 0),
                 "open_calendario": 0,
@@ -1718,36 +1813,54 @@ def list_tasks(
         has_leads = _table_exists(db, "leads")
         has_marcas = _table_exists(db, "marcas")
         has_estados = _table_exists(db, "estados_lead")
+        has_fin_eventos = _table_exists(db, "fin_eventos")
 
         joins = ""
-        lead_cliente_expr = "'—' AS lead_cliente"
-        lead_marca_expr = "'' AS lead_marca"
-        lead_estado_expr = "'' AS lead_estado"
-        lead_tel_expr = "'' AS lead_telefono"
-        lead_fecha_expr = "NULL::date AS lead_fecha_evento"
+
+        lead_cliente_base = "'—'"
+        lead_marca_base = "''"
+        lead_estado_base = "''"
+        lead_tel_base = "''"
+        lead_fecha_base = "NULL::date"
 
         if has_leads:
             joins += " LEFT JOIN public.leads l ON (t.entity_type='lead' AND t.entity_id=l.id_lead) "
-            lead_cliente_expr = f"{_lead_name_expr_db(db)} AS lead_cliente"
+            lead_cliente_base = _lead_name_expr_db(db)
             if _col_exists(db, "leads", "telefono"):
-                lead_tel_expr = "COALESCE(l.telefono,'') AS lead_telefono"
+                lead_tel_base = "COALESCE(l.telefono,'')"
             if _col_exists(db, "leads", "fecha_evento"):
-                lead_fecha_expr = f"{_lead_event_date_expr_db(db, alias='l')} AS lead_fecha_evento"
+                lead_fecha_base = _lead_event_date_expr_db(db, alias="l")
 
+            # Marca (por ID o texto)
             if has_marcas and _col_exists(db, "leads", "id_marca") and _col_exists(db, "marcas", "id_marca"):
                 joins += " LEFT JOIN public.marcas m ON m.id_marca = l.id_marca "
-                # algunas bases usan m.nombre, otras m.marca
                 if _col_exists(db, "marcas", "nombre") and _col_exists(db, "marcas", "marca"):
-                    lead_marca_expr = "COALESCE(m.nombre, m.marca, '') AS lead_marca"
+                    lead_marca_base = "COALESCE(m.nombre, m.marca, '')"
                 elif _col_exists(db, "marcas", "nombre"):
-                    lead_marca_expr = "COALESCE(m.nombre, '') AS lead_marca"
+                    lead_marca_base = "COALESCE(m.nombre, '')"
                 elif _col_exists(db, "marcas", "marca"):
-                    lead_marca_expr = "COALESCE(m.marca, '') AS lead_marca"
+                    lead_marca_base = "COALESCE(m.marca, '')"
+            elif _col_exists(db, "leads", "marca"):
+                lead_marca_base = "COALESCE(l.marca,'')"
 
             if has_estados and _col_exists(db, "leads", "id_estado") and _col_exists(db, "estados_lead", "id_estado"):
                 joins += " LEFT JOIN public.estados_lead e ON e.id_estado = l.id_estado "
                 if _col_exists(db, "estados_lead", "nombre"):
-                    lead_estado_expr = "COALESCE(e.nombre, '') AS lead_estado"
+                    lead_estado_base = "COALESCE(e.nombre, '')"
+
+        # Finanzas (cobros pendientes): entity_type='fin_evento'
+        if has_fin_eventos:
+            joins += " LEFT JOIN public.fin_eventos fe ON (t.entity_type='fin_evento' AND t.entity_id=fe.id_evento) "
+            lead_cliente_base = f"COALESCE(NULLIF(btrim({lead_cliente_base}),''), NULLIF(btrim(COALESCE(fe.cliente,'')),''), '—')"
+            lead_marca_base = f"COALESCE(NULLIF(btrim({lead_marca_base}),''), NULLIF(btrim(COALESCE(fe.marca,'')),''), '')"
+            lead_fecha_base = f"COALESCE({lead_fecha_base}, fe.fecha_evento)"
+            lead_estado_base = f"(CASE WHEN t.entity_type='fin_evento' THEN 'CONFIRMADO' ELSE {lead_estado_base} END)"
+
+        lead_cliente_expr = f"{lead_cliente_base} AS lead_cliente"
+        lead_marca_expr = f"{lead_marca_base} AS lead_marca"
+        lead_estado_expr = f"{lead_estado_base} AS lead_estado"
+        lead_tel_expr = f"{lead_tel_base} AS lead_telefono"
+        lead_fecha_expr = f"{lead_fecha_base} AS lead_fecha_evento"
 
         q = f"""
           SELECT t.id_task, t.created_at, t.updated_at, t.status, t.priority,

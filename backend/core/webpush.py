@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -18,20 +19,65 @@ except Exception:  # pragma: no cover
     WebPushException = Exception  # type: ignore
 
 
-def _vapid_public_key() -> str | None:
-    return (
-        os.getenv("CRM_VAPID_PUBLIC_KEY")
-        or os.getenv("VAPID_PUBLIC_KEY")
-        or os.getenv("VAPID_PUBLIC")
-    )
+def _project_root() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
-def _vapid_private_key() -> str | None:
-    return (
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def get_vapid_private_key() -> str | None:
+    """
+    Returns a file path to the VAPID private key PEM.
+    Falls back to `data/vapid_private_key.pem` if present.
+    """
+    v = (
         os.getenv("CRM_VAPID_PRIVATE_KEY")
         or os.getenv("VAPID_PRIVATE_KEY")
         or os.getenv("VAPID_PRIVATE")
-    )
+        or ""
+    ).strip()
+    if v:
+        # If relative, try relative to repo root first.
+        if not os.path.isabs(v):
+            cand = os.path.join(_project_root(), v)
+            if os.path.exists(cand):
+                return cand
+        if os.path.exists(v):
+            return v
+    fallback = os.path.join(_project_root(), "data", "vapid_private_key.pem")
+    return fallback if os.path.exists(fallback) else None
+
+
+def get_vapid_public_key() -> str | None:
+    """
+    Returns the VAPID public key in base64url (uncompressed P-256 point).
+    If not present in env, derive it from the private key PEM.
+    """
+    k = (os.getenv("CRM_VAPID_PUBLIC_KEY") or os.getenv("VAPID_PUBLIC_KEY") or os.getenv("VAPID_PUBLIC") or "").strip()
+    if k:
+        return k
+
+    priv_path = get_vapid_private_key()
+    if not priv_path:
+        return None
+
+    try:
+        from cryptography.hazmat.primitives import serialization  # type: ignore
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        with open(priv_path, "rb") as f:
+            pem = f.read()
+        priv = serialization.load_pem_private_key(pem, password=None)
+        pub = priv.public_key()  # type: ignore[attr-defined]
+        pub_bytes = pub.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+        return _b64url(pub_bytes)
+    except Exception:
+        return None
 
 
 def _vapid_subject() -> str:
@@ -217,8 +263,8 @@ def send_webpush_to_users(
             "py_version": sys.version.split()[0],
         }
 
-    pub = _vapid_public_key()
-    priv = _vapid_private_key()
+    pub = get_vapid_public_key()
+    priv = get_vapid_private_key()
     if not pub or not priv:
         return {
             "sent": 0,
