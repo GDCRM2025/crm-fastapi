@@ -4,7 +4,7 @@
 ========================= */
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Fraunces:wght@500;700&family=JetBrains+Mono:wght@400;600&family=Manrope:wght@400;600;700&family=Sora:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=Rubik:wght@400;600;700&family=DM+Sans:wght@400;600;700&family=Playfair+Display:wght@500;700&family=Poppins:wght@400;600;700&family=Nunito:wght@400;600;700&family=Montserrat:wght@400;600;700&family=Urbanist:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
 /* Tema global: Windows XP Royale (día) + Royale Noir (noche) */
-@import url('./xp_royale.css?v=20260404-4');
+@import url('./xp_royale.css?v=20260404-5');
 
 :root{
   /* Layout (no pisa colores del tema XP) */
@@ -801,10 +801,12 @@ body.app.ops-mode .main{
 .sidebar-user-btn .user-name{ max-width: 170px; }
 
 .menu-group{
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  border-radius: 14px;
-  overflow:hidden;
+  /* Evita el “doble marco” (botón dentro de otro botón).
+     El marco va en `.menu-group-head` y en los items. */
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
 }
 .menu-group-head{
   width:100%;
@@ -812,13 +814,15 @@ body.app.ops-mode .main{
   align-items:center;
   gap: 10px;
   padding: 10px 12px;
-  background: transparent;
-  border: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
   color: var(--text);
   cursor:pointer;
 }
 .menu-group-head:hover{
   background: var(--hover-surface);
+  border-color: var(--hover-border);
 }
 .menu-ico{
   width: 28px;
@@ -837,11 +841,17 @@ body.app.ops-mode .main{
 }
 
 .menu-group.open .menu-chevron{ transform: rotate(90deg); }
+.menu-group.open .menu-group-head{
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 18%, transparent);
+}
 
 .menu-items{
   display:none;
   flex-direction:column;
-  padding: 8px;
+  padding: 8px 0 0 14px;
   gap: 8px;
 }
 .menu-group.open .menu-items{ display:flex; }
@@ -894,8 +904,12 @@ body.app.ops-mode .main{
   border-color: var(--hover-border);
 }
 .menu-item.active{
-  border-color: rgba(25,195,125,.55);
-  box-shadow: inset 3px 0 0 rgba(25,195,125,.9);
+  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  box-shadow:
+    inset 3px 0 0 color-mix(in srgb, var(--accent) 85%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent),
+    0 0 24px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 .menu-item .dot{
   width: 8px; height: 8px; border-radius: 99px;

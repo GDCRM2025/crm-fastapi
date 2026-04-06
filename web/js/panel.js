@@ -2184,6 +2184,7 @@ const PERMISSIONS = {
     "tool_wx",
     "tools_hub"
     ,"tool_chat"
+    ,"set_prod"
   ])
 };
 function buildMenu() {
