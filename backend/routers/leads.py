@@ -1688,6 +1688,13 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
     motivo = (payload.get("motivo") or "").strip()
     undo_preagenda = bool(payload.get("undo_preagenda", False))
 
+    # Asegurar columna de seguimiento (si el usuario DB permite DDL).
+    # Si falla, seguimos sin romper producción.
+    try:
+        _ensure_leads_followup_cols()
+    except Exception:
+        pass
+
     with get_connection() as conn:
         lead = conn.execute(
             text("SELECT id_lead, id_estado, fecha_evento, COALESCE(notas,'') AS notas FROM public.leads WHERE id_lead=:id"),
@@ -1863,6 +1870,19 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
         except Exception:
             pass
 
+        # Al mover a CONTACTADO o COTIZADO, consideramos que hubo una acción real de seguimiento.
+        # Esto evita que tareas vuelvan a aparecer como NUEVO/pendiente solo por recargar.
+        try:
+            if old_estado is not None and int(old_estado) != int(id_estado) and (("CONTACT" in est_name) or ("COTIZ" in est_name)):
+                cols = _cols_for("leads")
+                if "seguimiento_at" in cols:
+                    conn.execute(
+                        text("UPDATE public.leads SET seguimiento_at=now(), updated_at=now() WHERE id_lead=:id"),
+                        {"id": int(id_lead)},
+                    )
+        except Exception:
+            pass
+
         # Nota automática de cambio de estado (siempre).
         try:
             old_estado_i = int(old_estado) if str(old_estado or "").isdigit() else None
@@ -1884,14 +1904,15 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
     return {"ok": True, "id_lead": id_lead, "id_estado": id_estado}
 
 @router.post("/leads/{id_lead}/estado")
-def move_estado_post(id_lead: int, payload: dict = Body(...)):
-    return move_estado(id_lead, payload)
+def move_estado_post(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+    # compat con frontends legacy (POST), pero SIEMPRE autenticado
+    return move_estado(id_lead=id_lead, payload=payload, user=user)
 
 
 @router.post("/leads/{id_lead}/estado_ex")
-def move_estado_ex(id_lead: int, payload: dict = Body(...)):
-    # compat con frontend legacy
-    return move_estado(id_lead, payload)
+def move_estado_ex(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+    # compat con frontend legacy (POST) — mismo comportamiento que PATCH
+    return move_estado(id_lead=id_lead, payload=payload, user=user)
 
 
 @router.post("/leads/{id_lead}/cotizacion_pdf")

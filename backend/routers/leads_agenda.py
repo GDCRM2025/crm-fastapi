@@ -677,21 +677,32 @@ def _list_cotizaciones_for_lead(lead):
 
 
 def _cotizacion_detalle_resumen(id_cotizacion):
+    # Preferido (nuevo): cotizacion_items
     if _table_exists("cotizacion_items"):
-        q = text(
-            """
-            SELECT producto, SUM(cantidad)::float AS cantidad
-            FROM cotizacion_items
-            WHERE id_cotizacion = :id
-            GROUP BY producto
-            ORDER BY producto
-            """
-        )
-        with engine.connect() as cn:
-            rows = cn.execute(q, {"id": id_cotizacion}).mappings().all()
-        return [{"producto": _as_text(r["producto"]).strip(), "cantidad": float(r["cantidad"] or 0)} for r in rows]
+        try:
+            q = text(
+                """
+                SELECT producto, SUM(cantidad)::float AS cantidad
+                FROM cotizacion_items
+                WHERE id_cotizacion = :id
+                GROUP BY producto
+                ORDER BY producto
+                """
+            )
+            with engine.connect() as cn:
+                rows = cn.execute(q, {"id": int(id_cotizacion)}).mappings().all()
+            out = [{"producto": _as_text(r["producto"]).strip(), "cantidad": float(r["cantidad"] or 0)} for r in rows]
+            if out:
+                return out
+        except Exception:
+            # Si falla por schema/permiso, intentamos compat abajo.
+            pass
 
-    cols = set(_cols_for("cotizaciones_detalle"))
+    # Compat (legacy): cotizaciones_detalle (nombres variables)
+    if not _table_exists("cotizaciones_detalle"):
+        return []
+
+    cols = set(_cols_for("cotizaciones_detalle") or [])
 
     prod_col = None
     for c in ("producto", "nombre_producto", "descripcion", "detalle", "producto_nombre", "nombre"):
@@ -712,7 +723,8 @@ def _cotizacion_detalle_resumen(id_cotizacion):
             break
 
     if not prod_col or not qty_col or not fk_col:
-        raise HTTPException(500, detail="cotizaciones_detalle no tiene columnas esperadas")
+        # No romper el flujo: quien llama decide si se puede caer a "manual" o debe exigir cotización.
+        return []
 
     q = text(
         """
@@ -1396,6 +1408,14 @@ def move_lead_and_maybe_agenda(
                 except Exception:
                     items = []
 
+            # Si el usuario seleccionó una cotización (no manual) pero no hay detalle,
+            # NO podemos inventar/mixear productos (provoca errores tipo "30+30" vs "60").
+            if id_cot_tmp and quote_source != "manual" and not items:
+                raise HTTPException(
+                    400,
+                    detail="No se pudo leer el detalle de la cotización seleccionada. Elige 'Manual' o corrige la cotización en el sistema.",
+                )
+
             if not items:
                 items = _lead_mice_items_resumen_by_day(id_lead)
 
@@ -1529,6 +1549,11 @@ def move_lead_and_maybe_agenda(
         if not segments_used:
             if id_cot and quote_source != "manual":
                 items = _cotizacion_detalle_resumen(int(id_cot))
+                if not items:
+                    raise HTTPException(
+                        400,
+                        detail="La cotización seleccionada no tiene detalle de productos. Elige 'Manual' o revisa la cotización.",
+                    )
             if not items:
                 items = _lead_mice_items_resumen_by_day(id_lead)
             if not items:
