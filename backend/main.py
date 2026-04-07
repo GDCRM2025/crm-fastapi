@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from pathlib import Path
 from fastapi import FastAPI
@@ -17,6 +18,7 @@ from dotenv import load_dotenv
 
 from backend.core.logging_setup import setup_logging
 from fastapi import HTTPException
+from backend.core.settings import settings
 
 
 def include_router_safe(app: FastAPI, module_path: str, attr: str = "router") -> None:
@@ -44,6 +46,34 @@ app = FastAPI(title="CRM BDGD")
 # Logging a archivo con rotación (urgente en prod para investigar 500s).
 setup_logging(BASE_DIR)
 log = logging.getLogger("crm")
+
+def _apply_security_headers(request: Request, resp):
+    """
+    Hardening básico sin romper el CRM embebido (iframes same-origin) ni la PWA.
+    """
+    try:
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        resp.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(self), notifications=(self), microphone=(), camera=(), payment=(), usb=()",
+        )
+        # HSTS (solo HTTPS). No forzamos includeSubDomains para evitar sorpresas.
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+
+        # Evita cachear JSON sensible en navegadores/proxies.
+        try:
+            p = str(request.url.path or "/")
+            ct = str(resp.headers.get("content-type") or "").lower()
+            if ("/web/" not in p) and ("application/json" in ct or p.startswith(("/auth", "/me", "/leads", "/tasks", "/finanzas", "/rrhh", "/chat"))):
+                resp.headers.setdefault("Cache-Control", "no-store")
+                resp.headers.setdefault("Pragma", "no-cache")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return resp
 
 def _safe_web_path(rel: str) -> Path | None:
     """
@@ -140,11 +170,12 @@ async def rid_middleware(request: Request, call_next):
                     # Permitimos historial (quotes) para FINANZAS (requerimiento: FINANZAS ve finanzas + historial).
                     allowed_prefixes = ("/finanzas", "/quotes", "/auth", "/login", "/logout", "/me", "/web")
                     if not (p == "/" or p.startswith(allowed_prefixes)):
-                        return JSONResponse(
+                        resp = JSONResponse(
                             {"detail": "Sin permiso"},
                             status_code=403,
                             headers={"X-RID": rid},
                         )
+                        return _apply_security_headers(request, resp)
         except HTTPException:
             # Token inválido / expirado: lo maneja el endpoint que corresponda
             pass
@@ -154,27 +185,31 @@ async def rid_middleware(request: Request, call_next):
 
         resp = await call_next(request)
         resp.headers["X-RID"] = rid
-        return resp
+        return _apply_security_headers(request, resp)
     except Exception:
         import traceback
         log.exception("RID=%s %s %s", rid, request.method, request.url.path)
         print(traceback.format_exc())
-        return JSONResponse(
+        resp = JSONResponse(
             {"detail": f"Internal Server Error. RID={rid}"},
             status_code=500,
             headers={"X-RID": rid},
         )
+        return _apply_security_headers(request, resp)
 
 
 
-# CORS (local dev)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS: solo si realmente lo necesitas (dev / herramientas externas).
+# En prod (mismo origen), no se requiere y es más seguro dejarlo apagado.
+_enable_cors = str(os.getenv("CRM_ENABLE_CORS") or "").strip().lower() in ("1", "true", "yes", "on")
+if _enable_cors:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(getattr(settings, "CORS_ORIGINS", []) or []),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # =========================
 # Routers (ajusta SOLO si tu estructura difiere)

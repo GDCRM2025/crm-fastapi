@@ -109,6 +109,8 @@
     header nav a.menu-delsabor{ background:rgba(242,140,26,.18); border-color:rgba(242,140,26,.65); color:#fff0e6; }
     header nav a.menu-express{ background:rgba(232,81,76,.18); border-color:rgba(232,81,76,.65); color:#ffecec; }
     header nav a.menu-brontos{ background:rgba(148,163,184,.12); border-color:rgba(148,163,184,.45); color:#fff; }
+    header nav a.menu-petras{ background:rgba(59,130,246,.16); border-color:rgba(59,130,246,.55); color:#eaf2ff; }
+    header nav a.menu-masflow{ background:rgba(168,85,247,.14); border-color:rgba(168,85,247,.50); color:#f4eaff; }
 
     @media (max-width: 980px){
       header .who{ display:none; }
@@ -164,6 +166,7 @@
     .side-sep{ height:10px; margin:4px 12px; border-bottom:1px solid rgba(255,255,255,.15); }
     .menu-camaleon{ background:rgba(67,181,22,.8); } .menu-gourmet{ background:rgba(251,181,49,.8); }
     .menu-delsabor{ background:rgba(242,140,26,.8); } .menu-express{ background:rgba(232,81,76,.8); }
+    .menu-petras{ background:rgba(59,130,246,.78); } .menu-masflow{ background:rgba(168,85,247,.76); }
 
     /* Tarjetas de contacto */
     .contactos-grid{ display:grid; gap:1.5rem; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); }
@@ -347,6 +350,8 @@
           <option value="EXPRESS">Express</option>
           <option value="DEL SABOR">Del Sabor</option>
           <option value="BRONTOS">Brontos</option>
+          <option value="PETRAS">Petras</option>
+          <option value="MAS FLOW">Mas Flow</option>
         </select>
       </li>
       <li class="brandLink"><a class="menu-camaleon" href="#menu-carritos-camaleon">Menu Camaleón</a></li>
@@ -354,6 +359,8 @@
       <li class="brandLink"><a class="menu-express" href="#menu-carritos-express">Menu Express</a></li>
       <li class="brandLink"><a class="menu-delsabor" href="#menu-carritos-del-sabor">Menu Del Sabor</a></li>
       <li class="brandLink"><a class="menu-brontos" href="#menu-brontos">Menu Brontos</a></li>
+      <li class="brandLink"><a class="menu-petras" href="#menu-petras">Menu Petras</a></li>
+      <li class="brandLink"><a class="menu-masflow" href="#menu-mas-flow">Menu Mas Flow</a></li>
       <li><a href="#videos">Universidad GD</a></li>
       <li><a class="soon" href="#ruta-futura" aria-disabled="true">Ver Ruta (próx.)</a></li>
       <li><a class="danger" href="#" id="logoutLink">Salir</a></li>
@@ -368,6 +375,8 @@
     <figure><img src="../icons/chef-hat.svg" alt="Carritos Gourmet"><figcaption>Gourmet</figcaption></figure>
     <figure><img src="../icons/hot-dog.svg" alt="Carritos del Sabor"><figcaption>Del&nbsp;Sabor</figcaption></figure>
     <figure><img src="../icons/food-truck.svg" alt="Carritos Express"><figcaption>Express</figcaption></figure>
+    <figure><img src="../icons/box.svg" alt="Petras"><figcaption>Petras</figcaption></figure>
+    <figure><img src="../icons/sparkles.svg" alt="Mas Flow"><figcaption>Mas&nbsp;Flow</figcaption></figure>
   </div>
 </section>
 
@@ -557,7 +566,9 @@
     'Carritos Camaleón': apiURL('/web/icons/chameleon.svg'),
     'Carritos Gourmet':  apiURL('/web/icons/chef-hat.svg'),
     'Carritos Express':  apiURL('/web/icons/food-truck.svg'),
-    'Carritos del Sabor': apiURL('/web/icons/hot-dog.svg')
+    'Carritos del Sabor': apiURL('/web/icons/hot-dog.svg'),
+    'Petras': apiURL('/web/icons/box.svg'),
+    'Mas Flow': apiURL('/web/icons/sparkles.svg')
   };
   const getIconForBrand = b => brandIcons[b] || apiURL('/web/icons/burger.svg');
 
@@ -573,7 +584,9 @@
     'Carritos Camaleón': ['Hotdog','AS','Hamburguesa','Churrasco','Lomito','Mechada','Wrap','Mini','Appetizer','Dulces','Refrescante','Extras'],
     'Carritos del Sabor': ['Hotdog','AS','Hamburguesa','Churrasco','Lomito','Mechada','Wrap','Mini','Masas','Frito','Dulce','Fría','Extras'],
     'Carritos Express': ['Hotdog','AS','Hamburguesa','Churrasco','Lomito','Mechada','Wrap','Mini','Pizzas / Pizzetas','Appetizer','Dulces','Dulces Premium','Dulces Fríos'],
-    'Carritos Gourmet': ['Hotdog','AS','Hamburguesa','Churrasco','Lomito','Mechada','Wrap','Mini','Appetizer','Dulces','Extras','Granizados']
+    'Carritos Gourmet': ['Hotdog','AS','Hamburguesa','Churrasco','Lomito','Mechada','Wrap','Mini','Appetizer','Dulces','Extras','Granizados'],
+    'Petras': [],
+    'Mas Flow': []
   };
 
   function getRecipeCategory(name){
@@ -607,12 +620,62 @@
     if (b.includes("gourmet")) return "menu-carritos-gourmet";
     if (b.includes("express")) return "menu-carritos-express";
     if (b.includes("sabor")) return "menu-carritos-del-sabor";
+    if (b.includes("petras")) return "menu-petras";
+    if (b.includes("mas") && b.includes("flow")) return "menu-mas-flow";
     return `menu-${slugBrand(brand)}`;
   }
 
-  function loadRecipes(){
+  function _splitIngredients(raw){
+    const t = String(raw || "").trim();
+    if (!t) return [];
+    // primero: bullets / líneas
+    let parts = t
+      .split(/\r?\n|•|·|\u2022/g)
+      .map(x => String(x || "").trim())
+      .filter(Boolean);
+    // fallback: csv/;/
+    if (parts.length <= 1){
+      parts = t
+        .split(/;|,|\|/g)
+        .map(x => String(x || "").trim())
+        .filter(Boolean);
+    }
+    // limpia prefijos tipo "Ingredientes:" etc
+    parts = parts.map(x => x.replace(/^ingredientes?:/i, "").trim()).filter(Boolean);
+    return parts.slice(0, 60);
+  }
+
+  async function _fetchBrandFromDB(marcaCode, displayName){
+    try{
+      const u = apiURL(`/productos?marca=${encodeURIComponent(marcaCode)}&only_active=true&limit=5000&offset=0`);
+      const r = await fetch(u, { headers: { Authorization: "Bearer " + token, "Accept": "application/json" } });
+      if (!r.ok) return null;
+      const j = await r.json().catch(()=>null);
+      const items = Array.isArray(j?.items) ? j.items : [];
+      if (!items.length) return null;
+      return items.map(it => ({
+        nombre: String(it?.producto || "").trim() || String(it?.descripcion || "").trim() || "Producto",
+        ingredientes: _splitIngredients(it?.ingredientes || it?.descripcion || ""),
+      }));
+    }catch(_){ return null; }
+  }
+
+  async function loadRecipes(){
     const data = JSON.parse(document.getElementById('recipes-data').textContent);
     const container = document.getElementById('recipes-container');
+
+    // Extiende menú con marcas nuevas (Petras / Mas Flow) desde BD.
+    // Esto evita re-escribir el JSON gigante en el HTML.
+    try{
+      if (!data["Petras"]){
+        const rows = await _fetchBrandFromDB("PETRAS", "Petras");
+        if (rows && rows.length) data["Petras"] = rows;
+      }
+      if (!data["Mas Flow"]){
+        const rows = await _fetchBrandFromDB("MAS FLOW", "Mas Flow");
+        if (rows && rows.length) data["Mas Flow"] = rows;
+      }
+    }catch(_){}
 
     for(const brand in data){
       const list = data[brand].map(r => ({...r, category: r.categoria || getRecipeCategory(r.nombre)}));
@@ -707,7 +770,7 @@
     }
     if (only === "cal") document.body.classList.add("only-cal");
     createStars();
-    loadRecipes();
+    await loadRecipes();
 
     const logoutLink=document.getElementById('logoutLink');
     const doLogout = async (e)=>{
@@ -774,6 +837,8 @@
             "EXPRESS": "menu-carritos-express",
             "DEL SABOR": "menu-carritos-del-sabor",
             "BRONTOS": "menu-brontos",
+            "PETRAS": "menu-petras",
+            "MAS FLOW": "menu-mas-flow",
           };
           const id = map[want] || "";
           if (id){

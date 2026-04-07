@@ -1,5 +1,5 @@
 /* GreenDiamond App (PWA shell) - minimal service worker */
-const CACHE_NAME = "gd-staff-shell-v4";
+const CACHE_NAME = "gd-staff-shell-v5";
 const SHELL_URLS = [
   "./views/staff.html",
   "./views/staff_ops.html",

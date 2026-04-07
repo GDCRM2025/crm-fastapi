@@ -60,6 +60,23 @@
         color: #92400e;
       }
       .grid{display:grid; gap:12px; margin-top:12px}
+      .hide{display:none!important}
+      .sel{
+        border:1px solid var(--border);
+        background:var(--surface);
+        border-radius:12px;
+        padding:9px 10px;
+        font-weight:900;
+        color:var(--text);
+        min-width: 220px;
+      }
+      .menuFrame{
+        width:100%;
+        height: min(70vh, 820px);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--bg);
+      }
       .day{
         border:1px solid var(--border);
         border-radius:18px;
@@ -132,11 +149,41 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
           <button class="btn" id="prevBtn">←</button>
           <button class="btn" id="nextBtn">→</button>
+          <button class="btn" id="menuBtn">Menús</button>
           <button class="btn primary" id="reloadBtn">Actualizar</button>
         </div>
       </div>
 
-      <div class="grid" id="days"></div>
+      <div id="eventsView">
+        <div class="grid" id="days"></div>
+      </div>
+
+      <div id="menuView" class="hide">
+        <div class="day" style="margin-top:12px">
+          <div class="dayTitle">
+            <b>Menús · Productos</b>
+            <span>Operación / Brochures</span>
+          </div>
+          <div class="actions" style="align-items:center">
+            <select id="menuBrand" class="sel" aria-label="Marca">
+              <option value="">Selecciona marca…</option>
+              <option value="CAMALEON">Camaleón</option>
+              <option value="GOURMET">Gourmet</option>
+              <option value="EXPRESS">Express</option>
+              <option value="DEL SABOR">Del Sabor</option>
+              <option value="BRONTOS">Brontos</option>
+              <option value="PETRAS">Petras</option>
+              <option value="MAS FLOW">Mas Flow</option>
+            </select>
+            <button class="btn primary" id="openMenuBtn" type="button">Abrir</button>
+          </div>
+          <div style="margin-top:10px">
+            <iframe id="menuFrame" class="menuFrame" title="Menú"></iframe>
+          </div>
+          <div class="muted" style="margin-top:8px">Tip: usa buscar dentro del menú para encontrar productos rápido.</div>
+        </div>
+      </div>
+
       <div class="toast" id="toast"></div>
     </div>
 
@@ -176,6 +223,12 @@
       const prevBtn = qs("#prevBtn");
       const nextBtn = qs("#nextBtn");
       const reloadBtn = qs("#reloadBtn");
+      const menuBtn = qs("#menuBtn");
+      const eventsView = qs("#eventsView");
+      const menuView = qs("#menuView");
+      const menuBrand = qs("#menuBrand");
+      const openMenuBtn = qs("#openMenuBtn");
+      const menuFrame = qs("#menuFrame");
       let weekOffset = 0;
 
       function toast(msg){
@@ -200,6 +253,26 @@
           if (isNaN(d.getTime())) return "—";
           return d.toLocaleTimeString("es-CL",{hour:"2-digit", minute:"2-digit"});
         }catch(_){ return "—"; }
+      }
+
+      function setMode(mode){
+        const m = String(mode || "events");
+        const isMenu = (m === "menu");
+        if (isMenu){
+          eventsView?.classList.add("hide");
+          menuView?.classList.remove("hide");
+          menuBtn.textContent = "Eventos";
+        }else{
+          menuView?.classList.add("hide");
+          eventsView?.classList.remove("hide");
+          menuBtn.textContent = "Menús";
+        }
+      }
+
+      function openMenuForBrand(code){
+        const v = String(code || "").trim();
+        if (!v) return;
+        menuFrame.src = `${API_BASE}/web/views/operadores.html?embed=1&only=menu&brand=${encodeURIComponent(v)}&v=${Date.now()}#recetas`;
       }
 
       function groupByDay(events){
@@ -398,10 +471,16 @@
       prevBtn.onclick = ()=>{ weekOffset -= 1; load(); };
       nextBtn.onclick = ()=>{ weekOffset += 1; load(); };
       reloadBtn.onclick = ()=>load();
+      menuBtn.onclick = ()=>{
+        const isMenuOpen = !menuView.classList.contains("hide");
+        setMode(isMenuOpen ? "events" : "menu");
+      };
+      openMenuBtn.onclick = ()=> openMenuForBrand(menuBrand.value);
+      menuBrand.onchange = ()=> openMenuForBrand(menuBrand.value);
 
       // init
+      setMode("events");
       load();
     </script>
   </body>
 </html>
-

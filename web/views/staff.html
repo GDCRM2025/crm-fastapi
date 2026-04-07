@@ -410,11 +410,18 @@
           vapidErr = (e && e.message) ? String(e.message) : "network";
         }
         if(!vapidKey){
-          if(String(vapidErr || "").toLowerCase().includes("network") || String(vapidErr || "").toLowerCase().includes("fetch")){
-            alert("No se pudo conectar al servidor. Revisa tu internet e intenta nuevamente.");
-          }else{
-            alert("Push aún no está configurado en el servidor (VAPID).");
+          const e = String(vapidErr || "");
+          const el = e.toLowerCase();
+          if (el.includes("token") || el.includes("unauthorized") || el.includes("forbidden") || el.includes("401") || el.includes("403")){
+            alert("Tu sesión no está válida para activar push. Cierra sesión y vuelve a ingresar, y luego intenta de nuevo.");
+            return;
           }
+          if(el.includes("network") || el.includes("fetch")){
+            alert("No se pudo conectar al servidor. Revisa tu internet e intenta nuevamente.");
+            return;
+          }
+          // 503 u otros: realmente es VAPID faltante
+          alert("Push aún no está configurado en el servidor (VAPID).");
           return;
         }
         const sub = existing || await reg.pushManager.subscribe({
