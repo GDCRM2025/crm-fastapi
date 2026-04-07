@@ -108,7 +108,6 @@
     header nav a.menu-gourmet{ background:rgba(251,181,49,.18); border-color:rgba(251,181,49,.65); color:#fff6e6; }
     header nav a.menu-delsabor{ background:rgba(242,140,26,.18); border-color:rgba(242,140,26,.65); color:#fff0e6; }
     header nav a.menu-express{ background:rgba(232,81,76,.18); border-color:rgba(232,81,76,.65); color:#ffecec; }
-    header nav a.menu-brontos{ background:rgba(148,163,184,.12); border-color:rgba(148,163,184,.45); color:#fff; }
     header nav a.menu-petras{ background:rgba(59,130,246,.16); border-color:rgba(59,130,246,.55); color:#eaf2ff; }
     header nav a.menu-masflow{ background:rgba(168,85,247,.14); border-color:rgba(168,85,247,.50); color:#f4eaff; }
 
@@ -349,7 +348,6 @@
           <option value="GOURMET">Gourmet</option>
           <option value="EXPRESS">Express</option>
           <option value="DEL SABOR">Del Sabor</option>
-          <option value="BRONTOS">Brontos</option>
           <option value="PETRAS">Petras</option>
           <option value="MAS FLOW">Mas Flow</option>
         </select>
@@ -358,7 +356,6 @@
       <li class="brandLink"><a class="menu-gourmet" href="#menu-carritos-gourmet">Menu Gourmet</a></li>
       <li class="brandLink"><a class="menu-express" href="#menu-carritos-express">Menu Express</a></li>
       <li class="brandLink"><a class="menu-delsabor" href="#menu-carritos-del-sabor">Menu Del Sabor</a></li>
-      <li class="brandLink"><a class="menu-brontos" href="#menu-brontos">Menu Brontos</a></li>
       <li class="brandLink"><a class="menu-petras" href="#menu-petras">Menu Petras</a></li>
       <li class="brandLink"><a class="menu-masflow" href="#menu-mas-flow">Menu Mas Flow</a></li>
       <li><a href="#videos">Universidad GD</a></li>
@@ -743,19 +740,6 @@
       render();
     }
 
-    // Brontos queda definido como menú (aún sin recetas cargadas aquí).
-    if (!document.getElementById("menu-brontos")){
-      const b = document.createElement("div");
-      b.className = "brand-recipes";
-      b.id = "menu-brontos";
-      b.innerHTML = `
-        <h3>Brontos</h3>
-        <div class="muted" style="text-align:left;max-width:900px">
-          Menú Brontos queda por definir. Cuando tengamos los productos/recetas, se cargan acá.
-        </div>
-      `;
-      container.appendChild(b);
-    }
   }
 
   document.addEventListener('DOMContentLoaded', async ()=>{
@@ -836,7 +820,6 @@
             "GOURMET": "menu-carritos-gourmet",
             "EXPRESS": "menu-carritos-express",
             "DEL SABOR": "menu-carritos-del-sabor",
-            "BRONTOS": "menu-brontos",
             "PETRAS": "menu-petras",
             "MAS FLOW": "menu-mas-flow",
           };

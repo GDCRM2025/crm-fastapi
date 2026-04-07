@@ -645,6 +645,15 @@ def _infer_marca_from_cotizacion(id_cotizacion):
 
 def _list_cotizaciones_for_lead(lead):
     cols = set(_cols_for("cotizaciones"))
+    # Detectar PK real (en algunos deploys no se llama id_cotizacion).
+    pk = None
+    try:
+        pk = _pk_for("cotizaciones")
+    except Exception:
+        for c in ("id_cotizacion", "id", "cotizacion_id", "id_quote"):
+            if c in cols:
+                pk = c
+                break
     where = ""
     params = {}
 
@@ -663,7 +672,8 @@ def _list_cotizaciones_for_lead(lead):
     else:
         return []
 
-    q = text("SELECT * FROM cotizaciones %s ORDER BY 1 DESC" % where)
+    order = f"ORDER BY {_qident(pk)} DESC" if pk else "ORDER BY 1 DESC"
+    q = text("SELECT * FROM cotizaciones %s %s" % (where, order))
     with engine.connect() as cn:
         rows = cn.execute(q, params).mappings().all()
 
@@ -671,7 +681,12 @@ def _list_cotizaciones_for_lead(lead):
     for r in rows:
         d = dict(r)
         if "id_cotizacion" not in d:
-            d["id_cotizacion"] = list(d.values())[0]
+            # Normalizar a `id_cotizacion` para el frontend (selector).
+            if pk and pk in d:
+                d["id_cotizacion"] = d.get(pk)
+            else:
+                # último fallback: primer valor (mejor que nada, pero ojalá pk exista).
+                d["id_cotizacion"] = list(d.values())[0] if d else None
         out.append(d)
     return out
 
