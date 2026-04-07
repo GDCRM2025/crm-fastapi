@@ -42,6 +42,11 @@ def main() -> int:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(priv_pem)
+    # Cache public key in a predictable file so the backend can serve it even if env vars are not loaded.
+    try:
+        (out_path.parent / "vapid_public_key.txt").write_text(pub_b64url, encoding="utf-8")
+    except Exception:
+        pass
 
     print("\n# VAPID generado")
     print(f"# Private key PEM escrito en: {out_path}")
@@ -58,4 +63,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -1138,6 +1138,99 @@ def _build_event(
     }
 
 
+def _bullets(text_value: str) -> list[str]:
+    raw = _as_text(text_value or "").replace("\r", "\n")
+    lines = [ln.strip() for ln in raw.split("\n")]
+    out: list[str] = []
+    for ln in lines:
+        if not ln:
+            continue
+        up = ln.upper().strip()
+        if up in ("PRODUCTOS", "PRODUCTOS:", "MONTAJE", "MONTAJE:", "MONTAJE SUGERIDO"):
+            continue
+        if ln.startswith("•"):
+            out.append(ln)
+        elif ln.startswith("-"):
+            out.append("• " + ln.lstrip("-").strip())
+        else:
+            out.append("• " + ln)
+    return out
+
+
+def _build_event_from_segment(
+    *,
+    lead: dict,
+    day: date,
+    marca: str,
+    telefono: str,
+    agenda_notes: str | None,
+    comuna: str,
+    direccion: str,
+    start_time: str,
+    end_time: str,
+    ops: int,
+    products_text: str,
+    montaje_text: str,
+    label: str | None = None,
+) -> dict:
+    tz = ZoneInfo("America/Santiago")
+    hh, mm = _parse_hhmm(start_time)
+    dt_start = datetime.combine(day, time(hh, mm), tzinfo=tz)
+    hh2, mm2 = _parse_hhmm(end_time)
+    dt_end = datetime.combine(day, time(hh2, mm2), tzinfo=tz)
+    if dt_end <= dt_start:
+        dt_end = dt_end + timedelta(days=1)
+
+    cliente = _as_text(lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)").strip() or "(Sin nombre)"
+    marca_txt = _as_text(marca).strip() if marca else "Sin Marca"
+    title = "%s - %s" % (cliente, marca_txt)
+
+    loc = _as_text(comuna).strip() or "COMUNA TBD"
+    dir_label = _as_text(direccion).strip() or "DIR TBD"
+    phone_label = _as_text(telefono).strip() or "POR CONFIRMAR"
+
+    prod_lines = _bullets(products_text) or ["• —"]
+    mont_lines = _bullets(montaje_text) or ["• —"]
+
+    notes = _as_text(agenda_notes).strip()
+    desc_lines: list[str] = []
+    if notes:
+        desc_lines += [
+            "🟨 NOTAS (IMPORTANTE):",
+            notes,
+            "",
+        ]
+    desc_lines += [
+        "🛒 PRODUCTOS:",
+        "",
+        *prod_lines,
+        "",
+        "🧰 MONTAJE:",
+        "",
+        *mont_lines,
+        "",
+        "👥 OPS: %s" % int(ops),
+        "",
+        "📞 TELEFONO: %s" % phone_label,
+        "📍 DIRECCION: %s" % dir_label,
+    ]
+    description = "\n".join(desc_lines).strip()
+
+    return {
+        "day": day.isoformat(),
+        "label": label or None,
+        "title": title,
+        "start_at": dt_start.isoformat(),
+        "end_at": dt_end.isoformat(),
+        "location": loc,
+        "description": description,
+        "ops": int(ops),
+        # sin headers extra (se limpia mejor en resumen/correos)
+        "montaje_text": "\n".join(mont_lines).strip(),
+        "products_text": "\n".join(prod_lines).strip(),
+    }
+
+
 def _items_grouped_by_day(items: list[dict], fallback_day: date) -> list[tuple[date, list[dict]]]:
     by: dict[date, list[dict]] = {}
     for it in items or []:
@@ -1398,15 +1491,55 @@ def move_lead_and_maybe_agenda(
             end_time = None
 
 
-        items = []
-        if id_cot and quote_source != "manual":
-            items = _cotizacion_detalle_resumen(int(id_cot))
-        if not items:
-            items = _lead_mice_items_resumen_by_day(id_lead)
-        if not items:
-            raise HTTPException(400, detail="No hay productos para calcular montaje. Carga productos para MICE.")
+        # Multi-locación: segmentos explícitos (misma fecha_evento; 1 evento por segmento)
+        raw_segments = payload.get("segments") or payload.get("segmentos") or None
+        segments: list[dict] = []
+        segments_used = False
+        if isinstance(raw_segments, list) and raw_segments:
+            for s in raw_segments:
+                if not isinstance(s, dict):
+                    continue
+                comuna_s = str(s.get("comuna") or s.get("location") or "").strip()
+                direccion_s = str(s.get("direccion") or s.get("address") or "").strip()
+                st_s = _safe_time_hhmm(s.get("start_time") or s.get("inicio") or "")
+                en_s = _safe_time_hhmm(s.get("end_time") or s.get("fin") or "")
+                try:
+                    ops_s = int(s.get("ops") or 0)
+                except Exception:
+                    ops_s = 0
+                products_s = str(s.get("products_text") or s.get("productos") or "").strip()
+                montaje_s = str(s.get("montaje_text") or s.get("montaje") or "").strip()
+                if not comuna_s or not direccion_s or not st_s or not en_s or ops_s < 1 or not products_s:
+                    continue
+                segments.append(
+                    {
+                        "comuna": comuna_s,
+                        "direccion": direccion_s,
+                        "start_time": st_s,
+                        "end_time": en_s,
+                        "ops": int(ops_s),
+                        "products_text": products_s,
+                        "montaje_text": montaje_s,
+                    }
+                )
+            if segments:
+                segments_used = True
 
-        _, ops, montaje_text, products_text = _calcular_montaje(items)
+        items = []
+        if not segments_used:
+            if id_cot and quote_source != "manual":
+                items = _cotizacion_detalle_resumen(int(id_cot))
+            if not items:
+                items = _lead_mice_items_resumen_by_day(id_lead)
+            if not items:
+                raise HTTPException(400, detail="No hay productos para calcular montaje. Carga productos para MICE.")
+
+            _, ops, montaje_text, products_text = _calcular_montaje(items)
+        else:
+            # para compat: usamos el primer segmento como "resumen"
+            ops = int((segments[0] or {}).get("ops") or 1)
+            montaje_text = str((segments[0] or {}).get("montaje_text") or "").strip()
+            products_text = str((segments[0] or {}).get("products_text") or "").strip()
 
         try:
             if payload.get("override_ops") is not None:
@@ -1471,50 +1604,74 @@ def move_lead_and_maybe_agenda(
             override_montaje_global = None
 
         base_day = date.fromisoformat(str(lead.get("fecha_evento"))[:10]) if lead.get("fecha_evento") else date.today()
-        grouped = _items_grouped_by_day(items, base_day)
-        total_days = len(grouped) if grouped else 1
 
         eventos: list[dict] = []
-        for idx, (day, items_day) in enumerate(grouped or [(base_day, items)], start=1):
-            obd = overrides_by_day.get(day.isoformat(), {}) if overrides_by_day else {}
-
-            ops_day = None
-            try:
-                if obd.get("ops") is not None and str(obd.get("ops")).strip() != "":
-                    ops_day = int(obd.get("ops"))
-            except Exception:
-                ops_day = None
-
-            mt_day = None
-            try:
-                if obd.get("montaje_text") is not None:
-                    mt_day = str(obd.get("montaje_text") or "").strip() or None
-            except Exception:
-                mt_day = None
-
-            day_label = f"Día {idx}/{total_days} · {day.isoformat()}" if total_days > 1 else day.isoformat()
-
-            eventos.append(
-                _build_event_for_day(
-                    lead=lead,
-                    day=day,
-                    comuna=comuna,
-                    marca=marca,
-                    items_day=items_day,
-                    telefono=telefono,
-                    direccion=direccion,
-                    start_time=start_time,
-                    end_time=end_time,
-                    hr_tbd=hr_tbd,
-                    agenda_notes=agenda_notes,
-                    override_title=override_title,
-                    override_location=override_location,
-                    override_description=override_description,
-                    override_ops=(ops_day if ops_day is not None else override_ops_global),
-                    override_montaje_text=(mt_day if mt_day is not None else override_montaje_global),
-                    day_label=day_label,
+        if segments_used:
+            if not lead.get("fecha_evento"):
+                raise HTTPException(400, detail="Multi-locación requiere fecha_evento en el lead.")
+            nseg = len(segments)
+            for i, s in enumerate(segments, start=1):
+                lab = f"Seg {i}/{nseg} · {str(s.get('comuna') or '').strip()}"
+                eventos.append(
+                    _build_event_from_segment(
+                        lead=lead,
+                        day=base_day,
+                        marca=marca,
+                        telefono=telefono,
+                        agenda_notes=agenda_notes,
+                        comuna=str(s.get("comuna") or ""),
+                        direccion=str(s.get("direccion") or ""),
+                        start_time=str(s.get("start_time") or ""),
+                        end_time=str(s.get("end_time") or ""),
+                        ops=int(s.get("ops") or 1),
+                        products_text=str(s.get("products_text") or ""),
+                        montaje_text=str(s.get("montaje_text") or ""),
+                        label=lab,
+                    )
                 )
-            )
+        else:
+            grouped = _items_grouped_by_day(items, base_day)
+            total_days = len(grouped) if grouped else 1
+            for idx, (day, items_day) in enumerate(grouped or [(base_day, items)], start=1):
+                obd = overrides_by_day.get(day.isoformat(), {}) if overrides_by_day else {}
+
+                ops_day = None
+                try:
+                    if obd.get("ops") is not None and str(obd.get("ops")).strip() != "":
+                        ops_day = int(obd.get("ops"))
+                except Exception:
+                    ops_day = None
+
+                mt_day = None
+                try:
+                    if obd.get("montaje_text") is not None:
+                        mt_day = str(obd.get("montaje_text") or "").strip() or None
+                except Exception:
+                    mt_day = None
+
+                day_label = f"Día {idx}/{total_days} · {day.isoformat()}" if total_days > 1 else day.isoformat()
+
+                eventos.append(
+                    _build_event_for_day(
+                        lead=lead,
+                        day=day,
+                        comuna=comuna,
+                        marca=marca,
+                        items_day=items_day,
+                        telefono=telefono,
+                        direccion=direccion,
+                        start_time=start_time,
+                        end_time=end_time,
+                        hr_tbd=hr_tbd,
+                        agenda_notes=agenda_notes,
+                        override_title=override_title,
+                        override_location=override_location,
+                        override_description=override_description,
+                        override_ops=(ops_day if ops_day is not None else override_ops_global),
+                        override_montaje_text=(mt_day if mt_day is not None else override_montaje_global),
+                        day_label=day_label,
+                    )
+                )
 
         ev = eventos[0] if eventos else None
         if not ev:
@@ -1532,6 +1689,7 @@ def move_lead_and_maybe_agenda(
                     {
                         "id_evento": None,
                         "day": e.get("day"),
+                        "label": e.get("label"),
                         "title": e.get("title"),
                         "start_at": e.get("start_at"),
                         "end_at": e.get("end_at"),
@@ -1547,6 +1705,7 @@ def move_lead_and_maybe_agenda(
                 "evento": {
                     "id_evento": None,
                     "day": ev.get("day"),
+                    "label": ev.get("label"),
                     "title": ev["title"],
                     "start_at": ev["start_at"],
                     "end_at": ev["end_at"],
@@ -1710,6 +1869,51 @@ def move_lead_and_maybe_agenda(
             products_clean = _clean_products((ev.get("products_text") or "").strip())
             montaje_clean = _clean_montaje((ev.get("montaje_text") or "").strip())
 
+            segmentos_txt = ""
+            if segments_used and len(eventos) > 1:
+                parts_seg: list[str] = []
+                for i, e2 in enumerate(eventos, start=1):
+                    seg_day = _fmt_ddmmyyyy(e2.get("day"))
+                    seg_loc = _as_text(e2.get("location") or "").strip()
+                    seg_ops = e2.get("ops") or 1
+                    seg_dir = ""
+                    try:
+                        desc = _as_text(e2.get("description") or "")
+                        for ln in desc.splitlines():
+                            if ln.strip().upper().startswith("📍 DIRECCION:"):
+                                seg_dir = ln.split(":", 1)[1].strip()
+                                break
+                    except Exception:
+                        seg_dir = ""
+                    seg_prod = _clean_products(_as_text(e2.get("products_text") or "").strip()) or "—"
+                    seg_mon = _clean_montaje(_as_text(e2.get("montaje_text") or "").strip()) or "—"
+                    hr = ""
+                    try:
+                        st = _as_text(e2.get("start_at") or "")
+                        en = _as_text(e2.get("end_at") or "")
+                        if st and en:
+                            hr = f"{st[11:16]} - {en[11:16]}"
+                    except Exception:
+                        hr = ""
+                    parts_seg += [
+                        f"SEGMENTO {i}/{len(eventos)}",
+                        f"Fecha: {seg_day}",
+                        f"Comuna: {seg_loc}",
+                        (f"Horario: {hr}" if hr else "Horario: —"),
+                        f"OPS: {seg_ops}",
+                        f"Dirección: {seg_dir or '—'}",
+                        "",
+                        "Productos:",
+                        seg_prod,
+                        "",
+                        "Montaje:",
+                        seg_mon,
+                        "",
+                        "-----",
+                        "",
+                    ]
+                segmentos_txt = "\n".join(parts_seg).strip()
+
             resumen = "\n".join(
                 [
                     f"Cliente: {cliente}",
@@ -1719,6 +1923,7 @@ def move_lead_and_maybe_agenda(
                     f"Fecha evento: {fecha_txt}",
                     f"OPS: {ops}",
                     "",
+                    *(["Segmentos:", segmentos_txt, ""] if segmentos_txt else []),
                     "Productos:",
                     products_clean or "—",
                     "",

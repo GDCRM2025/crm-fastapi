@@ -59,6 +59,21 @@ def get_vapid_public_key() -> str | None:
     if k:
         return k
 
+    # Optional: cached public key file (generated once by script / runtime).
+    try:
+        pub_file = os.path.join(_project_root(), "data", "vapid_public_key.txt")
+        if os.path.exists(pub_file):
+            txt = ""
+            try:
+                with open(pub_file, "r", encoding="utf-8") as f:
+                    txt = (f.read() or "").strip()
+            except Exception:
+                txt = ""
+            if txt:
+                return txt
+    except Exception:
+        pass
+
     priv_path = get_vapid_private_key()
     if not priv_path:
         return None
@@ -75,7 +90,16 @@ def get_vapid_public_key() -> str | None:
         priv = serialization.load_pem_private_key(pem, password=None)
         pub = priv.public_key()  # type: ignore[attr-defined]
         pub_bytes = pub.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
-        return _b64url(pub_bytes)
+        out = _b64url(pub_bytes)
+        # Cache to file for environments where env vars are not loaded reliably.
+        try:
+            pub_file = os.path.join(_project_root(), "data", "vapid_public_key.txt")
+            if out and (not os.path.exists(pub_file)):
+                with open(pub_file, "w", encoding="utf-8") as f:
+                    f.write(out)
+        except Exception:
+            pass
+        return out
     except Exception:
         return None
 

@@ -2432,6 +2432,14 @@ async function handleConfirmado(lead, newEstado){
             <div class="muted agSmall" id="ag_duracion" style="align-self:center;margin-top:26px">Duración: —</div>
           </div>
 
+          <div class="agRow" style="gap:12px;align-items:center">
+            <label style="display:flex;align-items:center;gap:8px">
+              <input id="ag_multiloc" type="checkbox" />
+              <span class="muted" style="font-weight:1000">Multi-locación</span>
+            </label>
+            <div class="muted agSmall" id="ag_multiloc_hint">Varias paradas en el mismo día (dirección/horario/productos/OPS por segmento).</div>
+          </div>
+
           <div class="agRow" style="gap:12px">
             <label class="agLabel" style="flex:1;min-width:240px">
               <div class="muted">Teléfono</div>
@@ -2453,7 +2461,16 @@ async function handleConfirmado(lead, newEstado){
             <textarea id="ag_notes" class="swTa" rows="3" placeholder="Notas importantes para operaciones / cliente…"></textarea>
           </label>
 
-          <div class="agPreview" style="max-height:none">
+          <div id="ag_segments_wrap" style="display:none;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.10);display:grid;gap:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <div class="muted" style="font-weight:1000">Segmentos (multi-locación)</div>
+              <button type="button" class="swBtn secondary" id="ag_seg_add" style="white-space:nowrap">Agregar segmento</button>
+            </div>
+            <div class="muted agSmall">Crea 1 segmento por parada. Cada segmento crea un evento en Calendar.</div>
+            <div id="ag_seg_list" style="display:grid;gap:10px"></div>
+          </div>
+
+          <div class="agPreview" id="ag_products_wrap" style="max-height:none">
             <div class="muted" style="margin-bottom:6px;font-weight:1000">Productos (día seleccionado)</div>
             <pre id="ag_products_day" class="agMono">(cargando…)</pre>
           </div>
@@ -2470,24 +2487,26 @@ async function handleConfirmado(lead, newEstado){
             <input id="ag_title" class="swInp" placeholder="Título del evento" />
           </label>
 
-          <div class="agRow" style="align-items:center;justify-content:space-between">
-            <div class="muted" style="font-weight:1000">Agenda por día</div>
-            <div id="ag_day_tabs" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"></div>
-          </div>
-
-          <div style="border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.10);display:grid;gap:10px">
-            <div class="muted" style="font-weight:1000">Montaje sugerido</div>
-            <div class="agRow" style="align-items:center">
-              <label class="agLabel" style="width:140px">
-                <div class="muted">OPS (día)</div>
-                <input id="ag_ops_day" class="swInp" type="number" min="0" step="1" />
-              </label>
-              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:22px">
-                <button type="button" class="swBtn secondary" id="ag_montaje_confirm" style="white-space:nowrap">Confirmar montaje</button>
-                <button type="button" class="swBtn" id="ag_montaje_edit" style="white-space:nowrap">Editar</button>
+	          <div id="ag_day_editor_wrap">
+	            <div class="agRow" style="align-items:center;justify-content:space-between">
+	              <div class="muted" id="ag_day_hdr" style="font-weight:1000">Agenda por día</div>
+	              <div id="ag_day_tabs" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"></div>
+	            </div>
+	
+	            <div id="ag_day_montaje_wrap" style="border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.10);display:grid;gap:10px">
+	              <div class="muted" style="font-weight:1000">Montaje sugerido</div>
+	              <div class="agRow" style="align-items:center">
+	                <label class="agLabel" style="width:140px">
+	                  <div class="muted">OPS (día)</div>
+                  <input id="ag_ops_day" class="swInp" type="number" min="0" step="1" />
+                </label>
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:22px">
+                  <button type="button" class="swBtn secondary" id="ag_montaje_confirm" style="white-space:nowrap">Confirmar montaje</button>
+                  <button type="button" class="swBtn" id="ag_montaje_edit" style="white-space:nowrap">Editar</button>
+                </div>
               </div>
+              <textarea id="ag_montaje_day" class="swTa" rows="7" placeholder="Montaje sugerido…"></textarea>
             </div>
-            <textarea id="ag_montaje_day" class="swTa" rows="7" placeholder="Montaje sugerido…"></textarea>
           </div>
 
           <label class="agLabel">
@@ -2512,6 +2531,10 @@ async function handleConfirmado(lead, newEstado){
   const touched = { title:false, loc:false, desc:false };
   let previewEvents = [];
   let selectedIdx = 0;
+  let TIMES = [];
+  let TIMES_OPT = "";
+  let multiLocOn = false;
+  let segState = []; // [{comuna,direccion,start_time,end_time,ops,products_text,montaje_text}]
   const dayEdits = {}; // day -> { ops, montaje }
   const touchedDay = {}; // day -> { ops, montaje }
 
@@ -2537,12 +2560,171 @@ async function handleConfirmado(lead, newEstado){
 	    if (btnE) btnE.disabled = !locked;
 	  };
 
+  // ===== Multi-locación (segmentos) =====
+  const _segWrap = ()=> qs("#ag_segments_wrap");
+  const _segList = ()=> qs("#ag_seg_list");
+  const _segAddBtn = ()=> qs("#ag_seg_add");
+  const _dayEditorWrap = ()=> qs("#ag_day_editor_wrap");
+  const _productsWrap = ()=> qs("#ag_products_wrap");
+  let _segDebounce = null;
+  const _schedulePreview = ()=>{
+    try{
+      clearTimeout(_segDebounce);
+      _segDebounce = setTimeout(()=>{ try{ runPreview(); }catch(_){ } }, 220);
+    }catch(_){}
+  };
+
+  const _normalizeBullets = (txt)=>{
+    const raw = String(txt || "");
+    const lines = raw.split("\n").map(l=>l.trim()).filter(Boolean);
+    const out = [];
+    for (const ln0 of lines){
+      const ln = String(ln0 || "").trim();
+      if (!ln) continue;
+      const up = ln.toUpperCase();
+      if (up === "PRODUCTOS" || up === "PRODUCTOS:" || up === "MONTAJE" || up === "MONTAJE:" || up === "MONTAJE SUGERIDO") continue;
+      if (ln.startsWith("•")) out.push(ln);
+      else if (ln.startsWith("-")) out.push("• " + ln.replace(/^-+\s*/, ""));
+      else out.push("• " + ln);
+    }
+    return out;
+  };
+
+  const _readSegStateFromDOM = ()=>{
+    try{
+      const list = _segList();
+      if (!list) return segState || [];
+      const cards = [...list.querySelectorAll("[data-seg-idx]")];
+      const next = [];
+      for (const card of cards){
+        const comuna = (card.querySelector("[data-f='comuna']")?.value || "").trim();
+        const direccion = (card.querySelector("[data-f='direccion']")?.value || "").trim();
+        const start_time = (card.querySelector("[data-f='start_time']")?.value || "").trim();
+        const end_time = (card.querySelector("[data-f='end_time']")?.value || "").trim();
+        const ops = Number((card.querySelector("[data-f='ops']")?.value || "").trim() || 0);
+        const products_text = (card.querySelector("[data-f='products_text']")?.value || "").trim();
+        const montaje_text = (card.querySelector("[data-f='montaje_text']")?.value || "").trim();
+        next.push({ comuna, direccion, start_time, end_time, ops, products_text, montaje_text });
+      }
+      segState = next;
+      return segState;
+    }catch(_){
+      return segState || [];
+    }
+  };
+
+  const _renderSegments = ()=>{
+    const wrap = _segWrap();
+    const list = _segList();
+    if (!wrap || !list) return;
+    const parts = [];
+    const n = Math.max(1, (segState || []).length);
+    for (let i=0;i<(segState||[]).length;i++){
+      const s = segState[i] || {};
+      parts.push(`
+        <div data-seg-idx="${i}" style="border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.08);display:grid;gap:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div class="muted" style="font-weight:1000">Segmento ${i+1}/${n}</div>
+            <button type="button" class="swBtn secondary" data-seg-del="${i}" ${n<=1 ? "disabled" : ""} style="white-space:nowrap">Quitar</button>
+          </div>
+          <div class="agRow" style="gap:12px">
+            <label class="agLabel" style="flex:1;min-width:200px">
+              <div class="muted">Comuna</div>
+              <input class="swInp" data-f="comuna" value="${escapeHtml(s.comuna||"")}" placeholder="Ej: Providencia" />
+            </label>
+            <label class="agLabel" style="flex:2;min-width:240px">
+              <div class="muted">Dirección</div>
+              <input class="swInp" data-f="direccion" value="${escapeHtml(s.direccion||"")}" placeholder="Ej: Av. Apoquindo 2730" />
+            </label>
+          </div>
+          <div class="agRow" style="gap:12px">
+            <label class="agLabel">
+              <div class="muted">Inicio (24h)</div>
+              <select class="swSel" data-f="start_time">${TIMES_OPT || `<option value=\"\">—</option>`}</select>
+            </label>
+            <label class="agLabel">
+              <div class="muted">Fin (24h)</div>
+              <select class="swSel" data-f="end_time">${TIMES_OPT || `<option value=\"\">—</option>`}</select>
+            </label>
+            <label class="agLabel" style="width:140px">
+              <div class="muted">OPS</div>
+              <input class="swInp" type="number" min="1" step="1" data-f="ops" value="${escapeHtml(String(s.ops ?? ""))}" />
+            </label>
+          </div>
+          <label class="agLabel">
+            <div class="muted">Productos</div>
+            <textarea class="swTa" rows="4" data-f="products_text" placeholder="Ej: 400 Pop corn">${escapeHtml(s.products_text||"")}</textarea>
+          </label>
+          <label class="agLabel">
+            <div class="muted">Montaje</div>
+            <textarea class="swTa" rows="3" data-f="montaje_text" placeholder="Ej: 1 x Carro Clásico">${escapeHtml(s.montaje_text||"")}</textarea>
+          </label>
+        </div>
+      `);
+    }
+    list.innerHTML = parts.join("");
+
+    // Set selects current values + listeners
+    [...list.querySelectorAll("[data-seg-idx]")].forEach((card, i)=>{
+      const s = segState[i] || {};
+      const selA = card.querySelector("select[data-f='start_time']");
+      const selB = card.querySelector("select[data-f='end_time']");
+      if (selA) selA.value = String(s.start_time || "");
+      if (selB) selB.value = String(s.end_time || "");
+      card.querySelectorAll("input,textarea,select").forEach((inp)=>{
+        inp.addEventListener("input", ()=>{ _readSegStateFromDOM(); _schedulePreview(); });
+        inp.addEventListener("change", ()=>{ _readSegStateFromDOM(); _schedulePreview(); });
+      });
+    });
+
+    list.querySelectorAll("button[data-seg-del]").forEach((b)=>{
+      b.addEventListener("click", ()=>{
+        const idx = Number(b.getAttribute("data-seg-del") || -1);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        if ((segState||[]).length <= 1) return;
+        _readSegStateFromDOM();
+        segState.splice(idx, 1);
+        _renderSegments();
+        _schedulePreview();
+      });
+    });
+  };
+
+  const _seedSegmentsFromCurrent = ()=>{
+    try{
+      const loc = (qs("#ag_loc")?.value || "").trim() || (previewEvents[0]?.location || "");
+      const dir = (qs("#ag_dir")?.value || "").trim();
+      const hIni = (qs("#ag_hini")?.value || "").trim();
+      const hFin = (qs("#ag_hfin")?.value || "").trim();
+      const ops = Number((qs("#ag_ops_day")?.value || "").trim() || (previewEvents[0]?.ops ?? 1) || 1);
+      const prod = (qs("#ag_products_day")?.textContent || "").trim();
+      const mt = (qs("#ag_montaje_day")?.value || "").trim();
+      const s1 = { comuna: loc, direccion: dir, start_time: hIni, end_time: hFin, ops: (Number.isFinite(ops) && ops>0)?ops:1, products_text: prod, montaje_text: mt };
+      const s2 = { comuna: loc, direccion: dir, start_time: hIni, end_time: hFin, ops: 1, products_text: "", montaje_text: "" };
+      segState = [s1, s2];
+    }catch(_){
+      segState = [{ comuna:"", direccion:"", start_time:"", end_time:"", ops:1, products_text:"", montaje_text:"" }];
+    }
+  };
+
+	  const _applyMultiLocUI = ()=>{
+	    const on = !!multiLocOn;
+	    const wrap = _segWrap();
+	    const dayHdr = qs("#ag_day_hdr");
+	    const dayMont = qs("#ag_day_montaje_wrap");
+	    const prodW = _productsWrap();
+	    if (wrap) wrap.style.display = on ? "grid" : "none";
+	    if (dayHdr) dayHdr.textContent = on ? "Segmentos" : "Agenda por día";
+	    if (dayMont) dayMont.style.display = on ? "none" : "";
+	    if (prodW) prodW.style.display = on ? "none" : "";
+	  };
+
   const renderDayTabs = ()=>{
     const wrap = qs("#ag_day_tabs");
     if (!wrap) return;
     const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
     const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
-    const showTabs = (quoteSource === "manual") && (previewEvents.length > 1);
+    const showTabs = ((quoteSource === "manual") || !!multiLocOn) && (previewEvents.length > 1);
     wrap.style.display = showTabs ? "flex" : "none";
     if (!showTabs){
       wrap.innerHTML = "";
@@ -2552,7 +2734,7 @@ async function handleConfirmado(lead, newEstado){
 	    for (let i=0;i<previewEvents.length;i++){
 	      const e = previewEvents[i] || {};
       const d = String(e.day || "").slice(0,10);
-      const lab = `Día ${i+1}/${previewEvents.length} · ${d || "-"}`;
+      const lab = String(e.label || "").trim() || `Día ${i+1}/${previewEvents.length} · ${d || "-"}`;
       parts.push(`<button type="button" class="swBtn ${i===selectedIdx ? "" : "secondary"}" data-ag-day="${i}" style="padding:8px 10px;border-radius:999px">${escapeHtml(lab)}</button>`);
     }
     wrap.innerHTML = parts.join("");
@@ -2601,6 +2783,11 @@ async function handleConfirmado(lead, newEstado){
     const tel = (qs("#ag_tel")?.value || "").trim();
     const dir = (qs("#ag_dir")?.value || "").trim();
     const notes = (qs("#ag_notes")?.value || "").trim();
+    multiLocOn = !!qs("#ag_multiloc")?.checked;
+    if (multiLocOn){
+      // Mantener segState actualizado con lo que el usuario tiene en pantalla.
+      _readSegStateFromDOM();
+    }
 
     if (st) st.textContent = "Calculando…";
     try{
@@ -2617,6 +2804,7 @@ async function handleConfirmado(lead, newEstado){
           direccion: dir,
           ...(notes ? { agenda_notes: notes } : {}),
           ...(hrTbd ? { hr_tbd: true } : { start_time: hIni, end_time: hFin, hr_tbd: false }),
+          ...(multiLocOn ? { segments: (segState || []) } : {}),
         })
       });
       previewEvents = (Array.isArray(out?.eventos) && out.eventos.length) ? out.eventos : (out?.evento ? [out.evento] : []);
@@ -2632,10 +2820,10 @@ async function handleConfirmado(lead, newEstado){
     }
   };
 
-	  const res = await Swal.fire({
-	    title:"Confirmar + Agenda",
-	    html,
-	    width: 1040,
+		  const res = await Swal.fire({
+		    title:"Confirmar + Agenda",
+		    html,
+		    width: 1040,
 	    focusConfirm:false,
 	    showCancelButton:true,
 	    showDenyButton:true,
@@ -2643,28 +2831,29 @@ async function handleConfirmado(lead, newEstado){
 	    denyButtonText:"Confirmar sin agendar",
 	    cancelButtonText:"Cancelar",
 	    heightAuto:false,
-	    customClass: { popup: "gdAgenda" },
-	    didOpen: async ()=>{
-      const q = qs("#ag_quote");
-      if (q) q.value = defaultSel || "manual";
-
-      // Horas (24h) - selector estable en iOS/Android (evita pickers 12h).
-      const TIMES = (() => {
-        const out = [];
-        for (let h = 0; h < 24; h++) {
-          for (const m of [0, 15, 30, 45]) {
-            out.push(String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"));
-          }
-        }
-        return out;
-      })();
-      const fillSel = (id) => {
-        const el = qs(id);
-        if (!el) return;
-        el.innerHTML = `<option value="">—</option>` + TIMES.map((t) => `<option value="${t}">${t}</option>`).join("");
-      };
-      fillSel("#ag_hini");
-      fillSel("#ag_hfin");
+		    customClass: { popup: "gdAgenda" },
+		    didOpen: async ()=>{
+	      const q = qs("#ag_quote");
+	      if (q) q.value = defaultSel || "manual";
+	
+	      // Horas (24h) - selector estable en iOS/Android (evita pickers 12h).
+	      TIMES = (() => {
+	        const out = [];
+	        for (let h = 0; h < 24; h++) {
+	          for (const m of [0, 15, 30, 45]) {
+	            out.push(String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"));
+	          }
+	        }
+	        return out;
+	      })();
+	      TIMES_OPT = `<option value="">—</option>` + TIMES.map((t) => `<option value="${t}">${t}</option>`).join("");
+	      const fillSel = (id) => {
+	        const el = qs(id);
+	        if (!el) return;
+	        el.innerHTML = TIMES_OPT;
+	      };
+	      fillSel("#ag_hini");
+	      fillSel("#ag_hfin");
 
       const timeFromDT = (v) => {
         if (!v) return "";
@@ -2782,27 +2971,117 @@ async function handleConfirmado(lead, newEstado){
         el.textContent = `Duración: ${hh}h ${mm.toString().padStart(2,"0")}m`;
       };
 
-      qs("#ag_hrtbd") && qs("#ag_hrtbd").addEventListener("change", ()=>{ updDur(); runPreview(); });
-      qs("#ag_hini") && qs("#ag_hini").addEventListener("change", ()=>{ updDur(); runPreview(); });
-      qs("#ag_hfin") && qs("#ag_hfin").addEventListener("change", ()=>{ updDur(); runPreview(); });
-      qs("#ag_tel") && qs("#ag_tel").addEventListener("change", runPreview);
-      qs("#ag_dir") && qs("#ag_dir").addEventListener("change", runPreview);
+	      qs("#ag_hrtbd") && qs("#ag_hrtbd").addEventListener("change", ()=>{ updDur(); runPreview(); });
+	      qs("#ag_hini") && qs("#ag_hini").addEventListener("change", ()=>{ updDur(); runPreview(); });
+	      qs("#ag_hfin") && qs("#ag_hfin").addEventListener("change", ()=>{ updDur(); runPreview(); });
+	      qs("#ag_tel") && qs("#ag_tel").addEventListener("change", runPreview);
+	      qs("#ag_dir") && qs("#ag_dir").addEventListener("change", runPreview);
+	
+	      // Multi-locación (segmentos)
+	      const ml = qs("#ag_multiloc");
+	      if (ml){
+	        ml.addEventListener("change", ()=>{
+	          multiLocOn = !!ml.checked;
+	          if (multiLocOn && (!Array.isArray(segState) || segState.length === 0)){
+	            _seedSegmentsFromCurrent();
+	          }
+	          if (multiLocOn){
+	            _renderSegments();
+	          }
+	          _applyMultiLocUI();
+	          _schedulePreview();
+	        });
+	      }
+	      const addSeg = _segAddBtn();
+	      if (addSeg){
+	        addSeg.addEventListener("click", ()=>{
+	          _readSegStateFromDOM();
+	          const last = (segState && segState.length) ? (segState[segState.length-1] || {}) : {};
+	          segState.push({
+	            comuna: String(last.comuna || "").trim(),
+	            direccion: String(last.direccion || "").trim(),
+	            start_time: String(last.start_time || (qs("#ag_hini")?.value || "")).trim(),
+	            end_time: String(last.end_time || (qs("#ag_hfin")?.value || "")).trim(),
+	            ops: Number.isFinite(Number(last.ops)) && Number(last.ops) > 0 ? Number(last.ops) : 1,
+	            products_text: "",
+	            montaje_text: "",
+	          });
+	          _renderSegments();
+	          _schedulePreview();
+	        });
+	      }
+	      _applyMultiLocUI();
 	      updDur();
 	      await runPreview();
-	    },
-	    preConfirm: ()=>{
+		    },
+		    preConfirm: ()=>{
 	      const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
 	      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
 	      const idCot = (quoteSource === "cotizador") ? qSel : null;
-	      const hrTbd = !!qs("#ag_hrtbd")?.checked;
-	      const hIni = (qs("#ag_hini")?.value || "").trim();
-	      const hFin = (qs("#ag_hfin")?.value || "").trim();
-	      if (!hrTbd && (!hIni || !hFin)) return Swal.showValidationMessage("Debes indicar horas o marcar HR TBD.");
-	      saveCurrentDay();
-	      const overrideByDay = [];
-	      for (const e of (previewEvents || [])){
-        const day = String(e.day || "").slice(0,10);
-        if (!day) continue;
+		      const multiLoc = !!qs("#ag_multiloc")?.checked;
+		      const hrTbd = !!qs("#ag_hrtbd")?.checked;
+		      const hIni = (qs("#ag_hini")?.value || "").trim();
+		      const hFin = (qs("#ag_hfin")?.value || "").trim();
+		      if (!multiLoc){
+		        if (!hrTbd && (!hIni || !hFin)) return Swal.showValidationMessage("Debes indicar horas o marcar HR TBD.");
+		        saveCurrentDay();
+		      }
+
+		      let segsOut = null;
+		      if (multiLoc){
+		        _readSegStateFromDOM();
+		        const segs = Array.isArray(segState) ? segState : [];
+		        if (segs.length < 2){
+		          Swal.showValidationMessage("Multi-locación requiere al menos 2 segmentos.");
+		          return false;
+		        }
+		        const cleaned = [];
+		        for (let i=0;i<segs.length;i++){
+		          const s = segs[i] || {};
+		          const comuna = String(s.comuna || "").trim();
+		          const direccion = String(s.direccion || "").trim();
+		          const start_time = String(s.start_time || "").trim();
+		          const end_time = String(s.end_time || "").trim();
+		          const ops = Number(s.ops || 0);
+		          const products_text = (String(s.products_text || "").trim());
+		          const montaje_text = (String(s.montaje_text || "").trim());
+		          if (!comuna){
+		            Swal.showValidationMessage(`Falta comuna en Segmento ${i+1}.`);
+		            return false;
+		          }
+		          if (!direccion){
+		            Swal.showValidationMessage(`Falta dirección en Segmento ${i+1}.`);
+		            return false;
+		          }
+		          if (!start_time || !end_time){
+		            Swal.showValidationMessage(`Faltan horas (inicio/fin) en Segmento ${i+1}.`);
+		            return false;
+		          }
+		          if (!Number.isFinite(ops) || ops < 1){
+		            Swal.showValidationMessage(`Falta OPS (>=1) en Segmento ${i+1}.`);
+		            return false;
+		          }
+		          if (!products_text){
+		            Swal.showValidationMessage(`Faltan productos en Segmento ${i+1}.`);
+		            return false;
+		          }
+		          cleaned.push({
+		            comuna,
+		            direccion,
+		            start_time,
+		            end_time,
+		            ops: Math.round(ops),
+		            products_text: _normalizeBullets(products_text).join("\n"),
+		            montaje_text: _normalizeBullets(montaje_text).join("\n"),
+		          });
+		        }
+		        segsOut = cleaned;
+		      }
+
+		      const overrideByDay = [];
+		      for (const e of (previewEvents || [])){
+	        const day = String(e.day || "").slice(0,10);
+	        if (!day) continue;
         const ed = dayEdits[day];
         const td = touchedDay[day];
         if (!ed && !td) continue;
@@ -2813,55 +3092,57 @@ async function handleConfirmado(lead, newEstado){
 	        if ((td?.montaje || false) && mtV) row.montaje_text = mtV;
 	        if (row.ops != null || row.montaje_text) overrideByDay.push(row);
 	      }
-	      // Validación: SIEMPRE debe haber operadores (>=1) por día.
-	      // En manual multi-día esto es crítico para operaciones.
-	      const opsByDay = new Map();
-	      for (const r of overrideByDay){
-	        const d = String(r?.day || "").slice(0,10);
-	        if (d && r?.ops != null && Number.isFinite(Number(r.ops))) opsByDay.set(d, Number(r.ops));
-	      }
-	      for (let i=0;i<(previewEvents||[]).length;i++){
-	        const e = previewEvents[i] || {};
-	        const d = String(e.day || "").slice(0,10);
-	        const baseOps = Number(e.ops ?? 0);
-	        const finalOps = opsByDay.has(d) ? Number(opsByDay.get(d) || 0) : baseOps;
-	        if (!Number.isFinite(finalOps) || finalOps < 1){
-	          try{
-	            selectedIdx = Math.max(0, Math.min((previewEvents||[]).length-1, i));
-	            renderDayTabs();
-	            renderPreviewForSelectedDay();
-	            const el = qs("#ag_ops_day");
-	            el && el.focus && el.focus();
-	          }catch(_){}
-	          Swal.showValidationMessage(`Falta OPS (>=1) para ${d ? ("el día " + d) : "un día del evento"}.`);
-	          return false;
-	        }
-	      }
-        // Validación: para agendar (confirm) necesitamos productos cuando es manual.
-        if (quoteSource === "manual"){
-          const hasPrev = Array.isArray(previewEvents) && previewEvents.length > 0;
-          const hasProducts = hasPrev && String((previewEvents[0] || {}).products_text || "").trim();
-          if (!hasProducts){
-            Swal.showValidationMessage("Faltan productos manuales. Usa “Editar productos” antes de agendar.");
-            return false;
-          }
-        }
-	      return {
-	        quote_source: quoteSource,
-	        id_cotizacion: idCot ? Number(idCot) : null,
-	        hr_tbd: hrTbd,
-        start_time: hIni,
-        end_time: hFin,
-        telefono: (qs("#ag_tel")?.value || "").trim(),
-        direccion: (qs("#ag_dir")?.value || "").trim(),
-        agenda_notes: (qs("#ag_notes")?.value || "").trim(),
-        override_title: (qs("#ag_title")?.value || "").trim(),
-        override_location: (qs("#ag_loc")?.value || "").trim(),
-        override_description: (qs("#ag_desc")?.value || "").trim(),
-        override_by_day: overrideByDay,
-      };
-    }
-    ,
+		      // Validación: SIEMPRE debe haber operadores (>=1) por día.
+		      // En manual multi-día esto es crítico para operaciones.
+		      if (!multiLoc){
+		        const opsByDay = new Map();
+		        for (const r of overrideByDay){
+		          const d = String(r?.day || "").slice(0,10);
+		          if (d && r?.ops != null && Number.isFinite(Number(r.ops))) opsByDay.set(d, Number(r.ops));
+		        }
+		        for (let i=0;i<(previewEvents||[]).length;i++){
+		          const e = previewEvents[i] || {};
+		          const d = String(e.day || "").slice(0,10);
+		          const baseOps = Number(e.ops ?? 0);
+		          const finalOps = opsByDay.has(d) ? Number(opsByDay.get(d) || 0) : baseOps;
+		          if (!Number.isFinite(finalOps) || finalOps < 1){
+		            try{
+		              selectedIdx = Math.max(0, Math.min((previewEvents||[]).length-1, i));
+		              renderDayTabs();
+		              renderPreviewForSelectedDay();
+		              const el = qs("#ag_ops_day");
+		              el && el.focus && el.focus();
+		            }catch(_){}
+		            Swal.showValidationMessage(`Falta OPS (>=1) para ${d ? ("el día " + d) : "un día del evento"}.`);
+		            return false;
+		          }
+		        }
+		        // Validación: para agendar (confirm) necesitamos productos cuando es manual.
+		        if (quoteSource === "manual"){
+		          const hasPrev = Array.isArray(previewEvents) && previewEvents.length > 0;
+		          const hasProducts = hasPrev && String((previewEvents[0] || {}).products_text || "").trim();
+		          if (!hasProducts){
+		            Swal.showValidationMessage("Faltan productos manuales. Usa “Editar productos” antes de agendar.");
+		            return false;
+		          }
+		        }
+		      }
+		      return {
+		        quote_source: quoteSource,
+		        id_cotizacion: idCot ? Number(idCot) : null,
+		        hr_tbd: segsOut ? false : hrTbd,
+	        start_time: segsOut ? String((segsOut[0]||{}).start_time || "").trim() : hIni,
+	        end_time: segsOut ? String((segsOut[0]||{}).end_time || "").trim() : hFin,
+	        telefono: (qs("#ag_tel")?.value || "").trim(),
+	        direccion: (qs("#ag_dir")?.value || "").trim(),
+	        agenda_notes: (qs("#ag_notes")?.value || "").trim(),
+	        override_title: (qs("#ag_title")?.value || "").trim(),
+	        override_location: (qs("#ag_loc")?.value || "").trim(),
+	        override_description: (qs("#ag_desc")?.value || "").trim(),
+	        ...(segsOut ? { segments: segsOut } : { override_by_day: overrideByDay }),
+	      };
+	    }
+	    ,
     // Deny = confirmar sin agendar: NO validamos horas ni obligamos productos manuales aquí.
     preDeny: ()=>{
       const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
@@ -2930,21 +3211,22 @@ async function handleConfirmado(lead, newEstado){
     if (!ok.isConfirmed) return false;
   }
 
-		  const payload = {
-		    id_estado: Number(newEstado),
-		    agendar: true,
-	    quote_source: v.quote_source,
-	    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
-	    telefono: v.telefono,
-	    direccion: v.direccion,
-	    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
-	    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
-	    ...(v.agenda_notes ? { agenda_notes: v.agenda_notes } : {}),
-	    ...(v.override_title ? { override_title: v.override_title } : {}),
-	    ...(v.override_location ? { override_location: v.override_location } : {}),
-	    ...(v.override_description ? { override_description: v.override_description } : {}),
-	    ...(Array.isArray(v.override_by_day) && v.override_by_day.length ? { override_by_day: v.override_by_day } : {}),
-	  };
+			  const payload = {
+			    id_estado: Number(newEstado),
+			    agendar: true,
+		    quote_source: v.quote_source,
+		    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
+		    telefono: v.telefono,
+		    direccion: v.direccion,
+		    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
+		    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
+		    ...(v.agenda_notes ? { agenda_notes: v.agenda_notes } : {}),
+		    ...(v.override_title ? { override_title: v.override_title } : {}),
+		    ...(v.override_location ? { override_location: v.override_location } : {}),
+		    ...(v.override_description ? { override_description: v.override_description } : {}),
+		    ...(Array.isArray(v.override_by_day) && v.override_by_day.length ? { override_by_day: v.override_by_day } : {}),
+		    ...(Array.isArray(v.segments) && v.segments.length ? { segments: v.segments } : {}),
+		  };
 
   const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
     method:"POST",

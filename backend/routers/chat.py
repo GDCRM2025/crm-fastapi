@@ -23,6 +23,29 @@ import time
 router = APIRouter(prefix="/chat", tags=["chat"])
 _DDL_READY = False
 
+_ROLE_NUM_MAP = {
+    "1": "ADMIN",
+    "2": "EJECUTIVO",
+    "3": "OPERACIONES",
+    "4": "BODEGUERO",
+    "5": "COMPRAS",
+    "6": "CONDUCTOR",
+    "7": "OPERADOR",
+    "8": "MICE",
+    "9": "OPERADOR PATIO",
+    "11": "FINANZAS",
+    "12": "SUPERADMIN",
+}
+
+
+def _norm_role_value(v: str) -> str:
+    s = str(v or "").strip()
+    if not s:
+        return ""
+    if s.isdigit():
+        return _ROLE_NUM_MAP.get(s, s)
+    return s.upper()
+
 def _cols(db: Session, table: str) -> set[str]:
     rows = db.execute(
         text(
@@ -238,7 +261,8 @@ def _ensure_default_groups(db: Session) -> None:
         sel_name = "COALESCE(NULLIF(nombre,''), NULLIF(username,''), NULLIF(email,''), 'Usuario') AS name" if ("nombre" in cols_u or "username" in cols_u or "email" in cols_u) else "'Usuario' AS name"
         sel_email = "COALESCE(email,'') AS email" if "email" in cols_u else "'' AS email"
         sel_username = "COALESCE(username,'') AS username" if "username" in cols_u else "'' AS username"
-        sel_role = "COALESCE(rol,'') AS rol" if "rol" in cols_u else "'' AS rol"
+        # rol puede ser INT o TEXT según instalaciones; lo normalizamos a texto.
+        sel_role = "COALESCE(rol::text,'') AS rol" if "rol" in cols_u else "'' AS rol"
         sel_avatar = "COALESCE(avatar_url,'') AS avatar_url" if "avatar_url" in cols_u else "'' AS avatar_url"
         where = ["1=1"]
         if "is_active" in cols_u:
@@ -286,7 +310,7 @@ def _ensure_default_groups(db: Session) -> None:
                     "name": str(r.get("name") or "").strip(),
                     "email": str(r.get("email") or "").strip(),
                     "username": str(r.get("username") or "").strip().lower(),
-                    "rol": str(r.get("rol") or ""),
+                    "rol": _norm_role_value(r.get("rol") or ""),
                     "avatar_url": (str(r.get("avatar_url") or "").strip() or None),
                 }
             )
@@ -426,12 +450,6 @@ def list_users(
     # si existe is_active, filtramos, pero tratamos NULL como TRUE (no queremos esconder usuarios por data incompleta)
     if "is_active" in cols_u:
         where.append("COALESCE(is_active, TRUE) = TRUE")
-    # Por defecto el CRM oculta operadores/choferes para no ensuciar el listado.
-    # Staff app puede pedir include_staff=1.
-    if (not int(include_staff)) and ("rol" in cols_u):
-        where.append("COALESCE(upper(rol),'') NOT LIKE '%OPERADOR%'")
-        where.append("COALESCE(upper(rol),'') NOT LIKE '%CONDUCTOR%'")
-        where.append("COALESCE(upper(rol),'') NOT LIKE '%CHOFER%'")
     params = {"lim": lim}
     if q:
         parts = []
@@ -452,7 +470,8 @@ def list_users(
     sel_nombre = "nombre" if "nombre" in cols_u else "NULL::text"
     sel_email = "email" if "email" in cols_u else "NULL::text"
     sel_username = "username" if "username" in cols_u else "NULL::text"
-    sel_rol = "rol" if "rol" in cols_u else "NULL::text"
+    # rol puede ser INT o TEXT según instalaciones; lo tomamos como texto.
+    sel_rol = "rol::text" if "rol" in cols_u else "NULL::text"
     sel_avatar = "avatar_url" if "avatar_url" in cols_u else "NULL::text"
     order = "nombre" if "nombre" in cols_u else id_col
     rows = db.execute(
@@ -475,12 +494,17 @@ def list_users(
     ).mappings().all()
     items = []
     for r in rows:
+        role_norm = _norm_role_value(r.get("rol") or "")
+        if (not int(include_staff)) and role_norm:
+            ru = role_norm.upper()
+            if ("OPERADOR" in ru) or ("CONDUCTOR" in ru) or ("CHOFER" in ru):
+                continue
         items.append(
             {
                 "id": int(r.get("id_usuario")),
                 "name": r.get("nombre") or r.get("username") or "",
                 "email": r.get("email") or "",
-                "role": r.get("rol") or "",
+                "role": role_norm,
                 "avatar_url": r.get("avatar_url"),
             }
         )
