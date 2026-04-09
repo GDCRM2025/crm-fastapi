@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RRHH · Puntos + QR</title>
+  <link rel="stylesheet" href="../xp_royale.css" />
+  <style>
+    .wrap{ max-width: 1200px; margin: 0 auto; padding: 14px; }
+    .top{ display:flex; align-items:flex-end; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .title{ font-weight: 1000; font-size: 20px; }
+    .muted{ opacity:.75; font-weight:700; }
+    .card{ background: rgba(255,255,255,.92); border:1px solid rgba(15,23,42,.15); border-radius: 14px; padding: 12px; }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:12px; }
+    @media (max-width: 980px){ .grid{ grid-template-columns: 1fr; } }
+    table{ width:100%; border-collapse: collapse; }
+    th,td{ text-align:left; padding:10px 8px; border-bottom:1px solid rgba(15,23,42,.10); vertical-align:top; }
+    th{ font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.8; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .in{ height: 36px; border-radius: 12px; border:1px solid rgba(15,23,42,.18); padding: 0 10px; font-weight: 800; }
+    .btn{ height: 36px; border-radius: 12px; border:1px solid rgba(15,23,42,.20); padding: 0 12px; font-weight: 900; background: #fff; cursor:pointer; }
+    .btn.primary{ background: rgba(25,195,125,.18); border-color: rgba(25,195,125,.35); }
+    .qrImg{ width: 220px; height: 220px; border-radius: 10px; border:1px solid rgba(15,23,42,.12); background:#fff; }
+    .code{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 900; }
+    .small{ font-size: 12px; opacity:.8; }
+    .toast{ position: fixed; bottom: 12px; right: 12px; background: rgba(15,23,42,.92); color:#fff; padding: 10px 12px; border-radius: 12px; font-weight: 900; display:none; }
+    @media print{
+      .noPrint{ display:none !important; }
+      body{ background:#fff !important; }
+      .card{ box-shadow:none !important; }
+      .wrap{ max-width: none; padding: 0; }
+      .grid{ grid-template-columns: 1fr 1fr; }
+      .qrImg{ width: 260px; height: 260px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="title">Puntos de marcación + QR</div>
+        <div class="muted">1 QR por centro de costo (sede). Reimprime cuando quieras.</div>
+      </div>
+      <div class="row noPrint">
+        <button class="btn" id="reloadBtn" type="button">Actualizar</button>
+        <button class="btn primary" id="printBtn" type="button">Imprimir</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <table>
+        <thead>
+          <tr>
+            <th>Centro de costo</th>
+            <th>Config</th>
+            <th>QR</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="3" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="small muted" style="margin-top:10px">
+      Tip: el QR abre la pantalla de “Marcar” con el punto preseleccionado (parámetro <span class="code">?p=SGJO-...</span>).
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const API_BASE = (() => {
+      try { return (location.hostname === "localhost" || location.hostname === "127.0.0.1") ? "" : "/crm"; }
+      catch (_) { return ""; }
+    })();
+    const token = localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    function authHeaders(extra={}){ return token ? { ...extra, Authorization: "Bearer " + token } : extra; }
+    async function apiJSON(path, opts={}){
+      const r = await fetch(`${API_BASE}${path}`, { ...opts, headers: authHeaders({ "Accept":"application/json", ...(opts.headers||{}) }) });
+      const j = await r.json().catch(()=>null);
+      if(!r.ok) throw new Error((j && j.detail) ? String(j.detail) : `HTTP ${r.status}`);
+      return j;
+    }
+    function toast(msg){
+      const el = document.getElementById("toast");
+      if(!el) return;
+      el.textContent = msg;
+      el.style.display = "block";
+      clearTimeout(window.__t);
+      window.__t = setTimeout(()=>{ el.style.display="none"; }, 2200);
+    }
+    function qrescape(s){ return encodeURIComponent(String(s||"")); }
+    function mkQR(url){
+      // Quick win: usamos Google Chart para QR (externo). Es imprimible y estable.
+      // Si quieres 100% local sin CDN/externos, luego lo cambiamos por generador QR embebido.
+      const size = "260x260";
+      return `https://chart.googleapis.com/chart?cht=qr&chs=${size}&chl=${qrescape(url)}`;
+    }
+
+    async function load(){
+      const rowsEl = document.getElementById("rows");
+      rowsEl.innerHTML = `<tr><td colspan="3" class="muted">Cargando…</td></tr>`;
+      const cfg = await apiJSON("/rrhh/sgjo/config");
+      const sedes = Array.isArray(cfg?.sedes) ? cfg.sedes : [];
+      const puntos = Array.isArray(cfg?.puntos) ? cfg.puntos : [];
+
+      const bySede = new Map();
+      for(const p of puntos){
+        const sid = Number(p.id_sede || 0);
+        if(!bySede.has(sid)) bySede.set(sid, []);
+        bySede.get(sid).push(p);
+      }
+
+      const appBase = `${location.origin}${API_BASE}`;
+      rowsEl.innerHTML = sedes.map(s=>{
+        const sid = Number(s.id_sede || 0);
+        const sede = String(s.nombre || "—");
+        const p0 = (bySede.get(sid) || [])[0] || {};
+        const code = String(p0.code || "").trim();
+        const markUrl = `${appBase}/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(code)}`;
+        const img = mkQR(markUrl);
+        return `
+          <tr>
+            <td>
+              <div style="font-weight:1000">${sede}</div>
+              <div class="small muted code">${code || "—"}</div>
+              <div class="small muted">${markUrl}</div>
+            </td>
+            <td>
+              <div class="row noPrint" style="align-items:flex-end">
+                <label class="small muted">Radio (m)<br><input class="in" data-k="radius_m" data-id="${sid}" value="${Number(s.radius_m||20)}" style="width:90px" /></label>
+                <label class="small muted">Fallback (m)<br><input class="in" data-k="fallback_radius_m" data-id="${sid}" value="${Number(s.fallback_radius_m||35)}" style="width:110px" /></label>
+                <label class="small muted">Precisión (m)<br><input class="in" data-k="fallback_accuracy_m" data-id="${sid}" value="${Number(s.fallback_accuracy_m||25)}" style="width:120px" /></label>
+                <button class="btn" data-act="save" data-id="${sid}" type="button">Guardar</button>
+              </div>
+              <div class="small muted">Actual: ${Number(s.radius_m||20)} / ${Number(s.fallback_radius_m||35)} / ${Number(s.fallback_accuracy_m||25)}</div>
+            </td>
+            <td>
+              <img class="qrImg" src="${img}" alt="QR ${sede}" />
+            </td>
+          </tr>
+        `;
+      }).join("") || `<tr><td colspan="3" class="muted">Sin sedes.</td></tr>`;
+
+      rowsEl.querySelectorAll("button[data-act='save']").forEach(btn=>{
+        btn.addEventListener("click", async ()=>{
+          const sid = Number(btn.getAttribute("data-id")||0);
+          const inputs = [...rowsEl.querySelectorAll(`input[data-id='${sid}']`)];
+          const payload = {};
+          for(const inp of inputs){
+            payload[inp.getAttribute("data-k")] = Number(String(inp.value||"").replace(/[^0-9.]/g,"")||0);
+          }
+          try{
+            await apiJSON(`/rrhh/sgjo/admin/sede/${sid}`, { method:"PATCH", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
+            toast("Guardado.");
+            await load();
+          }catch(e){
+            alert("No pude guardar: " + (e?.message||e));
+          }
+        });
+      });
+    }
+
+    document.getElementById("reloadBtn").addEventListener("click", ()=>load().catch(e=>alert(e?.message||e)));
+    document.getElementById("printBtn").addEventListener("click", ()=>window.print());
+    load().catch(e=>alert(e?.message||e));
+  </script>
+</body>
+</html>
+

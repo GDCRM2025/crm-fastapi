@@ -394,7 +394,7 @@
         let vapidErr = "";
         try{
           // VAPID public key is public. We fetch it without auth to avoid false errors if the token expired.
-          const r = await fetch(`${API_BASE}/push/vapid_public_key`, { headers: { "Accept":"application/json" } });
+          const r = await fetch(`${API_BASE}/push/vapid_public_key?v=${encodeURIComponent(String(FRAME_V||""))}`, { headers: { "Accept":"application/json" } });
           if(r.ok){
             const j = await r.json().catch(() => null);
             vapidKey = j && j.publicKey;
@@ -418,6 +418,10 @@
           }
           if(el.includes("network") || el.includes("fetch")){
             alert("No se pudo conectar al servidor. Revisa tu internet e intenta nuevamente.");
+            return;
+          }
+          if(el.includes("not found") || el.includes("404")){
+            alert("Tu app está desactualizada o el enlace no es el correcto. Haz recarga completa y vuelve a intentar.");
             return;
           }
           // 503 u otros: realmente es VAPID faltante

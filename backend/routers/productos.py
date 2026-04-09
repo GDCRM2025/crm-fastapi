@@ -443,7 +443,22 @@ def _role(user):
 
 
 def _is_admin(role):
-    return role in ("ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "OPERACIONES", "MICE")
+    # "Admin" aquí significa: puede listar productos sin filtro por marcas asignadas.
+    # Esto NO implica permisos para crear/editar (eso se valida en endpoints de settings/productos).
+    return role in (
+        "ADMIN",
+        "SUPERADMIN",
+        "JEFE DE OPERACIONES",
+        "OPERACIONES",
+        "MICE",
+        "COMPRAS",
+        "BODEGUERO",
+        "OPERADOR",
+        "OPERADOR PATIO",
+        "CONDUCTOR",
+        "CHOFER",
+        "CHOP",
+    )
 
 
 class ProductoUpsert(BaseModel):

@@ -131,6 +131,46 @@ def config(db: Session = Depends(get_db), user: dict = Depends(get_current_user)
     return {"ok": True, "sedes": [dict(r) for r in sedes], "puntos": [dict(r) for r in puntos]}
 
 
+def _role_key(user: dict) -> str:
+    return str(user.get("role") or user.get("rol") or "").strip().upper()
+
+
+def _is_admin(user: dict) -> bool:
+    r = _role_key(user)
+    return ("SUPERADMIN" in r) or (r == "ADMIN") or ("JEFE DE OPERACIONES" in r) or ("COMPRAS" in r) or ("OPERACIONES" in r)
+
+
+@router.patch("/admin/sede/{id_sede}")
+def admin_update_sede(
+    id_sede: int,
+    payload: dict = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    radius_m = payload.get("radius_m")
+    fb_radius_m = payload.get("fallback_radius_m")
+    fb_acc_m = payload.get("fallback_accuracy_m")
+    data = {"id": int(id_sede)}
+    sets = []
+    if radius_m is not None:
+        sets.append("radius_m=:r")
+        data["r"] = int(radius_m)
+    if fb_radius_m is not None:
+        sets.append("fallback_radius_m=:fr")
+        data["fr"] = int(fb_radius_m)
+    if fb_acc_m is not None:
+        sets.append("fallback_accuracy_m=:fa")
+        data["fa"] = int(fb_acc_m)
+    if not sets:
+        return {"ok": True, "updated": False}
+    db.execute(text(f"UPDATE public.sgjo_sedes SET {', '.join(sets)} WHERE id_sede=:id"), data)
+    db.commit()
+    return {"ok": True, "updated": True}
+
+
 @router.get("/me")
 def sgjo_me(db: Session = Depends(get_db), user: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure(db)

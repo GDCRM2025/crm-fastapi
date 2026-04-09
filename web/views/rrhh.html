@@ -110,6 +110,7 @@
       marc: `/web/views/rrhh_marcaciones.html?v=${V}`,
       sol: `/web/views/rrhh_solicitudes.html?v=${V}`,
       sgjo: `/web/views/rrhh_sgjo.html?v=${V}`,
+      puntos: `/web/views/rrhh_puntos.html?v=${V}`,
     };
 
     const historyStack = [];
@@ -144,6 +145,7 @@
           { id:"colab", label:"Colaboradores", url: URLS.colab },
           { id:"nomina", label:"Nómina", url: URLS.nomina },
           { id:"turnos", label:"Turnos + horarios", url: URLS.turnos },
+          { id:"puntos", label:"Puntos + QR", url: URLS.puntos },
           { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
           { id:"sol", label:"Solicitudes (admin)", url: URLS.sol },
         );

@@ -1,6 +1,10 @@
 import json
 import ast
 from datetime import date, datetime, timedelta
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 
 
 def _as_text(v):
@@ -1200,6 +1204,8 @@ def _build_event_from_segment(
     montaje_text: str,
     label: str | None = None,
 ) -> dict:
+    if ZoneInfo is None:
+        raise HTTPException(500, detail="Timezone no soportada (ZoneInfo).")
     tz = ZoneInfo("America/Santiago")
     hh, mm = _parse_hhmm(start_time)
     dt_start = datetime.combine(day, time(hh, mm), tzinfo=tz)
@@ -1210,7 +1216,7 @@ def _build_event_from_segment(
 
     cliente = _as_text(lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)").strip() or "(Sin nombre)"
     marca_txt = _as_text(marca).strip() if marca else "Sin Marca"
-    title = "%s - %s" % (cliente, marca_txt)
+    title = ("%s - %s" % (cliente, marca_txt)).upper()
 
     loc = _as_text(comuna).strip() or "COMUNA TBD"
     dir_label = _as_text(direccion).strip() or "DIR TBD"
@@ -1383,6 +1389,14 @@ def move_lead_and_maybe_agenda(
 
         if int(id_estado) != confirmado_id:
             return {"ok": True, "ask_agendar": False}
+
+        # UX/robustez: si el usuario confirmó, movemos el lead a CONFIRMADO de inmediato.
+        # Si falla la preparación/agenda, queda marcado como pendiente_agendar y se puede reintentar sin "hacerlo 2 veces".
+        if not dry_run:
+            try:
+                _update_row("leads", "id_lead", id_lead, {"id_estado": int(id_estado)})
+            except Exception:
+                pass
 
         cotizaciones = _list_cotizaciones_for_lead(lead)
 
