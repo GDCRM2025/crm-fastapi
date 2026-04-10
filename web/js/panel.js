@@ -8,7 +8,10 @@ const API_BASE = (() => {
   try {
     const h = String(location.hostname || "").toLowerCase();
     const isLocal = h === "localhost" || h === "127.0.0.1";
-    return isLocal ? "" : "/crm";
+    if (isLocal) return "";
+    // Hosting puede montar el CRM en /crm o en / (según Passenger/Apache).
+    const p = String(location.pathname || "");
+    return p.startsWith("/crm/") || p === "/crm" ? "/crm" : "";
   } catch (_) {
     return "";
   }

@@ -39,6 +39,28 @@ def _ensure(db: Session) -> None:
         db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS marcacion_method TEXT DEFAULT 'BOTH'"))
     except Exception:
         pass
+    # Solicitudes de enrolamiento de dispositivo (aprobación por RRHH/SuperAdmin).
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS public.sgjo_device_requests (
+                  id_request BIGSERIAL PRIMARY KEY,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  decided_at TIMESTAMPTZ,
+                  status TEXT NOT NULL DEFAULT 'pending', -- pending/approved/rejected
+                  id_usuario BIGINT NOT NULL,
+                  device_id TEXT NOT NULL,
+                  ua_hash TEXT NOT NULL,
+                  decided_by BIGINT,
+                  note TEXT,
+                  UNIQUE(id_usuario, device_id, status)
+                )
+                """
+            )
+        )
+    except Exception:
+        pass
     db.commit()
 
 
@@ -423,6 +445,118 @@ def enroll_device(
     if not device_id or len(device_id) < 12:
         raise HTTPException(status_code=400, detail="device_id requerido")
     h = ua_hash(user_agent or "")
+
+    # Ya enrolado (con UA actual) => OK directo.
+    if _device_enrolled(db, uid_int, device_id, user_agent or ""):
+        return {"ok": True, "already": True}
+
+    # Crea solicitud pendiente (requiere aprobación admin). Idempotente.
+    try:
+        pending = db.execute(
+            text(
+                """
+                SELECT id_request
+                FROM public.sgjo_device_requests
+                WHERE id_usuario=:u AND device_id=:d AND status='pending'
+                ORDER BY id_request DESC
+                LIMIT 1
+                """
+            ),
+            {"u": uid_int, "d": device_id},
+        ).scalar()
+        if not pending:
+            db.execute(
+                text(
+                    """
+                    INSERT INTO public.sgjo_device_requests(id_usuario, device_id, ua_hash, status)
+                    VALUES (:u,:d,:h,'pending')
+                    """
+                ),
+                {"u": uid_int, "d": device_id, "h": h},
+            )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"No pude crear solicitud: {e}")
+
+    # Aviso por correo (best-effort). Push no sirve aquí porque aún no está enrolado.
+    try:
+        from backend.core.email import send_email_group
+
+        rrhh_to = (os.getenv("RRHH_NOTIFY_TO") or "c.grez@clavetributariacontadores.cl").strip()
+        rrhh_cc = [x.strip() for x in str(os.getenv("RRHH_NOTIFY_CC") or "").split(",") if x.strip()]
+        to_list = [rrhh_to] + rrhh_cc if rrhh_to else rrhh_cc
+        if to_list:
+            subj = f"RRHH · Solicitud enrolamiento dispositivo · {user.get('name') or user.get('username')}"
+            body = (
+                f"Usuario ID: {uid_int}\n"
+                f"Usuario: {user.get('username')}\n"
+                f"Nombre: {user.get('name') or user.get('nombre')}\n"
+                f"Device ID: {device_id}\n"
+                f"UA hash: {h}\n\n"
+                f"Aprueba desde RRHH → Puntos + QR → 'Solicitudes de dispositivos'.\n"
+            )
+            send_email_group(to_list, subj, body)
+    except Exception:
+        pass
+
+    return {"ok": False, "pending_approval": True, "detail": "Solicitud enviada. Un admin debe aprobar este dispositivo."}
+
+
+@router.get("/admin/device_requests")
+def admin_device_requests(
+    status: str = "pending",
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    st = str(status or "pending").strip().lower()
+    if st not in ("pending", "approved", "rejected"):
+        st = "pending"
+    rows = db.execute(
+        text(
+            """
+            SELECT r.id_request, r.created_at, r.decided_at, r.status, r.id_usuario, r.device_id,
+                   u.username, COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display
+            FROM public.sgjo_device_requests r
+            LEFT JOIN public.usuarios u ON u.id_usuario = r.id_usuario
+            WHERE r.status = :st
+            ORDER BY r.created_at DESC, r.id_request DESC
+            LIMIT 200
+            """
+        ),
+        {"st": st},
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.post("/admin/device_requests/{id_request}/approve")
+def admin_device_request_approve(
+    id_request: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    me_id = user.get("id")
+    me_id_int = int(me_id) if str(me_id or "").isdigit() else None
+    req = db.execute(
+        text(
+            """
+            SELECT id_request, id_usuario, device_id, ua_hash
+            FROM public.sgjo_device_requests
+            WHERE id_request=:id AND status='pending'
+            LIMIT 1
+            """
+        ),
+        {"id": int(id_request)},
+    ).mappings().first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Solicitud no existe.")
+
     db.execute(
         text(
             """
@@ -432,10 +566,47 @@ def enroll_device(
             SET ua_hash=EXCLUDED.ua_hash, revoked_at=NULL
             """
         ),
-        {"u": uid_int, "d": device_id, "h": h},
+        {"u": int(req["id_usuario"]), "d": str(req["device_id"]), "h": str(req["ua_hash"])},
+    )
+    db.execute(
+        text(
+            """
+            UPDATE public.sgjo_device_requests
+            SET status='approved', decided_at=now(), decided_by=:by
+            WHERE id_request=:id
+            """
+        ),
+        {"id": int(id_request), "by": me_id_int},
     )
     db.commit()
     return {"ok": True}
+
+
+@router.post("/admin/device_requests/{id_request}/reject")
+def admin_device_request_reject(
+    id_request: int,
+    payload: dict = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    me_id = user.get("id")
+    me_id_int = int(me_id) if str(me_id or "").isdigit() else None
+    note = str(payload.get("note") or "").strip()[:300] or None
+    upd = db.execute(
+        text(
+            """
+            UPDATE public.sgjo_device_requests
+            SET status='rejected', decided_at=now(), decided_by=:by, note=:n
+            WHERE id_request=:id AND status='pending'
+            """
+        ),
+        {"id": int(id_request), "by": me_id_int, "n": note},
+    )
+    db.commit()
+    return {"ok": True, "updated": int(getattr(upd, "rowcount", 0) or 0)}
 
 
 def _device_enrolled(db: Session, uid: int, device_id: str, user_agent: str) -> bool:

@@ -65,6 +65,24 @@
       </table>
     </div>
 
+    <div class="card noPrint" style="margin-top:12px">
+      <div class="title" style="font-size:16px">Solicitudes de dispositivos</div>
+      <div class="muted small">Cuando un colaborador aprieta “Enrolar dispositivo”, queda pendiente hasta que un admin apruebe.</div>
+      <table style="margin-top:10px">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Usuario</th>
+            <th>Device</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="devRows">
+          <tr><td colspan="4" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="small muted" style="margin-top:10px">
       Tip: el QR abre la pantalla de “Marcar” con el punto preseleccionado (parámetro <span class="code">?p=SGJO-...</span>).
     </div>
@@ -74,8 +92,13 @@
 
   <script>
     const API_BASE = (() => {
-      try { return (location.hostname === "localhost" || location.hostname === "127.0.0.1") ? "" : "/crm"; }
-      catch (_) { return ""; }
+      try{
+        const h = String(location.hostname||"").toLowerCase();
+        const isLocal = (h==="localhost" || h==="127.0.0.1");
+        if (isLocal) return "";
+        const p = String(location.pathname||"");
+        return (p.startsWith("/crm/") || p === "/crm") ? "/crm" : "";
+      }catch(_){ return ""; }
     })();
     const token = localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
     function authHeaders(extra={}){ return token ? { ...extra, Authorization: "Bearer " + token } : extra; }
@@ -164,6 +187,62 @@
           }
         });
       });
+
+      // Solicitudes de dispositivos (pending)
+      const devEl = document.getElementById("devRows");
+      try{
+        const out = await apiJSON("/rrhh/sgjo/admin/device_requests?status=pending");
+        const items = Array.isArray(out?.items) ? out.items : [];
+        if (!items.length){
+          devEl.innerHTML = `<tr><td colspan="4" class="muted">Sin solicitudes pendientes.</td></tr>`;
+        } else {
+          devEl.innerHTML = items.map(it=>{
+            const id = Number(it.id_request||0);
+            const when = String(it.created_at||"").replace("T"," ").slice(0,16);
+            const who = `${String(it.display||it.username||("ID "+it.id_usuario))}`;
+            const dev = String(it.device_id||"");
+            return `
+              <tr>
+                <td class="small muted">${when}</td>
+                <td><div style="font-weight:1000">${who}</div><div class="small muted">ID ${it.id_usuario}</div></td>
+                <td class="code small">${dev}</td>
+                <td>
+                  <button class="btn primary" data-act="approve" data-id="${id}" type="button">Aprobar</button>
+                  <button class="btn" data-act="reject" data-id="${id}" type="button">Rechazar</button>
+                </td>
+              </tr>
+            `;
+          }).join("");
+        }
+
+        devEl.querySelectorAll("button[data-act='approve']").forEach(b=>{
+          b.addEventListener("click", async ()=>{
+            const id = Number(b.getAttribute("data-id")||0);
+            try{
+              await apiJSON(`/rrhh/sgjo/admin/device_requests/${id}/approve`, { method:"POST" });
+              toast("Aprobado.");
+              await load();
+            }catch(e){
+              alert("No pude aprobar: " + (e?.message||e));
+            }
+          });
+        });
+        devEl.querySelectorAll("button[data-act='reject']").forEach(b=>{
+          b.addEventListener("click", async ()=>{
+            const id = Number(b.getAttribute("data-id")||0);
+            const note = prompt("Motivo (opcional):") || "";
+            try{
+              await apiJSON(`/rrhh/sgjo/admin/device_requests/${id}/reject`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ note }) });
+              toast("Rechazado.");
+              await load();
+            }catch(e){
+              alert("No pude rechazar: " + (e?.message||e));
+            }
+          });
+        });
+      }catch(e){
+        devEl.innerHTML = `<tr><td colspan="4" class="muted">No pude cargar solicitudes: ${(e?.message||e)}</td></tr>`;
+      }
     }
 
     document.getElementById("reloadBtn").addEventListener("click", ()=>load().catch(e=>alert(e?.message||e)));

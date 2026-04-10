@@ -252,6 +252,7 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
     except Exception:
         fecha_evento = None
 
+    created_pago = False
     with engine.begin() as cn:
         existing = cn.execute(
             text("SELECT id_evento FROM fin_eventos WHERE id_lead=:id ORDER BY id_evento DESC LIMIT 1"),
@@ -341,6 +342,60 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     text("INSERT INTO fin_pagos(id_evento, monto, metodo, referencia) VALUES (:ev,:m,'ABONO','AUTO_AGENDA')"),
                     {"ev": int(id_evento), "m": float(abono)},
                 )
+                created_pago = True
+
+    # Aviso a Finanzas por abono al agendar (best-effort).
+    if created_pago and abono > 0:
+        try:
+            from backend.core.email import send_email_group
+            from backend.core.system_notifs import push_system_notif
+
+            to_addr = (os.getenv("FIN_ABONO_TO") or "v.ortiz@clavetributariacontadores.cl").strip()
+            cc = [x.strip() for x in str(os.getenv("FIN_ABONO_CC") or "").split(",") if x.strip()]
+            to = [to_addr] + cc if to_addr else cc
+
+            cliente2 = (cliente or "").strip()
+            marca2 = (marca_txt or "").strip()
+            comuna2 = (comuna_txt or "").strip()
+            fe2 = str(fecha_evento or "").strip()
+            subj = f"Abono registrado (Agenda) · {marca2} · {cliente2}"
+            body = (
+                f"Lead #{id_lead}\n"
+                f"Cliente: {cliente2}\n"
+                f"Marca: {marca2}\n"
+                f"Comuna: {comuna2}\n"
+                f"Fecha evento: {fe2}\n"
+                f"Cot: {num_cot or '-'}\n"
+                f"Abono: {int(abono):,}".replace(",", ".") + "\n"
+                f"Total: {int(total):,}".replace(",", ".") + "\n"
+                f"Saldo: {int(saldo):,}".replace(",", ".") + "\n"
+                "\nOrigen: AUTO_AGENDA (al confirmar/agendar desde Leads).\n"
+            )
+            if to:
+                send_email_group(to, subj, body)
+
+            # Notificación interna (alertas)
+            with engine.begin() as cn:
+                push_system_notif(
+                    cn,
+                    kind="ABONO_AGENDA",
+                    role_target="FINANZAS",
+                    id_lead=int(id_lead),
+                    title="Abono registrado (Agenda)",
+                    body=f"{marca2} · {cliente2} · ${int(abono):,}".replace(",", "."),
+                    payload={"id_lead": int(id_lead), "abono": float(abono), "saldo": float(saldo), "marca": marca2},
+                )
+                push_system_notif(
+                    cn,
+                    kind="ABONO_AGENDA",
+                    role_target="ADMIN",
+                    id_lead=int(id_lead),
+                    title="Abono registrado (Agenda)",
+                    body=f"{marca2} · {cliente2} · ${int(abono):,}".replace(",", "."),
+                    payload={"id_lead": int(id_lead), "abono": float(abono), "saldo": float(saldo), "marca": marca2},
+                )
+        except Exception:
+            pass
 
 
 def _ensure_system_notifs():

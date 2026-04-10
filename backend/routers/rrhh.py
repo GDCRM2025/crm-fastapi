@@ -679,6 +679,39 @@ def solicitudes_me_create(body: dict, db: Session = Depends(get_db), me: dict = 
             data,
         )
         db.commit()
+        # Aviso por correo a RRHH (best-effort).
+        try:
+            from backend.core.email import send_email_group
+
+            rrhh_to = (os.getenv("RRHH_NOTIFY_TO") or "c.grez@clavetributariacontadores.cl").strip()
+            rrhh_cc = [x.strip() for x in str(os.getenv("RRHH_NOTIFY_CC") or "").split(",") if x.strip()]
+            adelanto_to = (os.getenv("RRHH_ADELANTO_TO") or "simonurrutia@greendiamond.cl,oscar@greendiamond.cl").strip()
+            adelanto_list = [x.strip() for x in adelanto_to.split(",") if x.strip()]
+
+            to_list = []
+            if tipo == "adelanto":
+                to_list = adelanto_list or ([rrhh_to] if rrhh_to else [])
+            else:
+                to_list = ([rrhh_to] if rrhh_to else []) + rrhh_cc
+
+            if to_list:
+                subj = f"RRHH · Solicitud {tipo} · {colaborador}"
+                txt = (
+                    f"Colaborador: {colaborador}\n"
+                    f"Tipo: {tipo}\n"
+                    + (f"Documento: {doc_tipo}\n" if doc_tipo else "")
+                    + (f"Fecha inicio: {data.get('fecha_inicio')}\n" if data.get("fecha_inicio") else "")
+                    + (f"Fecha fin: {data.get('fecha_fin')}\n" if data.get("fecha_fin") else "")
+                    + (f"Días: {data.get('dias')}\n" if data.get("dias") else "")
+                    + (f"Monto: {data.get('monto')}\n" if data.get("monto") else "")
+                    + (f"Motivo: {data.get('motivo')}\n" if data.get("motivo") else "")
+                    + f"\nEstado: pendiente\n"
+                    + f"Usuario CRM ID: {uid}\n"
+                    + f"RUT: {data.get('rut') or ''}\n"
+                )
+                send_email_group(to_list, subj, txt)
+        except Exception:
+            pass
         return {"ok": True}
     except Exception as e:
         db.rollback()
@@ -1507,6 +1540,24 @@ def staff_bulk_upsert(body: dict, db: Session = Depends(get_db), me: dict = Depe
 def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
     _require_rrhh_admin(me)
+    prev = {}
+    try:
+        prev = (
+            db.execute(
+                text(
+                    """
+                    SELECT email, puede_marcar, marcacion_method
+                    FROM rrhh_staff
+                    WHERE id_staff=:id
+                    LIMIT 1
+                    """
+                ),
+                {"id": int(id_staff)},
+            ).mappings().first()
+            or {}
+        )
+    except Exception:
+        prev = {}
     ficha = body.get("ficha")
     if isinstance(ficha, (dict, list)):
         ficha = json.dumps(ficha, ensure_ascii=False)
@@ -1556,6 +1607,31 @@ def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db), me: d
             data,
         )
         db.commit()
+        # Si se habilitó marcación (o cambió método), avisa al colaborador para enrolar su teléfono.
+        try:
+            prev_puede = bool(prev.get("puede_marcar", True))
+            new_puede = bool(data.get("puede_marcar", True))
+            prev_m = str(prev.get("marcacion_method") or "BOTH").strip().upper()
+            new_m = str(data.get("marcacion_method") or "BOTH").strip().upper()
+            email = str(data.get("email") or prev.get("email") or "").strip()
+            if email and new_puede and ((not prev_puede) or (prev_m != new_m)):
+                from backend.core.email import send_email
+
+                app_url = (os.getenv("APP_URL") or "https://greendiamond.cl").strip().rstrip("/")
+                link = f"{app_url}/crm/web/views/rrhh_sgjo_marcacion.html"
+                subj = "RRHH · Enrolamiento de dispositivo (SGJO)"
+                txt = (
+                    "Se habilitó tu marcación en el CRM.\n\n"
+                    f"Método permitido: {new_m}\n"
+                    "Paso 1: Ingresa al CRM.\n"
+                    "Paso 2: RRHH → Marcar.\n"
+                    "Paso 3: Presiona “Enrolar dispositivo”.\n\n"
+                    f"Link directo: {link}\n"
+                    "\nSi cambiaste de teléfono, repite el enrolamiento desde el nuevo dispositivo.\n"
+                )
+                send_email(email, subj, txt)
+        except Exception:
+            pass
         return {"ok": True}
     except Exception as e:
         db.rollback()

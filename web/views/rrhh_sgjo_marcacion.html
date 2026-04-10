@@ -92,7 +92,9 @@
       try{
         const h = String(location.hostname||"").toLowerCase();
         const isLocal = (h==="localhost" || h==="127.0.0.1");
-        return isLocal ? "" : "/crm";
+        if (isLocal) return "";
+        const p = String(location.pathname||"");
+        return (p.startsWith("/crm/") || p === "/crm") ? "/crm" : "";
       }catch(_){ return ""; }
     })();
     const qs = (s, el=document)=> el.querySelector(s);
@@ -206,8 +208,14 @@
     qs("#btnEnroll").addEventListener("click", async ()=>{
       try{
         const device_id = getDeviceId();
-        await apiJSON("/rrhh/sgjo/device/enroll", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ device_id }) });
-        log("Dispositivo enrolado OK.");
+        const out = await apiJSON("/rrhh/sgjo/device/enroll", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ device_id }) });
+        if (out && out.ok){
+          log("Dispositivo enrolado OK.");
+        } else if (out && out.pending_approval){
+          log("Solicitud enviada. Un admin debe aprobar este dispositivo (RRHH).\nLuego vuelve a intentar marcar.");
+        } else {
+          log("Solicitud enviada. Espera aprobación y recarga.");
+        }
       }catch(e){
         log("No pude enrolar: " + (e?.message||e));
       }
