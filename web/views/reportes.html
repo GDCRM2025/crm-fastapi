@@ -11,7 +11,8 @@
   <script src="../js/iframe-theme.js"></script>
   <style>
     html,body{height:100%;margin:0;}
-    body{background:transparent;padding:18px;overflow:auto;}
+    body{background:transparent;padding:18px;overflow:auto;color:rgba(226,232,240,.96);}
+    :root.light body{ color:#0f172a; }
     /* Reportes usa tema global (XP). Solo mantenemos acento GD para gráficos. */
     :root{ --accent: #5B974E; }
 
@@ -49,6 +50,17 @@
 
     .card{
       min-height:0;
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.28);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+      padding:14px;
+    }
+    :root.light .card{
+      background: rgba(255,255,255,.86);
+      border-color: rgba(15,23,42,.14);
+      box-shadow: 0 14px 40px rgba(2,6,23,.08);
     }
     .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
     .muted{opacity:.72; font-weight:850; font-size:12px;}
@@ -60,7 +72,10 @@
       border-radius:16px;
       padding:12px;
       cursor:pointer;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
     }
+    :root.light .kpi{ background: rgba(255,255,255,.76); border-color: rgba(15,23,42,.12); }
     .kpi .l{font-weight:1000; font-size:11px; letter-spacing:.12em; text-transform:uppercase; opacity:.72;}
     .kpi .v{font-weight:1200; font-size:20px; margin-top:6px;}
     .kpi .s{font-weight:850; font-size:12px; opacity:.70; margin-top:6px;}

@@ -528,7 +528,7 @@ def list_leads(
             LEFT JOIN public.estados_lead e ON e.id_estado = l.id_estado
             LEFT JOIN public.comunas c ON c.id_comuna = l.id_comuna
             {where_sql}
-            ORDER BY l.id_lead DESC
+            ORDER BY (l.fecha_evento IS NULL) ASC, l.fecha_evento ASC, {created_expr} DESC, l.id_lead DESC
             LIMIT :limit OFFSET :offset
         """
         rows = conn.execute(text(q), params).mappings().all()
@@ -626,7 +626,7 @@ def leads_by_ids(
             LEFT JOIN public.estados_lead e ON e.id_estado = l.id_estado
             LEFT JOIN public.comunas c ON c.id_comuna = l.id_comuna
             {where_sql}
-            ORDER BY l.id_lead DESC
+            ORDER BY (l.fecha_evento IS NULL) ASC, l.fecha_evento ASC, {created_expr} DESC, l.id_lead DESC
         """
         rows = conn.execute(text(q), params).mappings().all()
         return {"ok": True, "items": list(rows)}

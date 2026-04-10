@@ -1,6 +1,8 @@
 import json
 import ast
+import re
 from datetime import date, datetime, timedelta, time
+from typing import Any
 try:
     from zoneinfo import ZoneInfo  # py3.9+
 except Exception:  # pragma: no cover
@@ -71,6 +73,274 @@ except Exception:
 
 
 router = APIRouter(prefix="/leads", tags=["leads-agenda"])
+
+def _ensure_finanzas_tables():
+    # Minimal ensure (idempotente).
+    with engine.begin() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS fin_eventos (
+                    id_evento SERIAL PRIMARY KEY,
+                    id_lead INT,
+                    num_cotizacion TEXT,
+                    id_cotizacion INT,
+                    cliente TEXT,
+                    comuna TEXT,
+                    marca TEXT,
+                    tipo_cliente TEXT,
+                    fecha_evento DATE,
+                    monto_bruto NUMERIC(14,2) DEFAULT 0,
+                    monto_neto NUMERIC(14,2) DEFAULT 0,
+                    iva NUMERIC(14,2) DEFAULT 0,
+                    traslado NUMERIC(14,2) DEFAULT 0,
+                    abono NUMERIC(14,2) DEFAULT 0,
+                    saldo NUMERIC(14,2) DEFAULT 0,
+                    comision_pct NUMERIC(6,2) DEFAULT 0,
+                    comision_monto NUMERIC(14,2) DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS fin_pagos (
+                    id_pago SERIAL PRIMARY KEY,
+                    id_evento INT NOT NULL REFERENCES fin_eventos(id_evento) ON DELETE CASCADE,
+                    fecha TIMESTAMP DEFAULT now(),
+                    monto NUMERIC(14,2) NOT NULL DEFAULT 0,
+                    metodo TEXT,
+                    referencia TEXT,
+                    doc_num TEXT
+                )
+                """
+            )
+        )
+
+
+def _to_number(v: Any) -> float:
+    try:
+        if v is None:
+            return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip()
+        if not s:
+            return 0.0
+        s = s.replace(".", "").replace(",", ".")
+        s = re.sub(r"[^0-9.\-]", "", s)
+        if s in ("", "-", "."):
+            return 0.0
+        return float(s)
+    except Exception:
+        return 0.0
+
+
+def _detect_is_empresa(lead: dict) -> bool:
+    try:
+        id_tipo = lead.get("id_tipo_cliente")
+        if id_tipo is None:
+            return False
+        with engine.begin() as cn:
+            ok = cn.execute(text("SELECT to_regclass('public.tipos_cliente')")).scalar()
+            if not ok:
+                return False
+            name = cn.execute(
+                text("SELECT COALESCE(nombre,tipo,'') FROM public.tipos_cliente WHERE id_tipo_cliente=:id LIMIT 1"),
+                {"id": int(id_tipo)},
+            ).scalar()
+            return bool(re.search(r"EMPRESA|FACTURA", str(name or ""), re.I))
+    except Exception:
+        return False
+
+
+def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: dict | None, marca: dict | None) -> None:
+    """
+    Crea/actualiza fin_eventos automáticamente al agendar desde Leads.
+    También registra un pago (abono) si se indicó en el modal.
+    """
+    try:
+        _ensure_finanzas_tables()
+    except Exception:
+        return
+
+    id_lead = int(lead.get("id_lead") or 0)
+    if id_lead <= 0:
+        return
+
+    id_cot = payload.get("id_cotizacion") or None
+    try:
+        id_cot = int(id_cot) if id_cot is not None else None
+    except Exception:
+        id_cot = None
+
+    doc_mode = str(payload.get("doc_mode") or "auto").strip().lower()
+    is_empresa = _detect_is_empresa(lead)
+    if doc_mode in ("con", "con_documento", "empresa"):
+        is_empresa = True
+    if doc_mode in ("sin", "sin_documento", "particular"):
+        is_empresa = False
+
+    traslado = 0.0
+    neto = _to_number(lead.get("monto_cotizado") or 0)
+    iva = 0.0
+    total = neto
+    num_cot = str(lead.get("num_cotizacion") or "").strip() or None
+    abono = _to_number(payload.get("abono") or 0)
+    tipo_cliente = "EMPRESA" if is_empresa else "PARTICULAR"
+
+    # Totales desde cotización si existe.
+    try:
+        if id_cot:
+            with engine.begin() as cn:
+                ok = cn.execute(text("SELECT to_regclass('public.cotizaciones')")).scalar()
+                if ok:
+                    row = cn.execute(
+                        text(
+                            """
+                            SELECT numero, subtotal_productos, iva, total, traslado, abono, tipo_cliente
+                            FROM public.cotizaciones
+                            WHERE id_cotizacion=:id
+                            LIMIT 1
+                            """
+                        ),
+                        {"id": int(id_cot)},
+                    ).mappings().first()
+                    if row:
+                        if row.get("numero") is not None:
+                            num_cot = str(row.get("numero"))
+                        neto = _to_number(row.get("subtotal_productos") or row.get("subtotal") or neto)
+                        iva = _to_number(row.get("iva") or 0)
+                        total = _to_number(row.get("total") or (neto + iva))
+                        traslado = _to_number(row.get("traslado") or 0)
+                        if abono <= 0:
+                            abono = _to_number(row.get("abono") or 0)
+                        tcl = str(row.get("tipo_cliente") or "").upper()
+                        if doc_mode == "auto" and tcl:
+                            is_empresa = ("EMP" in tcl) or ("FACT" in tcl)
+                            tipo_cliente = tcl
+    except Exception:
+        pass
+
+    # Recalcula IVA/total si corresponde.
+    try:
+        if not is_empresa:
+            iva = 0.0
+            total = float(neto) + float(traslado)
+        else:
+            base = float(neto) + float(traslado)
+            if iva <= 0:
+                iva = round(base * 0.19, 2)
+            if total <= 0:
+                total = float(base + iva)
+    except Exception:
+        pass
+
+    if abono < 0:
+        abono = 0.0
+    saldo = max(0.0, float(total) - float(abono))
+
+    cliente = str(lead.get("nombre_cliente") or lead.get("cliente") or "").strip() or None
+    comuna_txt = str((comuna or {}).get("nombre") or lead.get("comuna_nombre") or lead.get("comuna") or "").strip() or None
+    marca_txt = str((marca or {}).get("nombre") or (marca or {}).get("marca") or lead.get("marca_nombre") or lead.get("marca") or "").strip() or None
+    fecha_evento = lead.get("fecha_evento") or None
+    try:
+        if fecha_evento:
+            fecha_evento = str(fecha_evento)[:10]
+    except Exception:
+        fecha_evento = None
+
+    with engine.begin() as cn:
+        existing = cn.execute(
+            text("SELECT id_evento FROM fin_eventos WHERE id_lead=:id ORDER BY id_evento DESC LIMIT 1"),
+            {"id": id_lead},
+        ).scalar()
+        if existing:
+            cn.execute(
+                text(
+                    """
+                    UPDATE fin_eventos
+                    SET num_cotizacion=:num,
+                        id_cotizacion=:idc,
+                        cliente=:cli,
+                        comuna=:com,
+                        marca=:mar,
+                        tipo_cliente=:tc,
+                        fecha_evento=:fe,
+                        monto_bruto=:br,
+                        monto_neto=:ne,
+                        iva=:iv,
+                        traslado=:tr,
+                        abono=:ab,
+                        saldo=:sa
+                    WHERE id_evento=:ev
+                    """
+                ),
+                {
+                    "ev": int(existing),
+                    "num": num_cot,
+                    "idc": int(id_cot) if id_cot else None,
+                    "cli": cliente,
+                    "com": comuna_txt,
+                    "mar": marca_txt,
+                    "tc": tipo_cliente,
+                    "fe": fecha_evento,
+                    "br": float(total),
+                    "ne": float(neto),
+                    "iv": float(iva),
+                    "tr": float(traslado),
+                    "ab": float(abono),
+                    "sa": float(saldo),
+                },
+            )
+            id_evento = int(existing)
+        else:
+            id_evento = cn.execute(
+                text(
+                    """
+                    INSERT INTO fin_eventos(
+                      id_lead, num_cotizacion, id_cotizacion,
+                      cliente, comuna, marca, tipo_cliente, fecha_evento,
+                      monto_bruto, monto_neto, iva, traslado, abono, saldo
+                    ) VALUES (
+                      :id, :num, :idc,
+                      :cli, :com, :mar, :tc, :fe,
+                      :br, :ne, :iv, :tr, :ab, :sa
+                    )
+                    RETURNING id_evento
+                    """
+                ),
+                {
+                    "id": id_lead,
+                    "num": num_cot,
+                    "idc": int(id_cot) if id_cot else None,
+                    "cli": cliente,
+                    "com": comuna_txt,
+                    "mar": marca_txt,
+                    "tc": tipo_cliente,
+                    "fe": fecha_evento,
+                    "br": float(total),
+                    "ne": float(neto),
+                    "iv": float(iva),
+                    "tr": float(traslado),
+                    "ab": float(abono),
+                    "sa": float(saldo),
+                },
+            ).scalar()
+            id_evento = int(id_evento or 0)
+
+        if id_evento and abono > 0:
+            exists_pago = cn.execute(
+                text("SELECT 1 FROM fin_pagos WHERE id_evento=:ev AND referencia='AUTO_AGENDA' LIMIT 1"),
+                {"ev": int(id_evento)},
+            ).scalar()
+            if not exists_pago:
+                cn.execute(
+                    text("INSERT INTO fin_pagos(id_evento, monto, metodo, referencia) VALUES (:ev,:m,'ABONO','AUTO_AGENDA')"),
+                    {"ev": int(id_evento), "m": float(abono)},
+                )
 
 
 def _ensure_system_notifs():
@@ -2113,6 +2383,12 @@ def move_lead_and_maybe_agenda(
                     entity_id=int(id_lead),
                     meta={"id_evento": int(evento_id) if evento_id is not None else None},
                 )
+        except Exception:
+            pass
+
+        # Finanzas: upsert evento + registrar abono (si aplica) en el mismo flujo de confirmación.
+        try:
+            _upsert_fin_evento_for_lead_confirm(lead=lead, payload=payload or {}, comuna=comuna, marca=marca)
         except Exception:
             pass
 

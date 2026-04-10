@@ -2551,6 +2551,21 @@ async function handleConfirmado(lead, newEstado){
           </div>
 
           <div class="agRow">
+            <label class="agLabel" style="flex:1;min-width:240px">
+              <div class="muted">Abono (opcional)</div>
+              <input id="ag_abono" class="swInp" placeholder="0" inputmode="numeric" />
+            </label>
+            <label class="agLabel" style="flex:1;min-width:240px">
+              <div class="muted">Documento</div>
+              <select id="ag_doc_mode" class="swSel" title="Documento (afecta IVA y texto WhatsApp)">
+                <option value="auto">Auto (según tipo cliente)</option>
+                <option value="sin">Sin documento</option>
+                <option value="con">Con documento</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="agRow">
             <label class="agLabel">
               <div class="muted">Inicio (24h)</div>
               <select id="ag_hini" class="swSel"></select>
@@ -3260,22 +3275,32 @@ async function handleConfirmado(lead, newEstado){
 		            return false;
 		          }
 		        }
-		      }
-		      return {
-		        quote_source: quoteSource,
-		        id_cotizacion: idCot ? Number(idCot) : null,
-		        hr_tbd: segsOut ? false : hrTbd,
-	        start_time: segsOut ? String((segsOut[0]||{}).start_time || "").trim() : hIni,
-	        end_time: segsOut ? String((segsOut[0]||{}).end_time || "").trim() : hFin,
-	        telefono: (qs("#ag_tel")?.value || "").trim(),
-	        direccion: (qs("#ag_dir")?.value || "").trim(),
-	        agenda_notes: (qs("#ag_notes")?.value || "").trim(),
-	        override_title: (qs("#ag_title")?.value || "").trim(),
-	        override_location: (qs("#ag_loc")?.value || "").trim(),
-	        override_description: (qs("#ag_desc")?.value || "").trim(),
-	        ...(segsOut ? { segments: segsOut } : { override_by_day: overrideByDay }),
-	      };
-	    }
+			      }
+			      return {
+			        quote_source: quoteSource,
+			        id_cotizacion: idCot ? Number(idCot) : null,
+			        hr_tbd: segsOut ? false : hrTbd,
+		        start_time: segsOut ? String((segsOut[0]||{}).start_time || "").trim() : hIni,
+		        end_time: segsOut ? String((segsOut[0]||{}).end_time || "").trim() : hFin,
+		        abono: (()=>{
+		          try{
+		            const raw = String(qs("#ag_abono")?.value || "");
+		            if (!raw.trim()) return 0;
+		            const s = raw.replace(/[^0-9,.\-]/g,"").replace(/\./g,"").replace(/,/g,".");
+		            const n = Number(s);
+		            return Number.isFinite(n) ? n : 0;
+		          }catch(_){ return 0; }
+		        })(),
+		        doc_mode: (qs("#ag_doc_mode")?.value || "auto").toString().trim() || "auto",
+		        telefono: (qs("#ag_tel")?.value || "").trim(),
+		        direccion: (qs("#ag_dir")?.value || "").trim(),
+		        agenda_notes: (qs("#ag_notes")?.value || "").trim(),
+		        override_title: (qs("#ag_title")?.value || "").trim(),
+		        override_location: (qs("#ag_loc")?.value || "").trim(),
+		        override_description: (qs("#ag_desc")?.value || "").trim(),
+		        ...(segsOut ? { segments: segsOut } : { override_by_day: overrideByDay }),
+		      };
+		    }
 	    ,
     // Deny = confirmar sin agendar: NO validamos horas ni obligamos productos manuales aquí.
     preDeny: ()=>{
@@ -3345,18 +3370,20 @@ async function handleConfirmado(lead, newEstado){
     if (!ok.isConfirmed) return false;
   }
 
-			  const payload = {
-			    id_estado: Number(newEstado),
-			    agendar: true,
-		    quote_source: v.quote_source,
-		    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
-		    telefono: v.telefono,
-		    direccion: v.direccion,
-		    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
-		    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
-		    ...(v.agenda_notes ? { agenda_notes: v.agenda_notes } : {}),
-		    ...(v.override_title ? { override_title: v.override_title } : {}),
-		    ...(v.override_location ? { override_location: v.override_location } : {}),
+				  const payload = {
+				    id_estado: Number(newEstado),
+				    agendar: true,
+			    quote_source: v.quote_source,
+			    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
+			    telefono: v.telefono,
+			    direccion: v.direccion,
+			    ...(v.abono != null ? { abono: v.abono } : {}),
+			    ...(v.doc_mode ? { doc_mode: v.doc_mode } : {}),
+			    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
+			    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
+			    ...(v.agenda_notes ? { agenda_notes: v.agenda_notes } : {}),
+			    ...(v.override_title ? { override_title: v.override_title } : {}),
+			    ...(v.override_location ? { override_location: v.override_location } : {}),
 		    ...(v.override_description ? { override_description: v.override_description } : {}),
 		    ...(Array.isArray(v.override_by_day) && v.override_by_day.length ? { override_by_day: v.override_by_day } : {}),
 		    ...(Array.isArray(v.segments) && v.segments.length ? { segments: v.segments } : {}),
@@ -3425,16 +3452,15 @@ async function handleConfirmado(lead, newEstado){
       return s;
     }catch(_){ return String(d).slice(0,10); }
   };
-  const fmtTime12 = (dt)=>{
+  const fmtTime24 = (dt)=>{
     try{
       const d = new Date(dt);
       if (isNaN(d.getTime())) return "";
       const h = d.getHours();
       const m = d.getMinutes();
-      const hh = String(((h % 12) || 12)).padStart(2,"0");
+      const hh = String(h).padStart(2,"0");
       const mm = String(m).padStart(2,"0");
-      const suf = (h < 12) ? "a. m." : "p. m.";
-      return `${hh}:${mm} ${suf}`;
+      return `${hh}:${mm}`;
     }catch(_){ return ""; }
   };
   const bulletsFrom = (txt)=>{
@@ -3470,6 +3496,12 @@ async function handleConfirmado(lead, newEstado){
       if (c?.abono != null) abono = Number(c.abono);
     }catch(_){}
   }
+  // Override: si el usuario ingresó abono en el modal de agenda, respétalo.
+  try{
+    if (v?.abono != null && Number.isFinite(Number(v.abono)) && Number(v.abono) > 0){
+      abono = Number(v.abono);
+    }
+  }catch(_){}
 
   const clienteNom = (lead?.nombre_cliente || lead?.cliente || "").toString().trim();
   const marcaNom = (lead?.marca_nombre || lead?.marca || "").toString().trim();
@@ -3491,7 +3523,12 @@ async function handleConfirmado(lead, newEstado){
       return String(hit?.nombre || hit?.tipo || "").trim();
     }catch(_){ return ""; }
   })();
-  const isEmpresa = /EMPRESA|FACTURA/i.test(tipoName);
+  let isEmpresa = /EMPRESA|FACTURA/i.test(tipoName);
+  try{
+    const dm = String(v?.doc_mode || "").trim().toLowerCase();
+    if (dm === "con") isEmpresa = true;
+    if (dm === "sin") isEmpresa = false;
+  }catch(_){}
   if (!v?.id_cotizacion){
     if (isEmpresa){
       ivaVal = Math.round(Number.isFinite(neto) ? (neto * 0.19) : 0);
@@ -3514,7 +3551,7 @@ async function handleConfirmado(lead, newEstado){
     ? `del ${fmtDateLong(uniqueDays[0])} al ${fmtDateLong(uniqueDays[uniqueDays.length-1])}`
     : (uniqueDays[0] ? fmtDateLong(uniqueDays[0]) : "");
 
-  const hrLine = v?.hr_tbd ? "POR CONFIRMAR" : `${fmtTime12(evs[0]?.start_at)} a ${fmtTime12(evs[0]?.end_at)}`;
+  const hrLine = v?.hr_tbd ? "POR CONFIRMAR" : `${fmtTime24(evs[0]?.start_at)} a ${fmtTime24(evs[0]?.end_at)}`;
 
   const EMO = {
     // Importante: usamos escapes por codepoint para evitar problemas de encoding en producción
@@ -3553,6 +3590,7 @@ async function handleConfirmado(lead, newEstado){
 NOMBRE CLIENTE: ${[clienteNom, marcaNom].filter(Boolean).join(" - ") || "—"}
 COMUNA: ${(comunaNom || "—").toUpperCase()}
 Valor TOTAL: ${moneyCLP(total)}
+Abono: ${abono != null && Number.isFinite(Number(abono)) ? (moneyCLP(abono) + " (SE QUITA)") : "—"}
 COT Nº: ${cotN || "—"}
 ${EMO.doc} Documento: ${isEmpresa ? `Con Documento (IVA: ${moneyCLP(ivaVal || 0)})` : "Sin Documento"}
 ${EMO.clock} HORARIO: ${hrLine}

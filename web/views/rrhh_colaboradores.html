@@ -57,6 +57,21 @@
       user-select:none;
     }
     .uMarcaOpt input{ width:16px; height:16px; }
+
+    .stepTabs{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .stepTab{
+      height:30px;
+      padding:0 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.04);
+      color: inherit;
+      font-weight:1000;
+      cursor:pointer;
+      font-size:12px;
+    }
+    :root.light .stepTab{ border-color: rgba(0,0,0,.12); background: rgba(0,0,0,.04); }
+    .stepTab.active{ border-color: rgba(25,195,125,.55); background: rgba(25,195,125,.18); }
   </style>
 </head>
 <body>
@@ -108,6 +123,14 @@
         <strong>1. Antecedentes cargo</strong>
         <button class="btn" data-close>Cancelar</button>
       </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab active" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+      </div>
       <div class="row" style="margin-top:10px;">
         <input class="inp" id="stArea" placeholder="Área" />
         <input class="inp" id="stCargo" placeholder="Cargo (obligatorio)" />
@@ -129,6 +152,14 @@
       <div class="row" style="justify-content:space-between;">
         <strong>2. Antecedentes personales</strong>
         <button class="btn" data-close>Cancelar</button>
+      </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab active" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
       </div>
       <div class="row" style="margin-top:10px;">
         <input class="inp" id="stApellidoP" placeholder="Apellido paterno (obligatorio)" />
@@ -192,6 +223,14 @@
         <strong>3. Antecedentes familiares</strong>
         <button class="btn" data-close>Cancelar</button>
       </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab active" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+      </div>
       <div class="muted" style="margin-top:6px;">Puedes agregar 1 o más familiares, o omitir.</div>
       <div class="row" style="margin-top:10px;">
         <input class="inp" id="stFamPar" placeholder="Parentesco" />
@@ -240,6 +279,14 @@
         <strong>4. Tallas</strong>
         <button class="btn" data-close>Cancelar</button>
       </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab active" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+      </div>
       <div class="row" style="margin-top:10px;">
         <input class="inp" id="stPantalon" placeholder="Pantalón" />
         <input class="inp" id="stChaqueta" placeholder="Chaqueta" />
@@ -255,16 +302,24 @@
   </div>
 
   <!-- Paso 5: Afiliaciones -->
-  <div class="modal" id="m5">
-    <div class="card">
-      <div class="row" style="justify-content:space-between;">
-        <strong>5. Afiliaciones</strong>
-        <button class="btn" data-close>Cancelar</button>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <select class="inp" id="stRol">
-          <option value="">Rol (obligatorio)</option>
-        </select>
+	  <div class="modal" id="m5">
+	    <div class="card">
+	      <div class="row" style="justify-content:space-between;">
+	        <strong>5. Afiliaciones</strong>
+	        <button class="btn" data-close>Cancelar</button>
+	      </div>
+	      <div class="stepTabs" data-stepbar>
+	        <button class="stepTab" type="button" data-step="1">Cargo</button>
+	        <button class="stepTab" type="button" data-step="2">Personales</button>
+	        <button class="stepTab" type="button" data-step="3">Familia</button>
+	        <button class="stepTab" type="button" data-step="4">Tallas</button>
+	        <button class="stepTab active" type="button" data-step="5">AFP/Salud</button>
+	        <button class="stepTab" type="button" data-step="6">Bancos</button>
+	      </div>
+	      <div class="row" style="margin-top:10px;">
+	        <select class="inp" id="stRol">
+	          <option value="">Rol (obligatorio)</option>
+	        </select>
         <select class="inp" id="stCentro">
           <option value="">Centro de costo</option>
           <option>Greendiamond</option>
@@ -290,16 +345,24 @@
   </div>
 
   <!-- Paso 6: Bancarios -->
-  <div class="modal" id="m6">
-    <div class="card">
-      <div class="row" style="justify-content:space-between;">
-        <strong>6. Datos bancarios</strong>
-        <button class="btn" data-close>Cancelar</button>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <input class="inp" id="stCuentaNum" placeholder="Nº de cuenta (obligatorio)" />
-        <select class="inp" id="stTipoCuenta">
-          <option value="">Tipo de cuenta</option>
+	  <div class="modal" id="m6">
+	    <div class="card">
+	      <div class="row" style="justify-content:space-between;">
+	        <strong>6. Datos bancarios</strong>
+	        <button class="btn" data-close>Cancelar</button>
+	      </div>
+	      <div class="stepTabs" data-stepbar>
+	        <button class="stepTab" type="button" data-step="1">Cargo</button>
+	        <button class="stepTab" type="button" data-step="2">Personales</button>
+	        <button class="stepTab" type="button" data-step="3">Familia</button>
+	        <button class="stepTab" type="button" data-step="4">Tallas</button>
+	        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+	        <button class="stepTab active" type="button" data-step="6">Bancos</button>
+	      </div>
+	      <div class="row" style="margin-top:10px;">
+	        <input class="inp" id="stCuentaNum" placeholder="Nº de cuenta (obligatorio)" />
+	        <select class="inp" id="stTipoCuenta">
+	          <option value="">Tipo de cuenta</option>
           <option>Cuenta Corriente</option>
           <option>Cuenta Vista</option>
           <option>Cuenta RUT</option>
@@ -618,9 +681,42 @@
     function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||"").trim()); }
     function isValidPhoneCL(v){ const raw = String(v||"").replace(/\D/g,""); return raw.length >= 8; }
 
-    function openModal(id){ closeAll(); qs(id).style.display = "flex"; }
+    function setStepActive(step){
+      const s = Number(step || 0);
+      if (!Number.isFinite(s) || s < 1) return;
+      document.querySelectorAll(".stepTabs .stepTab").forEach(btn=>{
+        const n = Number(btn.getAttribute("data-step") || 0);
+        btn.classList.toggle("active", n === s);
+      });
+    }
+    function openModal(id){
+      closeAll();
+      qs(id).style.display = "flex";
+      try{
+        const m = String(id || "");
+        const mm = m.startsWith("#m") ? m.slice(2) : "";
+        const s = Number(mm || 0);
+        if (Number.isFinite(s) && s >= 1 && s <= 6){
+          setStepActive(s);
+          if (s === 3) renderFamiliares();
+        }
+      }catch(_){}
+    }
     function closeAll(){ document.querySelectorAll('.modal').forEach(m => m.style.display='none'); }
     document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeAll));
+
+    function openStep(step){
+      const s = Number(step || 0);
+      if (!Number.isFinite(s) || s < 1 || s > 6) return;
+      openModal(`#m${s}`);
+    }
+    document.querySelectorAll(".stepTabs .stepTab").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const s = Number(btn.getAttribute("data-step") || 0);
+        if (!s) return;
+        openStep(s);
+      });
+    });
 
     function openStaffModal(item){
       staffEditing = item || null;
@@ -699,7 +795,7 @@
       // backend guarda 'BOTH' (mixto), 'QR' o 'GEO'
       qs("#stMarcacionMethod").value = String(item?.marcacion_method || "BOTH").toUpperCase();
       qs("#stActivo").value = String(item?.is_active ?? true);
-      openModal('#m1');
+      openStep(1);
     }
 
     function renderFamiliares(){

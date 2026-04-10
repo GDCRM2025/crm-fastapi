@@ -1266,6 +1266,10 @@ async function fetchMe() {
       await maybeShowAutoDecline(me);
     } catch (_) {
     }
+    try {
+      await maybePromptSgjoMarkIn(me);
+    } catch (_) {
+    }
     const keyRaw = (_g = (_f = (_e = (_d = (_c = (_b = me.id) != null ? _b : (_a = me.user) == null ? void 0 : _a.id) != null ? _c : me.username) != null ? _d : me.email) != null ? _e : me.nombre) != null ? _f : me.name) != null ? _g : "default";
     setPrefKey(keyRaw);
     const name = me.username || me.nombre || me.name || "Usuario";
@@ -1318,6 +1322,50 @@ async function fetchMe() {
   } catch (_) {
     const userNameEl = qs("#userName");
     if (userNameEl) userNameEl.textContent = "Usuario";
+  }
+}
+
+async function maybePromptSgjoMarkIn(me) {
+  try {
+    if (!getToken()) return;
+    const roleName = String((me == null ? void 0 : me.role) || (me == null ? void 0 : me.rol) || "").toUpperCase();
+    if (roleName.includes("SUPERADMIN") || roleName.includes("ADMIN") || roleName.includes("EJECUTIV") || roleName.includes("OPERADOR") || roleName.includes("CONDUCTOR") || roleName.includes("CHOFER") || roleName.includes("COMPRAS") || roleName.includes("OPERACIONES") || roleName.includes("MICE")) {
+      ;
+    } else {
+      return;
+    }
+    const r = await fetch(`${API_BASE}/rrhh/sgjo/today`, { headers: authHeaders({ "Accept": "application/json" }) });
+    if (!r.ok) return;
+    const j = await r.json().catch(() => null);
+    if (!(j && j.ok)) return;
+    const today = String(j.today || "").trim();
+    if (!today) return;
+    if (j.puede_marcar === false) return;
+    if (j.has_in) return;
+    const k = `gd_sgjo_in_dismissed_${today}`;
+    if (localStorage.getItem(k) === "1") return;
+    const punto = String(j.default_punto_code || "").trim();
+    const markURL = punto ? `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto)}&v=${Date.now()}` : `/web/views/rrhh_portal.html?v=${Date.now()}`;
+    const openMark = () => {
+      const frame = qs("#mainFrame");
+      if (frame) frame.src = viewURL(markURL);
+    };
+    if (window.Swal) {
+      const res = await Swal.fire({
+        icon: "info",
+        title: "Marcación de entrada",
+        html: `<div style="text-align:left;opacity:.9">Para iniciar la jornada, registra tu <b>ENTRADA</b> (QR/GPS según tu permiso RRHH).</div>`,
+        showCancelButton: true,
+        confirmButtonText: "Marcar ahora",
+        cancelButtonText: "Más tarde"
+      });
+      if (res.isConfirmed) openMark();
+      else localStorage.setItem(k, "1");
+      return;
+    }
+    if (confirm("RRHH: registra tu ENTRADA ahora?")) openMark();
+    else localStorage.setItem(k, "1");
+  } catch (_) {
   }
 }
 

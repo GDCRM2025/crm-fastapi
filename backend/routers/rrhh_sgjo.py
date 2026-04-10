@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
+from fastapi.responses import Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -165,6 +167,175 @@ def _role_key(user: dict) -> str:
 def _is_admin(user: dict) -> bool:
     r = _role_key(user)
     return ("SUPERADMIN" in r) or (r == "ADMIN") or ("JEFE DE OPERACIONES" in r) or ("COMPRAS" in r) or ("OPERACIONES" in r)
+
+@router.get("/qr")
+def qr_png(
+    p: str,
+    size: int = 260,
+    request: Request | None = None,
+) -> Response:
+    """
+    QR imprimible (PNG) para abrir la pantalla de marcación con el punto preseleccionado.
+
+    - NO requiere token (se imprime/pega en sede).
+    - El QR NO registra la marca: solo abre la URL. La marcación exige login + dispositivo enrolado + geolocalización.
+    """
+    code = str(p or "").strip().upper()
+    if not code or len(code) > 64:
+        raise HTTPException(status_code=400, detail="p inválido")
+
+    try:
+        sz = int(size)
+        if sz < 120:
+            sz = 120
+        if sz > 800:
+            sz = 800
+    except Exception:
+        sz = 260
+
+    app_url = (os.getenv("APP_URL") or "").strip().rstrip("/")
+    if not app_url:
+        try:
+            if request is not None:
+                app_url = str(request.base_url).rstrip("/")
+        except Exception:
+            app_url = ""
+    if not app_url:
+        # Worst-case fallback; should never happen in prod.
+        app_url = "https://greendiamond.cl"
+
+    from urllib.parse import quote_plus
+
+    mark_url = f"{app_url}/crm/web/views/rrhh_sgjo_marcacion.html?p={quote_plus(code)}"
+    qr_url = f"https://chart.googleapis.com/chart?cht=qr&chs={sz}x{sz}&chl={quote_plus(mark_url)}&chld=M|1"
+
+    try:
+        import requests  # type: ignore
+
+        r = requests.get(qr_url, timeout=10)
+        if r.status_code != 200 or not (r.content or b""):
+            raise RuntimeError(f"QR fetch failed: {r.status_code}")
+        return Response(
+            content=r.content,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except Exception as e:
+        # No rompemos RRHH por fallo externo; devolvemos 1x1 para no dejar img rota.
+        # (el link igual se ve en pantalla para copiar).
+        _ = e
+        return Response(
+            content=(
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06"
+                b"\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00"
+                b"\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
+            ),
+            media_type="image/png",
+            headers={"Cache-Control": "no-store"},
+        )
+
+
+def _normalize_key(s: str) -> str:
+    return "".join(ch for ch in (s or "").strip().upper() if ch.isalnum())
+
+
+@router.get("/today")
+def today_status(db: Session = Depends(get_db), user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """
+    Estado de marcación del día (Chile) para el usuario actual.
+    Usado para UX: pedir IN al iniciar sesión solo 1 vez por día.
+    """
+    _ensure(db)
+    uid = user.get("id")
+    if not str(uid or "").isdigit():
+        raise HTTPException(status_code=401, detail="Usuario inválido")
+    uid_int = int(uid)
+
+    # RUT y policy RRHH
+    rut = get_user_rut(db, uid_int)
+    pol = _rrhh_marking_policy(db, rut or "") if rut else None
+    puede = None if pol is None else bool(pol.get("puede_marcar"))
+    method_allowed = None if pol is None else str(pol.get("marcacion_method") or "BOTH").upper()
+
+    # Default punto por centro de costo (match nombre sede)
+    default_punto = None
+    try:
+        cc = db.execute(
+            text(
+                """
+                SELECT COALESCE(NULLIF(btrim(centro_costo),''), NULLIF(btrim(centro),''), NULLIF(btrim(cc),''), NULLIF(btrim(centro_cost),''), '') AS cc
+                FROM public.rrhh_staff
+                WHERE lower(rut)=lower(:r) AND is_active IS TRUE
+                ORDER BY id_staff DESC
+                LIMIT 1
+                """
+            ),
+            {"r": rut or ""},
+        ).scalar()
+        cc_key = _normalize_key(str(cc or ""))
+        if cc_key:
+            sedes = db.execute(text("SELECT id_sede, nombre FROM public.sgjo_sedes WHERE is_active IS TRUE")).mappings().all()
+            sid = None
+            for s in sedes:
+                if _normalize_key(str(s.get("nombre") or "")) == cc_key:
+                    sid = int(s["id_sede"])
+                    break
+            if sid is None:
+                # Heurística: ROLFI -> ROLFIS
+                for s in sedes:
+                    if cc_key in _normalize_key(str(s.get("nombre") or "")) or _normalize_key(str(s.get("nombre") or "")) in cc_key:
+                        sid = int(s["id_sede"])
+                        break
+            if sid is not None:
+                default_punto = db.execute(
+                    text(
+                        """
+                        SELECT code
+                        FROM public.sgjo_puntos
+                        WHERE id_sede=:sid AND is_active IS TRUE
+                        ORDER BY id_punto
+                        LIMIT 1
+                        """
+                    ),
+                    {"sid": sid},
+                ).scalar()
+    except Exception:
+        default_punto = None
+
+    rows = db.execute(
+        text(
+            """
+            SELECT tipo, method, created_at
+            FROM public.sgjo_marcaciones
+            WHERE id_usuario=:u
+              AND ok IS TRUE
+              AND ((created_at AT TIME ZONE 'America/Santiago')::date = (now() AT TIME ZONE 'America/Santiago')::date)
+            ORDER BY created_at ASC
+            """
+        ),
+        {"u": uid_int},
+    ).mappings().all()
+    tipos = [str(r.get("tipo") or "").upper() for r in rows]
+    has_in = "IN" in tipos
+    has_out = "OUT" in tipos
+    last = rows[-1] if rows else None
+    try:
+        today = db.execute(text("SELECT (now() AT TIME ZONE 'America/Santiago')::date")).scalar()
+        today_s = str(today)
+    except Exception:
+        today_s = ""
+
+    return {
+        "ok": True,
+        "today": today_s,
+        "has_in": bool(has_in),
+        "has_out": bool(has_out),
+        "last_tipo": (str(last.get("tipo") or "").upper() if last else None),
+        "last_at": (str(last.get("created_at")) if last else None),
+        "puede_marcar": puede,
+        "marcacion_method": method_allowed,
+        "default_punto_code": (str(default_punto or "").strip().upper() or None),
+    }
 
 
 @router.patch("/admin/sede/{id_sede}")
