@@ -190,11 +190,11 @@ def _is_admin(user: dict) -> bool:
     r = _role_key(user)
     return ("SUPERADMIN" in r) or (r == "ADMIN") or ("JEFE DE OPERACIONES" in r) or ("COMPRAS" in r) or ("OPERACIONES" in r)
 
-@router.get("/qr")
+@router.get("/qr", response_class=Response, response_model=None)
 def qr_png(
     p: str,
     size: int = 260,
-    request: Request | None = None,
+    request: Request = None,  # type: ignore[assignment]
 ) -> Response:
     """
     QR imprimible (PNG) para abrir la pantalla de marcación con el punto preseleccionado.
@@ -215,10 +215,11 @@ def qr_png(
     except Exception:
         sz = 260
 
+    # `request` siempre existe en FastAPI, pero dejamos fallback por compatibilidad/harness.
     app_url = (os.getenv("APP_URL") or "").strip().rstrip("/")
     if not app_url:
         try:
-            if request is not None:
+            if request:
                 app_url = str(request.base_url).rstrip("/")
         except Exception:
             app_url = ""
