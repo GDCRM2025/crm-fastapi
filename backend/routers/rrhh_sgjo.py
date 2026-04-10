@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
+from backend.core.qr_local import make_qr_png
 from backend.core.sgjo import (
     ensure_sgjo_tables,
     seed_sedes_and_points,
@@ -230,37 +231,18 @@ def qr_png(
     from urllib.parse import quote_plus
 
     mark_url = f"{app_url}/crm/web/views/rrhh_sgjo_marcacion.html?p={quote_plus(code)}"
-    qr_url = f"https://chart.googleapis.com/chart?cht=qr&chs={sz}x{sz}&chl={quote_plus(mark_url)}&chld=M|1"
-
+    # Generación 100% local (sin llamadas externas) para que siempre funcione en hosting.
     try:
-        content: bytes | None = None
-        try:
-            import requests  # type: ignore
-
-            r = requests.get(qr_url, timeout=10)
-            if r.status_code == 200 and (r.content or b""):
-                content = bytes(r.content)
-        except Exception:
-            content = None
-
-        if content is None:
-            from urllib.request import urlopen
-
-            with urlopen(qr_url, timeout=10) as resp:  # nosec - URL fija a Google Chart
-                content = resp.read()
-
-        if not content:
-            raise RuntimeError("QR fetch failed")
-
+        # Ajuste simple de tamaño aproximado: box en base a "sz".
+        box = 4 if sz <= 220 else 5 if sz <= 320 else 6
+        png = make_qr_png(mark_url, box=box, border=4)
         return Response(
-            content=content,
+            content=png,
             media_type="image/png",
             headers={"Cache-Control": "public, max-age=86400"},
         )
-    except Exception as e:
-        # No rompemos RRHH por fallo externo; devolvemos 1x1 para no dejar img rota.
-        # (el link igual se ve en pantalla para copiar).
-        _ = e
+    except Exception:
+        # Worst-case fallback 1x1
         return Response(
             content=(
                 b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06"
