@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
-from backend.core.qr_local import make_qr_png
+from backend.core.qr_local import make_qr_png, make_qr_svg
 from backend.core.sgjo import (
     ensure_sgjo_tables,
     seed_sedes_and_points,
@@ -233,25 +233,35 @@ def qr_png(
     mark_url = f"{app_url}/crm/web/views/rrhh_sgjo_marcacion.html?p={quote_plus(code)}"
     # Generación 100% local (sin llamadas externas) para que siempre funcione en hosting.
     try:
-        # Ajuste simple de tamaño aproximado: box en base a "sz".
-        box = 4 if sz <= 220 else 5 if sz <= 320 else 6
-        png = make_qr_png(mark_url, box=box, border=4)
+        # Ajuste simple de tamaño aproximado: scale en base a "sz".
+        scale = 4 if sz <= 220 else 5 if sz <= 320 else 6
+        png = make_qr_png(mark_url, scale=scale, border=4)
         return Response(
             content=png,
             media_type="image/png",
             headers={"Cache-Control": "public, max-age=86400"},
         )
     except Exception:
-        # Worst-case fallback 1x1
-        return Response(
-            content=(
-                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06"
-                b"\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00"
-                b"\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
-            ),
-            media_type="image/png",
-            headers={"Cache-Control": "no-store"},
-        )
+        # Fallback SVG (igual imprimible y visible aunque Pillow no esté OK).
+        try:
+            scale = 4 if sz <= 220 else 5 if sz <= 320 else 6
+            svg = make_qr_svg(mark_url, scale=scale, border=4)
+            return Response(
+                content=svg,
+                media_type="image/svg+xml",
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+        except Exception:
+            # Worst-case fallback 1x1
+            return Response(
+                content=(
+                    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06"
+                    b"\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00"
+                    b"\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
+                ),
+                media_type="image/png",
+                headers={"Cache-Control": "no-store"},
+            )
 
 
 def _normalize_key(s: str) -> str:
