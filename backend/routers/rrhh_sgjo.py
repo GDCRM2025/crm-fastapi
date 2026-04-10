@@ -210,13 +210,27 @@ def qr_png(
     qr_url = f"https://chart.googleapis.com/chart?cht=qr&chs={sz}x{sz}&chl={quote_plus(mark_url)}&chld=M|1"
 
     try:
-        import requests  # type: ignore
+        content: bytes | None = None
+        try:
+            import requests  # type: ignore
 
-        r = requests.get(qr_url, timeout=10)
-        if r.status_code != 200 or not (r.content or b""):
-            raise RuntimeError(f"QR fetch failed: {r.status_code}")
+            r = requests.get(qr_url, timeout=10)
+            if r.status_code == 200 and (r.content or b""):
+                content = bytes(r.content)
+        except Exception:
+            content = None
+
+        if content is None:
+            from urllib.request import urlopen
+
+            with urlopen(qr_url, timeout=10) as resp:  # nosec - URL fija a Google Chart
+                content = resp.read()
+
+        if not content:
+            raise RuntimeError("QR fetch failed")
+
         return Response(
-            content=r.content,
+            content=content,
             media_type="image/png",
             headers={"Cache-Control": "public, max-age=86400"},
         )
