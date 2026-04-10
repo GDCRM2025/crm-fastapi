@@ -1,6 +1,6 @@
 import json
 import ast
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time
 try:
     from zoneinfo import ZoneInfo  # py3.9+
 except Exception:  # pragma: no cover

@@ -1262,6 +1262,10 @@ async function fetchMe() {
     if (!r.ok) throw new Error("me failed");
     const me = await r.json();
     window.GD.me = me;
+    try {
+      await maybeShowAutoDecline(me);
+    } catch (_) {
+    }
     const keyRaw = (_g = (_f = (_e = (_d = (_c = (_b = me.id) != null ? _b : (_a = me.user) == null ? void 0 : _a.id) != null ? _c : me.username) != null ? _d : me.email) != null ? _e : me.nombre) != null ? _f : me.name) != null ? _g : "default";
     setPrefKey(keyRaw);
     const name = me.username || me.nombre || me.name || "Usuario";
@@ -1314,6 +1318,31 @@ async function fetchMe() {
   } catch (_) {
     const userNameEl = qs("#userName");
     if (userNameEl) userNameEl.textContent = "Usuario";
+  }
+}
+
+async function maybeShowAutoDecline(me) {
+  try {
+    const role = String((me == null ? void 0 : me.role) || (me == null ? void 0 : me.rol) || "").toUpperCase();
+    const okRole = role.includes("ADMIN") || role.includes("SUPERADMIN") || role.includes("EJECUTIV");
+    if (!okRole) return;
+    const payload = (me == null ? void 0 : me.auto_decline_last) || null;
+    if (!payload || typeof payload !== "object") return;
+    const run = String(payload.run_date || "");
+    const total = Number(payload.total || 0) || 0;
+    if (!run || total <= 0) return;
+    const key = `gd_auto_decline_seen_${run}`;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, "1");
+    const monto = Number(payload.monto_total || 0) || 0;
+    const msg = `Se auto-declinaron ${total} lead(s) por reglas (evento pasado / sin movimiento).\n${monto ? `Monto total declinado: $${Math.round(monto).toLocaleString("es-CL")}` : ""}`.trim();
+    await Swal.fire({
+      icon: "info",
+      title: "Auto‑decline",
+      text: msg,
+      confirmButtonText: "OK"
+    });
+  } catch (_) {
   }
 }
 function findItemById(itemId) {

@@ -42,6 +42,17 @@
     }
     .btn.primary{background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
     .btn:disabled{opacity:.6;cursor:not-allowed;}
+    .sel{
+      height:42px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;
+      padding:0 12px;
+      font-weight:1100;
+      flex:1;
+      min-width:220px;
+      outline:none;
+    }
     pre{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.35;margin:10px 0 0 0;opacity:.85}
   </style>
 </head>
@@ -56,10 +67,17 @@
         <span class="pill" id="pSede">Sede: —</span>
         <span class="pill" id="pPunto">Punto: —</span>
         <span class="pill" id="pModo">Modo: —</span>
+        <span class="pill" id="pPolicy">Método: —</span>
       </div>
 
       <div class="row" style="margin-top:14px">
         <button class="btn primary" id="btnEnroll" type="button">Enrolar dispositivo</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select class="sel" id="selMethod" title="Método de marcación">
+          <option value="QR">QR</option>
+          <option value="GEO">GPS</option>
+        </select>
       </div>
       <div class="row" style="margin-top:8px">
         <button class="btn primary" id="btnMark" type="button" disabled>Marcar</button>
@@ -162,8 +180,24 @@
         qs("#pPunto").textContent = "Punto: " + (pt?.nombre || punto_code);
         const me = await apiJSON("/rrhh/sgjo/me");
         qs("#pModo").textContent = "Modo: " + String(me?.modality_today || "—");
+        const pol = String(me?.marcacion_method || "BOTH").toUpperCase();
+        const can = (me?.puede_marcar === false) ? "NO" : "SÍ";
+        qs("#pPolicy").textContent = `Método: ${pol} · Puede marcar: ${can}`;
+        // Ajustar selector según política RRHH (si existe)
+        try{
+          const sel = qs("#selMethod");
+          if (pol === "QR"){
+            sel.value = "QR";
+            sel.disabled = true;
+          } else if (pol === "GPS" || pol === "GEO"){
+            sel.value = "GEO";
+            sel.disabled = true;
+          } else {
+            sel.disabled = false;
+          }
+        }catch(_){}
         qs("#btnMark").disabled = false;
-        log("Listo. Enrola el dispositivo la primera vez, luego marca.");
+        log("Listo. Enrola el dispositivo la primera vez, luego marca (QR o GPS según tu permiso RRHH).");
       }catch(e){
         log("Error: " + (e?.message||e));
       }
@@ -185,10 +219,11 @@
         qs("#btnMark").disabled = true;
         const device_id = getDeviceId();
         const loc = await getLocation();
+        const method = String(qs("#selMethod")?.value || "QR").toUpperCase();
         const out = await apiJSON("/rrhh/sgjo/marcar", {
           method:"POST",
           headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ punto_code, device_id, method:"QR", ...loc }),
+          body: JSON.stringify({ punto_code, device_id, method, ...loc }),
         });
         const dist = (out?.distance_m != null) ? (Number(out.distance_m).toFixed(1) + "m") : "—";
         log(`OK · ${out.tipo} · ${out.sede}\nDistancia: ${dist}\nFallback: ${out.used_fallback ? "sí" : "no"}\nModo: ${out.modality}`);

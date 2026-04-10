@@ -1828,6 +1828,10 @@ def dashboard(
     cierre_pct = (confirmados_semana / total_semana * 100) if total_semana else 0
 
     _ensure_baseline(db)
+    try:
+        _ensure_metas(db)
+    except Exception:
+        pass
     month = today.month
 
     allowed_names = None
@@ -1892,23 +1896,60 @@ def dashboard(
         if name:
             actual_map[name] = float(r.get("monto") or 0)
 
+    # Metas mensuales (si existen), por marca.
+    metas_by_marca: dict[str, dict[str, Any]] = {}
+    try:
+        if _table_exists_pg(db, "metas_marca_mensual") and _table_exists_pg(db, "marcas"):
+            rows = db.execute(
+                text(
+                    """
+                    SELECT COALESCE(m.nombre, m.marca, '') AS marca,
+                           COALESCE(mm.venta_base,0)::float AS venta_base,
+                           COALESCE(mm.crecimiento_pct,0)::float AS crecimiento_pct,
+                           COALESCE(mm.meta,0)::float AS meta
+                    FROM metas_marca_mensual mm
+                    JOIN marcas m ON m.id_marca = mm.id_marca
+                    WHERE mm.year=:y AND mm.month=:m
+                    """
+                ),
+                {"y": int(today.year), "m": int(month)},
+            ).mappings().all()
+            for r in rows:
+                name = str(r.get("marca") or "").strip()
+                if not name:
+                    continue
+                metas_by_marca[name] = {
+                    "venta_base": float(r.get("venta_base") or 0),
+                    "crecimiento_pct": float(r.get("crecimiento_pct") or 0),
+                    "meta": float(r.get("meta") or 0),
+                }
+    except Exception:
+        metas_by_marca = {}
+
     sales_compare = []
     for b in baseline_rows:
         name = b.get("marca")
         base = float(b.get("monto") or 0)
-        target = round(base * 1.12, 2)
+        # target legacy: 12% sobre baseline. Si hay meta configurada, usarla.
+        meta_row = metas_by_marca.get(str(name or "").strip(), {})
+        target = float(meta_row.get("meta") or 0) or round(base * 1.12, 2)
         actual = float(actual_map.get(name, 0))
         vs_base = (actual / base * 100) if base else 0
         vs_target = (actual / target * 100) if target else 0
         sales_compare.append({
             "marca": name,
+            # Backward compat con frontend (reportes.html): baseline/meta
             "base": base,
+            "baseline": base,
             "target": target,
+            "meta": target,
             "actual": actual,
             "vs_base": round(vs_base, 2),
             "vs_target": round(vs_target, 2),
+            "vs_meta": round(vs_target, 2),
             "empresa": int(b.get("empresa") or 0),
             "particular": int(b.get("particular") or 0),
+            "meta_cfg": meta_row or None,
         })
 
     commissions = []

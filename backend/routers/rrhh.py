@@ -108,6 +108,8 @@ def _ensure_tables(db: Session) -> None:
               afp_pct NUMERIC,
               salud_tipo TEXT,
               salud_pct NUMERIC,
+              puede_marcar BOOLEAN DEFAULT TRUE,
+              marcacion_method TEXT DEFAULT 'BOTH',
               is_active BOOLEAN DEFAULT TRUE,
               observaciones TEXT,
               ficha JSONB
@@ -121,6 +123,8 @@ def _ensure_tables(db: Session) -> None:
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS id_usuario INTEGER"))
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS presencial_dow SMALLINT"))
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS modalidad_default TEXT"))
+    db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS puede_marcar BOOLEAN DEFAULT TRUE"))
+    db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS marcacion_method TEXT DEFAULT 'BOTH'"))
     db.execute(
         text(
             """
@@ -426,7 +430,7 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
                        fecha_ingreso, observaciones, ficha
                 FROM rrhh_staff
                 WHERE is_active IS TRUE
-                ORDER BY colaborador ASC NULLS LAST, id_staff ASC
+                ORDER BY COALESCE(centro_costo,''), COALESCE(rol,''), colaborador ASC NULLS LAST, id_staff ASC
                 """
             )
         ).mappings().all()
@@ -1009,7 +1013,7 @@ def staff_list(db: Session = Depends(get_db), me: dict = Depends(get_current_use
                 """
                 SELECT *
                 FROM rrhh_staff
-                ORDER BY colaborador ASC NULLS LAST, id_staff ASC
+                ORDER BY COALESCE(centro_costo,''), COALESCE(rol,''), colaborador ASC NULLS LAST, id_staff ASC
                 """
             )
         ).mappings().all()
@@ -1085,7 +1089,7 @@ def users_list(
               COALESCE(u.is_active, TRUE) AS is_active
             FROM public.usuarios u
             {where}
-            ORDER BY u.id_usuario DESC
+            ORDER BY lower(COALESCE(u.nombre, u.username, u.email, u.id_usuario::text)) ASC, u.id_usuario ASC
             LIMIT :limit OFFSET :offset
             """
         ),
@@ -1316,6 +1320,8 @@ def staff_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(g
         "afp_pct": body.get("afp_pct"),
         "salud_tipo": body.get("salud_tipo"),
         "salud_pct": body.get("salud_pct"),
+        "puede_marcar": body.get("puede_marcar", True),
+        "marcacion_method": (body.get("marcacion_method") or "BOTH"),
         "is_active": body.get("is_active", True),
         "observaciones": body.get("observaciones"),
         "ficha": ficha,
@@ -1326,10 +1332,10 @@ def staff_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(g
                 """
                 INSERT INTO rrhh_staff(
                   colaborador,rut,email,telefono,rol,centro_costo,fecha_ingreso,
-                  afp,afp_pct,salud_tipo,salud_pct,is_active,observaciones,ficha
+                  afp,afp_pct,salud_tipo,salud_pct,puede_marcar,marcacion_method,is_active,observaciones,ficha
                 ) VALUES (
                   :colaborador,:rut,:email,:telefono,:rol,:centro_costo,:fecha_ingreso,
-                  :afp,:afp_pct,:salud_tipo,:salud_pct,:is_active,:observaciones,CAST(:ficha AS JSONB)
+                  :afp,:afp_pct,:salud_tipo,:salud_pct,:puede_marcar,:marcacion_method,:is_active,:observaciones,CAST(:ficha AS JSONB)
                 )
                 RETURNING id_staff
                 """
@@ -1437,6 +1443,8 @@ def staff_bulk_upsert(body: dict, db: Session = Depends(get_db), me: dict = Depe
                 "afp_pct": _as_num(it.get("afp_pct")),
                 "salud_tipo": it.get("salud_tipo"),
                 "salud_pct": _as_num(it.get("salud_pct")),
+                "puede_marcar": bool(it.get("puede_marcar", True)),
+                "marcacion_method": (it.get("marcacion_method") or "BOTH"),
                 "is_active": bool(it.get("is_active", True)),
                 "observaciones": it.get("observaciones"),
                 "ficha": ficha_json,
@@ -1459,6 +1467,8 @@ def staff_bulk_upsert(body: dict, db: Session = Depends(get_db), me: dict = Depe
                             afp_pct=COALESCE(:afp_pct, afp_pct),
                             salud_tipo=COALESCE(:salud_tipo, salud_tipo),
                             salud_pct=COALESCE(:salud_pct, salud_pct),
+                            puede_marcar=COALESCE(:puede_marcar, puede_marcar),
+                            marcacion_method=COALESCE(:marcacion_method, marcacion_method),
                             is_active=COALESCE(:is_active, is_active),
                             observaciones=COALESCE(:observaciones, observaciones),
                             ficha=CAST(:ficha AS JSONB)
@@ -1474,10 +1484,10 @@ def staff_bulk_upsert(body: dict, db: Session = Depends(get_db), me: dict = Depe
                         """
                         INSERT INTO rrhh_staff(
                           colaborador,rut,email,telefono,rol,centro_costo,fecha_ingreso,
-                          afp,afp_pct,salud_tipo,salud_pct,is_active,observaciones,ficha
+                          afp,afp_pct,salud_tipo,salud_pct,puede_marcar,marcacion_method,is_active,observaciones,ficha
                         ) VALUES (
                           :colaborador,:rut,:email,:telefono,:rol,:centro_costo,:fecha_ingreso,
-                          :afp,:afp_pct,:salud_tipo,:salud_pct,:is_active,:observaciones,CAST(:ficha AS JSONB)
+                          :afp,:afp_pct,:salud_tipo,:salud_pct,:puede_marcar,:marcacion_method,:is_active,:observaciones,CAST(:ficha AS JSONB)
                         )
                         """
                     ),
@@ -1513,6 +1523,8 @@ def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db), me: d
         "afp_pct": body.get("afp_pct"),
         "salud_tipo": body.get("salud_tipo"),
         "salud_pct": body.get("salud_pct"),
+        "puede_marcar": body.get("puede_marcar", True),
+        "marcacion_method": (body.get("marcacion_method") or "BOTH"),
         "is_active": body.get("is_active", True),
         "observaciones": body.get("observaciones"),
         "ficha": ficha,
@@ -1533,6 +1545,8 @@ def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db), me: d
                     afp_pct=:afp_pct,
                     salud_tipo=:salud_tipo,
                     salud_pct=:salud_pct,
+                    puede_marcar=:puede_marcar,
+                    marcacion_method=:marcacion_method,
                     is_active=:is_active,
                     observaciones=:observaciones,
                     ficha=CAST(:ficha AS JSONB)

@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -102,6 +104,24 @@ def _enrich_user(user: dict) -> dict:
                 out["push_ok"] = bool(row.get("push_ok"))
                 out["needs_phone"] = not bool(tel_ok)
                 out["needs_push_ok"] = not bool(row.get("push_ok"))
+
+            # Aviso auto-decline (global del día). Best-effort, nunca debe romper /me.
+            try:
+                has_kv = bool(cn.execute(text("SELECT to_regclass('public.system_kv') IS NOT NULL")).scalar())
+            except Exception:
+                has_kv = False
+            if has_kv:
+                try:
+                    v = cn.execute(
+                        text("SELECT value FROM public.system_kv WHERE key='auto_decline_last_payload' LIMIT 1")
+                    ).scalar()
+                    if v:
+                        try:
+                            out["auto_decline_last"] = json.loads(str(v))
+                        except Exception:
+                            out["auto_decline_last"] = None
+                except Exception:
+                    pass
     except Exception:
         pass
     return out

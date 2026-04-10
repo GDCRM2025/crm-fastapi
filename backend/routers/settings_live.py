@@ -1389,8 +1389,45 @@ def list_rows(
 
     sel_cols = ", ".join([_qident(c) for c in colnames])
 
+    # Orden por defecto: alfabético cuando aplica (mejor UX). Mantener orden técnico en tablas operativas.
     order_sql = f'ORDER BY {_qident(pk)} DESC'
+    try:
+        if table == "marcas":
+            if _has_col(cols, "nombre") and _has_col(cols, "marca"):
+                order_sql = f'ORDER BY COALESCE({_qident("nombre")},{_qident("marca")}) ASC NULLS LAST, {_qident(pk)} ASC'
+            elif _has_col(cols, "nombre"):
+                order_sql = f'ORDER BY {_qident("nombre")} ASC NULLS LAST, {_qident(pk)} ASC'
+            elif _has_col(cols, "marca"):
+                order_sql = f'ORDER BY {_qident("marca")} ASC NULLS LAST, {_qident(pk)} ASC'
+        elif table == "usuarios":
+            # nombre -> username -> email
+            parts = []
+            if _has_col(cols, "nombre"):
+                parts.append(_qident("nombre"))
+            if _has_col(cols, "username"):
+                parts.append(_qident("username"))
+            if _has_col(cols, "email"):
+                parts.append(_qident("email"))
+            if parts:
+                order_sql = f"ORDER BY lower(COALESCE({', '.join(parts)})) ASC NULLS LAST, {_qident(pk)} ASC"
+        elif table == "roles" and _has_col(cols, "nombre"):
+            order_sql = f'ORDER BY lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+        elif table == "estados_lead":
+            if _has_col(cols, "orden") and _has_col(cols, "nombre"):
+                order_sql = f'ORDER BY {_qident("orden")} ASC NULLS LAST, lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+            elif _has_col(cols, "nombre"):
+                order_sql = f'ORDER BY lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+        elif table == "comunas":
+            if _has_col(cols, "nombre"):
+                order_sql = f'ORDER BY lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+            elif _has_col(cols, "comuna"):
+                order_sql = f'ORDER BY lower({_qident("comuna")}) ASC NULLS LAST, {_qident(pk)} ASC'
+        elif table == "tipocliente" and _has_col(cols, "nombre"):
+            order_sql = f'ORDER BY lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+    except Exception:
+        pass
     if table == "productos" and _has_col(cols, "orden"):
+        # productos: respeta orden para catálogo (pero es sortable por click en UI).
         order_sql = f'ORDER BY {_qident("orden")} DESC NULLS LAST, {_qident(pk)} DESC'
     sql_items = text(
         f'SELECT {sel_cols} FROM {_qident(table)} {where_sql} '

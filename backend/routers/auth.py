@@ -373,9 +373,54 @@ def login(data: LoginIn):
                         ).scalar()
                         if (last or "") != today:
                             # Importante: no debe romper el login si falla.
-                            auto_decline_stale_leads(
+                            res = auto_decline_stale_leads(
                                 dry_run=False, triggered_by=str(user.get("username") or ""), conn=conn
                             )
+                            # Guardar resumen para UI (basurero/alerta). Best-effort.
+                            try:
+                                items = (res or {}).get("items") or []
+                                ids = [int(x.get("id_lead")) for x in items if isinstance(x, dict) and str(x.get("id_lead") or "").isdigit()]
+                                payload: dict[str, Any] = {
+                                    "run_date": today,
+                                    "total": int((res or {}).get("total") or len(ids) or 0),
+                                    "items": items[:250],
+                                }
+                                if ids:
+                                    rows = conn.execute(
+                                        text(
+                                            """
+                                            SELECT
+                                              l.id_lead,
+                                              COALESCE(l.monto_cotizado,0) AS monto,
+                                              COALESCE(l.id_marca,0) AS id_marca,
+                                              COALESCE(l.cliente, COALESCE(l.nombre_cliente,'')) AS cliente
+                                            FROM public.leads l
+                                            WHERE l.id_lead = ANY(:ids)
+                                            """
+                                        ),
+                                        {"ids": ids},
+                                    ).fetchall()
+                                    # suma monto (si existe columna)
+                                    total_monto = 0.0
+                                    for r in rows:
+                                        try:
+                                            total_monto += float(r[1] or 0)
+                                        except Exception:
+                                            pass
+                                    payload["monto_total"] = float(total_monto)
+                                conn.execute(
+                                    text(
+                                        """
+                                        INSERT INTO system_kv(key,value,updated_at)
+                                        VALUES ('auto_decline_last_payload', :v, now())
+                                        ON CONFLICT(key) DO UPDATE SET value=:v, updated_at=now()
+                                        """
+                                    ),
+                                    {"v": json.dumps(payload, ensure_ascii=True)[:100000]},
+                                )
+                                conn.commit()
+                            except Exception:
+                                pass
                             conn.execute(
                                 text(
                                     """

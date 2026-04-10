@@ -8,6 +8,8 @@
 
   <!-- SweetAlert2 -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- Tema day/night desde el shell + helpers (cache-bust styles, sorting, etc.) -->
+  <script src="../js/iframe-theme.js"></script>
 
   <style>
     :root{
@@ -80,6 +82,27 @@
     }
     .btn.toggle.active{
       background:var(--accent); color:#062016; border-color:transparent;
+    }
+    .btn .miniCount{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:22px;
+      height:22px;
+      padding:0 8px;
+      border-radius:999px;
+      margin-left:8px;
+      font-size:11px;
+      font-weight:1100;
+      border:1px solid var(--border);
+      background: rgba(0,0,0,.12);
+      color: var(--text);
+    }
+    :root.light .btn .miniCount{ background: rgba(0,0,0,.06); }
+    #btnTrash.dropHover{
+      border-color: rgba(239,68,68,.45);
+      box-shadow: 0 0 0 3px rgba(239,68,68,.14);
+      background: rgba(239,68,68,.06);
     }
 
     .kanban{
@@ -510,6 +533,9 @@
       <div class="badge" id="status">Init…</div>
       <div class="badge" id="monthBadge">Mes actual: 0</div>
       <div class="badge" id="leadCount">0 leads</div>
+      <button class="btn" id="btnTrash" type="button" title="Declinados (basurero). También puedes arrastrar un lead aquí para declinar.">
+        🗑️ Declinados <span class="miniCount" id="trashCount">0</span>
+      </button>
       <button class="btn primary" id="btnCreate" type="button">+ Crear lead</button>
     </div>
 
@@ -1356,7 +1382,7 @@ function setView(v){
   openLeadFromQuery();
 }
 
-	function getFilteredLeads(){
+function getFilteredLeads(){
 	  const t = (qs("#q").value || "").trim().toLowerCase();
 	  let base = FILTER_MONTH ? LEADS.filter(isInCurrentMonth) : LEADS.slice();
 	  if (STALE_IDS && STALE_IDS.size){
@@ -1379,6 +1405,21 @@ function setView(v){
   });
 }
 
+function _estadoIdByNameIncludes(substrUpper){
+  const s = String(substrUpper || "").toUpperCase();
+  const hit = (CATS.estados || []).find(e => String(e?.nombre || e?.estado || "").toUpperCase().includes(s));
+  return hit ? Number(hit.id_estado) : null;
+}
+function _declinadoId(){ return _estadoIdByNameIncludes("DECLIN"); }
+function _contactadoId(){ return _estadoIdByNameIncludes("CONTACT"); }
+
+function getDeclinados(all=false){
+  const did = _declinadoId();
+  if (!did) return [];
+  const base = all ? (LEADS || []) : getFilteredLeads();
+  return (base || []).filter(l => Number(l.id_estado||0) === Number(did));
+}
+
 	function render(){
 	  clearError();
 	  const list = getFilteredLeads();
@@ -1386,9 +1427,14 @@ function setView(v){
 	  const baseTotal = FILTER_MONTH ? MONTH_TOTAL : total;
 	  qs("#leadCount").textContent = `Mostrando ${list.length} / ${baseTotal}`;
 	  qs("#btnMonth").classList.toggle("active", FILTER_MONTH);
+    try{
+      const d = getDeclinados(true).length;
+      qs("#trashCount").textContent = String(d || 0);
+    }catch(_){}
 
-	  // columnas visibles
-    const visibleStates = (CATS.estados||[]);
+	  // columnas visibles (no contamos DECLINADO porque va al basurero 🗑️)
+    const did = _declinadoId();
+    const visibleStates = (CATS.estados||[]).filter(s => !(did && Number(s.id_estado) === Number(did)));
 	  qs("#kanbanView").style.setProperty("--cols", String(Math.max(1, visibleStates.length)));
 
 	  if (VIEW==="kanban") renderKanban(list, visibleStates);
@@ -1415,6 +1461,92 @@ function flagIconHTML(flag){
   // "Banderita" real (no rectángulo), usando CSS .flag + clip-path.
   return `<span class="flag ${cls}" title="${title}" role="img" aria-label="${title}"></span>`;
 }
+
+async function openDeclinadosTrash(){
+  const did = _declinadoId();
+  if (!did){
+    toast("No encontré estado DECLINADO", "warning");
+    return;
+  }
+  const items = (LEADS||[]).filter(l => Number(l.id_estado||0) === Number(did));
+  const contactadoId = _contactadoId();
+  const norm = (v)=> String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  items.sort((a,b)=> norm(a.cliente).localeCompare(norm(b.cliente), "es"));
+  const rows = items.map(l=>`
+    <tr>
+      <td><strong>${escapeHtml(l.cliente||"—")}</strong><div class="muted">#${escapeHtml(l.id_lead||"")}</div></td>
+      <td class="muted">${escapeHtml(l.marca_nombre||"")}</td>
+      <td class="muted">${escapeHtml(l.comuna_nombre||"")}</td>
+      <td class="muted">${escapeHtml(fmtDate(l.fecha_evento)||"—")}</td>
+      <td class="muted">${escapeHtml(money(l.monto_cotizado)||"—")}</td>
+      <td style="text-align:right; white-space:nowrap">
+        <button class="swBtn" data-open="${escapeHtml(l.id_lead||"")}">Ver</button>
+        ${contactadoId ? `<button class="swBtn secondary" data-restore="${escapeHtml(l.id_lead||"")}">Restaurar</button>` : ``}
+      </td>
+    </tr>
+  `).join("") || `<tr><td colspan="6" class="muted">No hay declinados.</td></tr>`;
+
+  await Swal.fire({
+    title: `🗑️ Declinados (${items.length})`,
+    html: `
+      <div style="text-align:left;opacity:.8;font-weight:900;margin-bottom:8px">
+        Leads declinados (no aparecen en el kanban). Puedes restaurar a CONTACTADO si corresponde.
+      </div>
+      <div style="max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:14px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:10px">Lead</th>
+              <th style="text-align:left;padding:10px">Marca</th>
+              <th style="text-align:left;padding:10px">Comuna</th>
+              <th style="text-align:left;padding:10px">Evento</th>
+              <th style="text-align:left;padding:10px">Monto</th>
+              <th style="text-align:right;padding:10px">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `,
+    width: 980,
+    showConfirmButton:false,
+    showCloseButton:true,
+    didOpen: ()=>{
+      const box = Swal.getHtmlContainer();
+      box?.querySelectorAll("[data-open]").forEach(b=>{
+        b.addEventListener("click", ()=>{
+          const id = Number(b.getAttribute("data-open")||0);
+          const lead = (LEADS||[]).find(x=>Number(x.id_lead)===id);
+          if (lead) openEditModal(lead);
+        });
+      });
+      box?.querySelectorAll("[data-restore]").forEach(b=>{
+        b.addEventListener("click", async ()=>{
+          const id = Number(b.getAttribute("data-restore")||0);
+          if (!id || !contactadoId) return;
+          const res = await Swal.fire({
+            icon:"question",
+            title:"¿Restaurar a Contactado?",
+            text:"Esto moverá el lead a CONTACTADO.",
+            showCancelButton:true,
+            confirmButtonText:"Restaurar",
+            cancelButtonText:"Cancelar",
+          });
+          if (!res.isConfirmed) return;
+          try{
+            await setLeadEstado(id, contactadoId);
+            const lead = (LEADS||[]).find(x=>Number(x.id_lead)===id);
+            if (lead) lead.id_estado = Number(contactadoId);
+            toast("Restaurado", "success");
+            render();
+          }catch(e){
+            toast("No pude restaurar: " + String(e?.message||e), "error");
+          }
+        });
+      });
+    }
+  });
+}
 function iconButton(title, iconName, handler){
   const b = document.createElement("button");
   b.type = "button";
@@ -1432,6 +1564,7 @@ function iconButton(title, iconName, handler){
 	  const mEstado = mapBy(CATS.estados,"id_estado");
 
     const STATES = Array.isArray(statesOverride) && statesOverride.length ? statesOverride : (CATS.estados || []);
+    const declinadoId = _declinadoId();
 	  const by = new Map();
 	  for (const st of STATES) by.set(st.id_estado, []);
 	  for (const l of list){
@@ -1443,8 +1576,9 @@ function iconButton(title, iconName, handler){
 	  const root = qs("#kanbanView");
 	  root.innerHTML = "";
 
-	  // SIEMPRE mostrar todos los estados (aunque no haya leads)
+	  // Basurero: declinados NO se muestran como columna, pero se pueden arrastrar al botón 🗑️.
 	  for (const st of STATES){
+      if (declinadoId && Number(st.id_estado) === Number(declinadoId)) continue;
 	    const col = document.createElement("div");
 	    col.className = "column";
 	    col.style.setProperty("--col-color", st.color || "transparent");
@@ -4902,6 +5036,20 @@ async function init(){
   qs("#btnTable").onclick  = ()=>setView("table");
   qs("#q").addEventListener("input", render);
   qs("#btnCreate").onclick = openCreateModal;
+  // Basurero declinados (click + drag&drop)
+  try{
+    const bt = qs("#btnTrash");
+    bt.addEventListener("click", openDeclinadosTrash);
+    bt.addEventListener("dragover", (e)=>{ e.preventDefault(); bt.classList.add("dropHover"); });
+    bt.addEventListener("dragleave", ()=> bt.classList.remove("dropHover"));
+    bt.addEventListener("drop", async (e)=>{
+      e.preventDefault();
+      bt.classList.remove("dropHover");
+      const did = _declinadoId();
+      if (!did) return toast("No encontré estado DECLINADO", "warning");
+      await onDrop(e, did);
+    });
+  }catch(_){}
   qs("#btnMonth").onclick = ()=>{
     FILTER_MONTH = !FILTER_MONTH;
     savePrefs();

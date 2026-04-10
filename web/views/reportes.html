@@ -1547,15 +1547,17 @@
         if (!chart) return;
         const labels = top.map(r => String(r.marca||"—"));
         const actual = top.map(r => Number(r.actual||0));
-        const base = top.map(r => Number(r.baseline||0));
+        const base = top.map(r => Number(r.baseline ?? r.base ?? 0));
+        const meta = top.map(r => Number(r.meta ?? r.target ?? 0));
 	        chart.setOption({
 	          color: [c.accentDark, c.accent, c.accentLight, c.accent2],
-	          title:{ text:"Total venta por marca (Actual vs Baseline) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+	          title:{ text:"Total venta por marca (Actual vs Meta vs Baseline) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
           tooltip:{ trigger:"axis", axisPointer:{ type:"shadow" }, formatter:(p)=>{
             const i = p?.[0]?.dataIndex ?? 0;
             return `<div style="font-weight:900">${esc(labels[i])}</div>` +
               `<div style="margin-top:4px">Actual: ${esc(money(actual[i]||0))}</div>` +
-              `<div style="opacity:.8;margin-top:4px">Baseline: ${esc(money(base[i]||0))}</div>`;
+              `<div style="opacity:.8;margin-top:4px">Meta: ${esc(money(meta[i]||0))}</div>` +
+              `<div style="opacity:.8;margin-top:4px">Baseline 2025: ${esc(money(base[i]||0))}</div>`;
           }},
           legend:{ top: 28, right: 0, textStyle:{ color:c.axis, fontWeight:800 } },
           grid:{ left: 10, right: 10, top: 58, bottom: 10, containLabel:true },
@@ -1564,22 +1566,27 @@
 	          graphic: ecWatermark(c),
 	          series:[
 	            { name:"Actual", type:"bar", data: actual, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accent } },
-	            { name:"Baseline", type:"bar", data: base, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accentDark } },
+	            { name:"Meta", type:"bar", data: meta, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accentLight } },
+	            { name:"Baseline 2025", type:"bar", data: base, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accentDark } },
 	          ]
 	        }, true);
 	      })();
       box.innerHTML = `
         <div style="max-height:420px;overflow:auto">
           <table class="tbl">
-            <thead><tr><th>Marca</th><th class="right">Actual</th><th class="right">Baseline</th><th class="right">Δ</th></tr></thead>
+            <thead><tr><th>Marca</th><th class="right">Actual</th><th class="right">Meta</th><th class="right">% Meta</th><th class="right">Baseline 2025</th><th class="right">Δ vs Meta</th></tr></thead>
             <tbody>
               ${items.map(r => {
                 const a = Number(r.actual||0);
-                const b = Number(r.baseline||0);
-                const d = a - b;
+                const b = Number(r.baseline ?? r.base ?? 0);
+                const m = Number(r.meta ?? r.target ?? 0);
+                const d = a - m;
+                const pct = m ? (a / m * 100) : 0;
                 return `<tr>
                   <td><strong>${esc(r.marca||"—")}</strong></td>
                   <td class="right">${esc(money(a))}</td>
+                  <td class="right">${esc(money(m))}</td>
+                  <td class="right">${esc(pct.toFixed(1))}%</td>
                   <td class="right">${esc(money(b))}</td>
                   <td class="right">${esc(money(d))}</td>
                 </tr>`;

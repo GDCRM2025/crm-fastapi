@@ -249,6 +249,11 @@
           <div class="muted">Acción recomendada: “Seguimiento” abre el lead. Para cerrar, registra evidencia o confirma cerrar sin seguimiento.</div>
         </div>
       </div>
+      <div class="pill" id="mlBox" style="display:none; margin-top:10px; border-radius:16px; padding:12px;">
+        <div style="font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:11px; opacity:.82">Asistente</div>
+        <div class="muted" style="margin-top:6px">Siguiente mejor acción (top 5). Ordenado por score (reglas explicables).</div>
+        <div id="mlNext" style="display:flex; flex-direction:column; gap:8px; margin-top:10px"></div>
+      </div>
       <div class="muted" style="margin-top:-2px">Agrupado por estado del lead: Nuevos / Contactados / Cotizados.</div>
 
       <div style="max-height:76vh; overflow:auto; display:flex; flex-direction:column; gap:12px; margin-top:10px">
@@ -557,6 +562,8 @@
       const items = Array.isArray(j.items) ? j.items : [];
       const norm = (s)=> String(s||"").trim().toUpperCase();
       const isCobro = (t)=> norm(t.kind) === "COBRO_PENDIENTE";
+      const score = (t)=> Number(t?.score || t?.meta?.score || 0) || 0;
+      const sortBest = (a,b)=> (score(b)-score(a)) || (Number(a.priority||0)-Number(b.priority||0)) || (String(a.due_at||"").localeCompare(String(b.due_at||""))) || (Number(b.id_task||0)-Number(a.id_task||0));
       const cobros = items.filter(isCobro);
       const leads = items.filter(t => !isCobro(t));
 
@@ -572,15 +579,56 @@
         const k = norm(t.kind);
         return k === "LEAD_COTIZADO_SEGUIMIENTO";
       };
-      const gNew = leads.filter(isNew);
-      const gContact = leads.filter(t => !isNew(t) && isContact(t));
-      const gQuote = leads.filter(t => !isNew(t) && !isContact(t) && isQuote(t));
-      const gOther = leads.filter(t => !isNew(t) && !isContact(t) && !isQuote(t));
+      const gNew = leads.filter(isNew).sort(sortBest);
+      const gContact = leads.filter(t => !isNew(t) && isContact(t)).sort(sortBest);
+      const gQuote = leads.filter(t => !isNew(t) && !isContact(t) && isQuote(t)).sort(sortBest);
+      const gOther = leads.filter(t => !isNew(t) && !isContact(t) && !isQuote(t)).sort(sortBest);
+      cobros.sort(sortBest);
 
       qs("#bLeadNew").textContent = String(gNew.length);
       qs("#bLeadContact").textContent = String(gContact.length);
       qs("#bLeadQuote").textContent = String(gQuote.length + gOther.length);
       try{ qs("#bCobrosInner").textContent = String(cobros.length); }catch(_){}
+
+      // Asistente (solo en "Abiertas"): top 5 por score.
+      try{
+        const ml = qs("#mlBox");
+        const mlNext = qs("#mlNext");
+        if (ml && mlNext && st === "open"){
+          const best = [...items].sort(sortBest).slice(0,5);
+          if (best.length){
+            ml.style.display = "";
+            mlNext.innerHTML = best.map(t => {
+              const isC = isCobro(t);
+              const idLead = isC ? (t?.meta?.id_lead || t?.meta?.lead_id || "") : (t.entity_id || "");
+              const who = `${esc(t.lead_cliente||"—")}${t.lead_marca ? " · " + esc(t.lead_marca) : ""}`;
+              const hint = String(t.ml_hint || "").trim();
+              const s = score(t);
+              const btn = isC ? "Cobrar" : "Seguimiento";
+              return `
+                <div style="display:flex; gap:10px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; border:1px solid rgba(148,163,184,.16); border-radius:14px; padding:10px; background:rgba(2,6,23,.10)">
+                  <div style="min-width:240px; flex:1">
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                      <span class="pill" title="Score">${esc(s)}</span>
+                      <strong>${esc(t.title||t.kind||"—")}</strong>
+                      <span class="muted">#${esc(idLead||"—")}</span>
+                    </div>
+                    <div class="muted" style="margin-top:4px">${who}</div>
+                    ${hint ? `<div class="muted" style="margin-top:4px">Sugerencia: ${esc(hint)}</div>` : ""}
+                  </div>
+                  <div style="display:flex; gap:8px; align-items:center">
+                    <button class="btn primary" data-act="go" data-task="${esc(t.id_task)}" data-lead="${esc(idLead||"")}" data-etype="${esc(t.entity_type||"")}" data-kind="${esc(String(t.kind||\"\"))}">${btn}</button>
+                  </div>
+                </div>
+              `;
+            }).join("");
+          }else{
+            ml.style.display = "none";
+          }
+        }else if (ml){
+          ml.style.display = "none";
+        }
+      }catch(_){}
 
       qs("#tbLeadsNew").innerHTML = gNew.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
       qs("#tbLeadsContact").innerHTML = gContact.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
@@ -622,19 +670,19 @@
         if (!btn) return;
         ev.preventDefault();
         const tr = btn.closest("tr");
-        const idTask = tr?.getAttribute("data-task");
+        const idTask = btn.getAttribute("data-task") || tr?.getAttribute("data-task");
         const act = String(btn.getAttribute("data-act")||"");
-        const etype = String(tr?.getAttribute("data-etype")||"").toLowerCase();
+        const etype = String(btn.getAttribute("data-etype") || tr?.getAttribute("data-etype") || "").toLowerCase();
         if (act === "go"){
           if (!idTask) return;
-          const idLead = tr?.getAttribute("data-lead");
+          const idLead = btn.getAttribute("data-lead") || tr?.getAttribute("data-lead");
           if (!idLead) return;
           if (etype === "fin_evento"){
             const url = `/web/views/finanzas_evento.html?lead=${encodeURIComponent(String(idLead))}`;
             try{ window.parent?.postMessage({ type:"openItem", id:"evt", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
             return;
           }
-          const kind = String(tr?.getAttribute("data-kind")||"").toUpperCase();
+          const kind = String(btn.getAttribute("data-kind") || tr?.getAttribute("data-kind") || "").toUpperCase();
           const requireFollowup = new Set([
             "LEAD_NUEVO_SEGUIMIENTO",
             "LEAD_CONTACTADO_SEGUIMIENTO",

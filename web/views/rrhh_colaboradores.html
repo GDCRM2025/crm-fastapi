@@ -89,6 +89,7 @@
               <th>AFP</th>
               <th>Salud</th>
               <th>Activo</th>
+              <th>Marcación</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -318,6 +319,15 @@
           <option>Banco Ripley</option>
           <option>Banco Internacional</option>
           <option>Banco BTG Pactual</option>
+        </select>
+        <select class="inp" id="stPuedeMarcar" title="Habilitación de marcación">
+          <option value="true">Puede marcar</option>
+          <option value="false">Bloqueado</option>
+        </select>
+        <select class="inp" id="stMarcacionMethod" title="Método de marcación permitido">
+          <option value="BOTH">Mixto (QR + GPS)</option>
+          <option value="QR">Solo QR</option>
+          <option value="GEO">Solo GPS</option>
         </select>
         <select class="inp" id="stActivo">
           <option value="true">Activo</option>
@@ -685,6 +695,9 @@
       qs("#stCuentaNum").value = ficha.cuenta_numero || "";
       qs("#stTipoCuenta").value = ficha.tipo_cuenta || "";
       qs("#stBanco").value = ficha.banco || "";
+      qs("#stPuedeMarcar").value = String(item?.puede_marcar ?? true);
+      // backend guarda 'BOTH' (mixto), 'QR' o 'GEO'
+      qs("#stMarcacionMethod").value = String(item?.marcacion_method || "BOTH").toUpperCase();
       qs("#stActivo").value = String(item?.is_active ?? true);
       openModal('#m1');
     }
@@ -858,6 +871,8 @@
         afp_pct: Number(qs("#stAfpPct").value || 0) || null,
         salud_tipo: qs("#stSalud").value,
         salud_pct: Number(qs("#stSaludPct").value || 0) || null,
+        puede_marcar: (qs("#stPuedeMarcar").value === "true"),
+        marcacion_method: String(qs("#stMarcacionMethod").value || "BOTH").toUpperCase(),
         is_active: qs("#stActivo").value === "true",
         observaciones: "",
         ficha,
@@ -903,6 +918,10 @@
           <td>${i.afp ? `${i.afp} (${fmt(i.afp_pct)}%)` : "—"}</td>
           <td>${i.salud_tipo ? `${i.salud_tipo} (${fmt(i.salud_pct)}%)` : "—"}</td>
           <td>${String(i.is_active ?? true) === "true" ? "Sí" : "No"}</td>
+          <td>
+            <span class="muted">${String(i.puede_marcar ?? true) === "true" ? "Habilitado" : "Bloqueado"}</span>
+            <div class="muted" style="opacity:.85;margin-top:2px">${(String(i.marcacion_method||"BOTH").toUpperCase()==="QR") ? "Solo QR" : (String(i.marcacion_method||"BOTH").toUpperCase()==="GEO") ? "Solo GPS" : "Mixto"}</div>
+          </td>
           <td>
             <button class="btn" data-edit="${i.id_staff}">Editar</button>
             <button class="btn" data-ficha="${i.id_staff}">Ficha PDF</button>

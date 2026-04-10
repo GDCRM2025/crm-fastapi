@@ -1809,6 +1809,131 @@ def list_tasks(
         pass
 
     # Nunca 500: si hay diferencias de esquema (columnas/tablas), degradar a lista simple.
+    def _attach_scores(items: list[dict]) -> None:
+        """
+        "ML" v0: scoring explicable (reglas) para priorizar la siguiente mejor acción.
+        No cambia persistencia; solo guía el orden/UX del frontend.
+        """
+        from datetime import datetime as _dt
+
+        def _as_dt(v) -> _dt | None:
+            if v is None:
+                return None
+            if isinstance(v, _dt):
+                return v
+            try:
+                s = str(v).replace("Z", "+00:00")
+                return _dt.fromisoformat(s)
+            except Exception:
+                return None
+
+        def _as_date(v) -> _dt | None:
+            if v is None:
+                return None
+            if isinstance(v, _dt):
+                return v
+            try:
+                s = str(v).strip()
+                if not s:
+                    return None
+                if len(s) == 10 and "-" in s:
+                    return _dt.fromisoformat(s + "T00:00:00")
+                if len(s) == 10 and "/" in s:
+                    # dd/mm/yyyy
+                    dd, mm, yy = s.split("/")
+                    return _dt(int(yy), int(mm), int(dd), 0, 0, 0)
+                return _dt.fromisoformat(s)
+            except Exception:
+                return None
+
+        def _meta(d: dict) -> dict:
+            m = d.get("meta")
+            if isinstance(m, dict):
+                return m
+            if isinstance(m, str):
+                try:
+                    return json.loads(m) if m.strip() else {}
+                except Exception:
+                    return {}
+            return {}
+
+        now = _dt.utcnow()
+        for it in items:
+            try:
+                kind = str(it.get("kind") or "").upper()
+                status_now = str(it.get("status") or "").lower()
+                due = _as_dt(it.get("due_at"))
+                ev = _as_date(it.get("lead_fecha_evento"))
+                m = _meta(it)
+
+                saldo = 0.0
+                try:
+                    saldo = float(m.get("saldo") or 0)
+                except Exception:
+                    saldo = 0.0
+
+                score = 0
+                if status_now != "open":
+                    it["score"] = 0
+                    it["ml_hint"] = ""
+                    continue
+
+                # Overdue / due soon
+                if due:
+                    delta_h = (due - now).total_seconds() / 3600.0
+                    if delta_h < 0:
+                        score += 120 + min(80, int(abs(delta_h) // 24) * 10)
+                    else:
+                        if delta_h <= 72:
+                            score += 60 + int((72 - delta_h) / 3)
+                        elif delta_h <= 120:
+                            score += 35
+                        else:
+                            score += 10
+                else:
+                    score += 10
+
+                # Tipo de tarea
+                if kind == "COBRO_PENDIENTE":
+                    score += 90 + min(60, int(max(0.0, saldo) / 100000.0) * 6)
+                    if ev:
+                        days = (ev.date() - now.date()).days
+                        if days < 0:
+                            score += 60
+                        elif days == 0:
+                            score += 40
+                        elif days <= 2:
+                            score += 30
+                elif "LEAD_NUEVO" in kind:
+                    score += 55
+                elif "LEAD_CONTACTADO" in kind:
+                    score += 45
+                elif "LEAD_COTIZADO" in kind:
+                    score += 40
+                else:
+                    score += 20
+
+                # Evento cerca
+                if ev:
+                    days_to = (ev.date() - now.date()).days
+                    if days_to < 0:
+                        score -= 999  # no debería aparecer; filtro defensivo
+                    elif days_to <= 2:
+                        score += 40
+                    elif days_to <= 5:
+                        score += 20
+
+                hint = ""
+                if kind == "COBRO_PENDIENTE":
+                    hint = "Cobrar saldo pendiente (Finanzas)."
+                elif "LEAD_" in kind:
+                    hint = "Hacer seguimiento con evidencia (WSP/Llamada/Email)."
+                it["score"] = int(score)
+                it["ml_hint"] = hint
+            except Exception:
+                it["score"] = 0
+                it["ml_hint"] = ""
+
     try:
         has_leads = _table_exists(db, "leads")
         has_marcas = _table_exists(db, "marcas")
@@ -1883,6 +2008,7 @@ def list_tasks(
           LIMIT :lim OFFSET :off
         """
         items = [dict(r) for r in db.execute(text(q), params).mappings().all()]
+        _attach_scores(items)
         return {"ok": True, "items": items, "limit": limit, "offset": offset}
     except Exception as e:
         try:
@@ -1905,6 +2031,7 @@ def list_tasks(
               LIMIT :lim OFFSET :off
             """
             items = [dict(r) for r in db.execute(text(q2), params).mappings().all()]
+            _attach_scores(items)
             return {"ok": True, "items": items, "limit": limit, "offset": offset, "degraded": True, "error": str(e)[:160]}
         except Exception:
             return {"ok": True, "items": [], "limit": limit, "offset": offset, "disabled": True, "error": str(e)[:160]}

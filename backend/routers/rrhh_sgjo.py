@@ -33,6 +33,8 @@ def _ensure(db: Session) -> None:
     try:
         db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS presencial_dow SMALLINT"))
         db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS modalidad_default TEXT"))
+        db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS puede_marcar BOOLEAN DEFAULT TRUE"))
+        db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS marcacion_method TEXT DEFAULT 'BOTH'"))
     except Exception:
         pass
     db.commit()
@@ -59,6 +61,31 @@ def _rrhh_staff_row(db: Session, rut: str) -> dict[str, Any] | None:
                 SELECT rol, presencial_dow, modalidad_default
                 FROM rrhh_staff
                 WHERE lower(rut)=lower(:r) AND is_active IS TRUE
+                LIMIT 1
+                """
+            ),
+            {"r": rut},
+        ).mappings().first()
+        return dict(row) if row else None
+    except Exception:
+        return None
+
+
+def _rrhh_marking_policy(db: Session, rut: str) -> dict[str, Any] | None:
+    if not rut:
+        return None
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT
+                  COALESCE(puede_marcar, TRUE) AS puede_marcar,
+                  COALESCE(NULLIF(btrim(marcacion_method),''), 'BOTH') AS marcacion_method,
+                  COALESCE(NULLIF(btrim(telefono),''), NULL) AS telefono
+                FROM public.rrhh_staff
+                WHERE lower(rut)=lower(:r)
+                  AND is_active IS TRUE
+                ORDER BY id_staff DESC
                 LIMIT 1
                 """
             ),
@@ -181,6 +208,7 @@ def sgjo_me(db: Session = Depends(get_db), user: dict = Depends(get_current_user
     rut = get_user_rut(db, uid_int)
     role = str(user.get("role") or user.get("rol") or "")
     mod = modality_for_user(db, uid=uid_int, rut=rut, role=role, when=_now())
+    pol = _rrhh_marking_policy(db, rut or "") if rut else None
     return {
         "ok": True,
         "id_usuario": uid_int,
@@ -188,6 +216,9 @@ def sgjo_me(db: Session = Depends(get_db), user: dict = Depends(get_current_user
         "role": role,
         "modality_today": mod["modality"],
         "presencial_dow": mod.get("presencial_dow"),
+        "puede_marcar": (bool(pol.get("puede_marcar")) if pol else None),
+        "marcacion_method": (str(pol.get("marcacion_method")) if pol else None),
+        "telefono_rrhh": (str(pol.get("telefono")) if (pol and pol.get("telefono")) else None),
     }
 
 
@@ -254,6 +285,8 @@ def marcar(
         raise HTTPException(status_code=401, detail="Usuario inválido")
     uid_int = int(uid)
     rut = get_user_rut(db, uid_int) or None
+    if not rut:
+        raise HTTPException(status_code=400, detail="Tu usuario no tiene RUT configurado (RRHH).")
     role = str(user.get("role") or user.get("rol") or "")
     mod = modality_for_user(db, uid=uid_int, rut=rut or "", role=role, when=_now())
     modality = str(mod.get("modality") or "PRESENCIAL")
@@ -287,8 +320,25 @@ def marcar(
     lng = payload.get("lng")
     acc = payload.get("accuracy_m")
     method = str(payload.get("method") or "QR").strip().upper()
+    if method == "GPS":
+        method = "GEO"
     if method not in ("QR", "GEO", "BOTH"):
         method = "QR"
+
+    # Enrolamiento por RRHH: puede_marcar + método permitido por colaborador.
+    policy = _rrhh_marking_policy(db, rut or "")
+    if policy is not None:
+        if not bool(policy.get("puede_marcar")):
+            raise HTTPException(status_code=403, detail="No habilitado para marcar.")
+        staff_method = str(policy.get("marcacion_method") or "BOTH").strip().upper()
+        if staff_method == "MIXTO":
+            staff_method = "BOTH"
+        if staff_method == "QR" and method != "QR":
+            raise HTTPException(status_code=403, detail="Tu método permitido es solo QR.")
+        if staff_method in ("GPS", "GEO") and method == "QR":
+            raise HTTPException(status_code=403, detail="Tu método permitido es solo GPS.")
+        if staff_method in ("GPS", "GEO") and not policy.get("telefono"):
+            raise HTTPException(status_code=403, detail="Falta teléfono en RRHH para marcar con GPS.")
 
     distance_m = None
     within = None
