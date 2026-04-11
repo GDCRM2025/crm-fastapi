@@ -179,6 +179,11 @@
         <select id="marca" class="sel" title="Marca">
           <option value="">Todas las marcas</option>
         </select>
+        <select id="periodo" class="sel" title="Periodo">
+          <option value="mtd" selected>MTD</option>
+          <option value="ytd">YTD</option>
+          <option value="range">Rango</option>
+        </select>
         <select id="topN" class="sel" title="Top">
           <option value="5">Top 5</option>
           <option value="10">Top 10</option>
@@ -1199,7 +1204,7 @@
       if (tab === "funnel") return void renderFunnel(rep);
       if (tab === "cierre") return void renderCierre(dash);
       if (tab === "tipo_cliente") return void renderTipos(rep);
-      if (tab === "total") { renderTotal(dash); return void renderMarcaPie(rep); }
+      if (tab === "total") { renderTotal(dash, rep); return void renderMarcaPie(rep); }
       if (tab === "comunas") return void renderTop(rep, "comunas");
       if (tab === "productos") return void renderTop(rep, "productos");
       if (tab === "clientes") return void renderTop(rep, "clientes");
@@ -1209,7 +1214,33 @@
       if (tab === "cxp") return void (await renderFinanzas(LAST.ini, LAST.fin, "cxp"));
     }
 
+    function syncPeriodoDates(){
+      const per = String(qs("#periodo")?.value || "mtd");
+      const iniEl = qs("#ini");
+      const finEl = qs("#fin");
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth()+1).padStart(2,"0");
+      const dd = String(now.getDate()).padStart(2,"0");
+      const today = `${yyyy}-${mm}-${dd}`;
+      if (per === "mtd"){
+        iniEl.value = `${yyyy}-${mm}-01`;
+        finEl.value = today;
+        iniEl.disabled = true;
+        finEl.disabled = true;
+      }else if (per === "ytd"){
+        iniEl.value = `${yyyy}-01-01`;
+        finEl.value = today;
+        iniEl.disabled = true;
+        finEl.disabled = true;
+      }else{
+        iniEl.disabled = false;
+        finEl.disabled = false;
+      }
+    }
+
     async function load(){
+      const periodo = String(qs("#periodo")?.value || "mtd");
       const ini = qs("#ini").value;
       const fin = qs("#fin").value;
       const mid = qs("#marca").value;
@@ -1224,6 +1255,7 @@
       const repQs = new URLSearchParams();
       if (ini) repQs.set("fecha_inicio", ini);
       if (fin) repQs.set("fecha_termino", fin);
+      if (periodo) repQs.set("periodo", periodo);
       if (mid) repQs.set("id_marca", mid);
       repQs.set("top_n", topN);
       repQs.set("productos_order", prodOrd);
@@ -1237,27 +1269,34 @@
 
       LAST.dash = dash;
       LAST.rep = rep;
-      LAST.ini = ini;
-      LAST.fin = fin;
+      LAST.ini = rep?.range?.from || ini;
+      LAST.fin = rep?.range?.to || fin;
       LAST.mid = mid;
 
-      renderKPIs(dash, ini, fin, mid);
+      renderKPIs(dash, rep, LAST.ini, LAST.fin, mid);
       await renderTab(CURRENT_TAB);
 
-      qs("#st").textContent = `OK · Rango: ${ini} → ${fin}${mid ? (" · Marca ID: " + mid) : ""}`;
+      qs("#st").textContent = `OK · Rango: ${LAST.ini} → ${LAST.fin}${mid ? (" · Marca ID: " + mid) : ""}`;
     }
 
-    function renderKPIs(dash, ini, fin, mid){
+    function renderKPIs(dash, rep, ini, fin, mid){
       const k = dash?.kpis || {};
+      const rk = rep?.kpis || {};
+      const comp = Array.isArray(rep?.ventas_comparativo) ? rep.ventas_comparativo : [];
+      const baseSum = comp.reduce((a,x)=> a + Number(x.base||0), 0);
+      const metaSum = comp.reduce((a,x)=> a + Number(x.meta||0), 0);
+      const actual = Number(rk.venta_total||0);
+      const vsBase = baseSum ? ((actual/baseSum - 1)*100) : null;
+      const vsMeta = metaSum ? ((actual/metaSum)*100) : null;
       const el = qs("#kpis");
       if (!el) return;
       const blocks = [
-        { id:"k_leads_hoy", l:"Leads hoy", v:String(k.leads_hoy||0), s:"Click: filtro día", on: () => openFilter({ campo:"ingreso", desde: fmtDate(new Date()), hasta: fmtDate(new Date()), ...(mid?{marca:mid}:{}) }) },
-        { id:"k_venta_dia", l:"Venta día", v: money(k.venta_dia||0), s:"Click: confirmados hoy", on: () => openConfirmedSales(fmtDate(new Date()), fmtDate(new Date()), mid) },
-        { id:"k_venta_sem", l:"Venta semana", v: money(k.venta_semana||0), s:"Click: confirmados semana", on: () => openConfirmedSales(dash?.week?.start||ini, dash?.week?.end||fin, mid) },
-        { id:"k_cierre", l:"% cierre", v: `${Number(k.cierre_pct||0).toFixed(2)}%`, s:"Semanal", on: () => { try{ selectTab("cierre"); }catch(_){ location.hash = "#cierre"; } } },
-        { id:"k_total_sem", l:"Leads semana", v: String(k.total_semana||0), s:"Total", on: () => {} },
-        { id:"k_conf_sem", l:"Confirmados semana", v: String(k.confirmados_semana||0), s:"Total", on: () => {} },
+        { id:"k_venta_rango", l:"Venta (rango)", v: money(actual||0), s:`vs Base: ${vsBase===null?"—":vsBase.toFixed(1)+"%"} · vs Meta: ${vsMeta===null?"—":vsMeta.toFixed(1)+"%"}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
+        { id:"k_cierre_rango", l:"% cierre (rango)", v: `${Number(rk.cierre_pct||0).toFixed(2)}%`, s:`Confirmados/Leads (${rk.confirmados_total||0}/${rk.leads_total||0})`, on: () => { try{ selectTab("cierre"); }catch(_){ location.hash="#cierre"; } } },
+        { id:"k_leads_hoy", l:"Leads hoy", v:String(k.leads_hoy||0), s:"Dashboard (hoy)", on: () => openFilter({ campo:"ingreso", desde: fmtDate(new Date()), hasta: fmtDate(new Date()), ...(mid?{marca:mid}:{}) }) },
+        { id:"k_venta_dia", l:"Venta día", v: money(k.venta_dia||0), s:"Dashboard (confirmados)", on: () => openConfirmedSales(fmtDate(new Date()), fmtDate(new Date()), mid) },
+        { id:"k_venta_sem", l:"Venta semana", v: money(k.venta_semana||0), s:"Dashboard (confirmados)", on: () => openConfirmedSales(dash?.week?.start||ini, dash?.week?.end||fin, mid) },
+        { id:"k_cierre", l:"% cierre (semana)", v: `${Number(k.cierre_pct||0).toFixed(2)}%`, s:"Dashboard", on: () => { try{ selectTab("cierre"); }catch(_){ location.hash = "#cierre"; } } },
       ];
       el.innerHTML = blocks.map(b => `
         <div class="kpi" data-id="${esc(b.id)}">
@@ -1272,6 +1311,12 @@
         if (b?.on) div.addEventListener("click", b.on);
       });
     }
+
+    // init
+    try{
+      qs("#periodo")?.addEventListener("change", ()=> { syncPeriodoDates(); });
+      syncPeriodoDates();
+    }catch(_){}
 
     function renderFunnel(rep){
       const tb = qs("#tbFunnel");
@@ -1544,9 +1589,9 @@
       qs("#openLeadsHoy")?.addEventListener("click", () => openFilter({ campo:"ingreso", desde:d, hasta:d, ...(mid?{marca:mid}:{}) }));
     }
 
-    function renderTotal(dash){
+    function renderTotal(dash, rep){
       const box = qs("#boxTotal");
-      const items = dash?.sales_compare || [];
+      const items = (rep?.ventas_comparativo || dash?.sales_compare || []);
       if (!box) return;
       if (!items.length){
         box.innerHTML = `<div class="muted">Sin datos.</div>`;
@@ -1566,13 +1611,13 @@
         const meta = top.map(r => Number(r.meta ?? r.target ?? 0));
 	        chart.setOption({
 	          color: [c.accentDark, c.accent, c.accentLight, c.accent2],
-	          title:{ text:"Total venta por marca (Actual vs Meta vs Baseline) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+	          title:{ text:"Total venta por marca (Actual vs Meta vs Base) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
           tooltip:{ trigger:"axis", axisPointer:{ type:"shadow" }, formatter:(p)=>{
             const i = p?.[0]?.dataIndex ?? 0;
             return `<div style="font-weight:900">${esc(labels[i])}</div>` +
               `<div style="margin-top:4px">Actual: ${esc(money(actual[i]||0))}</div>` +
               `<div style="opacity:.8;margin-top:4px">Meta: ${esc(money(meta[i]||0))}</div>` +
-              `<div style="opacity:.8;margin-top:4px">Baseline 2025: ${esc(money(base[i]||0))}</div>`;
+              `<div style="opacity:.8;margin-top:4px">Base: ${esc(money(base[i]||0))}</div>`;
           }},
           legend:{ top: 28, right: 0, textStyle:{ color:c.axis, fontWeight:800 } },
           grid:{ left: 10, right: 10, top: 58, bottom: 10, containLabel:true },
@@ -1582,14 +1627,14 @@
 	          series:[
 	            { name:"Actual", type:"bar", data: actual, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accent } },
 	            { name:"Meta", type:"bar", data: meta, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accentLight } },
-	            { name:"Baseline 2025", type:"bar", data: base, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accentDark } },
+	            { name:"Base", type:"bar", data: base, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accentDark } },
 	          ]
 	        }, true);
 	      })();
       box.innerHTML = `
         <div style="max-height:420px;overflow:auto">
           <table class="tbl">
-            <thead><tr><th>Marca</th><th class="right">Actual</th><th class="right">Meta</th><th class="right">% Meta</th><th class="right">Baseline 2025</th><th class="right">Δ vs Meta</th></tr></thead>
+            <thead><tr><th>Marca</th><th class="right">Actual</th><th class="right">Meta</th><th class="right">% Meta</th><th class="right">Base</th><th class="right">Δ vs Meta</th></tr></thead>
             <tbody>
               ${items.map(r => {
                 const a = Number(r.actual||0);

@@ -1825,6 +1825,39 @@ def dashboard(
                     {**conf_params, "today": today},
                 ).scalar_one()
 
+        # Fuente oficial de venta (si existe): fin_eventos.monto_bruto por fecha_evento (semana actual).
+        if _table_exists_pg(db, "fin_eventos"):
+            try:
+                q_sales = f"""
+                    SELECT fe.fecha_evento::date AS dia,
+                           l.id_marca,
+                           COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    WHERE fe.fecha_evento::date BETWEEN :ws AND :we
+                      AND {conf_where}
+                      {marca_sql}
+                    GROUP BY 1,2
+                    ORDER BY 1 ASC, 2 ASC
+                """
+                rows = db.execute(text(q_sales), conf_params).mappings().all()
+                sales_daily = []
+                for r in rows:
+                    mid = r.get("id_marca")
+                    name = brand_map.get(int(mid)) if mid is not None else ""
+                    if not name:
+                        continue
+                    sales_daily.append({
+                        "dia": str(r.get("dia")),
+                        "id_marca": int(mid) if mid is not None else None,
+                        "marca": str(name).upper(),
+                        "monto": float(r.get("monto") or 0),
+                    })
+                venta_semana = float(sum([float(x.get("monto") or 0) for x in sales_daily]) or 0)
+                venta_dia = float(sum([float(x.get("monto") or 0) for x in sales_daily if x.get("dia") == str(today)]) or 0)
+            except Exception:
+                pass
+
     cierre_pct = (confirmados_semana / total_semana * 100) if total_semana else 0
 
     _ensure_baseline(db)
@@ -2033,6 +2066,7 @@ def dashboard(
 def dashboard_reportes(
     fecha_inicio: Optional[str] = None,
     fecha_termino: Optional[str] = None,
+    periodo: Optional[str] = None,  # mtd | ytd | range
     id_marca: int | None = None,
     top_n: int = 20,
     productos_order: str = "monto",
@@ -2044,10 +2078,14 @@ def dashboard_reportes(
     # IMPORTANTE: este endpoint no debe botar el frontend. Si algo falla en reportería
     # (tablas/columnas faltantes o SQL incompatibles), devolvemos payload vacío con ok=true.
     try:
+        tz = ZoneInfo("America/Santiago")
+        today = datetime.now(tz).date()
+
         role = (me.get("role") or me.get("rol") or "").upper()
         marcas = _fetch_marcas_ids(db, me)
         only_own = not _is_admin(role)
 
+        # Base de fecha por defecto: fecha_evento.
         if _col_exists(db, "leads", "fecha_evento"):
             date_col = "fecha_evento"
         elif _col_exists(db, "leads", "fecha_ingreso"):
@@ -2055,14 +2093,45 @@ def dashboard_reportes(
         else:
             date_col = "created_at"
 
+        def _parse_date(s: str) -> date:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+
+        p = (periodo or "").strip().lower() or "range"
+        ini_d: date | None = None
+        fin_d: date | None = None
+        if fecha_inicio:
+            try:
+                ini_d = _parse_date(str(fecha_inicio))
+            except Exception:
+                ini_d = None
+        if fecha_termino:
+            try:
+                fin_d = _parse_date(str(fecha_termino))
+            except Exception:
+                fin_d = None
+        if p in ("mtd", "mes", "month"):
+            ini_d = date(today.year, today.month, 1)
+            fin_d = today
+        elif p in ("ytd", "anio", "year"):
+            ini_d = date(today.year, 1, 1)
+            fin_d = today
+        if ini_d and not fin_d:
+            fin_d = today
+        if fin_d and not ini_d:
+            ini_d = date(fin_d.year, fin_d.month, 1)
+        if not ini_d or not fin_d:
+            ini_d = date(today.year, today.month, 1)
+            fin_d = today
+
+        ly_ini = date(ini_d.year - 1, ini_d.month, ini_d.day)
+        ly_fin = date(fin_d.year - 1, fin_d.month, fin_d.day)
+
         where_parts = ["1=1"]
         params: dict[str, Any] = {}
-        if fecha_inicio:
-            where_parts.append(f"DATE(l.{date_col}) >= :ini")
-            params["ini"] = fecha_inicio
-        if fecha_termino:
-            where_parts.append(f"DATE(l.{date_col}) <= :fin")
-            params["fin"] = fecha_termino
+        where_parts.append(f"DATE(l.{date_col}) >= :ini")
+        where_parts.append(f"DATE(l.{date_col}) <= :fin")
+        params["ini"] = ini_d.isoformat()
+        params["fin"] = fin_d.isoformat()
 
         if id_marca:
             try:
@@ -2080,6 +2149,10 @@ def dashboard_reportes(
         where_sql = " AND ".join(where_parts)
 
         confirmado_id = _estado_id(db, "CONFIRM")
+        conf_where = "1=1"
+        if confirmado_id:
+            conf_where = "l.id_estado=:conf"
+            params["conf"] = confirmado_id
 
         funnel: list[dict] = []
         try:
@@ -2098,9 +2171,6 @@ def dashboard_reportes(
             funnel = []
 
         diarios_col = "fecha_evento" if _col_exists(db, "leads", "fecha_evento") else date_col
-        diarios_params = dict(params)
-        if confirmado_id:
-            diarios_params["conf"] = confirmado_id
         eventos_diarios: list[dict] = []
         try:
             q_diarios = f"""
@@ -2110,47 +2180,82 @@ def dashboard_reportes(
                 FROM leads l
                 WHERE {where_sql}
                   AND l.{diarios_col} IS NOT NULL
-                  {"AND l.id_estado=:conf" if confirmado_id else ""}
+                  AND {conf_where}
                 GROUP BY DATE(l.{diarios_col})
                 ORDER BY dia ASC
             """
-            eventos_diarios = db.execute(text(q_diarios), diarios_params).mappings().all()
+            eventos_diarios = db.execute(text(q_diarios), params).mappings().all()
         except Exception:
             eventos_diarios = []
 
         name_expr = _lead_name_expr(db)
         clientes: list[dict] = []
         try:
-            q_clientes = f"""
-                SELECT {name_expr} AS cliente,
-                       COUNT(*)::int AS cantidad,
-                       COALESCE(SUM(l.monto_cotizado),0) AS monto
-                FROM leads l
-                WHERE {where_sql}
-                  {"AND l.id_estado=:conf" if confirmado_id else ""}
-                GROUP BY {name_expr}
-                ORDER BY monto DESC
-                LIMIT 20
-            """
-            clientes = db.execute(text(q_clientes), diarios_params).mappings().all()
+            lim = max(5, min(100, int(top_n or 20)))
+            if _table_exists_pg(db, "fin_eventos"):
+                q_clientes = f"""
+                    SELECT COALESCE(fe.cliente, {name_expr}, '—') AS cliente,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    WHERE {where_sql}
+                      AND fe.fecha_evento IS NOT NULL
+                      AND {conf_where}
+                    GROUP BY 1
+                    ORDER BY monto DESC
+                    LIMIT {lim}
+                """
+                clientes = db.execute(text(q_clientes), params).mappings().all()
+            else:
+                q_clientes = f"""
+                    SELECT {name_expr} AS cliente,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0) AS monto
+                    FROM leads l
+                    WHERE {where_sql}
+                      AND {conf_where}
+                    GROUP BY {name_expr}
+                    ORDER BY monto DESC
+                    LIMIT {lim}
+                """
+                clientes = db.execute(text(q_clientes), params).mappings().all()
         except Exception:
             clientes = []
 
         comunas: list[dict] = []
         try:
-            q_comunas = f"""
-                SELECT COALESCE(c.nombre,'—') AS comuna,
-                       COUNT(*)::int AS cantidad,
-                       COALESCE(SUM(l.monto_cotizado),0) AS monto
-                FROM leads l
-                LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
-                WHERE {where_sql}
-                  {"AND l.id_estado=:conf" if confirmado_id else ""}
-                GROUP BY c.nombre
-                ORDER BY monto DESC
-                LIMIT 20
-            """
-            comunas = db.execute(text(q_comunas), diarios_params).mappings().all()
+            lim = max(5, min(100, int(top_n or 20)))
+            if _table_exists_pg(db, "fin_eventos"):
+                q_comunas = f"""
+                    SELECT COALESCE(fe.comuna, c.nombre,'—') AS comuna,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                    WHERE {where_sql}
+                      AND fe.fecha_evento IS NOT NULL
+                      AND {conf_where}
+                    GROUP BY 1
+                    ORDER BY monto DESC
+                    LIMIT {lim}
+                """
+                comunas = db.execute(text(q_comunas), params).mappings().all()
+            else:
+                q_comunas = f"""
+                    SELECT COALESCE(c.nombre,'—') AS comuna,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0) AS monto
+                    FROM leads l
+                    LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                    WHERE {where_sql}
+                      AND {conf_where}
+                    GROUP BY c.nombre
+                    ORDER BY monto DESC
+                    LIMIT {lim}
+                """
+                comunas = db.execute(text(q_comunas), params).mappings().all()
         except Exception:
             comunas = []
 
@@ -2178,9 +2283,8 @@ def dashboard_reportes(
                 """
                 tipos_rows = db.execute(text(q_tipo), params).mappings().all()
 
-                if confirmado_id:
-                    q_tipo_conf = q_tipo.replace(f"WHERE {where_sql}", f"WHERE {where_sql} AND l.id_estado=:conf")
-                    tipos_rows_conf = db.execute(text(q_tipo_conf), diarios_params).mappings().all()
+                q_tipo_conf = q_tipo.replace(f"WHERE {where_sql}", f"WHERE {where_sql} AND {conf_where}")
+                tipos_rows_conf = db.execute(text(q_tipo_conf), params).mappings().all()
         except Exception:
             tipos_rows = []
             tipos_rows_conf = []
@@ -2188,7 +2292,22 @@ def dashboard_reportes(
         # Venta por marca (torta) para el rango/confirmados
         ventas_por_marca: list[dict] = []
         try:
-            if confirmado_id:
+            if _table_exists_pg(db, "fin_eventos"):
+                q_vm = f"""
+                    SELECT COALESCE(m.nombre, m.marca,'—') AS marca,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                    WHERE {where_sql}
+                      AND fe.fecha_evento IS NOT NULL
+                      AND {conf_where}
+                    GROUP BY COALESCE(m.nombre, m.marca,'—')
+                    ORDER BY monto DESC
+                """
+                ventas_por_marca = db.execute(text(q_vm), params).mappings().all()
+            else:
                 q_vm = f"""
                     SELECT COALESCE(m.nombre, m.marca,'—') AS marca,
                            COUNT(*)::int AS cantidad,
@@ -2196,11 +2315,11 @@ def dashboard_reportes(
                     FROM leads l
                     LEFT JOIN marcas m ON m.id_marca=l.id_marca
                     WHERE {where_sql}
-                      AND l.id_estado=:conf
+                      AND {conf_where}
                     GROUP BY COALESCE(m.nombre, m.marca,'—')
                     ORDER BY monto DESC
                 """
-                ventas_por_marca = db.execute(text(q_vm), diarios_params).mappings().all()
+                ventas_por_marca = db.execute(text(q_vm), params).mappings().all()
         except Exception:
             ventas_por_marca = []
 
@@ -2232,8 +2351,8 @@ def dashboard_reportes(
                         LEFT JOIN leads l ON l.id_lead=c.id_lead
                         LEFT JOIN marcas m ON m.id_marca=l.id_marca
                         WHERE 1=1
-                          {("AND DATE(c." + date_cot + ") >= :ini" if fecha_inicio else "")}
-                          {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
+                          AND l.{date_col}::date BETWEEN :ini AND :fin
+                          AND {conf_where}
                           {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
                         GROUP BY i.{prod_col}, {marca_expr}
                         ORDER BY {prod_order} DESC
@@ -2262,8 +2381,8 @@ def dashboard_reportes(
                         LEFT JOIN leads l ON l.id_lead=c.id_lead
                         LEFT JOIN marcas m ON m.id_marca=l.id_marca
                         WHERE 1=1
-                          {("AND DATE(c." + date_cot + ") >= :ini" if fecha_inicio else "")}
-                          {("AND DATE(c." + date_cot + ") <= :fin" if fecha_termino else "")}
+                          AND l.{date_col}::date BETWEEN :ini AND :fin
+                          AND {conf_where}
                           {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
                         GROUP BY d.{prod_col}, COALESCE(m.nombre, m.marca,'')
                         ORDER BY {prod_order} DESC
@@ -2293,8 +2412,179 @@ def dashboard_reportes(
         except Exception:
             clientes = list(clientes)[:top_n_i] if clientes else []
 
+        # KPIs + comparativo vs venta_base/meta (metas_marca_mensual) del mes del rango.
+        _ensure_baseline(db)
+        try:
+            _ensure_metas(db)
+        except Exception:
+            pass
+
+        leads_total = 0
+        confirmados_total = 0
+        cierre_pct = 0.0
+        try:
+            leads_total = int(db.execute(text(f"SELECT COUNT(*)::int FROM leads l WHERE {where_sql}"), params).scalar_one() or 0)
+            confirmados_total = int(
+                db.execute(text(f"SELECT COUNT(*)::int FROM leads l WHERE {where_sql} AND {conf_where}"), params).scalar_one() or 0
+            )
+            cierre_pct = (confirmados_total / leads_total * 100.0) if leads_total else 0.0
+        except Exception:
+            leads_total = 0
+            confirmados_total = 0
+            cierre_pct = 0.0
+
+        venta_total = 0.0
+        try:
+            if _table_exists_pg(db, "fin_eventos"):
+                venta_total = float(
+                    db.execute(
+                        text(
+                            f"""
+                            SELECT COALESCE(SUM(fe.monto_bruto),0)::float
+                            FROM fin_eventos fe
+                            JOIN leads l ON l.id_lead=fe.id_lead
+                            WHERE {where_sql}
+                              AND fe.fecha_evento IS NOT NULL
+                              AND {conf_where}
+                            """
+                        ),
+                        params,
+                    ).scalar_one()
+                    or 0
+                )
+            else:
+                venta_total = float(
+                    db.execute(
+                        text(f"SELECT COALESCE(SUM(l.monto_cotizado),0)::float FROM leads l WHERE {where_sql} AND {conf_where}"),
+                        params,
+                    ).scalar_one()
+                    or 0
+                )
+        except Exception:
+            venta_total = 0.0
+
+        ventas_comparativo: list[dict] = []
+        try:
+            ym_year = int(ini_d.year)
+            ym_month = int(ini_d.month)
+
+            metas_map: dict[int, dict] = {}
+            if _table_exists_pg(db, "metas_marca_mensual"):
+                mrows = db.execute(
+                    text(
+                        """
+                        SELECT id_marca,
+                               COALESCE(venta_base,0)::float AS venta_base,
+                               COALESCE(meta,0)::float AS meta
+                        FROM metas_marca_mensual
+                        WHERE year=:y AND month=:m
+                        """
+                    ),
+                    {"y": ym_year, "m": ym_month},
+                ).mappings().all()
+                for r in mrows:
+                    try:
+                        metas_map[int(r["id_marca"])] = {
+                            "venta_base": float(r.get("venta_base") or 0),
+                            "meta": float(r.get("meta") or 0),
+                        }
+                    except Exception:
+                        continue
+
+            baseline_map: dict[str, float] = {}
+            try:
+                brows = db.execute(
+                    text("SELECT marca, COALESCE(monto,0)::float AS monto FROM ventas_baseline WHERE mes=:m"),
+                    {"m": ym_month},
+                ).mappings().all()
+                for r in brows:
+                    baseline_map[str(r.get("marca") or "").strip().upper()] = float(r.get("monto") or 0)
+            except Exception:
+                baseline_map = {}
+
+            actual_by_marca: dict[int, float] = {}
+            if _table_exists_pg(db, "fin_eventos"):
+                arows = db.execute(
+                    text(
+                        f"""
+                        SELECT l.id_marca, COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                        FROM fin_eventos fe
+                        JOIN leads l ON l.id_lead=fe.id_lead
+                        WHERE {where_sql}
+                          AND fe.fecha_evento IS NOT NULL
+                          AND {conf_where}
+                        GROUP BY l.id_marca
+                        """
+                    ),
+                    params,
+                ).mappings().all()
+                for r in arows:
+                    if r.get("id_marca") is None:
+                        continue
+                    actual_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
+            else:
+                arows = db.execute(
+                    text(
+                        f"""
+                        SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                        FROM leads l
+                        WHERE {where_sql} AND {conf_where}
+                        GROUP BY l.id_marca
+                        """
+                    ),
+                    params,
+                ).mappings().all()
+                for r in arows:
+                    if r.get("id_marca") is None:
+                        continue
+                    actual_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
+
+            brands = db.execute(text("SELECT id_marca, COALESCE(nombre, marca,'') AS marca FROM marcas")).mappings().all()
+            for b in brands:
+                try:
+                    mid = int(b.get("id_marca") or 0)
+                except Exception:
+                    continue
+                if mid <= 0:
+                    continue
+                if only_own and marcas and (mid not in set(marcas)):
+                    continue
+                if id_marca and mid != int(id_marca):
+                    continue
+                name = str(b.get("marca") or "").strip().upper()
+                actual = float(actual_by_marca.get(mid, 0.0))
+                base = float(metas_map.get(mid, {}).get("venta_base") or baseline_map.get(name, 0.0) or 0.0)
+                meta = float(metas_map.get(mid, {}).get("meta") or (base * 1.12 if base else 0.0))
+                share = (actual / venta_total * 100.0) if venta_total else 0.0
+                vs_base = ((actual / base - 1.0) * 100.0) if base else None
+                vs_meta = ((actual / meta) * 100.0) if meta else None
+                ventas_comparativo.append(
+                    {
+                        "id_marca": mid,
+                        "marca": name,
+                        "actual": round(actual, 2),
+                        "base": round(base, 2),
+                        "meta": round(meta, 2),
+                        "share_pct": round(share, 2),
+                        "vs_base_pct": (round(vs_base, 2) if vs_base is not None else None),
+                        "vs_meta_pct": (round(vs_meta, 2) if vs_meta is not None else None),
+                    }
+                )
+            ventas_comparativo.sort(key=lambda x: float(x.get("actual") or 0), reverse=True)
+        except Exception:
+            ventas_comparativo = []
+
         return {
             "ok": True,
+            "range": {"from": ini_d.isoformat(), "to": fin_d.isoformat(), "periodo": (p or "range")},
+            "range_ly": {"from": ly_ini.isoformat(), "to": ly_fin.isoformat()},
+            "kpis": {
+                "venta_total": round(float(venta_total or 0), 2),
+                "leads_total": int(leads_total or 0),
+                "confirmados_total": int(confirmados_total or 0),
+                "cierre_pct": round(float(cierre_pct or 0), 2),
+            },
+            "ventas_comparativo": list(ventas_comparativo),
             "funnel": list(funnel),
             "eventos_diarios": list(eventos_diarios),
             "top_productos": list(top_productos),
