@@ -88,6 +88,12 @@ def _ensure_tables(conn):
             """
         )
     )
+    # 1 evento financiero por lead (si existe id_lead). Permite upsert estable desde "sync confirmados".
+    try:
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_fin_eventos_id_lead ON fin_eventos(id_lead) WHERE id_lead IS NOT NULL"))
+    except Exception:
+        # no bloquear import si el motor no soporta (o permisos restringidos)
+        pass
     # Backward-compatible schema upgrades (works even on older PostgreSQL versions).
     _add_column_if_missing(conn, "fin_eventos", "num_cotizacion", "TEXT")
     _add_column_if_missing(conn, "fin_eventos", "id_cotizacion", "INT")
@@ -279,6 +285,29 @@ class PagoIn(BaseModel):
     referencia: Optional[str] = None
     doc_num: Optional[str] = None
     fecha: Optional[date] = None
+
+
+def _estado_confirm_id(conn) -> int | None:
+    """
+    Busca el id_estado para CONFIRMADO. Preferimos match por nombre.
+    """
+    try:
+        row = conn.execute(
+            text(
+                """
+                SELECT id_estado
+                FROM public.estados_lead
+                WHERE upper(nombre) LIKE 'CONFIRM%'
+                ORDER BY id_estado
+                LIMIT 1
+                """
+            )
+        ).first()
+        if row and row[0] is not None:
+            return int(row[0])
+    except Exception:
+        return None
+    return None
 
 
 @router.get("/plan-cuentas")
@@ -587,6 +616,120 @@ def list_eventos(
             params,
         ).mappings().all()
     return {"ok": True, "items": list(rows)}
+
+
+@router.post("/eventos/sync_confirmados")
+def sync_confirmados_a_fin_eventos(
+    month: int = Query(..., ge=1, le=12),
+    year: int = Query(..., ge=2000, le=2100),
+    me=Depends(get_current_user),
+):
+    """
+    Sincroniza (idempotente) leads CONFIRMADOS del mes a fin_eventos.
+    Fuente de venta: leads.monto_cotizado (monto_bruto).
+    NO toca abonos/saldo existentes (si el evento ya fue gestionado en finanzas).
+    """
+    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        conf_id = _estado_confirm_id(conn)
+        if not conf_id:
+            raise HTTPException(status_code=500, detail="No encontré estado CONFIRMADO en estados_lead")
+
+        # Detectar columnas opcionales en leads (muy defensivo).
+        has_num_cot = _has_column(conn, "leads", "num_cotizacion")
+        has_id_cot = _has_column(conn, "leads", "id_cotizacion")
+        has_tipo_cli = _has_column(conn, "leads", "tipo_cliente")
+        has_id_tipo_cli = _has_column(conn, "leads", "id_tipo_cliente")
+        has_traslado = _has_column(conn, "leads", "traslado")
+        has_com_pct = _has_column(conn, "leads", "comision_pct")
+
+        # Cliente: preferimos nombre_cliente si existe.
+        name_expr = "COALESCE(NULLIF(btrim(l.nombre_cliente),''), NULLIF(btrim(l.cliente),''), NULLIF(btrim(l.nombre),''), '—')"
+        if not _has_column(conn, "leads", "nombre_cliente"):
+            name_expr = "COALESCE(NULLIF(btrim(l.cliente),''), NULLIF(btrim(l.nombre),''), '—')"
+
+        tipo_expr = "'—'"
+        join_tipo = ""
+        if has_id_tipo_cli and _has_column(conn, "tipos_cliente", "id_tipo_cliente"):
+            join_tipo = "LEFT JOIN public.tipos_cliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente"
+            tipo_expr = "COALESCE(NULLIF(btrim(tc.nombre),''), '—')"
+        elif has_tipo_cli:
+            tipo_expr = "COALESCE(NULLIF(btrim(l.tipo_cliente),''), '—')"
+
+        num_cot_expr = "NULL"
+        if has_num_cot:
+            num_cot_expr = "NULLIF(btrim(l.num_cotizacion::text),'')"
+        id_cot_expr = "NULL"
+        if has_id_cot:
+            id_cot_expr = "l.id_cotizacion"
+
+        traslado_expr = "0"
+        if has_traslado:
+            traslado_expr = "COALESCE(l.traslado,0)"
+        com_pct_expr = "0"
+        if has_com_pct:
+            com_pct_expr = "COALESCE(l.comision_pct,0)"
+
+        # Upsert. Mantiene abono/saldo existentes.
+        q = f"""
+            WITH src AS (
+              SELECT
+                l.id_lead,
+                {num_cot_expr} AS num_cotizacion,
+                {id_cot_expr} AS id_cotizacion,
+                {name_expr} AS cliente,
+                COALESCE(NULLIF(btrim(c.nombre),''), '—') AS comuna,
+                COALESCE(NULLIF(btrim(m.nombre),''), NULLIF(btrim(m.marca),''), '—') AS marca,
+                {tipo_expr} AS tipo_cliente,
+                l.fecha_evento::date AS fecha_evento,
+                COALESCE(l.monto_cotizado,0)::numeric(14,2) AS monto_bruto,
+                COALESCE(l.monto_cotizado,0)::numeric(14,2) AS monto_neto,
+                0::numeric(14,2) AS iva,
+                {traslado_expr}::numeric(14,2) AS traslado,
+                {com_pct_expr}::numeric(6,2) AS comision_pct,
+                (COALESCE(l.monto_cotizado,0) * COALESCE({com_pct_expr},0) / 100.0)::numeric(14,2) AS comision_monto,
+                (COALESCE(l.monto_cotizado,0) + COALESCE({traslado_expr},0))::numeric(14,2) AS saldo_init
+              FROM public.leads l
+              LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
+              LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
+              {join_tipo}
+              WHERE l.id_estado=:conf
+                AND l.fecha_evento IS NOT NULL
+                AND EXTRACT(MONTH FROM l.fecha_evento)=:m
+                AND EXTRACT(YEAR FROM l.fecha_evento)=:y
+            )
+            INSERT INTO fin_eventos(
+              id_lead,num_cotizacion,id_cotizacion,cliente,comuna,marca,tipo_cliente,fecha_evento,
+              monto_bruto,monto_neto,iva,traslado,comision_pct,comision_monto,saldo
+            )
+            SELECT
+              id_lead,num_cotizacion,id_cotizacion,cliente,comuna,marca,tipo_cliente,fecha_evento,
+              monto_bruto,monto_neto,iva,traslado,comision_pct,comision_monto,saldo_init
+            FROM src
+            ON CONFLICT (id_lead) DO UPDATE
+              SET num_cotizacion=EXCLUDED.num_cotizacion,
+                  id_cotizacion=EXCLUDED.id_cotizacion,
+                  cliente=EXCLUDED.cliente,
+                  comuna=EXCLUDED.comuna,
+                  marca=EXCLUDED.marca,
+                  tipo_cliente=EXCLUDED.tipo_cliente,
+                  fecha_evento=EXCLUDED.fecha_evento,
+                  monto_bruto=EXCLUDED.monto_bruto,
+                  monto_neto=EXCLUDED.monto_neto,
+                  iva=EXCLUDED.iva,
+                  traslado=EXCLUDED.traslado,
+                  comision_pct=EXCLUDED.comision_pct,
+                  comision_monto=EXCLUDED.comision_monto
+        """
+        res = conn.execute(text(q), {"conf": conf_id, "m": int(month), "y": int(year)})
+        try:
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        # rowcount es best-effort, depende del driver.
+        return {"ok": True, "month": int(month), "year": int(year), "affected": int(getattr(res, "rowcount", 0) or 0)}
 
 
 @router.post("/gastos")
