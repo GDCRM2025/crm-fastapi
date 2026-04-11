@@ -1331,12 +1331,6 @@ async function fetchMe() {
 async function maybePromptSgjoMarkIn(me) {
   try {
     if (!getToken()) return;
-    const roleName = String((me == null ? void 0 : me.role) || (me == null ? void 0 : me.rol) || "").toUpperCase();
-    if (roleName.includes("SUPERADMIN") || roleName.includes("ADMIN") || roleName.includes("EJECUTIV") || roleName.includes("OPERADOR") || roleName.includes("CONDUCTOR") || roleName.includes("CHOFER") || roleName.includes("COMPRAS") || roleName.includes("OPERACIONES") || roleName.includes("MICE")) {
-      ;
-    } else {
-      return;
-    }
     const r = await fetch(`${API_BASE}/rrhh/sgjo/today`, { headers: authHeaders({ "Accept": "application/json" }) });
     if (!r.ok) return;
     const j = await r.json().catch(() => null);

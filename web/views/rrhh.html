@@ -133,7 +133,7 @@
 
     function isAdminRole(role){
       const r = String(role||"").toUpperCase();
-      return r.includes("SUPERADMIN") || r === "ADMIN" || r.includes("JEFE") || r.includes("OPERACIONES");
+      return r.includes("SUPERADMIN") || r === "ADMIN" || r.includes("FINAN") || r.includes("RRHH") || r.includes("RECURSOS HUMANOS") || r.includes("JEFE") || r.includes("OPERACIONES") || r.includes("COMPRAS");
     }
 
     function buildTabs(isAdmin){

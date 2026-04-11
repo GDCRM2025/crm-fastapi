@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+import struct
+import zlib
 from typing import List
 
 
@@ -46,29 +48,80 @@ def make_qr_svg(data: str, *, scale: int = 6, border: int = 4) -> bytes:
 
 
 def make_qr_png(data: str, *, scale: int = 6, border: int = 4) -> bytes:
-    # Render via Pillow if available; else SVG fallback (caller can change media_type).
+    # Render via Pillow if available; else pure-Python PNG (no external deps).
     try:
         from PIL import Image  # type: ignore
-    except Exception as e:
-        raise RuntimeError("Pillow not available") from e
+    except Exception:
+        Image = None  # type: ignore[assignment]
 
     m = make_qr_matrix(data)
     size = m.size
     dim = (size + border * 2) * scale
-    img = Image.new("RGB", (dim, dim), "white")
-    px = img.load()
+    if Image is not None:
+        img = Image.new("RGB", (dim, dim), "white")
+        px = img.load()
+        for y in range(size):
+            row = m.modules[y]
+            for x in range(size):
+                if row[x]:
+                    xx0 = (x + border) * scale
+                    yy0 = (y + border) * scale
+                    for yy in range(yy0, yy0 + scale):
+                        for xx in range(xx0, xx0 + scale):
+                            px[xx, yy] = (0, 0, 0)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
+
+    # Pure-Python grayscale PNG (color type 0).
+    # Build a full pixel grid (dim x dim) with sharp edges (no antialias).
+    white = 255
+    black = 0
+    # Initialize as white rows.
+    rows = [bytearray([white]) * dim for _ in range(dim)]
     for y in range(size):
         row = m.modules[y]
         for x in range(size):
-            if row[x]:
-                xx0 = (x + border) * scale
-                yy0 = (y + border) * scale
-                for yy in range(yy0, yy0 + scale):
-                    for xx in range(xx0, xx0 + scale):
-                        px[xx, yy] = (0, 0, 0)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
-    return buf.getvalue()
+            if not row[x]:
+                continue
+            xx0 = (x + border) * scale
+            yy0 = (y + border) * scale
+            for yy in range(yy0, yy0 + scale):
+                r = rows[yy]
+                r[xx0 : xx0 + scale] = bytes([black]) * scale
+
+    # PNG scanlines: filter byte (0) + pixel bytes
+    raw = bytearray()
+    for y in range(dim):
+        raw.append(0)
+        raw.extend(rows[y])
+    comp = zlib.compress(bytes(raw), 9)
+
+    def chunk(tag: bytes, data_b: bytes) -> bytes:
+        ln = struct.pack(">I", len(data_b))
+        crc = zlib.crc32(tag)
+        crc = zlib.crc32(data_b, crc) & 0xFFFFFFFF
+        return ln + tag + data_b + struct.pack(">I", crc)
+
+    ihdr = struct.pack(">IIBBBBB", dim, dim, 8, 0, 0, 0, 0)  # 8-bit, grayscale
+    return b"".join(
+        [
+            b"\x89PNG\r\n\x1a\n",
+            chunk(b"IHDR", ihdr),
+            chunk(b"IDAT", comp),
+            chunk(b"IEND", b""),
+        ]
+    )
+
+
+def make_qr_png_target(data: str, *, target_px: int = 360, border: int = 6) -> bytes:
+    """
+    Genera PNG con un tamaño objetivo (px) ajustando el scale automáticamente.
+    """
+    m = make_qr_matrix(data)
+    n = (m.size + border * 2)
+    scale = max(3, min(12, int(target_px // max(1, n))))
+    return make_qr_png(data, scale=scale, border=border)
 
 
 # -------------------------------

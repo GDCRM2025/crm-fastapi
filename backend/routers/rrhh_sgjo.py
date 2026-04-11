@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
-from backend.core.qr_local import make_qr_png, make_qr_svg
+from backend.core.qr_local import make_qr_png_target, make_qr_svg
 from backend.core.sgjo import (
     ensure_sgjo_tables,
     seed_sedes_and_points,
@@ -194,7 +194,7 @@ def _is_admin(user: dict) -> bool:
 @router.get("/qr", response_class=Response, response_model=None)
 def qr_png(
     p: str,
-    size: int = 260,
+    size: int = 420,
     request: Request = None,  # type: ignore[assignment]
 ) -> Response:
     """
@@ -209,12 +209,12 @@ def qr_png(
 
     try:
         sz = int(size)
-        if sz < 120:
-            sz = 120
-        if sz > 800:
-            sz = 800
+        if sz < 180:
+            sz = 180
+        if sz > 1200:
+            sz = 1200
     except Exception:
-        sz = 260
+        sz = 420
 
     # `request` siempre existe en FastAPI, pero dejamos fallback por compatibilidad/harness.
     app_url = (os.getenv("APP_URL") or "").strip().rstrip("/")
@@ -233,19 +233,20 @@ def qr_png(
     mark_url = f"{app_url}/crm/web/views/rrhh_sgjo_marcacion.html?p={quote_plus(code)}"
     # Generación 100% local (sin llamadas externas) para que siempre funcione en hosting.
     try:
-        # Ajuste simple de tamaño aproximado: scale en base a "sz".
-        scale = 4 if sz <= 220 else 5 if sz <= 320 else 6
-        png = make_qr_png(mark_url, scale=scale, border=4)
+        png = make_qr_png_target(mark_url, target_px=sz, border=6)
         return Response(
             content=png,
             media_type="image/png",
-            headers={"Cache-Control": "public, max-age=86400"},
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "Content-Disposition": f'inline; filename="QR-{code}.png"',
+            },
         )
     except Exception:
         # Fallback SVG (igual imprimible y visible aunque Pillow no esté OK).
         try:
-            scale = 4 if sz <= 220 else 5 if sz <= 320 else 6
-            svg = make_qr_svg(mark_url, scale=scale, border=4)
+            scale = 8 if sz >= 520 else 7 if sz >= 420 else 6
+            svg = make_qr_svg(mark_url, scale=scale, border=6)
             return Response(
                 content=svg,
                 media_type="image/svg+xml",

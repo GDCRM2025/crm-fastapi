@@ -560,6 +560,7 @@ def get_evento_by_lead(
 def list_eventos(
     month: int = Query(0, ge=0, le=12),
     year: int = Query(0, ge=0, le=2100),
+    only_pending: bool = Query(False),
     me=Depends(get_current_user),
 ):
     _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
@@ -570,6 +571,8 @@ def list_eventos(
         if month and year:
             where = "WHERE EXTRACT(MONTH FROM fecha_evento)=:m AND EXTRACT(YEAR FROM fecha_evento)=:y"
             params = {"m": month, "y": year}
+        if only_pending:
+            where = (where + " AND " if where else "WHERE ") + "COALESCE(saldo,0) > 0"
         rows = conn.execute(
             text(
                 f"""

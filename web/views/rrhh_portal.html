@@ -76,7 +76,7 @@
       <div class="hint">Tip: si el navegador bloqueó notificaciones, entra a Ajustes del sitio y habilítalas (PWA instalada).</div>
     </div>
 
-    <div class="grid">
+      <div class="grid">
       <div class="card">
         <h3 class="secTitle">Turno de hoy</h3>
         <div class="muted" id="turnoTxt" style="margin-top:6px">Cargando…</div>
@@ -87,6 +87,10 @@
         </div>
 
         <h3 class="secTitle" style="margin-top:16px">Mis marcaciones</h3>
+        <div class="row" id="sumRow" style="margin-top:10px; display:none">
+          <span class="pill" id="pillWeek"></span>
+          <span class="pill" id="pillMonth"></span>
+        </div>
         <div class="table" style="margin-top:10px">
           <table>
             <thead>
@@ -258,6 +262,20 @@
         qs("#rowsMarc").innerHTML = `<tr><td class="muted">Error: ${(data.detail||r.status)}</td></tr>`;
         return;
       }
+      try{
+        const s = data.summary || null;
+        if (s && (s.week_hours != null || s.month_hours != null)){
+          qs("#sumRow").style.display = "flex";
+          const wh = Number(s.week_hours||0);
+          const mh = Number(s.month_hours||0);
+          const wf = (s.week && s.week.from) ? String(s.week.from).slice(5) : "";
+          const wt = (s.week && s.week.to) ? String(s.week.to).slice(5) : "";
+          qs("#pillWeek").textContent = `Semana (${wf}→${wt}): ${wh.toFixed(1)} h`;
+          qs("#pillMonth").textContent = `Mes: ${mh.toFixed(1)} h`;
+        } else {
+          qs("#sumRow").style.display = "none";
+        }
+      }catch(_){}
       const items = data.items || [];
       qs("#rowsMarc").innerHTML = items.map(m=>{
         const ok = !!m.ok;

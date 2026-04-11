@@ -604,7 +604,73 @@ def marcaciones_me(
             ),
             {"u": int(uid), "lim": max(1, min(500, int(limit)))},
         ).mappings().all()
-        return {"ok": True, "items": [dict(r) for r in rows]}
+        # Resumen (semanal/mensual) por pares IN/OUT. Best-effort; no bloquea si falla.
+        summary: dict[str, Any] | None = None
+        try:
+            tz = "America/Santiago"
+            today = datetime.date.today()
+            week_start = today - datetime.timedelta(days=today.weekday())
+            week_end = week_start + datetime.timedelta(days=6)
+            month_start = datetime.date(today.year, today.month, 1)
+
+            q = text(
+                """
+                WITH marks AS (
+                  SELECT (created_at AT TIME ZONE :tz) AS ts,
+                         (created_at AT TIME ZONE :tz)::date AS d,
+                         UPPER(COALESCE(tipo,'')) AS tipo
+                  FROM public.sgjo_marcaciones
+                  WHERE id_usuario=:u
+                    AND ok IS TRUE
+                    AND created_at >= (:month_start::date - INTERVAL '1 day')
+                ),
+                per_day AS (
+                  SELECT d,
+                         MIN(ts) FILTER (WHERE tipo='IN')  AS tin,
+                         MAX(ts) FILTER (WHERE tipo='OUT') AS tout
+                  FROM marks
+                  GROUP BY d
+                ),
+                hours AS (
+                  SELECT d,
+                         CASE
+                           WHEN tin IS NULL OR tout IS NULL OR tout <= tin THEN 0
+                           ELSE GREATEST(0, EXTRACT(EPOCH FROM (tout - tin))/3600.0)
+                         END AS h_raw
+                  FROM per_day
+                ),
+                hours2 AS (
+                  SELECT d,
+                         CASE WHEN h_raw >= 6 THEN GREATEST(0, h_raw - 1.0) ELSE h_raw END AS h
+                  FROM hours
+                )
+                SELECT
+                  COALESCE(SUM(h) FILTER (WHERE d BETWEEN :ws AND :we), 0)::float AS week_hours,
+                  COALESCE(SUM(h) FILTER (WHERE d BETWEEN :ms AND :today), 0)::float AS month_hours
+                FROM hours2
+                """
+            )
+            row = db.execute(
+                q,
+                {
+                    "tz": tz,
+                    "u": int(uid),
+                    "ws": week_start.isoformat(),
+                    "we": week_end.isoformat(),
+                    "ms": month_start.isoformat(),
+                    "today": today.isoformat(),
+                    "month_start": month_start.isoformat(),
+                },
+            ).mappings().first()
+            summary = {
+                "week": {"from": week_start.isoformat(), "to": week_end.isoformat()},
+                "month": {"from": month_start.isoformat(), "to": today.isoformat()},
+                "week_hours": float((row or {}).get("week_hours") or 0),
+                "month_hours": float((row or {}).get("month_hours") or 0),
+            }
+        except Exception:
+            summary = None
+        return {"ok": True, "items": [dict(r) for r in rows], "summary": summary}
     except Exception as e:
         db.rollback()
         return {"ok": False, "detail": str(e)}
