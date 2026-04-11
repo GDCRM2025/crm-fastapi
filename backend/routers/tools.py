@@ -2539,7 +2539,12 @@ def dashboard_reportes(
                         continue
                     actual_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
 
-            brands = db.execute(text("SELECT id_marca, COALESCE(nombre, marca,'') AS marca FROM marcas")).mappings().all()
+            if _col_exists(db, "marcas", "color"):
+                brands = db.execute(
+                    text("SELECT id_marca, COALESCE(nombre, marca,'') AS marca, COALESCE(color,'') AS color FROM marcas")
+                ).mappings().all()
+            else:
+                brands = db.execute(text("SELECT id_marca, COALESCE(nombre, marca,'') AS marca, '' AS color FROM marcas")).mappings().all()
             for b in brands:
                 try:
                     mid = int(b.get("id_marca") or 0)
@@ -2552,6 +2557,7 @@ def dashboard_reportes(
                 if id_marca and mid != int(id_marca):
                     continue
                 name = str(b.get("marca") or "").strip().upper()
+                color = str(b.get("color") or "").strip()
                 actual = float(actual_by_marca.get(mid, 0.0))
                 base = float(metas_map.get(mid, {}).get("venta_base") or baseline_map.get(name, 0.0) or 0.0)
                 meta = float(metas_map.get(mid, {}).get("meta") or (base * 1.12 if base else 0.0))
@@ -2562,6 +2568,7 @@ def dashboard_reportes(
                     {
                         "id_marca": mid,
                         "marca": name,
+                        "color": color,
                         "actual": round(actual, 2),
                         "base": round(base, 2),
                         "meta": round(meta, 2),

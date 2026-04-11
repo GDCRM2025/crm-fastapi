@@ -356,6 +356,36 @@
       if (__nfCL) return `$${__nfCL.format(vv)}`;
       return "$" + String(vv);
     };
+
+    // Colores por marca (para barras por marca en Reportes)
+    function _hslToHex(h, s, l){
+      s /= 100; l /= 100;
+      const k = n => (n + h / 30) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+      const toHex = x => Math.round(255 * x).toString(16).padStart(2, "0");
+      return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+    }
+    function brandColor(name, preferred){
+      const c = String(preferred||"").trim();
+      if (c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c)){
+        return (c.length === 4) ? ("#" + c[1]+c[1]+c[2]+c[2]+c[3]+c[3]) : c;
+      }
+      const s = String(name||"").trim().toUpperCase();
+      let h = 0;
+      for (let i=0;i<s.length;i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
+      const hue = (h % 360);
+      return _hslToHex(hue, 62, 42);
+    }
+    function hexToRgba(hex, alpha){
+      const c = brandColor("", hex);
+      const h = c.replace("#", "");
+      const r = parseInt(h.slice(0,2), 16);
+      const g = parseInt(h.slice(2,4), 16);
+      const b = parseInt(h.slice(4,6), 16);
+      const a = Math.max(0, Math.min(1, Number(alpha ?? 1)));
+      return `rgba(${r},${g},${b},${a})`;
+    }
     const LAST = { dash:null, rep:null, ini:"", fin:"", mid:"" };
     const ME = { role:"", username:"" };
     let CURRENT_TAB = "total";
@@ -1609,8 +1639,11 @@
         const actual = top.map(r => Number(r.actual||0));
         const base = top.map(r => Number(r.baseline ?? r.base ?? 0));
         const meta = top.map(r => Number(r.meta ?? r.target ?? 0));
+        const colors = top.map(r => brandColor(r.marca, r.color));
+        const actualData = actual.map((v,i) => ({ value: v, itemStyle:{ color: colors[i] } }));
+        const baseData = base.map((v,i) => ({ value: v, itemStyle:{ color: hexToRgba(colors[i], 0.32) } }));
+        const metaData = meta.map((v)=> ({ value: v, itemStyle:{ color: "#2563eb" } }));
 	        chart.setOption({
-	          color: [c.accentDark, c.accent, c.accentLight, c.accent2],
 	          title:{ text:"Total venta por marca (Actual vs Meta vs Base) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
           tooltip:{ trigger:"axis", axisPointer:{ type:"shadow" }, formatter:(p)=>{
             const i = p?.[0]?.dataIndex ?? 0;
@@ -1625,9 +1658,9 @@
 	          yAxis:{ type:"value", axisLabel:{ color:c.axis, formatter:(v)=>fmtAxisMoney(v) }, splitLine:{ lineStyle:{ color:c.grid } } },
 	          graphic: ecWatermark(c),
 	          series:[
-	            { name:"Actual", type:"bar", data: actual, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accent } },
-	            { name:"Meta", type:"bar", data: meta, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accentLight } },
-	            { name:"Base", type:"bar", data: base, barWidth: 14, itemStyle:{ borderRadius: 8, color: c.accentDark } },
+	            { name:"Actual", type:"bar", data: actualData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
+	            { name:"Meta", type:"bar", data: metaData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
+	            { name:"Base", type:"bar", data: baseData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
 	          ]
 	        }, true);
 	      })();
