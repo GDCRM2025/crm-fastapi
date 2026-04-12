@@ -19,7 +19,9 @@ class QrMatrix:
 
 def make_qr_matrix(data: str) -> QrMatrix:
     b = (data or "").encode("utf-8")
-    qr = _QrCode.encode_bytes(b, _QrCode.Ecc.MEDIUM)
+    # Usamos ECC LOW para mantener el QR menos denso (mejor lectura en cámara),
+    # especialmente en URLs largas o al escanear desde pantalla.
+    qr = _QrCode.encode_bytes(b, _QrCode.Ecc.LOW)
     return QrMatrix(size=qr.get_size(), modules=[[qr.get_module(x, y) for x in range(qr.get_size())] for y in range(qr.get_size())])
 
 

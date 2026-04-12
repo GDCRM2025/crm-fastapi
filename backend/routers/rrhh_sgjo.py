@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -194,7 +194,7 @@ def _is_admin(user: dict) -> bool:
 @router.get("/qr", response_class=Response, response_model=None)
 def qr_png(
     p: str,
-    size: int = 420,
+    size: int = 900,
     request: Request = None,  # type: ignore[assignment]
 ) -> Response:
     """
@@ -230,10 +230,11 @@ def qr_png(
 
     from urllib.parse import quote_plus
 
-    mark_url = f"{app_url}/crm/web/views/rrhh_sgjo_marcacion.html?p={quote_plus(code)}"
+    # Usamos un endpoint corto para evitar QRs densos (mejor lectura en cámara).
+    mark_url = f"{app_url}/crm/rrhh/sgjo/m?p={quote_plus(code)}"
     # Generación 100% local (sin llamadas externas) para que siempre funcione en hosting.
     try:
-        png = make_qr_png_target(mark_url, target_px=sz, border=6)
+        png = make_qr_png_target(mark_url, target_px=sz, border=10)
         return Response(
             content=png,
             media_type="image/png",
@@ -246,7 +247,7 @@ def qr_png(
         # Fallback SVG (igual imprimible y visible aunque Pillow no esté OK).
         try:
             scale = 8 if sz >= 520 else 7 if sz >= 420 else 6
-            svg = make_qr_svg(mark_url, scale=scale, border=6)
+            svg = make_qr_svg(mark_url, scale=scale, border=10)
             return Response(
                 content=svg,
                 media_type="image/svg+xml",
@@ -263,6 +264,17 @@ def qr_png(
                 media_type="image/png",
                 headers={"Cache-Control": "no-store"},
             )
+
+
+@router.get("/m", include_in_schema=False)
+def sgjo_mark_redirect(p: str) -> RedirectResponse:
+    """
+    Endpoint corto (para QR). Redirige a la vista de marcación.
+    """
+    code = str(p or "").strip().upper()
+    if not code or len(code) > 64:
+        raise HTTPException(status_code=400, detail="p inválido")
+    return RedirectResponse(url=f"/crm/web/views/rrhh_sgjo_marcacion.html?p={code}", status_code=302)
 
 
 def _normalize_key(s: str) -> str:

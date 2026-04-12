@@ -145,7 +145,7 @@
         const p0 = (bySede.get(sid) || [])[0] || {};
         const code = String(p0.code || "").trim();
         const markUrl = `${appBase}/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(code)}`;
-        const img = mkQRFromCode(code, 360);
+        const img = mkQRFromCode(code, 900);
         return `
           <tr>
             <td>
