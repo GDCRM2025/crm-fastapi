@@ -651,6 +651,7 @@ def sync_confirmados_a_fin_eventos(
 
         tipo_expr = "'—'"
         join_tipo = ""
+        # Tabla: public.tipos_cliente (ojo: plural). En algunos despliegues el join estaba mal escrito y rompe el sync.
         if has_id_tipo_cli and _has_column(conn, "tipos_cliente", "id_tipo_cliente"):
             join_tipo = "LEFT JOIN public.tipos_cliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente"
             tipo_expr = "COALESCE(NULLIF(btrim(tc.nombre),''), '—')"
@@ -671,7 +672,9 @@ def sync_confirmados_a_fin_eventos(
         if has_com_pct:
             com_pct_expr = "COALESCE(l.comision_pct,0)"
 
-        # Upsert. Mantiene abono/saldo existentes.
+        # Upsert DEFENSIVO (sin depender de UNIQUE INDEX):
+        # - UPDATE de existentes (NO toca abono/saldo)
+        # - INSERT de faltantes (saldo inicia = monto + traslado)
         q = f"""
             WITH src AS (
               SELECT
@@ -698,38 +701,50 @@ def sync_confirmados_a_fin_eventos(
                 AND l.fecha_evento IS NOT NULL
                 AND EXTRACT(MONTH FROM l.fecha_evento)=:m
                 AND EXTRACT(YEAR FROM l.fecha_evento)=:y
+            ),
+            upd AS (
+              UPDATE fin_eventos f
+              SET num_cotizacion = s.num_cotizacion,
+                  id_cotizacion  = s.id_cotizacion,
+                  cliente        = s.cliente,
+                  comuna         = s.comuna,
+                  marca          = s.marca,
+                  tipo_cliente   = s.tipo_cliente,
+                  fecha_evento   = s.fecha_evento,
+                  monto_bruto    = s.monto_bruto,
+                  monto_neto     = s.monto_neto,
+                  iva            = s.iva,
+                  traslado       = s.traslado,
+                  comision_pct   = s.comision_pct,
+                  comision_monto = s.comision_monto
+              FROM src s
+              WHERE f.id_lead = s.id_lead
+              RETURNING f.id_lead
+            ),
+            ins AS (
+              INSERT INTO fin_eventos(
+                id_lead,num_cotizacion,id_cotizacion,cliente,comuna,marca,tipo_cliente,fecha_evento,
+                monto_bruto,monto_neto,iva,traslado,comision_pct,comision_monto,saldo
+              )
+              SELECT
+                s.id_lead,s.num_cotizacion,s.id_cotizacion,s.cliente,s.comuna,s.marca,s.tipo_cliente,s.fecha_evento,
+                s.monto_bruto,s.monto_neto,s.iva,s.traslado,s.comision_pct,s.comision_monto,s.saldo_init
+              FROM src s
+              WHERE NOT EXISTS (SELECT 1 FROM fin_eventos f WHERE f.id_lead = s.id_lead)
+              RETURNING id_lead
             )
-            INSERT INTO fin_eventos(
-              id_lead,num_cotizacion,id_cotizacion,cliente,comuna,marca,tipo_cliente,fecha_evento,
-              monto_bruto,monto_neto,iva,traslado,comision_pct,comision_monto,saldo
-            )
-            SELECT
-              id_lead,num_cotizacion,id_cotizacion,cliente,comuna,marca,tipo_cliente,fecha_evento,
-              monto_bruto,monto_neto,iva,traslado,comision_pct,comision_monto,saldo_init
-            FROM src
-            ON CONFLICT (id_lead) DO UPDATE
-              SET num_cotizacion=EXCLUDED.num_cotizacion,
-                  id_cotizacion=EXCLUDED.id_cotizacion,
-                  cliente=EXCLUDED.cliente,
-                  comuna=EXCLUDED.comuna,
-                  marca=EXCLUDED.marca,
-                  tipo_cliente=EXCLUDED.tipo_cliente,
-                  fecha_evento=EXCLUDED.fecha_evento,
-                  monto_bruto=EXCLUDED.monto_bruto,
-                  monto_neto=EXCLUDED.monto_neto,
-                  iva=EXCLUDED.iva,
-                  traslado=EXCLUDED.traslado,
-                  comision_pct=EXCLUDED.comision_pct,
-                  comision_monto=EXCLUDED.comision_monto
+            SELECT (SELECT count(*) FROM upd) AS updated,
+                   (SELECT count(*) FROM ins) AS created;
         """
-        res = conn.execute(text(q), {"conf": conf_id, "m": int(month), "y": int(year)})
+        res = conn.execute(text(q), {"conf": conf_id, "m": int(month), "y": int(year)}).mappings().first()
         try:
             conn.commit()
         except Exception:
             conn.rollback()
             raise
-        # rowcount es best-effort, depende del driver.
-        return {"ok": True, "month": int(month), "year": int(year), "affected": int(getattr(res, "rowcount", 0) or 0)}
+        created = int((res or {}).get("created") or 0)
+        updated = int((res or {}).get("updated") or 0)
+        return {"ok": True, "month": int(month), "year": int(year), "created": created, "updated": updated}
 
 
 @router.post("/gastos")
