@@ -339,17 +339,38 @@ class _QrCode:
                     self._modules[y][x] = not self._modules[y][x]
 
     def _draw_format_bits(self, mask: int) -> None:
-        data = (self._ECC_FORMAT_BITS[self._ecl] << 3) | mask
-        rem = data
-        for _ in range(10):
-            rem = (rem << 1) ^ (0x537 if (rem & (1 << 9)) else 0)
-        bits = ((data << 10) | rem) ^ 0x5412
-        for i in range(15):
-            bit = ((bits >> i) & 1) != 0
-            a = (8, i) if i < 6 else (8, i + 1) if i < 8 else (8, self._size - 15 + i)
-            b = (self._size - 1 - i, 8) if i < 8 else (15 - i - 1, 8)
-            self._set_function(a[0], a[1], bit)
-            self._set_function(b[0], b[1], bit)
+        # Format bits (15): 5 data bits (ECC level + mask) + 10 BCH.
+        # Polynomial: 0x537 (10100110111). XOR mask: 0x5412.
+        data = (self._ECC_FORMAT_BITS[self._ecl] << 3) | (mask & 7)
+
+        # Compute remainder of (data << 10) mod poly (degree 10).
+        rem = data << 10
+        poly = 0x537
+        # Align poly with highest bit of rem and divide (like Nayuki's qrcodegen).
+        for i in range(14, 9, -1):  # 14..10
+            if (rem >> i) & 1:
+                rem ^= poly << (i - 10)
+        bits = ((data << 10) | (rem & 0x3FF)) ^ 0x5412
+
+        def bit_at(i: int) -> bool:
+            return ((bits >> i) & 1) != 0
+
+        size = self._size
+
+        # First copy around top-left finder.
+        for i in range(0, 6):
+            self._set_function(8, i, bit_at(i))
+        self._set_function(8, 7, bit_at(6))
+        self._set_function(8, 8, bit_at(7))
+        self._set_function(7, 8, bit_at(8))
+        for i in range(9, 15):
+            self._set_function(14 - i, 8, bit_at(i))  # (5,8) .. (0,8)
+
+        # Second copy.
+        for i in range(0, 8):
+            self._set_function(size - 1 - i, 8, bit_at(i))
+        for i in range(8, 15):
+            self._set_function(8, size - 15 + i, bit_at(i))  # (8, size-7) .. (8, size-1)
 
     def _penalty(self) -> int:
         m = self._modules
