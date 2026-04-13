@@ -99,6 +99,13 @@
     })();
     const qs = (s, el=document)=> el.querySelector(s);
 
+    function getCookie(name){
+      try{
+        const m = String(document.cookie||"").match(new RegExp("(^|;\\s*)"+name.replace(/[-[\\]{}()*+?.,\\\\^$|#\\s]/g,"\\\\$&")+"=([^;]*)"));
+        return m ? decodeURIComponent(m[2] || "") : "";
+      }catch(_){ return ""; }
+    }
+
     function getToken(){
       return (
         localStorage.getItem("token") ||
@@ -107,6 +114,29 @@
         sessionStorage.getItem("gd_token") ||
         ""
       );
+    }
+
+    function ensureTokenOrRedirect(punto_code){
+      const t = getToken();
+      if (t) return true;
+      // Intentar tomar token desde cookie (login.html siempre la setea como gd_token).
+      const ck = getCookie("gd_token");
+      if (ck){
+        try{
+          localStorage.setItem("token", ck);
+          localStorage.setItem("gd_token", ck);
+        }catch(_){}
+        return true;
+      }
+      // No hay token: guiar al login y volver a esta misma marcación (sin re-scan).
+      try{
+        const next = `${API_BASE}/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto_code)}`;
+        log("Debes iniciar sesión para marcar. Abriendo login…");
+        location.href = `${API_BASE}/web/login.html?next=${encodeURIComponent(next)}`;
+      }catch(_){
+        log("Debes iniciar sesión para marcar (Token requerido).");
+      }
+      return false;
     }
     function authHeaders(extra={}){
       const t = getToken();
@@ -170,6 +200,7 @@
         log("Falta parámetro ?p=SGJO-ROLFIS o ?p=SGJO-GREENDIAMOND (desde el QR).");
         return;
       }
+      if (!ensureTokenOrRedirect(punto_code)) return;
       try{
         const cfg = await apiJSON("/rrhh/sgjo/config");
         const pt = (cfg.puntos||[]).find(x=>String(x.code||"").toUpperCase()===punto_code);
@@ -207,6 +238,8 @@
 
     qs("#btnEnroll").addEventListener("click", async ()=>{
       try{
+        const punto_code = getPuntoCode();
+        if (!ensureTokenOrRedirect(punto_code)) return;
         const device_id = getDeviceId();
         const out = await apiJSON("/rrhh/sgjo/device/enroll", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ device_id }) });
         if (out && out.ok){
@@ -224,6 +257,7 @@
     qs("#btnMark").addEventListener("click", async ()=>{
       const punto_code = getPuntoCode();
       try{
+        if (!ensureTokenOrRedirect(punto_code)) return;
         qs("#btnMark").disabled = true;
         const device_id = getDeviceId();
         const loc = await getLocation();

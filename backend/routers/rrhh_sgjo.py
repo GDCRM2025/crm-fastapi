@@ -327,14 +327,23 @@ def qr_png(
 
 @router.get("/m", include_in_schema=False)
 @router.head("/m", include_in_schema=False)
-def sgjo_mark_redirect(p: str) -> RedirectResponse:
+def sgjo_mark_redirect(p: str, request: Request) -> RedirectResponse:
     """
     Endpoint corto (para QR). Redirige a la vista de marcación.
     """
     code = str(p or "").strip().upper()
     if not code or len(code) > 64:
         raise HTTPException(status_code=400, detail="p inválido")
-    return RedirectResponse(url=f"/crm/web/views/rrhh_sgjo_marcacion.html?p={code}", status_code=302)
+    # Si el usuario no está logueado (sin cookie de token), lo mandamos al login con retorno a la marcación.
+    # Motivo: el "Escáner de código" en iPhone abre Safari sin compartir localStorage; esta ruta debe guiar el flujo.
+    try:
+        tok_cookie = (request.cookies or {}).get("gd_token") or ""
+    except Exception:
+        tok_cookie = ""
+    next_url = f"/crm/web/views/rrhh_sgjo_marcacion.html?p={code}"
+    if not str(tok_cookie or "").strip():
+        return RedirectResponse(url=f"/crm/web/login.html?next={next_url}", status_code=302)
+    return RedirectResponse(url=next_url, status_code=302)
 
 
 def _normalize_key(s: str) -> str:
