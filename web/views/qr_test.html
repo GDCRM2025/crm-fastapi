@@ -79,10 +79,21 @@
         setStatus("BarcodeDetector no está disponible en este navegador. Usa Chrome/Edge.");
         return;
       }
+      // Mostrar origen/headers del QR (debug)
+      try{
+        const u = String(urlEl.value||"").trim();
+        const hr = await fetch(u, { method:"HEAD", cache:"no-store" });
+        const src = hr.headers.get("x-qr-source") || "—";
+        const ct = hr.headers.get("content-type") || "—";
+        const len = hr.headers.get("content-length") || "—";
+        setOut(`HEAD → content-type=${ct}\ncontent-length=${len}\nX-QR-Source=${src}\n\n`);
+      }catch(_){
+        // ignore
+      }
       if (!imgEl.naturalWidth) await load();
       if (!imgEl.naturalWidth) return;
       setStatus("Decodificando…");
-      setOut("");
+      // preserve header debug in outEl
       try{
         const det = new BarcodeDetector({ formats: ["qr_code"] });
         const res = await det.detect(imgEl);
@@ -91,10 +102,10 @@
           return;
         }
         setStatus(`Detectado: ${res.length}`);
-        setOut(res.map(r=>r.rawValue).join("\n"));
+        setOut((outEl.textContent||"") + res.map(r=>r.rawValue).join("\n"));
       }catch(e){
         setStatus("Error al decodificar.");
-        setOut(String(e && e.message ? e.message : e));
+        setOut((outEl.textContent||"") + String(e && e.message ? e.message : e));
       }
     }
 
@@ -105,4 +116,3 @@
   </script>
 </body>
 </html>
-

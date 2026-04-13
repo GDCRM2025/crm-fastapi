@@ -249,31 +249,56 @@ def qr_png(
             },
         )
 
-    # Hotfix: generador externo estable (Google Charts) como primera opción.
-    # Motivo: lectores (iPhone/BarcodeDetector) no detectan ciertos QRs generados localmente.
-    # El QR solo abre un endpoint (no marca sin login), así que el riesgo es bajo y esto nos desbloquea.
-    if src0 in ("auto", "google"):
+    def _looks_like_png(b: bytes) -> bool:
+        return bool(b) and len(b) > 16 and b[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def _fetch_png(url: str, *, source: str) -> bytes | None:
         try:
             import requests
-            from urllib.parse import quote_plus
 
-            # L|4: ECC Low, margen 4 (quiet zone)
-            gurl = (
-                "https://chart.googleapis.com/chart"
-                f"?cht=qr&chs={sz}x{sz}&chld=L|4&chl={quote_plus(mark_url)}"
+            r = requests.get(
+                url,
+                timeout=7,
+                headers={
+                    "Accept": "image/png,image/*;q=0.9,*/*;q=0.1",
+                    "User-Agent": "GDCRM/qr (passenger)",
+                },
+                allow_redirects=True,
             )
-            r = requests.get(gurl, timeout=6)
-            if r.status_code == 200 and r.content and r.headers.get("content-type", "").startswith("image/"):
-                return _resp_png(r.content, "google")
+            ct = (r.headers.get("content-type") or "").lower()
+            if r.status_code == 200 and r.content and ct.startswith("image/") and _looks_like_png(r.content):
+                return r.content
+            return None
         except Exception:
-            if src0 == "google":
-                raise HTTPException(status_code=502, detail="No pude generar QR por Google Charts (bloqueo/red/timeout).")
+            return None
 
-    # Generación local (fallback)
+    # Hotfix: generadores externos (PNG real) para asegurar lecturas en iPhone/Android/BarcodeDetector.
+    # Si el hosting bloquea un dominio, probamos el siguiente.
+    if src0 in ("auto", "google"):
+        from urllib.parse import quote_plus, quote
+
+        providers = [
+            ("quickchart", f"https://quickchart.io/qr?text={quote(mark_url)}&size={sz}"),
+            ("qrserver", f"https://api.qrserver.com/v1/create-qr-code/?size={sz}x{sz}&data={quote_plus(mark_url)}"),
+            ("google", f"https://chart.googleapis.com/chart?cht=qr&chs={sz}x{sz}&chld=L|4&chl={quote_plus(mark_url)}"),
+        ]
+        if src0 == "google":
+            # Forzar solo el provider Google (útil para diagnosticar).
+            providers = [p for p in providers if p[0] == "google"]
+        for src_name, url in providers:
+            payload = _fetch_png(url, source=src_name)
+            if payload:
+                return _resp_png(payload, src_name)
+        if src0 == "google":
+            raise HTTPException(status_code=502, detail="No pude generar QR externo (google): bloqueo/red/DNS.")
+
+    # Generación local (último recurso). Si el generador local vuelve a ser ilegible, preferimos fallar explícitamente.
     if src0 in ("auto", "local"):
         try:
             png = make_qr_png_target(mark_url, target_px=sz, border=10)
-            return _resp_png(png, "local")
+            if _looks_like_png(png):
+                return _resp_png(png, "local")
+            raise Exception("local invalid png")
         except Exception:
             if src0 == "local":
                 raise HTTPException(status_code=500, detail="No pude generar QR local.")
