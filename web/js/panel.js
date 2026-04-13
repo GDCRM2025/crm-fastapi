@@ -2082,6 +2082,7 @@ const PERMISSIONS = {
 		  ]),
 	  10: /* @__PURE__ */ new Set([
 	    "dash_home",
+	    "rrhh_hub",
 	    "leads_ver",
 	    "leads_fil",
 	    "historial",
@@ -2097,6 +2098,7 @@ const PERMISSIONS = {
 	  ]),
 	  2: /* @__PURE__ */ new Set([
 	    "dash_home",
+	    "rrhh_hub",
 	    "leads_ver",
 	    "leads_fil",
     "historial",
@@ -2128,6 +2130,7 @@ const PERMISSIONS = {
 		  ]),
 		  3: /* @__PURE__ */ new Set([
 		    "dash_home",
+		    "rrhh_hub",
 		    "rep_com",
 		    "rep_prod",
 		    "rep_cli",
@@ -2166,6 +2169,7 @@ const PERMISSIONS = {
 		  ]),
 	  4: /* @__PURE__ */ new Set([
 	    "dash_home",
+	    "rrhh_hub",
 	    "rep_prod",
     "inv_tomar",
     "inv_stock",
@@ -2184,6 +2188,7 @@ const PERMISSIONS = {
 	    "set_prod"
 	  ]),
 	  9: /* @__PURE__ */ new Set([
+	    "rrhh_hub",
 	    "pl",
 	    "gast",
 	    "evt",
@@ -2192,6 +2197,7 @@ const PERMISSIONS = {
 	  ]),
 	  5: /* @__PURE__ */ new Set([
 	    "dash_home",
+	    "rrhh_hub",
 	    "rep_prod",
 	    "op_rec",
 	    "op_mice",
@@ -2220,6 +2226,7 @@ const PERMISSIONS = {
 	    "set_prod"
 	  ]),
   6: /* @__PURE__ */ new Set([
+    "rrhh_hub",
     "op_gps",
     "op_vruta",
     "op_cal",
@@ -2231,6 +2238,7 @@ const PERMISSIONS = {
     "op_vruta2"
   ]),
   7: /* @__PURE__ */ new Set([
+    "rrhh_hub",
     "op_cal",
     "op_menu_cam",
     "op_menu_gou",
@@ -2241,6 +2249,7 @@ const PERMISSIONS = {
   ]),
 		  8: /* @__PURE__ */ new Set([
 		    "dash_home",
+		    "rrhh_hub",
 		    "system_notifs",
 		    "op_rec",
 		    "op_mice",

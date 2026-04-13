@@ -192,6 +192,7 @@ def _is_admin(user: dict) -> bool:
     return ("SUPERADMIN" in r) or (r == "ADMIN") or ("JEFE DE OPERACIONES" in r) or ("COMPRAS" in r) or ("OPERACIONES" in r)
 
 @router.get("/qr", response_class=Response, response_model=None)
+@router.head("/qr", include_in_schema=False)
 def qr_png(
     p: str,
     size: int = 900,
@@ -267,6 +268,7 @@ def qr_png(
 
 
 @router.get("/m", include_in_schema=False)
+@router.head("/m", include_in_schema=False)
 def sgjo_mark_redirect(p: str) -> RedirectResponse:
     """
     Endpoint corto (para QR). Redirige a la vista de marcación.

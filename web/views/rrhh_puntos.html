@@ -20,7 +20,18 @@
     .in{ height: 36px; border-radius: 12px; border:1px solid rgba(15,23,42,.18); padding: 0 10px; font-weight: 800; }
     .btn{ height: 36px; border-radius: 12px; border:1px solid rgba(15,23,42,.20); padding: 0 12px; font-weight: 900; background: #fff; cursor:pointer; }
     .btn.primary{ background: rgba(25,195,125,.18); border-color: rgba(25,195,125,.35); }
-    .qrImg{ width: 220px; height: 220px; border-radius: 10px; border:1px solid rgba(15,23,42,.12); background:#fff; }
+    /* Importante: QR debe escanear desde pantalla y desde impresión.
+       - sin bordes redondeados (pueden “comerse” la zona quieta)
+       - scaling con pixelated para evitar blur/antialias */
+    .qrImg{
+      width: 320px;
+      height: 320px;
+      border-radius: 0;
+      border: 1px solid rgba(15,23,42,.12);
+      background: #fff;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
     .code{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 900; }
     .small{ font-size: 12px; opacity:.8; }
     .toast{ position: fixed; bottom: 12px; right: 12px; background: rgba(15,23,42,.92); color:#fff; padding: 10px 12px; border-radius: 12px; font-weight: 900; display:none; }
@@ -31,7 +42,7 @@
       .card{ box-shadow:none !important; }
       .wrap{ max-width: none; padding: 0; }
       .grid{ grid-template-columns: 1fr 1fr; }
-      .qrImg{ width: 260px; height: 260px; }
+      .qrImg{ width: 360px; height: 360px; }
       tr{ break-inside: avoid; page-break-inside: avoid; }
       thead{ display: table-header-group; }
     }
@@ -165,7 +176,7 @@
             <td>
               <img class="qrImg" src="${img}" alt="QR ${sede}" onerror="this.style.opacity='0.15'; this.title='No pude cargar QR';" />
               <div class="noPrint" style="margin-top:6px">
-                <a class="btn" href="${img}" target="_blank" rel="noopener">Descargar</a>
+                <a class="btn" href="${img}" target="_blank" rel="noopener" download>Descargar</a>
               </div>
               <div class="small muted noPrint" style="margin-top:6px">Si el QR no carga, usa el link: <span class="code">${markUrl}</span></div>
             </td>

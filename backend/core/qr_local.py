@@ -75,12 +75,13 @@ def make_qr_png(data: str, *, scale: int = 6, border: int = 4) -> bytes:
         img.save(buf, format="PNG", optimize=True)
         return buf.getvalue()
 
-    # Pure-Python grayscale PNG (color type 0).
+    # Pure-Python truecolor PNG (color type 2, RGB).
+    # Nota: algunos lectores/cámaras son más quisquillosos con grayscale; RGB es lo más compatible.
     # Build a full pixel grid (dim x dim) with sharp edges (no antialias).
-    white = 255
-    black = 0
-    # Initialize as white rows.
-    rows = [bytearray([white]) * dim for _ in range(dim)]
+    white_px = b"\xFF\xFF\xFF"
+    black_px = b"\x00\x00\x00"
+    # Initialize as white rows (RGB triplets).
+    rows = [bytearray(white_px * dim) for _ in range(dim)]
     for y in range(size):
         row = m.modules[y]
         for x in range(size):
@@ -90,7 +91,7 @@ def make_qr_png(data: str, *, scale: int = 6, border: int = 4) -> bytes:
             yy0 = (y + border) * scale
             for yy in range(yy0, yy0 + scale):
                 r = rows[yy]
-                r[xx0 : xx0 + scale] = bytes([black]) * scale
+                r[xx0 * 3 : (xx0 + scale) * 3] = black_px * scale
 
     # PNG scanlines: filter byte (0) + pixel bytes
     raw = bytearray()
@@ -105,7 +106,7 @@ def make_qr_png(data: str, *, scale: int = 6, border: int = 4) -> bytes:
         crc = zlib.crc32(data_b, crc) & 0xFFFFFFFF
         return ln + tag + data_b + struct.pack(">I", crc)
 
-    ihdr = struct.pack(">IIBBBBB", dim, dim, 8, 0, 0, 0, 0)  # 8-bit, grayscale
+    ihdr = struct.pack(">IIBBBBB", dim, dim, 8, 2, 0, 0, 0)  # 8-bit, truecolor RGB
     return b"".join(
         [
             b"\x89PNG\r\n\x1a\n",
@@ -230,8 +231,14 @@ class _QrCode:
                 xx = x + dx
                 yy = y + dy
                 if 0 <= xx < self._size and 0 <= yy < self._size:
-                    dist = max(abs(dx), abs(dy))
-                    self._set_function(xx, yy, dist in (0, 1, 2, 6))
+                    # Importante: dist se calcula desde el centro del patrón (3,3) dentro del bloque 7x7.
+                    # El bug clásico es medir desde (0,0) y terminar dibujando un bloque sólido en la esquina.
+                    dist = max(abs(dx - 3), abs(dy - 3))
+                    # Finder clásico:
+                    # - dist==3: borde externo negro (7x7)
+                    # - dist==2: anillo blanco
+                    # - dist<=1: centro negro (3x3)
+                    self._set_function(xx, yy, dist in (0, 1, 3))
 
     def _draw_alignment(self, x: int, y: int) -> None:
         for dy in range(-2, 3):
