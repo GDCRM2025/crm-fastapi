@@ -169,8 +169,24 @@ def modality_for_user(role: str, when: datetime) -> str:
 
 def get_user_rut(db: Session, id_usuario: int) -> str:
     try:
-        v = db.execute(text("SELECT COALESCE(rut,'') FROM public.usuarios WHERE id_usuario=:id LIMIT 1"), {"id": int(id_usuario)}).scalar()
-        return str(v or "").strip()
+        uid = int(id_usuario)
+        v = db.execute(text("SELECT COALESCE(rut,'') FROM public.usuarios WHERE id_usuario=:id LIMIT 1"), {"id": uid}).scalar()
+        rut = str(v or "").strip()
+        if rut:
+            return rut
+        # Fallback: si el usuario está vinculado en RRHH, usa ese RUT (evita depender de usuarios.rut).
+        v2 = db.execute(
+            text(
+                """
+                SELECT COALESCE(rut,'')
+                FROM public.rrhh_staff
+                WHERE id_usuario=:id AND is_active IS TRUE
+                ORDER BY id_staff DESC
+                LIMIT 1
+                """
+            ),
+            {"id": uid},
+        ).scalar()
+        return str(v2 or "").strip()
     except Exception:
         return ""
-

@@ -696,18 +696,37 @@ def admin_device_request_reject(
 
 def _device_enrolled(db: Session, uid: int, device_id: str, user_agent: str) -> bool:
     try:
+        # Nota: NO validamos por UA hash porque iOS puede cambiar el User-Agent
+        # entre Safari/PWA/escáner QR, y eso rompe la marcación aun cuando el
+        # dispositivo ya fue aprobado. El control real aquí es (id_usuario, device_id)
+        # + revocación. Si cambia el UA, actualizamos el hash best-effort.
         h = ua_hash(user_agent or "")
         v = db.execute(
             text(
                 """
                 SELECT 1
                 FROM public.sgjo_dispositivos
-                WHERE id_usuario=:u AND device_id=:d AND revoked_at IS NULL AND ua_hash=:h
+                WHERE id_usuario=:u AND device_id=:d AND revoked_at IS NULL
                 LIMIT 1
                 """
             ),
-            {"u": int(uid), "d": device_id, "h": h},
+            {"u": int(uid), "d": device_id},
         ).scalar()
+        if v and h:
+            try:
+                db.execute(
+                    text(
+                        """
+                        UPDATE public.sgjo_dispositivos
+                        SET ua_hash=:h
+                        WHERE id_usuario=:u AND device_id=:d AND revoked_at IS NULL
+                        """
+                    ),
+                    {"u": int(uid), "d": device_id, "h": h},
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
         return bool(v)
     except Exception:
         return False
