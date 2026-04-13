@@ -1489,6 +1489,7 @@ def dashboard_ops_alertas(
 @router.get("/dashboard")
 def dashboard(
     id_marca: int | None = None,
+    venta_source: str = "confirmados",  # confirmados (monto_cotizado) | eventos (fin_eventos)
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
@@ -1825,8 +1826,8 @@ def dashboard(
                     {**conf_params, "today": today},
                 ).scalar_one()
 
-        # Fuente oficial de venta (si existe): fin_eventos.monto_bruto por fecha_evento (semana actual).
-        if _table_exists_pg(db, "fin_eventos"):
+        # Fuente alternativa: fin_eventos (útil para finanzas). Por defecto reportamos confirmados (monto_cotizado).
+        if str(venta_source or "").lower() in ("eventos", "fin_eventos") and _table_exists_pg(db, "fin_eventos"):
             try:
                 q_sales = f"""
                     SELECT fe.fecha_evento::date AS dia,
@@ -2068,6 +2069,7 @@ def dashboard_reportes(
     fecha_termino: Optional[str] = None,
     periodo: Optional[str] = None,  # mtd | ytd | range
     id_marca: int | None = None,
+    venta_source: str = "confirmados",  # confirmados (monto_cotizado) | eventos (fin_eventos)
     top_n: int = 20,
     productos_order: str = "monto",
     comunas_order: str = "monto",
@@ -2084,6 +2086,7 @@ def dashboard_reportes(
         role = (me.get("role") or me.get("rol") or "").upper()
         marcas = _fetch_marcas_ids(db, me)
         only_own = not _is_admin(role)
+        use_fin_eventos = str(venta_source or "").lower() in ("eventos", "fin_eventos")
 
         # Base de fecha por defecto: fecha_evento.
         if _col_exists(db, "leads", "fecha_evento"):
@@ -2192,7 +2195,7 @@ def dashboard_reportes(
         clientes: list[dict] = []
         try:
             lim = max(5, min(100, int(top_n or 20)))
-            if _table_exists_pg(db, "fin_eventos"):
+            if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
                 q_clientes = f"""
                     SELECT COALESCE(fe.cliente, {name_expr}, '—') AS cliente,
                            COUNT(*)::int AS cantidad,
@@ -2226,7 +2229,7 @@ def dashboard_reportes(
         comunas: list[dict] = []
         try:
             lim = max(5, min(100, int(top_n or 20)))
-            if _table_exists_pg(db, "fin_eventos"):
+            if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
                 q_comunas = f"""
                     SELECT COALESCE(fe.comuna, c.nombre,'—') AS comuna,
                            COUNT(*)::int AS cantidad,
@@ -2292,7 +2295,7 @@ def dashboard_reportes(
         # Venta por marca (torta) para el rango/confirmados
         ventas_por_marca: list[dict] = []
         try:
-            if _table_exists_pg(db, "fin_eventos"):
+            if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
                 q_vm = f"""
                     SELECT COALESCE(m.nombre, m.marca,'—') AS marca,
                            COUNT(*)::int AS cantidad,
@@ -2435,7 +2438,7 @@ def dashboard_reportes(
 
         venta_total = 0.0
         try:
-            if _table_exists_pg(db, "fin_eventos"):
+            if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
                 venta_total = float(
                     db.execute(
                         text(
@@ -2503,7 +2506,7 @@ def dashboard_reportes(
                 baseline_map = {}
 
             actual_by_marca: dict[int, float] = {}
-            if _table_exists_pg(db, "fin_eventos"):
+            if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
                 arows = db.execute(
                     text(
                         f"""

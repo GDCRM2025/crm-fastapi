@@ -179,6 +179,10 @@
         <select id="marca" class="sel" title="Marca">
           <option value="">Todas las marcas</option>
         </select>
+        <select id="ventaSource" class="sel" title="Fuente de venta">
+          <option value="confirmados" selected>Confirmados (monto cotizado)</option>
+          <option value="eventos">Eventos (finanzas)</option>
+        </select>
         <select id="periodo" class="sel" title="Periodo">
           <option value="mtd" selected>MTD</option>
           <option value="ytd">YTD</option>
@@ -1157,7 +1161,7 @@
       qs("#expCli")?.addEventListener("click", ()=> exportCSV("clientes"));
 
       // Auto-reload when changing filters/knobs
-      ["topN","prodOrd","comOrd","cliOrd","marca"].forEach(id=>{
+      ["topN","prodOrd","comOrd","cliOrd","marca","ventaSource"].forEach(id=>{
         const el = qs("#"+id);
         if (!el) return;
         el.addEventListener("change", ()=> qs("#go")?.click());
@@ -1274,6 +1278,7 @@
       const ini = qs("#ini").value;
       const fin = qs("#fin").value;
       const mid = qs("#marca").value;
+      const ventaSource = String(qs("#ventaSource")?.value || "confirmados");
       const topN = String(qs("#topN")?.value || "20");
       const prodOrd = String(qs("#prodOrd")?.value || "monto");
       const comOrd = String(qs("#comOrd")?.value || "monto");
@@ -1282,11 +1287,13 @@
 
       const dashQs = new URLSearchParams();
       if (mid) dashQs.set("id_marca", mid);
+      if (ventaSource) dashQs.set("venta_source", ventaSource);
       const repQs = new URLSearchParams();
       if (ini) repQs.set("fecha_inicio", ini);
       if (fin) repQs.set("fecha_termino", fin);
       if (periodo) repQs.set("periodo", periodo);
       if (mid) repQs.set("id_marca", mid);
+      if (ventaSource) repQs.set("venta_source", ventaSource);
       repQs.set("top_n", topN);
       repQs.set("productos_order", prodOrd);
       repQs.set("comunas_order", comOrd);
