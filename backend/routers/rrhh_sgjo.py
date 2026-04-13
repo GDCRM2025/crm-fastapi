@@ -581,6 +581,7 @@ def enroll_device(
 @router.get("/admin/device_requests")
 def admin_device_requests(
     status: str = "pending",
+    id_usuario: int | None = None,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -590,19 +591,28 @@ def admin_device_requests(
     st = str(status or "pending").strip().lower()
     if st not in ("pending", "approved", "rejected"):
         st = "pending"
+    where = "WHERE r.status = :st"
+    params: dict[str, Any] = {"st": st}
+    if id_usuario is not None:
+        try:
+            uid = int(id_usuario)
+            where += " AND r.id_usuario = :uid"
+            params["uid"] = uid
+        except Exception:
+            pass
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT r.id_request, r.created_at, r.decided_at, r.status, r.id_usuario, r.device_id,
                    u.username, COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display
             FROM public.sgjo_device_requests r
             LEFT JOIN public.usuarios u ON u.id_usuario = r.id_usuario
-            WHERE r.status = :st
+            {where}
             ORDER BY r.created_at DESC, r.id_request DESC
             LIMIT 200
             """
         ),
-        {"st": st},
+        params,
     ).mappings().all()
     return {"ok": True, "items": [dict(r) for r in rows]}
 

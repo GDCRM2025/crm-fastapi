@@ -131,16 +131,22 @@
       qs("#btnBack").style.display = historyStack.length ? "" : "none";
     });
 
-    function isAdminRole(role){
+    function isSuperRole(role){
       const r = String(role||"").toUpperCase();
-      return r.includes("SUPERADMIN") || r === "ADMIN" || r.includes("FINAN") || r.includes("RRHH") || r.includes("RECURSOS HUMANOS") || r.includes("JEFE") || r.includes("OPERACIONES") || r.includes("COMPRAS");
+      return r.includes("SUPERADMIN") || r === "ADMIN" || r.includes("FINAN") || r === "RRHH" || r.includes("RECURSOS HUMANOS");
+    }
+    function isManagerRole(role){
+      const r = String(role||"").toUpperCase();
+      return r.includes("JEFE") || r.includes("OPERACIONES") || r.includes("COMPRAS");
     }
 
-    function buildTabs(isAdmin){
+    function buildTabs(role){
+      const superRRHH = isSuperRole(role);
+      const managerRRHH = isManagerRole(role);
       const tabs = [
         { id:"portal", label:"Mi portal", url: URLS.portal },
       ];
-      if (isAdmin){
+      if (superRRHH){
         tabs.push(
           { id:"colab", label:"Colaboradores", url: URLS.colab },
           { id:"nomina", label:"Nómina", url: URLS.nomina },
@@ -148,6 +154,11 @@
           { id:"puntos", label:"Puntos + QR", url: URLS.puntos },
           { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
           { id:"sol", label:"Solicitudes (admin)", url: URLS.sol },
+        );
+      }else if (managerRRHH){
+        tabs.push(
+          { id:"turnos", label:"Turnos + horarios", url: URLS.turnos },
+          { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
         );
       }
       tabs.push({ id:"sgjo", label:"Marcar", url: URLS.sgjo });
@@ -172,9 +183,8 @@
       const r = await fetch(apiURL("/me"), { headers: headers() });
       const me = await r.json().catch(()=>({}));
       const role = me.role || me.rol || "";
-      const admin = isAdminRole(role);
       qs("#sub").textContent = `${esc(me.name || me.nombre || me.username || me.email || "Usuario")} · ${esc(String(role||"").toUpperCase() || "—")}`;
-      TABS = buildTabs(admin);
+      TABS = buildTabs(role);
       qs("#tabs").innerHTML = TABS.map(t => `<button class="tab" data-tab="${esc(t.id)}">${esc(t.label)}</button>`).join("");
       for (const b of Array.from(qs("#tabs").querySelectorAll("button[data-tab]"))){
         b.addEventListener("click", ()=> openTab(b.getAttribute("data-tab")));

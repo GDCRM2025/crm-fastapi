@@ -288,11 +288,27 @@ def _role_key(user: dict) -> str:
 
 def _is_rrhh_admin(user: dict) -> bool:
     r = _role_key(user)
-    return ("SUPERADMIN" in r) or (r == "ADMIN") or (r == "SUPER ADMIN") or (r == "SUPER_ADMIN")
+    # Admin RRHH (gestión operativa: turnos/horarios/marcaciones/solicitudes)
+    if ("SUPERADMIN" in r) or (r == "ADMIN") or (r == "SUPER ADMIN") or (r == "SUPER_ADMIN"):
+        return True
+    if ("FINAN" in r) or (r == "RRHH") or ("RECURSOS HUMANOS" in r):
+        return True
+    if ("JEFE" in r) or ("OPERACIONES" in r) or ("COMPRAS" in r):
+        return True
+    return False
+
+def _is_rrhh_super(user: dict) -> bool:
+    # Super RRHH (datos maestros: colaboradores + vincular usuarios + nómina completa)
+    r = _role_key(user)
+    return ("SUPERADMIN" in r) or (r == "ADMIN") or ("FINAN" in r) or (r == "RRHH") or ("RECURSOS HUMANOS" in r)
 
 def _require_rrhh_admin(user: dict) -> None:
     if not _is_rrhh_admin(user):
         raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+
+def _require_rrhh_super(user: dict) -> None:
+    if not _is_rrhh_super(user):
+        raise HTTPException(status_code=403, detail="Solo SuperAdmin/Admin/RRHH/Finanzas.")
 
 
 class LinkUserIn(BaseModel):
@@ -1105,7 +1121,7 @@ def adelanto_delete(id_adelanto: int, db: Session = Depends(get_db), me: dict = 
 @router.get("/staff")
 def staff_list(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
-    _require_rrhh_admin(me)
+    _require_rrhh_super(me)
     try:
         rows = db.execute(
             text(
@@ -1135,7 +1151,7 @@ def staff_list(db: Session = Depends(get_db), me: dict = Depends(get_current_use
 @router.get("/staff/{id_staff}")
 def staff_get(id_staff: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
-    _require_rrhh_admin(me)
+    _require_rrhh_super(me)
     row = db.execute(
         text("SELECT * FROM rrhh_staff WHERE id_staff=:id LIMIT 1"),
         {"id": int(id_staff)},
@@ -1165,7 +1181,7 @@ def users_list(
     Solo Admin/SuperAdmin.
     """
     _ensure_tables(db)
-    _require_rrhh_admin(me)
+    _require_rrhh_super(me)
     limit = max(1, min(int(limit or 50), 200))
     offset = max(0, int(offset or 0))
     q0 = (q or "").strip()
@@ -1209,7 +1225,7 @@ def staff_link_user(
     Solo Admin/SuperAdmin.
     """
     _ensure_tables(db)
-    _require_rrhh_admin(me)
+    _require_rrhh_super(me)
     row_staff = db.execute(
         text("SELECT id_staff FROM rrhh_staff WHERE id_staff=:id LIMIT 1"),
         {"id": int(id_staff)},
@@ -1267,7 +1283,7 @@ def staff_unlink_user(
     me: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     _ensure_tables(db)
-    _require_rrhh_admin(me)
+    _require_rrhh_super(me)
     db.execute(text("UPDATE rrhh_staff SET id_usuario=NULL WHERE id_staff=:id"), {"id": int(id_staff)})
     db.commit()
     return {"ok": True, "id_staff": int(id_staff)}
@@ -1400,7 +1416,7 @@ def salud_list(db: Session = Depends(get_db), me: dict = Depends(get_current_use
 @router.post("/staff")
 def staff_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
-    _require_rrhh_admin(me)
+    _require_rrhh_super(me)
     colaborador = (body.get("colaborador") or "").strip()
     if not colaborador:
         return {"ok": False, "detail": "colaborador requerido"}
@@ -1461,7 +1477,7 @@ def staff_bulk_upsert(body: dict, db: Session = Depends(get_db), me: dict = Depe
                     ficha?: {...}, hh_liquido?, situacion_contractual?, jefe_directo?, area?, cargo? } ] }
     """
     _ensure_tables(db)
-    _require_rrhh_admin(me)
+    _require_rrhh_super(me)
     items = body.get("items") or []
     if not isinstance(items, list) or not items:
         return {"ok": False, "detail": "items requerido"}
@@ -1605,7 +1621,7 @@ def staff_bulk_upsert(body: dict, db: Session = Depends(get_db), me: dict = Depe
 @router.put("/staff/{id_staff}")
 def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
-    _require_rrhh_admin(me)
+    _require_rrhh_super(me)
     prev = {}
     try:
         prev = (
@@ -1707,7 +1723,7 @@ def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db), me: d
 @router.delete("/staff/{id_staff}")
 def staff_delete(id_staff: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
-    _require_rrhh_admin(me)
+    _require_rrhh_super(me)
     db.execute(text("DELETE FROM rrhh_staff WHERE id_staff=:id"), {"id": id_staff})
     db.commit()
     return {"ok": True}

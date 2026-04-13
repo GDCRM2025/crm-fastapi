@@ -130,6 +130,7 @@
         <button class="stepTab" type="button" data-step="4">Tallas</button>
         <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
         <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
       </div>
       <div class="row" style="margin-top:10px;">
         <input class="inp" id="stArea" placeholder="Área" />
@@ -160,6 +161,7 @@
         <button class="stepTab" type="button" data-step="4">Tallas</button>
         <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
         <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
       </div>
       <div class="row" style="margin-top:10px;">
         <input class="inp" id="stApellidoP" placeholder="Apellido paterno (obligatorio)" />
@@ -230,6 +232,7 @@
         <button class="stepTab" type="button" data-step="4">Tallas</button>
         <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
         <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
       </div>
       <div class="muted" style="margin-top:6px;">Puedes agregar 1 o más familiares, o omitir.</div>
       <div class="row" style="margin-top:10px;">
@@ -286,6 +289,7 @@
         <button class="stepTab active" type="button" data-step="4">Tallas</button>
         <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
         <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
       </div>
       <div class="row" style="margin-top:10px;">
         <input class="inp" id="stPantalon" placeholder="Pantalón" />
@@ -308,14 +312,15 @@
 	        <strong>5. Afiliaciones</strong>
 	        <button class="btn" data-close>Cancelar</button>
 	      </div>
-	      <div class="stepTabs" data-stepbar>
-	        <button class="stepTab" type="button" data-step="1">Cargo</button>
-	        <button class="stepTab" type="button" data-step="2">Personales</button>
-	        <button class="stepTab" type="button" data-step="3">Familia</button>
-	        <button class="stepTab" type="button" data-step="4">Tallas</button>
-	        <button class="stepTab active" type="button" data-step="5">AFP/Salud</button>
-	        <button class="stepTab" type="button" data-step="6">Bancos</button>
-	      </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab active" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
+      </div>
 	      <div class="row" style="margin-top:10px;">
 	        <select class="inp" id="stRol">
 	          <option value="">Rol (obligatorio)</option>
@@ -358,6 +363,7 @@
 	        <button class="stepTab" type="button" data-step="4">Tallas</button>
 	        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
 	        <button class="stepTab active" type="button" data-step="6">Bancos</button>
+	        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
 	      </div>
 	      <div class="row" style="margin-top:10px;">
 	        <input class="inp" id="stCuentaNum" placeholder="Nº de cuenta (obligatorio)" />
@@ -383,6 +389,40 @@
           <option>Banco Internacional</option>
           <option>Banco BTG Pactual</option>
         </select>
+        <select class="inp" id="stActivo">
+          <option value="true">Activo</option>
+          <option value="false">Inactivo</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:12px; justify-content:flex-end;">
+        <button class="btn" id="back6">Atrás</button>
+        <button class="btn" id="next6">Siguiente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paso 7: Enrolamiento -->
+  <div class="modal" id="m7">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <strong>7. Enrolamiento y marcación</strong>
+        <button class="btn" data-close>Cancelar</button>
+      </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab active" type="button" data-step="7">Enrolamiento</button>
+      </div>
+
+      <div class="muted" style="margin-top:6px;">
+        El colaborador debe tener “Usuario CRM” vinculado para enrolar el dispositivo (GPS/QR).
+      </div>
+
+      <div class="row" style="margin-top:10px;">
         <select class="inp" id="stPuedeMarcar" title="Habilitación de marcación">
           <option value="true">Puede marcar</option>
           <option value="false">Bloqueado</option>
@@ -392,14 +432,30 @@
           <option value="QR">Solo QR</option>
           <option value="GEO">Solo GPS</option>
         </select>
-        <select class="inp" id="stActivo">
-          <option value="true">Activo</option>
-          <option value="false">Inactivo</option>
-        </select>
       </div>
+
+      <div style="margin-top:12px; padding:12px; border-radius:14px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.10);">
+        <h4>Solicitudes de enrolamiento (pendientes)</h4>
+        <div class="table-wrap" style="margin-top:8px; max-height:34vh;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Fecha</th>
+                <th>Dispositivo</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="enrolReqRows">
+              <tr><td class="muted">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="row" style="margin-top:12px; justify-content:flex-end;">
-        <button class="btn" id="back6">Atrás</button>
-        <button class="btn" id="saveStaff">Guardar</button>
+        <button class="btn" id="back7">Atrás</button>
+        <button class="btn" id="saveStaff2">Guardar</button>
       </div>
     </div>
   </div>
@@ -696,9 +752,10 @@
         const m = String(id || "");
         const mm = m.startsWith("#m") ? m.slice(2) : "";
         const s = Number(mm || 0);
-        if (Number.isFinite(s) && s >= 1 && s <= 6){
+        if (Number.isFinite(s) && s >= 1 && s <= 7){
           setStepActive(s);
           if (s === 3) renderFamiliares();
+          if (s === 7) loadEnrolRequestsForEditing();
         }
       }catch(_){}
     }
@@ -707,7 +764,7 @@
 
     function openStep(step){
       const s = Number(step || 0);
-      if (!Number.isFinite(s) || s < 1 || s > 6) return;
+      if (!Number.isFinite(s) || s < 1 || s > 7) return;
       openModal(`#m${s}`);
     }
     document.querySelectorAll(".stepTabs .stepTab").forEach(btn=>{
@@ -796,6 +853,80 @@
       qs("#stMarcacionMethod").value = String(item?.marcacion_method || "BOTH").toUpperCase();
       qs("#stActivo").value = String(item?.is_active ?? true);
       openStep(1);
+    }
+
+    async function loadEnrolRequestsForEditing(){
+      const box = qs("#enrolReqRows");
+      if (!box) return;
+      box.innerHTML = `<tr><td class="muted">Cargando...</td></tr>`;
+
+      const idu = Number(staffEditing?.id_usuario || 0) || 0;
+      if (!idu){
+        box.innerHTML = `<tr><td class="muted">Este colaborador no tiene usuario CRM vinculado. Vincúlalo en “Usuario CRM” para poder enrolar y aprobar dispositivos.</td></tr>`;
+        return;
+      }
+
+      try{
+        const url = `/rrhh/sgjo/admin/device_requests?status=pending&id_usuario=${encodeURIComponent(String(idu))}`;
+        const r = await fetch(apiURL(url), { headers: headers() });
+        const j = await r.json().catch(()=>({}));
+        if (!r.ok || !j?.ok){
+          const msg = j?.detail || (await r.text().catch(()=> "")) || String(r.status);
+          throw new Error(msg);
+        }
+        const items = Array.isArray(j.items) ? j.items : [];
+        if (!items.length){
+          box.innerHTML = `<tr><td class="muted">Sin solicitudes pendientes.</td></tr>`;
+          return;
+        }
+        box.innerHTML = items.map(it => `
+          <tr>
+            <td><strong>#${escapeHtml(it.id_request)}</strong></td>
+            <td>${escapeHtml(it.created_at || "—")}</td>
+            <td>${escapeHtml(it.device_id || "—")}</td>
+            <td>
+              <button class="btn" data-enrol-approve="${escapeHtml(it.id_request)}">Aprobar</button>
+              <button class="btn" data-enrol-reject="${escapeHtml(it.id_request)}">Rechazar</button>
+            </td>
+          </tr>
+        `).join("");
+        box.querySelectorAll("[data-enrol-approve]").forEach(btn=>{
+          btn.addEventListener("click", async ()=>{
+            const idr = Number(btn.getAttribute("data-enrol-approve") || 0) || 0;
+            if (!idr) return;
+            if (!confirm("¿Aprobar este dispositivo?")) return;
+            const rr = await fetch(apiURL(`/rrhh/sgjo/admin/device_requests/${idr}/approve`), { method:"POST", headers: headers() });
+            if (!rr.ok){
+              const t = await rr.text().catch(()=> "");
+              toast("No se pudo aprobar: " + (t || rr.status));
+              return;
+            }
+            toast("Dispositivo aprobado");
+            await loadEnrolRequestsForEditing();
+          });
+        });
+        box.querySelectorAll("[data-enrol-reject]").forEach(btn=>{
+          btn.addEventListener("click", async ()=>{
+            const idr = Number(btn.getAttribute("data-enrol-reject") || 0) || 0;
+            if (!idr) return;
+            const note = prompt("Motivo (opcional)") || "";
+            const rr = await fetch(apiURL(`/rrhh/sgjo/admin/device_requests/${idr}/reject`), {
+              method:"POST",
+              headers: { "Content-Type":"application/json", ...headers() },
+              body: JSON.stringify({ note }),
+            });
+            if (!rr.ok){
+              const t = await rr.text().catch(()=> "");
+              toast("No se pudo rechazar: " + (t || rr.status));
+              return;
+            }
+            toast("Solicitud rechazada");
+            await loadEnrolRequestsForEditing();
+          });
+        });
+      }catch(err){
+        box.innerHTML = `<tr><td class="muted">No se pudo cargar solicitudes: ${escapeHtml(String(err?.message||err))}</td></tr>`;
+      }
     }
 
     function renderFamiliares(){
@@ -896,6 +1027,8 @@
     qs("#back5").onclick = () => openModal('#m4');
     qs("#next5").onclick = () => openModal('#m6');
     qs("#back6").onclick = () => openModal('#m5');
+    qs("#next6").onclick = () => openModal('#m7');
+    qs("#back7").onclick = () => openModal('#m6');
 
     qs("#stAfp").addEventListener("change", () => {
       const sel = qs("#stAfp").value;
@@ -917,7 +1050,7 @@
       setTimeout(()=>t.remove(), 2200);
     }
 
-    qs("#saveStaff").onclick = async () => {
+    async function saveStaffNow(){
       if (!requiredOk()) return;
       const ficha = {
         area: qs("#stArea").value,
@@ -984,7 +1117,12 @@
       toast("Colaborador guardado");
       closeAll();
       await loadStaff();
-    };
+    }
+
+    const btnSaveA = qs("#saveStaff");
+    if (btnSaveA) btnSaveA.onclick = saveStaffNow;
+    const btnSaveB = qs("#saveStaff2");
+    if (btnSaveB) btnSaveB.onclick = saveStaffNow;
 
     async function loadStaff(){
       const r = await fetch(apiURL("/rrhh/staff"), { headers: headers() });
