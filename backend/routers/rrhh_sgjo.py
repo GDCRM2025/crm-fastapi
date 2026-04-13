@@ -196,6 +196,7 @@ def _is_admin(user: dict) -> bool:
 def qr_png(
     p: str,
     size: int = 900,
+    src: str = "auto",
     request: Request = None,  # type: ignore[assignment]
 ) -> Response:
     """
@@ -233,39 +234,67 @@ def qr_png(
 
     # Usamos un endpoint corto para evitar QRs densos (mejor lectura en cámara).
     mark_url = f"{app_url}/crm/rrhh/sgjo/m?p={quote_plus(code)}"
-    # Generación 100% local (sin llamadas externas) para que siempre funcione en hosting.
-    try:
-        png = make_qr_png_target(mark_url, target_px=sz, border=10)
+    src0 = str(src or "auto").strip().lower()
+    if src0 not in ("auto", "google", "local", "svg"):
+        src0 = "auto"
+
+    def _resp_png(payload: bytes) -> Response:
         return Response(
-            content=png,
+            content=payload,
             media_type="image/png",
             headers={
-                # No cache: si el QR cambia (bugfix/mejora), los teléfonos/edge caches podían servir el PNG viejo y “parece que no hace nada”.
                 "Cache-Control": "no-store",
                 "Content-Disposition": f'inline; filename="QR-{code}.png"',
             },
         )
-    except Exception:
-        # Fallback SVG (igual imprimible y visible aunque Pillow no esté OK).
+
+    # Hotfix: generador externo estable (Google Charts) como primera opción.
+    # Motivo: lectores (iPhone/BarcodeDetector) no detectan ciertos QRs generados localmente.
+    # El QR solo abre un endpoint (no marca sin login), así que el riesgo es bajo y esto nos desbloquea.
+    if src0 in ("auto", "google"):
         try:
-            scale = 8 if sz >= 520 else 7 if sz >= 420 else 6
-            svg = make_qr_svg(mark_url, scale=scale, border=10)
-            return Response(
-                content=svg,
-                media_type="image/svg+xml",
-                headers={"Cache-Control": "public, max-age=86400"},
+            import requests
+            from urllib.parse import quote_plus
+
+            # L|4: ECC Low, margen 4 (quiet zone)
+            gurl = (
+                "https://chart.googleapis.com/chart"
+                f"?cht=qr&chs={sz}x{sz}&chld=L|4&chl={quote_plus(mark_url)}"
             )
+            r = requests.get(gurl, timeout=6)
+            if r.status_code == 200 and r.content and r.headers.get("content-type", "").startswith("image/"):
+                return _resp_png(r.content)
         except Exception:
-            # Worst-case fallback 1x1
-            return Response(
-                content=(
-                    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06"
-                    b"\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00"
-                    b"\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
-                ),
-                media_type="image/png",
-                headers={"Cache-Control": "no-store"},
-            )
+            pass
+
+    # Generación local (fallback)
+    if src0 in ("auto", "local"):
+        try:
+            png = make_qr_png_target(mark_url, target_px=sz, border=10)
+            return _resp_png(png)
+        except Exception:
+            pass
+
+    # SVG (útil para impresión)
+    try:
+        scale = 8 if sz >= 520 else 7 if sz >= 420 else 6
+        svg = make_qr_svg(mark_url, scale=scale, border=10)
+        return Response(
+            content=svg,
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "no-store"},
+        )
+    except Exception:
+        # Worst-case fallback 1x1
+        return Response(
+            content=(
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06"
+                b"\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00"
+                b"\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
+            ),
+            media_type="image/png",
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 @router.get("/m", include_in_schema=False)
