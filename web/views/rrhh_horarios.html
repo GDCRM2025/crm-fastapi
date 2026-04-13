@@ -43,6 +43,7 @@
       <select class="inp" id="selTurno"><option value="">Turno…</option></select>
       <input class="inp" id="hDesde" type="date" />
       <input class="inp" id="hHasta" type="date" />
+      <label class="chk" style="min-width:auto;"><input type="checkbox" id="chkIndef" /> Indefinido</label>
       <span class="pill">Días: si no marcas, aplica a todos</span>
     </div>
     <div class="row" style="margin-top:8px;">
@@ -125,7 +126,7 @@
     }
 
     async function loadStaff(){
-      const r = await fetch(apiURL("/rrhh/staff"), { headers: headers() });
+      const r = await fetch(apiURL("/rrhh/staff/assignable"), { headers: headers() });
       const data = await r.json().catch(()=>({}));
       const items = data.items || [];
       qs("#selStaff").innerHTML = `<option value="">Colaborador…</option>` + items.map(s=>`<option value="${s.id_staff}">${s.colaborador || ("#"+s.id_staff)}</option>`).join("");
@@ -142,7 +143,7 @@
       const items = data.items || [];
       const staffMap = {};
       try{
-        const st = await fetch(apiURL("/rrhh/staff"), { headers: headers() }).then(x=>x.json());
+        const st = await fetch(apiURL("/rrhh/staff/assignable"), { headers: headers() }).then(x=>x.json());
         (st.items||[]).forEach(s=> staffMap[String(s.id_staff)] = s.colaborador || ("#"+s.id_staff));
       }catch(_){}
       qs("#rows").innerHTML = items.map(h=>`
@@ -150,7 +151,7 @@
           <td><strong>${staffMap[String(h.id_staff)] || ("#"+h.id_staff)}</strong></td>
           <td>${h.turno_nombre || "—"} (${h.hora_entrada || ""}-${h.hora_salida || ""})</td>
           <td>${String(h.desde||"").slice(0,10) || "—"}</td>
-          <td>${h.hasta ? String(h.hasta).slice(0,10) : "—"}</td>
+          <td>${h.hasta ? String(h.hasta).slice(0,10) : "Indefinido"}</td>
           <td>${fmtMask(h.dow_mask)}</td>
         </tr>
       `).join("") || `<tr><td class="muted">Sin horarios.</td></tr>`;
@@ -161,7 +162,7 @@
         id_staff: Number(qs("#selStaff").value || 0),
         id_turno: Number(qs("#selTurno").value || 0),
         desde: qs("#hDesde").value,
-        hasta: qs("#hHasta").value || null,
+        hasta: (qs("#chkIndef")?.checked ? null : (qs("#hHasta").value || null)),
         dow_mask: getDowMask(),
       };
       if (!payload.id_staff || !payload.id_turno || !payload.desde){
@@ -184,6 +185,11 @@
     qs("#btnTurnos").addEventListener("click", ()=>{
       const base = API_BASE || "";
       window.location.href = `${base}/web/views/rrhh_turnos.html`;
+    });
+    qs("#chkIndef")?.addEventListener("change", ()=>{
+      const on = !!qs("#chkIndef").checked;
+      qs("#hHasta").disabled = on;
+      if (on) qs("#hHasta").value = "";
     });
     renderDow();
     loadStaff(); loadTurnos(); loadHorarios();

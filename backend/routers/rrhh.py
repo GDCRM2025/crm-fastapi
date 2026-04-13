@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 import json
 import datetime
+import os
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
@@ -309,6 +310,48 @@ def _require_rrhh_admin(user: dict) -> None:
 def _require_rrhh_super(user: dict) -> None:
     if not _is_rrhh_super(user):
         raise HTTPException(status_code=403, detail="Solo SuperAdmin/Admin/RRHH/Finanzas.")
+
+def _notify_rrhh_admins(db: Session, *, subject: str, body: str) -> None:
+    """
+    Notifica por correo a RRHH + Admin/SuperAdmin/Finanzas (best-effort).
+    """
+    try:
+        from backend.core.email import send_email_group
+
+        to_list: list[str] = []
+        rrhh_to = (os.getenv("RRHH_NOTIFY_TO") or "").strip()
+        if rrhh_to:
+            to_list.append(rrhh_to)
+        rrhh_cc = [x.strip() for x in str(os.getenv("RRHH_NOTIFY_CC") or "").split(",") if x.strip()]
+        to_list.extend(rrhh_cc)
+
+        rows = db.execute(
+            text(
+                """
+                SELECT DISTINCT COALESCE(NULLIF(btrim(email),''), NULL) AS email
+                FROM public.usuarios
+                WHERE COALESCE(is_active, TRUE) IS TRUE
+                  AND (
+                    upper(COALESCE(rol,'')) LIKE '%ADMIN%'
+                    OR upper(COALESCE(rol,'')) LIKE '%SUPER%'
+                    OR upper(COALESCE(rol,'')) LIKE '%FINAN%'
+                    OR upper(COALESCE(rol,'')) LIKE '%RRHH%'
+                    OR upper(COALESCE(rol,'')) LIKE '%RECURSOS%'
+                  )
+                """
+            )
+        ).fetchall()
+        for (em,) in rows or []:
+            if em and str(em).strip():
+                to_list.append(str(em).strip())
+
+        # de-dup y limpieza
+        to_list = list(dict.fromkeys([x for x in to_list if x]))
+        if not to_list:
+            return
+        send_email_group(to_list, subject, body)
+    except Exception:
+        return
 
 
 class LinkUserIn(BaseModel):
@@ -850,6 +893,21 @@ def turnos_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(
         },
     )
     db.commit()
+    try:
+        _notify_rrhh_admins(
+            db,
+            subject=f"RRHH · Turno actualizado/creado · {nombre}",
+            body=(
+                f"Turno: {nombre}\n"
+                f"Entrada: {hora_entrada}\n"
+                f"Salida: {hora_salida}\n"
+                f"Tolerancia (min): {int(body.get('tolerancia_min') or 0)}\n"
+                f"Colación auto: {bool(body.get('colacion_auto', True))}\n"
+                f"Colación: {(body.get('colacion_ini') or '13:30')}–{(body.get('colacion_fin') or '14:30')}\n"
+            ),
+        )
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -871,6 +929,52 @@ def horarios_assign(body: dict, db: Session = Depends(get_db), me: dict = Depend
         dow_mask = int(dow_mask) if dow_mask is not None and str(dow_mask).strip() != "" else None
     except Exception:
         dow_mask = None
+
+    # Validación: no superar 42 horas semanales (con colación auto=1h si aplica).
+    try:
+        t = db.execute(
+            text(
+                """
+                SELECT hora_entrada, hora_salida, COALESCE(colacion_auto, TRUE) AS colacion_auto
+                FROM rrhh_turnos
+                WHERE id_turno=:id AND is_active IS TRUE
+                LIMIT 1
+                """
+            ),
+            {"id": int(id_turno)},
+        ).mappings().first()
+        if t:
+            he = str(t.get("hora_entrada") or "")
+            hs = str(t.get("hora_salida") or "")
+
+            def _hm(s: str) -> int:
+                parts = (s or "").strip().split(":")
+                if len(parts) < 2:
+                    return 0
+                return int(parts[0]) * 60 + int(parts[1])
+
+            m_in = _hm(he)
+            m_out = _hm(hs)
+            if m_out <= m_in:
+                m_out += 24 * 60
+            dur_min = max(0, m_out - m_in)
+            if bool(t.get("colacion_auto")):
+                dur_min = max(0, dur_min - 60)
+
+            if dow_mask is None:
+                day_count = 7
+            else:
+                day_count = sum(1 for k in range(7) if int(dow_mask) & (1 << k))
+
+            weekly_hours = (dur_min / 60.0) * float(day_count or 0)
+            if weekly_hours > 42.0 + 1e-6:
+                raise HTTPException(status_code=400, detail=f"Horario excede 42h/semana (≈ {weekly_hours:.1f}h). Ajusta días o el turno.")
+    except HTTPException:
+        raise
+    except Exception:
+        # Best-effort: no bloquea si falla el cálculo.
+        pass
+
     db.execute(
         text(
             """
@@ -881,6 +985,30 @@ def horarios_assign(body: dict, db: Session = Depends(get_db), me: dict = Depend
         {"s": id_staff, "t": id_turno, "d": desde, "h": hasta, "m": dow_mask},
     )
     db.commit()
+    try:
+        st = db.execute(
+            text("SELECT colaborador, COALESCE(centro_costo,''), COALESCE(rol,'') FROM rrhh_staff WHERE id_staff=:id LIMIT 1"),
+            {"id": int(id_staff)},
+        ).first()
+        tn = db.execute(
+            text("SELECT nombre, hora_entrada, hora_salida FROM rrhh_turnos WHERE id_turno=:id LIMIT 1"),
+            {"id": int(id_turno)},
+        ).first()
+        _notify_rrhh_admins(
+            db,
+            subject="RRHH · Horario asignado",
+            body=(
+                f"Colaborador: {(st[0] if st else id_staff)}\n"
+                f"Centro de costo: {(st[1] if st else '')}\n"
+                f"Rol: {(st[2] if st else '')}\n"
+                f"Turno: {(tn[0] if tn else id_turno)} ({(tn[1] if tn else '')}-{(tn[2] if tn else '')})\n"
+                f"Desde: {desde}\n"
+                f"Hasta: {hasta or 'Indefinido'}\n"
+                f"Días mask: {dow_mask if dow_mask is not None else 'Todos'}\n"
+            ),
+        )
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -1146,6 +1274,26 @@ def staff_list(db: Session = Depends(get_db), me: dict = Depends(get_current_use
     except Exception as e:
         db.rollback()
         return {"ok": False, "detail": str(e)}
+
+@router.get("/staff/assignable")
+def staff_assignable(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """
+    Lista acotada de colaboradores para asignar horarios/turnos.
+    Visible para Admin RRHH (incluye Jefe Operaciones/Compras/Operaciones).
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    rows = db.execute(
+        text(
+            """
+            SELECT id_staff, colaborador, centro_costo, rol, COALESCE(is_active, TRUE) AS is_active, id_usuario, rut
+            FROM rrhh_staff
+            WHERE COALESCE(is_active, TRUE) IS TRUE
+            ORDER BY lower(colaborador) ASC, id_staff ASC
+            """
+        )
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
 
 
 @router.get("/staff/{id_staff}")
