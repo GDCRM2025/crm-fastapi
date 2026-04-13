@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QR Test</title>
+  <link rel="stylesheet" href="../xp_royale.css" />
+  <style>
+    .wrap{ max-width: 980px; margin: 0 auto; padding: 14px; }
+    .card{ background: rgba(255,255,255,.92); border:1px solid rgba(15,23,42,.15); border-radius: 14px; padding: 12px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+    .in{ height: 38px; border-radius: 12px; border:1px solid rgba(15,23,42,.18); padding: 0 10px; font-weight: 900; width: min(720px, 100%); }
+    .btn{ height: 38px; border-radius: 12px; border:1px solid rgba(15,23,42,.20); padding: 0 12px; font-weight: 1000; background: #fff; cursor:pointer; }
+    .muted{ opacity:.75; font-weight:800; }
+    .img{ width: 320px; height: 320px; border:1px solid rgba(15,23,42,.15); background:#fff; image-rendering: pixelated; }
+    .out{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 900; white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div style="font-weight:1100;font-size:18px">Probar QR (BarcodeDetector)</div>
+      <div class="muted" style="margin-top:6px">
+        Esto verifica si el QR es <b>decodificable</b> en el navegador (Chrome/Edge soportan BarcodeDetector).
+        Si aquí NO lo decodifica, el QR está inválido (no es tema de tamaño/cámara).
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <input id="url" class="in" placeholder="Pega una URL de imagen PNG/SVG de QR…" />
+        <button class="btn" id="loadBtn" type="button">Cargar</button>
+        <button class="btn" id="decodeBtn" type="button">Decodificar</button>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <img id="img" class="img" alt="QR" />
+        <div style="flex:1; min-width: 260px">
+          <div class="muted">Resultado</div>
+          <div id="status" class="muted" style="margin-top:6px">—</div>
+          <div id="out" class="out" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s)=>document.querySelector(s);
+    const urlEl = qs("#url");
+    const imgEl = qs("#img");
+    const statusEl = qs("#status");
+    const outEl = qs("#out");
+
+    function setStatus(t){ statusEl.textContent = String(t||"—"); }
+    function setOut(t){ outEl.textContent = String(t||""); }
+
+    function guessDefault(){
+      try{
+        const p = new URLSearchParams(location.search);
+        const u = p.get("u");
+        if (u) return u;
+      }catch(_){}
+      const origin = location.origin;
+      const base = location.pathname.includes("/crm/") ? "/crm" : "";
+      return `${origin}${base}/rrhh/sgjo/qr?p=SGJO-ROLFI&size=1100&v=${Date.now()}`;
+    }
+
+    async function load(){
+      const u = String(urlEl.value||"").trim();
+      if(!u){ setStatus("Pega una URL."); return; }
+      setStatus("Cargando imagen…");
+      setOut("");
+      imgEl.src = u;
+      await new Promise((res)=>{ imgEl.onload = ()=>res(); imgEl.onerror = ()=>res(); });
+      if (!imgEl.naturalWidth){ setStatus("No pude cargar la imagen."); return; }
+      setStatus(`OK: ${imgEl.naturalWidth}x${imgEl.naturalHeight}`);
+    }
+
+    async function decode(){
+      if (!("BarcodeDetector" in window)) {
+        setStatus("BarcodeDetector no está disponible en este navegador. Usa Chrome/Edge.");
+        return;
+      }
+      if (!imgEl.naturalWidth) await load();
+      if (!imgEl.naturalWidth) return;
+      setStatus("Decodificando…");
+      setOut("");
+      try{
+        const det = new BarcodeDetector({ formats: ["qr_code"] });
+        const res = await det.detect(imgEl);
+        if (!res || !res.length){
+          setStatus("No detecté QR.");
+          return;
+        }
+        setStatus(`Detectado: ${res.length}`);
+        setOut(res.map(r=>r.rawValue).join("\n"));
+      }catch(e){
+        setStatus("Error al decodificar.");
+        setOut(String(e && e.message ? e.message : e));
+      }
+    }
+
+    qs("#loadBtn").addEventListener("click", load);
+    qs("#decodeBtn").addEventListener("click", decode);
+    urlEl.value = guessDefault();
+    load();
+  </script>
+</body>
+</html>
+
