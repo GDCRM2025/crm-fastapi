@@ -510,13 +510,25 @@ class _ReedSolomon:
 
     @classmethod
     def _generator(cls, degree: int) -> List[int]:
+        """
+        Genera el divisor Reed-Solomon (coeficientes) para el grado dado.
+
+        Implementación equivalente a la de Nayuki/qrcodegen (probada):
+        devuelve una lista de longitud `degree` (sin el coeficiente líder 1).
+        """
         cls._init()
-        g = [1]
-        for i in range(degree):
-            g2 = [0] * (len(g) + 1)
-            for j in range(len(g)):
-                g2[j] ^= g[j]
-                g2[j + 1] ^= cls._mul(g[j], cls._EXP[i])
-            g = g2
-        # drop leading 1, match compute() indexing
-        return g[1:]
+        if degree <= 0:
+            return []
+        # Coefs para polinomio monico de grado=degree (sin el líder 1).
+        # Representación: coeficientes de x^(degree-1) ... x^0
+        res = [0] * degree
+        res[-1] = 1
+        root = 1
+        for _ in range(degree):
+            # Multiply current polynomial by (x - root)
+            for j in range(degree):
+                res[j] = cls._mul(res[j], root)
+                if j + 1 < degree:
+                    res[j] ^= res[j + 1]
+            root = cls._mul(root, 2)  # next power of primitive element
+        return res
