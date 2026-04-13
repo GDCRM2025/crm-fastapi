@@ -238,13 +238,14 @@ def qr_png(
     if src0 not in ("auto", "google", "local", "svg"):
         src0 = "auto"
 
-    def _resp_png(payload: bytes) -> Response:
+    def _resp_png(payload: bytes, source: str) -> Response:
         return Response(
             content=payload,
             media_type="image/png",
             headers={
                 "Cache-Control": "no-store",
                 "Content-Disposition": f'inline; filename="QR-{code}.png"',
+                "X-QR-Source": source,
             },
         )
 
@@ -263,17 +264,19 @@ def qr_png(
             )
             r = requests.get(gurl, timeout=6)
             if r.status_code == 200 and r.content and r.headers.get("content-type", "").startswith("image/"):
-                return _resp_png(r.content)
+                return _resp_png(r.content, "google")
         except Exception:
-            pass
+            if src0 == "google":
+                raise HTTPException(status_code=502, detail="No pude generar QR por Google Charts (bloqueo/red/timeout).")
 
     # Generación local (fallback)
     if src0 in ("auto", "local"):
         try:
             png = make_qr_png_target(mark_url, target_px=sz, border=10)
-            return _resp_png(png)
+            return _resp_png(png, "local")
         except Exception:
-            pass
+            if src0 == "local":
+                raise HTTPException(status_code=500, detail="No pude generar QR local.")
 
     # SVG (útil para impresión)
     try:
