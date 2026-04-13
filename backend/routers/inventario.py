@@ -1164,6 +1164,11 @@ def update_producto(id_producto: int, body: ProductoIn, me=Depends(get_current_u
         raise HTTPException(status_code=400, detail="nombre requerido")
     with get_connection() as conn:
         _ensure_tables(conn)
+        # Detectar cambio de precio/nombre para propagar a recetas (costo_unitario).
+        prev = conn.execute(
+            text("SELECT COALESCE(sku,''), COALESCE(nombre,''), precio FROM inv_productos WHERE id_producto=:id LIMIT 1"),
+            {"id": id_producto},
+        ).first()
         sku = (body.sku or "").strip()
         if not sku:
             sku = _gen_sku(conn, body.id_categoria)
@@ -1195,6 +1200,95 @@ def update_producto(id_producto: int, body: ProductoIn, me=Depends(get_current_u
                 "act": True if body.is_active is None else body.is_active,
             },
         )
+        # Propagación a recetas: si cambia el precio del ingrediente en inventario,
+        # actualizamos receta_items.costo_unitario para ingredientes que matchean por nombre (único).
+        try:
+            prev_sku = str(prev[0] if prev else "") if prev else ""
+            prev_nombre = str(prev[1] if prev else "") if prev else ""
+            prev_precio = float(prev[2]) if (prev and prev[2] is not None) else None
+        except Exception:
+            prev_sku = ""
+            prev_nombre = ""
+            prev_precio = None
+
+        new_nombre = body.nombre.strip()
+        try:
+            new_precio = float(body.precio) if body.precio is not None else None
+        except Exception:
+            new_precio = None
+
+        try:
+            name_changed = (prev_nombre or "").strip().lower() != (new_nombre or "").strip().lower()
+            price_changed = (prev_precio is None and new_precio is not None) or (prev_precio is not None and new_precio is not None and abs(prev_precio - new_precio) > 0.0001)
+            if new_precio is not None and (name_changed or price_changed):
+                # Si hay duplicados por nombre en inventario, no forzamos update (ambigüedad).
+                dup_cnt = conn.execute(
+                    text("SELECT COUNT(*) FROM inv_productos WHERE upper(nombre)=upper(:n)"),
+                    {"n": new_nombre},
+                ).scalar()
+                if int(dup_cnt or 0) == 1:
+                    # Actualiza items por nombre (caso estándar: ingrediente único).
+                    conn.execute(
+                        text(
+                            """
+                            UPDATE receta_items
+                            SET costo_unitario=:p
+                            WHERE upper(ingrediente)=upper(:n)
+                            """
+                        ),
+                        {"p": new_precio, "n": new_nombre},
+                    )
+                    # Si cambió el nombre, también migra los items con el nombre antiguo (para no perder vínculo).
+                    if name_changed and prev_nombre:
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE receta_items
+                                SET ingrediente=:n2, costo_unitario=:p
+                                WHERE upper(ingrediente)=upper(:n1)
+                                """
+                            ),
+                            {"n2": new_nombre, "n1": prev_nombre, "p": new_precio},
+                        )
+                    # Recalcular recetas afectadas y propagar costo a productos (venta).
+                    try:
+                        from backend.routers.recetas import _recalc_and_propagate_cost  # type: ignore
+
+                        rec_ids = conn.execute(
+                            text(
+                                """
+                                SELECT DISTINCT id_receta
+                                FROM receta_items
+                                WHERE upper(ingrediente)=upper(:n)
+                                """
+                            ),
+                            {"n": new_nombre},
+                        ).fetchall()
+                        for (rid,) in rec_ids or []:
+                            try:
+                                _recalc_and_propagate_cost(conn, int(rid))
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                else:
+                    # Intento best-effort por SKU embebido en el nombre (si existe).
+                    sku_try = (sku or prev_sku or "").strip()
+                    if sku_try:
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE receta_items
+                                SET costo_unitario=:p
+                                WHERE ingrediente ILIKE ('%' || :sku || '%')
+                                """
+                            ),
+                            {"p": new_precio, "sku": sku_try},
+                        )
+        except Exception:
+            # best-effort: no romper inventario por falla en recetas
+            pass
+
         conn.commit()
     return {"ok": True}
 
