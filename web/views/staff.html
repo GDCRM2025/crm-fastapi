@@ -186,9 +186,13 @@
       }
       function hasOperacionAccess(role){
         const r = String(role || "").toUpperCase();
+        const isOpsAppRole = (x) => {
+          const v = String(x || "").trim().toUpperCase();
+          return v === "OPERADOR" || v === "CONDUCTOR" || v === "CHOFER" || v === "CHOP" || v === "CONDUCTOR (CHOP)";
+        };
         return r.includes("SUPERADMIN") || r === "ADMIN"
           || r.includes("OPERACIONES") || r.includes("OPERACION")
-          || r.includes("OPERADOR") || r.includes("CONDUCTOR") || r.includes("CHOFER");
+          || isOpsAppRole(r);
       }
       async function apiJSON(path){
         const r = await fetch(`${API_BASE}${path}`, { headers: authHeaders({ "Accept":"application/json" }) });

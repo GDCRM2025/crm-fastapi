@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Any
 from sqlalchemy import text
+import json
 
 from backend.core.db import get_connection
 from backend.routers.auth import get_current_user
@@ -203,6 +204,21 @@ def _ensure_tables(conn):
             """
         )
     )
+    # Audit de cambios (mini historial)
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS recetas_audit (
+                id_audit SERIAL PRIMARY KEY,
+                id_receta INT NOT NULL REFERENCES recetas(id_receta) ON DELETE CASCADE,
+                action TEXT NOT NULL,
+                username TEXT,
+                payload JSONB,
+                created_at TIMESTAMP DEFAULT now()
+            )
+            """
+        )
+    )
     try:
         conn.execute(text("ALTER TABLE recetas ADD COLUMN IF NOT EXISTS es_sub_receta BOOLEAN NOT NULL DEFAULT FALSE"))
     except Exception:
@@ -256,6 +272,28 @@ def _ensure_tables(conn):
     except Exception:
         pass
     conn.commit()
+
+def _audit(conn, id_receta: int, action: str, username: str | None, payload: dict[str, Any] | None = None) -> None:
+    try:
+        conn.execute(
+            text(
+                """
+                INSERT INTO recetas_audit(id_receta, action, username, payload)
+                VALUES (:r, :a, :u, :p::jsonb)
+                """
+            ),
+            {
+                "r": int(id_receta),
+                "a": str(action or "")[:80],
+                "u": (str(username or "").strip() or None),
+                "p": json.dumps(payload or {}, ensure_ascii=False),
+            },
+        )
+    except Exception:
+        pass
+
+def _username(me) -> str:
+    return str(me.get("username") or me.get("name") or me.get("id") or "").strip()
 
 
 def _role_upper(me) -> str:
@@ -356,7 +394,7 @@ def get_receta(id_receta: int, me=Depends(get_current_user)):
         _ensure_tables(conn)
         receta = conn.execute(
             text(
-                "SELECT id_receta, producto, marca, rendimiento, merma_pct, costos_extra, unidad_base, es_sub_receta, is_active FROM recetas WHERE id_receta=:id"
+                "SELECT id_receta, producto, marca, rendimiento, merma_pct, costos_extra, unidad_base, es_sub_receta, is_active, created_at, updated_at FROM recetas WHERE id_receta=:id"
             ),
             {"id": id_receta},
         ).mappings().first()
@@ -373,7 +411,40 @@ def get_receta(id_receta: int, me=Depends(get_current_user)):
             ),
             {"id": id_receta},
         ).mappings().all()
-    return {"ok": True, "receta": dict(receta), "items": list(items)}
+        last = conn.execute(
+            text(
+                """
+                SELECT id_audit, action, username, created_at
+                FROM recetas_audit
+                WHERE id_receta=:id
+                ORDER BY id_audit DESC
+                LIMIT 1
+                """
+            ),
+            {"id": id_receta},
+        ).mappings().first()
+    return {"ok": True, "receta": dict(receta), "items": list(items), "last_update": (dict(last) if last else None)}
+
+
+@router.get("/{id_receta}/audit")
+def receta_audit(id_receta: int, limit: int = 10, me=Depends(get_current_user)):
+    _ensure_role_read(me)
+    lim = max(1, min(50, int(limit or 10)))
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT id_audit, action, username, created_at, payload
+                FROM recetas_audit
+                WHERE id_receta=:id
+                ORDER BY id_audit DESC
+                LIMIT {lim}
+                """
+            ),
+            {"id": int(id_receta)},
+        ).mappings().all()
+    return {"ok": True, "items": list(rows)}
 
 
 @router.post("")
@@ -402,12 +473,20 @@ def create_receta(body: RecetaIn, me=Depends(get_current_user)):
                 "a": True if body.is_active is None else body.is_active,
             },
         ).fetchone()
+        rid = int(row[0]) if row else 0
+        _audit(
+            conn,
+            rid,
+            "RECETA_CREATE",
+            _username(me),
+            {"producto": body.producto.strip(), "marca": body.marca or ""},
+        )
         try:
-            _recalc_and_propagate_cost(conn, int(row[0]))
+            _recalc_and_propagate_cost(conn, rid)
         except Exception:
             pass
         conn.commit()
-        return {"ok": True, "id": int(row[0])}
+        return {"ok": True, "id": rid}
 
 
 @router.put("/{id_receta}")
@@ -415,6 +494,14 @@ def update_receta(id_receta: int, body: RecetaIn, me=Depends(get_current_user)):
     _ensure_role_write(me)
     with get_connection() as conn:
         _ensure_tables(conn)
+        before = None
+        try:
+            before = conn.execute(
+                text("SELECT producto, COALESCE(marca,'') AS marca, rendimiento, merma_pct, costos_extra, unidad_base, es_sub_receta, is_active FROM recetas WHERE id_receta=:id"),
+                {"id": id_receta},
+            ).mappings().first()
+        except Exception:
+            before = None
         conn.execute(
             text(
                 """
@@ -443,6 +530,25 @@ def update_receta(id_receta: int, body: RecetaIn, me=Depends(get_current_user)):
                 "id": id_receta,
             },
         )
+        _audit(
+            conn,
+            int(id_receta),
+            "RECETA_UPDATE",
+            _username(me),
+            {
+                "before": dict(before) if before else None,
+                "after": {
+                    "producto": body.producto.strip(),
+                    "marca": body.marca or "",
+                    "rendimiento": body.rendimiento,
+                    "merma_pct": body.merma_pct,
+                    "costos_extra": body.costos_extra,
+                    "unidad_base": body.unidad_base,
+                    "es_sub_receta": bool(body.es_sub_receta),
+                    "is_active": True if body.is_active is None else body.is_active,
+                },
+            },
+        )
         try:
             _recalc_and_propagate_cost(conn, int(id_receta))
         except Exception:
@@ -456,6 +562,14 @@ def delete_receta(id_receta: int, me=Depends(get_current_user)):
     _ensure_role_write(me)
     with get_connection() as conn:
         _ensure_tables(conn)
+        try:
+            row = conn.execute(
+                text("SELECT producto, COALESCE(marca,'') AS marca FROM recetas WHERE id_receta=:id"),
+                {"id": id_receta},
+            ).mappings().first()
+            _audit(conn, int(id_receta), "RECETA_DELETE", _username(me), {"receta": dict(row) if row else None})
+        except Exception:
+            pass
         # intenta resetear costo de producto (venta) antes de borrar
         try:
             row = conn.execute(
@@ -488,6 +602,20 @@ def add_item(id_receta: int, body: ItemIn, me=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="ingrediente requerido")
     with get_connection() as conn:
         _ensure_tables(conn)
+        _audit(
+            conn,
+            int(id_receta),
+            "ITEM_UPSERT",
+            _username(me),
+            {
+                "ingrediente": body.ingrediente.strip(),
+                "cantidad": body.cantidad,
+                "unidad": body.unidad,
+                "costo_unitario": body.costo_unitario,
+                "merma_pct": body.merma_pct,
+                "sub_receta_id": body.sub_receta_id,
+            },
+        )
         conn.execute(
             text(
                 """
@@ -524,6 +652,21 @@ def update_item(id_receta: int, id_item: int, body: ItemIn, me=Depends(get_curre
     _ensure_role_write(me)
     with get_connection() as conn:
         _ensure_tables(conn)
+        _audit(
+            conn,
+            int(id_receta),
+            "ITEM_UPDATE",
+            _username(me),
+            {
+                "id_item": int(id_item),
+                "ingrediente": body.ingrediente.strip(),
+                "cantidad": body.cantidad,
+                "unidad": body.unidad,
+                "costo_unitario": body.costo_unitario,
+                "merma_pct": body.merma_pct,
+                "sub_receta_id": body.sub_receta_id,
+            },
+        )
         conn.execute(
             text(
                 """
@@ -561,6 +704,7 @@ def delete_item(id_receta: int, id_item: int, me=Depends(get_current_user)):
     _ensure_role_write(me)
     with get_connection() as conn:
         _ensure_tables(conn)
+        _audit(conn, int(id_receta), "ITEM_DELETE", _username(me), {"id_item": int(id_item)})
         conn.execute(
             text("DELETE FROM receta_items WHERE id_item=:id AND id_receta=:r"),
             {"id": id_item, "r": id_receta},

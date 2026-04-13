@@ -1490,14 +1490,20 @@ def dashboard_ops_alertas(
 def dashboard(
     id_marca: int | None = None,
     venta_source: str = "confirmados",  # confirmados (monto_cotizado) | eventos (fin_eventos)
+    week_mode: str = "rolling",  # rolling (últimos 7 días) | calendar (lun-dom)
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
     tz = ZoneInfo("America/Santiago")
     now = datetime.now(tz)
     today = now.date()
-    week_start = today - timedelta(days=today.weekday())
-    week_end = week_start + timedelta(days=6)
+    if str(week_mode or "").lower() == "calendar":
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+    else:
+        # Últimos 7 días (incluye hoy) — evita “venta semana = 0” cada lunes.
+        week_end = today
+        week_start = today - timedelta(days=6)
     week_num = week_start.isocalendar().week
     week_days = [(week_start + timedelta(days=i)).isoformat() for i in range(7)]
 

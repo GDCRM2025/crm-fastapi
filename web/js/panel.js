@@ -917,7 +917,7 @@ async function pollChatThreads() {
     if (!getToken()) return;
     const me = ((_a = window.GD) == null ? void 0 : _a.me) || {};
     const role = String((me == null ? void 0 : me.role) || (me == null ? void 0 : me.rol) || "").toUpperCase();
-    if (role.includes("OPERADOR") || role.includes("CONDUCTOR") || role.includes("CHOFER")) return;
+    if (isOpsAppRole(role)) return;
     const r = await fetch(`${API_BASE}/chat/threads?limit=40`, { headers: authHeaders() });
     if (!r.ok) return;
     const j = await r.json();
@@ -1299,7 +1299,7 @@ async function fetchMe() {
       if (sysBackup) sysBackup.style.display = CURRENT_ROLE_ID === 1 ? "" : "none";
     } catch (_) {
     }
-    const isOpsOnly = CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7 || roleName.includes("OPERADOR") || roleName.includes("CONDUCTOR") || roleName.includes("CHOFER");
+    const isOpsOnly = CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7 || isOpsAppRole(roleName);
     if (isOpsOnly) {
       try {
         const here = String(location.pathname || "");
@@ -2003,6 +2003,11 @@ const ROLE_IDS = {
   "MICE": 8,
   "FINANZAS": 9
 };
+
+function isOpsAppRole(roleName) {
+  const v = String(roleName || "").trim().toUpperCase();
+  return v === "OPERADOR" || v === "CONDUCTOR" || v === "CHOFER" || v === "CHOP" || v === "CONDUCTOR (CHOP)";
+}
 const PERMISSIONS = {
 	  1: /* @__PURE__ */ new Set([
     "dash_home",

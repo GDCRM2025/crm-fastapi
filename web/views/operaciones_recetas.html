@@ -15,9 +15,11 @@
     .list .active{border-color:#19C37D; box-shadow:0 0 0 2px rgba(25,195,125,.18);}
     .toolbar{display:flex; flex-direction:column; gap:8px; margin-bottom:10px;}
     .toolbar input,.toolbar select{width:100%;}
-    .tag{display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.12); font-size:11px; font-weight:900;}
-    .tag.ok{border-color:rgba(34,197,94,.35); color:#9df2c2;}
-    .tag.bad{border-color:rgba(245,158,11,.35); color:#f9d089;}
+    .tag{display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.16); font-size:11px; font-weight:1100; letter-spacing:.08em; text-transform:uppercase;}
+    .tag.ok{border-color:rgba(34,197,94,.65); color:#052012; background:rgba(34,197,94,.25); box-shadow:0 0 0 3px rgba(34,197,94,.10);}
+    .tag.bad{border-color:rgba(239,68,68,.70); color:#2b0b0b; background:rgba(239,68,68,.25); box-shadow:0 0 0 3px rgba(239,68,68,.10);}
+    :root.light .tag.ok{ color:#0a2a16; background:rgba(34,197,94,.20); }
+    :root.light .tag.bad{ color:#3a0a0a; background:rgba(239,68,68,.18); }
     .meta{font-size:12px; opacity:.7;}
     .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
     .row input,.row select{background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.14); color:inherit; padding:8px 10px; border-radius:10px;}
@@ -458,8 +460,8 @@
         }else{
           btn.className = "btn " + (currentProduct?.id_producto === p.id_producto ? "active" : "");
           const status = p.tiene_receta
-            ? `<span class="tag ok">${p.es_sub_receta ? "SUB" : "RECETA"}</span>`
-            : `<span class="tag bad">SIN RECETA</span>`;
+            ? `<span class="tag ok">✅ ${p.es_sub_receta ? "SUB" : "RECETA"}</span>`
+            : `<span class="tag bad">⚠️ SIN RECETA</span>`;
           btn.innerHTML = `
             <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
               <div>
@@ -480,7 +482,7 @@
     async function selectSubReceta(r){
       currentProduct = { id_producto: null, producto: r.producto, marca: "" };
       const res = await api(`/ops/recetas/${r.id_receta}`);
-      setRecipeForm(res.receta);
+      setRecipeForm({ ...(res.receta||{}), last_update: res.last_update || null });
       renderItems(res.items);
       renderList();
     }
@@ -496,7 +498,37 @@
       $("#recetaMerma").value = (receta?.merma_pct ?? "") === 0 ? "" : (receta?.merma_pct ?? "");
       $("#recetaExtra").value = (receta?.costos_extra ?? "") === 0 ? "" : (receta?.costos_extra ?? "");
       $("#recetaSub").checked = !!receta?.es_sub_receta;
-      $("#recetaMeta").textContent = receta ? `ID #${receta.id_receta}` : "Sin receta";
+      const last = receta?.last_update || null;
+      const who = last?.username || "";
+      const when = (last?.created_at || receta?.updated_at || "");
+      let meta = receta ? `ID #${receta.id_receta}` : "Sin receta";
+      if (receta && (who || when)){
+        meta += ` · Última: ${String(when).replace("T"," ").slice(0,19)}${who ? ` · ${who}` : ""}`;
+      }
+      const metaEl = $("#recetaMeta");
+      metaEl.textContent = meta;
+      metaEl.style.cursor = receta ? "pointer" : "default";
+      metaEl.title = receta ? "Click para ver historial" : "";
+      metaEl.onclick = receta ? (async () => {
+        try{
+          const res = await api(`/ops/recetas/${receta.id_receta}/audit?limit=10`);
+          const items = Array.isArray(res?.items) ? res.items : [];
+          const rows = items.map(a => {
+            const d = String(a.created_at||"").replace("T"," ").slice(0,19);
+            const u = a.username ? ` · ${esc(a.username)}` : "";
+            const ac = esc(a.action||"");
+            return `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.10)"><b>${ac}</b><div class="meta">${esc(d)}${u}</div></div>`;
+          }).join("") || `<div class="meta">Sin historial.</div>`;
+          await Swal.fire({
+            title: "Historial de receta",
+            html: `<div style="text-align:left;max-height:420px;overflow:auto">${rows}</div>`,
+            confirmButtonText: "Cerrar",
+            customClass: { popup: "gd-swal" },
+          });
+        }catch(e){
+          toast("No pude cargar historial", true);
+        }
+      }) : null;
       $("#btnCreate").style.display = receta ? "none" : (currentProduct ? "inline-flex" : "none");
       $("#btnSaveReceta").style.display = receta ? "inline-flex" : "none";
       $("#btnDelReceta").style.display = receta ? "inline-flex" : "none";
@@ -626,7 +658,7 @@
       const receta = direct || generic || null;
       if (receta){
         const res = await api(`/ops/recetas/${receta.id_receta}`);
-        setRecipeForm(res.receta);
+        setRecipeForm({ ...(res.receta||{}), last_update: res.last_update || null });
         renderItems(res.items);
       } else {
         setRecipeForm(null);
