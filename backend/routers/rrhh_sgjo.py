@@ -240,7 +240,8 @@ def qr_png(
             content=png,
             media_type="image/png",
             headers={
-                "Cache-Control": "public, max-age=86400",
+                # No cache: si el QR cambia (bugfix/mejora), los teléfonos/edge caches podían servir el PNG viejo y “parece que no hace nada”.
+                "Cache-Control": "no-store",
                 "Content-Disposition": f'inline; filename="QR-{code}.png"',
             },
         )

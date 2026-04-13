@@ -132,7 +132,8 @@
       // QR servido por el backend (mismo dominio) para que sea más confiable en iPhone/iframes/print.
       // No requiere token.
       const c = String(code||"").trim().toUpperCase();
-      return `${API_BASE}/rrhh/sgjo/qr?p=${encodeURIComponent(c)}&size=${encodeURIComponent(String(size))}`;
+      // Cache-buster: si el QR cambió por bugfix, algunos caches seguían sirviendo el PNG viejo.
+      return `${API_BASE}/rrhh/sgjo/qr?p=${encodeURIComponent(c)}&size=${encodeURIComponent(String(size))}&v=${Date.now()}`;
     }
 
     async function load(){
