@@ -2550,20 +2550,33 @@ async function handleConfirmado(lead, newEstado){
             <button type="button" class="swBtn secondary" id="ag_edit_manual" style="display:none;white-space:nowrap">Editar productos</button>
           </div>
 
-          <div class="agRow">
-            <label class="agLabel" style="flex:1;min-width:240px">
-              <div class="muted">Abono (opcional)</div>
-              <input id="ag_abono" class="swInp" placeholder="0" inputmode="numeric" />
-            </label>
-            <label class="agLabel" style="flex:1;min-width:240px">
-              <div class="muted">Documento</div>
-              <select id="ag_doc_mode" class="swSel" title="Documento (afecta IVA y texto WhatsApp)">
-                <option value="auto">Auto (según tipo cliente)</option>
-                <option value="sin">Sin documento</option>
-                <option value="con">Con documento</option>
-              </select>
-            </label>
-          </div>
+	          <div class="agRow">
+	            <label class="agLabel" style="flex:1;min-width:240px">
+	              <div class="muted">Abono (opcional)</div>
+	              <input id="ag_abono" class="swInp" placeholder="0" inputmode="numeric" />
+	            </label>
+	            <div class="agLabel" id="ag_abono_extra" style="flex:1;min-width:240px;display:none">
+	              <div class="muted">Si NO hay abono</div>
+	              <div class="agRow" style="gap:8px;align-items:center">
+	                <select id="ag_abono_mode" class="swSel" style="flex:1;min-width:160px" title="Define OC o fecha de abono">
+	                  <option value="">— Seleccionar —</option>
+	                  <option value="oc">OC</option>
+	                  <option value="fecha">Fecha de abono</option>
+	                </select>
+	                <input id="ag_abono_oc" class="swInp" style="flex:1;min-width:160px;display:none" placeholder="OC / referencia" />
+	                <input id="ag_abono_fecha" class="swInp" style="flex:1;min-width:160px;display:none" type="date" />
+	              </div>
+	              <div class="muted agSmall">Regla: si abono = 0, debes indicar OC o fecha de abono.</div>
+	            </div>
+	            <label class="agLabel" style="flex:1;min-width:240px">
+	              <div class="muted">Documento</div>
+	              <select id="ag_doc_mode" class="swSel" title="Documento (afecta IVA y texto WhatsApp)">
+	                <option value="auto">Auto (según tipo cliente)</option>
+	                <option value="sin">Sin documento</option>
+	                <option value="con">Con documento</option>
+	              </select>
+	            </label>
+	          </div>
 
           <div class="agRow">
             <label class="agLabel">
@@ -2981,9 +2994,9 @@ async function handleConfirmado(lead, newEstado){
 	    cancelButtonText:"Cancelar",
 	    heightAuto:false,
 		    customClass: { popup: "gdAgenda" },
-		    didOpen: async ()=>{
-	      const q = qs("#ag_quote");
-	      if (q) q.value = defaultSel || "manual";
+			    didOpen: async ()=>{
+		      const q = qs("#ag_quote");
+		      if (q) q.value = defaultSel || "manual";
 	
 	      // Horas (24h) - selector estable en iOS/Android (evita pickers 12h).
 	      TIMES = (() => {
@@ -3034,10 +3047,48 @@ async function handleConfirmado(lead, newEstado){
       refreshManualBtn();
       q && q.addEventListener("change", async ()=>{ refreshManualBtn(); await runPreview(); });
 
-      qs("#ag_title") && qs("#ag_title").addEventListener("input", ()=>{ touched.title=true; });
-      qs("#ag_loc") && qs("#ag_loc").addEventListener("input", ()=>{ touched.loc=true; });
-      qs("#ag_desc") && qs("#ag_desc").addEventListener("input", ()=>{ touched.desc=true; });
-      qs("#ag_notes") && qs("#ag_notes").addEventListener("input", runPreview);
+	      qs("#ag_title") && qs("#ag_title").addEventListener("input", ()=>{ touched.title=true; });
+	      qs("#ag_loc") && qs("#ag_loc").addEventListener("input", ()=>{ touched.loc=true; });
+	      qs("#ag_desc") && qs("#ag_desc").addEventListener("input", ()=>{ touched.desc=true; });
+	      qs("#ag_notes") && qs("#ag_notes").addEventListener("input", runPreview);
+
+	      // Abono: si es 0, exige OC o fecha de abono (para que finanzas tenga trazabilidad).
+	      const abEl = qs("#ag_abono");
+	      const abWrap = qs("#ag_abono_extra");
+	      const abMode = qs("#ag_abono_mode");
+	      const abOC = qs("#ag_abono_oc");
+	      const abFecha = qs("#ag_abono_fecha");
+	      const parseAbono = ()=>{
+	        try{
+	          const raw = String(abEl?.value || "");
+	          if (!raw.trim()) return 0;
+	          const s = raw.replace(/[^0-9,.\-]/g,"").replace(/\\./g,"").replace(/,/g,".");
+	          const n = Number(s);
+	          return Number.isFinite(n) ? n : 0;
+	        }catch(_){ return 0; }
+	      };
+	      const syncAbMode = ()=>{
+	        const m = (abMode?.value || "").toString().trim();
+	        if (abOC) abOC.style.display = (m === "oc") ? "" : "none";
+	        if (abFecha) abFecha.style.display = (m === "fecha") ? "" : "none";
+	      };
+	      const syncAbUI = ()=>{
+	        const ab = parseAbono();
+	        const show = !(ab > 0);
+	        if (abWrap) abWrap.style.display = show ? "" : "none";
+	        if (!show){
+	          if (abMode) abMode.value = "";
+	          if (abOC){ abOC.value = ""; abOC.style.display = "none"; }
+	          if (abFecha){ abFecha.value = ""; abFecha.style.display = "none"; }
+	        }else{
+	          syncAbMode();
+	        }
+	      };
+	      abEl && abEl.addEventListener("input", ()=>{ syncAbUI(); runPreview(); });
+	      abMode && abMode.addEventListener("change", ()=>{ syncAbMode(); runPreview(); });
+	      abOC && abOC.addEventListener("input", runPreview);
+	      abFecha && abFecha.addEventListener("change", runPreview);
+	      syncAbUI();
 
       const ensureDayTouched = (day)=>{
         if (!day) return { ops:false, montaje:false };
@@ -3275,32 +3326,55 @@ async function handleConfirmado(lead, newEstado){
 		            return false;
 		          }
 		        }
-			      }
-			      return {
-			        quote_source: quoteSource,
-			        id_cotizacion: idCot ? Number(idCot) : null,
-			        hr_tbd: segsOut ? false : hrTbd,
-		        start_time: segsOut ? String((segsOut[0]||{}).start_time || "").trim() : hIni,
-		        end_time: segsOut ? String((segsOut[0]||{}).end_time || "").trim() : hFin,
-		        abono: (()=>{
-		          try{
-		            const raw = String(qs("#ag_abono")?.value || "");
-		            if (!raw.trim()) return 0;
-		            const s = raw.replace(/[^0-9,.\-]/g,"").replace(/\./g,"").replace(/,/g,".");
-		            const n = Number(s);
-		            return Number.isFinite(n) ? n : 0;
-		          }catch(_){ return 0; }
-		        })(),
-		        doc_mode: (qs("#ag_doc_mode")?.value || "auto").toString().trim() || "auto",
-		        telefono: (qs("#ag_tel")?.value || "").trim(),
-		        direccion: (qs("#ag_dir")?.value || "").trim(),
-		        agenda_notes: (qs("#ag_notes")?.value || "").trim(),
-		        override_title: (qs("#ag_title")?.value || "").trim(),
-		        override_location: (qs("#ag_loc")?.value || "").trim(),
-		        override_description: (qs("#ag_desc")?.value || "").trim(),
-		        ...(segsOut ? { segments: segsOut } : { override_by_day: overrideByDay }),
-		      };
-		    }
+				      }
+
+				      const abonoVal = (()=>{
+				        try{
+				          const raw = String(qs("#ag_abono")?.value || "");
+				          if (!raw.trim()) return 0;
+				          const s = raw.replace(/[^0-9,.\-]/g,"").replace(/\./g,"").replace(/,/g,".");
+				          const n = Number(s);
+				          return Number.isFinite(n) ? n : 0;
+				        }catch(_){ return 0; }
+				      })();
+				      const abMode = (qs("#ag_abono_mode")?.value || "").toString().trim();
+				      const abOC = (qs("#ag_abono_oc")?.value || "").toString().trim();
+				      const abFe = (qs("#ag_abono_fecha")?.value || "").toString().trim();
+				      if (!(Number(abonoVal) > 0)){
+				        if (!abMode){
+				          Swal.showValidationMessage("Abono=0: debes indicar OC o fecha de abono.");
+				          return false;
+				        }
+				        if (abMode === "oc" && !abOC){
+				          Swal.showValidationMessage("Abono=0: falta OC / referencia.");
+				          return false;
+				        }
+				        if (abMode === "fecha" && !abFe){
+				          Swal.showValidationMessage("Abono=0: falta fecha de abono.");
+				          return false;
+				        }
+				      }
+
+					    return {
+					        quote_source: quoteSource,
+					        id_cotizacion: idCot ? Number(idCot) : null,
+					        hr_tbd: segsOut ? false : hrTbd,
+			        start_time: segsOut ? String((segsOut[0]||{}).start_time || "").trim() : hIni,
+			        end_time: segsOut ? String((segsOut[0]||{}).end_time || "").trim() : hFin,
+				        abono: abonoVal,
+			        abono_mode: abMode,
+			        abono_oc: abOC,
+			        abono_fecha: abFe,
+			        doc_mode: (qs("#ag_doc_mode")?.value || "auto").toString().trim() || "auto",
+			        telefono: (qs("#ag_tel")?.value || "").trim(),
+			        direccion: (qs("#ag_dir")?.value || "").trim(),
+			        agenda_notes: (qs("#ag_notes")?.value || "").trim(),
+			        override_title: (qs("#ag_title")?.value || "").trim(),
+			        override_location: (qs("#ag_loc")?.value || "").trim(),
+			        override_description: (qs("#ag_desc")?.value || "").trim(),
+			        ...(segsOut ? { segments: segsOut } : { override_by_day: overrideByDay }),
+			      };
+			    }
 	    ,
     // Deny = confirmar sin agendar: NO validamos horas ni obligamos productos manuales aquí.
     preDeny: ()=>{
@@ -3329,7 +3403,7 @@ async function handleConfirmado(lead, newEstado){
       });
       if (!ok.isConfirmed) return false;
     }
-    if (v.quote_source === "manual"){
+	  if (v.quote_source === "manual"){
       // Para confirmar sin agendar SOLO exigimos meta (monto + número),
       // pero NO obligamos productos manuales (se pueden cargar después).
       const okMeta = await ensureQuoteMeta();
@@ -3358,8 +3432,8 @@ async function handleConfirmado(lead, newEstado){
     if (!okItems) return false;
   }
 
-  {
-    const ok = await Swal.fire({
+	  {
+	    const ok = await Swal.fire({
       icon: "question",
       title: "¿Confirmar evento?",
       text: "Se confirmará el lead y se intentará crear/actualizar el/los evento(s) en Google Calendar.",
@@ -3368,19 +3442,38 @@ async function handleConfirmado(lead, newEstado){
       cancelButtonText: "Cancelar",
     });
     if (!ok.isConfirmed) return false;
-  }
+	  }
 
-				  const payload = {
-				    id_estado: Number(newEstado),
-				    agendar: true,
-			    quote_source: v.quote_source,
+	  // Validación final abono: si abono = 0, exige OC o fecha de abono.
+	  try{
+	    const ab = Number(v.abono || 0);
+	    if (!(ab > 0)){
+	      const mode = String(v.abono_mode || "").trim();
+	      const oc = String(v.abono_oc || "").trim();
+	      const fe = String(v.abono_fecha || "").trim();
+	      if (!mode) throw new Error("Debes indicar OC o fecha de abono (abono=0).");
+	      if (mode === "oc" && !oc) throw new Error("Falta OC / referencia (abono=0).");
+	      if (mode === "fecha" && !fe) throw new Error("Falta fecha de abono (abono=0).");
+	    }
+	  }catch(err){
+	    await Swal.fire({ icon:"warning", title:"Abono", text: String(err?.message || err) });
+	    return false;
+	  }
+
+					  const payload = {
+					    id_estado: Number(newEstado),
+					    agendar: true,
+				    quote_source: v.quote_source,
 			    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
 			    telefono: v.telefono,
 			    direccion: v.direccion,
-			    ...(v.abono != null ? { abono: v.abono } : {}),
-			    ...(v.doc_mode ? { doc_mode: v.doc_mode } : {}),
-			    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
-			    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
+				    ...(v.abono != null ? { abono: v.abono } : {}),
+				    ...(v.abono_mode ? { abono_mode: v.abono_mode } : {}),
+				    ...(v.abono_oc ? { abono_oc: v.abono_oc } : {}),
+				    ...(v.abono_fecha ? { abono_fecha: v.abono_fecha } : {}),
+				    ...(v.doc_mode ? { doc_mode: v.doc_mode } : {}),
+				    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
+				    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
 			    ...(v.agenda_notes ? { agenda_notes: v.agenda_notes } : {}),
 			    ...(v.override_title ? { override_title: v.override_title } : {}),
 			    ...(v.override_location ? { override_location: v.override_location } : {}),

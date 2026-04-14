@@ -76,6 +76,8 @@ def _role_targets(role: str) -> list[str]:
         out += ["BODEGUERO", "4"]
     if "mice" in rk:
         out += ["MICE", "8"]
+    if "rrhh" in rk or "recursoshumanos" in rk or "humanos" in rk:
+        out += ["RRHH"]
     if not out:
         out = [str(role or "").upper().strip()]
     # de-dup manteniendo orden

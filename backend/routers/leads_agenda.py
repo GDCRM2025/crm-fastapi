@@ -103,6 +103,23 @@ def _ensure_finanzas_tables():
                 """
             )
         )
+        # columnas adicionales (best-effort) para trazabilidad cuando no hay abono.
+        try:
+            cn.execute(text("ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS abono_mode TEXT"))
+        except Exception:
+            pass
+        try:
+            cn.execute(text("ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS abono_ref TEXT"))
+        except Exception:
+            pass
+        try:
+            cn.execute(text("ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS abono_due_date DATE"))
+        except Exception:
+            pass
+        try:
+            cn.execute(text("ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT now()"))
+        except Exception:
+            pass
         cn.execute(
             text(
                 """
@@ -189,6 +206,11 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
     total = neto
     num_cot = str(lead.get("num_cotizacion") or "").strip() or None
     abono = _to_number(payload.get("abono") or 0)
+    abono_mode = str(payload.get("abono_mode") or "").strip().lower()
+    abono_ref = str(payload.get("abono_oc") or "").strip() or None
+    abono_due_date = str(payload.get("abono_fecha") or "").strip() or None
+    if abono_due_date:
+        abono_due_date = str(abono_due_date)[:10]
     tipo_cliente = "EMPRESA" if is_empresa else "PARTICULAR"
 
     # Totales desde cotización si existe.
@@ -242,6 +264,22 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
         abono = 0.0
     saldo = max(0.0, float(total) - float(abono))
 
+    # Normaliza regla: si abono=0, guardamos referencia OC o fecha (para finanzas).
+    if not (abono > 0):
+        if abono_mode == "fecha":
+            abono_ref = None
+        elif abono_mode == "oc":
+            abono_due_date = None
+        else:
+            abono_mode = ""
+            abono_ref = None
+            abono_due_date = None
+    else:
+        # Si hay abono, limpiamos metadata de "sin abono".
+        abono_mode = ""
+        abono_ref = None
+        abono_due_date = None
+
     cliente = str(lead.get("nombre_cliente") or lead.get("cliente") or "").strip() or None
     comuna_txt = str((comuna or {}).get("nombre") or lead.get("comuna_nombre") or lead.get("comuna") or "").strip() or None
     marca_txt = str((marca or {}).get("nombre") or (marca or {}).get("marca") or lead.get("marca_nombre") or lead.get("marca") or "").strip() or None
@@ -275,7 +313,11 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                         iva=:iv,
                         traslado=:tr,
                         abono=:ab,
-                        saldo=:sa
+                        saldo=:sa,
+                        abono_mode=:am,
+                        abono_ref=:ar,
+                        abono_due_date=:ad,
+                        updated_at=now()
                     WHERE id_evento=:ev
                     """
                 ),
@@ -294,6 +336,9 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     "tr": float(traslado),
                     "ab": float(abono),
                     "sa": float(saldo),
+                    "am": abono_mode or None,
+                    "ar": abono_ref,
+                    "ad": abono_due_date,
                 },
             )
             id_evento = int(existing)
@@ -304,11 +349,13 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     INSERT INTO fin_eventos(
                       id_lead, num_cotizacion, id_cotizacion,
                       cliente, comuna, marca, tipo_cliente, fecha_evento,
-                      monto_bruto, monto_neto, iva, traslado, abono, saldo
+                      monto_bruto, monto_neto, iva, traslado, abono, saldo,
+                      abono_mode, abono_ref, abono_due_date, updated_at
                     ) VALUES (
                       :id, :num, :idc,
                       :cli, :com, :mar, :tc, :fe,
-                      :br, :ne, :iv, :tr, :ab, :sa
+                      :br, :ne, :iv, :tr, :ab, :sa,
+                      :am, :ar, :ad, now()
                     )
                     RETURNING id_evento
                     """
@@ -328,6 +375,9 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     "tr": float(traslado),
                     "ab": float(abono),
                     "sa": float(saldo),
+                    "am": abono_mode or None,
+                    "ar": abono_ref,
+                    "ad": abono_due_date,
                 },
             ).scalar()
             id_evento = int(id_evento or 0)
@@ -343,6 +393,28 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     {"ev": int(id_evento), "m": float(abono)},
                 )
                 created_pago = True
+
+        # Mantén fin_eventos consistente con sumatoria de pagos.
+        if id_evento:
+            try:
+                total_pagos = cn.execute(
+                    text("SELECT COALESCE(SUM(monto),0) FROM fin_pagos WHERE id_evento=:ev"),
+                    {"ev": int(id_evento)},
+                ).scalar()
+                cn.execute(
+                    text(
+                        """
+                        UPDATE fin_eventos
+                        SET abono=:ab,
+                            saldo=GREATEST(0, COALESCE(monto_bruto,0) - :ab),
+                            updated_at=now()
+                        WHERE id_evento=:ev
+                        """
+                    ),
+                    {"ev": int(id_evento), "ab": float(total_pagos or 0)},
+                )
+            except Exception:
+                pass
 
     # Aviso a Finanzas por abono al agendar (best-effort).
     if created_pago and abono > 0:

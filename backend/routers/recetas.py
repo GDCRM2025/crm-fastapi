@@ -3,11 +3,13 @@ from pydantic import BaseModel
 from typing import List, Optional, Any
 from sqlalchemy import text
 import json
+import logging
 
 from backend.core.db import get_connection
 from backend.routers.auth import get_current_user
 
 router = APIRouter(prefix="/ops/recetas", tags=["recetas"])
+logger = logging.getLogger("crm.recetas")
 
 def _table_exists(conn, name: str) -> bool:
     return bool(conn.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{name}"}).scalar())
@@ -204,21 +206,35 @@ def _ensure_tables(conn):
             """
         )
     )
-    # Audit de cambios (mini historial)
-    conn.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS recetas_audit (
-                id_audit SERIAL PRIMARY KEY,
-                id_receta INT NOT NULL REFERENCES recetas(id_receta) ON DELETE CASCADE,
-                action TEXT NOT NULL,
-                username TEXT,
-                payload JSONB,
-                created_at TIMESTAMP DEFAULT now()
+    # Audit de cambios (mini historial).
+    # payload se guarda como TEXT (JSON serializado) para máxima compatibilidad.
+    # Nunca debe romper flujos si el entorno no soporta JSONB/casts/DDL.
+    try:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS recetas_audit (
+                    id_audit SERIAL PRIMARY KEY,
+                    id_receta INT NOT NULL REFERENCES recetas(id_receta) ON DELETE CASCADE,
+                    action TEXT NOT NULL,
+                    username TEXT,
+                    payload TEXT,
+                    created_at TIMESTAMP DEFAULT now()
+                )
+                """
             )
-            """
         )
-    )
+        # Si existía con payload JSONB, lo degradamos a TEXT (best-effort).
+        try:
+            conn.execute(text("ALTER TABLE recetas_audit ALTER COLUMN payload TYPE TEXT USING payload::text"))
+        except Exception:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE recetas_audit ADD COLUMN IF NOT EXISTS payload TEXT"))
+        except Exception:
+            pass
+    except Exception:
+        pass
     try:
         conn.execute(text("ALTER TABLE recetas ADD COLUMN IF NOT EXISTS es_sub_receta BOOLEAN NOT NULL DEFAULT FALSE"))
     except Exception:
@@ -271,7 +287,10 @@ def _ensure_tables(conn):
         )
     except Exception:
         pass
-    conn.commit()
+    try:
+        conn.commit()
+    except Exception:
+        pass
 
 def _audit(conn, id_receta: int, action: str, username: str | None, payload: dict[str, Any] | None = None) -> None:
     try:
@@ -279,7 +298,7 @@ def _audit(conn, id_receta: int, action: str, username: str | None, payload: dic
             text(
                 """
                 INSERT INTO recetas_audit(id_receta, action, username, payload)
-                VALUES (:r, :a, :u, :p::jsonb)
+                VALUES (:r, :a, :u, :p)
                 """
             ),
             {
@@ -290,7 +309,24 @@ def _audit(conn, id_receta: int, action: str, username: str | None, payload: dic
             },
         )
     except Exception:
-        pass
+        try:
+            logger.exception("recetas_audit insert failed (id_receta=%s action=%s)", id_receta, action)
+        except Exception:
+            pass
+
+
+def _payload_to_obj(v: Any) -> Any:
+    if v is None:
+        return None
+    if isinstance(v, (dict, list)):
+        return v
+    s = str(v or "").strip()
+    if not s:
+        return None
+    try:
+        return json.loads(s)
+    except Exception:
+        return s
 
 def _username(me) -> str:
     return str(me.get("username") or me.get("name") or me.get("id") or "").strip()
@@ -411,18 +447,22 @@ def get_receta(id_receta: int, me=Depends(get_current_user)):
             ),
             {"id": id_receta},
         ).mappings().all()
-        last = conn.execute(
-            text(
-                """
-                SELECT id_audit, action, username, created_at
-                FROM recetas_audit
-                WHERE id_receta=:id
-                ORDER BY id_audit DESC
-                LIMIT 1
-                """
-            ),
-            {"id": id_receta},
-        ).mappings().first()
+        last = None
+        try:
+            last = conn.execute(
+                text(
+                    """
+                    SELECT id_audit, action, username, created_at
+                    FROM recetas_audit
+                    WHERE id_receta=:id
+                    ORDER BY id_audit DESC
+                    LIMIT 1
+                    """
+                ),
+                {"id": id_receta},
+            ).mappings().first()
+        except Exception:
+            last = None
     return {"ok": True, "receta": dict(receta), "items": list(items), "last_update": (dict(last) if last else None)}
 
 
@@ -432,19 +472,27 @@ def receta_audit(id_receta: int, limit: int = 10, me=Depends(get_current_user)):
     lim = max(1, min(50, int(limit or 10)))
     with get_connection() as conn:
         _ensure_tables(conn)
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT id_audit, action, username, created_at, payload
-                FROM recetas_audit
-                WHERE id_receta=:id
-                ORDER BY id_audit DESC
-                LIMIT {lim}
-                """
-            ),
-            {"id": int(id_receta)},
-        ).mappings().all()
-    return {"ok": True, "items": list(rows)}
+        try:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT id_audit, action, username, created_at, payload
+                    FROM recetas_audit
+                    WHERE id_receta=:id
+                    ORDER BY id_audit DESC
+                    LIMIT {lim}
+                    """
+                ),
+                {"id": int(id_receta)},
+            ).mappings().all()
+        except Exception:
+            rows = []
+    items = []
+    for r in rows:
+        d = dict(r)
+        d["payload"] = _payload_to_obj(d.get("payload"))
+        items.append(d)
+    return {"ok": True, "items": items}
 
 
 @router.post("")
@@ -600,103 +648,117 @@ def add_item(id_receta: int, body: ItemIn, me=Depends(get_current_user)):
     _ensure_role_write(me)
     if not body.ingrediente.strip():
         raise HTTPException(status_code=400, detail="ingrediente requerido")
-    with get_connection() as conn:
-        _ensure_tables(conn)
-        _audit(
-            conn,
-            int(id_receta),
-            "ITEM_UPSERT",
-            _username(me),
-            {
-                "ingrediente": body.ingrediente.strip(),
-                "cantidad": body.cantidad,
-                "unidad": body.unidad,
-                "costo_unitario": body.costo_unitario,
-                "merma_pct": body.merma_pct,
-                "sub_receta_id": body.sub_receta_id,
-            },
-        )
-        conn.execute(
-            text(
-                """
-                INSERT INTO receta_items(id_receta, ingrediente, cantidad, unidad, costo_unitario, merma_pct, sub_receta_id)
-                VALUES (:r, :i, :c, :u, :cu, :m, :sr)
-                ON CONFLICT (id_receta, ingrediente) DO UPDATE
-                SET cantidad=EXCLUDED.cantidad,
-                    unidad=EXCLUDED.unidad,
-                    costo_unitario=EXCLUDED.costo_unitario,
-                    merma_pct=EXCLUDED.merma_pct,
-                    sub_receta_id=EXCLUDED.sub_receta_id
-                """
-            ),
-            {
-                "r": id_receta,
-                "i": body.ingrediente.strip(),
-                "c": body.cantidad,
-                "u": (body.unidad or None),
-                "cu": body.costo_unitario,
-                "m": body.merma_pct,
-                "sr": body.sub_receta_id,
-            },
-        )
+    try:
+        with get_connection() as conn:
+            _ensure_tables(conn)
+            _audit(
+                conn,
+                int(id_receta),
+                "ITEM_UPSERT",
+                _username(me),
+                {
+                    "ingrediente": body.ingrediente.strip(),
+                    "cantidad": body.cantidad,
+                    "unidad": body.unidad,
+                    "costo_unitario": body.costo_unitario,
+                    "merma_pct": body.merma_pct,
+                    "sub_receta_id": body.sub_receta_id,
+                },
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO receta_items(id_receta, ingrediente, cantidad, unidad, costo_unitario, merma_pct, sub_receta_id)
+                    VALUES (:r, :i, :c, :u, :cu, :m, :sr)
+                    ON CONFLICT (id_receta, ingrediente) DO UPDATE
+                    SET cantidad=EXCLUDED.cantidad,
+                        unidad=EXCLUDED.unidad,
+                        costo_unitario=EXCLUDED.costo_unitario,
+                        merma_pct=EXCLUDED.merma_pct,
+                        sub_receta_id=EXCLUDED.sub_receta_id
+                    """
+                ),
+                {
+                    "r": id_receta,
+                    "i": body.ingrediente.strip(),
+                    "c": body.cantidad,
+                    "u": (body.unidad or None),
+                    "cu": body.costo_unitario,
+                    "m": body.merma_pct,
+                    "sr": body.sub_receta_id,
+                },
+            )
+            try:
+                _recalc_and_propagate_cost(conn, int(id_receta))
+            except Exception:
+                pass
+            conn.commit()
+        return {"ok": True}
+    except Exception as e:
         try:
-            _recalc_and_propagate_cost(conn, int(id_receta))
+            logger.exception("add_item failed (id_receta=%s)", id_receta)
         except Exception:
             pass
-        conn.commit()
-    return {"ok": True}
+        raise HTTPException(status_code=500, detail=f"Error al guardar ingrediente: {e}")
 
 
 @router.put("/{id_receta}/items/{id_item}")
 def update_item(id_receta: int, id_item: int, body: ItemIn, me=Depends(get_current_user)):
     _ensure_role_write(me)
-    with get_connection() as conn:
-        _ensure_tables(conn)
-        _audit(
-            conn,
-            int(id_receta),
-            "ITEM_UPDATE",
-            _username(me),
-            {
-                "id_item": int(id_item),
-                "ingrediente": body.ingrediente.strip(),
-                "cantidad": body.cantidad,
-                "unidad": body.unidad,
-                "costo_unitario": body.costo_unitario,
-                "merma_pct": body.merma_pct,
-                "sub_receta_id": body.sub_receta_id,
-            },
-        )
-        conn.execute(
-            text(
-                """
-                UPDATE receta_items
-                SET ingrediente=:i,
-                    cantidad=:c,
-                    unidad=:u,
-                    costo_unitario=:cu,
-                    merma_pct=:m,
-                    sub_receta_id=:sr
-                WHERE id_item=:id AND id_receta=:r
-                """
-            ),
-            {
-                "i": body.ingrediente.strip(),
-                "c": body.cantidad,
-                "u": (body.unidad or None),
-                "cu": body.costo_unitario,
-                "m": body.merma_pct,
-                "sr": body.sub_receta_id,
-                "id": id_item,
-                "r": id_receta,
-            },
-        )
+    try:
+        with get_connection() as conn:
+            _ensure_tables(conn)
+            _audit(
+                conn,
+                int(id_receta),
+                "ITEM_UPDATE",
+                _username(me),
+                {
+                    "id_item": int(id_item),
+                    "ingrediente": body.ingrediente.strip(),
+                    "cantidad": body.cantidad,
+                    "unidad": body.unidad,
+                    "costo_unitario": body.costo_unitario,
+                    "merma_pct": body.merma_pct,
+                    "sub_receta_id": body.sub_receta_id,
+                },
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE receta_items
+                    SET ingrediente=:i,
+                        cantidad=:c,
+                        unidad=:u,
+                        costo_unitario=:cu,
+                        merma_pct=:m,
+                        sub_receta_id=:sr
+                    WHERE id_item=:id AND id_receta=:r
+                    """
+                ),
+                {
+                    "i": body.ingrediente.strip(),
+                    "c": body.cantidad,
+                    "u": (body.unidad or None),
+                    "cu": body.costo_unitario,
+                    "m": body.merma_pct,
+                    "sr": body.sub_receta_id,
+                    "id": id_item,
+                    "r": id_receta,
+                },
+            )
+            try:
+                _recalc_and_propagate_cost(conn, int(id_receta))
+            except Exception:
+                pass
+            conn.commit()
+        return {"ok": True}
+    except Exception as e:
         try:
-            _recalc_and_propagate_cost(conn, int(id_receta))
+            logger.exception("update_item failed (id_receta=%s id_item=%s)", id_receta, id_item)
         except Exception:
             pass
-        conn.commit()
-    return {"ok": True}
+        raise HTTPException(status_code=500, detail=f"Error al actualizar ingrediente: {e}")
 
 
 @router.delete("/{id_receta}/items/{id_item}")

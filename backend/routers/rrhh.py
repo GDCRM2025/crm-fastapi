@@ -804,37 +804,38 @@ def solicitudes_me_create(body: dict, db: Session = Depends(get_db), me: dict = 
             data,
         )
         db.commit()
-        # Aviso por correo a RRHH (best-effort).
+        # Aviso por correo + alerta interna (best-effort, pero NO silencioso).
         try:
-            from backend.core.email import send_email_group
-
-            rrhh_to = (os.getenv("RRHH_NOTIFY_TO") or "c.grez@clavetributariacontadores.cl").strip()
-            rrhh_cc = [x.strip() for x in str(os.getenv("RRHH_NOTIFY_CC") or "").split(",") if x.strip()]
-            adelanto_to = (os.getenv("RRHH_ADELANTO_TO") or "simonurrutia@greendiamond.cl,oscar@greendiamond.cl").strip()
-            adelanto_list = [x.strip() for x in adelanto_to.split(",") if x.strip()]
-
-            to_list = []
+            subj = f"RRHH · Solicitud {tipo} · {colaborador}"
+            txt = (
+                f"Colaborador: {colaborador}\n"
+                f"Tipo: {tipo}\n"
+                + (f"Documento: {doc_tipo}\n" if doc_tipo else "")
+                + (f"Fecha inicio: {data.get('fecha_inicio')}\n" if data.get("fecha_inicio") else "")
+                + (f"Fecha fin: {data.get('fecha_fin')}\n" if data.get("fecha_fin") else "")
+                + (f"Días: {data.get('dias')}\n" if data.get("dias") else "")
+                + (f"Monto: {data.get('monto')}\n" if data.get("monto") else "")
+                + (f"Motivo: {data.get('motivo')}\n" if data.get("motivo") else "")
+                + "\nEstado: pendiente\n"
+                + f"Usuario CRM ID: {uid}\n"
+                + f"RUT: {data.get('rut') or ''}\n"
+            )
+            _notify_rrhh_admins(db, subject=subj, body=txt)
+        except Exception:
+            # No frenes la solicitud.
+            pass
+        try:
+            from backend.core.system_notifs import push_system_notif
+            # id_lead se usa como "id" genérico para dedupe; aquí usamos id_usuario.
+            lid = int(uid)
+            title = "RRHH · Nueva solicitud"
+            body_txt = f"{colaborador} · {tipo} · pendiente"
+            push_system_notif(db, kind="RRHH_SOLICITUD", role_target="RRHH", id_lead=lid, title=title, body=body_txt, payload={"tipo": tipo, "colaborador": colaborador, "estado": "pendiente", "id_usuario": lid})
+            push_system_notif(db, kind="RRHH_SOLICITUD", role_target="ADMIN", id_lead=lid, title=title, body=body_txt, payload={"tipo": tipo, "colaborador": colaborador, "estado": "pendiente", "id_usuario": lid})
+            push_system_notif(db, kind="RRHH_SOLICITUD", role_target="SUPERADMIN", id_lead=lid, title=title, body=body_txt, payload={"tipo": tipo, "colaborador": colaborador, "estado": "pendiente", "id_usuario": lid})
+            # Adelantos/quincenas también se notifican a finanzas.
             if tipo == "adelanto":
-                to_list = adelanto_list or ([rrhh_to] if rrhh_to else [])
-            else:
-                to_list = ([rrhh_to] if rrhh_to else []) + rrhh_cc
-
-            if to_list:
-                subj = f"RRHH · Solicitud {tipo} · {colaborador}"
-                txt = (
-                    f"Colaborador: {colaborador}\n"
-                    f"Tipo: {tipo}\n"
-                    + (f"Documento: {doc_tipo}\n" if doc_tipo else "")
-                    + (f"Fecha inicio: {data.get('fecha_inicio')}\n" if data.get("fecha_inicio") else "")
-                    + (f"Fecha fin: {data.get('fecha_fin')}\n" if data.get("fecha_fin") else "")
-                    + (f"Días: {data.get('dias')}\n" if data.get("dias") else "")
-                    + (f"Monto: {data.get('monto')}\n" if data.get("monto") else "")
-                    + (f"Motivo: {data.get('motivo')}\n" if data.get("motivo") else "")
-                    + f"\nEstado: pendiente\n"
-                    + f"Usuario CRM ID: {uid}\n"
-                    + f"RUT: {data.get('rut') or ''}\n"
-                )
-                send_email_group(to_list, subj, txt)
+                push_system_notif(db, kind="RRHH_SOLICITUD", role_target="FINANZAS", id_lead=lid, title=title, body=body_txt, payload={"tipo": tipo, "colaborador": colaborador, "estado": "pendiente", "id_usuario": lid})
         except Exception:
             pass
         return {"ok": True}
@@ -2045,6 +2046,16 @@ def solicitudes_update(id_solicitud: int, body: dict, db: Session = Depends(get_
     _ensure_tables(db)
     _require_rrhh_admin(me)
     try:
+        prev = db.execute(
+            text(
+                """
+                SELECT id_solicitud, colaborador, tipo, doc_tipo, fecha_inicio, fecha_fin, dias, monto, motivo, estado, id_usuario, rut, created_at
+                FROM rrhh_solicitudes
+                WHERE id_solicitud = :id
+                """
+            ),
+            {"id": int(id_solicitud)},
+        ).mappings().first()
         db.execute(
             text(
                 """
@@ -2057,6 +2068,64 @@ def solicitudes_update(id_solicitud: int, body: dict, db: Session = Depends(get_
             {"id": id_solicitud, "estado": body.get("estado"), "motivo": body.get("motivo")},
         )
         db.commit()
+
+        # Notificaciones (correo + alertas) cuando cambia estado.
+        try:
+            new_estado = str(body.get("estado") or "").strip().lower()
+            old_estado = str((prev or {}).get("estado") or "").strip().lower()
+            if new_estado and new_estado != old_estado:
+                colaborador = str((prev or {}).get("colaborador") or "").strip() or "Colaborador"
+                tipo = str((prev or {}).get("tipo") or "").strip() or "solicitud"
+                subj = f"RRHH · Solicitud {tipo} · {colaborador} · {new_estado.upper()}"
+                txt = (
+                    f"Colaborador: {colaborador}\n"
+                    f"Tipo: {tipo}\n"
+                    f"Estado: {new_estado}\n"
+                    + (f"Monto: {(prev or {}).get('monto')}\n" if (prev or {}).get("monto") else "")
+                    + (f"Días: {(prev or {}).get('dias')}\n" if (prev or {}).get("dias") else "")
+                    + (f"Fechas: {(prev or {}).get('fecha_inicio') or ''} → {(prev or {}).get('fecha_fin') or ''}\n" if ((prev or {}).get("fecha_inicio") or (prev or {}).get("fecha_fin")) else "")
+                    + (f"Motivo/obs: {(body.get('motivo') or (prev or {}).get('motivo') or '')}\n")
+                    + f"Solicitud ID: {id_solicitud}\n"
+                )
+                _notify_rrhh_admins(db, subject=subj, body=txt)
+
+                # Correo al usuario solicitante (si tenemos email en usuarios/rrhh_staff)
+                try:
+                    uid = int((prev or {}).get("id_usuario") or 0)
+                    email = None
+                    if uid:
+                        email = db.execute(
+                            text("SELECT COALESCE(NULLIF(btrim(email),''), NULL) FROM public.usuarios WHERE id_usuario=:id LIMIT 1"),
+                            {"id": uid},
+                        ).scalar()
+                    if not email:
+                        st = db.execute(
+                            text("SELECT COALESCE(NULLIF(btrim(email),''), NULL) FROM rrhh_staff WHERE is_active IS TRUE AND lower(colaborador)=lower(:c) ORDER BY id_staff DESC LIMIT 1"),
+                            {"c": colaborador},
+                        ).scalar()
+                        email = st
+                    if email:
+                        from backend.core.email import send_email
+                        send_email(str(email).strip(), subj, txt)
+                except Exception:
+                    pass
+
+                # Alertas internas
+                try:
+                    from backend.core.system_notifs import push_system_notif
+                    lid = int((prev or {}).get("id_usuario") or 0) or int(id_solicitud)
+                    title = "RRHH · Solicitud actualizada"
+                    body_txt = f"{colaborador} · {tipo} · {new_estado}"
+                    payload = {"tipo": tipo, "colaborador": colaborador, "estado": new_estado, "id_solicitud": int(id_solicitud)}
+                    push_system_notif(db, kind="RRHH_SOLICITUD_UPD", role_target="RRHH", id_lead=lid, title=title, body=body_txt, payload=payload)
+                    push_system_notif(db, kind="RRHH_SOLICITUD_UPD", role_target="ADMIN", id_lead=lid, title=title, body=body_txt, payload=payload)
+                    push_system_notif(db, kind="RRHH_SOLICITUD_UPD", role_target="SUPERADMIN", id_lead=lid, title=title, body=body_txt, payload=payload)
+                    if str(tipo).strip().lower() == "adelanto":
+                        push_system_notif(db, kind="RRHH_SOLICITUD_UPD", role_target="FINANZAS", id_lead=lid, title=title, body=body_txt, payload=payload)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         return {"ok": True}
     except Exception as e:
         db.rollback()

@@ -88,6 +88,11 @@ def _ensure_tables(conn):
             """
         )
     )
+    # Trazabilidad cuando no hay abono (OC/fecha estimada) + updated_at.
+    _add_column_if_missing(conn, "fin_eventos", "abono_mode", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "abono_ref", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "abono_due_date", "DATE")
+    _add_column_if_missing(conn, "fin_eventos", "updated_at", "TIMESTAMP DEFAULT now()")
     # 1 evento financiero por lead (si existe id_lead). Permite upsert estable desde "sync confirmados".
     try:
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_fin_eventos_id_lead ON fin_eventos(id_lead) WHERE id_lead IS NOT NULL"))
@@ -573,7 +578,8 @@ def get_evento_by_lead(
             text(
                 """
                 SELECT id_evento, id_lead, num_cotizacion, id_cotizacion, cliente, comuna, marca, tipo_cliente, fecha_evento,
-                       monto_bruto, monto_neto, iva, traslado, abono, saldo, comision_pct, comision_monto, created_at
+                       monto_bruto, monto_neto, iva, traslado, abono, saldo, comision_pct, comision_monto,
+                       abono_mode, abono_ref, abono_due_date, created_at, updated_at
                 FROM fin_eventos
                 WHERE id_lead=:id
                 ORDER BY id_evento DESC

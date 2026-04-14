@@ -1437,17 +1437,17 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                         'abono', COALESCE(fe.abono,0),
                         'saldo', COALESCE(fe.saldo,0)
                       )
-                    FROM public.fin_eventos fe
-                    JOIN public.leads l ON l.id_lead = fe.id_lead
-                    WHERE COALESCE(fe.fecha_evento, NULL) IS NOT NULL
-                      AND fe.fecha_evento >= {month_start} AND fe.fecha_evento < {month_end}
-                      AND COALESCE(fe.abono,0) > 0
-                      AND COALESCE(fe.saldo,0) > 0
-                      AND l.id_estado = :conf
-                      -- Cobros: siempre por dueño del lead (no por marca).
-                      AND (:is_admin OR {assigned_sql})
-                    ON CONFLICT DO NOTHING
-                    """
+	                    FROM public.fin_eventos fe
+	                    JOIN public.leads l ON l.id_lead = fe.id_lead
+	                    WHERE COALESCE(fe.fecha_evento, NULL) IS NOT NULL
+	                      AND fe.fecha_evento >= {month_start} AND fe.fecha_evento < {month_end}
+	                      AND COALESCE(fe.saldo,0) > 0
+	                      AND fe.fecha_evento <= {today}
+	                      AND l.id_estado = :conf
+	                      -- Cobros: siempre por dueño del lead (no por marca).
+	                      AND (:is_admin OR {assigned_sql})
+	                    ON CONFLICT DO NOTHING
+	                    """
                 ),
                 {
                     "uid": int(user_id),
