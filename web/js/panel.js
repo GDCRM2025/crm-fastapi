@@ -48,7 +48,23 @@ function viewURL(u) {
   return s;
 }
 function getToken() {
-  return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+  const fromStorage = localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+  if (fromStorage) return fromStorage;
+  // Compat: si el login solo seteó cookie (Safari/PWA/QR), intentamos leer `gd_token`.
+  try {
+    const m = String(document.cookie || "").match(/(?:^|;\s*)gd_token=([^;]+)/);
+    const ck = m ? decodeURIComponent(m[1] || "") : "";
+    if (ck) {
+      try {
+        localStorage.setItem("token", ck);
+        localStorage.setItem("gd_token", ck);
+      } catch (_) {
+      }
+      return ck;
+    }
+  } catch (_) {
+  }
+  return "";
 }
 function authHeaders(extra = {}) {
   const t = getToken();

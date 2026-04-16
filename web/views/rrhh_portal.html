@@ -185,7 +185,22 @@
       if (!API_BASE) return p;
       return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
     }
-    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+    function token(){
+      const t = localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+      if (t) return t;
+      try{
+        const m = String(document.cookie||"").match(/(?:^|;\\s*)gd_token=([^;]+)/);
+        const ck = m ? decodeURIComponent(m[1] || "") : "";
+        if (ck){
+          try{
+            localStorage.setItem("token", ck);
+            localStorage.setItem("gd_token", ck);
+          }catch(_){}
+          return ck;
+        }
+      }catch(_){}
+      return "";
+    }
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
     function toast(msg){
       const t = document.createElement("div");
