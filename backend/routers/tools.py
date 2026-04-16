@@ -1885,8 +1885,29 @@ def dashboard(
     if allowed_names is not None:
         baseline_rows = [b for b in baseline_rows if b.get("marca") in allowed_names]
 
+    # Venta mes (KPI/comisiones): por MES DEL EVENTO (fecha_evento), no por fecha de cierre.
+    # Regla: si el evento es en JUNIO, cuenta en JUNIO aunque se haya confirmado en Enero.
     actual_rows = []
-    if conf_where:
+    if conf_where and _col_exists(db, "leads", "fecha_evento"):
+        try:
+            actual_rows = db.execute(
+                text(
+                    f"""
+                    SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    WHERE {conf_where}
+                      AND l.fecha_evento::date BETWEEN :ms AND :me
+                      {marca_sql}
+                    GROUP BY l.id_marca
+                    """
+                ),
+                {**conf_params, "ms": month_start, "me": month_end},
+            ).mappings().all()
+        except Exception:
+            actual_rows = []
+
+    # Fallback (instancias legacy sin fecha_evento): mantenemos el comportamiento anterior (por cierre).
+    if conf_where and not actual_rows:
         if _table_exists_pg(db, "activity_log"):
             try:
                 tzname = "America/Santiago"
@@ -1905,30 +1926,31 @@ def dashboard(
                         SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
                         FROM conf c
                         JOIN leads l ON l.id_lead = c.id_lead
-                        WHERE c.confirmed_local::date BETWEEN :ms AND :me
+                        WHERE {conf_where}
+                          AND c.confirmed_local::date BETWEEN :ms AND :me
                         {marca_sql}
                         GROUP BY l.id_marca
                         """
                     ),
-                    {**params, "ms": month_start, "me": month_end, "tz": tzname},
+                    {**conf_params, "ms": month_start, "me": month_end, "tz": tzname},
                 ).mappings().all()
             except Exception:
                 actual_rows = []
 
-        if not actual_rows:
-            actual_rows = db.execute(
-                text(
-                    f"""
-                    SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
-                    FROM leads l
-                    WHERE {conf_where}
-                      AND l.updated_at::date BETWEEN :ms AND :me
-                      {marca_sql}
-                    GROUP BY l.id_marca
-                    """
-                ),
-                {**conf_params, "ms": month_start, "me": month_end},
-            ).mappings().all()
+    if conf_where and not actual_rows and _col_exists(db, "leads", "updated_at"):
+        actual_rows = db.execute(
+            text(
+                f"""
+                SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                FROM leads l
+                WHERE {conf_where}
+                  AND l.updated_at::date BETWEEN :ms AND :me
+                  {marca_sql}
+                GROUP BY l.id_marca
+                """
+            ),
+            {**conf_params, "ms": month_start, "me": month_end},
+        ).mappings().all()
     actual_map = {}
     for r in actual_rows:
         mid = r.get("id_marca")
@@ -2023,18 +2045,24 @@ def dashboard(
             })
 
     if conf_where and not sales_daily:
+        dia_expr = "l.fecha_evento::date"
+        try:
+            if _col_exists(db, "leads", "updated_at"):
+                dia_expr = "l.updated_at::date"
+        except Exception:
+            dia_expr = "l.fecha_evento::date"
         rows = db.execute(
             text(
                 f"""
-                SELECT l.fecha_evento::date AS dia,
+                SELECT {dia_expr} AS dia,
                        l.id_marca,
                        COALESCE(SUM(l.monto_cotizado),0)::float AS monto
                 FROM leads l
                 WHERE {conf_where}
-                  AND l.fecha_evento BETWEEN :ws AND :we
+                  AND {dia_expr} BETWEEN :ws AND :we
                   {marca_sql}
-                GROUP BY l.fecha_evento::date, l.id_marca
-                ORDER BY l.fecha_evento::date ASC
+                GROUP BY 1, l.id_marca
+                ORDER BY 1 ASC
                 """
             ),
             conf_params,
@@ -2711,6 +2739,7 @@ def dashboard_leads_hoy(
 def dashboard_sales_ids(
     desde: str,
     hasta: str,
+    mode: str = "confirmed",  # confirmed (fecha_cierre) | event (fecha_evento)
     id_marca: int | None = None,
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
@@ -2749,34 +2778,84 @@ def dashboard_sales_ids(
             marca_sql = " AND l.id_marca = :id_marca "
             params["id_marca"] = mid
 
-    if not _table_exists_pg(db, "activity_log"):
-        return {"ok": True, "ids": []}
+    confirmado_id = _estado_id(db, "CONFIRM")
+    conf_where = ""
+    if confirmado_id:
+        conf_where = "l.id_estado=:conf"
+        params["conf"] = confirmado_id
+    else:
+        conf_where = "EXISTS (SELECT 1 FROM estados_lead e WHERE e.id_estado=l.id_estado AND UPPER(e.nombre) LIKE :confname)"
+        params["confname"] = "%CONFIRM%"
 
-    rows = db.execute(
-        text(
-            f"""
-            WITH conf AS (
-              SELECT entity_id::bigint AS id_lead,
-                     MAX(created_at AT TIME ZONE :tz) AS confirmed_local
-              FROM public.activity_log
-              WHERE entity_type='lead'
-                AND action IN ('EVENT_CONFIRMED_AGENDED')
-                AND entity_id IS NOT NULL
-              GROUP BY entity_id
-            )
-            SELECT l.id_lead::bigint AS id_lead
-            FROM conf c
-            JOIN leads l ON l.id_lead=c.id_lead
-            WHERE c.confirmed_local::date BETWEEN :d1 AND :d2
-            {marca_sql}
-            ORDER BY c.confirmed_local DESC NULLS LAST, l.id_lead DESC
-            LIMIT 2000
-            """
-        ),
-        params,
-    ).fetchall()
-    ids = [int(r[0]) for r in rows if r and str(r[0] or "").isdigit()]
-    return {"ok": True, "ids": ids}
+    mode_u = str(mode or "confirmed").strip().lower()
+    if mode_u in ("event", "evento", "fecha_evento"):
+        if not _col_exists(db, "leads", "fecha_evento"):
+            return {"ok": True, "ids": []}
+        rows = db.execute(
+            text(
+                f"""
+                SELECT l.id_lead::bigint AS id_lead
+                FROM leads l
+                WHERE {conf_where}
+                  AND l.fecha_evento::date BETWEEN :d1 AND :d2
+                  {marca_sql}
+                ORDER BY l.fecha_evento DESC NULLS LAST, l.id_lead DESC
+                LIMIT 2000
+                """
+            ),
+            params,
+        ).fetchall()
+        ids = [int(r[0]) for r in rows if r and str(r[0] or "").isdigit()]
+        return {"ok": True, "ids": ids}
+
+    # Default: confirmed/cierre (activity_log si existe; si no, updated_at).
+    if _table_exists_pg(db, "activity_log"):
+        rows = db.execute(
+            text(
+                f"""
+                WITH conf AS (
+                  SELECT entity_id::bigint AS id_lead,
+                         MAX(created_at AT TIME ZONE :tz) AS confirmed_local
+                  FROM public.activity_log
+                  WHERE entity_type='lead'
+                    AND action IN ('EVENT_CONFIRMED_AGENDED')
+                    AND entity_id IS NOT NULL
+                  GROUP BY entity_id
+                )
+                SELECT l.id_lead::bigint AS id_lead
+                FROM conf c
+                JOIN leads l ON l.id_lead=c.id_lead
+                WHERE {conf_where}
+                  AND c.confirmed_local::date BETWEEN :d1 AND :d2
+                {marca_sql}
+                ORDER BY c.confirmed_local DESC NULLS LAST, l.id_lead DESC
+                LIMIT 2000
+                """
+            ),
+            params,
+        ).fetchall()
+        ids = [int(r[0]) for r in rows if r and str(r[0] or "").isdigit()]
+        return {"ok": True, "ids": ids}
+
+    if _col_exists(db, "leads", "updated_at"):
+        rows = db.execute(
+            text(
+                f"""
+                SELECT l.id_lead::bigint AS id_lead
+                FROM leads l
+                WHERE {conf_where}
+                  AND l.updated_at::date BETWEEN :d1 AND :d2
+                  {marca_sql}
+                ORDER BY l.updated_at DESC NULLS LAST, l.id_lead DESC
+                LIMIT 2000
+                """
+            ),
+            params,
+        ).fetchall()
+        ids = [int(r[0]) for r in rows if r and str(r[0] or "").isdigit()]
+        return {"ok": True, "ids": ids}
+
+    return {"ok": True, "ids": []}
 
 
 @router.get("/dashboard/events")

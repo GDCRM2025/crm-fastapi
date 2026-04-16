@@ -703,12 +703,16 @@
       }
     }
 
-    async function openConfirmedSales(desde, hasta, idMarcaOverride=""){
-      // Ventas = leads confirmados/agendados en ese rango (activity_log).
+    async function openConfirmedSales(desde, hasta, idMarcaOverride="", mode="confirmed"){
+      // Ventas = leads confirmados/agendados en ese rango.
+      // mode:
+      // - confirmed: por fecha de cierre/confirmación
+      // - event: por fecha_evento (mes del evento)
       try{
         const qs = new URLSearchParams();
         if (desde) qs.set("desde", String(desde));
         if (hasta) qs.set("hasta", String(hasta));
+        if (mode) qs.set("mode", String(mode));
         const mid = String(idMarcaOverride || state.idMarca || "").trim();
         if (mid) qs.set("id_marca", mid);
         const r = await fetch(`${API_BASE}/tools/dashboard/sales_ids?${qs.toString()}`, { headers: authHeaders() });
@@ -812,7 +816,8 @@
       $("#kpi2").onclick = () => openConfirmedSales(state.lastWeek?.start || state.from, state.lastWeek?.end || state.to);
       $("#kpi3").onclick = () => {
         const r = monthRange();
-        openConfirmedSales(r.from, r.to);
+        // Venta mes (KPI): por mes del evento (fecha_evento).
+        openConfirmedSales(r.from, r.to, "", "event");
       };
       $("#kpi5").onclick = () => {
         const d = isoSCL();
