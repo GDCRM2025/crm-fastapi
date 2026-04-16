@@ -57,7 +57,7 @@ def verify_user(username: str, password: str) -> tuple[bool, str]:
 # Algunas rutas legacy importan `get_current_user` desde `backend.core.auth`.
 # En la app real, la auth canónica vive en `backend.routers.auth.get_current_user`.
 def get_current_user(
-    request: Request,
+    request: Request | None = None,
     authorization: str | None = Header(default=None),
 ):  # type: ignore[override]
     try:
@@ -68,7 +68,7 @@ def get_current_user(
         # Fallback mínimo: intenta JWT directo (dev/legacy) y construye estructura esperada.
         if not authorization or not str(authorization).lower().startswith("bearer "):
             try:
-                tok = (request.cookies or {}).get("gd_token") or ""
+                tok = ((request.cookies or {}) if request else {}).get("gd_token") or ""
             except Exception:
                 tok = ""
             tok = str(tok or "").strip()

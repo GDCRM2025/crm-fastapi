@@ -633,7 +633,7 @@ def register(data: RegisterIn):
 
 # auth deps (compat con settings_live)
 def get_current_user(
-    request: Request,
+    request: Request | None = None,
     authorization: str | None = Header(default=None),
 ) -> Dict[str, Any]:
     # bypass dev si se activa
@@ -642,7 +642,7 @@ def get_current_user(
     # Compat: algunas vistas (iPhone QR scanner / PWA) sólo traen cookie `gd_token`.
     if not authorization or not authorization.lower().startswith("bearer "):
         try:
-            tok = (request.cookies or {}).get("gd_token") or ""
+            tok = ((request.cookies or {}) if request else {}).get("gd_token") or ""
         except Exception:
             tok = ""
         tok = str(tok or "").strip()
