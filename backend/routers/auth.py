@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Header, Depends, Body
+from fastapi import APIRouter, HTTPException, Header, Depends, Body, Request
 from sqlalchemy import text
 
 from backend.core.db import get_connection
@@ -632,12 +632,24 @@ def register(data: RegisterIn):
 
 
 # auth deps (compat con settings_live)
-def get_current_user(authorization: str | None = Header(default=None)) -> Dict[str, Any]:
+def get_current_user(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> Dict[str, Any]:
     # bypass dev si se activa
     if settings.DEV_NO_AUTH:
         return {"id": "dev", "role": "Admin", "marcas": [], "name": "Dev"}
+    # Compat: algunas vistas (iPhone QR scanner / PWA) sólo traen cookie `gd_token`.
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Token requerido")
+        try:
+            tok = (request.cookies or {}).get("gd_token") or ""
+        except Exception:
+            tok = ""
+        tok = str(tok or "").strip()
+        if tok:
+            authorization = f"Bearer {tok}"
+        else:
+            raise HTTPException(status_code=401, detail="Token requerido")
     token = authorization.split(" ", 1)[1]
     try:
         if _jose_jwt is not None:

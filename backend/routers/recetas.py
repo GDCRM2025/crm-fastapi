@@ -4,12 +4,16 @@ from typing import List, Optional, Any
 from sqlalchemy import text
 import json
 import logging
+import threading
 
 from backend.core.db import get_connection
 from backend.routers.auth import get_current_user
 
 router = APIRouter(prefix="/ops/recetas", tags=["recetas"])
 logger = logging.getLogger("crm.recetas")
+
+_RECETAS_ENSURED = False
+_RECETAS_ENSURE_LOCK = threading.Lock()
 
 def _table_exists(conn, name: str) -> bool:
     return bool(conn.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{name}"}).scalar())
@@ -187,6 +191,13 @@ def _recalc_and_propagate_cost(conn, id_receta: int) -> None:
 
 
 def _ensure_tables(conn):
+    # Evitar DDL repetido en hot paths (puede causar locks/colas con Passenger).
+    global _RECETAS_ENSURED
+    if _RECETAS_ENSURED:
+        return
+    with _RECETAS_ENSURE_LOCK:
+        if _RECETAS_ENSURED:
+            return
     conn.execute(
         text(
             """
@@ -291,6 +302,7 @@ def _ensure_tables(conn):
         conn.commit()
     except Exception:
         pass
+    _RECETAS_ENSURED = True
 
 def _audit(conn, id_receta: int, action: str, username: str | None, payload: dict[str, Any] | None = None) -> None:
     try:

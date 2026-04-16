@@ -10,11 +10,15 @@ from sqlalchemy.orm import Session
 import json
 import datetime
 import os
+import threading
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
 
 router = APIRouter(prefix="/rrhh", tags=["rrhh"])
+
+_RRHH_ENSURED = False
+_RRHH_ENSURE_LOCK = threading.Lock()
 
 NOMINA_FIELDS = [
     "colaborador",
@@ -45,6 +49,13 @@ NOMINA_FIELDS = [
 
 
 def _ensure_tables(db: Session) -> None:
+    # Evitar DDL repetido en hot paths (puede causar locks/colas con Passenger).
+    global _RRHH_ENSURED
+    if _RRHH_ENSURED:
+        return
+    with _RRHH_ENSURE_LOCK:
+        if _RRHH_ENSURED:
+            return
     db.execute(
         text(
             """
@@ -308,6 +319,7 @@ def _ensure_tables(db: Session) -> None:
     except Exception:
         pass
     db.commit()
+    _RRHH_ENSURED = True
 
 
 def _tol_minutes_for_role(role: str) -> int:

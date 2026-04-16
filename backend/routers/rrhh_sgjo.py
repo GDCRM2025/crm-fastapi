@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 from datetime import datetime, timezone
+import threading
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
@@ -24,45 +25,60 @@ from backend.core.sgjo import (
 
 router = APIRouter(prefix="/rrhh/sgjo", tags=["rrhh-sgjo"])
 
+_SGJO_ENSURED = False
+_SGJO_ENSURE_LOCK = threading.Lock()
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
 def _ensure(db: Session) -> None:
-    ensure_sgjo_tables(db)
-    seed_sedes_and_points(db)
-    # Extend RRHH staff schema (idempotente) para modalidad/turno mixto.
-    try:
-        db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS presencial_dow SMALLINT"))
-        db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS modalidad_default TEXT"))
-        db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS puede_marcar BOOLEAN DEFAULT TRUE"))
-        db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS marcacion_method TEXT DEFAULT 'BOTH'"))
-    except Exception:
-        pass
-    # Solicitudes de enrolamiento de dispositivo (aprobación por RRHH/SuperAdmin).
-    try:
-        db.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS public.sgjo_device_requests (
-                  id_request BIGSERIAL PRIMARY KEY,
-                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                  decided_at TIMESTAMPTZ,
-                  status TEXT NOT NULL DEFAULT 'pending', -- pending/approved/rejected
-                  id_usuario BIGINT NOT NULL,
-                  device_id TEXT NOT NULL,
-                  ua_hash TEXT NOT NULL,
-                  decided_by BIGINT,
-                  note TEXT,
-                  UNIQUE(id_usuario, device_id, status)
+    # IMPORTANTE: DDL en hot paths puede causar locks/colas (Passenger "queue full").
+    # Esto se ejecuta 1 vez por proceso para estabilizar performance.
+    global _SGJO_ENSURED
+    if _SGJO_ENSURED:
+        return
+    with _SGJO_ENSURE_LOCK:
+        if _SGJO_ENSURED:
+            return
+        ensure_sgjo_tables(db)
+        seed_sedes_and_points(db)
+        # Extend RRHH staff schema (idempotente) para modalidad/turno mixto.
+        try:
+            db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS presencial_dow SMALLINT"))
+            db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS modalidad_default TEXT"))
+            db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS puede_marcar BOOLEAN DEFAULT TRUE"))
+            db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS marcacion_method TEXT DEFAULT 'BOTH'"))
+        except Exception:
+            pass
+        # Solicitudes de enrolamiento de dispositivo (aprobación por RRHH/SuperAdmin).
+        try:
+            db.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS public.sgjo_device_requests (
+                      id_request BIGSERIAL PRIMARY KEY,
+                      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                      decided_at TIMESTAMPTZ,
+                      status TEXT NOT NULL DEFAULT 'pending', -- pending/approved/rejected
+                      id_usuario BIGINT NOT NULL,
+                      device_id TEXT NOT NULL,
+                      ua_hash TEXT NOT NULL,
+                      decided_by BIGINT,
+                      note TEXT,
+                      UNIQUE(id_usuario, device_id, status)
+                    )
+                    """
                 )
-                """
             )
-        )
-    except Exception:
-        pass
-    db.commit()
+        except Exception:
+            pass
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+        _SGJO_ENSURED = True
 
 
 def _exec_presencial_dow(uid: int, rut: str) -> int:
@@ -334,15 +350,9 @@ def sgjo_mark_redirect(p: str, request: Request) -> RedirectResponse:
     code = str(p or "").strip().upper()
     if not code or len(code) > 64:
         raise HTTPException(status_code=400, detail="p inválido")
-    # Si el usuario no está logueado (sin cookie de token), lo mandamos al login con retorno a la marcación.
-    # Motivo: el "Escáner de código" en iPhone abre Safari sin compartir localStorage; esta ruta debe guiar el flujo.
-    try:
-        tok_cookie = (request.cookies or {}).get("gd_token") or ""
-    except Exception:
-        tok_cookie = ""
     next_url = f"/crm/web/views/rrhh_sgjo_marcacion.html?p={code}"
-    if not str(tok_cookie or "").strip():
-        return RedirectResponse(url=f"/crm/web/login.html?next={next_url}", status_code=302)
+    # Siempre redirigimos a la vista: ella misma toma token desde cookie/localStorage y, si falta,
+    # guía a login con retorno. Esto evita falsos "no logueado" en PWA/iframes.
     return RedirectResponse(url=next_url, status_code=302)
 
 
@@ -820,13 +830,14 @@ def marcar(
             acc_thr = int(point["fallback_accuracy_m"] or 25)
             within_hard = distance_m <= float(hard)
             within_soft = distance_m <= float(soft)
-            acc_bad = (acc_f is not None) and (acc_f >= float(acc_thr))
+            # `accuracy` es "metros de error": mientras más bajo, mejor.
+            acc_good = (acc_f is None) or (acc_f <= float(acc_thr))
 
             if modality == "REMOTO":
                 within = True
             else:
-                within = bool(within_hard or (within_soft and acc_bad))
-                used_fb = bool((not within_hard) and within_soft and acc_bad)
+                within = bool(within_hard or (within_soft and acc_good))
+                used_fb = bool((not within_hard) and within_soft and acc_good)
             if not within:
                 ok = False
                 err = "Fuera de rango"
