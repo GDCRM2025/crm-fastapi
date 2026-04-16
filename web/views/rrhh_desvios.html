@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>RRHH · Desvíos</title>
+  <link rel="stylesheet" href="../styles.css"/>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:14px;background:transparent;color:var(--text);}
+    .wrap{max-width:1200px;margin:0 auto;display:grid;gap:12px;}
+    .card{border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.26);border-radius:18px;padding:14px;backdrop-filter: blur(10px);}
+    :root.light .card{background:rgba(255,255,255,.86);border-color:rgba(0,0,0,.10);}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    .ttl{font-weight:1200;font-size:18px;}
+    .muted{opacity:.8;font-weight:850;font-size:12px;}
+    .btn{height:38px;border-radius:12px;border:1px solid rgba(148,163,184,.22);background:rgba(2,6,23,.18);color:inherit;padding:0 12px;font-weight:1100;cursor:pointer;}
+    .btn.primary{background:color-mix(in srgb, var(--accent) 22%, transparent);border-color:color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn.bad{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35);}
+    .btn.ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35);}
+    .inp{height:38px;border-radius:12px;border:1px solid rgba(148,163,184,.22);background:rgba(2,6,23,.12);color:inherit;padding:0 12px;font-weight:1000;outline:none;}
+    table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border-radius:14px;border:1px solid rgba(148,163,184,.18);}
+    th,td{padding:10px 10px;border-bottom:1px solid rgba(148,163,184,.14);font-size:12px;text-align:left;vertical-align:middle;}
+    th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.8;}
+    tr:hover td{background:rgba(148,163,184,.06);}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.12);font-weight:1100;}
+    .pill.pend{border-color:rgba(234,179,8,.35);background:rgba(234,179,8,.10);}
+    .pill.ok{border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.10);}
+    .pill.bad{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.10);}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <div class="ttl">RRHH · Desvíos</div>
+          <div class="muted">Pendientes de aprobación vs turno teórico (SGJO).</div>
+        </div>
+        <div class="row">
+          <input class="inp" id="fDate" type="date"/>
+          <select class="inp" id="fEstado">
+            <option value="pendiente">Pendiente</option>
+            <option value="aprobado">Aprobado</option>
+            <option value="rechazado">Rechazado</option>
+            <option value="">Todos</option>
+          </select>
+          <button class="btn primary" id="btnDetect">Detectar hoy</button>
+          <button class="btn" id="btnReload">Actualizar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div class="muted" id="meta">—</div>
+        <div class="muted" id="log">—</div>
+      </div>
+      <div style="overflow:auto;margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Colaborador</th>
+              <th>Rol</th>
+              <th>Tipo</th>
+              <th>Esperado</th>
+              <th>Real</th>
+              <th>Impacto</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="9" class="muted">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = (()=> {
+      try{
+        const h = String(location.hostname||"").toLowerCase();
+        const isLocal = (h==="localhost" || h==="127.0.0.1");
+        if (isLocal) return "";
+        const p = String(location.pathname||"");
+        return (p.startsWith("/crm/") || p === "/crm") ? "/crm" : "";
+      }catch(_){ return ""; }
+    })();
+    const qs = (s, el=document)=> el.querySelector(s);
+    function getToken(){
+      return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    }
+    function authHeaders(h){
+      const tok = getToken();
+      return tok ? ({...h, "Authorization":"Bearer "+tok}) : h;
+    }
+    async function apiJSON(path, opt){
+      const r = await fetch(`${API_BASE}${path}`, { ...(opt||{}), headers: authHeaders({ "Accept":"application/json", ...((opt||{}).headers||{}) })});
+      const t = await r.text();
+      let j=null; try{ j = t ? JSON.parse(t) : null; }catch(_){}
+      if(!r.ok){
+        throw new Error((j && (j.detail||j.error||j.message)) ? (j.detail||j.error||j.message) : (t || ("HTTP "+r.status)));
+      }
+      return j;
+    }
+    function fmtTipo(t){
+      t = String(t||"").toUpperCase();
+      const mp = {
+        "MISSING_IN":"Falta IN",
+        "MISSING_OUT":"Falta OUT",
+        "LATE_IN":"Atraso IN",
+        "EARLY_IN":"Entrada temprana",
+        "EARLY_OUT":"Salida anticipada",
+        "LATE_OUT":"Salida tarde"
+      };
+      return mp[t] || t;
+    }
+    function pillEstado(st){
+      st = String(st||"").toLowerCase();
+      const cls = st==="pendiente" ? "pend" : (st==="aprobado" ? "ok" : (st==="rechazado" ? "bad" : ""));
+      return `<span class="pill ${cls}">${st||"—"}</span>`;
+    }
+    function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m])); }
+    function setLog(s){ qs("#log").textContent = String(s||"—"); }
+
+    async function load(){
+      const d = qs("#fDate").value || "";
+      const st = qs("#fEstado").value || "";
+      const q = new URLSearchParams();
+      if (d) q.set("date", d);
+      if (st) q.set("estado", st);
+      setLog("Cargando…");
+      const res = await apiJSON(`/rrhh/desvios?${q.toString()}`);
+      const items = Array.isArray(res?.items) ? res.items : [];
+      qs("#meta").textContent = `${items.length} desvío(s)`;
+      const tb = qs("#tbody");
+      if(!items.length){
+        tb.innerHTML = `<tr><td colspan="9" class="muted">Sin desvíos.</td></tr>`;
+        setLog("Listo");
+        return;
+      }
+      tb.innerHTML = items.map(x=>{
+        const exp = `${x.expected_in||"—"} → ${x.expected_out||"—"}`;
+        const real = `${(x.actual_in||"—").toString().replace("T"," ").slice(0,16)} / ${(x.actual_out||"—").toString().replace("T"," ").slice(0,16)}`;
+        const imp = `${x.impact_kind||"—"}${x.impact_min ? (" · "+x.impact_min+"m") : ""}`;
+        const canAct = String(x.status||"").toLowerCase() === "pendiente";
+        return `
+          <tr>
+            <td>${esc(String(x.fecha||""))}</td>
+            <td><b>${esc(x.colaborador||"—")}</b><div class="muted">${esc(x.centro_costo||"")}</div></td>
+            <td>${esc(x.rol||"—")}</td>
+            <td>${esc(fmtTipo(x.tipo))}</td>
+            <td>${esc(exp)}</td>
+            <td>${esc(real)}</td>
+            <td>${esc(imp)}</td>
+            <td>${pillEstado(x.status)}</td>
+            <td>
+              <div class="actions">
+                <button class="btn ok" data-act="aprobado" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Aprobar</button>
+                <button class="btn bad" data-act="rechazado" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Rechazar</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+      setLog("Listo");
+    }
+
+    async function detect(){
+      setLog("Detectando…");
+      const d = qs("#fDate").value || "";
+      const res = await apiJSON(`/rrhh/desvios/detect`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ date: d || null }) });
+      setLog(`Detectados: ${res.count||0}`);
+      await load();
+    }
+
+    document.addEventListener("click", async (e)=>{
+      const b = e.target.closest("button[data-act]");
+      if(!b) return;
+      const id = Number(b.dataset.id||0);
+      const st = String(b.dataset.act||"");
+      if(!id) return;
+      let note = "";
+      try{
+        note = prompt(`Obs (${st}):`, "") || "";
+      }catch(_){}
+      b.disabled = true;
+      try{
+        await apiJSON(`/rrhh/desvios/${id}`, { method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ status: st, note }) });
+        await load();
+      }catch(err){
+        alert(String(err?.message||err));
+        b.disabled = false;
+      }
+    });
+
+    (async ()=>{
+      // default date = hoy Chile
+      try{
+        const now = new Date();
+        const iso = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+        qs("#fDate").value = iso;
+      }catch(_){}
+      qs("#btnReload").addEventListener("click", load);
+      qs("#btnDetect").addEventListener("click", detect);
+      qs("#fEstado").addEventListener("change", load);
+      qs("#fDate").addEventListener("change", load);
+      await load();
+    })();
+  </script>
+</body>
+</html>
+

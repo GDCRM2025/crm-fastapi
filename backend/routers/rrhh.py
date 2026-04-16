@@ -126,6 +126,11 @@ def _ensure_tables(db: Session) -> None:
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS modalidad_default TEXT"))
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS puede_marcar BOOLEAN DEFAULT TRUE"))
     db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS marcacion_method TEXT DEFAULT 'BOTH'"))
+    db.execute(text("ALTER TABLE rrhh_staff ADD COLUMN IF NOT EXISTS jefe_id_staff INTEGER"))
+    try:
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_staff_jefe ON rrhh_staff(jefe_id_staff)"))
+    except Exception:
+        pass
     db.execute(
         text(
             """
@@ -242,7 +247,533 @@ def _ensure_tables(db: Session) -> None:
             """
         )
     )
+    # Desvíos vs turno teórico (pendiente aprobación)
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS rrhh_desvios (
+                  id_desvio BIGSERIAL PRIMARY KEY,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  fecha DATE NOT NULL,
+                  id_staff INTEGER NOT NULL REFERENCES rrhh_staff(id_staff) ON DELETE CASCADE,
+                  id_usuario INTEGER,
+                  rut TEXT,
+                  colaborador TEXT,
+                  rol TEXT,
+                  centro_costo TEXT,
+                  tipo TEXT NOT NULL,              -- MISSING_IN/MISSING_OUT/LATE_IN/EARLY_IN/EARLY_OUT/LATE_OUT
+                  status TEXT NOT NULL DEFAULT 'pendiente', -- pendiente/aprobado/rechazado
+                  decided_at TIMESTAMPTZ,
+                  decided_by INTEGER,
+                  note TEXT,
+                  expected_in TEXT,
+                  expected_out TEXT,
+                  actual_in TIMESTAMPTZ,
+                  actual_out TIMESTAMPTZ,
+                  diff_in_min INTEGER,
+                  diff_out_min INTEGER,
+                  impact_kind TEXT,                -- AUSENCIA/DESCUENTO_HORAS/HORAS_EXTRA/JUSTIFICADO
+                  impact_min INTEGER,
+                  meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+                  UNIQUE(fecha, id_staff, tipo)
+                )
+                """
+            )
+        )
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_desvios_fecha ON rrhh_desvios(fecha DESC)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_desvios_staff ON rrhh_desvios(id_staff, fecha DESC)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_desvios_status ON rrhh_desvios(status, fecha DESC)"))
+    except Exception:
+        pass
+    # Ajustes por desvíos (para nómina/contabilidad)
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS rrhh_ajustes (
+                  id_ajuste BIGSERIAL PRIMARY KEY,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  fecha DATE NOT NULL,
+                  id_staff INTEGER NOT NULL REFERENCES rrhh_staff(id_staff) ON DELETE CASCADE,
+                  id_desvio BIGINT,
+                  kind TEXT NOT NULL,              -- AUSENCIA/DESCUENTO_HORAS/HORAS_EXTRA
+                  minutos INTEGER NOT NULL DEFAULT 0,
+                  note TEXT
+                )
+                """
+            )
+        )
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_ajustes_staff_fecha ON rrhh_ajustes(id_staff, fecha DESC)"))
+    except Exception:
+        pass
     db.commit()
+
+
+def _tol_minutes_for_role(role: str) -> int:
+    r = str(role or "").upper()
+    # Ejecutivos (remoto): tolerancia baja
+    if "EJECUTIV" in r:
+        return 10
+    # Patio / bodega / compras: tolerancia alta (3 horas)
+    if ("PATIO" in r) or ("BODEG" in r) or ("COMPRA" in r) or ("OPERAC" in r) or ("DISE" in r) or ("MARKET" in r):
+        return 180
+    return 60
+
+
+def _parse_hhmm(v: str) -> tuple[int, int] | None:
+    try:
+        s = str(v or "").strip()
+        if not s:
+            return None
+        m = __import__("re").match(r"^\s*(\d{1,2}):(\d{2})\s*$", s)
+        if not m:
+            return None
+        hh = int(m.group(1)); mm = int(m.group(2))
+        if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+            return None
+        return hh, mm
+    except Exception:
+        return None
+
+
+def _minutes(a: "datetime.datetime", b: "datetime.datetime") -> int:
+    try:
+        return int(round((a - b).total_seconds() / 60.0))
+    except Exception:
+        return 0
+
+
+def _sgjo_marks_for_date(db: Session, *, id_usuario: int, rut: str, on_date: "datetime.date") -> dict[str, Any]:
+    """
+    Retorna la primera IN y última OUT del día (Chile), best-effort.
+    """
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT tipo, created_at
+                FROM public.sgjo_marcaciones
+                WHERE ok IS TRUE
+                  AND (
+                    (id_usuario=:u)
+                    OR (:rut <> '' AND lower(COALESCE(rut,''))=lower(:rut))
+                  )
+                  AND ((created_at AT TIME ZONE 'America/Santiago')::date = :d)
+                ORDER BY created_at ASC
+                """
+            ),
+            {"u": int(id_usuario), "rut": str(rut or ""), "d": on_date},
+        ).mappings().all()
+        ins = [r for r in rows if str(r.get("tipo") or "").upper() == "IN"]
+        outs = [r for r in rows if str(r.get("tipo") or "").upper() == "OUT"]
+        return {
+            "in": (ins[0].get("created_at") if ins else None),
+            "out": (outs[-1].get("created_at") if outs else None),
+        }
+    except Exception:
+        return {"in": None, "out": None}
+
+
+def _detect_desvios_for_staff(db: Session, *, staff: dict[str, Any], on_date: "datetime.date") -> list[dict[str, Any]]:
+    """
+    Crea/actualiza rrhh_desvios (idempotente) para un colaborador en una fecha.
+    Retorna lista de desvíos detectados (pendientes o existentes).
+    """
+    out: list[dict[str, Any]] = []
+    try:
+        id_staff = int(staff.get("id_staff") or 0)
+        id_usuario = int(staff.get("id_usuario") or 0) if str(staff.get("id_usuario") or "").isdigit() else 0
+        rol = str(staff.get("rol") or "")
+        tol = _tol_minutes_for_role(rol)
+        if id_staff <= 0 or id_usuario <= 0:
+            return []
+        shift = _today_theoretical_shift(db, id_staff, on_date)
+        if not shift:
+            return []
+        he = _parse_hhmm(str(shift.get("hora_entrada") or ""))
+        hs = _parse_hhmm(str(shift.get("hora_salida") or ""))
+        if not he or not hs:
+            return []
+        hh_in, mm_in = he
+        hh_out, mm_out = hs
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Santiago")
+        exp_in = _dt.combine(on_date, _dt.min.time().replace(hour=hh_in, minute=mm_in), tzinfo=tz)
+        exp_out = _dt.combine(on_date, _dt.min.time().replace(hour=hh_out, minute=mm_out), tzinfo=tz)
+        marks = _sgjo_marks_for_date(db, id_usuario=id_usuario, rut=str(staff.get("rut") or ""), on_date=on_date)
+        act_in = marks.get("in")
+        act_out = marks.get("out")
+
+        def upsert(tipo: str, *, diff_in: int | None, diff_out: int | None, impact_kind: str, impact_min: int | None):
+            db.execute(
+                text(
+                    """
+                    INSERT INTO rrhh_desvios(
+                      fecha, id_staff, id_usuario, rut, colaborador, rol, centro_costo,
+                      tipo, status,
+                      expected_in, expected_out, actual_in, actual_out,
+                      diff_in_min, diff_out_min,
+                      impact_kind, impact_min,
+                      meta
+                    ) VALUES (
+                      :f,:s,:u,:rut,:c,:r,:cc,
+                      :t,'pendiente',
+                      :ein,:eout,:ain,:aout,
+                      :di,:do,
+                      :ik,:im,
+                      jsonb_build_object('tol_min', :tol)
+                    )
+                    ON CONFLICT (fecha, id_staff, tipo) DO UPDATE SET
+                      id_usuario=EXCLUDED.id_usuario,
+                      rut=EXCLUDED.rut,
+                      colaborador=EXCLUDED.colaborador,
+                      rol=EXCLUDED.rol,
+                      centro_costo=EXCLUDED.centro_costo,
+                      expected_in=EXCLUDED.expected_in,
+                      expected_out=EXCLUDED.expected_out,
+                      actual_in=EXCLUDED.actual_in,
+                      actual_out=EXCLUDED.actual_out,
+                      diff_in_min=EXCLUDED.diff_in_min,
+                      diff_out_min=EXCLUDED.diff_out_min,
+                      impact_kind=EXCLUDED.impact_kind,
+                      impact_min=EXCLUDED.impact_min,
+                      meta=EXCLUDED.meta,
+                      -- No pisa status si ya fue decidido
+                      status=CASE WHEN rrhh_desvios.status IN ('aprobado','rechazado') THEN rrhh_desvios.status ELSE 'pendiente' END
+                    """
+                ),
+                {
+                    "f": on_date,
+                    "s": id_staff,
+                    "u": id_usuario,
+                    "rut": str(staff.get("rut") or ""),
+                    "c": str(staff.get("colaborador") or ""),
+                    "r": str(rol or ""),
+                    "cc": str(staff.get("centro_costo") or ""),
+                    "t": tipo,
+                    "ein": f"{hh_in:02d}:{mm_in:02d}",
+                    "eout": f"{hh_out:02d}:{mm_out:02d}",
+                    "ain": act_in,
+                    "aout": act_out,
+                    "di": diff_in,
+                    "do": diff_out,
+                    "ik": impact_kind,
+                    "im": impact_min,
+                    "tol": int(tol),
+                },
+            )
+
+        # Missing
+        if act_in is None:
+            upsert("MISSING_IN", diff_in=None, diff_out=None, impact_kind="AUSENCIA", impact_min=None)
+            out.append({"tipo": "MISSING_IN"})
+        if act_out is None:
+            upsert("MISSING_OUT", diff_in=None, diff_out=None, impact_kind="AUSENCIA", impact_min=None)
+            out.append({"tipo": "MISSING_OUT"})
+
+        # Diffs
+        if act_in is not None:
+            try:
+                act_in_dt = act_in.astimezone(tz) if hasattr(act_in, "astimezone") else act_in
+                di = _minutes(act_in_dt, exp_in)
+                if abs(int(di)) > int(tol):
+                    if di > 0:
+                        upsert("LATE_IN", diff_in=int(di), diff_out=None, impact_kind="DESCUENTO_HORAS", impact_min=int(di))
+                        out.append({"tipo": "LATE_IN", "min": int(di)})
+                    else:
+                        upsert("EARLY_IN", diff_in=int(di), diff_out=None, impact_kind="HORAS_EXTRA", impact_min=int(abs(di)))
+                        out.append({"tipo": "EARLY_IN", "min": int(di)})
+            except Exception:
+                pass
+        if act_out is not None:
+            try:
+                act_out_dt = act_out.astimezone(tz) if hasattr(act_out, "astimezone") else act_out
+                do = _minutes(act_out_dt, exp_out)
+                # do < 0 => salió antes; do > 0 => salió después
+                if abs(int(do)) > int(tol):
+                    if do < 0:
+                        upsert("EARLY_OUT", diff_in=None, diff_out=int(do), impact_kind="DESCUENTO_HORAS", impact_min=int(abs(do)))
+                        out.append({"tipo": "EARLY_OUT", "min": int(do)})
+                    else:
+                        upsert("LATE_OUT", diff_in=None, diff_out=int(do), impact_kind="HORAS_EXTRA", impact_min=int(do))
+                        out.append({"tipo": "LATE_OUT", "min": int(do)})
+            except Exception:
+                pass
+
+        db.commit()
+        return out
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return []
+
+
+@router.post("/desvios/detect")
+def detect_desvios(
+    body: dict = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Detecta desvíos vs turno teórico.
+    - SUPERADMIN/ADMIN/FINANZAS/RRHH: todos
+    - JEFE/OPERACIONES/COMPRAS: solo su equipo (jefe_id_staff)
+    """
+    _ensure_tables(db)
+    if not _is_rrhh_admin(me):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    from datetime import date as _date
+    ds = str(body.get("date") or "").strip()
+    if ds:
+        try:
+            on_date = _date.fromisoformat(ds[:10])
+        except Exception:
+            raise HTTPException(status_code=400, detail="date inválida (YYYY-MM-DD)")
+    else:
+        on_date = db.execute(text("SELECT (now() AT TIME ZONE 'America/Santiago')::date")).scalar()
+        on_date = _date.fromisoformat(str(on_date))
+
+    role = _role_key(me)
+    uid = _user_id(me) or 0
+    # staff_id del jefe (si está vinculado)
+    jefe_staff_id = None
+    try:
+        if uid:
+            jefe_staff_id = db.execute(
+                text("SELECT id_staff FROM rrhh_staff WHERE id_usuario=:u AND is_active IS TRUE ORDER BY id_staff DESC LIMIT 1"),
+                {"u": int(uid)},
+            ).scalar()
+            jefe_staff_id = int(jefe_staff_id) if jefe_staff_id else None
+    except Exception:
+        jefe_staff_id = None
+
+    where = "WHERE is_active IS TRUE"
+    params: dict[str, Any] = {}
+    if (("SUPERADMIN" in role) or (role == "ADMIN") or ("FINAN" in role) or ("RRHH" in role) or ("RECURSOS" in role)):
+        pass
+    else:
+        # jefe/ops/compras: solo su equipo
+        if jefe_staff_id:
+            where += " AND jefe_id_staff=:j"
+            params["j"] = int(jefe_staff_id)
+        else:
+            return {"ok": True, "date": str(on_date), "count": 0, "items": []}
+
+    staff_rows = db.execute(
+        text(
+            f"""
+            SELECT id_staff, colaborador, rut, id_usuario, rol, centro_costo
+            FROM rrhh_staff
+            {where}
+            ORDER BY lower(colaborador) ASC, id_staff ASC
+            """
+        ),
+        params,
+    ).mappings().all()
+
+    items = []
+    for st in staff_rows:
+        det = _detect_desvios_for_staff(db, staff=dict(st), on_date=on_date)
+        if det:
+            items.append({"id_staff": int(st["id_staff"]), "colaborador": st.get("colaborador"), "detected": det})
+    return {"ok": True, "date": str(on_date), "count": len(items), "items": items}
+
+
+@router.get("/desvios")
+def list_desvios(
+    estado: str | None = None,
+    date: str | None = None,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    if not _is_rrhh_admin(me):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    role = _role_key(me)
+    uid = _user_id(me) or 0
+    jefe_staff_id = None
+    try:
+        if uid:
+            jefe_staff_id = db.execute(
+                text("SELECT id_staff FROM rrhh_staff WHERE id_usuario=:u AND is_active IS TRUE ORDER BY id_staff DESC LIMIT 1"),
+                {"u": int(uid)},
+            ).scalar()
+            jefe_staff_id = int(jefe_staff_id) if jefe_staff_id else None
+    except Exception:
+        jefe_staff_id = None
+
+    where = []
+    params: dict[str, Any] = {}
+    if estado:
+        where.append("status = :st")
+        params["st"] = str(estado).strip().lower()
+    if date:
+        where.append("fecha = :d")
+        params["d"] = str(date)[:10]
+    # scope por rol
+    if (("SUPERADMIN" in role) or (role == "ADMIN") or ("FINAN" in role) or ("RRHH" in role) or ("RECURSOS" in role)):
+        pass
+    else:
+        if jefe_staff_id:
+            where.append("id_staff IN (SELECT id_staff FROM rrhh_staff WHERE jefe_id_staff=:j AND is_active IS TRUE)")
+            params["j"] = int(jefe_staff_id)
+        else:
+            return {"ok": True, "items": []}
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    rows = db.execute(
+        text(
+            f"""
+            SELECT id_desvio, created_at, fecha, id_staff, id_usuario, rut, colaborador, rol, centro_costo,
+                   tipo, status, decided_at, decided_by, note,
+                   expected_in, expected_out, actual_in, actual_out, diff_in_min, diff_out_min,
+                   impact_kind, impact_min
+            FROM rrhh_desvios
+            {where_sql}
+            ORDER BY fecha DESC, status ASC, colaborador ASC, id_desvio DESC
+            LIMIT 500
+            """
+        ),
+        params,
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.put("/desvios/{id_desvio}")
+def decide_desvio(
+    id_desvio: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    if not _is_rrhh_admin(me):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    estado = str(body.get("status") or "").strip().lower()
+    if estado not in ("aprobado", "rechazado"):
+        raise HTTPException(status_code=400, detail="status inválido")
+    note = str(body.get("note") or "").strip()
+    uid = _user_id(me) or 0
+
+    row = db.execute(
+        text(
+            """
+            SELECT id_desvio, fecha, id_staff, id_usuario, colaborador, tipo, impact_kind, impact_min, status
+            FROM rrhh_desvios
+            WHERE id_desvio=:id
+            """
+        ),
+        {"id": int(id_desvio)},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Desvío no existe")
+    if str(row.get("status") or "").lower() in ("aprobado", "rechazado") and not body.get("force"):
+        return {"ok": True, "already": True}
+
+    db.execute(
+        text(
+            """
+            UPDATE rrhh_desvios
+            SET status=:st, decided_at=now(), decided_by=:by, note=:n
+            WHERE id_desvio=:id
+            """
+        ),
+        {"id": int(id_desvio), "st": estado, "by": int(uid) if uid else None, "n": note or None},
+    )
+
+    # Impacto (reglas usuario: 4=C, 5=C).
+    tipo = str(row.get("tipo") or "").upper()
+    impact_kind = str(row.get("impact_kind") or "").upper()
+    impact_min = int(row.get("impact_min") or 0) if str(row.get("impact_min") or "").strip() != "" else 0
+    id_staff = int(row.get("id_staff") or 0)
+    fecha = str(row.get("fecha") or "")[:10]
+    colaborador = str(row.get("colaborador") or "Colaborador")
+
+    try:
+        if estado == "rechazado":
+            # No aprobado => ausencias o descuento horas
+            if tipo in ("MISSING_IN", "MISSING_OUT"):
+                # ausencia día completo
+                db.execute(
+                    text(
+                        """
+                        INSERT INTO rrhh_inasistencias(colaborador, fecha, dias, motivo)
+                        VALUES (:c, :f, 1, :m)
+                        """
+                    ),
+                    {"c": colaborador, "f": fecha, "m": f"Auto (desvío {tipo})"},
+                )
+                db.execute(
+                    text(
+                        """
+                        INSERT INTO rrhh_ajustes(fecha, id_staff, id_desvio, kind, minutos, note)
+                        VALUES (:f,:s,:d,'AUSENCIA',0,:n)
+                        """
+                    ),
+                    {"f": fecha, "s": id_staff, "d": int(id_desvio), "n": note or None},
+                )
+            else:
+                # descuento proporcional por minutos
+                mins = abs(int(impact_min or 0))
+                db.execute(
+                    text(
+                        """
+                        INSERT INTO rrhh_ajustes(fecha, id_staff, id_desvio, kind, minutos, note)
+                        VALUES (:f,:s,:d,'DESCUENTO_HORAS',:m,:n)
+                        """
+                    ),
+                    {"f": fecha, "s": id_staff, "d": int(id_desvio), "m": int(mins), "n": note or None},
+                )
+        else:
+            # aprobado => justificado o horas extra según caso
+            if impact_kind == "HORAS_EXTRA" and tipo in ("EARLY_IN", "LATE_OUT"):
+                mins = abs(int(impact_min or 0))
+                db.execute(
+                    text(
+                        """
+                        INSERT INTO rrhh_ajustes(fecha, id_staff, id_desvio, kind, minutos, note)
+                        VALUES (:f,:s,:d,'HORAS_EXTRA',:m,:n)
+                        """
+                    ),
+                    {"f": fecha, "s": id_staff, "d": int(id_desvio), "m": int(mins), "n": note or None},
+                )
+            else:
+                # justificado: no ajuste
+                db.execute(
+                    text(
+                        """
+                        INSERT INTO rrhh_ajustes(fecha, id_staff, id_desvio, kind, minutos, note)
+                        VALUES (:f,:s,:d,'JUSTIFICADO',0,:n)
+                        """
+                    ),
+                    {"f": fecha, "s": id_staff, "d": int(id_desvio), "n": note or None},
+                )
+    except Exception:
+        pass
+
+    db.commit()
+
+    # Notificar siempre (correo + alertas internas)
+    try:
+        subj = f"RRHH · Desvío {tipo} · {colaborador} · {estado.upper()}"
+        txt = f"Colaborador: {colaborador}\nFecha: {fecha}\nTipo: {tipo}\nEstado: {estado}\nObs: {note or ''}\n"
+        _notify_rrhh_admins(db, subject=subj, body=txt)
+    except Exception:
+        pass
+    try:
+        from backend.core.system_notifs import push_system_notif
+        lid = int(row.get("id_usuario") or 0) or int(id_desvio)
+        push_system_notif(db, kind="RRHH_DESVIO", role_target="RRHH", id_lead=lid, title="RRHH · Desvío", body=f"{colaborador} · {tipo} · {estado}", payload={"id_desvio": int(id_desvio), "estado": estado, "tipo": tipo, "fecha": fecha})
+        push_system_notif(db, kind="RRHH_DESVIO", role_target="FINANZAS", id_lead=lid, title="RRHH · Desvío", body=f"{colaborador} · {tipo} · {estado}", payload={"id_desvio": int(id_desvio), "estado": estado, "tipo": tipo, "fecha": fecha})
+        push_system_notif(db, kind="RRHH_DESVIO", role_target="ADMIN", id_lead=lid, title="RRHH · Desvío", body=f"{colaborador} · {tipo} · {estado}", payload={"id_desvio": int(id_desvio), "estado": estado, "tipo": tipo, "fecha": fecha})
+        push_system_notif(db, kind="RRHH_DESVIO", role_target="SUPERADMIN", id_lead=lid, title="RRHH · Desvío", body=f"{colaborador} · {tipo} · {estado}", payload={"id_desvio": int(id_desvio), "estado": estado, "tipo": tipo, "fecha": fecha})
+    except Exception:
+        pass
+    return {"ok": True}
 
     # Seed AFP commissions if empty
     try:

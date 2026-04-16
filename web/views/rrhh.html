@@ -102,16 +102,17 @@
     function esc(s){ return String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('\"',"&quot;"); }
 
     const V = "20260402-2";
-    const URLS = {
-      portal: `/web/views/rrhh_portal.html?v=${V}`,
-      colab: `/web/views/rrhh_colaboradores.html?v=${V}`,
-      turnos: `/web/views/rrhh_turnos.html?v=${V}`,
-      nomina: `/web/views/rrhh_nomina.html?v=${V}`,
-      marc: `/web/views/rrhh_marcaciones.html?v=${V}`,
-      sol: `/web/views/rrhh_solicitudes.html?v=${V}`,
-      sgjo: `/web/views/rrhh_sgjo.html?v=${V}`,
-      puntos: `/web/views/rrhh_puntos.html?v=${V}`,
-    };
+	    const URLS = {
+	      portal: `/web/views/rrhh_portal.html?v=${V}`,
+	      colab: `/web/views/rrhh_colaboradores.html?v=${V}`,
+	      turnos: `/web/views/rrhh_turnos.html?v=${V}`,
+	      nomina: `/web/views/rrhh_nomina.html?v=${V}`,
+	      marc: `/web/views/rrhh_marcaciones.html?v=${V}`,
+	      sol: `/web/views/rrhh_solicitudes.html?v=${V}`,
+	      desv: `/web/views/rrhh_desvios.html?v=${V}`,
+	      sgjo: `/web/views/rrhh_sgjo.html?v=${V}`,
+	      puntos: `/web/views/rrhh_puntos.html?v=${V}`,
+	    };
 
     const historyStack = [];
     function setFrame(url, push=true){
@@ -146,21 +147,23 @@
       const tabs = [
         { id:"portal", label:"Mi portal", url: URLS.portal },
       ];
-      if (superRRHH){
-        tabs.push(
-          { id:"colab", label:"Colaboradores", url: URLS.colab },
-          { id:"nomina", label:"Nómina", url: URLS.nomina },
-          { id:"turnos", label:"Turnos + horarios", url: URLS.turnos },
-          { id:"puntos", label:"Puntos + QR", url: URLS.puntos },
-          { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
-          { id:"sol", label:"Solicitudes (admin)", url: URLS.sol },
-        );
-      }else if (managerRRHH){
-        tabs.push(
-          { id:"turnos", label:"Turnos + horarios", url: URLS.turnos },
-          { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
-        );
-      }
+	      if (superRRHH){
+	        tabs.push(
+	          { id:"colab", label:"Colaboradores", url: URLS.colab },
+	          { id:"nomina", label:"Nómina", url: URLS.nomina },
+	          { id:"turnos", label:"Turnos + horarios", url: URLS.turnos },
+	          { id:"puntos", label:"Puntos + QR", url: URLS.puntos },
+	          { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
+	          { id:"sol", label:"Solicitudes (admin)", url: URLS.sol },
+	          { id:"desv", label:"Desvíos (aprobación)", url: URLS.desv },
+	        );
+	      }else if (managerRRHH){
+	        tabs.push(
+	          { id:"turnos", label:"Turnos + horarios", url: URLS.turnos },
+	          { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
+	          { id:"desv", label:"Desvíos (aprobación)", url: URLS.desv },
+	        );
+	      }
       tabs.push({ id:"sgjo", label:"Marcar", url: URLS.sgjo });
       return tabs;
     }

@@ -473,10 +473,12 @@ def receta_audit(id_receta: int, limit: int = 10, me=Depends(get_current_user)):
     with get_connection() as conn:
         _ensure_tables(conn)
         try:
+            # Siempre casteamos payload a TEXT para evitar problemas de serialización (JSONB/dict).
             rows = conn.execute(
                 text(
                     f"""
-                    SELECT id_audit, action, username, created_at, payload
+                    SELECT id_audit, action, username, created_at,
+                           COALESCE(payload::text,'') AS payload
                     FROM recetas_audit
                     WHERE id_receta=:id
                     ORDER BY id_audit DESC
