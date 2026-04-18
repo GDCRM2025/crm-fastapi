@@ -1654,8 +1654,11 @@
 	          title:{ text:"Total venta por marca (Actual vs Meta vs Base) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
           tooltip:{ trigger:"axis", axisPointer:{ type:"shadow" }, formatter:(p)=>{
             const i = p?.[0]?.dataIndex ?? 0;
+            const ly = Number(top?.[i]?.actual_ly ?? 0);
+            const yoy = (ly ? ((actual[i] / ly - 1) * 100) : null);
             return `<div style="font-weight:900">${esc(labels[i])}</div>` +
               `<div style="margin-top:4px">Actual: ${esc(money(actual[i]||0))}</div>` +
+              `<div style="opacity:.8;margin-top:4px">Año pasado: ${esc(money(ly||0))}${yoy===null?"":(" · YoY "+yoy.toFixed(1)+"%")}</div>` +
               `<div style="opacity:.8;margin-top:4px">Meta: ${esc(money(meta[i]||0))}</div>` +
               `<div style="opacity:.8;margin-top:4px">Base: ${esc(money(base[i]||0))}</div>`;
           }},
@@ -1674,17 +1677,21 @@
       box.innerHTML = `
         <div style="max-height:420px;overflow:auto">
           <table class="tbl">
-            <thead><tr><th>Marca</th><th class="right">Actual</th><th class="right">Meta</th><th class="right">% Meta</th><th class="right">Base</th><th class="right">Δ vs Meta</th></tr></thead>
+            <thead><tr><th>Marca</th><th class="right">Actual</th><th class="right">Año pasado</th><th class="right">YoY</th><th class="right">Meta</th><th class="right">% Meta</th><th class="right">Base</th><th class="right">Δ vs Meta</th></tr></thead>
             <tbody>
               ${items.map(r => {
                 const a = Number(r.actual||0);
                 const b = Number(r.baseline ?? r.base ?? 0);
                 const m = Number(r.meta ?? r.target ?? 0);
+                const ly = Number(r.actual_ly || 0);
                 const d = a - m;
                 const pct = m ? (a / m * 100) : 0;
+                const yoy = ly ? ((a / ly - 1) * 100) : null;
                 return `<tr>
                   <td><strong>${esc(r.marca||"—")}</strong></td>
                   <td class="right">${esc(money(a))}</td>
+                  <td class="right">${esc(money(ly))}</td>
+                  <td class="right">${esc(yoy===null?"—":(yoy.toFixed(1)+"%"))}</td>
                   <td class="right">${esc(money(m))}</td>
                   <td class="right">${esc(pct.toFixed(1))}%</td>
                   <td class="right">${esc(money(b))}</td>

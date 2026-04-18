@@ -399,6 +399,27 @@ def _is_admin(role: str) -> bool:
     return role in ("ADMIN", "SUPERADMIN", "JEFE DE OPERACIONES", "OPERACIONES")
 
 
+def _role_key(role: str) -> str:
+    raw = str(role or "").strip().lower()
+    if not raw:
+        return ""
+    raw = unicodedata.normalize("NFD", raw)
+    raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Mn")
+    raw = re.sub(r"[^a-z0-9]+", "", raw)
+    return raw
+
+
+def _is_superadmin(me: dict) -> bool:
+    role = str(me.get("role") or me.get("rol") or "").strip()
+    rk = _role_key(role)
+    if "superadmin" in rk:
+        return True
+    u = str(me.get("username") or me.get("email") or me.get("name") or "").strip().lower()
+    if u in ("greengd", "oscarmendoza", "oscarmendoza@greendiamond.cl"):
+        return True
+    return False
+
+
 def _resolve_uid_for_marcas(db: Session, me: dict) -> int | None:
     """
     Compat: algunos tokens traen `id` como username (string) y no como int.
@@ -1408,7 +1429,8 @@ def dashboard_ops_alertas(
 
     role = (me.get("role") or me.get("rol") or "").upper()
     marcas = _fetch_marcas_ids(db, me)
-    only_own = not _is_admin(role)
+    # Scope: SUPERADMIN ve todo; ADMIN/EJECUTIVO ven solo sus marcas.
+    only_own = not _is_superadmin(me)
     if only_own and not marcas:
         return {"ok": True, "range": {"from": str(today), "to": str(end_day)}, "counts": {"tel": 0, "dir": 0, "hr": 0}, "items": {"tel": [], "dir": [], "hr": []}}
 
@@ -2101,7 +2123,8 @@ def dashboard_reportes(
 
         role = (me.get("role") or me.get("rol") or "").upper()
         marcas = _fetch_marcas_ids(db, me)
-        only_own = not _is_admin(role)
+        # Scope: SUPERADMIN ve todo; ADMIN/EJECUTIVO ven solo sus marcas.
+        only_own = not _is_superadmin(me)
         use_fin_eventos = str(venta_source or "").lower() in ("eventos", "fin_eventos")
 
         # Base de fecha por defecto: fecha_evento.
@@ -2142,8 +2165,18 @@ def dashboard_reportes(
             ini_d = date(today.year, today.month, 1)
             fin_d = today
 
-        ly_ini = date(ini_d.year - 1, ini_d.month, ini_d.day)
-        ly_fin = date(fin_d.year - 1, fin_d.month, fin_d.day)
+        def _shift_year_safe(d: date, years: int) -> date:
+            y = d.year + years
+            try:
+                return date(y, d.month, d.day)
+            except Exception:
+                # clamp al último día del mes (ej: 29-feb)
+                from calendar import monthrange
+                last = monthrange(y, d.month)[1]
+                return date(y, d.month, min(d.day, last))
+
+        ly_ini = _shift_year_safe(ini_d, -1)
+        ly_fin = _shift_year_safe(fin_d, -1)
 
         where_parts = ["1=1"]
         params: dict[str, Any] = {}
@@ -2522,6 +2555,7 @@ def dashboard_reportes(
                 baseline_map = {}
 
             actual_by_marca: dict[int, float] = {}
+            actual_by_marca_ly: dict[int, float] = {}
             if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
                 arows = db.execute(
                     text(
@@ -2541,6 +2575,28 @@ def dashboard_reportes(
                     if r.get("id_marca") is None:
                         continue
                     actual_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
+
+                params_ly = dict(params)
+                params_ly["ini"] = ly_ini.isoformat()
+                params_ly["fin"] = ly_fin.isoformat()
+                arows_ly = db.execute(
+                    text(
+                        f"""
+                        SELECT l.id_marca, COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                        FROM fin_eventos fe
+                        JOIN leads l ON l.id_lead=fe.id_lead
+                        WHERE {where_sql}
+                          AND fe.fecha_evento IS NOT NULL
+                          AND {conf_where}
+                        GROUP BY l.id_marca
+                        """
+                    ),
+                    params_ly,
+                ).mappings().all()
+                for r in arows_ly:
+                    if r.get("id_marca") is None:
+                        continue
+                    actual_by_marca_ly[int(r["id_marca"])] = float(r.get("monto") or 0)
             else:
                 arows = db.execute(
                     text(
@@ -2557,6 +2613,25 @@ def dashboard_reportes(
                     if r.get("id_marca") is None:
                         continue
                     actual_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
+
+                params_ly = dict(params)
+                params_ly["ini"] = ly_ini.isoformat()
+                params_ly["fin"] = ly_fin.isoformat()
+                arows_ly = db.execute(
+                    text(
+                        f"""
+                        SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                        FROM leads l
+                        WHERE {where_sql} AND {conf_where}
+                        GROUP BY l.id_marca
+                        """
+                    ),
+                    params_ly,
+                ).mappings().all()
+                for r in arows_ly:
+                    if r.get("id_marca") is None:
+                        continue
+                    actual_by_marca_ly[int(r["id_marca"])] = float(r.get("monto") or 0)
 
             if _col_exists(db, "marcas", "color"):
                 brands = db.execute(
@@ -2578,19 +2653,23 @@ def dashboard_reportes(
                 name = str(b.get("marca") or "").strip().upper()
                 color = str(b.get("color") or "").strip()
                 actual = float(actual_by_marca.get(mid, 0.0))
+                actual_ly = float(actual_by_marca_ly.get(mid, 0.0))
                 base = float(metas_map.get(mid, {}).get("venta_base") or baseline_map.get(name, 0.0) or 0.0)
                 meta = float(metas_map.get(mid, {}).get("meta") or (base * 1.12 if base else 0.0))
                 share = (actual / venta_total * 100.0) if venta_total else 0.0
                 vs_base = ((actual / base - 1.0) * 100.0) if base else None
                 vs_meta = ((actual / meta) * 100.0) if meta else None
+                yoy = ((actual / actual_ly - 1.0) * 100.0) if actual_ly else None
                 ventas_comparativo.append(
                     {
                         "id_marca": mid,
                         "marca": name,
                         "color": color,
-                        "actual": round(actual, 2),
-                        "base": round(base, 2),
-                        "meta": round(meta, 2),
+                        "actual": _money_int(actual),
+                        "actual_ly": _money_int(actual_ly),
+                        "yoy_pct": (round(yoy, 2) if yoy is not None else None),
+                        "base": _money_int(base),
+                        "meta": _money_int(meta),
                         "share_pct": round(share, 2),
                         "vs_base_pct": (round(vs_base, 2) if vs_base is not None else None),
                         "vs_meta_pct": (round(vs_meta, 2) if vs_meta is not None else None),
@@ -2605,7 +2684,7 @@ def dashboard_reportes(
             "range": {"from": ini_d.isoformat(), "to": fin_d.isoformat(), "periodo": (p or "range")},
             "range_ly": {"from": ly_ini.isoformat(), "to": ly_fin.isoformat()},
             "kpis": {
-                "venta_total": round(float(venta_total or 0), 2),
+                "venta_total": _money_int(venta_total or 0),
                 "leads_total": int(leads_total or 0),
                 "confirmados_total": int(confirmados_total or 0),
                 "cierre_pct": round(float(cierre_pct or 0), 2),
