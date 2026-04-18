@@ -566,6 +566,13 @@ def _ensure_metas(db: Session) -> None:
     db.commit()
 
 
+def _money_int(x: Any) -> int:
+    try:
+        return int(round(float(x or 0)))
+    except Exception:
+        return 0
+
+
 def _is_admin_strict(role: str) -> bool:
     return role in ("ADMIN", "SUPERADMIN")
 
@@ -1490,7 +1497,7 @@ def dashboard_ops_alertas(
 def dashboard(
     id_marca: int | None = None,
     venta_source: str = "confirmados",  # confirmados (monto_cotizado) | eventos (fin_eventos)
-    week_mode: str = "rolling",  # rolling (últimos 7 días) | calendar (lun-dom)
+    week_mode: str = "calendar",  # calendar (lun-dom) | rolling (últimos 7 días)
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
@@ -1517,7 +1524,7 @@ def dashboard(
             "pipeline": [],
             "tasks": {"preagenda": 0, "confirmados_sin_preagenda": 0},
             "events": [],
-            "kpis": {"venta_dia": 0, "venta_semana": 0, "cierre_pct": 0, "total_semana": 0, "confirmados_semana": 0},
+            "kpis": {"venta_dia": 0, "venta_semana": 0, "venta_mes": 0, "cierre_pct": 0, "total_semana": 0, "confirmados_semana": 0},
         }
 
     if _col_exists(db, "leads", "fecha_ingreso"):
@@ -1549,7 +1556,7 @@ def dashboard(
         params["id_marca"] = int(id_marca)
 
     brand_rows = db.execute(
-        text("SELECT id_marca, COALESCE(nombre, marca) AS nombre FROM marcas")
+        text("SELECT id_marca, COALESCE(nombre, marca) AS nombre FROM marcas ORDER BY COALESCE(nombre, marca) ASC")
     ).mappings().all()
     brand_map = {int(r["id_marca"]): r["nombre"] for r in brand_rows if r.get("id_marca")}
 
@@ -1757,13 +1764,14 @@ def dashboard(
                           COALESCE(SUM(l.monto_cotizado),0)::float AS monto
                         FROM conf c
                         JOIN leads l ON l.id_lead = c.id_lead
-                        WHERE c.confirmed_local::date BETWEEN :ws AND :we
+                        WHERE {conf_where}
+                          AND c.confirmed_local::date BETWEEN :ws AND :we
                         {marca_sql}
                         GROUP BY 1,2
                         ORDER BY 1 ASC, 2 ASC
                         """
                     ),
-                    {**params, "tz": tzname},
+                    {**conf_params, "tz": tzname},
                 ).mappings().all()
                 for r in rows:
                     mid = r.get("id_marca")
@@ -1783,15 +1791,18 @@ def dashboard(
 
         if not sales_daily:
             try:
+                sale_date_expr = "l.updated_at::date"
+                if _col_exists(db, "leads", "agenda_approved_at"):
+                    sale_date_expr = "l.agenda_approved_at::date"
                 rows = db.execute(
                     text(
                         f"""
-                        SELECT l.updated_at::date AS dia,
+                        SELECT {sale_date_expr} AS dia,
                                l.id_marca,
                                COALESCE(SUM(l.monto_cotizado),0)::float AS monto
                         FROM leads l
                         WHERE {conf_where}
-                          AND l.updated_at::date BETWEEN :ws AND :we
+                          AND {sale_date_expr} BETWEEN :ws AND :we
                           {marca_sql}
                         GROUP BY 1,2
                         ORDER BY 1 ASC, 2 ASC
@@ -1813,11 +1824,14 @@ def dashboard(
                 venta_semana = float(sum([float(x.get("monto") or 0) for x in sales_daily]) or 0)
                 venta_dia = float(sum([float(x.get("monto") or 0) for x in sales_daily if x.get("dia") == str(today)]) or 0)
             except Exception:
+                sale_date_expr = "l.updated_at::date"
+                if _col_exists(db, "leads", "agenda_approved_at"):
+                    sale_date_expr = "l.agenda_approved_at::date"
                 venta_semana = db.execute(
                     text(f"""
                         SELECT COALESCE(SUM(l.monto_cotizado),0)::float
                         FROM leads l
-                        WHERE {conf_where} AND l.updated_at::date BETWEEN :ws AND :we
+                        WHERE {conf_where} AND {sale_date_expr} BETWEEN :ws AND :we
                         {marca_sql}
                     """),
                     conf_params,
@@ -1826,7 +1840,7 @@ def dashboard(
                     text(f"""
                         SELECT COALESCE(SUM(l.monto_cotizado),0)::float
                         FROM leads l
-                        WHERE {conf_where} AND l.updated_at::date = :today
+                        WHERE {conf_where} AND {sale_date_expr} = :today
                         {marca_sql}
                     """),
                     {**conf_params, "today": today},
@@ -1865,6 +1879,12 @@ def dashboard(
             except Exception:
                 pass
 
+    # Normalización CLP: siempre enteros (no decimales)
+    venta_dia_i = _money_int(venta_dia)
+    venta_semana_i = _money_int(venta_semana)
+    for row in sales_daily:
+        row["monto"] = _money_int(row.get("monto"))
+
     cierre_pct = (confirmados_semana / total_semana * 100) if total_semana else 0
 
     _ensure_baseline(db)
@@ -1885,50 +1905,24 @@ def dashboard(
     if allowed_names is not None:
         baseline_rows = [b for b in baseline_rows if b.get("marca") in allowed_names]
 
+    baseline_map: dict[str, dict[str, Any]] = {str(b.get("marca")): dict(b) for b in baseline_rows if b.get("marca")}
+
+    # Venta mes: por MES DEL EVENTO (fecha_evento), no por fecha de cierre.
     actual_rows = []
     if conf_where:
-        if _table_exists_pg(db, "activity_log"):
-            try:
-                tzname = "America/Santiago"
-                actual_rows = db.execute(
-                    text(
-                        f"""
-                        WITH conf AS (
-                          SELECT entity_id::bigint AS id_lead,
-                                 MAX(created_at AT TIME ZONE :tz) AS confirmed_local
-                          FROM public.activity_log
-                          WHERE entity_type='lead'
-                            AND action IN ('EVENT_CONFIRMED_AGENDED')
-                            AND entity_id IS NOT NULL
-                          GROUP BY entity_id
-                        )
-                        SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
-                        FROM conf c
-                        JOIN leads l ON l.id_lead = c.id_lead
-                        WHERE c.confirmed_local::date BETWEEN :ms AND :me
-                        {marca_sql}
-                        GROUP BY l.id_marca
-                        """
-                    ),
-                    {**params, "ms": month_start, "me": month_end, "tz": tzname},
-                ).mappings().all()
-            except Exception:
-                actual_rows = []
-
-        if not actual_rows:
-            actual_rows = db.execute(
-                text(
-                    f"""
-                    SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
-                    FROM leads l
-                    WHERE {conf_where}
-                      AND l.updated_at::date BETWEEN :ms AND :me
-                      {marca_sql}
-                    GROUP BY l.id_marca
-                    """
-                ),
-                {**conf_params, "ms": month_start, "me": month_end},
-            ).mappings().all()
+        actual_rows = db.execute(
+            text(
+                f"""
+                SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                FROM leads l
+                WHERE {conf_where}
+                  AND l.fecha_evento::date BETWEEN :ms AND :me
+                  {marca_sql}
+                GROUP BY l.id_marca
+                """
+            ),
+            {**conf_params, "ms": month_start, "me": month_end},
+        ).mappings().all()
     actual_map = {}
     for r in actual_rows:
         mid = r.get("id_marca")
@@ -1966,9 +1960,20 @@ def dashboard(
     except Exception:
         metas_by_marca = {}
 
+    # Mostrar marcas aunque estén en 0:
+    # - Ejecutivo: solo sus marcas (allowed_names)
+    # - Admin: todas las marcas
+    marca_order = [str(r.get("nombre") or "") for r in brand_rows if r.get("nombre")]
+    if allowed_names is not None:
+        compare_names = [n for n in marca_order if n in set(allowed_names)]
+    else:
+        compare_names = list(marca_order)
+    extras = sorted((set(baseline_map.keys()) | set(actual_map.keys())) - set(compare_names))
+    compare_names.extend(extras)
+
     sales_compare = []
-    for b in baseline_rows:
-        name = b.get("marca")
+    for name in compare_names:
+        b = baseline_map.get(str(name), {}) or {}
         base = float(b.get("monto") or 0)
         # target legacy: 12% sobre baseline. Si hay meta configurada, usarla.
         meta_row = metas_by_marca.get(str(name or "").strip(), {})
@@ -1979,11 +1984,11 @@ def dashboard(
         sales_compare.append({
             "marca": name,
             # Backward compat con frontend (reportes.html): baseline/meta
-            "base": base,
-            "baseline": base,
-            "target": target,
-            "meta": target,
-            "actual": actual,
+            "base": _money_int(base),
+            "baseline": _money_int(base),
+            "target": _money_int(target),
+            "meta": _money_int(target),
+            "actual": _money_int(actual),
             "vs_base": round(vs_base, 2),
             "vs_target": round(vs_target, 2),
             "vs_meta": round(vs_target, 2),
@@ -1991,6 +1996,8 @@ def dashboard(
             "particular": int(b.get("particular") or 0),
             "meta_cfg": meta_row or None,
         })
+
+    venta_mes_i = int(sum(int(r.get("actual") or 0) for r in sales_compare))
 
     commissions = []
     if _is_admin(role):
@@ -2009,8 +2016,7 @@ def dashboard(
             else:
                 com_map[m] = pct
 
-        for b in baseline_rows:
-            name = b.get("marca")
+        for name in compare_names:
             if not name:
                 continue
             actual = float(actual_map.get(name, 0))
@@ -2018,8 +2024,8 @@ def dashboard(
             commissions.append({
                 "marca": name,
                 "porcentaje": round(pct, 2),
-                "venta": actual,
-                "comision": round(actual * (pct / 100.0), 2),
+                "venta": _money_int(actual),
+                "comision": _money_int(actual * (pct / 100.0)),
             })
 
     if conf_where and not sales_daily:
@@ -2045,6 +2051,9 @@ def dashboard(
             if name:
                 sales_daily.append({"dia": str(r.get("dia")), "marca": str(name).upper(), "monto": float(r.get("monto") or 0)})
 
+    for row in sales_daily:
+        row["monto"] = _money_int(row.get("monto"))
+
     return {
         "ok": True,
         "week": {"start": str(week_start), "end": str(week_end), "number": week_num},
@@ -2055,8 +2064,9 @@ def dashboard(
         "tasks": {"preagenda": int(preagenda), "confirmados_sin_preagenda": int(conf_sin)},
         "events": events,
         "kpis": {
-            "venta_dia": float(venta_dia or 0),
-            "venta_semana": float(venta_semana or 0),
+            "venta_dia": venta_dia_i,
+            "venta_semana": venta_semana_i,
+            "venta_mes": venta_mes_i,
             "cierre_pct": float(round(cierre_pct, 2)),
             "total_semana": int(total_semana),
             "confirmados_semana": int(confirmados_semana),
