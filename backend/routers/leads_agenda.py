@@ -1879,8 +1879,26 @@ def move_lead_and_maybe_agenda(
         if quote_source == "manual":
             id_cot = None
 
+        # Si hay múltiples cotizaciones, preferir la cotización vigente del lead para no obligar "doble intento".
+        # Solo exigir id_cotizacion si NO hay id_cotizacion_vigente utilizable.
         if quote_source != "manual" and cotizaciones and len(cotizaciones) > 1 and not id_cot:
-            raise HTTPException(400, detail="Debes seleccionar la cotización aprobada (id_cotizacion).")
+            lead_vig = lead.get("id_cotizacion_vigente")
+            if lead_vig:
+                try:
+                    lead_vig = int(lead_vig)
+                except Exception:
+                    lead_vig = None
+            if lead_vig:
+                for c in cotizaciones:
+                    try:
+                        cid = int(c.get("id_cotizacion") or 0)
+                    except Exception:
+                        cid = 0
+                    if cid == int(lead_vig):
+                        id_cot = cid
+                        break
+            if not id_cot:
+                raise HTTPException(400, detail="Debes seleccionar la cotización aprobada (id_cotizacion).")
 
         if not id_cot and cotizaciones and quote_source != "manual":
             lead_vig = lead.get("id_cotizacion_vigente")
