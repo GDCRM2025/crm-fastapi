@@ -600,6 +600,10 @@ def list_system_notifs(
     Se usa para Operaciones/Compras/Bodega/Admin desde UI.
     """
     role = (user.get("role") or user.get("rol") or "").upper()
+    uname = (user.get("username") or user.get("email") or user.get("name") or "").strip()
+    if uname and "@" in uname:
+        # por si viene email
+        uname = uname.split("@", 1)[0]
     role_targets = _role_targets(role)
     if not role_targets:
         role_targets = [role]
@@ -607,6 +611,10 @@ def list_system_notifs(
     with get_connection() as conn:
         _ensure_system_notifs(conn)
         where = ["role_target = ANY(:roles)", "created_at >= (now() - interval '30 days')"]
+        # Soporte notifs dirigidas a un usuario específico (ej: solo Oscar).
+        # Si payload.username_target existe, solo lo ve ese usuario; si no existe, lo ven todos por rol.
+        if uname:
+            where.append("(payload->>'username_target' IS NULL OR payload->>'username_target' = :uname)")
         if int(unread_only or 0) == 1:
             where.append("read_at IS NULL")
         rows = conn.execute(
@@ -619,7 +627,7 @@ def list_system_notifs(
                 LIMIT :lim
                 """
             ),
-            {"roles": role_targets, "lim": limit},
+            {"roles": role_targets, "lim": limit, "uname": uname},
         ).mappings().all()
         # Dedup: un mismo evento suele insertarse por varios role_target (ADMIN/OPERACIONES/MICE...).
         # La UI no muestra role_target, así que lo colapsamos por (kind + lead + id_evento + fecha_evento + title).

@@ -4107,6 +4107,67 @@ def approve_agenda(
             pass
 
         db.commit()
+
+        # Regla negocio: SIEMPRE se debe agendar (calendar_event_id). Si falla, avisar a Oscar y
+        # devolver error para forzar retry (evita el “hay que hacerlo 2 veces”).
+        if not ok_calendar or not str(first_eid or "").strip():
+            try:
+                from backend.core.system_notifs import push_system_notif
+                cn = db.connection()
+                who = (x_user or me.get("username") or me.get("email") or me.get("name") or "usuario")
+                title = f"Fallo agendar evento · Lead #{int(id_lead)}"
+                body = f"No se pudo crear/obtener calendar_event_id al agendar. Requiere revisión. (por {who})"
+                payload = {
+                    "id_lead": int(id_lead),
+                    "username_target": "oscarmendoza",
+                    "who": who,
+                    "id_marca": id_marca,
+                    "id_comuna": id_comuna,
+                    "calendar_event_id": first_eid,
+                    "calendar_html_link": first_link,
+                    "calendar_event_ids": event_ids,
+                    "calendar_html_links": links,
+                    "connected": bool(connected),
+                    "gcal_error": gcal_error,
+                }
+                push_system_notif(cn, kind="AGENDA_FAIL", role_target="ADMIN", id_lead=int(id_lead), title=title, body=body, payload=payload)
+                try:
+                    db.commit()
+                except Exception:
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "ok": False,
+                    "error": "NO_CALENDAR_EVENT_ID",
+                    "connected": connected,
+                    "calendar_html_link": first_link,
+                    "calendar_event_id": first_eid,
+                    "calendar_html_links": links,
+                    "calendar_event_ids": event_ids,
+                    "calendar_ids": calendar_ids,
+                    "gcal_error": gcal_error,
+                    "lead": {
+                        "id_lead": int(id_lead),
+                        "telefono": cliente_telefono,
+                        "direccion": cliente_direccion,
+                        "ventas_telefono": ventas_telefono,
+                        "id_usuario": id_usuario_key,
+                        "num_cotizacion": num_cotizacion,
+                        "monto_cotizado": monto_cotizado,
+                        "id_cotizacion_vigente": id_cotizacion_vigente,
+                        "id_marca": id_marca,
+                        "id_comuna": id_comuna,
+                    },
+                },
+            )
+
         return {
             "ok": True,
             "connected": connected,

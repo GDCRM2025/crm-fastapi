@@ -279,15 +279,49 @@
     }
 
     const data = await res.json().catch(() => ({}));
-    if (data?.htmlLink) {
+    const link = data?.calendar_html_link || data?.htmlLink;
+    if (link) {
       // abrir el editor para que el usuario presione Guardar en Google Calendar
-      window.open(data.htmlLink, "_blank", "noopener");
+      window.open(link, "_blank", "noopener");
     }
+    try {
+      if (data?.ok && (data?.calendar_event_id || link)) playCashRegisterSound();
+    } catch (e) {}
 
     closeModal();
     // recargar listas
     await loadPreagenda();
     await loadAgenda();
+  }
+
+  function playCashRegisterSound() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const now = ctx.currentTime;
+
+      const mkTone = (freq, start, dur, gain) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "square";
+        o.frequency.setValueAtTime(freq, start);
+        g.gain.setValueAtTime(0.0001, start);
+        g.gain.exponentialRampToValueAtTime(gain, start + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+        o.connect(g).connect(ctx.destination);
+        o.start(start);
+        o.stop(start + dur + 0.02);
+      };
+
+      mkTone(880, now + 0.00, 0.10, 0.08);
+      mkTone(1320, now + 0.08, 0.12, 0.06);
+      mkTone(660, now + 0.16, 0.18, 0.05);
+
+      setTimeout(() => {
+        try { ctx.close(); } catch (e) {}
+      }, 600);
+    } catch (e) {}
   }
 
   // -------------------- CALCULADORA --------------------
