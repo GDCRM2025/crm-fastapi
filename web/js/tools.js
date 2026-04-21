@@ -248,6 +248,9 @@
   async function approveCurrent() {
     if (!CURRENT) return;
 
+    // Unlock audio as early as possible (Safari/Chrome require a user gesture).
+    try { unlockCashRegisterSound(); } catch (e) {}
+
     const approverSel = $("#approverSel");
     const who = (approverSel ? approverSel.value : "OSCAR").toString().toUpperCase();
 
@@ -294,12 +297,25 @@
     await loadAgenda();
   }
 
+  let _cashCtx = null;
+
+  function unlockCashRegisterSound() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!_cashCtx) _cashCtx = new Ctx();
+      // Some browsers start suspended until user gesture; resume is safe here.
+      try { _cashCtx.resume?.(); } catch (e) {}
+    } catch (e) {}
+  }
+
   function playCashRegisterSound() {
     try {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return;
-      const ctx = new Ctx();
-      const now = ctx.currentTime;
+      if (!_cashCtx) _cashCtx = new Ctx();
+      const ctx = _cashCtx;
+      const now = ctx.currentTime || 0;
 
       const mkTone = (freq, start, dur, gain) => {
         const o = ctx.createOscillator();
@@ -317,10 +333,6 @@
       mkTone(880, now + 0.00, 0.10, 0.08);
       mkTone(1320, now + 0.08, 0.12, 0.06);
       mkTone(660, now + 0.16, 0.18, 0.05);
-
-      setTimeout(() => {
-        try { ctx.close(); } catch (e) {}
-      }, 600);
     } catch (e) {}
   }
 

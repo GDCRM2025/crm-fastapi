@@ -1755,7 +1755,7 @@ def move_lead_and_maybe_agenda(
         confirmado_id = _find_estado_confirmado_id()
         dry_run = bool(payload.get("dry_run", False))
         agendar = payload.get("agendar", None)
-        should_update_now = int(id_estado) != confirmado_id or agendar is False
+        should_update_now = int(id_estado) != confirmado_id
 
         if dry_run:
             if int(id_estado) != confirmado_id:
@@ -1787,13 +1787,8 @@ def move_lead_and_maybe_agenda(
         if int(id_estado) != confirmado_id:
             return {"ok": True, "ask_agendar": False}
 
-        # UX/robustez: si el usuario confirmó, movemos el lead a CONFIRMADO de inmediato.
-        # Si falla la preparación/agenda, queda marcado como pendiente_agendar y se puede reintentar sin "hacerlo 2 veces".
-        if not dry_run:
-            try:
-                _update_row("leads", "id_lead", id_lead, {"id_estado": int(id_estado)})
-            except Exception:
-                pass
+        # Importante negocio: CONFIRMADO se consolida solo cuando el approve de Agenda logra
+        # obtener `calendar_event_id` (ver /tools/agenda/{id}/approve). Aquí solo preparamos pre-agenda.
 
         cotizaciones = _list_cotizaciones_for_lead(lead)
 
@@ -1824,54 +1819,10 @@ def move_lead_and_maybe_agenda(
             }
 
         if agendar is False:
-            quote_source = str(payload.get("quote_source") or "").strip().lower()
-            id_cot_tmp = payload.get("id_cotizacion") if quote_source != "manual" else None
-
-            items = []
-            if id_cot_tmp:
-                try:
-                    items = _cotizacion_detalle_resumen(int(id_cot_tmp))
-                except Exception:
-                    items = []
-
-            # Si el usuario seleccionó una cotización (no manual) pero no hay detalle,
-            # NO podemos inventar/mixear productos (provoca errores tipo "30+30" vs "60").
-            if id_cot_tmp and quote_source != "manual" and not items:
-                raise HTTPException(
-                    400,
-                    detail="No se pudo leer el detalle de la cotización seleccionada. Elige 'Manual' o corrige la cotización en el sistema.",
-                )
-
-            if not items:
-                items = _lead_mice_items_resumen_by_day(id_lead)
-
-            if not items:
-                _update_row(
-                    "leads",
-                    "id_lead",
-                    id_lead,
-                    {
-                        "pendiente_agendar": True,
-                        "pre_products_text": None,
-                        "pre_montaje_text": None,
-                        "pre_ops": None,
-                    },
-                )
-                return {"ok": True, "ask_agendar": False, "agendado": False, "warning": "NO_MICE_ITEMS"}
-
-            _, ops, montaje_text, products_text = _calcular_montaje(items)
-            _update_row(
-                "leads",
-                "id_lead",
-                id_lead,
-                {
-                    "pendiente_agendar": True,
-                    "pre_products_text": products_text,
-                    "pre_montaje_text": montaje_text,
-                    "pre_ops": ops,
-                },
+            raise HTTPException(
+                status_code=409,
+                detail="No se puede CONFIRMAR sin agendar. Debes crear el evento en Calendar (agendar=true).",
             )
-            return {"ok": True, "ask_agendar": False, "agendado": False}
 
         quote_source = str(payload.get("quote_source") or "").strip().lower()
         id_cot = payload.get("id_cotizacion")
@@ -2268,11 +2219,8 @@ def move_lead_and_maybe_agenda(
             "id_lead",
             id_lead,
             {
-                "id_estado": int(id_estado),
-                # Importante: mover a CONFIRMADO prepara la pre-agenda, pero el evento en Google Calendar
-                # se crea/actualiza en un segundo paso (/tools/agenda/{id}/approve). Si aquí dejamos
-                # `pendiente_agendar=False` y luego falla el approve (token, red, etc.), el lead puede
-                # quedar "confirmado" sin aparecer como pendiente de agendar.
+                # Importante negocio: la CONFIRMACIÓN final se hace en /tools/agenda/{id}/approve
+                # solo si se logró obtener calendar_event_id. Aquí solo preparamos pre-agenda.
                 "pendiente_agendar": True,
                 **({"id_cotizacion_vigente": int(id_cot)} if id_cot else {}),
                 **extra_ev_ref,
@@ -2294,9 +2242,9 @@ def move_lead_and_maybe_agenda(
             stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
             who = str(user.get("username") or user.get("email") or user.get("id") or "").strip() or "CRM"
             if quote_source == "manual" or not id_cot:
-                note = "[CONFIRMADO %s] Cotización confirmada: MANUAL · por %s" % (stamp, who)
+                note = "[AGENDA %s] Pre-agenda preparada: MANUAL · por %s" % (stamp, who)
             else:
-                note = "[CONFIRMADO %s] Cotización confirmada: %s · por %s" % (stamp, id_cot, who)
+                note = "[AGENDA %s] Pre-agenda preparada: %s · por %s" % (stamp, id_cot, who)
             _append_lead_notas(id_lead, note)
         except Exception:
             pass
@@ -2516,26 +2464,8 @@ def move_lead_and_maybe_agenda(
         except Exception:
             pass
 
-        try:
-            with engine.begin() as cn:
-                log_activity(
-                    cn,
-                    username=str(user.get("username") or user.get("email") or user.get("name") or ""),
-                    user_id=int(user.get("id") or 0) if str(user.get("id") or "").isdigit() else None,
-                    role=str(user.get("role") or user.get("rol") or ""),
-                    action="EVENT_CONFIRMED_AGENDED",
-                    entity_type="lead",
-                    entity_id=int(id_lead),
-                    meta={"id_evento": int(evento_id) if evento_id is not None else None},
-                )
-        except Exception:
-            pass
-
-        # Finanzas: upsert evento + registrar abono (si aplica) en el mismo flujo de confirmación.
-        try:
-            _upsert_fin_evento_for_lead_confirm(lead=lead, payload=payload or {}, comuna=comuna, marca=marca)
-        except Exception:
-            pass
+        # Nota: La confirmación final ocurre en /tools/agenda/{id}/approve (cuando hay calendar_event_id),
+        # por lo que la auditoría/finanzas quedan asociadas a ese flujo (no aquí).
 
         return {
             "ok": True,

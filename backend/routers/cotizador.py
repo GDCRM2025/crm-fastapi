@@ -461,13 +461,31 @@ def cotizar(payload: dict = Body(...)):
             cotizado_id = _estado_id(conn, "%COTIZ%")
             confirmado_id = _estado_id(conn, "%CONFIRM%")
             declinado_id = _estado_id(conn, "%DECLIN%")
-            conn.execute(text("""
-          UPDATE public.leads
-          SET id_cotizacion_vigente=:id_cot, monto_cotizado=:m, updated_at=now()
-          WHERE id_lead=:id_lead
-            AND COALESCE(id_estado, -1) <> COALESCE(:conf, -2)
-            AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
-        """), {"id_cot": int(id_cot), "id_lead": id_lead, "m": neto, "conf": confirmado_id, "decl": declinado_id})
+            lead_cols = cols_for(conn, "leads")
+            set_parts = ["id_cotizacion_vigente=:id_cot", "monto_cotizado=:m", "updated_at=now()"]
+            params = {"id_cot": int(id_cot), "id_lead": id_lead, "m": float(base_iva), "conf": confirmado_id, "decl": declinado_id}
+            # regla negocio: si se cambia fecha_evento desde cotizador, se actualiza el lead
+            fe = (payload.get("fecha_evento") or "")
+            fe = str(fe)[:10].strip() if fe else ""
+            if fe and ("fecha_evento" in lead_cols):
+                set_parts.append("fecha_evento=:fe")
+                params["fe"] = fe
+            # tipo_cliente (si existe columna)
+            if "tipo_cliente" in lead_cols:
+                set_parts.append("tipo_cliente=:tc")
+                params["tc"] = ("EMPRESA" if iva > 0 else "PARTICULAR")
+            conn.execute(
+                text(
+                    f"""
+                    UPDATE public.leads
+                    SET {", ".join(set_parts)}
+                    WHERE id_lead=:id_lead
+                      AND COALESCE(id_estado, -1) <> COALESCE(:conf, -2)
+                      AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
+                    """
+                ),
+                params,
+            )
 
             # num_cotizacion: si está vacío, usa el número del cotizador
             try:
@@ -627,8 +645,46 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
                       AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
                     """
                 ),
-                {"id_cot": int(new_id), "id_lead": id_lead, "m": neto, "conf": confirmado_id, "decl": declinado_id},
+                {"id_cot": int(new_id), "id_lead": id_lead, "m": float(neto + traslado), "conf": confirmado_id, "decl": declinado_id},
             )
+            # Opcional: si viene fecha_evento desde cotizador, actualiza lead
+            try:
+                lead_cols = cols_for(conn, "leads")
+                fe = (payload.get("fecha_evento") or "")
+                fe = str(fe)[:10].strip() if fe else ""
+                if fe and ("fecha_evento" in lead_cols):
+                    conn.execute(
+                        text(
+                            """
+                            UPDATE public.leads
+                            SET fecha_evento=:fe, updated_at=now()
+                            WHERE id_lead=:id_lead
+                              AND COALESCE(id_estado, -1) <> COALESCE(:conf, -2)
+                              AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
+                            """
+                        ),
+                        {"fe": fe, "id_lead": id_lead, "conf": confirmado_id, "decl": declinado_id},
+                    )
+                if "tipo_cliente" in lead_cols:
+                    conn.execute(
+                        text(
+                            """
+                            UPDATE public.leads
+                            SET tipo_cliente=:tc, updated_at=now()
+                            WHERE id_lead=:id_lead
+                              AND COALESCE(id_estado, -1) <> COALESCE(:conf, -2)
+                              AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
+                            """
+                        ),
+                        {
+                            "tc": ("EMPRESA" if iva > 0 else "PARTICULAR"),
+                            "id_lead": id_lead,
+                            "conf": confirmado_id,
+                            "decl": declinado_id,
+                        },
+                    )
+            except Exception:
+                pass
             try:
                 # traer número existente de la cotización (si existe)
                 num2 = conn.execute(

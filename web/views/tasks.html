@@ -345,6 +345,10 @@
       );
     }
     function authHeaders(extra){
+      const GD = window.parent && window.parent.GD;
+      if (GD && typeof GD.authHeaders === "function"){
+        try{ return GD.authHeaders(extra || {}); }catch(_){}
+      }
       const t = getToken();
       return t ? Object.assign({ "Authorization": "Bearer " + t }, extra || {}) : Object.assign({}, extra || {});
     }

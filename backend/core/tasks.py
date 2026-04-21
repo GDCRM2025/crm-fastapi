@@ -997,7 +997,14 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
         marcas_upper = []
 
     # Role puede venir vacío (schemas legacy); inferimos por marcas.
-    is_exec = ("EJECUTIVO" in r_up) or (r_up == "2") or ((not r_up) and bool(marcas_ids_text or marcas_upper))
+    # Nota: varios deploys usan nombres distintos para el rol de ventas.
+    is_exec = (
+        ("EJECUTIVO" in r_up)
+        or ("VENTAS" in r_up)
+        or ("COMERCIAL" in r_up)
+        or (r_up == "2")
+        or ((not r_up) and bool(marcas_ids_text or marcas_upper))
+    )
     # Último fallback: si el usuario tiene leads asignados, lo tratamos como ejecutivo para no dejar tareas en 0
     # cuando falta `rol`/`role` o `usuarios_marcas`.
     if not is_exec:
@@ -1019,7 +1026,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
         except Exception:
             pass
     if not is_exec:
-        # No generar masivo para otros roles; limpiar este set.
+        # No generar masivo para otros roles; limpiar este set y devolver resumen (sin disabled).
         try:
             db.execute(
                 text(
@@ -1035,7 +1042,26 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
             )
         except Exception:
             pass
-        return {"ok": True, "counts": {"open_total": 0}, "overdue": {"overdue_total": 0}, "disabled": True}
+        summary: Dict[str, Any] = {"ok": True, "counts": {}, "overdue": {}, "disabled": False}
+        try:
+            row = db.execute(
+                text(
+                    """
+                    SELECT
+                      COUNT(*) FILTER (WHERE status='open')::int AS open_total,
+                      COUNT(*) FILTER (WHERE status='open' AND due_at IS NOT NULL AND due_at < now())::int AS overdue_total
+                    FROM public.tasks
+                    WHERE assigned_user_id = :uid
+                    """
+                ),
+                {"uid": int(user_id)},
+            ).mappings().first()
+            if row:
+                summary["counts"] = {"open_total": int(row.get("open_total") or 0)}
+                summary["overdue"] = {"overdue_total": int(row.get("overdue_total") or 0)}
+        except Exception:
+            pass
+        return summary
 
     # Scope por usuario/marcas
     has_id_usuario = _col_exists(db, "leads", "id_usuario")

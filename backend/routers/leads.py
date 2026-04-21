@@ -1778,13 +1778,40 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             confirmado_id = None
         if (confirmado_id and int(id_estado) == int(confirmado_id)) or ("CONFIRM" in est_name):
             row = conn.execute(
-                text("SELECT COALESCE(monto_cotizado,0) AS monto, COALESCE(num_cotizacion,'') AS num FROM public.leads WHERE id_lead=:id"),
+                text(
+                    """
+                    SELECT COALESCE(monto_cotizado,0) AS monto,
+                           COALESCE(num_cotizacion,'') AS num,
+                           COALESCE(calendar_event_id,'') AS calendar_event_id,
+                           agenda_approved_at
+                    FROM public.leads
+                    WHERE id_lead=:id
+                    """
+                ),
                 {"id": id_lead},
             ).mappings().first()
             monto = float(row.get("monto") or 0) if row else 0
             num = (row.get("num") or "").strip() if row else ""
             if monto <= 0 or not num:
                 raise HTTPException(400, "No se puede CONFIRMAR sin monto y número de cotización.")
+            # Regla negocio: no permitir CONFIRMAR si no está agendado (calendar_event_id + agenda_approved_at).
+            # La confirmación debe hacerse por el flujo de agenda (/leads/{id}/move con agendar=true o /tools/agenda/{id}/approve).
+            try:
+                cal_eid = (row.get("calendar_event_id") or "").strip() if row else ""
+                appr = row.get("agenda_approved_at") if row else None
+                if not cal_eid or appr is None:
+                    raise HTTPException(
+                        409,
+                        "No se puede CONFIRMAR sin agendar en Calendar. Usa el botón de Agendar/Confirmar (Agenda).",
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                # Si algo falla leyendo columnas, preferimos bloquear antes que dejar confirmados sin agenda.
+                raise HTTPException(
+                    409,
+                    "No se puede CONFIRMAR sin agendar en Calendar. Usa el botón de Agendar/Confirmar (Agenda).",
+                )
 
         if id_estado == DECLINADO_ID and not motivo:
             raise HTTPException(400, "motivo requerido para DECLINADO")

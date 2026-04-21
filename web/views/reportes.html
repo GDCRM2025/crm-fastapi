@@ -1329,6 +1329,7 @@
       if (!el) return;
       const blocks = [
         { id:"k_venta_rango", l:"Venta (rango)", v: money(actual||0), s:`vs Base: ${vsBase===null?"—":vsBase.toFixed(1)+"%"} · vs Meta: ${vsMeta===null?"—":vsMeta.toFixed(1)+"%"}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
+        { id:"k_traslados_rango", l:"Traslados (rango)", v: money(rk.traslado_cobrado||0), s:`Costo: ${money(rk.traslado_costo||0)} · Margen: ${money(rk.traslado_margen||0)}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
         { id:"k_cierre_rango", l:"% cierre (rango)", v: `${Number(rk.cierre_pct||0).toFixed(2)}%`, s:`Confirmados/Leads (${rk.confirmados_total||0}/${rk.leads_total||0})`, on: () => { try{ selectTab("cierre"); }catch(_){ location.hash="#cierre"; } } },
         { id:"k_leads_hoy", l:"Leads hoy", v:String(k.leads_hoy||0), s:"Dashboard (hoy)", on: () => openFilter({ campo:"ingreso", desde: fmtDate(new Date()), hasta: fmtDate(new Date()), ...(mid?{marca:mid}:{}) }) },
         { id:"k_venta_dia", l:"Venta día", v: money(k.venta_dia||0), s:"Dashboard (confirmados)", on: () => openConfirmedSales(fmtDate(new Date()), fmtDate(new Date()), mid) },
@@ -1635,6 +1636,12 @@
         setChartMsg("chTotal", "Sin datos.");
         return;
       }
+      const hasTras = items.some(r => Number(r?.traslado_cobrado||0) || Number(r?.traslado_costo||0));
+      const yinfo = rep?.years || {};
+      const yCur = Number(yinfo.current || new Date().getFullYear());
+      const yLy = Number(yinfo.ly || (yCur - 1));
+      const yExtra = Array.isArray(yinfo.extra) ? yinfo.extra.map(Number).filter(n=>isFinite(n)).sort((a,b)=>a-b) : [];
+      const yearCols = [yCur, yLy, ...yExtra].filter((v,i,a)=>a.indexOf(v)===i);
       // chart: comparar actual vs baseline (Top 10 por actual)
       const top = [...items].sort((a,b)=>Number(b.actual||0)-Number(a.actual||0)).slice(0,10);
       // BI: bar agrupado Actual vs Baseline
@@ -1673,11 +1680,20 @@
 	            { name:"Base", type:"bar", data: baseData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
 	          ]
 	        }, true);
-	      })();
+      })();
       box.innerHTML = `
         <div style="max-height:420px;overflow:auto">
           <table class="tbl">
-            <thead><tr><th>Marca</th><th class="right">Actual</th><th class="right">Año pasado</th><th class="right">YoY</th><th class="right">Meta</th><th class="right">% Meta</th><th class="right">Base</th><th class="right">Δ vs Meta</th></tr></thead>
+            <thead><tr>
+              <th>Marca</th>
+              ${yearCols.map(y => `<th class="right">${esc(String(y))}</th>`).join("")}
+              <th class="right">YoY</th>
+              <th class="right">Meta</th>
+              <th class="right">% Meta</th>
+              <th class="right">Base</th>
+              <th class="right">Δ vs Meta</th>
+              ${hasTras?'<th class="right">Traslado</th><th class="right">Costo</th><th class="right">Margen</th>':''}
+            </tr></thead>
             <tbody>
               ${items.map(r => {
                 const a = Number(r.actual||0);
@@ -1687,15 +1703,19 @@
                 const d = a - m;
                 const pct = m ? (a / m * 100) : 0;
                 const yoy = ly ? ((a / ly - 1) * 100) : null;
+                const trC = Number(r.traslado_cobrado||0);
+                const trK = Number(r.traslado_costo||0);
+                const trM = Number(r.traslado_margen||0);
+                const ym = (r && typeof r === "object" && r.years && typeof r.years === "object") ? r.years : {};
                 return `<tr>
                   <td><strong>${esc(r.marca||"—")}</strong></td>
-                  <td class="right">${esc(money(a))}</td>
-                  <td class="right">${esc(money(ly))}</td>
+                  ${yearCols.map(y => `<td class="right">${esc(money(ym?.[String(y)] ?? ym?.[y] ?? (y===yCur?a:(y===yLy?ly:0))))}</td>`).join("")}
                   <td class="right">${esc(yoy===null?"—":(yoy.toFixed(1)+"%"))}</td>
                   <td class="right">${esc(money(m))}</td>
                   <td class="right">${esc(pct.toFixed(1))}%</td>
                   <td class="right">${esc(money(b))}</td>
                   <td class="right">${esc(money(d))}</td>
+                  ${hasTras?`<td class="right">${esc(money(trC))}</td><td class="right">${esc(money(trK))}</td><td class="right">${esc(money(trM))}</td>`:""}
                 </tr>`;
               }).join("")}
             </tbody>

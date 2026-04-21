@@ -679,6 +679,41 @@ function toast(title, icon="success"){
   _plainToast(title, icon);
 }
 
+// Sonido de caja registradora al agendar/confirmar (best-effort).
+let _cashCtx = null;
+function unlockCashRegisterSound(){
+  try{
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!_cashCtx) _cashCtx = new Ctx();
+    try{ _cashCtx.resume?.(); }catch(_){ }
+  }catch(_){}
+}
+function playCashRegisterSound(){
+  try{
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!_cashCtx) _cashCtx = new Ctx();
+    const ctx = _cashCtx;
+    const now = ctx.currentTime || 0;
+    const mkTone = (freq, start, dur, gain) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "square";
+      o.frequency.setValueAtTime(freq, start);
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(gain, start + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      o.connect(g).connect(ctx.destination);
+      o.start(start);
+      o.stop(start + dur + 0.02);
+    };
+    mkTone(880, now + 0.00, 0.10, 0.08);
+    mkTone(1320, now + 0.08, 0.12, 0.06);
+    mkTone(660, now + 0.16, 0.18, 0.05);
+  }catch(_){}
+}
+
 (function themeBootstrap(){
   try{
     const mode = localStorage.getItem("gd_theme") || "dark";
@@ -2098,6 +2133,9 @@ async function handleDeclinado(lead, newEstado){
     title:"Motivo de declinación",
     html: `
       <div style="text-align:left;display:grid;gap:10px">
+        <label>Buscar motivo
+          <input id="sw_decl_q" class="swInp" placeholder="Escribe para filtrar (ej: presupuesto, duplicado)..." />
+        </label>
         <label>Mensaje predefinido
           <select id="sw_decl_tpl" class="swInp">${selOpts}</select>
         </label>
@@ -2112,7 +2150,26 @@ async function handleDeclinado(lead, newEstado){
     cancelButtonText:"Cancelar",
     didOpen: () => {
       const sel = document.getElementById("sw_decl_tpl");
+      const q = document.getElementById("sw_decl_q");
       const ta = document.getElementById("sw_decl_txt");
+      const all = Array.isArray(DECLINE_TEMPLATES) ? DECLINE_TEMPLATES.slice() : [];
+
+      const render = (needle) => {
+        const n = String(needle || "").trim().toLowerCase();
+        const keep = sel?.value || "";
+        const items = !n ? all : all.filter(t => {
+          const id = String(t?.id || "").toLowerCase();
+          const label = String(t?.label || "").toLowerCase();
+          const text = String(t?.text || "").toLowerCase();
+          return id.includes(n) || label.includes(n) || text.includes(n);
+        });
+        if (sel){
+          sel.innerHTML = items.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`).join("")
+            || `<option value="">(sin resultados)</option>`;
+          if (keep && items.some(t => String(t.id) === String(keep))) sel.value = keep;
+        }
+      };
+
       const apply = () => {
         const id = sel?.value || "no_responde";
         const tpl = DECLINE_TEMPLATES.find(x => x.id === id) || DECLINE_TEMPLATES[0];
@@ -2121,6 +2178,15 @@ async function handleDeclinado(lead, newEstado){
         if (ta && txt) ta.value = txt; // siempre reemplaza al cambiar template
       };
       if (sel) sel.addEventListener("change", apply);
+      if (q){
+        q.addEventListener("input", () => {
+          render(q.value);
+          apply();
+        });
+        // focus para agilizar
+        try{ q.focus(); }catch(_){ }
+      }
+      render("");
       apply();
     },
     preConfirm: () => {
@@ -2140,6 +2206,7 @@ async function handleDeclinado(lead, newEstado){
 }
 
 async function handleConfirmado(lead, newEstado){
+  try{ unlockCashRegisterSound(); }catch(_){ }
   // Refrescamos el lead desde API para evitar usar data stale (p.ej. id_cotizacion_vigente).
   try{
     const fresh = await apiJSON(`/leads/${lead.id_lead}`);
@@ -2982,18 +3049,16 @@ async function handleConfirmado(lead, newEstado){
     }
   };
 
-		  const res = await Swal.fire({
-		    title:"Confirmar + Agenda",
-		    html,
-		    width: 1040,
-	    focusConfirm:false,
-	    showCancelButton:true,
-	    showDenyButton:true,
-	    confirmButtonText:"Confirmar y crear en Calendar",
-	    denyButtonText:"Confirmar sin agendar",
-	    cancelButtonText:"Cancelar",
-	    heightAuto:false,
-		    customClass: { popup: "gdAgenda" },
+			  const res = await Swal.fire({
+			    title:"Confirmar + Agenda",
+			    html,
+			    width: 1040,
+		    focusConfirm:false,
+		    showCancelButton:true,
+		    confirmButtonText:"Confirmar y crear en Calendar",
+		    cancelButtonText:"Cancelar",
+		    heightAuto:false,
+			    customClass: { popup: "gdAgenda" },
 			    didOpen: async ()=>{
 		      const q = qs("#ag_quote");
 		      if (q) q.value = defaultSel || "manual";
@@ -3374,56 +3439,11 @@ async function handleConfirmado(lead, newEstado){
 			        override_description: (qs("#ag_desc")?.value || "").trim(),
 			        ...(segsOut ? { segments: segsOut } : { override_by_day: overrideByDay }),
 			      };
-			    }
-	    ,
-    // Deny = confirmar sin agendar: NO validamos horas ni obligamos productos manuales aquí.
-    preDeny: ()=>{
-      const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
-      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
-      const idCot = (quoteSource === "cotizador") ? qSel : null;
-      return {
-        quote_source: quoteSource,
-        id_cotizacion: idCot ? Number(idCot) : null,
-      };
-    }
-  });
+				    }
+		  });
 
-  if (!res.isConfirmed && !res.isDenied) return false;
-  const v = res.value || {};
-
-  if (res.isDenied){
-    {
-      const ok = await Swal.fire({
-        icon: "question",
-        title: "¿Confirmar sin agendar?",
-        text: "El lead quedará confirmado, pero NO se creará evento en Google Calendar.",
-        showCancelButton: true,
-        confirmButtonText: "Sí, confirmar",
-        cancelButtonText: "Cancelar",
-      });
-      if (!ok.isConfirmed) return false;
-    }
-	  if (v.quote_source === "manual"){
-      // Para confirmar sin agendar SOLO exigimos meta (monto + número),
-      // pero NO obligamos productos manuales (se pueden cargar después).
-      const okMeta = await ensureQuoteMeta();
-      if (!okMeta) return false;
-    }
-    const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
-      method:"POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({
-        id_estado: Number(newEstado),
-        agendar: false,
-        quote_source: v.quote_source,
-        ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
-      })
-    });
-    if (out?.warning === "NO_MICE_ITEMS"){
-      toast("Confirmado, pero falta cargar productos para MICE (pendiente de agendar).", "warning");
-    }
-    return true;
-  }
+	  if (!res.isConfirmed) return false;
+	  const v = res.value || {};
 
   if (v.quote_source === "manual"){
     const okMeta = await ensureQuoteMeta();
@@ -3493,13 +3513,29 @@ async function handleConfirmado(lead, newEstado){
   try{
     gcal = await apiJSON(`/tools/agenda/${lead.id_lead}/approve`, { method:"PUT" });
   }catch(err){
-    gcal = { connected:false, calendar_html_link:"", calendar_event_id:"", gcal_error: String(err?.message||err) };
+    await Swal.fire({
+      icon:"error",
+      title:"No se pudo agendar",
+      text: String(err?.message || err),
+    });
+    return false;
   }
   const gcalLink = String(gcal?.calendar_html_link || "");
   const gcalEid = String(gcal?.calendar_event_id || "");
   const gcalErr = String(gcal?.gcal_error || "");
   const gcalCalId = (Array.isArray(gcal?.calendar_ids) && gcal.calendar_ids.length) ? String(gcal.calendar_ids[0] || "") : "";
   const gcalLead = (gcal && typeof gcal === "object" && gcal.lead && typeof gcal.lead === "object") ? gcal.lead : {};
+
+  if (!gcalEid){
+    await Swal.fire({
+      icon:"error",
+      title:"No se pudo agendar",
+      text:"No se obtuvo calendar_event_id. Se notificó a Super Admin para revisión. Intenta nuevamente.",
+    });
+    return false;
+  }
+
+  try{ playCashRegisterSound(); }catch(_){ }
 
   const fmtDT = (s)=>{
     if (!s) return "";

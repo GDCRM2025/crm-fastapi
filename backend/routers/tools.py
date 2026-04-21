@@ -527,36 +527,51 @@ def _lead_col(db: Session, col: str) -> str:
 
 
 def _ensure_baseline(db: Session) -> None:
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS ventas_baseline (
-                id_baseline SERIAL PRIMARY KEY,
-                mes INT NOT NULL,
-                marca TEXT NOT NULL,
-                monto NUMERIC(14,2) NOT NULL DEFAULT 0,
-                empresa INT NOT NULL DEFAULT 0,
-                particular INT NOT NULL DEFAULT 0,
-                UNIQUE (mes, marca)
-            )
-            """
-        )
-    )
-    existing = db.execute(text("SELECT COUNT(*) FROM ventas_baseline")).scalar_one()
-    if existing:
-        return
-    for row in BASELINE_SALES:
+    # Importante: si una query anterior falló, la transacción queda "aborted" y cualquier SQL
+    # posterior falla con InFailedSqlTransaction hasta hacer rollback.
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+    try:
         db.execute(
             text(
                 """
-                INSERT INTO ventas_baseline(mes, marca, monto, empresa, particular)
-                VALUES (:mes, :marca, :monto, :empresa, :particular)
-                ON CONFLICT (mes, marca) DO NOTHING
+                CREATE TABLE IF NOT EXISTS ventas_baseline (
+                    id_baseline SERIAL PRIMARY KEY,
+                    mes INT NOT NULL,
+                    marca TEXT NOT NULL,
+                    monto NUMERIC(14,2) NOT NULL DEFAULT 0,
+                    empresa INT NOT NULL DEFAULT 0,
+                    particular INT NOT NULL DEFAULT 0,
+                    UNIQUE (mes, marca)
+                )
                 """
-            ),
-            row,
+            )
         )
-    db.commit()
+        existing = db.execute(text("SELECT COUNT(*) FROM ventas_baseline")).scalar_one()
+        if existing:
+            db.commit()
+            return
+        for row in BASELINE_SALES:
+            db.execute(
+                text(
+                    """
+                    INSERT INTO ventas_baseline(mes, marca, monto, empresa, particular)
+                    VALUES (:mes, :marca, :monto, :empresa, :particular)
+                    ON CONFLICT (mes, marca) DO NOTHING
+                    """
+                ),
+                row,
+            )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return
 
 
 def _ensure_metas(db: Session) -> None:
@@ -566,25 +581,37 @@ def _ensure_metas(db: Session) -> None:
     - crecimiento_pct: % crecimiento (default 12)
     - meta: venta_base * (1 + crecimiento_pct/100)
     """
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS metas_marca_mensual (
-              id_meta bigserial PRIMARY KEY,
-              year integer NOT NULL,
-              month integer NOT NULL,
-              id_marca integer NOT NULL,
-              venta_base numeric(16,2) NOT NULL DEFAULT 0,
-              crecimiento_pct numeric(8,2) NOT NULL DEFAULT 12,
-              meta numeric(16,2) NOT NULL DEFAULT 0,
-              updated_at timestamp without time zone NOT NULL DEFAULT now(),
-              updated_by text,
-              UNIQUE (year, month, id_marca)
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS metas_marca_mensual (
+                  id_meta bigserial PRIMARY KEY,
+                  year integer NOT NULL,
+                  month integer NOT NULL,
+                  id_marca integer NOT NULL,
+                  venta_base numeric(16,2) NOT NULL DEFAULT 0,
+                  crecimiento_pct numeric(8,2) NOT NULL DEFAULT 12,
+                  meta numeric(16,2) NOT NULL DEFAULT 0,
+                  updated_at timestamp without time zone NOT NULL DEFAULT now(),
+                  updated_by text,
+                  UNIQUE (year, month, id_marca)
+                )
+                """
             )
-            """
         )
-    )
-    db.commit()
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return
 
 
 def _money_int(x: Any) -> int:
@@ -1402,6 +1429,342 @@ def agenda(db: Session = Depends(get_db), me=Depends(get_current_user)):
     }
 
 
+@router.post("/agenda/repair_confirmados_sin_agenda")
+def repair_confirmados_sin_agenda(
+    apply: int = 0,
+    limit: int = 500,
+    future_only: int = 1,
+    calendar_mode: str = "link_or_create",  # link_only | link_or_create | none
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Reparación de datos legacy: existen leads CONFIRMADOS sin calendar_event_id/agenda_approved_at.
+    - No cambia el estado (para no alterar ventas históricas).
+    - Para FECHAS FUTURAS:
+        - si calendar_mode=link_or_create: intenta vincular a un evento existente en Google Calendar
+          (match exacto por título + rango horario); si no encuentra, crea el evento y guarda event_id.
+        - si calendar_mode=link_only: solo intenta vincular; si no, deja pendiente_agendar=TRUE.
+        - si calendar_mode=none: solo deja pendiente_agendar=TRUE.
+    - Para FECHAS PASADAS: no inventa agenda_approved_at ni calendar_event_id (se mantienen como están).
+    - Solo SUPERADMIN.
+    """
+    if not _is_superadmin(me):
+        raise HTTPException(status_code=403, detail="Solo superadmin")
+
+    confirmado_id = _estado_id(db, "CONFIRM")
+    if not confirmado_id:
+        return {"ok": True, "confirmado_id": None, "count": 0, "ids": [], "applied": False}
+
+    try:
+        _ensure_lead_calendar_cols(db)
+    except Exception:
+        pass
+
+    lim = int(limit or 0)
+    lim = 500 if lim <= 0 else max(1, min(5000, lim))
+
+    tz = ZoneInfo("America/Santiago")
+    today = datetime.now(tz).date()
+
+    name_expr = _lead_name_expr(db)
+    cols = set()
+    try:
+        cols = set(_cols_pg(db, "leads"))
+    except Exception:
+        cols = set()
+
+    sel = [
+        "l.id_lead",
+        "l.id_marca",
+        "l.id_comuna",
+        "l.fecha_evento",
+        f"{name_expr} AS lead_nombre",
+        "COALESCE(l.monto_cotizado,0)::float AS monto_cotizado",
+        "COALESCE(l.calendar_event_id,'') AS calendar_event_id",
+        "COALESCE(l.calendar_html_link,'') AS calendar_html_link",
+        "l.agenda_approved_at",
+        "COALESCE(l.pendiente_agendar,false) AS pendiente_agendar",
+    ]
+    if "pre_title" in cols:
+        sel.append("l.pre_title")
+    if "pre_start" in cols:
+        sel.append("l.pre_start")
+    if "pre_end" in cols:
+        sel.append("l.pre_end")
+    if "pre_location" in cols:
+        sel.append("l.pre_location")
+    if "pre_description" in cols:
+        sel.append("l.pre_description")
+    if "direccion" in cols:
+        sel.append("l.direccion")
+
+    where = """
+      l.id_estado=:e
+      AND (
+        l.agenda_approved_at IS NULL
+        OR l.calendar_event_id IS NULL
+        OR btrim(l.calendar_event_id)=''
+      )
+    """
+    params = {"e": int(confirmado_id), "lim": lim, "today": today}
+    if int(future_only or 0) == 1:
+        where += " AND (l.fecha_evento IS NOT NULL AND l.fecha_evento::date >= :today) "
+
+    leads = db.execute(
+        text(
+            f"""
+            SELECT {', '.join(sel)}
+            FROM leads l
+            WHERE {where}
+            ORDER BY l.fecha_evento DESC NULLS LAST, l.id_lead DESC
+            LIMIT :lim
+            """
+        ),
+        params,
+    ).mappings().all()
+
+    ids = [int(r.get("id_lead")) for r in leads if r.get("id_lead") is not None]
+
+    applied = False
+    summary = {
+        "ok": True,
+        "confirmado_id": int(confirmado_id),
+        "count": len(ids),
+        "applied": False,
+        "calendar_mode": str(calendar_mode or ""),
+        "future_only": int(future_only or 0),
+        "linked": 0,
+        "created": 0,
+        "marked_pending": 0,
+        "errors": 0,
+        "ids": ids[:200],
+        "results": [],
+    }
+
+    mode = str(calendar_mode or "link_or_create").strip().lower()
+    if mode not in ("link_only", "link_or_create", "none"):
+        mode = "link_or_create"
+
+    svc = _gcal_service(db) if mode in ("link_only", "link_or_create") else None
+    cal_id = _gcal_default_calendar_id(db, None) if svc else None
+
+    def _norm(s: str) -> str:
+        s = (s or "").strip().lower()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+        s = re.sub(r"[^a-z0-9]+", "", s)
+        return s
+
+    def _as_dt(v) -> datetime | None:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v if v.tzinfo else v.replace(tzinfo=tz)
+        try:
+            d = datetime.fromisoformat(str(v))
+            return d if d.tzinfo else d.replace(tzinfo=tz)
+        except Exception:
+            return None
+
+    def _pick_times(r: dict) -> tuple[datetime | None, datetime | None]:
+        st = _as_dt(r.get("pre_start"))
+        en = _as_dt(r.get("pre_end"))
+        if st and en:
+            return st.astimezone(tz), en.astimezone(tz)
+        fe = r.get("fecha_evento")
+        if fe is None:
+            return None, None
+        try:
+            d = fe.date() if isinstance(fe, datetime) else fe
+            st2 = datetime.combine(d, time(10, 0), tzinfo=tz)
+            en2 = st2 + timedelta(hours=2)
+            return st2, en2
+        except Exception:
+            return None, None
+
+    def _pick_title(r: dict) -> str:
+        return (str(r.get("pre_title") or "").strip() or str(r.get("lead_nombre") or "").strip() or f"Evento Lead {int(r.get('id_lead'))}")
+
+    def _pick_location(r: dict) -> str:
+        return (str(r.get("pre_location") or "").strip() or str(r.get("direccion") or "").strip() or "")
+
+    def _pick_desc(r: dict) -> str:
+        return str(r.get("pre_description") or "").strip()
+
+    def _link_or_create_one(r: dict) -> dict:
+        id_lead = int(r.get("id_lead"))
+        st, en = _pick_times(r)
+        if not st or not en:
+            return {"id_lead": id_lead, "status": "skip_no_time"}
+        title = _pick_title(r)
+        loc = _pick_location(r)
+        desc = _pick_desc(r)
+
+        # Solo intentamos para fechas futuras (regla de Oscar)
+        try:
+            d = st.date()
+            if d < today:
+                return {"id_lead": id_lead, "status": "skip_past"}
+        except Exception:
+            pass
+
+        # 1) link existing
+        found_id = None
+        found_link = None
+        if svc and cal_id and mode in ("link_only", "link_or_create"):
+            try:
+                tmin = (st - timedelta(minutes=30)).isoformat()
+                tmax = (en + timedelta(minutes=30)).isoformat()
+                out = svc.events().list(
+                    calendarId=cal_id,
+                    timeMin=tmin,
+                    timeMax=tmax,
+                    singleEvents=True,
+                    orderBy="startTime",
+                    maxResults=20,
+                ).execute()
+                items = out.get("items") or []
+
+                want = _norm(title)
+                cand = []
+                for it in items:
+                    ssum = _norm(str(it.get("summary") or ""))
+                    if not ssum:
+                        continue
+                    if ssum != want:
+                        continue
+                    # match start/end to minute (best-effort)
+                    try:
+                        sdt = (it.get("start") or {}).get("dateTime") or ""
+                        edt = (it.get("end") or {}).get("dateTime") or ""
+                        if not sdt or not edt:
+                            continue
+                        sdt = datetime.fromisoformat(sdt.replace("Z", "+00:00")).astimezone(tz)
+                        edt = datetime.fromisoformat(edt.replace("Z", "+00:00")).astimezone(tz)
+                        if abs((sdt - st).total_seconds()) > 60:
+                            continue
+                        if abs((edt - en).total_seconds()) > 60:
+                            continue
+                    except Exception:
+                        continue
+                    cand.append(it)
+                if len(cand) == 1:
+                    found_id = cand[0].get("id")
+                    found_link = cand[0].get("htmlLink") or ""
+                elif len(cand) > 1:
+                    return {"id_lead": id_lead, "status": "ambiguous_multi_match", "matches": len(cand)}
+            except Exception as e:
+                return {"id_lead": id_lead, "status": "error_list", "error": f"{type(e).__name__}: {e}"}
+
+        # 2) create if missing
+        created_id = None
+        created_link = None
+        if (not found_id) and mode == "link_or_create":
+            if not svc or not cal_id:
+                return {"id_lead": id_lead, "status": "no_calendar_connected"}
+            try:
+                lead_key = f"{id_lead}:{st.date().isoformat()}"
+                body = {
+                    "summary": title,
+                    "location": loc,
+                    "description": desc or "",
+                    "start": {"dateTime": st.isoformat(), "timeZone": "America/Santiago"},
+                    "end": {"dateTime": en.isoformat(), "timeZone": "America/Santiago"},
+                    "extendedProperties": {"private": {"lead_id": str(id_lead), "lead_key": lead_key}},
+                }
+                created = svc.events().insert(calendarId=cal_id, body=body).execute()
+                created_id = created.get("id")
+                created_link = created.get("htmlLink") or _gcal_link(title, st, en, details=desc or "", location=loc)
+            except Exception as e:
+                return {"id_lead": id_lead, "status": "error_create", "error": f"{type(e).__name__}: {e}"}
+
+        eid = (found_id or created_id or "").strip()
+        link = (found_link or created_link or "").strip()
+        if not eid:
+            return {"id_lead": id_lead, "status": "not_found"}
+
+        # Persist
+        try:
+            db.execute(
+                text(
+                    """
+                    UPDATE leads
+                    SET calendar_start=:s,
+                        calendar_end=:e,
+                        calendar_html_link=:lnk,
+                        calendar_event_id=:eid,
+                        agenda_approved_by=COALESCE(agenda_approved_by, :by),
+                        agenda_approved_at=COALESCE(agenda_approved_at, now()),
+                        pendiente_agendar=FALSE,
+                        updated_at=now()
+                    WHERE id_lead=:id
+                    """
+                ),
+                {
+                    "id": id_lead,
+                    "s": st,
+                    "e": en,
+                    "lnk": link,
+                    "eid": eid,
+                    "by": (me.get("username") or me.get("email") or me.get("name") or "superadmin"),
+                },
+            )
+            return {"id_lead": id_lead, "status": ("linked" if found_id else "created"), "calendar_event_id": eid}
+        except Exception as e:
+            return {"id_lead": id_lead, "status": "error_db", "error": f"{type(e).__name__}: {e}"}
+
+    if int(apply or 0) != 1:
+        # Dry-run: solo cuenta y entrega IDs.
+        summary["applied"] = False
+        summary["results"] = [{"id_lead": int(r.get("id_lead")), "fecha_evento": (str(r.get("fecha_evento") or "")[:10])} for r in leads[:200]]
+        return summary
+
+    applied = True
+    touched_ids = []
+    for r in leads:
+        res = {"id_lead": int(r.get("id_lead")), "status": "pending"}
+        if mode == "none":
+            res = {"id_lead": int(r.get("id_lead")), "status": "marked_pending"}
+        else:
+            res = _link_or_create_one(dict(r))
+
+        summary["results"].append(res)
+
+        st = str(res.get("status") or "")
+        if st in ("linked", "created"):
+            summary["linked"] += (1 if st == "linked" else 0)
+            summary["created"] += (1 if st == "created" else 0)
+            touched_ids.append(int(res.get("id_lead")))
+            continue
+
+        if st.startswith("skip_"):
+            continue
+
+        # Si no se pudo, marcamos pendiente_agendar=TRUE para que aparezca en Agenda.
+        try:
+            db.execute(
+                text("UPDATE leads SET pendiente_agendar=TRUE, updated_at=now() WHERE id_lead=:id"),
+                {"id": int(res.get("id_lead"))},
+            )
+            summary["marked_pending"] += 1
+        except Exception:
+            summary["errors"] += 1
+
+    try:
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        applied = False
+
+    summary["applied"] = bool(applied)
+    summary["ids"] = ids[:200]
+    return summary
+
+
 @router.get("/dashboard/ops_alertas")
 def dashboard_ops_alertas(
     days_ahead: int = 30,
@@ -1519,20 +1882,18 @@ def dashboard_ops_alertas(
 def dashboard(
     id_marca: int | None = None,
     venta_source: str = "confirmados",  # confirmados (monto_cotizado) | eventos (fin_eventos)
-    week_mode: str = "calendar",  # calendar (lun-dom) | rolling (últimos 7 días)
+    week_mode: str = "calendar",  # (legacy) ignorado: siempre lun-dom (Google Calendar)
+    week_offset: int = 0,  # semana relativa (0=actual, -1=anterior, +1=siguiente)
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
     tz = ZoneInfo("America/Santiago")
     now = datetime.now(tz)
     today = now.date()
-    if str(week_mode or "").lower() == "calendar":
-        week_start = today - timedelta(days=today.weekday())
-        week_end = week_start + timedelta(days=6)
-    else:
-        # Últimos 7 días (incluye hoy) — evita “venta semana = 0” cada lunes.
-        week_end = today
-        week_start = today - timedelta(days=6)
+    # Semana calendario (lun-dom), consistente con Google Calendar.
+    woff = int(week_offset or 0)
+    week_start = (today - timedelta(days=today.weekday())) + timedelta(days=woff * 7)
+    week_end = week_start + timedelta(days=6)
     week_num = week_start.isocalendar().week
     week_days = [(week_start + timedelta(days=i)).isoformat() for i in range(7)]
 
@@ -1751,71 +2112,91 @@ def dashboard(
     ).scalar_one()
 
     confirmados_semana = 0
-    venta_semana = 0
-    venta_dia = 0
+    venta_semana = 0.0
+    venta_dia = 0.0
     sales_daily: list[dict] = []
     if conf_where:
-        confirmados_semana = db.execute(
-            text(f"""
-                SELECT COUNT(*)::int
-                FROM leads l
-                WHERE {conf_where} AND l.{date_col}::date BETWEEN :ws AND :we
-                {marca_sql}
-            """),
-            conf_params,
-        ).scalar_one()
+        use_fin_eventos = str(venta_source or "").lower() in ("eventos", "fin_eventos")
 
-        if _table_exists_pg(db, "activity_log"):
+        # Regla negocio: venta día/semana se mide por agenda_approved_at (fecha de agendamiento/aprobación).
+        sale_date_expr = "l.updated_at::date"
+        if _col_exists(db, "leads", "agenda_approved_at"):
+            sale_date_expr = "l.agenda_approved_at::date"
+
+        if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
             try:
-                tzname = "America/Santiago"
-                rows = db.execute(
-                    text(
-                        f"""
-                        WITH conf AS (
-                          SELECT entity_id::bigint AS id_lead,
-                                 MAX(created_at AT TIME ZONE :tz) AS confirmed_local
-                          FROM public.activity_log
-                          WHERE entity_type='lead'
-                            AND action IN ('EVENT_CONFIRMED_AGENDED')
-                            AND entity_id IS NOT NULL
-                          GROUP BY entity_id
-                        )
-                        SELECT
-                          (c.confirmed_local::date) AS dia,
-                          l.id_marca,
-                          COALESCE(SUM(l.monto_cotizado),0)::float AS monto
-                        FROM conf c
-                        JOIN leads l ON l.id_lead = c.id_lead
-                        WHERE {conf_where}
-                          AND c.confirmed_local::date BETWEEN :ws AND :we
-                        {marca_sql}
-                        GROUP BY 1,2
-                        ORDER BY 1 ASC, 2 ASC
-                        """
-                    ),
-                    {**conf_params, "tz": tzname},
-                ).mappings().all()
+                q_sales = f"""
+                    SELECT fe.fecha_evento::date AS dia,
+                           l.id_marca,
+                           COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    WHERE fe.fecha_evento::date BETWEEN :ws AND :we
+                      AND {conf_where}
+                      {marca_sql}
+                    GROUP BY 1,2
+                    ORDER BY 1 ASC, 2 ASC
+                """
+                rows = db.execute(text(q_sales), conf_params).mappings().all()
                 for r in rows:
                     mid = r.get("id_marca")
                     name = brand_map.get(int(mid)) if mid is not None else ""
                     if not name:
                         continue
-                    sales_daily.append({
-                        "dia": str(r.get("dia")),
-                        "id_marca": int(mid) if mid is not None else None,
-                        "marca": str(name).upper(),
-                        "monto": float(r.get("monto") or 0),
-                    })
-                venta_semana = float(sum([float(x.get("monto") or 0) for x in sales_daily]) or 0)
-                venta_dia = float(sum([float(x.get("monto") or 0) for x in sales_daily if x.get("dia") == str(today)]) or 0)
+                    sales_daily.append({"dia": str(r.get("dia")), "id_marca": int(mid), "marca": str(name).upper(), "monto": float(r.get("monto") or 0)})
+                venta_semana = float(sum(float(x.get("monto") or 0) for x in sales_daily) or 0.0)
+                venta_dia = float(sum(float(x.get("monto") or 0) for x in sales_daily if x.get("dia") == str(today)) or 0.0)
             except Exception:
                 sales_daily = []
-
-        if not sales_daily:
+                venta_semana = 0.0
+                venta_dia = 0.0
+        else:
             try:
-                sale_date_expr = "l.updated_at::date"
-                if _col_exists(db, "leads", "agenda_approved_at"):
-                    sale_date_expr = "l.agenda_approved_at::date"
+                confirmados_semana = int(
+                    db.execute(
+                        text(
+                            f"""
+                            SELECT COUNT(*)::int
+                            FROM leads l
+                            WHERE {conf_where}
+                              AND {sale_date_expr} BETWEEN :ws AND :we
+                              {marca_sql}
+                            """
+                        ),
+                        conf_params,
+                    ).scalar_one()
+                    or 0
+                )
+                venta_semana = float(
+                    db.execute(
+                        text(
+                            f"""
+                            SELECT COALESCE(SUM(l.monto_cotizado),0)::float
+                            FROM leads l
+                            WHERE {conf_where}
+                              AND {sale_date_expr} BETWEEN :ws AND :we
+                              {marca_sql}
+                            """
+                        ),
+                        conf_params,
+                    ).scalar_one()
+                    or 0.0
+                )
+                venta_dia = float(
+                    db.execute(
+                        text(
+                            f"""
+                            SELECT COALESCE(SUM(l.monto_cotizado),0)::float
+                            FROM leads l
+                            WHERE {conf_where}
+                              AND {sale_date_expr} = :today
+                              {marca_sql}
+                            """
+                        ),
+                        {**conf_params, "today": today},
+                    ).scalar_one()
+                    or 0.0
+                )
                 rows = db.execute(
                     text(
                         f"""
@@ -1837,69 +2218,12 @@ def dashboard(
                     name = brand_map.get(int(mid)) if mid is not None else ""
                     if not name:
                         continue
-                    sales_daily.append({
-                        "dia": str(r.get("dia")),
-                        "id_marca": int(mid) if mid is not None else None,
-                        "marca": str(name).upper(),
-                        "monto": float(r.get("monto") or 0),
-                    })
-                venta_semana = float(sum([float(x.get("monto") or 0) for x in sales_daily]) or 0)
-                venta_dia = float(sum([float(x.get("monto") or 0) for x in sales_daily if x.get("dia") == str(today)]) or 0)
+                    sales_daily.append({"dia": str(r.get("dia")), "id_marca": int(mid), "marca": str(name).upper(), "monto": float(r.get("monto") or 0)})
             except Exception:
-                sale_date_expr = "l.updated_at::date"
-                if _col_exists(db, "leads", "agenda_approved_at"):
-                    sale_date_expr = "l.agenda_approved_at::date"
-                venta_semana = db.execute(
-                    text(f"""
-                        SELECT COALESCE(SUM(l.monto_cotizado),0)::float
-                        FROM leads l
-                        WHERE {conf_where} AND {sale_date_expr} BETWEEN :ws AND :we
-                        {marca_sql}
-                    """),
-                    conf_params,
-                ).scalar_one()
-                venta_dia = db.execute(
-                    text(f"""
-                        SELECT COALESCE(SUM(l.monto_cotizado),0)::float
-                        FROM leads l
-                        WHERE {conf_where} AND {sale_date_expr} = :today
-                        {marca_sql}
-                    """),
-                    {**conf_params, "today": today},
-                ).scalar_one()
-
-        # Fuente alternativa: fin_eventos (útil para finanzas). Por defecto reportamos confirmados (monto_cotizado).
-        if str(venta_source or "").lower() in ("eventos", "fin_eventos") and _table_exists_pg(db, "fin_eventos"):
-            try:
-                q_sales = f"""
-                    SELECT fe.fecha_evento::date AS dia,
-                           l.id_marca,
-                           COALESCE(SUM(fe.monto_bruto),0)::float AS monto
-                    FROM fin_eventos fe
-                    JOIN leads l ON l.id_lead=fe.id_lead
-                    WHERE fe.fecha_evento::date BETWEEN :ws AND :we
-                      AND {conf_where}
-                      {marca_sql}
-                    GROUP BY 1,2
-                    ORDER BY 1 ASC, 2 ASC
-                """
-                rows = db.execute(text(q_sales), conf_params).mappings().all()
+                confirmados_semana = 0
+                venta_semana = 0.0
+                venta_dia = 0.0
                 sales_daily = []
-                for r in rows:
-                    mid = r.get("id_marca")
-                    name = brand_map.get(int(mid)) if mid is not None else ""
-                    if not name:
-                        continue
-                    sales_daily.append({
-                        "dia": str(r.get("dia")),
-                        "id_marca": int(mid) if mid is not None else None,
-                        "marca": str(name).upper(),
-                        "monto": float(r.get("monto") or 0),
-                    })
-                venta_semana = float(sum([float(x.get("monto") or 0) for x in sales_daily]) or 0)
-                venta_dia = float(sum([float(x.get("monto") or 0) for x in sales_daily if x.get("dia") == str(today)]) or 0)
-            except Exception:
-                pass
 
     # Normalización CLP: siempre enteros (no decimales)
     venta_dia_i = _money_int(venta_dia)
@@ -1996,13 +2320,23 @@ def dashboard(
     sales_compare = []
     for name in compare_names:
         b = baseline_map.get(str(name), {}) or {}
-        base = float(b.get("monto") or 0)
-        # target legacy: 12% sobre baseline. Si hay meta configurada, usarla.
-        meta_row = metas_by_marca.get(str(name or "").strip(), {})
-        target = float(meta_row.get("meta") or 0) or round(base * 1.12, 2)
+        base_legacy = float(b.get("monto") or 0)
+        meta_row = metas_by_marca.get(str(name or "").strip(), {}) or {}
+        venta_base = float(meta_row.get("venta_base") or 0)
+        crec_pct = float(meta_row.get("crecimiento_pct") or 0)
+        meta_cfg = float(meta_row.get("meta") or 0)
+        # Base/META oficiales: vienen de metas_marca_mensual. Baseline legacy solo como fallback.
+        base = venta_base if venta_base > 0 else base_legacy
+        if meta_cfg > 0:
+            target = meta_cfg
+        elif base > 0:
+            target = round(base * (1.0 + ((crec_pct or 12.0) / 100.0)), 2)
+        else:
+            target = 0.0
         actual = float(actual_map.get(name, 0))
         vs_base = (actual / base * 100) if base else 0
         vs_target = (actual / target * 100) if target else 0
+        yoy_pct = ((actual / base - 1.0) * 100.0) if base else None
         sales_compare.append({
             "marca": name,
             # Backward compat con frontend (reportes.html): baseline/meta
@@ -2011,15 +2345,19 @@ def dashboard(
             "target": _money_int(target),
             "meta": _money_int(target),
             "actual": _money_int(actual),
+            "actual_ly": _money_int(base),
+            "yoy_pct": (round(float(yoy_pct), 2) if yoy_pct is not None else None),
             "vs_base": round(vs_base, 2),
             "vs_target": round(vs_target, 2),
             "vs_meta": round(vs_target, 2),
             "empresa": int(b.get("empresa") or 0),
             "particular": int(b.get("particular") or 0),
-            "meta_cfg": meta_row or None,
+            "meta_cfg": (meta_row or None),
         })
 
     venta_mes_i = int(sum(int(r.get("actual") or 0) for r in sales_compare))
+    venta_mes_base_i = int(sum(int(r.get("base") or 0) for r in sales_compare))
+    venta_mes_meta_i = int(sum(int(r.get("meta") or 0) for r in sales_compare))
 
     commissions = []
     if _is_admin(role):
@@ -2076,6 +2414,313 @@ def dashboard(
     for row in sales_daily:
         row["monto"] = _money_int(row.get("monto"))
 
+    # ------------------------
+    # Dashboard v2 (UI nueva)
+    # ------------------------
+    dashboard_v2: dict[str, Any] = {
+        "filters": {"id_marca": (int(id_marca) if (id_marca and str(id_marca).isdigit()) else None), "week_offset": woff},
+        "sales_kpis": {},
+        "estado_cards": [],
+        "channels_total": [],
+        "sales_daily_by_brand": [],
+        "my_events_week": [],
+        "my_tasks": {"ok": True, "items": [], "counts": {"open": 0, "overdue": 0, "due_today": 0}},
+    }
+
+    # Canal / plataforma (best-effort)
+    channel_expr = "COALESCE(l.plataforma,'—') AS canal" if _col_exists(db, "leads", "plataforma") else "'—' AS canal"
+
+    # Confirmado WHERE (robusto)
+    conf_params2: dict[str, Any] = dict(params)
+    conf_where2 = "1=1"
+    if confirmado_id:
+        conf_where2 = "l.id_estado=:conf"
+        conf_params2["conf"] = int(confirmado_id)
+    else:
+        conf_where2 = "EXISTS (SELECT 1 FROM estados_lead e WHERE e.id_estado=l.id_estado AND UPPER(e.nombre) LIKE :confname)"
+        conf_params2["confname"] = "%CONFIRM%"
+
+    # Venta hoy/semana por agenda_approved_at (si existe)
+    sale_date_expr = "l.updated_at::date"
+    if _col_exists(db, "leads", "agenda_approved_at"):
+        sale_date_expr = "l.agenda_approved_at::date"
+
+    venta_hoy = 0
+    venta_semana = 0
+    try:
+        venta_hoy = float(
+            db.execute(
+                text(
+                    f"""
+                    SELECT COALESCE(SUM(l.monto_cotizado),0)::float
+                    FROM leads l
+                    WHERE {conf_where2}
+                      AND {sale_date_expr} = :today
+                      {marca_sql}
+                    """
+                ),
+                {**conf_params2, "today": today},
+            ).scalar_one()
+            or 0
+        )
+        venta_semana = float(
+            db.execute(
+                text(
+                    f"""
+                    SELECT COALESCE(SUM(l.monto_cotizado),0)::float
+                    FROM leads l
+                    WHERE {conf_where2}
+                      AND {sale_date_expr} BETWEEN :ws AND :we
+                      {marca_sql}
+                    """
+                ),
+                conf_params2,
+            ).scalar_one()
+            or 0
+        )
+    except Exception:
+        venta_hoy = 0
+        venta_semana = 0
+
+    # Venta mes (mes del evento) por fecha_evento (best-effort)
+    venta_mes_evento = 0
+    month_start2 = date(today.year, today.month, 1)
+    month_end2 = (date(today.year, today.month, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    if _col_exists(db, "leads", "fecha_evento"):
+        try:
+            venta_mes_evento = float(
+                db.execute(
+                    text(
+                        f"""
+                        SELECT COALESCE(SUM(l.monto_cotizado),0)::float
+                        FROM leads l
+                        WHERE {conf_where2}
+                          AND l.fecha_evento::date BETWEEN :ms AND :me
+                          {marca_sql}
+                        """
+                    ),
+                    {**conf_params2, "ms": month_start2, "me": month_end2},
+                ).scalar_one()
+                or 0
+            )
+        except Exception:
+            venta_mes_evento = 0
+
+    dashboard_v2["sales_kpis"] = {
+        "venta_hoy": _money_int(venta_hoy),
+        "venta_semana": _money_int(venta_semana),
+        "venta_mes_evento": _money_int(venta_mes_evento),
+        "confirmados_semana": int(confirmados_semana or 0),
+        "basis": {"venta_hoy": sale_date_expr, "venta_semana": sale_date_expr, "venta_mes_evento": "l.fecha_evento::date"},
+        "ranges": {
+            "week": {"start": str(week_start), "end": str(week_end), "number": int(week_num)},
+            "month_evento": {"start": str(month_start2), "end": str(month_end2)},
+        },
+    }
+
+    # Cards por estado + canal (sin filtro de fecha: snapshot de pipeline actual)
+    try:
+        rows_sc = db.execute(
+            text(
+                f"""
+                SELECT COALESCE(e.nombre,'Sin estado') AS estado,
+                       {channel_expr},
+                       COUNT(*)::int AS cantidad,
+                       COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::float AS monto
+                FROM leads l
+                LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+                WHERE 1=1
+                {marca_sql}
+                GROUP BY 1,2
+                ORDER BY 1 ASC, 4 DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+
+        def _bucket(name: str) -> str:
+            n = (name or "").strip().upper()
+            if "DECLIN" in n or "RECHAZ" in n:
+                return "DECLINADO"
+            if "CONFIRM" in n:
+                return "CONFIRMADO"
+            if "COTIZ" in n:
+                return "COTIZADO"
+            if "CONTACT" in n:
+                return "CONTACTADO"
+            if "NUEV" in n:
+                return "NUEVO"
+            return "OTROS"
+
+        buckets: dict[str, dict[str, Any]] = {}
+        total = {"key": "TOTAL", "cantidad": 0, "monto": 0.0, "channels": {}}
+        for r in rows_sc:
+            estado = str(r.get("estado") or "Sin estado")
+            canal = str(r.get("canal") or "—")
+            qty = int(r.get("cantidad") or 0)
+            monto = float(r.get("monto") or 0)
+            key = _bucket(estado)
+            b = buckets.setdefault(key, {"key": key, "cantidad": 0, "monto": 0.0, "channels": {}})
+            b["cantidad"] += qty
+            b["monto"] += monto
+            b["channels"][canal] = {
+                "canal": canal,
+                "cantidad": int((b["channels"].get(canal, {}) or {}).get("cantidad") or 0) + qty,
+                "monto": float((b["channels"].get(canal, {}) or {}).get("monto") or 0) + monto,
+            }
+            total["cantidad"] += qty
+            total["monto"] += monto
+            total["channels"][canal] = {
+                "canal": canal,
+                "cantidad": int((total["channels"].get(canal, {}) or {}).get("cantidad") or 0) + qty,
+                "monto": float((total["channels"].get(canal, {}) or {}).get("monto") or 0) + monto,
+            }
+
+        order_keys = ["TOTAL", "NUEVO", "CONTACTADO", "COTIZADO", "CONFIRMADO", "DECLINADO", "OTROS"]
+        out_cards: list[dict[str, Any]] = []
+        for k in order_keys:
+            if k == "TOTAL":
+                ch = sorted(list(total["channels"].values()), key=lambda x: float(x.get("monto") or 0), reverse=True)
+                out_cards.append({"key": "TOTAL", "cantidad": int(total["cantidad"]), "monto": _money_int(total["monto"]), "channels": ch})
+                continue
+            if k not in buckets:
+                out_cards.append({"key": k, "cantidad": 0, "monto": 0, "channels": []})
+                continue
+            b = buckets[k]
+            ch = sorted(list((b.get("channels") or {}).values()), key=lambda x: float(x.get("monto") or 0), reverse=True)
+            out_cards.append({"key": k, "cantidad": int(b.get("cantidad") or 0), "monto": _money_int(b.get("monto") or 0), "channels": ch})
+        dashboard_v2["estado_cards"] = out_cards
+
+        # Total por canal (snapshot)
+        chan_map: dict[str, dict[str, Any]] = {}
+        for c in total["channels"].values():
+            chan_map[str(c.get("canal") or "—")] = {"canal": str(c.get("canal") or "—"), "cantidad": int(c.get("cantidad") or 0), "monto": _money_int(c.get("monto") or 0)}
+        dashboard_v2["channels_total"] = sorted(list(chan_map.values()), key=lambda x: int(x.get("cantidad") or 0), reverse=True)
+    except Exception:
+        dashboard_v2["estado_cards"] = []
+        dashboard_v2["channels_total"] = []
+
+    # Venta diaria por marca (semana) — CONFIRMADOS por agenda_approved_at (o updated_at)
+    try:
+        rows_sd = db.execute(
+            text(
+                f"""
+                SELECT {sale_date_expr} AS dia,
+                       l.id_marca,
+                       COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                FROM leads l
+                WHERE {conf_where2}
+                  AND {sale_date_expr} BETWEEN :ws AND :we
+                  {marca_sql}
+                GROUP BY 1,2
+                ORDER BY 1 ASC, 2 ASC
+                """
+            ),
+            conf_params2,
+        ).mappings().all()
+        by_day_brand: list[dict[str, Any]] = []
+        for r in rows_sd:
+            mid = r.get("id_marca")
+            name = brand_map.get(int(mid)) if mid is not None else ""
+            if not name:
+                continue
+            by_day_brand.append({"dia": str(r.get("dia") or ""), "marca": str(name).upper(), "monto": _money_int(r.get("monto"))})
+        dashboard_v2["sales_daily_by_brand"] = by_day_brand
+    except Exception:
+        dashboard_v2["sales_daily_by_brand"] = []
+
+    # Mis eventos confirmados semana (no operadores/conductores)
+    try:
+        rk = _role_key(role)
+        is_operator_driver = any(x in rk for x in ("operador", "conductor", "chofer"))
+        if not is_operator_driver and conf_where:
+            uid_int = _resolve_uid_for_marcas(db, me)
+            has_id_usuario = _col_exists(db, "leads", "id_usuario")
+            user_sql = ""
+            user_params = dict(conf_params)
+            if has_id_usuario and uid_int:
+                user_sql = " AND CAST(l.id_usuario AS text) = :uid "
+                user_params["uid"] = str(uid_int)
+            q_my = f"""
+                SELECT l.id_lead, {name_expr} AS cliente, l.fecha_evento,
+                       {pre_start_expr} AS pre_start, {pre_end_expr} AS pre_end,
+                       COALESCE(m.nombre,m.marca,'') AS marca,
+                       COALESCE(c.nombre,'') AS comuna,
+                       {cal_expr} AS calendar_html_link
+                FROM leads l
+                LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                WHERE {conf_where}
+                  AND l.fecha_evento BETWEEN :ws AND :we
+                  {marca_sql}
+                  {user_sql}
+                ORDER BY l.fecha_evento ASC, l.id_lead DESC
+            """
+            rows_my = db.execute(text(q_my), user_params).mappings().all()
+            dashboard_v2["my_events_week"] = [
+                {
+                    "id_lead": r.get("id_lead"),
+                    "cliente": r.get("cliente"),
+                    "fecha_evento": str(r.get("fecha_evento") or "")[:10],
+                    "marca": r.get("marca"),
+                    "comuna": r.get("comuna"),
+                    "pre_start": (str(r.get("pre_start") or "") if r.get("pre_start") else None),
+                    "pre_end": (str(r.get("pre_end") or "") if r.get("pre_end") else None),
+                    "calendar_html_link": r.get("calendar_html_link") or "",
+                }
+                for r in rows_my[:80]
+            ]
+    except Exception:
+        dashboard_v2["my_events_week"] = []
+
+    # Mis tareas (ejecutivos/admin) — best-effort
+    try:
+        from backend.core.tasks import ensure_tasks_table  # type: ignore
+
+        uid_int = _resolve_uid_for_marcas(db, me)
+        if uid_int:
+            ensure_tasks_table(db)
+            trows = db.execute(
+                text(
+                    """
+                    SELECT id_task, kind, title, status, priority,
+                           due_at, entity_type, entity_id
+                    FROM public.tasks
+                    WHERE assigned_user_id=:u AND status='open'
+                    ORDER BY (due_at IS NULL) ASC, due_at ASC, priority ASC, id_task DESC
+                    LIMIT 50
+                    """
+                ),
+                {"u": int(uid_int)},
+            ).mappings().all()
+            items = []
+            overdue = 0
+            due_today = 0
+            for r in trows:
+                due = r.get("due_at")
+                due_s = str(due) if due else None
+                if due and hasattr(due, "date"):
+                    dd = due.astimezone(tz).date() if hasattr(due, "astimezone") else due.date()
+                    if dd < today:
+                        overdue += 1
+                    if dd == today:
+                        due_today += 1
+                items.append(
+                    {
+                        "id_task": int(r.get("id_task")),
+                        "kind": str(r.get("kind") or ""),
+                        "title": str(r.get("title") or ""),
+                        "status": str(r.get("status") or ""),
+                        "priority": int(r.get("priority") or 0),
+                        "due_at": due_s,
+                        "entity_type": str(r.get("entity_type") or ""),
+                        "entity_id": int(r.get("entity_id") or 0) if str(r.get("entity_id") or "").isdigit() else None,
+                    }
+                )
+            dashboard_v2["my_tasks"] = {"ok": True, "items": items, "counts": {"open": len(items), "overdue": overdue, "due_today": due_today}}
+    except Exception:
+        dashboard_v2["my_tasks"] = {"ok": True, "items": [], "counts": {"open": 0, "overdue": 0, "due_today": 0}}
+
     return {
         "ok": True,
         "week": {"start": str(week_start), "end": str(week_end), "number": week_num},
@@ -2089,6 +2734,8 @@ def dashboard(
             "venta_dia": venta_dia_i,
             "venta_semana": venta_semana_i,
             "venta_mes": venta_mes_i,
+            "venta_mes_base": venta_mes_base_i,
+            "venta_mes_meta": venta_mes_meta_i,
             "cierre_pct": float(round(cierre_pct, 2)),
             "total_semana": int(total_semana),
             "confirmados_semana": int(confirmados_semana),
@@ -2098,6 +2745,681 @@ def dashboard(
         "commissions": commissions,
         "sales_daily": sales_daily,
         "month": month,
+        "dashboard_v2": dashboard_v2,
+    }
+
+
+def _dashboard_reportes_v2(
+    *,
+    fecha_inicio: Optional[str],
+    fecha_termino: Optional[str],
+    periodo: Optional[str],
+    id_marca: int | None,
+    venta_source: str,
+    top_n: int,
+    productos_order: str,
+    comunas_order: str,
+    clientes_order: str,
+    db: Session,
+    me,
+):
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+    tz = ZoneInfo("America/Santiago")
+    today = datetime.now(tz).date()
+
+    marcas = _fetch_marcas_ids(db, me)
+    only_own = not _is_superadmin(me)
+    use_fin_eventos = str(venta_source or "").lower() in ("eventos", "fin_eventos")
+
+    def _parse_date(s: str) -> date:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+
+    # Range
+    p = (periodo or "").strip().lower() or "range"
+    ini_d: date | None = None
+    fin_d: date | None = None
+    if fecha_inicio:
+        try:
+            ini_d = _parse_date(str(fecha_inicio))
+        except Exception:
+            ini_d = None
+    if fecha_termino:
+        try:
+            fin_d = _parse_date(str(fecha_termino))
+        except Exception:
+            fin_d = None
+    if p in ("mtd", "mes", "month"):
+        ini_d = date(today.year, today.month, 1)
+        fin_d = today
+    elif p in ("ytd", "anio", "year"):
+        ini_d = date(today.year, 1, 1)
+        fin_d = today
+    if ini_d and not fin_d:
+        fin_d = today
+    if fin_d and not ini_d:
+        ini_d = date(fin_d.year, fin_d.month, 1)
+    if not ini_d or not fin_d:
+        ini_d = date(today.year, today.month, 1)
+        fin_d = today
+
+    def _shift_year_safe(d: date, years: int) -> date:
+        y = d.year + years
+        try:
+            return date(y, d.month, d.day)
+        except Exception:
+            from calendar import monthrange
+
+            last = monthrange(y, d.month)[1]
+            return date(y, d.month, min(d.day, last))
+
+    ly_ini = _shift_year_safe(ini_d, -1)
+    ly_fin = _shift_year_safe(fin_d, -1)
+
+    # Columna de fecha para filtro principal del reporte.
+    # Regla negocio: reportes se basan en MES DEL EVENTO => fecha_evento si existe.
+    if _col_exists(db, "leads", "fecha_evento"):
+        date_col = "fecha_evento"
+    elif _col_exists(db, "leads", "calendar_start"):
+        date_col = "calendar_start"
+    elif _col_exists(db, "leads", "fecha_ingreso"):
+        date_col = "fecha_ingreso"
+    else:
+        date_col = "created_at"
+
+    params: dict[str, Any] = {"ini": ini_d.isoformat(), "fin": fin_d.isoformat()}
+    where_parts = [f"DATE(l.{date_col}) >= :ini", f"DATE(l.{date_col}) <= :fin"]
+
+    # Scope marcas
+    if id_marca:
+        try:
+            mid = int(id_marca)
+        except Exception:
+            mid = 0
+        if mid > 0:
+            if only_own and marcas and (mid not in set(marcas)):
+                raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
+            where_parts.append("l.id_marca = :id_marca")
+            params["id_marca"] = mid
+    if only_own and marcas:
+        where_parts.append("l.id_marca = ANY(:marcas)")
+        params["marcas"] = marcas
+
+    where_sql = " AND ".join(where_parts) if where_parts else "1=1"
+
+    confirmado_id = _estado_id(db, "CONFIRM") or 0
+    conf_where = "1=1"
+    if int(confirmado_id) > 0:
+        conf_where = "l.id_estado = :conf"
+        params["conf"] = int(confirmado_id)
+    else:
+        conf_where = "EXISTS (SELECT 1 FROM estados_lead e WHERE e.id_estado=l.id_estado AND UPPER(e.nombre) LIKE :confname)"
+        params["confname"] = "%CONFIRM%"
+
+    top_n_i = int(top_n or 20)
+    top_n_i = max(5, min(100, top_n_i))
+    prod_order = "monto" if str(productos_order or "").lower() not in ("cantidad", "qty", "count") else "cantidad"
+    com_order = "monto" if str(comunas_order or "").lower() not in ("cantidad", "qty", "count") else "cantidad"
+    cli_order = "monto" if str(clientes_order or "").lower() not in ("cantidad", "qty", "count") else "cantidad"
+
+    # Totales
+    leads_total = int(db.execute(text(f"SELECT COUNT(*)::int FROM leads l WHERE {where_sql}"), params).scalar_one() or 0)
+    confirmados_total = int(
+        db.execute(text(f"SELECT COUNT(*)::int FROM leads l WHERE {where_sql} AND {conf_where}"), params).scalar_one() or 0
+    )
+    cierre_pct = (confirmados_total / leads_total * 100.0) if leads_total else 0.0
+
+    # Venta total (confirmados)
+    if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
+        venta_total = float(
+            db.execute(
+                text(
+                    f"""
+                    SELECT COALESCE(SUM(fe.monto_bruto),0)::float
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    WHERE {where_sql}
+                      AND fe.fecha_evento IS NOT NULL
+                      AND {conf_where}
+                    """
+                ),
+                params,
+            ).scalar_one()
+            or 0.0
+        )
+    else:
+        venta_total = float(
+            db.execute(text(f"SELECT COALESCE(SUM(l.monto_cotizado),0)::float FROM leads l WHERE {where_sql} AND {conf_where}"), params).scalar_one()
+            or 0.0
+        )
+
+    # Funnel
+    try:
+        funnel = db.execute(
+            text(
+                f"""
+                SELECT COALESCE(e.id_estado, 9999)::int AS id_estado,
+                       COALESCE(e.nombre,'Sin estado') AS estado,
+                       COALESCE(e.color,'#64748b') AS color,
+                       COUNT(*)::int AS cantidad,
+                       COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                FROM leads l
+                LEFT JOIN estados_lead e ON e.id_estado=l.id_estado
+                WHERE {where_sql}
+                GROUP BY 1,2,3
+                ORDER BY cantidad DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+    except Exception:
+        funnel = []
+
+    # Eventos diarios (confirmados)
+    try:
+        eventos_diarios = db.execute(
+            text(
+                f"""
+                SELECT DATE(l.{date_col}) AS dia,
+                       COUNT(*)::int AS cantidad,
+                       COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                FROM leads l
+                WHERE {where_sql}
+                  AND l.{date_col} IS NOT NULL
+                  AND {conf_where}
+                GROUP BY 1
+                ORDER BY dia ASC
+                """
+            ),
+            params,
+        ).mappings().all()
+    except Exception:
+        eventos_diarios = []
+
+    # Top clientes / comunas
+    name_expr = _lead_name_expr(db)
+    clientes = []
+    comunas = []
+    try:
+        if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
+            clientes = db.execute(
+                text(
+                    f"""
+                    SELECT COALESCE(fe.cliente, {name_expr}, '—') AS cliente,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    WHERE {where_sql}
+                      AND fe.fecha_evento IS NOT NULL
+                      AND {conf_where}
+                    GROUP BY 1
+                    ORDER BY monto DESC
+                    LIMIT {top_n_i}
+                    """
+                ),
+                params,
+            ).mappings().all()
+            comunas = db.execute(
+                text(
+                    f"""
+                    SELECT COALESCE(fe.comuna, c.nombre,'—') AS comuna,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                    WHERE {where_sql}
+                      AND fe.fecha_evento IS NOT NULL
+                      AND {conf_where}
+                    GROUP BY 1
+                    ORDER BY monto DESC
+                    LIMIT {top_n_i}
+                    """
+                ),
+                params,
+            ).mappings().all()
+        else:
+            clientes = db.execute(
+                text(
+                    f"""
+                    SELECT {name_expr} AS cliente,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    WHERE {where_sql}
+                      AND {conf_where}
+                    GROUP BY {name_expr}
+                    ORDER BY monto DESC
+                    LIMIT {top_n_i}
+                    """
+                ),
+                params,
+            ).mappings().all()
+            comunas = db.execute(
+                text(
+                    f"""
+                    SELECT COALESCE(c.nombre,'—') AS comuna,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                    WHERE {where_sql}
+                      AND {conf_where}
+                    GROUP BY 1
+                    ORDER BY monto DESC
+                    LIMIT {top_n_i}
+                    """
+                ),
+                params,
+            ).mappings().all()
+    except Exception:
+        clientes = []
+        comunas = []
+
+    # Tipo cliente
+    tipos_rows = []
+    tipos_rows_conf = []
+    if _col_exists(db, "leads", "tipo_cliente"):
+        try:
+            tipos_rows = db.execute(
+                text(
+                    f"""
+                    SELECT COALESCE(l.tipo_cliente,'—') AS tipo,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    WHERE {where_sql}
+                    GROUP BY 1
+                    ORDER BY monto DESC
+                    LIMIT {top_n_i}
+                    """
+                ),
+                params,
+            ).mappings().all()
+            tipos_rows_conf = db.execute(
+                text(
+                    f"""
+                    SELECT COALESCE(l.tipo_cliente,'—') AS tipo,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    WHERE {where_sql} AND {conf_where}
+                    GROUP BY 1
+                    ORDER BY monto DESC
+                    LIMIT {top_n_i}
+                    """
+                ),
+                params,
+            ).mappings().all()
+        except Exception:
+            tipos_rows = []
+            tipos_rows_conf = []
+
+    # Venta por marca (torta)
+    try:
+        if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
+            ventas_por_marca = db.execute(
+                text(
+                    f"""
+                    SELECT l.id_marca,
+                           COALESCE(m.nombre, m.marca,'—') AS marca,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                    WHERE {where_sql}
+                      AND fe.fecha_evento IS NOT NULL
+                      AND {conf_where}
+                    GROUP BY 1,2
+                    ORDER BY monto DESC
+                    """
+                ),
+                params,
+            ).mappings().all()
+        else:
+            ventas_por_marca = db.execute(
+                text(
+                    f"""
+                    SELECT l.id_marca,
+                           COALESCE(m.nombre, m.marca,'—') AS marca,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                    WHERE {where_sql}
+                      AND {conf_where}
+                    GROUP BY 1,2
+                    ORDER BY monto DESC
+                    """
+                ),
+                params,
+            ).mappings().all()
+    except Exception:
+        ventas_por_marca = []
+
+    # Top productos (desde cotizaciones)
+    top_productos = []
+    try:
+        if _table_exists_pg(db, "cotizacion_items") and _table_exists_pg(db, "cotizaciones"):
+            cols_items = _cols_pg(db, "cotizacion_items")
+            cols_cot = _cols_pg(db, "cotizaciones")
+            prod_col = "producto" if "producto" in cols_items else ("nombre_producto" if "nombre_producto" in cols_items else None)
+            qty_col = "cantidad" if "cantidad" in cols_items else None
+            total_col = "total_linea" if "total_linea" in cols_items else ("subtotal" if "subtotal" in cols_items else None)
+            has_id_lead = "id_lead" in cols_cot
+            marca_expr = "COALESCE(i.marca, m.nombre, m.marca,'')" if "marca" in cols_items else "COALESCE(m.nombre, m.marca,'')"
+            if prod_col and qty_col and total_col and has_id_lead:
+                q_prod = f"""
+                    SELECT i.{prod_col} AS producto,
+                           {marca_expr} AS marca,
+                           SUM(COALESCE(i.{qty_col},0))::float AS cantidad,
+                           SUM(COALESCE(i.{total_col},0))::float AS monto
+                    FROM cotizacion_items i
+                    JOIN cotizaciones c ON c.id_cotizacion=i.id_cotizacion
+                    LEFT JOIN leads l ON l.id_lead=c.id_lead
+                    LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                    WHERE 1=1
+                      AND l.{date_col}::date BETWEEN :ini AND :fin
+                      AND {conf_where}
+                      {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
+                    GROUP BY i.{prod_col}, {marca_expr}
+                    ORDER BY {prod_order} DESC
+                    LIMIT {top_n_i}
+                """
+                top_productos = db.execute(text(q_prod), params).mappings().all()
+        elif _table_exists_pg(db, "cotizaciones_detalle") and _table_exists_pg(db, "cotizaciones"):
+            cols_det = _cols_pg(db, "cotizaciones_detalle")
+            cols_cot = _cols_pg(db, "cotizaciones")
+            prod_col = "producto" if "producto" in cols_det else ("ingrediente" if "ingrediente" in cols_det else None)
+            qty_col = "cantidad" if "cantidad" in cols_det else None
+            total_col = "total_linea" if "total_linea" in cols_det else ("subtotal" if "subtotal" in cols_det else None)
+            has_id_lead = "id_lead" in cols_cot
+            if prod_col and qty_col and total_col and has_id_lead:
+                q_prod = f"""
+                    SELECT d.{prod_col} AS producto,
+                           COALESCE(m.nombre, m.marca,'') AS marca,
+                           SUM(COALESCE(d.{qty_col},0))::float AS cantidad,
+                           SUM(COALESCE(d.{total_col},0))::float AS monto
+                    FROM cotizaciones_detalle d
+                    JOIN cotizaciones c ON c.id_cotizacion=d.id_cotizacion
+                    LEFT JOIN leads l ON l.id_lead=c.id_lead
+                    LEFT JOIN marcas m ON m.id_marca=l.id_marca
+                    WHERE 1=1
+                      AND l.{date_col}::date BETWEEN :ini AND :fin
+                      AND {conf_where}
+                      {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
+                    GROUP BY d.{prod_col}, COALESCE(m.nombre, m.marca,'')
+                    ORDER BY {prod_order} DESC
+                    LIMIT {top_n_i}
+                """
+                top_productos = db.execute(text(q_prod), params).mappings().all()
+    except Exception:
+        top_productos = []
+
+    # Orden alternativo (cantidad) para UI
+    if com_order == "cantidad" and comunas:
+        comunas = sorted(list(comunas), key=lambda x: (int(x.get("cantidad") or 0), float(x.get("monto") or 0)), reverse=True)[:top_n_i]
+    else:
+        comunas = list(comunas)[:top_n_i] if comunas else []
+    if cli_order == "cantidad" and clientes:
+        clientes = sorted(list(clientes), key=lambda x: (int(x.get("cantidad") or 0), float(x.get("monto") or 0)), reverse=True)[:top_n_i]
+    else:
+        clientes = list(clientes)[:top_n_i] if clientes else []
+
+    # Traslados (solo modo leads)
+    traslado_kpis = {"cobrado": 0.0, "costo": 0.0}
+    traslado_by_marca: dict[int, dict[str, float]] = {}
+    if not use_fin_eventos:
+        try:
+            has_traslado = _col_exists(db, "leads", "traslado")
+            has_cost = _col_exists(db, "comunas", "costo_traslado")
+            if has_traslado or has_cost:
+                cob_expr = "COALESCE(SUM(COALESCE(l.traslado,0)),0)::float" if has_traslado else "0::float"
+                cost_expr = "COALESCE(SUM(COALESCE(c.costo_traslado,0)),0)::float" if has_cost else "0::float"
+                row = db.execute(
+                    text(
+                        f"""
+                        SELECT {cob_expr} AS cobrado,
+                               {cost_expr} AS costo
+                        FROM leads l
+                        LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                        WHERE {where_sql} AND {conf_where}
+                        """
+                    ),
+                    params,
+                ).mappings().first()
+                if row:
+                    traslado_kpis["cobrado"] = float(row.get("cobrado") or 0)
+                    traslado_kpis["costo"] = float(row.get("costo") or 0)
+
+                trows = db.execute(
+                    text(
+                        f"""
+                        SELECT l.id_marca,
+                               {cob_expr} AS cobrado,
+                               {cost_expr} AS costo
+                        FROM leads l
+                        LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                        WHERE {where_sql} AND {conf_where}
+                        GROUP BY l.id_marca
+                        """
+                    ),
+                    params,
+                ).mappings().all()
+                for r in trows:
+                    if r.get("id_marca") is None:
+                        continue
+                    traslado_by_marca[int(r["id_marca"])] = {"cobrado": float(r.get("cobrado") or 0), "costo": float(r.get("costo") or 0)}
+        except Exception:
+            traslado_kpis = {"cobrado": 0.0, "costo": 0.0}
+            traslado_by_marca = {}
+
+    # Ventas comparativo: actual vs LY por marca + metas (si existen)
+    years_extra: list[int] = []
+    ventas_comparativo: list[dict] = []
+    try:
+        same_year = (ini_d.year == fin_d.year)
+        months: list[int] = []
+        if same_year:
+            m0 = int(ini_d.month)
+            m1 = int(fin_d.month)
+            months = list(range(m0, m1 + 1)) if m0 <= m1 else [m0]
+        else:
+            months = [int(ini_d.month)]
+
+        metas_map: dict[int, dict[str, float]] = {}
+        if _table_exists_pg(db, "metas_marca_mensual"):
+            mrows = db.execute(
+                text(
+                    """
+                    SELECT id_marca,
+                           COALESCE(SUM(COALESCE(venta_base,0)),0)::float AS venta_base,
+                           COALESCE(SUM(COALESCE(meta,0)),0)::float AS meta,
+                           COALESCE(SUM(COALESCE(crecimiento_pct,0)),0)::float AS crecimiento_pct
+                    FROM metas_marca_mensual
+                    WHERE year=:y AND month = ANY(:months)
+                    GROUP BY id_marca
+                    """
+                ),
+                {"y": int(ini_d.year), "months": months},
+            ).mappings().all()
+            for r in mrows:
+                try:
+                    mid = int(r.get("id_marca") or 0)
+                except Exception:
+                    continue
+                if mid <= 0:
+                    continue
+                metas_map[mid] = {
+                    "venta_base": float(r.get("venta_base") or 0),
+                    "meta": float(r.get("meta") or 0),
+                    "crecimiento_pct": float(r.get("crecimiento_pct") or 0),
+                }
+
+        params_ly = dict(params)
+        params_ly["ini"] = ly_ini.isoformat()
+        params_ly["fin"] = ly_fin.isoformat()
+
+        actual_by_marca: dict[int, float] = {}
+        ly_by_marca: dict[int, float] = {}
+        if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
+            arows = db.execute(
+                text(
+                    f"""
+                    SELECT l.id_marca, COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    WHERE {where_sql}
+                      AND fe.fecha_evento IS NOT NULL
+                      AND {conf_where}
+                    GROUP BY l.id_marca
+                    """
+                ),
+                params,
+            ).mappings().all()
+            for r in arows:
+                if r.get("id_marca") is None:
+                    continue
+                actual_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
+
+            ly_rows = db.execute(
+                text(
+                    f"""
+                    SELECT l.id_marca, COALESCE(SUM(fe.monto_bruto),0)::float AS monto
+                    FROM fin_eventos fe
+                    JOIN leads l ON l.id_lead=fe.id_lead
+                    WHERE DATE(l.{date_col}) >= :ini AND DATE(l.{date_col}) <= :fin
+                      AND fe.fecha_evento IS NOT NULL
+                      AND {conf_where}
+                      {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
+                      {("AND l.id_marca = :id_marca" if (params.get('id_marca') is not None) else "")}
+                    GROUP BY l.id_marca
+                    """
+                ),
+                params_ly,
+            ).mappings().all()
+            for r in ly_rows:
+                if r.get("id_marca") is None:
+                    continue
+                ly_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
+        else:
+            arows = db.execute(
+                text(f"SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto FROM leads l WHERE {where_sql} AND {conf_where} GROUP BY l.id_marca"),
+                params,
+            ).mappings().all()
+            for r in arows:
+                if r.get("id_marca") is None:
+                    continue
+                actual_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
+
+            ly_rows = db.execute(
+                text(
+                    f"""
+                    SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
+                    FROM leads l
+                    WHERE DATE(l.{date_col}) >= :ini AND DATE(l.{date_col}) <= :fin
+                      AND {conf_where}
+                      {("AND l.id_marca = ANY(:marcas)" if (only_own and marcas) else "")}
+                      {("AND l.id_marca = :id_marca" if (params.get('id_marca') is not None) else "")}
+                    GROUP BY l.id_marca
+                    """
+                ),
+                params_ly,
+            ).mappings().all()
+            for r in ly_rows:
+                if r.get("id_marca") is None:
+                    continue
+                ly_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
+
+        if _col_exists(db, "marcas", "color"):
+            brands = db.execute(text("SELECT id_marca, COALESCE(nombre, marca,'') AS marca, COALESCE(color,'') AS color FROM marcas")).mappings().all()
+        else:
+            brands = db.execute(text("SELECT id_marca, COALESCE(nombre, marca,'') AS marca, '' AS color FROM marcas")).mappings().all()
+
+        for b in brands:
+            try:
+                mid = int(b.get("id_marca") or 0)
+            except Exception:
+                continue
+            if mid <= 0:
+                continue
+            if only_own and marcas and (mid not in set(marcas)):
+                continue
+            if params.get("id_marca") is not None and mid != int(params["id_marca"]):
+                continue
+
+            name = str(b.get("marca") or "").strip().upper()
+            color = str(b.get("color") or "").strip()
+            actual = float(actual_by_marca.get(mid, 0.0))
+            ly_val = float(ly_by_marca.get(mid, 0.0))
+
+            meta_row = metas_map.get(mid, {}) or {}
+            base_cfg = float(meta_row.get("venta_base") or 0.0)
+            meta_cfg = float(meta_row.get("meta") or 0.0)
+            crec_pct = float(meta_row.get("crecimiento_pct") or 0.0) or 12.0
+
+            base = base_cfg if base_cfg > 0 else ly_val
+            meta = meta_cfg if meta_cfg > 0 else (base * (1.0 + (crec_pct / 100.0)) if base > 0 else 0.0)
+
+            share = (actual / venta_total * 100.0) if venta_total else 0.0
+            vs_base = ((actual / base - 1.0) * 100.0) if base else None
+            vs_meta = ((actual / meta) * 100.0) if meta else None
+            yoy = ((actual / ly_val - 1.0) * 100.0) if ly_val else None
+            tr = traslado_by_marca.get(mid, {}) or {}
+
+            ventas_comparativo.append(
+                {
+                    "id_marca": mid,
+                    "marca": name,
+                    "color": color,
+                    "actual": _money_int(actual),
+                    "actual_ly": _money_int(ly_val),
+                    "yoy_pct": (round(yoy, 2) if yoy is not None else None),
+                    "base": _money_int(base),
+                    "meta": _money_int(meta),
+                    "share_pct": round(share, 2),
+                    "vs_base_pct": (round(vs_base, 2) if vs_base is not None else None),
+                    "vs_meta_pct": (round(vs_meta, 2) if vs_meta is not None else None),
+                    "traslado_cobrado": _money_int(tr.get("cobrado")),
+                    "traslado_costo": _money_int(tr.get("costo")),
+                    "traslado_margen": _money_int(float(tr.get("cobrado") or 0) - float(tr.get("costo") or 0)),
+                    "years": {int(ini_d.year): _money_int(actual), int(ini_d.year) - 1: _money_int(ly_val)},
+                }
+            )
+        ventas_comparativo.sort(key=lambda x: float(x.get("actual") or 0), reverse=True)
+    except Exception:
+        years_extra = []
+        ventas_comparativo = []
+
+    return {
+        "ok": True,
+        "range": {"from": ini_d.isoformat(), "to": fin_d.isoformat(), "periodo": (p or "range")},
+        "range_ly": {"from": ly_ini.isoformat(), "to": ly_fin.isoformat()},
+        "years": {"current": int(ini_d.year), "ly": int(ini_d.year) - 1, "extra": years_extra},
+        "kpis": {
+            "venta_total": _money_int(venta_total or 0),
+            "traslado_cobrado": _money_int(traslado_kpis.get("cobrado")),
+            "traslado_costo": _money_int(traslado_kpis.get("costo")),
+            "traslado_margen": _money_int(float(traslado_kpis.get("cobrado") or 0) - float(traslado_kpis.get("costo") or 0)),
+            "leads_total": int(leads_total or 0),
+            "confirmados_total": int(confirmados_total or 0),
+            "cierre_pct": round(float(cierre_pct or 0), 2),
+        },
+        "ventas_comparativo": list(ventas_comparativo),
+        "funnel": list(funnel),
+        "eventos_diarios": list(eventos_diarios),
+        "top_productos": list(top_productos),
+        "clientes": list(clientes),
+        "comunas": list(comunas),
+        "tipo_cliente": list(tipos_rows),
+        "tipo_cliente_confirmados": list(tipos_rows_conf),
+        "ventas_por_marca": list(ventas_por_marca),
+        "params": {"top_n": top_n_i, "productos_order": prod_order, "comunas_order": com_order, "clientes_order": cli_order},
     }
 
 
@@ -2115,9 +3437,48 @@ def dashboard_reportes(
     db: Session = Depends(get_db),
     me=Depends(get_current_user),
 ):
+    try:
+        return _dashboard_reportes_v2(
+            fecha_inicio=fecha_inicio,
+            fecha_termino=fecha_termino,
+            periodo=periodo,
+            id_marca=id_marca,
+            venta_source=venta_source,
+            top_n=top_n,
+            productos_order=productos_order,
+            comunas_order=comunas_order,
+            clientes_order=clientes_order,
+            db=db,
+            me=me,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {
+            "ok": True,
+            "funnel": [],
+            "eventos_diarios": [],
+            "top_productos": [],
+            "clientes": [],
+            "comunas": [],
+            "tipo_cliente": [],
+            "tipo_cliente_confirmados": [],
+            "ventas_por_marca": [],
+            "_error": str(e),
+        }
+
     # IMPORTANTE: este endpoint no debe botar el frontend. Si algo falla en reportería
     # (tablas/columnas faltantes o SQL incompatibles), devolvemos payload vacío con ok=true.
     try:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
         tz = ZoneInfo("America/Santiago")
         today = datetime.now(tz).date()
 
@@ -2518,7 +3879,18 @@ def dashboard_reportes(
         ventas_comparativo: list[dict] = []
         try:
             ym_year = int(ini_d.year)
-            ym_month = int(ini_d.month)
+            same_year = (ini_d.year == fin_d.year)
+            months: list[int] = []
+            if same_year:
+                m0 = int(ini_d.month)
+                m1 = int(fin_d.month)
+                if m0 <= m1:
+                    months = list(range(m0, m1 + 1))
+                else:
+                    months = [m0]
+            else:
+                # Evita mezclar años para metas/históricos (por ahora).
+                months = [int(ini_d.month)]
 
             metas_map: dict[int, dict] = {}
             if _table_exists_pg(db, "metas_marca_mensual"):
@@ -2526,13 +3898,14 @@ def dashboard_reportes(
                     text(
                         """
                         SELECT id_marca,
-                               COALESCE(venta_base,0)::float AS venta_base,
-                               COALESCE(meta,0)::float AS meta
+                               COALESCE(SUM(COALESCE(venta_base,0)),0)::float AS venta_base,
+                               COALESCE(SUM(COALESCE(meta,0)),0)::float AS meta
                         FROM metas_marca_mensual
-                        WHERE year=:y AND month=:m
+                        WHERE year=:y AND month = ANY(:months)
+                        GROUP BY id_marca
                         """
                     ),
-                    {"y": ym_year, "m": ym_month},
+                    {"y": ym_year, "months": months},
                 ).mappings().all()
                 for r in mrows:
                     try:
@@ -2546,16 +3919,20 @@ def dashboard_reportes(
             baseline_map: dict[str, float] = {}
             try:
                 brows = db.execute(
-                    text("SELECT marca, COALESCE(monto,0)::float AS monto FROM ventas_baseline WHERE mes=:m"),
-                    {"m": ym_month},
+                    text("SELECT marca, COALESCE(monto,0)::float AS monto FROM ventas_baseline WHERE mes = ANY(:months)"),
+                    {"months": months},
                 ).mappings().all()
                 for r in brows:
-                    baseline_map[str(r.get("marca") or "").strip().upper()] = float(r.get("monto") or 0)
+                    k = str(r.get("marca") or "").strip().upper()
+                    if not k:
+                        continue
+                    baseline_map[k] = float(baseline_map.get(k, 0.0) or 0.0) + float(r.get("monto") or 0)
             except Exception:
                 baseline_map = {}
 
             actual_by_marca: dict[int, float] = {}
-            actual_by_marca_ly: dict[int, float] = {}
+            # Año pasado / históricos vienen desde tabla (metas_marca_mensual.venta_base).
+            traslado_by_marca: dict[int, dict[str, float]] = {}
             if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
                 arows = db.execute(
                     text(
@@ -2575,28 +3952,6 @@ def dashboard_reportes(
                     if r.get("id_marca") is None:
                         continue
                     actual_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
-
-                params_ly = dict(params)
-                params_ly["ini"] = ly_ini.isoformat()
-                params_ly["fin"] = ly_fin.isoformat()
-                arows_ly = db.execute(
-                    text(
-                        f"""
-                        SELECT l.id_marca, COALESCE(SUM(fe.monto_bruto),0)::float AS monto
-                        FROM fin_eventos fe
-                        JOIN leads l ON l.id_lead=fe.id_lead
-                        WHERE {where_sql}
-                          AND fe.fecha_evento IS NOT NULL
-                          AND {conf_where}
-                        GROUP BY l.id_marca
-                        """
-                    ),
-                    params_ly,
-                ).mappings().all()
-                for r in arows_ly:
-                    if r.get("id_marca") is None:
-                        continue
-                    actual_by_marca_ly[int(r["id_marca"])] = float(r.get("monto") or 0)
             else:
                 arows = db.execute(
                     text(
@@ -2614,24 +3969,93 @@ def dashboard_reportes(
                         continue
                     actual_by_marca[int(r["id_marca"])] = float(r.get("monto") or 0)
 
-                params_ly = dict(params)
-                params_ly["ini"] = ly_ini.isoformat()
-                params_ly["fin"] = ly_fin.isoformat()
-                arows_ly = db.execute(
-                    text(
-                        f"""
-                        SELECT l.id_marca, COALESCE(SUM(l.monto_cotizado),0)::float AS monto
-                        FROM leads l
-                        WHERE {where_sql} AND {conf_where}
-                        GROUP BY l.id_marca
-                        """
-                    ),
-                    params_ly,
-                ).mappings().all()
-                for r in arows_ly:
-                    if r.get("id_marca") is None:
-                        continue
-                    actual_by_marca_ly[int(r["id_marca"])] = float(r.get("monto") or 0)
+                # Traslados (cobrado vs costo) por marca, si existen columnas.
+                try:
+                    has_traslado = _col_exists(db, "leads", "traslado")
+                    has_cost = _col_exists(db, "comunas", "costo_traslado")
+                    if has_traslado or has_cost:
+                        cob_expr = "COALESCE(SUM(COALESCE(l.traslado,0)),0)::float" if has_traslado else "0::float"
+                        cost_expr = "COALESCE(SUM(COALESCE(c.costo_traslado,0)),0)::float" if has_cost else "0::float"
+                        trows = db.execute(
+                            text(
+                                f"""
+                                SELECT l.id_marca,
+                                       {cob_expr} AS cobrado,
+                                       {cost_expr} AS costo
+                                FROM leads l
+                                LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                                WHERE {where_sql} AND {conf_where}
+                                GROUP BY l.id_marca
+                                """
+                            ),
+                            params,
+                        ).mappings().all()
+                        for r in trows:
+                            if r.get("id_marca") is None:
+                                continue
+                            traslado_by_marca[int(r["id_marca"])] = {
+                                "cobrado": float(r.get("cobrado") or 0),
+                                "costo": float(r.get("costo") or 0),
+                            }
+                except Exception:
+                    traslado_by_marca = {}
+
+            # Histórico (año pasado y hasta 3 años extra) viene desde metas_marca_mensual.venta_base.
+            # Regla: para año Y (ej 2025), el valor está guardado en year=Y+1 (ej 2026), month=mes, venta_base.
+            years_extra: list[int] = []
+            years_maps: dict[int, dict[int, float]] = {}
+            # Siempre incluimos LY (y-1) aunque sea 0.
+            if same_year and _table_exists_pg(db, "metas_marca_mensual"):
+                try:
+                    def _hist_for_year(y: int) -> dict[int, float]:
+                        meta_year = y + 1
+                        rows_y = db.execute(
+                            text(
+                                """
+                                SELECT id_marca, COALESCE(SUM(COALESCE(venta_base,0)),0)::float AS monto
+                                FROM metas_marca_mensual
+                                WHERE year=:y AND month = ANY(:months)
+                                GROUP BY id_marca
+                                """
+                            ),
+                            {"y": meta_year, "months": months},
+                        ).mappings().all()
+                        mp: dict[int, float] = {}
+                        for r in rows_y:
+                            try:
+                                mid = int(r.get("id_marca") or 0)
+                            except Exception:
+                                continue
+                            if mid <= 0:
+                                continue
+                            mp[mid] = float(r.get("monto") or 0)
+                        return mp
+
+                    # LY = ycur-1 (guardado en year=ycur)
+                    years_maps[ym_year - 1] = _hist_for_year(ym_year - 1)
+
+                    # Extras: -2, -3, -4 solo si existen filas.
+                    for y in (ym_year - 2, ym_year - 3, ym_year - 4):
+                        meta_year = y + 1
+                        has_any = db.execute(
+                            text(
+                                """
+                                SELECT 1
+                                FROM metas_marca_mensual
+                                WHERE year=:y AND month = ANY(:months)
+                                LIMIT 1
+                                """
+                            ),
+                            {"y": meta_year, "months": months},
+                        ).first()
+                        if not has_any:
+                            continue
+                        years_extra.append(y)
+                        years_maps[y] = _hist_for_year(y)
+                except Exception:
+                    years_extra = []
+                    years_maps = {}
+            years_extra = sorted(list(dict.fromkeys(years_extra)))
 
             if _col_exists(db, "marcas", "color"):
                 brands = db.execute(
@@ -2653,38 +4077,81 @@ def dashboard_reportes(
                 name = str(b.get("marca") or "").strip().upper()
                 color = str(b.get("color") or "").strip()
                 actual = float(actual_by_marca.get(mid, 0.0))
-                actual_ly = float(actual_by_marca_ly.get(mid, 0.0))
-                base = float(metas_map.get(mid, {}).get("venta_base") or baseline_map.get(name, 0.0) or 0.0)
-                meta = float(metas_map.get(mid, {}).get("meta") or (base * 1.12 if base else 0.0))
+                # Año pasado (tabla): si no está, queda 0.
+                ly_table = float((years_maps.get(ym_year - 1, {}) or {}).get(mid, 0.0))
+                base_cfg = float(metas_map.get(mid, {}).get("venta_base") or 0.0)
+                meta_cfg = float(metas_map.get(mid, {}).get("meta") or 0.0)
+                # Base/META oficiales: metas_marca_mensual (venta_base/meta). Si faltan, no inventamos.
+                base = base_cfg if base_cfg > 0 else ly_table
+                meta = meta_cfg if meta_cfg > 0 else 0.0
                 share = (actual / venta_total * 100.0) if venta_total else 0.0
                 vs_base = ((actual / base - 1.0) * 100.0) if base else None
                 vs_meta = ((actual / meta) * 100.0) if meta else None
-                yoy = ((actual / actual_ly - 1.0) * 100.0) if actual_ly else None
+                yoy = ((actual / ly_table - 1.0) * 100.0) if ly_table else None
+                tr = traslado_by_marca.get(mid, {}) or {}
+                years_map = {ym_year: _money_int(actual), (ym_year - 1): _money_int(ly_table)}
+                for y in years_extra:
+                    years_map[y] = _money_int((years_maps.get(y, {}) or {}).get(mid, 0.0))
                 ventas_comparativo.append(
                     {
                         "id_marca": mid,
                         "marca": name,
                         "color": color,
                         "actual": _money_int(actual),
-                        "actual_ly": _money_int(actual_ly),
+                        "actual_ly": _money_int(ly_table),
                         "yoy_pct": (round(yoy, 2) if yoy is not None else None),
                         "base": _money_int(base),
                         "meta": _money_int(meta),
                         "share_pct": round(share, 2),
                         "vs_base_pct": (round(vs_base, 2) if vs_base is not None else None),
                         "vs_meta_pct": (round(vs_meta, 2) if vs_meta is not None else None),
+                        "traslado_cobrado": _money_int(tr.get("cobrado")),
+                        "traslado_costo": _money_int(tr.get("costo")),
+                        "traslado_margen": _money_int(float(tr.get("cobrado") or 0) - float(tr.get("costo") or 0)),
+                        "years": years_map,
                     }
                 )
             ventas_comparativo.sort(key=lambda x: float(x.get("actual") or 0), reverse=True)
         except Exception:
             ventas_comparativo = []
 
+        # KPIs de traslados (cobrado vs costo) para el rango.
+        traslado_kpis = {"cobrado": 0.0, "costo": 0.0}
+        if not use_fin_eventos:
+            try:
+                has_traslado = _col_exists(db, "leads", "traslado")
+                has_cost = _col_exists(db, "comunas", "costo_traslado")
+                if has_traslado or has_cost:
+                    cob_expr = "COALESCE(SUM(COALESCE(l.traslado,0)),0)::float" if has_traslado else "0::float"
+                    cost_expr = "COALESCE(SUM(COALESCE(c.costo_traslado,0)),0)::float" if has_cost else "0::float"
+                    row = db.execute(
+                        text(
+                            f"""
+                            SELECT {cob_expr} AS cobrado,
+                                   {cost_expr} AS costo
+                            FROM leads l
+                            LEFT JOIN comunas c ON c.id_comuna=l.id_comuna
+                            WHERE {where_sql} AND {conf_where}
+                            """
+                        ),
+                        params,
+                    ).mappings().first()
+                    if row:
+                        traslado_kpis["cobrado"] = float(row.get("cobrado") or 0)
+                        traslado_kpis["costo"] = float(row.get("costo") or 0)
+            except Exception:
+                traslado_kpis = {"cobrado": 0.0, "costo": 0.0}
+
         return {
             "ok": True,
             "range": {"from": ini_d.isoformat(), "to": fin_d.isoformat(), "periodo": (p or "range")},
             "range_ly": {"from": ly_ini.isoformat(), "to": ly_fin.isoformat()},
+            "years": {"current": int(ini_d.year), "ly": int(ini_d.year) - 1, "extra": (years_extra if 'years_extra' in locals() else [])},
             "kpis": {
                 "venta_total": _money_int(venta_total or 0),
+                "traslado_cobrado": _money_int(traslado_kpis.get("cobrado")),
+                "traslado_costo": _money_int(traslado_kpis.get("costo")),
+                "traslado_margen": _money_int(float(traslado_kpis.get("cobrado") or 0) - float(traslado_kpis.get("costo") or 0)),
                 "leads_total": int(leads_total or 0),
                 "confirmados_total": int(confirmados_total or 0),
                 "cierre_pct": round(float(cierre_pct or 0), 2),
@@ -2709,6 +4176,10 @@ def dashboard_reportes(
         raise
     except Exception as e:
         # "Never 500": respuesta mínima para que el frontend no caiga.
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return {
             "ok": True,
             "funnel": [],
@@ -2866,6 +4337,468 @@ def dashboard_sales_ids(
     ).fetchall()
     ids = [int(r[0]) for r in rows if r and str(r[0] or "").isdigit()]
     return {"ok": True, "ids": ids}
+
+
+@router.get("/dashboard_v2/sales_ids")
+def dashboard_v2_sales_ids(
+    from_date: str,
+    to_date: str,
+    basis: str = "agenda",  # agenda (agenda_approved_at) | evento (fecha_evento)
+    id_marca: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    IDs para drilldown de ventas (confirmados).
+    - basis=agenda: usa agenda_approved_at::date (fallback fecha_evento si no existe la columna)
+    - basis=evento: usa fecha_evento::date
+    """
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+    try:
+        d1 = date.fromisoformat(str(from_date)[:10])
+        d2 = date.fromisoformat(str(to_date)[:10])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Fechas inválidas (usa YYYY-MM-DD)")
+    if d2 < d1:
+        d1, d2 = d2, d1
+
+    role = (me.get("role") or me.get("rol") or "").upper()
+    marcas = _fetch_marcas_ids(db, me)
+    only_own = not _is_admin(role)
+
+    if only_own and not marcas:
+        return {"ok": True, "ids": [], "from": str(d1), "to": str(d2)}
+
+    confirmado_id = _estado_id(db, "CONFIRM") or 0
+    if not confirmado_id:
+        return {"ok": True, "ids": [], "from": str(d1), "to": str(d2)}
+
+    b = str(basis or "").strip().lower()
+    if b in ("agenda", "approved", "agendado", "agendamiento"):
+        if _col_exists(db, "leads", "agenda_approved_at"):
+            date_expr = "l.agenda_approved_at::date"
+            basis_used = "agenda_approved_at"
+        else:
+            date_expr = "l.fecha_evento::date"
+            basis_used = "fecha_evento"
+    elif b in ("evento", "fecha_evento", "event"):
+        date_expr = "l.fecha_evento::date"
+        basis_used = "fecha_evento"
+    else:
+        raise HTTPException(status_code=400, detail="basis inválido (usa agenda|evento)")
+
+    marca_sql = ""
+    params: dict[str, Any] = {"conf": int(confirmado_id), "d1": str(d1), "d2": str(d2)}
+    if only_own and marcas:
+        marca_sql = " AND l.id_marca = ANY(:marcas) "
+        params["marcas"] = marcas
+        if id_marca and int(id_marca) in set(marcas):
+            marca_sql += " AND l.id_marca = :id_marca "
+            params["id_marca"] = int(id_marca)
+        elif id_marca:
+            raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
+    elif id_marca:
+        mid = int(id_marca)
+        if mid > 0:
+            marca_sql = " AND l.id_marca = :id_marca "
+            params["id_marca"] = mid
+
+    try:
+        rows = db.execute(
+            text(
+                f"""
+                SELECT l.id_lead::bigint AS id_lead
+                FROM public.leads l
+                WHERE l.id_estado = :conf
+                  AND {date_expr} BETWEEN :d1 AND :d2
+                  {marca_sql}
+                ORDER BY l.id_lead DESC
+                LIMIT 4000
+                """
+            ),
+            params,
+        ).fetchall()
+        ids = [int(r[0]) for r in rows if r and str(r[0] or "").isdigit()]
+        return {"ok": True, "from": str(d1), "to": str(d2), "basis": basis_used, "ids": ids}
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "from": str(d1), "to": str(d2), "basis": basis_used, "error": str(e), "ids": []}
+
+
+@router.get("/dashboard_v2")
+def dashboard_v2(
+    week_offset: int = 0,
+    month_offset: int = 0,
+    id_marca: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Dashboard v2 (nuevo).
+    Reglas negocio:
+    - `monto_cotizado` debe representar NETO (productos) + TRASLADO, sin IVA.
+    - Venta día/semana: por `agenda_approved_at` (si existe), fallback `fecha_evento`.
+    - Venta mes: por `fecha_evento` (mes completo, month_offset).
+    """
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+    tz = ZoneInfo("America/Santiago")
+    today = datetime.now(tz).date()
+
+    # Semana Lun-Dom
+    week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=int(week_offset or 0))
+    week_end = week_start + timedelta(days=6)
+
+    # Mes completo (month_offset)
+    y = int(today.year)
+    m = int(today.month) + int(month_offset or 0)
+    while m < 1:
+        y -= 1
+        m += 12
+    while m > 12:
+        y += 1
+        m -= 12
+    month_start = date(y, m, 1)
+    month_end = (date(y, m, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
+    role = (me.get("role") or me.get("rol") or "").upper().strip()
+    marcas = _fetch_marcas_ids(db, me)
+    only_own = not _is_admin(role)
+
+    if only_own and not marcas:
+        return {
+            "ok": True,
+            "filters": {"week_offset": int(week_offset or 0), "month_offset": int(month_offset or 0), "id_marca": None},
+            "week": {"start": str(week_start), "end": str(week_end)},
+            "month": {"start": str(month_start), "end": str(month_end)},
+            "sales": {"ok": True, "confirmado_id": 0},
+            "estado_cards": [],
+            "sales_week_daily_by_brand": {"days": [], "rows": []},
+            "events_confirmed": [],
+        }
+
+    confirmado_id = _estado_id(db, "CONFIRM") or 0
+    if not confirmado_id:
+        return {
+            "ok": True,
+            "filters": {"week_offset": int(week_offset or 0), "month_offset": int(month_offset or 0), "id_marca": None},
+            "week": {"start": str(week_start), "end": str(week_end)},
+            "month": {"start": str(month_start), "end": str(month_end)},
+            "sales": {"ok": True, "confirmado_id": 0},
+            "estado_cards": [],
+            "sales_week_daily_by_brand": {"days": [], "rows": []},
+            "events_confirmed": [],
+        }
+
+    # Filtro marca (respeta permisos)
+    marca_sql = ""
+    marca_params: dict[str, Any] = {}
+    if only_own and marcas:
+        marca_sql = " AND l.id_marca = ANY(:marcas) "
+        marca_params["marcas"] = marcas
+        if id_marca and int(id_marca) in set(marcas):
+            marca_sql += " AND l.id_marca = :id_marca "
+            marca_params["id_marca"] = int(id_marca)
+        elif id_marca:
+            raise HTTPException(status_code=403, detail="No autorizado para ver esta marca")
+    elif id_marca:
+        mid = int(id_marca)
+        if mid > 0:
+            marca_sql = " AND l.id_marca = :id_marca "
+            marca_params["id_marca"] = mid
+
+    has_agenda = _col_exists(db, "leads", "agenda_approved_at")
+    agenda_expr = "(l.agenda_approved_at AT TIME ZONE 'America/Santiago')::date" if has_agenda else "l.fecha_evento::date"
+    # tipo_cliente existe (agregado en migración hotfix); fallback por IVA de cotización
+    has_tipo = _col_exists(db, "leads", "tipo_cliente")
+    tipo_expr = "COALESCE(UPPER(l.tipo_cliente),'SIN')" if has_tipo else "COALESCE(CASE WHEN COALESCE(c.iva,0) > 0 THEN 'EMPRESA' ELSE 'PARTICULAR' END,'SIN')"
+
+    def _agg(date_expr: str, d1: date, d2: date) -> dict[str, Any]:
+        params = {"conf": int(confirmado_id), "d1": str(d1), "d2": str(d2), **marca_params}
+        row = db.execute(
+            text(
+                f"""
+                SELECT
+                  COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS total,
+                  COALESCE(SUM(COALESCE(c.traslado,0)),0)::bigint AS traslado,
+                  COALESCE(SUM(COALESCE(c.iva,0)),0)::bigint AS iva,
+                  COUNT(*)::int AS cnt_total,
+                  COUNT(*) FILTER (WHERE {tipo_expr}='EMPRESA')::int AS cnt_empresa,
+                  COUNT(*) FILTER (WHERE {tipo_expr}='PARTICULAR')::int AS cnt_particular
+                FROM public.leads l
+                LEFT JOIN public.cotizaciones c ON c.id_cotizacion=l.id_cotizacion_vigente
+                WHERE l.id_estado = :conf
+                  AND ({date_expr}) BETWEEN :d1 AND :d2
+                  {marca_sql}
+                """
+            ),
+            params,
+        ).mappings().first() or {}
+
+        by_brand = db.execute(
+            text(
+                f"""
+                SELECT
+                  COALESCE(m.nombre,m.marca,'') AS marca,
+                  COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS total,
+                  COALESCE(SUM(COALESCE(c.traslado,0)),0)::bigint AS traslado,
+                  COALESCE(SUM(COALESCE(c.iva,0)),0)::bigint AS iva,
+                  COUNT(*)::int AS cnt_total,
+                  COUNT(*) FILTER (WHERE {tipo_expr}='EMPRESA')::int AS cnt_empresa,
+                  COUNT(*) FILTER (WHERE {tipo_expr}='PARTICULAR')::int AS cnt_particular
+                FROM public.leads l
+                LEFT JOIN public.cotizaciones c ON c.id_cotizacion=l.id_cotizacion_vigente
+                LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
+                WHERE l.id_estado = :conf
+                  AND ({date_expr}) BETWEEN :d1 AND :d2
+                  {marca_sql}
+                GROUP BY 1
+                ORDER BY (COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0) + COALESCE(SUM(COALESCE(c.iva,0)),0)) DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+
+        out_brand = []
+        for r in by_brand:
+            total = int(r.get("total") or 0)
+            traslado = int(r.get("traslado") or 0)
+            iva = int(r.get("iva") or 0)
+            out_brand.append(
+                {
+                    "marca": str(r.get("marca") or "").upper(),
+                    "monto": total,  # sin IVA (monto_cotizado)
+                    "neto": int(total - traslado),
+                    "traslado": traslado,
+                    "iva": iva,
+                    "bruto": int(total + iva),
+                    "cnt_total": int(r.get("cnt_total") or 0),
+                    "cnt_empresa": int(r.get("cnt_empresa") or 0),
+                    "cnt_particular": int(r.get("cnt_particular") or 0),
+                }
+            )
+
+        total = int(row.get("total") or 0)
+        traslado = int(row.get("traslado") or 0)
+        iva = int(row.get("iva") or 0)
+        return {
+            "total": total,
+            "neto": int(total - traslado),
+            "traslado": traslado,
+            "iva": iva,
+            "bruto": int(total + iva),
+            "cnt_total": int(row.get("cnt_total") or 0),
+            "cnt_empresa": int(row.get("cnt_empresa") or 0),
+            "cnt_particular": int(row.get("cnt_particular") or 0),
+            "by_brand": out_brand,
+        }
+
+    # Ventas: día/semana por agenda (fallback fecha_evento), mes por fecha_evento
+    day = _agg(agenda_expr, today, today)
+    week = _agg(agenda_expr, week_start, week_end)
+    month = _agg("l.fecha_evento::date", month_start, month_end)
+
+    # Ventas diarias por marca (semana): rellenar todos los días Lun-Dom
+    week_days = [week_start + timedelta(days=i) for i in range(7)]
+    week_days_s = [str(d) for d in week_days]
+    params = {"conf": int(confirmado_id), "d1": str(week_start), "d2": str(week_end), **marca_params}
+    rows = db.execute(
+        text(
+            f"""
+            SELECT
+              ({agenda_expr})::date AS dia,
+              COALESCE(m.nombre,m.marca,'') AS marca,
+              COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS monto
+            FROM public.leads l
+            LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
+            WHERE l.id_estado = :conf
+              AND ({agenda_expr}) BETWEEN :d1 AND :d2
+              {marca_sql}
+            GROUP BY 1,2
+            ORDER BY 1 ASC, 2 ASC
+            """
+        ),
+        params,
+    ).mappings().all()
+    day_brand_map: dict[str, dict[str, int]] = {}
+    brands: set[str] = set()
+    for r in rows:
+        d = str(r.get("dia") or "")
+        b = str(r.get("marca") or "").upper()
+        if not d or not b:
+            continue
+        brands.add(b)
+        day_brand_map.setdefault(b, {})[d] = int(r.get("monto") or 0)
+    brand_list = sorted(brands)
+    daily_rows = []
+    for b in brand_list:
+        out = {"marca": b, "total": 0, "days": {}}
+        for d in week_days_s:
+            v = int(day_brand_map.get(b, {}).get(d, 0))
+            out["days"][d] = v
+            out["total"] += v
+        daily_rows.append(out)
+
+    # Estados por mes (preferencia producto): por fecha_evento en el mes seleccionado
+    estados = []
+    try:
+        if _table_exists_pg(db, "estados_lead"):
+            estados = db.execute(
+                text(
+                    """
+                    SELECT id_estado, nombre AS estado, COALESCE(color,'') AS color
+                    FROM public.estados_lead
+                    WHERE COALESCE(is_active,true)=true
+                    ORDER BY COALESCE(orden,0) ASC, id_estado ASC
+                    """
+                )
+            ).mappings().all()
+        elif _table_exists_pg(db, "lead_estados"):
+            estados = db.execute(
+                text(
+                    """
+                    SELECT id_estado, estado, COALESCE(color,'') AS color
+                    FROM public.lead_estados
+                    WHERE COALESCE(is_active,true)=true
+                    ORDER BY COALESCE(orden,0) ASC, id_estado ASC
+                    """
+                )
+            ).mappings().all()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        estados = []
+
+    estado_cards = []
+    params = {"d1": str(month_start), "d2": str(month_end), **marca_params}
+    for st in estados:
+        st_id = int(st.get("id_estado") or 0)
+        if st_id <= 0:
+            continue
+        r = db.execute(
+            text(
+                f"""
+                SELECT
+                  COUNT(*)::int AS cantidad,
+                  COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS monto
+                FROM public.leads l
+                WHERE l.id_estado = :eid
+                  AND l.fecha_evento::date BETWEEN :d1 AND :d2
+                  {marca_sql}
+                """
+            ),
+            {"eid": st_id, **params},
+        ).mappings().first() or {}
+        estado_cards.append(
+            {
+                "id_estado": st_id,
+                "estado": st.get("estado"),
+                "color": st.get("color") or "",
+                "cantidad": int(r.get("cantidad") or 0),
+                "monto": int(r.get("monto") or 0),
+            }
+        )
+
+    # Eventos confirmados (semana, fecha_evento) + preview de productos (si existe pre_products_text)
+    pre_products_expr = _lead_col(db, "pre_products_text")
+    name_expr = _lead_name_expr(db)
+    rows = db.execute(
+        text(
+            f"""
+            SELECT
+              l.id_lead::bigint AS id_lead,
+              {name_expr} AS cliente,
+              l.fecha_evento,
+              COALESCE(m.nombre,m.marca,'') AS marca,
+              COALESCE(c.nombre,'') AS comuna,
+              {pre_products_expr} AS pre_products_text,
+              COALESCE(l.calendar_html_link,'') AS calendar_html_link
+            FROM public.leads l
+            LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
+            LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
+            WHERE l.id_estado=:conf
+              AND l.fecha_evento::date BETWEEN :ws AND :we
+              {marca_sql}
+            ORDER BY l.fecha_evento ASC, l.id_lead DESC
+            LIMIT 400
+            """
+        ),
+        {"conf": int(confirmado_id), "ws": str(week_start), "we": str(week_end), **marca_params},
+    ).mappings().all()
+    events_confirmed = []
+    for r in rows:
+        events_confirmed.append(
+            {
+                "id_lead": int(r.get("id_lead") or 0),
+                "cliente": r.get("cliente") or "",
+                "fecha_evento": str(r.get("fecha_evento")) if r.get("fecha_evento") else None,
+                "marca": r.get("marca") or "",
+                "comuna": r.get("comuna") or "",
+                "products": (r.get("pre_products_text") or "").strip(),
+                "calendar_html_link": (r.get("calendar_html_link") or "").strip(),
+            }
+        )
+
+    return {
+        "ok": True,
+        "filters": {"week_offset": int(week_offset or 0), "month_offset": int(month_offset or 0), "id_marca": (int(id_marca) if id_marca else None)},
+        "week": {"start": str(week_start), "end": str(week_end)},
+        "month": {"start": str(month_start), "end": str(month_end)},
+        "sales": {
+            "ok": True,
+            "confirmado_id": int(confirmado_id),
+            "basis": {"dia": ("agenda_approved_at" if has_agenda else "fecha_evento"), "semana": ("agenda_approved_at" if has_agenda else "fecha_evento"), "mes": "fecha_evento"},
+            "venta_dia_total": day["total"],
+            "venta_dia_neta": day["neto"],
+            "venta_dia_traslado": day["traslado"],
+            "venta_dia_iva": day["iva"],
+            "venta_dia_bruto": day["bruto"],
+            "venta_dia_cnt_total": day["cnt_total"],
+            "venta_dia_cnt_empresa": day["cnt_empresa"],
+            "venta_dia_cnt_particular": day["cnt_particular"],
+            "venta_semana_total": week["total"],
+            "venta_semana_neta": week["neto"],
+            "venta_semana_traslado": week["traslado"],
+            "venta_semana_iva": week["iva"],
+            "venta_semana_bruto": week["bruto"],
+            "venta_semana_cnt_total": week["cnt_total"],
+            "venta_semana_cnt_empresa": week["cnt_empresa"],
+            "venta_semana_cnt_particular": week["cnt_particular"],
+            "venta_mes_total": month["total"],
+            "venta_mes_neta": month["neto"],
+            "venta_mes_traslado": month["traslado"],
+            "venta_mes_iva": month["iva"],
+            "venta_mes_bruto": month["bruto"],
+            "venta_mes_cnt_total": month["cnt_total"],
+            "venta_mes_cnt_empresa": month["cnt_empresa"],
+            "venta_mes_cnt_particular": month["cnt_particular"],
+            "dia_by_brand": day["by_brand"],
+            "semana_by_brand": week["by_brand"],
+            # Backward compat (UI): lista plana dia/marca/monto para tabla semanal
+            "semana_daily_by_brand": [
+                {"dia": d, "marca": r["marca"], "monto": int(r["days"].get(d, 0))}
+                for d in week_days_s
+                for r in daily_rows
+                if int(r["days"].get(d, 0)) != 0
+            ],
+            "mes_by_brand": month["by_brand"],
+        },
+        "estado_cards": estado_cards,
+        "sales_week_daily_by_brand": {"days": week_days_s, "rows": daily_rows},
+        "events_confirmed": events_confirmed,
+    }
 
 
 @router.get("/dashboard/events")
@@ -3880,6 +5813,21 @@ def approve_agenda(
         except Exception:
             id_usuario_key = None
 
+        # Regla negocio: no se puede confirmar/agendar sin monto cotizado y número de cotización.
+        try:
+            if float(monto_cotizado or 0) <= 0 or not str(num_cotizacion or "").strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se puede CONFIRMAR/AGENDAR sin monto cotizado y N° de cotización.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="No se puede CONFIRMAR/AGENDAR sin monto cotizado y N° de cotización.",
+            )
+
         # Teléfono de ventas (ejecutivo asignado al lead), best-effort.
         try:
             if id_usuario_key and _table_exists_pg(db, "usuarios"):
@@ -4126,12 +6074,16 @@ def approve_agenda(
         ok_ids = [str(eid).strip() for eid in (event_ids or []) if eid is not None and str(eid).strip()]
         ok_calendar = bool(connected) and bool(event_ids) and (len(ok_ids) == len(event_ids))
 
+        confirmado_id = _estado_id(db, "CONFIRM")
+        declinado_id = _estado_id(db, "DECLIN")
+
         db.execute(
             text(
                 """
                 UPDATE leads
                 SET calendar_start=:s,
                     calendar_end=:e,
+                    id_estado=CASE WHEN :ok AND :conf IS NOT NULL AND (:decl IS NULL OR id_estado <> :decl) THEN :conf ELSE id_estado END,
                     calendar_html_link=CASE WHEN :ok THEN :lnk ELSE calendar_html_link END,
                     calendar_event_id=CASE WHEN :ok THEN :eid ELSE calendar_event_id END,
                     calendar_event_ids_json=:eids,
@@ -4146,6 +6098,8 @@ def approve_agenda(
             {
                 "s": to_create[0]["start"],
                 "e": to_create[0]["end"],
+                "conf": int(confirmado_id) if confirmado_id else None,
+                "decl": int(declinado_id) if declinado_id else None,
                 "lnk": first_link,
                 "eid": first_eid,
                 "eids": json.dumps(event_ids, ensure_ascii=False),
