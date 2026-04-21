@@ -73,6 +73,23 @@
 
   fechaCot.valueAsDate = new Date();
 
+  function enableEdit(input, btn){
+    if (!input || !btn) return;
+    const startReadonly = () => { input.setAttribute("readonly", "readonly"); };
+    const stopReadonly = () => { input.removeAttribute("readonly"); };
+    btn.addEventListener("click", ()=>{
+      const isRo = input.hasAttribute("readonly");
+      if (isRo){
+        stopReadonly();
+        try{ input.focus(); }catch(_){}
+      } else {
+        startReadonly();
+      }
+    });
+    input.addEventListener("blur", ()=> startReadonly());
+    startReadonly();
+  }
+
   function normKey(s){
     return String(s || "")
       .normalize("NFD")
@@ -325,9 +342,15 @@
   // --- listeners ---
   $("btnAddItem").addEventListener("click", async () => {
     const prodName = (txtProducto.value || "").trim();
-    const qty = +cant.value || 0;
+    const qty = parseInt(String(cant.value || "").trim(), 10) || 0;
     const price = +precio.value || 0;
-    if (!prodName || qty <= 0 || price < 0) return;
+    if (!prodName) return;
+    if (qty <= 0){
+      alert("Indica una cantidad.");
+      try{ cant.focus(); }catch(_){}
+      return;
+    }
+    if (price < 0) return;
 
     let prod = productosIndex.find(p => String(p.producto||"").toLowerCase() === prodName.toLowerCase());
     if (!prod){
@@ -363,7 +386,9 @@
       subtotal: (price || prod.costo || 0) * qty
     };
     items.push(it);
-    txtProducto.value = ""; cant.value = 1; precio.value = 0;
+    txtProducto.value = "";
+    cant.value = "";
+    precio.value = 0;
     drawItems();
   });
 
@@ -680,6 +705,10 @@
     traslado.value = calcTraslado();
     await getQuotesHistory();
     await getProductos();
+    enableEdit(cliente, $("editCliente"));
+    enableEdit(email, $("editEmail"));
+    enableEdit(telefono, $("editTelefono"));
+    enableEdit(fechaEvento, $("editFechaEvento"));
     calcTotals();
   } catch (e) {
     console.error(e);

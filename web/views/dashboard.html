@@ -10,13 +10,8 @@
     :root{
       --dash-bg: rgba(7,12,16,.44);
       --dash-border: rgba(255,255,255,.12);
-      --dash-soft: rgba(255,255,255,.06);
       --dash-ink: rgba(255,255,255,.92);
       --dash-muted: rgba(255,255,255,.70);
-      --dash-accent: rgba(39,228,139,.95);
-      --dash-accent-2: rgba(56,189,248,.95);
-      --dash-warn: rgba(250,204,21,.95);
-      --dash-danger: rgba(248,113,113,.95);
     }
 
     html,body{height:100%; margin:0;}
@@ -57,7 +52,7 @@
       font-size:11px; opacity:.7; font-weight:1000;
       letter-spacing:.12em; text-transform:uppercase;
     }
-    .ctrl select, .ctrl input{
+    .ctrl select{
       appearance:none;
       border:1px solid rgba(255,255,255,.14);
       background:rgba(0,0,0,.18);
@@ -67,7 +62,16 @@
       font-weight:900;
       outline:none;
     }
-    .ctrl input[type="date"]{ padding:5px 8px; }
+    .iconbtn{
+      cursor:pointer;
+      border:1px solid rgba(255,255,255,.16);
+      background:rgba(0,0,0,.18);
+      color:inherit;
+      border-radius:12px;
+      padding:6px 10px;
+      font-weight:1200;
+      min-width:36px;
+    }
 
     .btn{
       cursor:pointer;
@@ -115,12 +119,10 @@
 
     .kpis{
       display:grid;
-      grid-template-columns:repeat(6, minmax(0,1fr));
+      grid-template-columns:repeat(3, minmax(0,1fr));
       gap:12px;
     }
-    @media (max-width:1200px){ .kpis{grid-template-columns:repeat(3, minmax(0,1fr));} }
     @media (max-width:820px){ .kpis{grid-template-columns:1fr;} }
-
     .kpi{
       padding:14px;
       border-radius:16px;
@@ -133,231 +135,66 @@
     .kpi .label{font-weight:1000; opacity:.7; font-size:11px; letter-spacing:.12em; text-transform:uppercase;}
     .kpi .value{font-weight:1200; font-size:22px; margin-top:6px;}
     .kpi .hint{font-size:11px; opacity:.65; margin-top:6px;}
-    .kpi[data-tone="good"]{border-color:rgba(39,228,139,.20)}
-    .kpi[data-tone="warn"]{border-color:rgba(250,204,21,.22)}
-    .kpi[data-tone="cold"]{border-color:rgba(56,189,248,.18)}
+    .kpi .break{font-size:11px; opacity:.72; margin-top:6px; font-weight:1000;}
 
-    .split{
+    .states{
       display:grid;
-      grid-template-columns:repeat(12, minmax(0, 1fr));
+      grid-template-columns:repeat(12, minmax(0,1fr));
       gap:12px;
     }
-    @media (max-width:1200px){ .split{grid-template-columns:1fr;} }
-
-    .pipe-wrap{display:flex; flex-direction:column; gap:10px;}
-    .pipe-bar{
-      display:flex; height:12px; border-radius:999px;
-      overflow:hidden; background:rgba(255,255,255,.08);
-      border:1px solid rgba(255,255,255,.10);
-    }
-    .pipe-bar > span{display:block; height:100%;}
-
-    /* Funnel (visual) */
-    .funnel{
-      display:flex;
-      flex-direction:column;
-      gap:8px;
-      margin-bottom:10px;
-    }
-    .fstep{
-      position:relative;
+    @media (max-width:1200px){ .states{grid-template-columns:repeat(6, minmax(0,1fr));} }
+    @media (max-width:820px){ .states{grid-template-columns:1fr;} }
+    .state{
+      grid-column: span 2;
       border-radius:16px;
-      border:1px solid rgba(255,255,255,.10);
-      background:rgba(0,0,0,.18);
-      padding:10px 12px 10px 12px;
-      cursor:pointer;
-      overflow:hidden;
-    }
-    .fstep:hover{ border-color: rgba(255,255,255,.18); }
-    .fstep::before{
-      content:"";
-      position:absolute;
-      left:10px;
-      top:10px;
-      height:28px;
-      width: calc(var(--w, 0) * 1%);
-      max-width: calc(100% - 20px);
-      background: var(--c, rgba(34,197,94,.28));
-      opacity:.35;
-      clip-path: polygon(0 0, 100% 0, 94% 100%, 6% 100%);
-      border-radius:12px;
-      pointer-events:none;
-    }
-    .fstep .row{
-      position:relative;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      min-width:0;
-    }
-    .fstep .name{
-      font-weight:1100;
-      font-size:12px;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      display:flex;
-      align-items:center;
-      gap:8px;
-      min-width:0;
-    }
-    .fstep .meta{
-      display:flex;
-      gap:10px;
-      align-items:baseline;
-      flex:0 0 auto;
-      font-weight:1000;
-      font-size:12px;
-      opacity:.92;
-      white-space:nowrap;
-    }
-    .fstep .sub{
-      position:relative;
-      margin-top:6px;
-      font-size:11px;
-      opacity:.70;
-      font-weight:900;
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-    }
-
-    .pipe-table{width:100%; border-collapse:collapse; font-size:12px;}
-    .pipe-table th,.pipe-table td{
-      padding:9px 10px;
-      border-bottom:1px solid rgba(255,255,255,.08);
-      text-align:left;
-    }
-    /* “Gráfico” simple dentro de la tabla (barra de porcentaje por fila) */
-    .pipe-table tbody tr{
-      position:relative;
-    }
-    .pipe-table tbody tr::before{
-      content:"";
-      position:absolute;
-      inset:0;
-      background: linear-gradient(90deg, rgba(34,197,94,.18), rgba(34,197,94,.18));
-      width: calc(var(--pct, 0) * 1%);
-      max-width: 100%;
-      pointer-events:none;
-      opacity:.9;
-    }
-    .pipe-table tbody tr{ --c: rgba(34,197,94,.18); }
-    .pipe-table tbody tr::before{ background: linear-gradient(90deg, var(--c), var(--c)); }
-    .pipe-table tbody td{ position:relative; }
-    .right{text-align:right;}
-
-    .rowlink{cursor:pointer;}
-    .rowlink:hover{background:rgba(255,255,255,.03);}
-
-    .badge{
-      display:inline-flex; align-items:center; gap:8px;
-      padding:4px 10px;
-      border-radius:999px;
-      border:1px solid rgba(255,255,255,.12);
-      background:rgba(0,0,0,.18);
-      font-weight:1000;
-    }
-    .dot{width:10px; height:10px; border-radius:999px; background:#7ee7b0; flex:0 0 auto;}
-
-    /* Eventos (horizontal, por día) */
-    .events-strip{
-      display:flex;
-      gap:10px;
-      overflow:auto;
-      padding-bottom:6px;
-      scrollbar-width: thin;
-      scrollbar-color: rgba(148,163,184,.30) transparent;
-    }
-    .events-strip::-webkit-scrollbar{ height: 6px; }
-    .events-strip::-webkit-scrollbar-track{ background: transparent; }
-    .events-strip::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.25); border-radius: 999px; }
-    .events-strip:hover::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.40); }
-
-    .event-day{
-      flex: 0 0 190px;
-      border:1px solid rgba(255,255,255,.10);
-      border-radius:16px;
-      background:rgba(0,0,0,.18);
-      padding:7px;
-      min-height:110px;
-    }
-    .event-day-head{
-      display:flex; align-items:center; justify-content:space-between; gap:8px;
-      border-bottom:1px dashed rgba(255,255,255,.10);
-      padding-bottom:6px;
-      margin-bottom:8px;
-    }
-    .event-day-title{
-      font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:10px; opacity:.85;
-      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-    }
-    .event-pill{
-      position:relative;
-      display:flex;
-      align-items:center;
-      gap:10px;
-      padding:7px 9px;
-      border-radius:14px;
-      border:1px solid rgba(255,255,255,.10);
-      background:rgba(10,16,22,.55);
-      cursor:pointer;
-      margin-bottom:6px;
-    }
-	    .event-pill:hover{ border-color: rgba(255,255,255,.18); }
-	    .event-pill .t1{ font-weight:1100; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-	    .event-pill .t2{ font-size:10px; opacity:.70; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-	    .event-pill .tip{
-	      display:none;
-	      position:absolute;
-	      left: 12px;
-      top: calc(100% + 8px);
-      width: 260px;
-      max-width: 65vw;
-      z-index: 50;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.14);
-      background: rgba(10,16,22,.96);
-      box-shadow: 0 20px 60px rgba(0,0,0,.45);
-      padding: 8px 10px;
-      font-size: 11px;
-      line-height: 1.2;
-      white-space: pre-wrap;
-    }
-    .event-pill:hover .tip{ display:block; }
-    .event-more{
-      width:100%;
-      border:1px solid rgba(255,255,255,.14);
-      background:rgba(255,255,255,.04);
-      color:inherit;
-      border-radius:12px;
-      padding:7px 10px;
-      font-weight:1000;
-      cursor:pointer;
-      font-size:12px;
-    }
-
-    .mini-grid{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px;}
-    @media (max-width:1200px){ .mini-grid{grid-template-columns:1fr;} }
-
-    .mini{
-      border-radius:16px; padding:12px;
       border:1px solid rgba(255,255,255,.12);
       background:rgba(0,0,0,.16);
-      overflow:auto;
+      padding:12px;
+      cursor:pointer;
     }
-    .mini h4{
-      margin:0 0 8px 0;
+    .state:hover{ border-color: rgba(255,255,255,.18); }
+    .state:active{ transform: translateY(1px); }
+    .state .head{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+    .state .name{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:11px; opacity:.92;}
+    .state .nums{display:flex; gap:12px; align-items:baseline; margin-top:8px;}
+    .state .count{font-weight:1200; font-size:18px;}
+    .state .amt{font-weight:1100; font-size:13px; opacity:.82;}
+    .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
+    .chip{
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.14);
+      border-radius:999px;
+      padding:4px 8px;
+      font-weight:1000;
       font-size:11px;
-      font-weight:1100;
-      letter-spacing:.14em;
-      text-transform:uppercase;
       opacity:.85;
+      white-space:nowrap;
     }
 
-    .table-mini{width:100%; border-collapse:collapse; font-size:12px;}
+    .table-mini{width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed;}
     .table-mini th,.table-mini td{padding:7px 8px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left;}
+    .table-mini th{opacity:.75; font-weight:1100; letter-spacing:.08em; text-transform:uppercase; font-size:11px;}
+    .right{text-align:right;}
+    .scroll-x{overflow:auto; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+    .table-mini{min-width:760px;}
+    .table-mini th:first-child, .table-mini td:first-child{
+      position:sticky; left:0; z-index:2;
+      background:rgba(0,0,0,.22);
+      backdrop-filter: blur(6px);
+    }
+    .scroll-hint{font-weight:1000; font-size:11px; opacity:.55; margin:6px 0 0 0;}
+
+    /* eventos strip (tomado del dashboard previo) */
+    .events-strip{display:flex; gap:10px; overflow:auto; padding-bottom:6px;}
+    .event-day{min-width:240px; border-radius:16px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.16); padding:10px;}
+    .event-day-head{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;}
+    .event-day-title{font-weight:1100; font-size:11px; letter-spacing:.12em; text-transform:uppercase; opacity:.85;}
+    .event-pill{position:relative; display:flex; align-items:center; gap:8px; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.12); padding:8px; margin-bottom:8px; cursor:pointer;}
+    .event-pill:hover{border-color:rgba(255,255,255,.16)}
+    .event-pill .dot{width:10px; height:10px; border-radius:999px; background:#7ee7b0; flex:0 0 auto;}
+    .event-pill .t1{font-weight:1100; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .event-pill .t2{font-weight:900; font-size:11px; opacity:.70; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .event-more{cursor:pointer; width:100%; border:1px dashed rgba(255,255,255,.16); background:transparent; color:inherit; border-radius:12px; padding:7px 8px; font-weight:1000; opacity:.85;}
 
     .modal{
       position:fixed; inset:0; display:none; align-items:center; justify-content:center;
@@ -382,7 +219,7 @@
 <body>
   <header class="topbar">
     <div>
-      <h1>Dashboard · Macro → Micro</h1>
+      <h1>Dashboard</h1>
       <div class="sub" id="dashSub">Cargando…</div>
     </div>
     <div class="filters">
@@ -391,19 +228,8 @@
         <select id="brandSel"><option value="">Todas</option></select>
       </div>
       <div class="ctrl">
-        <label>Rango</label>
-        <select id="rangeSel">
-          <option value="week">Semana</option>
-          <option value="month">Mes</option>
-          <option value="last7">Últimos 7 días</option>
-          <option value="custom">Personalizado</option>
-        </select>
-      </div>
-      <div class="ctrl" id="customDates" style="display:none;">
-        <label>Desde</label>
-        <input type="date" id="dFrom" />
-        <label>Hasta</label>
-        <input type="date" id="dTo" />
+        <label>Mes</label>
+        <select id="monthSel"></select>
       </div>
       <div class="ctrl">
         <label>Semana</label>
@@ -416,210 +242,102 @@
   </header>
 
   <div class="layout">
-    <section class="card" id="kpiCard" style="grid-column: span 12;">
-      <h3>KPIs</h3>
+    <section class="card" style="grid-column: span 12;">
+      <h3>Venta (confirmados)</h3>
+      <div class="muted" style="margin:-2px 0 10px 0">Montos siempre en <strong>monto_cotizado</strong>. Día/semana por <strong>agenda</strong>; mes por <strong>fecha evento</strong> (mes completo).</div>
       <div class="kpis">
-        <div class="kpi" data-tone="good" id="kpi1">
+        <div class="kpi" id="kpi1">
           <div class="label">Venta día</div>
           <div class="value" id="kpiVentaDia">$ 0</div>
-          <div class="hint">Click: confirmados de hoy</div>
+          <div class="break" id="kpiVentaDiaBreak">Neto $0 + Traslado $0</div>
+          <div class="hint">Click: vendidos hoy (agenda)</div>
         </div>
-        <div class="kpi" data-tone="cold" id="kpi2">
+        <div class="kpi" id="kpi2">
           <div class="label">Venta semana</div>
           <div class="value" id="kpiVentaSemana">$ 0</div>
-          <div class="hint">Click: confirmados en semana</div>
+          <div class="break" id="kpiVentaSemanaBreak">Neto $0 + Traslado $0</div>
+          <div class="hint">Click: vendidos semana (agenda)</div>
         </div>
-        <div class="kpi" data-tone="cold" id="kpi3">
-          <div class="label">Venta mes</div>
+        <div class="kpi" id="kpi3">
+        <div class="label">Venta mes</div>
           <div class="value" id="kpiVentaMes">$ 0</div>
-          <div class="hint">Click: confirmados en mes</div>
-        </div>
-        <div class="kpi" data-tone="warn" id="kpi5">
-          <div class="label">Leads hoy</div>
-          <div class="value" id="kpiLeadsHoy">0</div>
-          <div class="hint">Click: abrir filtro “hoy”</div>
-        </div>
-        <div class="kpi" data-tone="good" id="kpi6">
-          <div class="label">% cierre (semana)</div>
-          <div class="value" id="kpiCierre">0%</div>
-          <div class="hint">Confirmados / creados (semana)</div>
+          <div class="break" id="kpiVentaMesBreak">Neto $0 + Traslado $0</div>
+          <div class="hint">Click: confirmados del mes (fecha evento)</div>
         </div>
       </div>
     </section>
 
-	    <section class="card" id="tasksCard" style="grid-column: span 12; display:none;">
-	      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-	        <div>
-	          <h3 style="margin:0">Mis tareas</h3>
-	          <div class="muted" style="margin-top:6px">Seguimiento de leads (NUEVO / CONTACTADO / COTIZADO). Al registrar seguimiento, desaparece de tareas.</div>
-	        </div>
-	        <button class="btn" id="btnGoTasks" type="button">Abrir Tareas</button>
-	      </div>
-	      <div class="split" style="margin-top:12px;">
-	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="warn" style="padding:12px 14px; cursor:pointer" id="kpiTaskNew">
-	            <div class="label">Nuevos</div>
-	            <div class="value" id="tasksNew">0</div>
-	            <div class="hint">NUEVO sin seguimiento (3/5 días)</div>
-	          </div>
-	        </div>
-	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="cold" style="padding:12px 14px; cursor:pointer" id="kpiTaskContact">
-	            <div class="label">Contactados</div>
-	            <div class="value" id="tasksContact">0</div>
-	            <div class="hint">Evento ≤7d o sin fecha (seguimiento 3d)</div>
-	          </div>
-	        </div>
-	        <div style="grid-column: span 4;">
-	          <div class="kpi" data-tone="good" style="padding:12px 14px; cursor:pointer" id="kpiTaskQuote">
-	            <div class="label">Cotizados</div>
-	            <div class="value" id="tasksQuote">0</div>
-	            <div class="hint">Seguimiento 3d (prioriza evento ≤2d)</div>
-	          </div>
-	        </div>
-	      </div>
-	    </section>
-
-    <section class="card" id="eventsCard" style="grid-column: span 12;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-        <h3 style="margin:0">Eventos confirmados (semana)</h3>
-        <div class="muted" id="weekLabel">—</div>
-      </div>
-      <div class="muted" style="margin-top:8px; font-size:12px;">Máx. 3 por día. Pasa el mouse para ver detalle.</div>
-      <div id="eventsWeek" style="margin-top:10px"></div>
+    <section class="card" style="grid-column: span 12;">
+      <h3>Estados</h3>
+      <div class="muted" style="margin-top:-2px">Leads por estado + canal (mes seleccionado). Click: abre leads del estado.</div>
+      <div id="estadoCards" class="states" style="margin-top:12px"></div>
     </section>
 
-    <section class="card" id="opsCard" style="grid-column: span 12; display:none;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-        <div>
-          <h3 style="margin:0">Operaciones · Alertas</h3>
-          <div class="muted" style="margin-top:6px">Confirmados pr&oacute;ximos con datos incompletos y pendientes de agenda.</div>
-        </div>
-        <div class="muted" id="opsRange">—</div>
-      </div>
-      <div class="split" style="margin-top:12px;">
-        <div style="grid-column: span 4;">
-          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
-            <div class="label">Falta tel&eacute;fono</div>
-            <div class="value" id="opsMissingTel">0</div>
-            <div class="hint">Eventos confirmados (pr&oacute;ximos)</div>
-          </div>
-        </div>
-        <div style="grid-column: span 4;">
-          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
-            <div class="label">Falta direcci&oacute;n</div>
-            <div class="value" id="opsMissingDir">0</div>
-            <div class="hint">pre_direccion / direccion</div>
-          </div>
-        </div>
-        <div style="grid-column: span 4;">
-          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
-            <div class="label">Falta horario</div>
-            <div class="value" id="opsMissingHr">0</div>
-            <div class="hint">pre_start / pre_end</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="split" style="margin-top:12px;">
-        <div style="grid-column: span 6;">
-          <div class="muted" style="font-weight:1000; margin-bottom:8px;">Pendientes (Agenda)</div>
-          <div id="opsAgendaBox"></div>
-        </div>
-        <div style="grid-column: span 6;">
-          <div class="muted" style="font-weight:1000; margin-bottom:8px;">Detalle (top)</div>
-          <div id="opsMissingBox"></div>
-        </div>
-      </div>
-      <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en un lead para abrirlo.</div>
-    </section>
-
-    <section class="card" id="finCard" style="grid-column: span 12; display:none;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-        <div>
-          <h3 style="margin:0">Finanzas · Por cobrar / por pagar</h3>
-          <div class="muted" style="margin-top:6px">Resumen del mes (CxC/CxP).</div>
-        </div>
-        <button class="btn" id="btnGoFinReportes" type="button">Abrir Reportes financieros</button>
-      </div>
-      <div class="split" style="margin-top:12px;">
-        <div style="grid-column: span 6;">
-          <div class="kpi" data-tone="good" style="padding:12px 14px;">
-            <div class="label">CxC (por cobrar)</div>
-            <div class="value" id="finCxcTotal">$ 0</div>
-            <div class="hint"><span id="finCxcCount">0</span> eventos con saldo</div>
-          </div>
-          <div id="finCxcBox" style="margin-top:10px;"></div>
-        </div>
-        <div style="grid-column: span 6;">
-          <div class="kpi" data-tone="warn" style="padding:12px 14px;">
-            <div class="label">CxP (por pagar)</div>
-            <div class="value" id="finCxpTotal">$ 0</div>
-            <div class="hint"><span id="finCxpCount">0</span> gastos pendientes</div>
-          </div>
-          <div id="finCxpBox" style="margin-top:10px;"></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card" id="pipelineCard" style="grid-column: span 12;">
-      <h3>Pipeline</h3>
-      <div class="split">
-        <div style="grid-column: span 6;">
-          <div class="muted" style="font-weight:1000; margin-bottom:8px;">Total (todo el tiempo)</div>
-          <div class="pipe-wrap" id="pipelineTotal"></div>
-        </div>
-        <div style="grid-column: span 6;">
-          <div class="muted" style="font-weight:1000; margin-bottom:8px;">Semana / Mes (según rango)</div>
-          <div class="pipe-wrap" id="pipelineRange"></div>
-        </div>
-      </div>
-      <div class="muted" style="margin-top:10px; font-size:12px;">Tip: click en un estado para ir al filtro de leads.</div>
-    </section>
-
-    <section class="card" id="reportsCard" style="grid-column: span 12;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-        <div>
-          <h3 style="margin:0">Reportes</h3>
-          <div class="muted" style="margin-top:6px">Los insights (top productos/comunas/clientes) viven en la secci&oacute;n Reportes.</div>
-        </div>
-        <button class="btn" id="btnGoReportes" type="button">Ir a Reportes</button>
-      </div>
-    </section>
-
-    <section class="card" id="salesCard" style="grid-column: span 12;">
+    <section class="card" style="grid-column: span 12;">
       <h3>Venta diaria por marca (semana)</h3>
-      <div id="salesDaily"></div>
+      <div class="muted" style="margin-top:-2px">Doble click en un monto: abre leads confirmados del día.</div>
+      <div id="salesDaily" style="margin-top:10px" class="muted">Cargando…</div>
+    </section>
+
+    <section class="card" id="eventsCard" style="grid-column: span 12; display:none;">
+      <h3>Eventos confirmados (semana)</h3>
+      <div class="muted" style="margin-top:-2px">Semana Lun-Dom (Google Calendar). Click: detalle.</div>
+      <div id="eventsWeek" style="margin-top:12px" class="muted">Cargando…</div>
+    </section>
+
+    <section class="card" id="tasksCard" style="grid-column: span 12; display:none;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0">Mis tareas</h3>
+          <div class="muted" style="margin-top:6px">Seguimiento de leads (NUEVO / CONTACTADO / COTIZADO). Al registrar seguimiento, desaparece de tareas.</div>
+        </div>
+        <button class="btn" id="btnGoTasks" type="button">Abrir Tareas</button>
+      </div>
+      <div class="kpis" style="margin-top:12px;">
+        <div class="kpi" id="kpiTaskNew">
+          <div class="label">Nuevos</div>
+          <div class="value" id="tasksNew">0</div>
+          <div class="hint">NUEVO sin seguimiento</div>
+        </div>
+        <div class="kpi" id="kpiTaskContact">
+          <div class="label">Contactados</div>
+          <div class="value" id="tasksContact">0</div>
+          <div class="hint">CONTACTADO sin seguimiento</div>
+        </div>
+        <div class="kpi" id="kpiTaskQuote">
+          <div class="label">Cotizados</div>
+          <div class="value" id="tasksQuote">0</div>
+          <div class="hint">COTIZADO sin seguimiento</div>
+        </div>
+      </div>
     </section>
   </div>
 
-  <div id="dayModal" class="modal">
+  <div class="modal" id="dayModal" role="dialog" aria-modal="true" aria-label="Eventos del día">
     <div class="modal-card">
       <div class="modal-head">
         <div class="modal-title" id="dayModalTitle">Día</div>
-        <button class="modal-close" id="dayModalClose">Cerrar</button>
+        <button class="modal-close" id="dayModalClose" type="button">Cerrar</button>
       </div>
-      <div id="dayModalList"></div>
+      <div id="dayModalList" class="muted">—</div>
     </div>
   </div>
 
-  <div id="eventModal" class="modal">
+  <div class="modal" id="eventModal" role="dialog" aria-modal="true" aria-label="Evento">
     <div class="modal-card">
       <div class="modal-head">
         <div class="modal-title" id="eventModalTitle">Evento</div>
-        <button class="modal-close" id="eventModalClose">Cerrar</button>
+        <button class="modal-close" id="eventModalClose" type="button">Cerrar</button>
       </div>
-      <div id="eventModalBody"></div>
-      <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-        <button class="modal-close" id="eventModalOpen">Abrir en Calendar</button>
+      <div id="eventModalBody" class="muted">—</div>
+      <div style="display:flex; gap:10px; justify-content:center; margin-top:12px;">
+        <button class="iconbtn" id="eventModalOpenLead" type="button" title="Abrir lead">🔎</button>
+        <button class="iconbtn" id="eventModalOpenCal" type="button" title="Abrir en Calendar">📅</button>
       </div>
     </div>
   </div>
 
   <script>
-    const $ = (s, el=document) => el.querySelector(s);
-    const fmt = new Intl.NumberFormat("es-CL");
-    const daysEs = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
     const API_BASE = (() => {
       try {
         const h = String(location.hostname || "").toLowerCase();
@@ -629,392 +347,311 @@
         return "";
       }
     })();
-    const brandColors = {
-      "CAMALEON":"#22c55e",
-      "GOURMET":"#a855f7",
-      "EXPRESS":"#06b6d4",
-      "DEL SABOR":"#f59e0b"
-    };
-    const ROLE_NUM = {
-      "ADMIN": 1,
-      "SUPERADMIN": 1,
-      "EJECUTIVO DE VENTAS": 2,
-      "EJECUTIVO": 2,
-      "VENTAS": 2,
-      "JEFE DE OPERACIONES": 3,
-      "OPERACIONES": 3,
-      "BODEGUERO": 4,
-      "COMPRAS": 5,
-      "CONDUCTOR": 6,
-      "CHOFER": 6,
-      "OPERADOR": 7,
-      "MICE": 8,
-      "OPERADOR PATIO": 9,
-      "FINANZAS": 11,
-    };
 
-    function authHeaders(extra={}){
+    const $ = (q, c=document) => c.querySelector(q);
+    const $$ = (q, c=document) => [...c.querySelectorAll(q)];
+
+    function authHeaders(extra={}) {
       const GD = window.parent && window.parent.GD;
-      if (GD && GD.authHeaders) return GD.authHeaders(extra);
-      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
-      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+      return GD && GD.authHeaders ? GD.authHeaders(extra) : extra;
     }
-    async function apiJson(path, opt={}){
-      const url = String(path || "").startsWith("http")
-        ? String(path)
-        : `${API_BASE}${String(path || "").startsWith("/") ? "" : "/"}${path}`;
-      const r = await fetch(url, { ...opt, headers: authHeaders(opt.headers || {}) });
-      const txt = await r.text();
-      let j = null;
-      try{ j = txt ? JSON.parse(txt) : null; }catch(_){}
-      if (!r.ok) throw new Error((j && (j.detail || j.error)) ? (j.detail || j.error) : (txt || String(r.status)));
-      return j;
+
+    function fmtMoney(n){
+      const x = Number(n || 0);
+      try { return "$ " + Math.round(x).toLocaleString("es-CL"); } catch(_) { return "$ " + String(Math.round(x)); }
     }
-    function detectRoleId(me){
-      const raw = me?.role_id ?? me?.id_rol ?? me?.rol_id ?? me?.role ?? me?.rol ?? "";
-      const s = String(raw || "").trim();
-      if (/^\d+$/.test(s)) return Number(s);
-      const up = s.toUpperCase();
-      return ROLE_NUM[up] || null;
-    }
+
     function openLead(id){
       const lid = String(id || "").trim();
       if (!lid) return;
       window.parent?.postMessage({ type:"openItem", id:"leads_ver", url:`/web/views/leads.html?open_lead=${encodeURIComponent(lid)}` }, "*");
     }
-    function openCorreoMsg(idMsg, meta={}){
-      const id = String(idMsg || "").trim();
-      if (!id) return;
-      const qs = new URLSearchParams();
-      qs.set("open_msg", id);
-      if (meta && meta.id_marca) qs.set("id_marca", String(meta.id_marca));
-      if (meta && meta.inbox_type) qs.set("inbox_type", String(meta.inbox_type));
-      const url = "/web/views/tools_correo.html" + "?" + qs.toString();
-      window.parent?.postMessage({ type:"openItem", id:"tools_correo", url }, "*");
-    }
 
     function openFilter(params){
-      const q = new URLSearchParams(params || {}).toString();
-      const url = "/web/views/filtro_leads.html?v=20260326-fil1" + (q ? "&" + q : "");
-      try{
-        window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*");
-      }catch(_){
-        location.href = url;
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.openLeadsFilter){
+        try{ GD.openLeadsFilter(params); return; }catch(_){}
       }
+      const qs = new URLSearchParams();
+      Object.entries(params || {}).forEach(([k,v])=>{
+        if (v == null || v === "") return;
+        qs.set(String(k), String(v));
+      });
+      const url = "/web/views/leads.html" + (qs.toString() ? ("?" + qs.toString()) : "");
+      window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*");
     }
 
-    async function openConfirmedSales(desde, hasta, idMarcaOverride=""){
-      // Ventas = leads confirmados/agendados en ese rango (activity_log).
+    async function openConfirmedSales(desde, hasta, idMarcaOverride="", basis="agenda"){
       try{
         const qs = new URLSearchParams();
-        if (desde) qs.set("desde", String(desde));
-        if (hasta) qs.set("hasta", String(hasta));
-        const mid = String(idMarcaOverride || state.idMarca || "").trim();
+        qs.set("from_date", String(desde||""));
+        qs.set("to_date", String(hasta||""));
+        qs.set("basis", (basis === "evento") ? "evento" : "agenda");
+        const mid = idMarcaOverride || state.idMarca || "";
         if (mid) qs.set("id_marca", mid);
-        const r = await fetch(`${API_BASE}/tools/dashboard/sales_ids?${qs.toString()}`, { headers: authHeaders() });
-        if (!r.ok) throw new Error("No se pudo cargar ventas");
+
+        let r = await fetch(`${API_BASE}/tools/dashboard_v2/sales_ids?${qs.toString()}`, { headers: authHeaders() });
+        if (!r.ok) {
+          const qs2 = new URLSearchParams();
+          qs2.set("from_date", String(desde||""));
+          qs2.set("to_date", String(hasta||""));
+          if (mid) qs2.set("id_marca", mid);
+          r = await fetch(`${API_BASE}/tools/dashboard/sales_ids?${qs2.toString()}`, { headers: authHeaders() });
+          if (!r.ok) return;
+        }
         const j = await r.json();
         const ids = Array.isArray(j?.ids) ? j.ids : [];
-        if (!ids.length){
-          alert("No hay ventas/confirmaciones en ese rango.");
-          return;
-        }
+        if (!ids.length) return;
         const url = "/web/views/leads.html?stale_ids=" + encodeURIComponent(ids.join(","));
         window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*");
-      }catch(e){
-        alert(String(e?.message || e));
+      } catch (e) {
+        console.warn("openConfirmedSales failed", e);
       }
     }
 
-	    const state = {
-	      idMarca: "",
-	      range: "week",
-	      from: "",
-	      to: "",
-	      weekOffset: 0,
-	      me: null,
-	      marcasMap: {},
-	      lastWeek: null,
-	      roleId: null,
-	      lastOpsAt: 0,
-	      lastFinAt: 0,
-	    };
+    const state = {
+      me: null,
+      idMarca: "",
+      weekOffset: 0,
+      monthOffset: 0,
+      marcasMap: {},
+      dv2: null,
+    };
 
-    // Fechas en TZ negocio (America/Santiago) para que "hoy" calce con backend.
-    const fmtSCL = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Santiago",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    function isoSCL(d=new Date()){
-      return fmtSCL.format(d);
-    }
-    function partsSCL(){
-      const [y,m,d] = isoSCL().split("-").map(Number);
-      return { y, m, d };
-    }
-    function pad2(n){ return String(n).padStart(2,"0"); }
-
-    function monthRange(){
-      const { y, m } = partsSCL(); // m: 1..12
-      const endDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // día 0 = último del mes m
-      return { from: `${y}-${pad2(m)}-01`, to: `${y}-${pad2(m)}-${pad2(endDay)}` };
+    async function apiJson(path, init){
+      const r = await fetch(`${API_BASE}${path}`, { ...(init||{}), headers: authHeaders((init||{}).headers || {}) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
     }
 
-    function last7Range(){
-      const end = new Date();
-      const start = new Date(Date.now() - 6*86400000);
-      return { from: isoSCL(start), to: isoSCL(end) };
+    async function loadMe(){
+      try{
+        const r = await fetch(`${API_BASE}/me`, { headers: authHeaders() });
+        if (!r.ok) return null;
+        return await r.json();
+      }catch(_){ return null; }
     }
 
-    function applyRangeDefaults(week){
-      if (state.range === "custom") return;
-      if (state.range === "month"){
-        const r = monthRange();
-        state.from = r.from; state.to = r.to;
-        return;
-      }
-      if (state.range === "last7"){
-        const r = last7Range();
-        state.from = r.from; state.to = r.to;
-        return;
-      }
-      if (week?.start && week?.end){
-        state.from = week.start;
-        state.to = week.end;
-      }
+    async function loadMarcas(){
+      try{
+        const mR = await fetch(`${API_BASE}/marcas?solo_activas=1`, { headers: authHeaders() });
+        if (!mR.ok) return;
+        const arr = await mR.json();
+        const map = {};
+        (arr || []).forEach(m=>{
+          const id = String(m.id_marca ?? "");
+          const name = (m.marca || m.nombre || "").toString().trim();
+          if (id) map[id] = name;
+        });
+        state.marcasMap = map;
+      }catch(_){ state.marcasMap = {}; }
     }
 
-    function syncCustomVisibility(){
-      const box = $("#customDates");
-      if (!box) return;
-      box.style.display = (state.range === "custom") ? "flex" : "none";
-    }
-
-    function syncDateInputs(){
-      const a = $("#dFrom"), b = $("#dTo");
-      if (a) a.value = state.from || "";
-      if (b) b.value = state.to || "";
-    }
-
-    function buildMarcaLabel(){
+    function brandLabel(){
       if (!state.idMarca) return "Todas";
       return state.marcasMap[state.idMarca] || ("#" + state.idMarca);
     }
 
-    function kpiBindClicks(){
-      // Re-bind idempotente (replace onclick)
-      $("#kpi1").onclick = () => {
-        const d = isoSCL();
-        openConfirmedSales(d, d);
-      };
-      $("#kpi2").onclick = () => openConfirmedSales(state.lastWeek?.start || state.from, state.lastWeek?.end || state.to);
-      $("#kpi3").onclick = () => {
-        const r = monthRange();
-        openConfirmedSales(r.from, r.to);
-      };
-      $("#kpi5").onclick = () => {
-        const d = isoSCL();
-        openFilter({ campo:"ingreso", desde:d, hasta:d, ...(state.idMarca ? {marca: state.idMarca} : {}) });
-      };
-      $("#kpi6").onclick = () => openFilter({ ...(state.idMarca ? {marca: state.idMarca} : {}), desde: state.from, hasta: state.to });
+    function populateBrands(){
+      const sel = $("#brandSel");
+      if (!sel) return;
+      const allowed = new Set(((state.me?.marcas || [])).map(String));
+      const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
+      const isSuper = roleUp === "SUPERADMIN";
+      sel.innerHTML = `<option value="">Todas</option>`;
+      const ids = Object.keys(state.marcasMap).sort((a,b) => (state.marcasMap[a]||"").localeCompare(state.marcasMap[b]||""));
+      ids.forEach(id=>{
+        if (!isSuper && allowed.size && !allowed.has(String(id))) return;
+        const o = document.createElement("option");
+        o.value = id;
+        o.textContent = state.marcasMap[id] || ("#" + id);
+        sel.appendChild(o);
+      });
+      if (state.idMarca) sel.value = state.idMarca;
     }
 
-    function renderPipe(arr, rootSel, rangeType){
-      const root = $(rootSel);
-      if (!root) return;
-      const pipe = (arr || []).map(p => ({
-        id_estado: Number(p.id_estado ?? 9999),
-        estado: (p.estado || "SIN ESTADO").toString().trim() || "SIN ESTADO",
-        cantidad: Number(p.cantidad || 0),
-        monto: Number(p.monto || 0),
-        color: p.color || "#64748b",
-      }));
-      // Orden: por id_estado (pipeline real). Si no hay ids (legacy), cae a cantidad desc.
-      pipe.sort((a,b) => (a.id_estado - b.id_estado) || (b.cantidad - a.cantidad));
+    function applyRoleLayout(){
+      const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
+      const isAdmin = roleUp.includes("ADMIN");
+      const isSales = roleUp === "EJECUTIVO" || roleUp === "VENTAS" || roleUp === "SALES";
+      const isOps = roleUp === "OPERADOR" || roleUp === "CONDUCTOR" || roleUp === "CHOFER";
+      $("#tasksCard").style.display = (isAdmin || isSales) ? "" : "none";
+      $("#eventsCard").style.display = isOps ? "none" : "";
+    }
 
-      const total = pipe.reduce((a,b)=> a + b.monto, 0) || 1;
-      const maxQty = Math.max(1, ...pipe.map(p => p.cantidad || 0));
-      const bar = `<div class="pipe-bar">` + pipe.map(p => {
-        const w = Math.max(0.5, (p.monto / total) * 100);
-        return `<span style="width:${w}%; background:${p.color};"></span>`;
-      }).join("") + `</div>`;
+    function renderEstadoCards(items){
+      const box = $("#estadoCards");
+      if (!box) return;
+      const arr = Array.isArray(items) ? items : [];
 
-      // Funnel visual (conversión etapa a etapa)
-      let prev = null;
-      const funnel = `<div class="funnel">` + pipe.map(p => {
-        const w = Math.max(8, Math.round((p.cantidad / maxQty) * 100));
-        const conv = prev && prev.cantidad ? Math.round((p.cantidad / prev.cantidad) * 100) : null;
-        const convTxt = (conv == null) ? "—" : (conv + "%");
-        const prevEstado = prev ? prev.estado : "";
-        prev = p;
-        const c = (p.color || "#64748b").replace(/"/g, "");
+      const totalCount = arr.reduce((a,x)=> a + Number(x?.cantidad||0), 0);
+      const totalAmt = arr.reduce((a,x)=> a + Number(x?.monto||0), 0);
+      const totalByChannel = new Map();
+      arr.forEach(st=>{
+        (st?.channels || []).forEach(ch=>{
+          const k = String(ch?.canal || "").trim() || "—";
+          const prev = totalByChannel.get(k) || {cantidad:0, monto:0};
+          totalByChannel.set(k, {cantidad: prev.cantidad + Number(ch?.cantidad||0), monto: prev.monto + Number(ch?.monto||0)});
+        });
+      });
+      const totalChips = [...totalByChannel.entries()]
+        .sort((a,b)=> (b[1].cantidad||0) - (a[1].cantidad||0))
+        .slice(0, 6)
+        .map(([k,v])=> `<span class="chip">${(k||"—").toUpperCase()}: ${Number(v.cantidad||0)}</span>`)
+        .join("");
+
+      const mk = (o, isTotal=false) => {
+        const name = isTotal ? "TOTAL" : String(o?.estado || "—");
+        const count = Number(o?.cantidad || 0);
+        const amt = Number(o?.monto || 0);
+        const chips = isTotal
+          ? totalChips
+          : (Array.isArray(o?.channels) ? o.channels.slice(0,6) : []).map(ch=>{
+              const k = String(ch?.canal || "").trim() || "—";
+              return `<span class="chip">${(k||"—").toUpperCase()}: ${Number(ch?.cantidad||0)}</span>`;
+            }).join("");
         return `
-          <div class="fstep rowlink" data-estado="${encodeURIComponent(p.estado)}" data-range="${rangeType}"
-               style="--w:${w};--c:${c}55;">
-            <div class="row">
-              <div class="name">
-                <span class="dot" style="background:${p.color}"></span>
-                <span style="min-width:0; overflow:hidden; text-overflow:ellipsis;">${p.estado}</span>
-              </div>
-              <div class="meta">
-                <span>${p.cantidad}</span>
-                <span style="opacity:.75">·</span>
-                <span>$ ${fmt.format(p.monto)}</span>
-              </div>
+          <div class="state" data-estado="${isTotal ? "" : String(o?.id_estado||"")}">
+            <div class="head"><div class="name">${name}</div></div>
+            <div class="nums">
+              <div class="count">${isTotal ? totalCount : count}</div>
+              <div class="amt">${fmtMoney(isTotal ? totalAmt : amt)}</div>
             </div>
-            <div class="sub">
-              <span>Participación: ${Math.round((p.monto/total)*100)}%</span>
-              <span>Conv. vs anterior: ${convTxt}</span>
-            </div>
+            <div class="chips">${chips || `<span class="chip">—</span>`}</div>
           </div>
         `;
-      }).join("") + `</div>`;
+      };
 
-      let html = funnel + bar;
-      html += `<table class="pipe-table"><thead><tr><th>Estado</th><th class="right">Leads</th><th class="right">Monto</th><th class="right">%</th></tr></thead><tbody>`;
-      html += pipe.map(p => {
-        const pct = Math.round((p.monto / total) * 100);
-        const c = (p.color || "#64748b").replace(/"/g, "");
-        return `<tr class="rowlink" data-estado="${encodeURIComponent(p.estado)}" data-range="${rangeType}" style="--pct:${pct};--c: ${c}33;">
-          <td><span class="badge"><span class="dot" style="background:${p.color}"></span>${p.estado}</span></td>
-          <td class="right"><strong>${p.cantidad}</strong></td>
-          <td class="right">$ ${fmt.format(p.monto)}</td>
-          <td class="right">${pct}%</td>
-        </tr>`;
-      }).join("");
-      html += `</tbody></table>`;
+      box.innerHTML = mk({}, true) + arr.map(x=>mk(x,false)).join("");
 
-      root.innerHTML = pipe.length ? html : `<div class="muted">Sin datos.</div>`;
-      root.querySelectorAll(".rowlink").forEach(tr => {
-        tr.addEventListener("click", () => {
-          const estado = decodeURIComponent(tr.dataset.estado || "") || "";
-          const params = { estado };
-          if (state.idMarca) params.marca = state.idMarca;
-          if (rangeType !== "total"){
-            params.desde = state.from || "";
-            params.hasta = state.to || "";
+      $$(".state[data-estado]", box).forEach(el=>{
+        el.addEventListener("click", ()=>{
+          const eid = el.getAttribute("data-estado") || "";
+          if (!eid) {
+            openFilter({ id_marca: state.idMarca || "", week_offset: String(state.weekOffset || 0), month_offset: String(state.monthOffset || 0) });
+            return;
           }
-          openFilter(params);
+          openFilter({ id_estado: eid, id_marca: state.idMarca || "", week_offset: String(state.weekOffset || 0), month_offset: String(state.monthOffset || 0) });
         });
       });
     }
 
-    async function loadDashboard(){
-      const qs = new URLSearchParams();
-      if (state.idMarca) qs.set("id_marca", state.idMarca);
-      const r = await fetch(`${API_BASE}/tools/dashboard` + (qs.toString() ? ("?"+qs.toString()) : ""), { headers: authHeaders() });
-      if (!r.ok){
-        $("#dashSub").textContent = "No se pudo cargar dashboard.";
-        return null;
-      }
-      const j = await r.json();
-      state.lastWeek = j.week || null;
-      applyRangeDefaults(j.week);
-      syncDateInputs();
-      $("#dashSub").textContent = `Marca: ${buildMarcaLabel()} · Rango: ${state.from || "—"} → ${state.to || "—"} · Actualizado: ${new Date().toLocaleString("es-CL")}`;
-      if (j.week){
-        $("#weekLabel").textContent = `Semana ${j.week.number} · ${j.week.start} → ${j.week.end}`;
-      }
+    function renderSalesDaily(dv2){
+      const box = $("#salesDaily");
+      if (!box) return;
+      const week = dv2?.week || {};
+      const sales = dv2?.sales || {};
+      const daily = Array.isArray(sales?.semana_daily_by_brand) ? sales.semana_daily_by_brand : [];
 
-      $("#kpiVentaDia").textContent = `$ ${fmt.format(j.kpis?.venta_dia || 0)}`;
-      $("#kpiVentaSemana").textContent = `$ ${fmt.format(j.kpis?.venta_semana || 0)}`;
-      $("#kpiLeadsHoy").textContent = `${j.kpis?.leads_hoy || 0}`;
-      $("#kpiCierre").textContent = `${(j.kpis?.cierre_pct || 0).toFixed(2)}%`;
-
-      const ventaMes = (j.sales_compare || []).reduce((a,b)=> a + Number(b.actual || 0), 0);
-      $("#kpiVentaMes").textContent = `$ ${fmt.format(ventaMes || 0)}`;
-
-      renderPipe(j.pipeline, "#pipelineTotal", "total");
-      const rangePipe = (state.range === "month") ? j.pipeline_month : j.pipeline_week;
-      renderPipe(rangePipe, "#pipelineRange", state.range);
-
-      // Venta diaria por marca (semana) + drilldown (double click)
-      const daily = j.sales_daily || [];
-      const brandSet = [...new Set(daily.map(d => d.marca))];
-      const daySet = (j.week_days || []);
-      if (daily.length){
-        let table = `<table class="table-mini"><thead><tr><th>Marca</th>`;
-        daySet.forEach(d => table += `<th class="right">${d.slice(8,10)}/${d.slice(5,7)}</th>`);
-        table += `</tr></thead><tbody>`;
-        brandSet.forEach(b => {
-          table += `<tr><td><strong>${b}</strong></td>`;
-          daySet.forEach(d => {
-            const row = daily.find(x => x.marca===b && x.dia===d);
-            const mid = row?.id_marca ?? "";
-            const monto = Number(row?.monto || 0);
-            table += `<td class="right cell-sale" data-day="${d}" data-mid="${mid}">$ ${fmt.format(monto)}</td>`;
-          });
-          table += `</tr>`;
-        });
-        table += `</tbody></table>`;
-        $("#salesDaily").innerHTML = table;
-        $("#salesDaily").querySelectorAll(".cell-sale").forEach(td => {
-          td.addEventListener("dblclick", async () => {
-            const day = td.getAttribute("data-day") || "";
-            const mid = td.getAttribute("data-mid") || "";
-            if (!day || !mid) return;
-            await openConfirmedSales(day, day, mid);
-          });
-          td.title = "Doble click para ver los leads vendidos/confirmados ese día.";
-        });
-      }else{
-        $("#salesDaily").innerHTML = `<div class="muted">Sin ventas confirmadas en la semana.</div>`;
-      }
-
-      kpiBindClicks();
-      return j;
-    }
-
-    // Insights viven en /web/views/reportes.html (no en dashboard).
-
-    async function loadTasks(force=false){
-      const card = $("#tasksCard");
-      if (!card || card.style.display === "none") return;
-
-      const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
-      const isAdmin = roleUp.includes("ADMIN"); // ADMIN / SUPER_ADMIN / SUPERADMIN
-
-      // Admin ve global (conteo existente); ejecutivos: sync + conteo propio.
-      if (isAdmin){
-        try{
-          const sum = await apiJson("/tasks/summary?scope=all");
-          $("#tasksNew").textContent = String(sum?.open_nuevos ?? 0);
-          $("#tasksContact").textContent = String(sum?.open_contactados ?? 0);
-          $("#tasksQuote").textContent = String(sum?.open_cotizados ?? 0);
-        }catch(_){
-          $("#tasksNew").textContent = "0";
-          $("#tasksContact").textContent = "0";
-          $("#tasksQuote").textContent = "0";
+      const ws = String(week?.start || "");
+      const days = [];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(ws)){
+        const dt0 = new Date(ws + "T00:00:00");
+        for (let i=0;i<7;i++){
+          const d = new Date(dt0.getTime() + i*86400000);
+          days.push(d.toISOString().slice(0,10));
         }
+      } else {
+        days.push(...[...new Set(daily.map(x=>String(x?.dia||"").slice(0,10)).filter(Boolean))].sort());
+      }
+
+      const brands = [...new Set([
+        ...daily.map(x=>String(x?.marca||"").toUpperCase()).filter(Boolean),
+        ...(Array.isArray(sales?.semana_by_brand) ? sales.semana_by_brand.map(x=>String(x?.marca||"").toUpperCase()).filter(Boolean) : []),
+      ])].sort();
+      const cell = (b,d) => {
+        const row = daily.find(x => String(x?.marca||"").toUpperCase()===b && String(x?.dia||"").slice(0,10)===d);
+        const val = Number(row?.monto || 0);
+        return val ? fmtMoney(val) : "—";
+      };
+      const rowTotal = (b) => daily.filter(x=>String(x?.marca||"").toUpperCase()===b).reduce((a,x)=>a+Number(x?.monto||0),0);
+      const colTotal = (d) => daily.filter(x=>String(x?.dia||"").slice(0,10)===d).reduce((a,x)=>a+Number(x?.monto||0),0);
+      const total = Number(sales?.venta_semana || 0);
+
+      if (!brands.length){
+        box.innerHTML = `<div class="muted">Sin ventas confirmadas en la semana.</div>`;
         return;
       }
 
-      try{
-        const s = await apiJson("/tasks/sync", { method:"POST" });
-        if (s?.disabled){
-          $("#tasksNew").textContent = "0";
-          $("#tasksContact").textContent = "0";
-          $("#tasksQuote").textContent = "0";
-          return;
+      let table = `<div class="scroll-x"><table class="table-mini"><thead><tr><th>Marca</th>`;
+      days.forEach(d => table += `<th class="right">${d.slice(8,10)}/${d.slice(5,7)}</th>`);
+      table += `<th class="right">Total</th></tr></thead><tbody>`;
+      brands.forEach(b=>{
+        table += `<tr><td><strong>${b}</strong></td>`;
+        days.forEach(d=>{
+          table += `<td class="right cell-sale" data-day="${d}">${cell(b,d)}</td>`;
+        });
+        table += `<td class="right"><strong>${fmtMoney(rowTotal(b))}</strong></td></tr>`;
+      });
+      table += `<tr><td class="muted"><strong>Total</strong></td>`;
+      days.forEach(d=> table += `<td class="right muted"><strong>${fmtMoney(colTotal(d))}</strong></td>`);
+      table += `<td class="right"><strong>${fmtMoney(total)}</strong></td></tr>`;
+      table += `</tbody></table></div><div class="scroll-hint">Desliza horizontal para ver Lun→Dom</div>`;
+      box.innerHTML = table;
+
+      $$(".cell-sale", box).forEach(td=>{
+        td.addEventListener("dblclick", ()=>{
+          const d = td.getAttribute("data-day") || "";
+          if (!d) return;
+          openConfirmedSales(d, d, state.idMarca || "", "agenda");
+        });
+      });
+    }
+
+    function closeModals(){
+      $("#dayModal").classList.remove("open");
+      $("#eventModal").classList.remove("open");
+    }
+
+    function openDayModal(day){
+      $("#dayModalTitle").textContent = `${day.label || "Día"}`;
+      const items = Array.isArray(day?.items) ? day.items : [];
+      $("#dayModalList").innerHTML = items.length
+        ? `<ul>${items.map(ev=>`<li><strong>${(ev?.cliente||"—")}</strong> · ${(ev?.marca||"—")} · ${(ev?.comuna||"—")}</li>`).join("")}</ul>`
+        : `<div class="muted">—</div>`;
+      $("#dayModal").classList.add("open");
+    }
+
+    function extractProductsText(ev){
+      const candidates = [
+        ev?.pre_products_text,
+        ev?.productos_text,
+        ev?.productos,
+        ev?.items,
+        ev?.detalle,
+        ev?.descripcion,
+        ev?.observaciones,
+        ev?.lead?.pre_products_text,
+        ev?.lead?.productos_text,
+        ev?.lead?.productos,
+      ];
+      for (const c of candidates){
+        if (Array.isArray(c)){
+          const s = c.map(x=>String(x||"").trim()).filter(Boolean).join("\n").trim();
+          if (s) return s;
         }
-        $("#tasksNew").textContent = String(s?.counts?.open_nuevos ?? 0);
-        $("#tasksContact").textContent = String(s?.counts?.open_contactados ?? 0);
-        $("#tasksQuote").textContent = String(s?.counts?.open_cotizados ?? 0);
-      }catch(_){
-        // Best-effort fallback (no bloquea dashboard).
-        try{
-          const sum = await apiJson("/tasks/summary");
-          $("#tasksNew").textContent = String(sum?.open_nuevos ?? 0);
-          $("#tasksContact").textContent = String(sum?.open_contactados ?? 0);
-          $("#tasksQuote").textContent = String(sum?.open_cotizados ?? 0);
-        }catch(__){
-          $("#tasksNew").textContent = "0";
-          $("#tasksContact").textContent = "0";
-          $("#tasksQuote").textContent = "0";
+        if (typeof c === "string"){
+          const s = c.replace(/\r/g,"").trim();
+          if (s) return s;
         }
       }
+      return "";
+    }
+
+    let lastEventForModal = null;
+    function openEventModal(ev){
+      lastEventForModal = ev || null;
+      const cliente = (ev?.cliente || "").toString().trim() || "—";
+      $("#eventModalTitle").textContent = cliente;
+      const products = extractProductsText(ev).split("\n").map(s=>s.trim()).filter(Boolean);
+      $("#eventModalBody").innerHTML = `
+        <div><strong>Marca:</strong> ${(ev?.marca || "—")}</div>
+        <div><strong>Fecha:</strong> ${(ev?.fecha_evento || "—")}</div>
+        <div><strong>Comuna:</strong> ${(ev?.comuna || "—")}</div>
+        <div style="margin-top:10px"><strong>Productos:</strong></div>
+        <pre style="white-space:pre-wrap; margin:6px 0 0 0; opacity:.9; font-weight:900; font-family:inherit;">${(products.slice(0,8).join("\n") || "—")}</pre>
+      `;
+      $("#eventModal").classList.add("open");
     }
 
     async function loadEvents(offset=0){
@@ -1032,80 +669,50 @@
         return;
       }
 
-      // Por día, horizontal; máx 3 y botón "Ver más"
       const byDay = new Map();
-      (events || []).forEach(ev => {
+      events.forEach(ev=>{
         const d = String(ev.fecha_evento || "").slice(0,10) || "SIN_FECHA";
         if (!byDay.has(d)) byDay.set(d, []);
         byDay.get(d).push(ev);
       });
-      const safeLines = (txt, max=4) => {
-        const raw = String(txt || "").replace(/\r/g, "");
-        const lines = raw.split("\n").map(s=>s.trim()).filter(Boolean);
-        return lines.slice(0, max).join("\n");
-      };
-      const productLines = (txt, max=4) => {
-        const raw = String(txt || "").replace(/\r/g, "");
-        const lines = raw.split("\n").map(s=>s.trim()).filter(Boolean);
-        const body = lines.filter(ln => !/^productos\b/i.test(ln) && !/^•?\s*productos\b/i.test(ln));
-        return body.slice(0, max).join("\n");
-      };
-      const fmtHr = (ev) => {
-        const s = String(ev?.pre_start || "");
-        const e = String(ev?.pre_end || "");
-        if (!s || !e) return "HR TBD";
-        const sh = s.slice(11,16);
-        const eh = e.slice(11,16);
-        return (sh && eh) ? `${sh} - ${eh}` : "HR TBD";
-      };
-
       const weekStart = String(j?.week?.start || "");
-      const baseDays = [];
+      const days = [];
       if (weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart)){
         const dt0 = new Date(weekStart + "T00:00:00");
         for (let i=0;i<7;i++){
           const d = new Date(dt0.getTime() + i*86400000);
-          baseDays.push(d.toISOString().slice(0,10));
+          days.push(d.toISOString().slice(0,10));
         }
       } else {
-        baseDays.push(...[...byDay.keys()].sort());
+        days.push(...[...byDay.keys()].sort());
       }
 
-      const strip = `
+      $("#eventsWeek").innerHTML = `
         <div class="events-strip">
-          ${baseDays.map(d=>{
+          ${days.map(d=>{
             const arr = byDay.get(d) || [];
             const label = d !== "SIN_FECHA" ? `${d.slice(8,10)}/${d.slice(5,7)}` : "—";
-            const dayName = d !== "SIN_FECHA"
-              ? daysEs[(new Date(d + "T00:00:00").getDay() + 6) % 7].slice(0,3).toUpperCase()
-              : "";
             const top = arr.slice(0, 3);
             return `
-              <div class="event-day" data-day="${d}">
+              <div class="event-day">
                 <div class="event-day-head">
-                  <div class="event-day-title">${dayName} ${label} (${arr.length})</div>
+                  <div class="event-day-title">${label} (${arr.length})</div>
                 </div>
                 ${top.map(ev=>{
-                  const marca = (ev.marca || "").toString().trim();
-                  const dot = brandColors[marca.toUpperCase()] || "#7ee7b0";
-	                  const cliente = (ev.cliente || "").toString().trim() || "—";
-	                  const comuna = (ev.comuna || "").toString().trim() || "—";
-	                  const ops = (ev.pre_ops != null && String(ev.pre_ops).trim() !== "") ? String(ev.pre_ops) : "—";
-	                  const hr = fmtHr(ev);
-		                  const productos = productLines(ev.pre_products_text || "", 4) || "• —";
-		                  const tip = `📍 ${comuna} · 🕒 ${hr} · 👥 ${ops}\n${productos}`;
-		                  const payload = encodeURIComponent(JSON.stringify(ev));
-		                  return `
-		                    <div class="event-pill" data-evt="${payload}">
-		                      <span class="dot" style="background:${dot}"></span>
-		                      <div style="min-width:0; flex:1;">
-		                        <div class="t1">${cliente}</div>
-		                        <div class="t2">${marca || "—"}</div>
-		                      </div>
-		                      <div class="tip">${tip}</div>
-		                    </div>
-		                  `;
-		                }).join("")}
+                  const payload = encodeURIComponent(JSON.stringify(ev));
+                  const raw = extractProductsText(ev);
+                  const lines = raw.split("\n").map(s=>s.trim()).filter(Boolean);
+                  const preview = (lines.slice(0,3).join(" · ") || "—");
+                  return `
+                    <div class="event-pill" data-evt="${payload}">
+                      <span class="dot"></span>
+                      <div style="min-width:0; flex:1;">
+                        <div class="t1">${(ev?.cliente||"—")}</div>
+                        <div class="t2">${preview}</div>
+                      </div>
+                    </div>
+                  `;
+                }).join("")}
                 ${(!top.length) ? `<div class="muted" style="padding:6px 2px; font-weight:900; opacity:.55;">—</div>` : ``}
                 ${arr.length > 3 ? `<button class="event-more" type="button" data-more="${d}">Ver más</button>` : ``}
               </div>
@@ -1113,395 +720,187 @@
           }).join("")}
         </div>
       `;
-      $("#eventsWeek").innerHTML = strip || `<div class="muted">Sin eventos confirmados en la semana.</div>`;
 
-      $("#eventsWeek").querySelectorAll(".event-pill[data-evt]").forEach(row => {
-        row.addEventListener("click", () => {
-          const raw = row.getAttribute("data-evt");
+      $$(".event-pill[data-evt]", $("#eventsWeek")).forEach(el=>{
+        el.addEventListener("click", ()=>{
+          const raw = el.getAttribute("data-evt");
           if (!raw) return;
-          try{ openEventModal(JSON.parse(decodeURIComponent(raw))); }catch(_){ }
+          try{ openEventModal(JSON.parse(decodeURIComponent(raw))); }catch(_){}
         });
       });
-      $("#eventsWeek").querySelectorAll("[data-more]").forEach(btn => {
-        btn.addEventListener("click", () => {
+      $$("[data-more]", $("#eventsWeek")).forEach(btn=>{
+        btn.addEventListener("click", ()=>{
           const d = btn.getAttribute("data-more") || "";
           const items = byDay.get(d) || [];
           const label = d !== "SIN_FECHA" ? `${d.slice(8,10)}/${d.slice(5,7)}/${d.slice(0,4)}` : "Sin fecha";
-          const dayName = d !== "SIN_FECHA"
-            ? daysEs[(new Date(d + "T00:00:00").getDay() + 6) % 7]
-            : "";
-          openDayModal({ date: d, label: (dayName ? (dayName + " · ") : "") + label, items });
+          openDayModal({ date:d, label, items });
         });
       });
     }
 
-    function openDayModal(day){
-      const modal = $("#dayModal");
-      const title = $("#dayModalTitle");
-      const list = $("#dayModalList");
-      if (!modal || !title || !list) return;
-      title.textContent = `${day.label || "Día"}`;
-      const nrm = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
-
-      const safeLines = (txt, max=10) => {
-        const raw = String(txt || "").replace(/\r/g, "");
-        const lines = raw.split("\n").map(s=>s.trim()).filter(Boolean);
-        return lines.slice(0, max).join("\n");
-      };
-      const fmtHr = (ev) => {
-        const s = String(ev?.pre_start || "");
-        const e = String(ev?.pre_end || "");
-        if (!s || !e) return "HR TBD";
-        const sh = s.slice(11,16);
-        const eh = e.slice(11,16);
-        return (sh && eh) ? `${sh} - ${eh}` : "HR TBD";
-      };
-
-      list.innerHTML = (day.items || []).map(ev => {
-        const cliente = (ev.cliente || "Cliente").trim();
-        const marca = (ev.marca || "").trim();
-        const label = marca && !nrm(cliente).includes(nrm(marca)) ? `${cliente} - ${marca}` : cliente;
-        const dot = brandColors[(ev.marca || "").toUpperCase()] || "#7ee7b0";
-        const comuna = (ev.comuna || "").toString().trim() || "—";
-        const hr = fmtHr(ev);
-        const ops = (ev.pre_ops != null && String(ev.pre_ops).trim() !== "") ? String(ev.pre_ops) : "—";
-        const productos = safeLines(ev.pre_products_text || "", 12) || "PRODUCTOS\n—";
-        const tip = `COMUNA: ${comuna}\nHORARIO: ${hr}\nOPS: ${ops}\n\n${productos}`;
-        return `<div class="event-row rowlink" data-evt='${encodeURIComponent(JSON.stringify(ev))}' style="border:1px solid rgba(255,255,255,.12);">
-          <span class="dot" style="background:${dot}"></span>
-          <div style="min-width:0;">
-            <div style="font-weight:1100">${label}</div>
-            <div class="muted" style="font-size:12px; margin-top:2px; white-space:pre-wrap;">${tip}</div>
-          </div>
-        </div>`;
-      }).join("") || `<div class="muted">Sin eventos.</div>`;
-
-      list.querySelectorAll(".rowlink[data-evt]").forEach(row => {
-        row.addEventListener("click", () => {
-          const raw = row.getAttribute("data-evt");
-          if (!raw) return;
-          try{ openEventModal(JSON.parse(decodeURIComponent(raw))); }catch(_){ }
-        });
-      });
-
-      modal.classList.add("open");
-    }
-
-    function openEventModal(ev){
-      const modal = $("#eventModal");
-      const title = $("#eventModalTitle");
-      const body = $("#eventModalBody");
-      if (!modal || !title || !body) return;
-      const nrm = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
-      const cliente = (ev.cliente || "Cliente").trim();
-      const marca = (ev.marca || "").trim();
-      const label = marca && !nrm(cliente).includes(nrm(marca)) ? `${cliente} - ${marca}` : cliente;
-      const comuna = (ev.comuna || "").toString().trim() || "—";
-      const preStart = String(ev?.pre_start || "");
-      const preEnd = String(ev?.pre_end || "");
-      const hr = (preStart && preEnd) ? `${preStart.slice(11,16)} - ${preEnd.slice(11,16)}` : "HR TBD";
-      const ops = (ev.pre_ops != null && String(ev.pre_ops).trim() !== "") ? String(ev.pre_ops) : "—";
-      const prodRaw = String(ev.pre_products_text || "").replace(/\r/g, "");
-      const prodLines = prodRaw.split("\n").map(s=>s.trim()).filter(Boolean);
-      const prod = prodLines.slice(0, 18).join("\n") || "PRODUCTOS\n—";
-
-      title.textContent = label;
-      body.innerHTML = `
-        <div class="event-row" style="border:1px solid rgba(255,255,255,.12);">
-          <span class="dot" style="background:${brandColors[(ev.marca || "").toUpperCase()] || "#7ee7b0"}"></span>
-          <div>
-            <div style="font-weight:1100">${label}</div>
-            <div class="muted" style="font-size:12px; margin-top:2px;">${ev.fecha_evento || "—"} · ${comuna}</div>
-            <div class="muted" style="font-size:12px; margin-top:8px; white-space:pre-wrap;">HORARIO: ${hr}\nOPS: ${ops}\n\n${prod}</div>
-          </div>
-        </div>
-      `;
-
-      $("#eventModalOpen").onclick = () => {
-        if (ev.calendar_html_link) window.open(ev.calendar_html_link, "_blank", "noopener");
-      };
-
-      modal.classList.add("open");
-    }
-
-    $("#dayModalClose")?.addEventListener("click", () => $("#dayModal")?.classList.remove("open"));
-    $("#dayModal")?.addEventListener("click", (e) => { if (e.target?.id === "dayModal") $("#dayModal")?.classList.remove("open"); });
-    $("#eventModalClose")?.addEventListener("click", () => $("#eventModal")?.classList.remove("open"));
-    $("#eventModal")?.addEventListener("click", (e) => { if (e.target?.id === "eventModal") $("#eventModal")?.classList.remove("open"); });
-
-	    function applyRoleLayout(){
-	      const rid = state.roleId;
-	      const isAdmin = rid === 1;
-	      const isSales = rid === 2;
-	      const isOps = rid === 3;
-	      const isFinance = rid === 11;
-
-      const show = (id, on) => { const el = $(id); if (el) el.style.display = on ? "" : "none"; };
-
-	      // KPIs y ventas: solo Ejecutivos + Admin
-	      show("#kpiCard", (isAdmin || isSales));
-	      show("#salesCard", (isAdmin || isSales));
-	      show("#tasksCard", (isAdmin || isSales));
-
-      // Eventos confirmados (semana): para TODOS los usuarios
-      show("#eventsCard", true);
-
-      // Ops card: deshabilitado (las alertas/seguimiento van como tareas de Ejecutivos y notifs por email/push).
-      const opsCard = $("#opsCard");
-      if (opsCard) opsCard.style.display = "none";
-
-      // Finanzas: Admin + Finanzas
-      const finCard = $("#finCard");
-      if (finCard) finCard.style.display = (isAdmin || isFinance) ? "" : "none";
-
-      // Ajuste de enfoque por rol
-      if (isFinance && !isAdmin){
-        show("#pipelineCard", false);
-        show("#reportsCard", true);
-      } else if (isOps && !isAdmin){
-        show("#pipelineCard", false);
-      } else {
-        // Admin/Ventas y otros: default visible
-        show("#pipelineCard", true);
-        show("#reportsCard", true);
-      }
-    }
-
-    async function loadOpsCards(force=false){
-      const now = Date.now();
-      if (!force && now - (state.lastOpsAt || 0) < 30000) return;
-      state.lastOpsAt = now;
-      const card = $("#opsCard");
+    async function loadTasks(){
+      const card = $("#tasksCard");
       if (!card || card.style.display === "none") return;
+
+      const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
+      const isAdmin = roleUp.includes("ADMIN");
+
       try{
-        const mid = String(state.idMarca || "").trim();
-        const qs = new URLSearchParams();
-        if (mid) qs.set("id_marca", mid);
-        const alerts = await apiJson(`/tools/dashboard/ops_alertas?${qs.toString()}`);
-        const agenda = await apiJson(`/tools/agenda${qs.toString() ? ("?"+qs.toString()) : ""}`);
-
-        $("#opsRange").textContent = `${alerts?.range?.from || "—"} → ${alerts?.range?.to || "—"}`;
-        $("#opsMissingTel").textContent = String(alerts?.counts?.tel ?? 0);
-        $("#opsMissingDir").textContent = String(alerts?.counts?.dir ?? 0);
-        $("#opsMissingHr").textContent = String(alerts?.counts?.hr ?? 0);
-
-        const c = agenda?.counts || {};
-        const box = $("#opsAgendaBox");
-        if (box){
-          box.innerHTML = `
-            <table class="pipe-table">
-              <thead><tr><th>Tipo</th><th class="right">Cantidad</th></tr></thead>
-              <tbody>
-                <tr class="rowlink" data-open="por_aprobar"><td>Preagenda por aprobar</td><td class="right"><strong>${Number(c.por_aprobar||0)}</strong></td></tr>
-                <tr class="rowlink" data-open="sin_pre"><td>Confirmados sin preagenda</td><td class="right"><strong>${Number(c.confirmados_sin_preagenda||0)}</strong></td></tr>
-                <tr class="rowlink" data-open="agendados"><td>Agendados</td><td class="right"><strong>${Number(c.agendados||0)}</strong></td></tr>
-              </tbody>
-            </table>
-          `;
-          // Nota: agenda.html puede no existir en todos los despliegues; si falla, igual deja el conteo visible.
-          box.querySelectorAll("tr.rowlink[data-open]").forEach(tr=>{
-            tr.addEventListener("click", ()=>{
-              const t = tr.dataset.open || "";
-              if (t === "por_aprobar" || t === "agendados"){
-                window.parent?.postMessage({ type:"openItem", id:"tool_cal", url:"/web/views/tools.html?v=20260327-tools7#agenda" }, "*");
-              } else if (t === "sin_pre"){
-                window.parent?.postMessage({ type:"openItem", id:"leads_ver", url:"/web/views/leads.html" }, "*");
-              }
-            });
-          });
+        if (isAdmin){
+          const sum = await apiJson("/tasks/summary?scope=all");
+          $("#tasksNew").textContent = String(sum?.open_nuevos ?? 0);
+          $("#tasksContact").textContent = String(sum?.open_contactados ?? 0);
+          $("#tasksQuote").textContent = String(sum?.open_cotizados ?? 0);
+          return;
         }
-
-        const missBox = $("#opsMissingBox");
-        if (missBox){
-          const mk = (arr, title) => {
-            const rows = (arr || []).slice(0, 8);
-            if (!rows.length) return "";
-            const html = rows.map(r => `
-              <tr class="rowlink" data-lead="${r.id_lead}">
-                <td><strong>#${r.id_lead}</strong> ${String(r.cliente||"").slice(0,34)}</td>
-                <td class="right">${String(r.fecha_evento||"").slice(0,10)||"—"}</td>
-              </tr>
-            `).join("");
-            return `
-              <div class="muted" style="font-weight:1000; margin:10px 0 6px;">${title}</div>
-              <table class="pipe-table"><thead><tr><th>Lead</th><th class="right">Fecha</th></tr></thead><tbody>${html}</tbody></table>
-            `;
-          };
-          missBox.innerHTML =
-            mk(alerts?.items?.tel, "Falta teléfono") +
-            mk(alerts?.items?.dir, "Falta dirección") +
-            mk(alerts?.items?.hr, "Falta horario") ||
-            `<div class="muted">Sin alertas.</div>`;
-
-          missBox.querySelectorAll("[data-lead]").forEach(el=>{
-            el.addEventListener("click", ()=> openLead(el.getAttribute("data-lead")));
-          });
+        const s = await apiJson("/tasks/sync", { method:"POST" });
+        if (s?.disabled){
+          $("#tasksNew").textContent = "0";
+          $("#tasksContact").textContent = "0";
+          $("#tasksQuote").textContent = "0";
+          return;
         }
-      }catch(e){
-        const box = $("#opsAgendaBox");
-        if (box) box.innerHTML = `<div class="muted">No se pudieron cargar alertas.</div>`;
-        const missBox = $("#opsMissingBox");
-        if (missBox) missBox.innerHTML = `<div class="muted">${String(e?.message||e)}</div>`;
-      }
-    }
-
-    async function loadFinCards(force=false){
-      const now = Date.now();
-      if (!force && now - (state.lastFinAt || 0) < 60000) return;
-      state.lastFinAt = now;
-      const card = $("#finCard");
-      if (!card || card.style.display === "none") return;
-      try{
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = today.getMonth() + 1;
-        const cxc = await apiJson(`/finanzas/cxc_resumen?year=${year}&month=${month}`);
-        const cxp = await apiJson(`/finanzas/cxp_resumen?year=${year}&month=${month}`);
-
-        const cxcTotal = Number(cxc?.total_saldo || 0);
-        const cxpTotal = Number(cxp?.total_pendiente || 0);
-        $("#finCxcTotal").textContent = `$ ${fmt.format(cxcTotal)}`;
-        $("#finCxpTotal").textContent = `$ ${fmt.format(cxpTotal)}`;
-        $("#finCxcCount").textContent = String(Number(cxc?.items?.length || 0));
-        $("#finCxpCount").textContent = String(Number(cxp?.items?.length || 0));
-
-        const mk = (items, fields) => {
-          const rows = (items || []).slice(0, 8);
-          if (!rows.length) return `<div class="muted">Sin registros.</div>`;
-          const body = rows.map(r => `
-            <tr>
-              <td>${String(r[fields[0]] ?? "—").toString().slice(0, 34)}</td>
-              <td class="right">$ ${fmt.format(Number(r[fields[1]] || 0))}</td>
-            </tr>
-          `).join("");
-          return `<table class="pipe-table"><thead><tr><th>Item</th><th class="right">Monto</th></tr></thead><tbody>${body}</tbody></table>`;
-        };
-
-        $("#finCxcBox").innerHTML = mk(cxc?.items, ["cliente", "saldo"]);
-        $("#finCxpBox").innerHTML = mk(cxp?.items, ["proveedor", "pendiente"]);
+        $("#tasksNew").textContent = String(s?.counts?.open_nuevos ?? 0);
+        $("#tasksContact").textContent = String(s?.counts?.open_contactados ?? 0);
+        $("#tasksQuote").textContent = String(s?.counts?.open_cotizados ?? 0);
       }catch(_){
-        $("#finCxcBox").innerHTML = `<div class="muted">No se pudo cargar CxC.</div>`;
-        $("#finCxpBox").innerHTML = `<div class="muted">No se pudo cargar CxP.</div>`;
+        try{
+          const sum = await apiJson("/tasks/summary");
+          $("#tasksNew").textContent = String(sum?.open_nuevos ?? 0);
+          $("#tasksContact").textContent = String(sum?.open_contactados ?? 0);
+          $("#tasksQuote").textContent = String(sum?.open_cotizados ?? 0);
+        }catch(__){
+          $("#tasksNew").textContent = "0";
+          $("#tasksContact").textContent = "0";
+          $("#tasksQuote").textContent = "0";
+        }
       }
     }
 
-    async function initFilters(){
-      try{
-        const meR = await fetch(`${API_BASE}/me`, { headers: authHeaders() });
-        state.me = meR.ok ? await meR.json() : null;
-      }catch(_){ state.me = null; }
-      state.roleId = detectRoleId(state.me);
-      applyRoleLayout();
-
-      try{
-        const mR = await fetch(`${API_BASE}/marcas?solo_activas=1`, { headers: authHeaders() });
-        const list = mR.ok ? await mR.json() : [];
-        const map = {};
-        (Array.isArray(list) ? list : (list.items || [])).forEach(m => {
-          const id = String(m.id_marca ?? "");
-          const name = (m.marca || m.nombre || "").toString().trim();
-          if (id && name) map[id] = name.toUpperCase();
-        });
-        state.marcasMap = map;
-      }catch(_){ state.marcasMap = {}; }
-
-      const allowed = new Set(((state.me?.marcas || [])).map(String));
-      const isAdmin = String(state.me?.role || state.me?.rol || "").toUpperCase() === "ADMIN";
-
-      const sel = $("#brandSel");
-      if (sel){
-        sel.innerHTML = "";
-        const optAll = document.createElement("option");
-        optAll.value = "";
-        optAll.textContent = "Todas";
-        sel.appendChild(optAll);
-
-        const ids = Object.keys(state.marcasMap).sort((a,b) => (state.marcasMap[a]||"").localeCompare(state.marcasMap[b]||""));
-        ids.forEach(id => {
-          if (!isAdmin && allowed.size && !allowed.has(id)) return;
-          const o = document.createElement("option");
-          o.value = id;
-          o.textContent = state.marcasMap[id] || ("#" + id);
-          sel.appendChild(o);
-        });
-      }
-
-      const params = new URLSearchParams(location.search);
-      const qMarca = params.get("id_marca") || params.get("marca") || "";
-      if (qMarca){
-        state.idMarca = qMarca;
-        if (sel) sel.value = qMarca;
-      }
-
-      // initial range defaults
-      syncCustomVisibility();
+    function computeMonthRangeISO(){
+      const now = new Date();
+      const base = new Date(now.getFullYear(), now.getMonth() + Number(state.monthOffset || 0), 1);
+      const y = base.getFullYear();
+      const m = base.getMonth();
+      const from = new Date(y, m, 1);
+      const to = new Date(y, m + 1, 0);
+      const iso = (d) => d.toISOString().slice(0,10);
+      return { from: iso(from), to: iso(to) };
     }
 
-    let __refreshing = false;
-    async function refreshAll(){
-      if (__refreshing) return;
-      __refreshing = true;
-      try{
-        // Evita “parpadeo”: no limpiamos UI, solo refrescamos data en paralelo.
-        await loadDashboard();
-        await Promise.allSettled([
-          loadTasks(false),
-          loadEvents(state.weekOffset || 0),
-          loadFinCards(false),
-        ]);
-      }finally{
-        __refreshing = false;
-      }
-    }
-
-    $("#rangeSel")?.addEventListener("change", (e) => {
-      state.range = String(e.target?.value || "week");
-      syncCustomVisibility();
-      if (state.range !== "custom"){
-        applyRangeDefaults(state.lastWeek);
-        syncDateInputs();
-      }
-    });
-
-    $("#brandSel")?.addEventListener("change", (e) => { state.idMarca = String(e.target?.value || ""); });
-    $("#dFrom")?.addEventListener("change", (e) => { state.from = String(e.target?.value || ""); });
-    $("#dTo")?.addEventListener("change", (e) => { state.to = String(e.target?.value || ""); });
-
-    $("#btnWeekPrev")?.addEventListener("click", () => { state.weekOffset = (state.weekOffset || 0) - 1; refreshAll(); });
-    $("#btnWeekNow")?.addEventListener("click", () => { state.weekOffset = 0; refreshAll(); });
-    $("#btnWeekNext")?.addEventListener("click", () => { state.weekOffset = (state.weekOffset || 0) + 1; refreshAll(); });
-
-    $("#btnApply")?.addEventListener("click", () => refreshAll());
-
-    const REPORTES_URL = "/web/views/reportes.html?v=20260325-r2";
-    $("#btnGoReportes")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"rep_total", url: REPORTES_URL }, "*");
-    });
-    $("#btnGoFinReportes")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"rep_total", url: REPORTES_URL + "&tab=cxc#cxc" }, "*");
-    });
-    $("#btnGoTasks")?.addEventListener("click", () => {
-      window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260331-tasks3" }, "*");
-    });
-
-    function openTasksTab(tab){
+    async function loadDashboardV2(){
       const qs = new URLSearchParams();
-      if (tab) qs.set("tab", String(tab));
-      const url = "/web/views/tasks.html?v=20260331-tasks3" + (qs.toString() ? ("&" + qs.toString()) : "");
-      window.parent?.postMessage({ type:"openItem", id:"tasks_my", url }, "*");
-    }
-    $("#kpiTaskNew")?.addEventListener("click", ()=> openTasksTab("leads"));
-    $("#kpiTaskContact")?.addEventListener("click", ()=> openTasksTab("leads"));
-    $("#kpiTaskQuote")?.addEventListener("click", ()=> openTasksTab("leads"));
+      if (state.idMarca) qs.set("id_marca", state.idMarca);
+      qs.set("week_offset", String(state.weekOffset || 0));
+      qs.set("month_offset", String(state.monthOffset || 0));
+      const r = await fetch(`${API_BASE}/tools/dashboard_v2?${qs.toString()}`, { headers: authHeaders() });
+      if (!r.ok) return null;
+      const j = await r.json();
+      state.dv2 = j;
 
-    (async () => {
-      await initFilters();
+      const mr = computeMonthRangeISO();
+      $("#dashSub").textContent = `${brandLabel()} · Semana (${j.week?.start || ""} → ${j.week?.end || ""}) · Mes (${mr.from} → ${mr.to})`;
+
+      const sale = j.sales || {};
+      const diaN = Number(sale.venta_dia_neta ?? sale.venta_dia ?? 0);
+      const diaT = Number(sale.venta_dia_traslado ?? 0);
+      const diaTotal = Number(sale.venta_dia_total ?? (diaN + diaT));
+      const semN = Number(sale.venta_semana_neta ?? sale.venta_semana ?? 0);
+      const semT = Number(sale.venta_semana_traslado ?? 0);
+      const semTotal = Number(sale.venta_semana_total ?? (semN + semT));
+      const mesN = Number(sale.venta_mes_neta ?? sale.venta_mes_mtd ?? 0);
+      const mesT = Number(sale.venta_mes_traslado ?? 0);
+      const mesTotal = Number(sale.venta_mes_total ?? (mesN + mesT));
+
+      $("#kpiVentaDia").textContent = fmtMoney(diaTotal);
+      $("#kpiVentaSemana").textContent = fmtMoney(semTotal);
+      $("#kpiVentaMes").textContent = fmtMoney(mesTotal);
+      $("#kpiVentaDiaBreak").textContent = `Neto ${fmtMoney(diaN)} + Traslado ${fmtMoney(diaT)}`;
+      $("#kpiVentaSemanaBreak").textContent = `Neto ${fmtMoney(semN)} + Traslado ${fmtMoney(semT)}`;
+      $("#kpiVentaMesBreak").textContent = `Neto ${fmtMoney(mesN)} + Traslado ${fmtMoney(mesT)}`;
+
+      renderEstadoCards(j.estado_cards_total || j.estado_cards || []);
+      renderSalesDaily(j);
+      return j;
+    }
+
+    function bind(){
+      $("#brandSel").addEventListener("change", (e)=>{ state.idMarca = e.target.value || ""; });
+      $("#monthSel").addEventListener("change", (e)=>{ state.monthOffset = Number(e.target.value || 0) || 0; refreshAll(); });
+      $("#btnWeekPrev").addEventListener("click", ()=>{ state.weekOffset = (state.weekOffset||0) - 1; refreshAll(); });
+      $("#btnWeekNext").addEventListener("click", ()=>{ state.weekOffset = (state.weekOffset||0) + 1; refreshAll(); });
+      $("#btnWeekNow").addEventListener("click", ()=>{ state.weekOffset = 0; refreshAll(); });
+      $("#btnApply").addEventListener("click", ()=> refreshAll());
+
+      $("#btnGoTasks").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260406-tasks4" }, "*"));
+      $("#kpiTaskNew").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260406-tasks4&tab=leads" }, "*"));
+      $("#kpiTaskContact").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260406-tasks4&tab=leads" }, "*"));
+      $("#kpiTaskQuote").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260406-tasks4&tab=leads" }, "*"));
+
+      $("#kpi1").addEventListener("click", ()=>{
+        const today = new Date().toISOString().slice(0,10);
+        openConfirmedSales(today, today, state.idMarca || "", "agenda");
+      });
+      $("#kpi2").addEventListener("click", ()=>{
+        const ws = String(state.dv2?.week?.start || "");
+        const we = String(state.dv2?.week?.end || "");
+        if (!ws || !we) return;
+        openConfirmedSales(ws, we, state.idMarca || "", "agenda");
+      });
+      $("#kpi3").addEventListener("click", ()=>{
+        const mr = computeMonthRangeISO();
+        openConfirmedSales(mr.from, mr.to, state.idMarca || "", "evento");
+      });
+
+      $("#dayModalClose").addEventListener("click", closeModals);
+      $("#eventModalClose").addEventListener("click", closeModals);
+      $("#dayModal").addEventListener("click", (e)=>{ if (e.target?.id === "dayModal") closeModals(); });
+      $("#eventModal").addEventListener("click", (e)=>{ if (e.target?.id === "eventModal") closeModals(); });
+
+      $("#eventModalOpenLead").addEventListener("click", ()=> {
+        if (!lastEventForModal) return;
+        openLead(lastEventForModal?.id_lead);
+      });
+      $("#eventModalOpenCal").addEventListener("click", ()=> {
+        const link = (lastEventForModal?.calendar_html_link || lastEventForModal?.calendar_link || "").toString().trim();
+        if (link) window.open(link, "_blank", "noopener");
+      });
+    }
+
+    async function refreshAll(){
+      await loadDashboardV2();
+      if ($("#eventsCard").style.display !== "none") await loadEvents(state.weekOffset || 0);
+      await loadTasks();
+    }
+
+    async function init(){
+      const params = new URLSearchParams(location.search || "");
+      const qMarca = params.get("id_marca") || params.get("marca") || "";
+      if (qMarca) state.idMarca = qMarca;
+
+      state.me = await loadMe();
+      await loadMarcas();
+      populateBrands();
+      applyRoleLayout();
+      // month selector: últimos 12 meses (incluye actual)
+      const ms = $("#monthSel");
+      const now = new Date();
+      ms.innerHTML = "";
+      for (let k=0; k<12; k++){
+        const off = -k;
+        const d = new Date(now.getFullYear(), now.getMonth() + off, 1);
+        const lab = d.toLocaleString("es-CL", { month:"long", year:"numeric" });
+        const opt = document.createElement("option");
+        opt.value = String(off);
+        opt.textContent = lab.charAt(0).toUpperCase() + lab.slice(1);
+        ms.appendChild(opt);
+      }
+      ms.value = "0";
+      bind();
       await refreshAll();
-      setInterval(() => {
-        if (document.hidden) return;
-        refreshAll();
-      }, 60000);
-    })();
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
   </script>
 </body>
 </html>

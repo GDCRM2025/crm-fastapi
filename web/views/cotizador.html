@@ -26,6 +26,17 @@
       transform: none;
     }
     .controls { display:flex; gap:8px; }
+    .controls.center { justify-content:center; align-items:center; flex-wrap:wrap; }
+    .fieldRow{display:flex; gap:8px; align-items:center;}
+    .fieldRow input{flex:1 1 auto;}
+    .iconbtn{
+      width:36px; height:36px;
+      display:inline-flex; align-items:center; justify-content:center;
+      border:1px solid #ddd; border-radius:10px;
+      background:#fff; cursor:pointer;
+      line-height:1;
+    }
+    input[readonly]{background:#fafafa;}
     .btn { padding:8px 12px; border:1px solid #ddd; border-radius:8px; cursor:pointer; background:#fff; }
     .btn.primary { border-color:#0a7; }
     .btn.danger { border-color:#e33; }
@@ -52,15 +63,24 @@
 
       <div>
         <label class="muted">Cliente</label>
-        <input id="cliente" type="text"/>
+        <div class="fieldRow">
+          <input id="cliente" type="text" readonly/>
+          <button class="iconbtn" id="editCliente" type="button" title="Editar">✎</button>
+        </div>
       </div>
       <div>
         <label class="muted">Email</label>
-        <input id="email" type="email"/>
+        <div class="fieldRow">
+          <input id="email" type="email" readonly/>
+          <button class="iconbtn" id="editEmail" type="button" title="Editar">✎</button>
+        </div>
       </div>
       <div>
         <label class="muted">Teléfono</label>
-        <input id="telefono" type="text"/>
+        <div class="fieldRow">
+          <input id="telefono" type="text" readonly/>
+          <button class="iconbtn" id="editTelefono" type="button" title="Editar">✎</button>
+        </div>
       </div>
 
       <div>
@@ -74,17 +94,20 @@
       </div>
       <div>
         <label class="muted">Fecha de evento</label>
-        <input id="fechaEvento" type="date"/>
+        <div class="fieldRow">
+          <input id="fechaEvento" type="date" readonly/>
+          <button class="iconbtn" id="editFechaEvento" type="button" title="Editar">✎</button>
+        </div>
       </div>
     </section>
 
     <hr/>
 
     <section id="productos">
-      <div class="controls">
+      <div class="controls center">
         <input id="txtProducto" list="dlProductos" placeholder="Buscar producto"/>
         <datalist id="dlProductos"></datalist>
-        <input id="cant" type="number" min="1" step="1" value="1" placeholder="Cantidad"/>
+        <input id="cant" type="number" min="1" step="1" value="" placeholder="Cantidad"/>
         <input id="precio" type="number" min="0" step="1" value="0" placeholder="Valor unitario"/>
         <button class="btn primary" id="btnAddItem">Agregar</button>
       </div>
