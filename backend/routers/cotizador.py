@@ -474,13 +474,14 @@ def cotizar(payload: dict = Body(...)):
             if "tipo_cliente" in lead_cols:
                 set_parts.append("tipo_cliente=:tc")
                 params["tc"] = ("EMPRESA" if iva > 0 else "PARTICULAR")
+            # Nota negocio: al cotizar debemos mantener el `monto_cotizado` correcto incluso si el lead ya está CONFIRMADO.
+            # Solo evitamos tocar leads DECLINADOS.
             conn.execute(
                 text(
                     f"""
                     UPDATE public.leads
                     SET {", ".join(set_parts)}
                     WHERE id_lead=:id_lead
-                      AND COALESCE(id_estado, -1) <> COALESCE(:conf, -2)
                       AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
                     """
                 ),
@@ -635,17 +636,17 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
             cotizado_id = _estado_id(conn, "%COTIZ%")
             confirmado_id = _estado_id(conn, "%CONFIRM%")
             declinado_id = _estado_id(conn, "%DECLIN%")
+            # Mantener montos correctos incluso si está CONFIRMADO; solo evitamos DECLINADOS.
             conn.execute(
                 text(
                     """
                     UPDATE public.leads
                     SET id_cotizacion_vigente=:id_cot, monto_cotizado=:m, updated_at=now()
                     WHERE id_lead=:id_lead
-                      AND COALESCE(id_estado, -1) <> COALESCE(:conf, -2)
                       AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
                     """
                 ),
-                {"id_cot": int(new_id), "id_lead": id_lead, "m": float(neto + traslado), "conf": confirmado_id, "decl": declinado_id},
+                {"id_cot": int(new_id), "id_lead": id_lead, "m": float(neto + traslado), "decl": declinado_id},
             )
             # Opcional: si viene fecha_evento desde cotizador, actualiza lead
             try:
@@ -659,11 +660,10 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
                             UPDATE public.leads
                             SET fecha_evento=:fe, updated_at=now()
                             WHERE id_lead=:id_lead
-                              AND COALESCE(id_estado, -1) <> COALESCE(:conf, -2)
                               AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
                             """
                         ),
-                        {"fe": fe, "id_lead": id_lead, "conf": confirmado_id, "decl": declinado_id},
+                        {"fe": fe, "id_lead": id_lead, "decl": declinado_id},
                     )
                 if "tipo_cliente" in lead_cols:
                     conn.execute(
@@ -672,14 +672,12 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
                             UPDATE public.leads
                             SET tipo_cliente=:tc, updated_at=now()
                             WHERE id_lead=:id_lead
-                              AND COALESCE(id_estado, -1) <> COALESCE(:conf, -2)
                               AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
                             """
                         ),
                         {
                             "tc": ("EMPRESA" if iva > 0 else "PARTICULAR"),
                             "id_lead": id_lead,
-                            "conf": confirmado_id,
                             "decl": declinado_id,
                         },
                     )

@@ -9,163 +9,262 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <style>
-    .grid { display:grid; gap:12px; }
-    .grid-2 { grid-template-columns: repeat(2, 1fr); }
-    .grid-3 { grid-template-columns: repeat(3, 1fr); }
-    .right { text-align:right; }
-    .muted { opacity:.75; }
-    table.items { width:100%; border-collapse: collapse; }
-    table.items th, table.items td { border-bottom:1px solid #eee; padding:8px; }
-    .totales { max-width:520px; margin-left:auto; }
-    .ivaLegend { font-size:12px; opacity:.75; margin-top:6px; text-align:right; }
-    .badge { padding:2px 8px; border:1px solid #ddd; border-radius:12px; font-size:.8rem;}
-    #logoMarca{
-      max-height: 48px;
-      max-width: 180px;
-      object-fit: contain;
-      transform: none;
+    html,body{height:100%;margin:0;}
+    body{background:transparent;}
+    main.container{max-width:1400px;margin:0 auto;padding:18px 18px 28px;}
+
+    .card{
+      background:rgba(255,255,255,.92);
+      border:1px solid rgba(0,0,0,.10);
+      border-radius:18px;
+      padding:14px;
+      box-shadow:0 22px 70px rgba(0,0,0,.10);
     }
-    .controls { display:flex; gap:8px; }
-    .controls.center { justify-content:center; align-items:center; flex-wrap:wrap; }
-    .fieldRow{display:flex; gap:8px; align-items:center;}
-    .fieldRow input{flex:1 1 auto;}
+    .ttl{font-weight:1000;letter-spacing:.10em;text-transform:uppercase;font-size:12px;opacity:.85;}
+    .muted{opacity:.70;font-weight:700;}
+    .badge{padding:3px 10px;border:1px solid rgba(0,0,0,.12);border-radius:999px;font-size:12px;font-weight:900;background:rgba(0,0,0,.03);}
+
+    .grid{display:grid;gap:12px;min-width:0;}
+    .grid-12{grid-template-columns:repeat(12, minmax(0, 1fr));}
+    .span-8{grid-column:span 8;}
+    .span-4{grid-column:span 4;}
+    .span-6{grid-column:span 6;}
+    .span-3{grid-column:span 3;}
+    @media (max-width:1100px){ .span-8,.span-4{grid-column:span 12;} }
+
+    .row{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+    .rowL{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .rowR{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;}
+
+    #logoMarca{max-height:48px;max-width:180px;object-fit:contain;transform:none;}
+
+    .ctrl label{display:block;font-size:11px;letter-spacing:.10em;text-transform:uppercase;font-weight:900;opacity:.72;margin-bottom:6px;}
+    .ctrl select,.ctrl input{
+      height:36px;border-radius:999px;border:1px solid rgba(0,0,0,.14);
+      padding:0 12px;font-weight:900;background:#fff;outline:none;
+    }
+
+    .field{min-width:0;}
+    .field label{display:block;font-size:11px;letter-spacing:.10em;text-transform:uppercase;font-weight:950;opacity:.70;margin-bottom:6px;}
+    .fieldRow{display:flex;gap:8px;align-items:center;min-width:0;}
+    .fieldRow .roText{
+      flex:1 1 auto;
+      padding:4px 0;
+      border-bottom:1px dashed rgba(0,0,0,.25);
+      font-weight:950;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .fieldRow .roEdit{
+      flex:1 1 auto;
+      height:36px;
+      border:1px solid rgba(0,0,0,.14);
+      border-radius:10px;
+      padding:0 10px;
+      font-weight:900;
+      background:#fff;
+      display:none;
+      outline:none;
+    }
+    .fieldRow.editing .roText{display:none;}
+    .fieldRow.editing .roEdit{display:block;}
+
     .iconbtn{
-      width:36px; height:36px;
-      display:inline-flex; align-items:center; justify-content:center;
-      border:1px solid #ddd; border-radius:10px;
-      background:#fff; cursor:pointer;
+      width:34px;height:34px;
+      border-radius:999px;
+      border:1px solid rgba(0,0,0,.14);
+      background:#fff;
+      cursor:pointer;
+      display:inline-flex;align-items:center;justify-content:center;
+      font-weight:1000;
       line-height:1;
+      flex:0 0 auto;
     }
-    input[readonly]{background:#fafafa;}
-    .btn { padding:8px 12px; border:1px solid #ddd; border-radius:8px; cursor:pointer; background:#fff; }
-    .btn.primary { border-color:#0a7; }
-    .btn.danger { border-color:#e33; }
-    input[type=number] { text-align:right; }
+    .iconbtn:hover{filter:brightness(1.03);}
+
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .controls.center{justify-content:center;}
+
+    .btn{
+      padding:8px 12px;
+      border:1px solid rgba(0,0,0,.14);
+      border-radius:999px;
+      cursor:pointer;
+      background:#fff;
+      font-weight:1000;
+      height:36px;
+      white-space:nowrap;
+    }
+    .btn.primary{border-color:#0a7;}
+    .btn.danger{border-color:#e33;}
+
+    table.items{width:100%;border-collapse:separate;border-spacing:0;}
+    table.items th{
+      text-align:left;font-size:11px;letter-spacing:.10em;text-transform:uppercase;
+      font-weight:1000;opacity:.72;padding:10px;border-bottom:1px solid rgba(0,0,0,.10);
+    }
+    table.items td{padding:10px;border-bottom:1px solid rgba(0,0,0,.08);vertical-align:top;}
+
+    .totales{
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(0,0,0,.10);
+      background:rgba(0,0,0,.02);
+    }
+    .totRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;}
+    .totRow strong{font-weight:1000;}
+    .totRow input, .totRow select{
+      height:34px;border-radius:12px;border:1px solid rgba(0,0,0,.14);
+      padding:0 10px;font-weight:900;background:#fff;outline:none;
+    }
+    .ivaLegend{font-size:12px;opacity:.75;margin-top:10px;text-align:right;font-weight:800;}
   </style>
 </head>
 <body>
   <main class="container">
-    <h2>Cotizador</h2>
-
-    <section id="encabezado" class="grid grid-3">
-      <div>
-        <label class="muted">Cotización seleccionada</label>
-        <select id="selCotizacion"></select>
-        <div class="muted" style="margin-top:6px;">N° Cotización: <b id="nroCot">—</b></div>
-      </div>
-      <div>
-        <label class="muted">Fecha de cotización</label>
-        <input id="fechaCot" type="date"/>
-      </div>
-      <div class="right">
-        <img id="logoMarca" alt="logo" style="max-height:48px;"/>
-      </div>
-
-      <div>
-        <label class="muted">Cliente</label>
-        <div class="fieldRow">
-          <input id="cliente" type="text" readonly/>
-          <button class="iconbtn" id="editCliente" type="button" title="Editar">✎</button>
+    <div class="card">
+      <div class="row">
+        <div>
+          <div class="ttl">Cotizador</div>
+        </div>
+        <div class="rowR">
+          <span class="badge" id="tipoClienteLbl">—</span>
+          <img id="logoMarca" alt="logo"/>
         </div>
       </div>
-      <div>
-        <label class="muted">Email</label>
-        <div class="fieldRow">
-          <input id="email" type="email" readonly/>
-          <button class="iconbtn" id="editEmail" type="button" title="Editar">✎</button>
+      <div class="grid grid-12" style="margin-top:12px;">
+        <div class="ctrl span-6">
+          <label>Cotización seleccionada</label>
+          <div class="rowL">
+            <select id="selCotizacion" style="min-width:260px;"></select>
+            <span class="muted">N° <strong id="nroCot">—</strong></span>
+          </div>
         </div>
-      </div>
-      <div>
-        <label class="muted">Teléfono</label>
-        <div class="fieldRow">
-          <input id="telefono" type="text" readonly/>
-          <button class="iconbtn" id="editTelefono" type="button" title="Editar">✎</button>
+        <div class="ctrl span-3">
+          <label>Fecha de cotización</label>
+          <input id="fechaCot" type="date"/>
         </div>
+        <div class="span-3"></div>
       </div>
+    </div>
 
-      <div>
-        <label class="muted">Comuna</label>
-        <input id="comuna" type="text" list="dlComunas"/>
-        <datalist id="dlComunas"></datalist>
-      </div>
-      <div>
-        <label class="muted">Dirección</label>
-        <input id="direccion" type="text"/>
-      </div>
-      <div>
-        <label class="muted">Fecha de evento</label>
-        <div class="fieldRow">
-          <input id="fechaEvento" type="date" readonly/>
-          <button class="iconbtn" id="editFechaEvento" type="button" title="Editar">✎</button>
+    <div class="card" style="margin-top:12px;">
+      <div class="ttl">Ficha lead</div>
+      <div class="grid grid-12" style="margin-top:12px;">
+        <div class="field span-6">
+          <label>Cliente</label>
+          <div class="fieldRow">
+            <div class="roText" id="clienteText">—</div>
+            <input id="cliente" class="roEdit" type="text"/>
+            <button class="iconbtn" id="editCliente" type="button" title="Editar">✎</button>
+          </div>
         </div>
-      </div>
-    </section>
-
-    <hr/>
-
-    <section id="productos">
-      <div class="controls center">
-        <input id="txtProducto" list="dlProductos" placeholder="Buscar producto"/>
-        <datalist id="dlProductos"></datalist>
-        <input id="cant" type="number" min="1" step="1" value="" placeholder="Cantidad"/>
-        <input id="precio" type="number" min="0" step="1" value="0" placeholder="Valor unitario"/>
-        <button class="btn primary" id="btnAddItem">Agregar</button>
-      </div>
-      <table class="items" id="tblItems">
-        <thead>
-          <tr>
-            <th style="width:50%">Producto</th>
-            <th class="right">Cantidad</th>
-            <th class="right">Valor unitario</th>
-            <th class="right">Total</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </section>
-
-    <section id="totales" class="totales">
-      <div class="grid grid-2">
-        <div class="muted">Total productos</div>
-        <div class="right" id="tProductos">$0</div>
-
-        <div class="muted">Traslado</div>
-        <div class="right"><input id="traslado" type="number" step="1" min="0" value="0"/></div>
-
-        <div class="muted">Descuento</div>
-        <div class="right">
-          <div class="controls" style="justify-content:end">
-            <select id="tipoDesc">
-              <option value="$">$</option>
-              <option value="%">%</option>
-            </select>
-            <input id="descuento" type="number" step="1" min="0" value="0"/>
+        <div class="field span-3">
+          <label>Teléfono</label>
+          <div class="fieldRow">
+            <div class="roText" id="telefonoText">—</div>
+            <input id="telefono" class="roEdit" type="text"/>
+            <button class="iconbtn" id="editTelefono" type="button" title="Editar">✎</button>
+          </div>
+        </div>
+        <div class="field span-3">
+          <label>Fecha evento</label>
+          <div class="fieldRow">
+            <div class="roText" id="fechaEventoText">—</div>
+            <input id="fechaEvento" class="roEdit" type="date"/>
+            <button class="iconbtn" id="editFechaEvento" type="button" title="Editar">✎</button>
           </div>
         </div>
 
-        <div class="muted">Total neto</div>
-        <div class="right" id="tNeto">$0</div>
-
-        <div class="muted">IVA</div>
-        <div class="right" id="tIva">$0</div>
-
-        <div><b>Total cotización</b></div>
-        <div class="right" id="tTotal"><b>$0</b></div>
-        <div class="ivaLegend" id="ivaLegend">Esta cotización ha generado $0 de IVA.</div>
+        <div class="field span-6">
+          <label>Email</label>
+          <div class="fieldRow">
+            <div class="roText" id="emailText">—</div>
+            <input id="email" class="roEdit" type="email"/>
+            <button class="iconbtn" id="editEmail" type="button" title="Editar">✎</button>
+          </div>
+        </div>
+        <div class="field span-3">
+          <label>Comuna</label>
+          <div class="fieldRow">
+            <div class="roText" id="comunaText">—</div>
+            <input id="comuna" class="roEdit" type="text" list="dlComunas"/>
+            <datalist id="dlComunas"></datalist>
+            <button class="iconbtn" id="editComuna" type="button" title="Editar">✎</button>
+          </div>
+        </div>
+        <div class="field span-3">
+          <label>Dirección</label>
+          <div class="fieldRow">
+            <div class="roText" id="direccionText">—</div>
+            <input id="direccion" class="roEdit" type="text"/>
+            <button class="iconbtn" id="editDireccion" type="button" title="Editar">✎</button>
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
 
-    <hr/>
+    <div class="card" style="margin-top:12px;">
+      <div class="ttl">Productos</div>
+      <div class="controls center" style="margin-top:12px;">
+        <input id="txtProducto" list="dlProductos" placeholder="Buscar producto" style="min-width:320px; height:36px; border-radius:999px; border:1px solid rgba(0,0,0,.14); padding:0 12px; font-weight:900; outline:none;"/>
+        <datalist id="dlProductos"></datalist>
+        <input id="cant" type="number" min="1" step="1" value="" placeholder="Cantidad" style="width:140px; height:36px; border-radius:999px; border:1px solid rgba(0,0,0,.14); padding:0 12px; font-weight:900; outline:none; text-align:right;"/>
+        <input id="precio" type="number" min="0" step="1" value="0" placeholder="Valor unitario" style="width:160px; height:36px; border-radius:999px; border:1px solid rgba(0,0,0,.14); padding:0 12px; font-weight:900; outline:none; text-align:right;"/>
+        <button class="btn primary" id="btnAddItem">+ Agregar</button>
+      </div>
 
-    <section class="controls" style="justify-content:flex-end">
-      <button class="btn" id="btnGuardar">Guardar cotización</button>
-      <button class="btn" id="btnPreview">Previsualizar</button>
-      <button class="btn" id="btnEnviar">Enviar</button>
-      <button class="btn danger" id="btnCerrar">Cerrar</button>
-    </section>
+      <div class="grid grid-12" style="margin-top:12px; align-items:start;">
+        <div class="span-8" style="min-width:0;">
+          <div style="max-height:340px; overflow:auto; border-radius:14px;">
+            <table class="items" id="tblItems">
+              <thead>
+                <tr>
+                  <th style="width:50%">Producto</th>
+                  <th style="text-align:right;">Cantidad</th>
+                  <th style="text-align:right;">Valor unitario</th>
+                  <th style="text-align:right;">Total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="span-4">
+          <div class="totales">
+            <div class="totRow"><span class="muted">Total productos</span><strong id="tProductos">$0</strong></div>
+            <div class="totRow"><span class="muted">Traslado</span><input id="traslado" type="number" step="1" min="0" value="0" style="width:160px; text-align:right;"/></div>
+            <div class="totRow">
+              <span class="muted">Descuento</span>
+              <div class="controls" style="justify-content:end">
+                <select id="tipoDesc" style="width:64px;">
+                  <option value="$">$</option>
+                  <option value="%">%</option>
+                </select>
+                <input id="descuento" type="number" step="1" min="0" value="0" style="width:140px; text-align:right;"/>
+              </div>
+            </div>
+            <div class="totRow"><span class="muted">Total neto</span><strong id="tNeto">$0</strong></div>
+            <div class="totRow"><span class="muted">IVA</span><strong id="tIva">$0</strong></div>
+            <div class="totRow" style="margin-top:4px;border-top:1px solid rgba(0,0,0,.10);padding-top:10px;">
+              <span style="font-weight:1000;">Total cotización</span><strong id="tTotal">$0</strong>
+            </div>
+            <div class="ivaLegend" id="ivaLegend"></div>
+
+            <div class="controls" style="justify-content:flex-end; margin-top:12px; gap:10px;">
+              <button class="btn primary" id="btnGuardar">Guardar</button>
+              <button class="btn" id="btnPreview">Preview</button>
+              <button class="btn" id="btnEnviar">Enviar</button>
+              <button class="btn danger" id="btnCerrar">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
-
-  <script src="/web/js/cotizador.js?v=20260402-1"></script>
+  <script src="/web/js/cotizador.js?v=20260421-cotpretty3"></script>
 </body>
 </html>

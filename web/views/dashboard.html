@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="gd-build" content="20260421-kpis8" />
   <title>Dashboard</title>
   <link rel="stylesheet" href="../styles.css?v=20260320-6" />
   <script src="../js/iframe-theme.js"></script>
@@ -161,16 +162,19 @@
     .state .count{font-weight:1200; font-size:18px;}
     .state .amt{font-weight:1100; font-size:13px; opacity:.82;}
     .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
-    .chip{
-      border:1px solid rgba(255,255,255,.10);
-      background:rgba(0,0,0,.14);
-      border-radius:999px;
-      padding:4px 8px;
-      font-weight:1000;
-      font-size:11px;
-      opacity:.85;
-      white-space:nowrap;
-    }
+	    .chip{
+	      border:1px solid rgba(255,255,255,.10);
+	      background:rgba(0,0,0,.14);
+	      border-radius:999px;
+	      padding:4px 8px;
+	      font-weight:1000;
+	      font-size:11px;
+	      opacity:.85;
+	      white-space:nowrap;
+	    }
+	    .linkish{cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px;}
+	    .daylink{border-bottom:1px solid rgba(255,255,255,.20); padding-bottom:1px;}
+	    .cell-sale.clickable{cursor:pointer; text-decoration: underline; text-decoration-thickness:2px; text-underline-offset:3px;}
 
     .table-mini{width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed;}
     .table-mini th,.table-mini td{padding:7px 8px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left;}
@@ -246,8 +250,8 @@
 
   <div class="layout">
     <section class="card" style="grid-column: span 12;">
-      <h3>Venta (confirmados)</h3>
-      <div class="muted" style="margin:-2px 0 10px 0">Montos siempre en <strong>monto_cotizado</strong>. Día/semana por <strong>agenda</strong>; mes por <strong>fecha evento</strong> (mes completo).</div>
+	      <h3>Venta (confirmados)</h3>
+	      <div class="muted" id="kpiMetaLine" style="margin:-2px 0 10px 0">—</div>
       <div class="kpis">
         <div class="kpi" id="kpi1">
           <div class="label">Venta día</div>
@@ -273,11 +277,11 @@
       </div>
     </section>
 
-    <section class="card" style="grid-column: span 12;">
-      <h3>Estados</h3>
-      <div class="muted" style="margin-top:-2px">Leads por estado (mes seleccionado por <strong>fecha evento</strong>).</div>
-      <div id="estadoCards" class="states" style="margin-top:12px"></div>
-    </section>
+	    <section class="card" style="grid-column: span 12;">
+	      <h3>Estados</h3>
+	      <div class="muted" id="estadoSub" style="margin-top:-2px">Leads por estado · Mes: —</div>
+	      <div id="estadoCards" class="states" style="margin-top:12px"></div>
+	    </section>
 
     <section class="card" style="grid-column: span 12;">
       <h3>Venta diaria por marca (semana)</h3>
@@ -357,14 +361,33 @@
     const $ = (q, c=document) => c.querySelector(q);
     const $$ = (q, c=document) => [...c.querySelectorAll(q)];
 
+    function getToken(){
+      try{
+        return (
+          localStorage.getItem("token") ||
+          localStorage.getItem("gd_token") ||
+          sessionStorage.getItem("token") ||
+          sessionStorage.getItem("gd_token") ||
+          ""
+        );
+      }catch(_){ return ""; }
+    }
+
     function authHeaders(extra={}) {
       const GD = window.parent && window.parent.GD;
-      return GD && GD.authHeaders ? GD.authHeaders(extra) : extra;
+      if (GD && typeof GD.authHeaders === "function"){
+        try{ return GD.authHeaders(extra || {}); }catch(_){}
+      }
+      const t = getToken();
+      return t ? Object.assign({ "Authorization": "Bearer " + t }, extra || {}) : Object.assign({}, extra || {});
     }
 
     function fmtMoney(n){
       const x = Number(n || 0);
       try { return "$ " + Math.round(x).toLocaleString("es-CL"); } catch(_) { return "$ " + String(Math.round(x)); }
+    }
+    function esc(s){
+      return String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
     }
 
     function openLead(id){
@@ -385,6 +408,16 @@
       });
       const url = "/web/views/leads.html" + (qs.toString() ? ("?" + qs.toString()) : "");
       window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*");
+    }
+
+    function openFiltroLeadsIngreso({ dateISO, channel, idMarca }){
+      const qs = new URLSearchParams();
+      qs.set("campo", "ingreso");
+      if (dateISO) { qs.set("desde", String(dateISO)); qs.set("hasta", String(dateISO)); }
+      if (channel) qs.set("q", String(channel));
+      if (idMarca) qs.set("marca", String(idMarca));
+      const url = "/web/views/filtro_leads.html" + (qs.toString() ? ("?" + qs.toString()) : "");
+      window.parent?.postMessage({ type:"openItem", id:"filtro_leads", url }, "*");
     }
 
     async function openConfirmedSales(desde, hasta, idMarcaOverride="", basis="agenda"){
@@ -478,14 +511,14 @@
 
     function applyRoleLayout(){
       const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
-      const isAdmin = roleUp.includes("ADMIN");
+      const isAdmin = roleUp.includes("ADMIN") || roleUp.includes("SUPERADMIN");
       const isSales = roleUp === "EJECUTIVO" || roleUp === "VENTAS" || roleUp === "SALES";
       const isOps = roleUp === "OPERADOR" || roleUp === "CONDUCTOR" || roleUp === "CHOFER";
       $("#tasksCard").style.display = (isAdmin || isSales) ? "" : "none";
       $("#eventsCard").style.display = isOps ? "none" : "";
     }
 
-    function renderEstadoCards(items){
+    function renderEstadoCards(items, leadsToday){
       const box = $("#estadoCards");
       if (!box) return;
       const arr = Array.isArray(items) ? items : [];
@@ -511,6 +544,7 @@
         const name = isTotal ? "TOTAL" : String(o?.estado || "—");
         const count = Number(o?.cantidad || 0);
         const amt = Number(o?.monto || 0);
+        const nextEv = isTotal ? "" : String(o?.next_event || "").slice(0,10);
         const chips = isTotal
           ? totalChips
           : (Array.isArray(o?.channels) ? o.channels.slice(0,6) : []).map(ch=>{
@@ -519,7 +553,10 @@
             }).join("");
         return `
           <div class="state" data-estado="${isTotal ? "" : String(o?.id_estado||"")}">
-            <div class="head"><div class="name">${name}</div></div>
+            <div class="head">
+              <div class="name">${name}</div>
+              ${nextEv ? `<div class="muted" style="margin-top:6px">Próximo evento: <strong>${nextEv}</strong></div>` : ""}
+            </div>
             <div class="nums">
               <div class="count">${isTotal ? totalCount : count}</div>
               <div class="amt">${fmtMoney(isTotal ? totalAmt : amt)}</div>
@@ -530,7 +567,48 @@
         `;
       };
 
-      box.innerHTML = mk({}, true) + arr.map(x=>mk(x,false)).join("");
+      // Card extra: Leads que llegaron hoy (ingreso/created_at), con canales y monto.
+      const lt = leadsToday || {};
+      const ltDate = String(lt?.date || "").slice(0,10);
+      const ltCnt = Number(lt?.total_cnt || 0);
+      const ltMonto = Number(lt?.total_monto || 0);
+      const ltBy = Array.isArray(lt?.by_channel) ? lt.by_channel : [];
+      const ltChips = ltBy.slice(0, 8).map(x=>{
+        const canalRaw = String(x?.canal || "").trim();
+        const canalEnc = encodeURIComponent(canalRaw);
+        const label = (String(x?.canal || "—").trim() || "—").toUpperCase();
+        const cnt = Number(x?.cnt || x?.cantidad || 0);
+        const amt = Number(x?.monto || 0);
+        return `<span class="chip linkish" data-lt-channel="${esc(canalEnc)}">${label}: ${cnt}${amt ? " · " + fmtMoney(amt) : ""}</span>`;
+      }).join("");
+      const ltCard = `
+        <div class="state" style="grid-column: span 12; cursor:pointer;" data-lt="1" title="Click: ver leads ingresados hoy">
+          <div class="head">
+            <div class="name">HOY LLEGARON</div>
+            ${ltDate ? `<div class="muted" style="margin-top:6px">${ltDate}</div>` : ""}
+          </div>
+          <div class="nums">
+            <div class="count">${ltCnt}</div>
+            <div class="amt">${fmtMoney(ltMonto)}</div>
+          </div>
+          <div class="chips" style="margin-top:10px">${ltChips || `<span class="chip">—</span>`}</div>
+        </div>
+      `;
+
+      box.innerHTML = ltCard + mk({}, true) + arr.map(x=>mk(x,false)).join("");
+
+      // Click: abre filtro leads por ingreso de hoy (opcional canal)
+      const ltEl = box.querySelector?.("[data-lt='1']");
+      if (ltEl){
+        ltEl.addEventListener("click", (ev)=>{
+          const t = ev?.target;
+          const chip = t?.closest?.("[data-lt-channel]");
+          const enc = chip ? String(chip.getAttribute("data-lt-channel") || "") : "";
+          const canal = enc ? decodeURIComponent(enc) : "";
+          if (!ltDate) return;
+          openFiltroLeadsIngreso({ dateISO: ltDate, channel: canal, idMarca: (state.idMarca || "") });
+        });
+      }
 
       // Nota UX: estas cards ya no abren leads al click porque el conteo depende del mes/entrada
       // y puede no coincidir con el filtro estándar del módulo Leads.
@@ -587,30 +665,51 @@
         return;
       }
 
-      let table = `<div class="scroll-x"><table class="table-mini"><thead><tr><th>Marca</th>`;
-      days.forEach(d => table += `<th class="right">${d.slice(8,10)}/${d.slice(5,7)}</th>`);
-      table += `<th class="right">Total</th></tr></thead><tbody>`;
-      brands.forEach(b=>{
-        table += `<tr><td><strong>${b}</strong></td>`;
-        days.forEach(d=>{
-          table += `<td class="right cell-sale" data-day="${d}">${cell(b,d)}</td>`;
-        });
-        table += `<td class="right"><strong>${fmtMoney(rowTotal(b))}</strong></td></tr>`;
-      });
+	      let table = `<div class="scroll-x"><table class="table-mini"><thead><tr><th>Marca</th>`;
+	      days.forEach(d => table += `<th class="right day-head" data-day="${d}"><span class="daylink">${d.slice(8,10)}/${d.slice(5,7)}</span></th>`);
+	      table += `<th class="right">Total</th></tr></thead><tbody>`;
+	      brands.forEach(b=>{
+	        table += `<tr><td><strong>${b}</strong></td>`;
+	        days.forEach(d=>{
+	          const row = daily.find(x => String(x?.marca||"").toUpperCase()===b && String(x?.dia||"").slice(0,10)===d);
+	          const val = Number(row?.monto || 0);
+	          const txt = val ? fmtMoney(val) : "—";
+	          table += `<td class="right cell-sale ${val ? "clickable" : ""}" data-day="${d}" data-brand="${esc(b)}" data-val="${String(val||0)}">${txt}</td>`;
+	        });
+	        table += `<td class="right"><strong>${fmtMoney(rowTotal(b))}</strong></td></tr>`;
+	      });
       table += `<tr><td class="muted"><strong>Total</strong></td>`;
       days.forEach(d=> table += `<td class="right muted"><strong>${fmtMoney(colTotal(d))}</strong></td>`);
       table += `<td class="right"><strong>${fmtMoney(total)}</strong></td></tr>`;
       table += `</tbody></table></div><div class="scroll-hint">Desliza horizontal para ver Lun→Dom</div>`;
       box.innerHTML = table;
 
-      $$(".cell-sale", box).forEach(td=>{
-        td.addEventListener("dblclick", ()=>{
-          const d = td.getAttribute("data-day") || "";
-          if (!d) return;
-          openConfirmedSales(d, d, state.idMarca || "", "agenda");
-        });
-      });
-    }
+	      const brandIdFromName = (brandUpper) => {
+	        const up = String(brandUpper || "").trim().toUpperCase();
+	        if (!up) return "";
+	        const entries = Object.entries(state.marcasMap || {});
+	        for (const [id, name] of entries){
+	          if (String(name || "").trim().toUpperCase() === up) return String(id);
+	        }
+	        return "";
+	      };
+	      $$(".cell-sale.clickable", box).forEach(td=>{
+	        td.addEventListener("click", ()=>{
+	          const d = String(td.getAttribute("data-day") || "").slice(0,10);
+	          const b = String(td.getAttribute("data-brand") || "").trim();
+	          if (!d) return;
+	          const bid = brandIdFromName(b);
+	          openConfirmedSales(d, d, bid || (state.idMarca || ""), "agenda");
+	        });
+	      });
+	      $$(".day-head", box).forEach(th=>{
+	        th.addEventListener("click", ()=>{
+	          const d = String(th.getAttribute("data-day") || "").slice(0,10);
+	          if (!d) return;
+	          openConfirmedSales(d, d, state.idMarca || "", "agenda");
+	        });
+	      });
+	    }
 
     function closeModals(){
       $("#dayModal").classList.remove("open");
@@ -758,7 +857,7 @@
       if (!card || card.style.display === "none") return;
 
       const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
-      const isAdmin = roleUp.includes("ADMIN");
+      const isAdmin = roleUp.includes("ADMIN") || roleUp.includes("SUPERADMIN");
 
       try{
         if (isAdmin){
@@ -809,11 +908,21 @@
       qs.set("week_offset", String(state.weekOffset || 0));
       qs.set("month_offset", String(state.monthOffset || 0));
       const r = await fetch(`${API_BASE}/tools/dashboard_v2?${qs.toString()}`, { headers: authHeaders() });
-      if (!r.ok) return null;
+      if (!r.ok){
+        try{
+          const txt = await r.text();
+          $("#dashSub").textContent = `Error Dashboard v2: HTTP ${r.status} · ${String(txt||"").slice(0,160)}`;
+        }catch(_){
+          $("#dashSub").textContent = `Error Dashboard v2: HTTP ${r.status}`;
+        }
+        return null;
+      }
       const j = await r.json();
       state.dv2 = j;
 
-      const mr = computeMonthRangeISO();
+      const mr = (j.month && j.month.start && j.month.end)
+        ? { from: String(j.month.start), to: String(j.month.end) }
+        : computeMonthRangeISO();
       $("#dashSub").textContent = `${brandLabel()} · Semana (${j.week?.start || ""} → ${j.week?.end || ""}) · Mes (${mr.from} → ${mr.to})`;
 
       const sale = j.sales || {};
@@ -832,7 +941,7 @@
       $("#kpiVentaMes").textContent = fmtMoney(mesTotal);
       $("#kpiVentaDiaBreak").textContent = `Neto ${fmtMoney(diaN)} + Traslado ${fmtMoney(diaT)}`;
       $("#kpiVentaSemanaBreak").textContent = `Neto ${fmtMoney(semN)} + Traslado ${fmtMoney(semT)}`;
-      $("#kpiVentaMesBreak").textContent = `Neto ${fmtMoney(mesN)} + Traslado ${fmtMoney(mesT)}`;
+	      $("#kpiVentaMesBreak").textContent = `Neto ${fmtMoney(mesN)} + Traslado ${fmtMoney(mesT)}`;
       const dCnt = sale?.venta_dia_cnt_total ?? 0;
       const dEmp = sale?.venta_dia_cnt_empresa ?? 0;
       const dPar = sale?.venta_dia_cnt_particular ?? 0;
@@ -844,12 +953,36 @@
       const mPar = sale?.venta_mes_cnt_particular ?? 0;
       $("#kpiVentaDiaCounts").textContent = `Leads: ${dCnt} · Emp: ${dEmp} · Part: ${dPar}`;
       $("#kpiVentaSemanaCounts").textContent = `Leads: ${wCnt} · Emp: ${wEmp} · Part: ${wPar}`;
-      $("#kpiVentaMesCounts").textContent = `Leads: ${mCnt} · Emp: ${mEmp} · Part: ${mPar}`;
+	      $("#kpiVentaMesCounts").textContent = `Leads: ${mCnt} · Emp: ${mEmp} · Part: ${mPar}`;
 
-      renderEstadoCards(j.estado_cards_total || j.estado_cards || []);
-      renderSalesDaily(j);
-      return j;
-    }
+	      // Meta / Año pasado / Runway (mes)
+	      try{
+	        const meta = Number(sale?.meta_mes_total || 0);
+	        const base = Number(sale?.base_mes_total || 0);
+	        const vsMeta = sale?.vs_meta_pct;
+	        const vsBase = sale?.vs_base_pct;
+	        const gap = Number(sale?.meta_gap || 0);
+	        const pace = sale?.pace || {};
+	        const curDay = pace?.current_per_day;
+	        const reqDay = pace?.required_per_day;
+	        const daysLeft = Number(pace?.days_left || 0);
+	        const parts = [];
+	        if (meta > 0) parts.push(`Meta mes: <strong>${fmtMoney(meta)}</strong>`);
+	        if (base > 0) parts.push(`Año pasado: <strong>${fmtMoney(base)}</strong>`);
+	        if (typeof vsMeta === "number") parts.push(`Avance meta: <strong>${vsMeta}%</strong>`);
+	        if (typeof vsBase === "number") parts.push(`Vs LY: <strong>${vsBase}%</strong>`);
+	        if (meta > 0) parts.push(`Faltan: <strong>${fmtMoney(gap)}</strong>`);
+	        if (typeof reqDay === "number" && daysLeft > 0) parts.push(`Requiere/día: <strong>${fmtMoney(reqDay)}</strong> (${daysLeft} día(s))`);
+	        else if (typeof curDay === "number") parts.push(`Ritmo actual/día: <strong>${fmtMoney(curDay)}</strong>`);
+	        const line = parts.length ? parts.join(" · ") : "—";
+	        const el = $("#kpiMetaLine");
+	        if (el) el.innerHTML = line;
+	      }catch(_){}
+
+	      renderEstadoCards(j.estado_cards_total || j.estado_cards || [], j.leads_today || {});
+	      renderSalesDaily(j);
+	      return j;
+	    }
 
     function bind(){
       $("#brandSel").addEventListener("change", (e)=>{ state.idMarca = e.target.value || ""; });
@@ -859,10 +992,10 @@
       $("#btnWeekNow").addEventListener("click", ()=>{ state.weekOffset = 0; refreshAll(); });
       $("#btnApply").addEventListener("click", ()=> refreshAll());
 
-      $("#btnGoTasks").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260406-tasks4" }, "*"));
-      $("#kpiTaskNew").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260406-tasks4&tab=leads" }, "*"));
-      $("#kpiTaskContact").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260406-tasks4&tab=leads" }, "*"));
-      $("#kpiTaskQuote").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260406-tasks4&tab=leads" }, "*"));
+      $("#btnGoTasks").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260421-tasks9" }, "*"));
+      $("#kpiTaskNew").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260421-tasks9&tab=leads" }, "*"));
+      $("#kpiTaskContact").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260421-tasks9&tab=leads" }, "*"));
+      $("#kpiTaskQuote").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260421-tasks9&tab=leads" }, "*"));
 
       $("#kpi1").addEventListener("click", ()=>{
         const today = new Date().toISOString().slice(0,10);
@@ -894,11 +1027,23 @@
       });
     }
 
-    async function refreshAll(){
-      await loadDashboardV2();
-      if ($("#eventsCard").style.display !== "none") await loadEvents(state.weekOffset || 0);
-      await loadTasks();
-    }
+	    async function refreshAll(){
+	      await loadDashboardV2();
+	      try{
+	        const ms = String(state.dv2?.month?.start || "").slice(0,10);
+	        const yyyy = ms.slice(0,4);
+	        const mm = ms.slice(5,7);
+	        const MONTHS = {
+	          "01":"ENERO","02":"FEBRERO","03":"MARZO","04":"ABRIL","05":"MAYO","06":"JUNIO",
+	          "07":"JULIO","08":"AGOSTO","09":"SEPTIEMBRE","10":"OCTUBRE","11":"NOVIEMBRE","12":"DICIEMBRE",
+	        };
+	        const label = (MONTHS[mm] ? `${MONTHS[mm]} ${yyyy}` : (ms || "—"));
+	        const el = $("#estadoSub");
+	        if (el) el.innerHTML = `Leads por estado · Mes: <strong>${label}</strong>`;
+	      }catch(_){}
+	      if ($("#eventsCard").style.display !== "none") await loadEvents(state.weekOffset || 0);
+	      await loadTasks();
+	    }
 
     async function init(){
       const params = new URLSearchParams(location.search || "");

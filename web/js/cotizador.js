@@ -73,21 +73,34 @@
 
   fechaCot.valueAsDate = new Date();
 
-  function enableEdit(input, btn){
-    if (!input || !btn) return;
-    const startReadonly = () => { input.setAttribute("readonly", "readonly"); };
-    const stopReadonly = () => { input.removeAttribute("readonly"); };
-    btn.addEventListener("click", ()=>{
-      const isRo = input.hasAttribute("readonly");
-      if (isRo){
-        stopReadonly();
-        try{ input.focus(); }catch(_){}
-      } else {
-        startReadonly();
+  function enableEditRow(row, textEl, input, btn, { onStop } = {}){
+    if (!row || !textEl || !input || !btn) return;
+    const fmtText = () => {
+      const v = String(input.value || "").trim();
+      if (input.type === "date" && /^\d{4}-\d{2}-\d{2}$/.test(v)){
+        return `${v.slice(8,10)}/${v.slice(5,7)}/${v.slice(0,4)}`;
       }
+      return v || "—";
+    };
+    const stop = () => {
+      row.classList.remove("editing");
+      textEl.textContent = fmtText();
+      try{ if (typeof onStop === "function") onStop(); }catch(_){}
+    };
+    const start = () => {
+      row.classList.add("editing");
+      try{ input.focus(); }catch(_){}
+    };
+    btn.addEventListener("click", ()=>{
+      if (row.classList.contains("editing")) stop();
+      else start();
     });
-    input.addEventListener("blur", ()=> startReadonly());
-    startReadonly();
+    input.addEventListener("blur", stop);
+    input.addEventListener("keydown", (e)=>{
+      if (e.key === "Enter") { e.preventDefault(); stop(); }
+      if (e.key === "Escape") { e.preventDefault(); stop(); }
+    });
+    stop();
   }
 
   function normKey(s){
@@ -124,14 +137,38 @@
 
   async function getLead() {
     lead = await fetchJson(`/leads/${leadId}`);
-    cliente.value = lead.cliente || "";
-    email.value = lead.email || "";
-    telefono.value = lead.telefono || "";
-    comuna.value = lead.comuna_nombre || lead.comuna || "";
-    direccion.value = lead.direccion || "";
+    cliente.value =
+      lead.cliente ||
+      lead.nombre_cliente ||
+      lead.nombre_contacto ||
+      lead.contacto ||
+      lead.nombre ||
+      lead.name ||
+      lead.razon_social ||
+      "";
+    email.value = lead.email || lead.mail || lead.correo || lead.email_cliente || "";
+    telefono.value =
+      lead.telefono ||
+      lead.telefono1 ||
+      lead.celular ||
+      lead.telefono_cliente ||
+      lead.ventas_telefono ||
+      "";
+    comuna.value = lead.comuna_nombre || lead.comuna || lead.comuna_txt || "";
+    direccion.value = lead.direccion || lead.direccion1 || lead.direccion_txt || "";
     fechaEvento.value = (lead.fecha_evento || "").substring(0,10);
     tipoCliente = (lead.tipo_cliente_nombre || lead.tipo_cliente || "Persona");
     if (lead.logo_url) logoMarca.src = lead.logo_url;
+    try{
+      $("clienteText").textContent = String(cliente.value || "").trim() || "—";
+      $("emailText").textContent = String(email.value || "").trim() || "—";
+      $("telefonoText").textContent = String(telefono.value || "").trim() || "—";
+      $("comunaText").textContent = String(comuna.value || "").trim() || "—";
+      $("direccionText").textContent = String(direccion.value || "").trim() || "—";
+      const fe = String(fechaEvento.value || "").trim();
+      $("fechaEventoText").textContent = (/^\d{4}-\d{2}-\d{2}$/.test(fe)) ? `${fe.slice(8,10)}/${fe.slice(5,7)}/${fe.slice(0,4)}` : (fe || "—");
+      $("tipoClienteLbl").textContent = String(tipoCliente || "—");
+    }catch(_){}
   }
 
   async function getCatalogos() {
@@ -550,6 +587,10 @@
       id_lead: leadId,
       cliente: cliente.value || lead?.cliente,
       nombre_cliente: cliente.value || lead?.cliente,
+      email: email.value || lead?.email || null,
+      telefono: telefono.value || lead?.telefono || null,
+      comuna: comuna.value || lead?.comuna || null,
+      direccion: direccion.value || lead?.direccion || null,
       marca: lead?.marca_nombre || lead?.marca || "",
       fecha_evento: fechaEvento.value || lead?.fecha_evento || null,
       tipo_cliente: tipoCliente || "",
@@ -705,10 +746,17 @@
     traslado.value = calcTraslado();
     await getQuotesHistory();
     await getProductos();
-    enableEdit(cliente, $("editCliente"));
-    enableEdit(email, $("editEmail"));
-    enableEdit(telefono, $("editTelefono"));
-    enableEdit(fechaEvento, $("editFechaEvento"));
+    enableEditRow(cliente.closest(".fieldRow"), $("clienteText"), cliente, $("editCliente"));
+    enableEditRow(email.closest(".fieldRow"), $("emailText"), email, $("editEmail"));
+    enableEditRow(telefono.closest(".fieldRow"), $("telefonoText"), telefono, $("editTelefono"));
+    enableEditRow(fechaEvento.closest(".fieldRow"), $("fechaEventoText"), fechaEvento, $("editFechaEvento"));
+    enableEditRow(comuna.closest(".fieldRow"), $("comunaText"), comuna, $("editComuna"), {
+      onStop: () => {
+        try{ traslado.value = calcTraslado(); }catch(_){}
+        try{ calcTotals(); }catch(_){}
+      },
+    });
+    enableEditRow(direccion.closest(".fieldRow"), $("direccionText"), direccion, $("editDireccion"));
     calcTotals();
   } catch (e) {
     console.error(e);

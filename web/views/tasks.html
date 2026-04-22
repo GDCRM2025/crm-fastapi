@@ -208,6 +208,7 @@
           <option value="skipped">Omitidas</option>
         </select>
         <select id="selUser" class="sel" title="Usuario" style="display:none; min-width:260px"></select>
+        <span class="pill" id="viewAs" style="display:none;">Viendo: —</span>
         <button id="btnSync" class="btn primary" type="button">Sincronizar</button>
         <button id="btnReload" class="btn" type="button">Actualizar</button>
         <button id="btnRules" class="btn" type="button">Reglas</button>
@@ -250,8 +251,11 @@
         </div>
       </div>
       <div class="pill" id="mlBox" style="display:none; margin-top:10px; border-radius:16px; padding:12px;">
-        <div style="font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:11px; opacity:.82">Asistente</div>
-        <div class="muted" style="margin-top:6px">Siguiente mejor acción (top 5). Ordenado por score (reglas explicables).</div>
+        <div
+          style="font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:11px; opacity:.82"
+          title="Asistente = Top 5 tareas más urgentes. Prioriza por fecha de evento más próxima y luego por vencimiento/prioridad."
+        >Asistente</div>
+        <div class="muted" style="margin-top:6px">Top 5 “qué hago ahora”: primero <strong>fecha de evento</strong>, luego <strong>vencimiento/prioridad</strong>.</div>
         <div id="mlNext" style="display:flex; flex-direction:column; gap:8px; margin-top:10px"></div>
       </div>
       <div class="muted" style="margin-top:-2px">Agrupado por estado del lead: Nuevos / Contactados / Cotizados.</div>
@@ -335,10 +339,23 @@
       if (s.startsWith("/")) return API_BASE + s;
       return s;
     }
+    let TOKEN_OVERRIDE = "";
+    window.addEventListener("message", (ev)=>{
+      const d = ev?.data || {};
+      if (d?.type === "auth" && d?.token){
+        TOKEN_OVERRIDE = String(d.token || "");
+        try{ sessionStorage.setItem("gd_token", TOKEN_OVERRIDE); }catch(_){}
+      }
+    });
     function getToken(){
       return (
+        TOKEN_OVERRIDE ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("accessToken") ||
         localStorage.getItem("token") ||
         localStorage.getItem("gd_token") ||
+        sessionStorage.getItem("access_token") ||
+        sessionStorage.getItem("accessToken") ||
         sessionStorage.getItem("token") ||
         sessionStorage.getItem("gd_token") ||
         ""
@@ -477,12 +494,31 @@
 
     let CTX = { uid:null, is_admin:false, role:"", username:"" };
     let TARGET_UID = null; // admin "ver como"
+    let ADMIN_USERS = [];  // cache /tasks/admin/users
 
     function qpTarget(){
       return (TARGET_UID && Number(TARGET_UID) > 0) ? `&for_user_id=${encodeURIComponent(String(TARGET_UID))}` : "";
     }
 
     async function sync(){
+      // SUPERADMIN: modo "Todos"
+      if (TARGET_UID === "__ALL__"){
+        try{
+          const sum = await jget("/tasks/summary?scope=all");
+          qs("#pOpen").textContent = `Abiertas: ${sum?.open_total ?? "—"}`;
+          qs("#pOver").textContent = `Vencidas: ${sum?.overdue_total ?? "—"}`;
+          qs("#pNew").textContent = `Nuevos: ${sum?.open_nuevos ?? "—"}`;
+          qs("#pContacted").textContent = `Contactados: ${sum?.open_contactados ?? "—"}`;
+          qs("#pQuoted").textContent = `Cotizados: ${sum?.open_cotizados ?? "—"}`;
+        }catch(_){}
+
+        const targets = (ADMIN_USERS || []).filter(u => Number(u?.open||0) > 0).slice(0, 20);
+        for (const u of targets){
+          try{ await jpost(`/tasks/sync?x=1&for_user_id=${encodeURIComponent(String(u.id))}`, {}); }catch(_){}
+        }
+        return;
+      }
+
       const j = await jpost(`/tasks/sync?x=1${qpTarget()}`, {});
       const leadsCount = Number(j?.counts?.open_nuevos || 0) + Number(j?.counts?.open_contactados || 0) + Number(j?.counts?.open_cotizados || 0);
       const cobrosCount = Number(j?.counts?.open_cobros || 0);
@@ -506,6 +542,7 @@
       const over = (t.status==="open" && isOverdue(t.due_at));
       const kind = String(t.kind||"").toUpperCase();
       const cal = calendarTone(t.lead_fecha_evento);
+      const who = String(t?._user_name || "").trim();
       const dueHint = (() => {
         try{
           const d = parseDue(t.due_at);
@@ -523,7 +560,7 @@
           <td><span class="pill ${over ? "bad" : ""}">${esc(prLabel(t.priority))}</span></td>
           <td><strong>${esc(t.title||t.kind||"—")}</strong><div class="muted">${esc(t.description||"")}</div></td>
           <td><strong>${esc(t.lead_cliente||"—")}</strong><div class="muted">#${esc(t.entity_id||"")}</div></td>
-          <td class="muted">${esc(t.lead_marca||"")}</td>
+          <td class="muted">${esc(t.lead_marca||"")}${who ? `<div class="muted">👤 ${esc(who)}</div>` : ""}</td>
           <td class="muted">${esc(t.lead_estado||"")}</td>
           <td><span class="pill ${esc(cal.cls)}" title="${esc(cal.title)}">📅 ${esc(fmtDateOnly(t.lead_fecha_evento))}</span></td>
           <td><span class="pill ${over ? "bad" : ""}">${esc(fmtDue(t.due_at))}</span><div class="muted">${esc(dueHint)}</div></td>
@@ -543,12 +580,13 @@
       const idLead = meta.id_lead || meta.lead_id || "";
       const saldo = Number(meta.saldo || 0) || 0;
       const cal = calendarTone(t.lead_fecha_evento);
+      const who = String(t?._user_name || "").trim();
       return `
         <tr data-task="${esc(t.id_task)}" data-lead="${esc(idLead)}" data-kind="${esc(String(t.kind||""))}" data-etype="${esc(t.entity_type||"")}" data-eid="${esc(t.entity_id||"")}">
           <td><span class="pill ${over ? "bad" : ""}">${esc(prLabel(t.priority))}</span></td>
           <td><strong>${esc(t.title||t.kind||"—")}</strong><div class="muted">${esc(t.description||"")}</div></td>
           <td><strong>${esc(t.lead_cliente||"—")}</strong><div class="muted">#${esc(idLead||"—")}</div></td>
-          <td class="muted">${esc(t.lead_marca||"")}</td>
+          <td class="muted">${esc(t.lead_marca||"")}${who ? `<div class="muted">👤 ${esc(who)}</div>` : ""}</td>
           <td><span class="pill ${esc(cal.cls)}" title="${esc(cal.title)}">📅 ${esc(fmtDateOnly(t.lead_fecha_evento))}</span></td>
           <td><span class="pill ${over ? "bad" : ""}">${esc(money.format(saldo))}</span></td>
           <td>
@@ -562,12 +600,37 @@
 
     async function load(){
       const st = String(qs("#status")?.value || "open");
-      const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0${qpTarget()}`);
-      const items = Array.isArray(j.items) ? j.items : [];
+      let items = [];
+      if (TARGET_UID === "__ALL__"){
+        const targets = (ADMIN_USERS || []).filter(u => Number(u?.open||0) > 0).slice(0, 20);
+        const packs = [];
+        for (const u of targets){
+          try{
+            const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0&for_user_id=${encodeURIComponent(String(u.id))}`);
+            const arr = Array.isArray(j.items) ? j.items : [];
+            arr.forEach(t => { t._user_name = u.name || String(u.id); });
+            packs.push(...arr);
+          }catch(_){}
+        }
+        items = packs;
+      }else{
+        const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0${qpTarget()}`);
+        items = Array.isArray(j.items) ? j.items : [];
+      }
       const norm = (s)=> String(s||"").trim().toUpperCase();
       const isCobro = (t)=> norm(t.kind) === "COBRO_PENDIENTE";
       const score = (t)=> Number(t?.score || t?.meta?.score || 0) || 0;
-      const sortBest = (a,b)=> (score(b)-score(a)) || (Number(a.priority||0)-Number(b.priority||0)) || (String(a.due_at||"").localeCompare(String(b.due_at||""))) || (Number(b.id_task||0)-Number(a.id_task||0));
+      function _eventKey(t){
+        const d = String(t?.lead_fecha_evento || "").slice(0,10);
+        return (d && d.length === 10) ? d : "9999-12-31";
+      }
+      const sortBest = (a,b)=> (
+        _eventKey(a).localeCompare(_eventKey(b)) ||
+        (score(b)-score(a)) ||
+        (Number(a.priority||0)-Number(b.priority||0)) ||
+        (String(a.due_at||"").localeCompare(String(b.due_at||""))) ||
+        (Number(b.id_task||0)-Number(a.id_task||0))
+      );
       const cobros = items.filter(isCobro);
       const leads = items.filter(t => !isCobro(t));
 
@@ -621,7 +684,7 @@
                     ${hint ? `<div class="muted" style="margin-top:4px">Sugerencia: ${esc(hint)}</div>` : ""}
                   </div>
                   <div style="display:flex; gap:8px; align-items:center">
-                    <button class="btn primary" data-act="go" data-task="${esc(t.id_task)}" data-lead="${esc(idLead||"")}" data-etype="${esc(t.entity_type||"")}" data-kind="${esc(String(t.kind||\"\"))}">${btn}</button>
+	                    <button class="btn primary" data-act="go" data-task="${esc(t.id_task)}" data-lead="${esc(idLead||"")}" data-etype="${esc(t.entity_type||"")}" data-kind="${esc(String(t.kind||""))}">${btn}</button>
                   </div>
                 </div>
               `;
@@ -908,23 +971,43 @@
         try{
           const j = await jget("/tasks/admin/users");
           const items = Array.isArray(j.items) ? j.items : [];
+          ADMIN_USERS = items;
           const sel = qs("#selUser");
+          const viewAs = qs("#viewAs");
           if (sel && items.length){
             sel.style.display = "";
+            if (viewAs) viewAs.style.display = "";
             const saved = localStorage.getItem("gd_tasks_for_uid") || "";
             sel.innerHTML =
+              `<option value="__ALL__">(Todos)</option>` +
               `<option value="">(Mi usuario)</option>` +
               items.map(u => `<option value="${esc(u.id)}">${esc(u.name)} · ${esc(u.open||0)} abiertas</option>`).join("");
             if (saved) sel.value = saved;
             if (!sel.value){
-              const best = items.find(u => Number(u.open||0) > 0) || items[0];
-              if (best) sel.value = String(best.id);
+              // SUPERADMIN: por defecto ve TODO
+              sel.value = "__ALL__";
             }
-            TARGET_UID = sel.value ? Number(sel.value) : null;
+            TARGET_UID = (sel.value === "__ALL__") ? "__ALL__" : (sel.value ? Number(sel.value) : null);
+            if (viewAs){
+              const label = (TARGET_UID === "__ALL__")
+                ? "Todos"
+                : (TARGET_UID
+                    ? (items.find(u => Number(u.id) === Number(TARGET_UID))?.name || `UID ${String(TARGET_UID)}`)
+                    : (CTX?.username || "Mi usuario"));
+              viewAs.textContent = `Viendo: ${label}`;
+            }
             sel.addEventListener("change", async ()=>{
               const v = String(sel.value||"");
               try{ localStorage.setItem("gd_tasks_for_uid", v); }catch(_){}
-              TARGET_UID = v ? Number(v) : null;
+              TARGET_UID = (v === "__ALL__") ? "__ALL__" : (v ? Number(v) : null);
+              if (viewAs){
+                const label = (TARGET_UID === "__ALL__")
+                  ? "Todos"
+                  : (TARGET_UID
+                      ? (items.find(u => Number(u.id) === Number(TARGET_UID))?.name || `UID ${String(TARGET_UID)}`)
+                      : (CTX?.username || "Mi usuario"));
+                viewAs.textContent = `Viendo: ${label}`;
+              }
               clearErr();
               try{ await sync(); }catch(e){ showErr("sync", e); }
               try{ await load(); }catch(e){ showErr("load", e); }

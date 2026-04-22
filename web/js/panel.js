@@ -581,6 +581,15 @@ function initThemeToggle() {
     var _a;
     applyTheme(getTheme());
     applyPrefs(getPrefs());
+    // Propaga auth al iframe (evita vistas sin token cuando el storage difiere).
+    try {
+      const frame = qs("#mainFrame");
+      const t = getToken();
+      if (t && (frame == null ? void 0 : frame.contentWindow)) {
+        frame.contentWindow.postMessage({ type: "auth", token: t }, "*");
+      }
+    } catch (_) {
+    }
     try {
       const fr = qs("#mainFrame");
       const doc = fr == null ? void 0 : fr.contentDocument;
@@ -1820,7 +1829,7 @@ const MENU = [
     ico: "\u{1F9FE}",
     title: "Tareas",
     items: [
-      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260406-tasks4" },
+      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260421-tasks9" },
       { id: "events_calendar", label: "Eventos (Calendario)", url: "/web/views/events_calendar.html?v=20260330-1" }
     ]
   },
@@ -2842,7 +2851,7 @@ function bindTopbar() {
   var _a, _b, _c, _d;
   (_a = qs("#brandHome")) == null ? void 0 : _a.addEventListener("click", () => {
     if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {
-      openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260420-dashclean1" });
+      openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260421-kpis8" });
     } else {
       const first = findFirstAllowedItem();
       if (first) openItem(first);
@@ -3068,7 +3077,7 @@ function openDefault() {
     return;
   }
   if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {
-    openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260420-dashclean1" });
+    openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260421-kpis8" });
     return;
   }
   const first = findFirstAllowedItem();

@@ -4473,7 +4473,12 @@ def dashboard_v2(
 
     role = (me.get("role") or me.get("rol") or "").upper().strip()
     marcas = _fetch_marcas_ids(db, me)
-    only_own = not _is_admin(role)
+    # Requisito negocio: solo SUPERADMIN ve el total global; el resto se limita a sus marcas.
+    try:
+        is_super = bool(_is_superadmin(me))  # type: ignore[name-defined]
+    except Exception:
+        is_super = role in ("SUPERADMIN", "SUPER_ADMIN", "SUPER ADMIN")
+    only_own = not is_super
 
     if only_own and not marcas:
         return {
@@ -4519,6 +4524,7 @@ def dashboard_v2(
 
     has_agenda = _col_exists(db, "leads", "agenda_approved_at")
     agenda_expr = "(l.agenda_approved_at AT TIME ZONE 'America/Santiago')::date" if has_agenda else "l.fecha_evento::date"
+    source_col = "plataforma" if _col_exists(db, "leads", "plataforma") else None
     # tipo_cliente existe (agregado en migración hotfix); fallback por IVA de cotización
     has_tipo = _col_exists(db, "leads", "tipo_cliente")
     tipo_expr = "COALESCE(UPPER(l.tipo_cliente),'SIN')" if has_tipo else "COALESCE(CASE WHEN COALESCE(c.iva,0) > 0 THEN 'EMPRESA' ELSE 'PARTICULAR' END,'SIN')"
@@ -4608,6 +4614,59 @@ def dashboard_v2(
     week = _agg(agenda_expr, week_start, week_end)
     month = _agg("l.fecha_evento::date", month_start, month_end)
 
+    # Meta/Base (año pasado) del mes (metas_marca_mensual)
+    meta_mes_total = 0
+    base_mes_total = 0
+    try:
+        if _table_exists_pg(db, "metas_marca_mensual"):
+            meta_params: dict[str, Any] = {"y": int(month_start.year), "m": int(month_start.month)}
+            meta_filter_sql = ""
+            # aplica el mismo scope que el filtro de marcas del usuario
+            if "id_marca" in marca_params and marca_params.get("id_marca"):
+                meta_filter_sql = " AND mm.id_marca = :id_marca "
+                meta_params["id_marca"] = int(marca_params["id_marca"])
+            elif only_own and marcas:
+                meta_filter_sql = " AND mm.id_marca = ANY(:marcas) "
+                meta_params["marcas"] = marcas
+
+            mr = (
+                db.execute(
+                    text(
+                        f"""
+                        SELECT
+                          COALESCE(SUM(COALESCE(mm.meta,0)),0)::bigint AS meta,
+                          COALESCE(SUM(COALESCE(mm.venta_base,0)),0)::bigint AS base
+                        FROM public.metas_marca_mensual mm
+                        WHERE mm.year = :y
+                          AND mm.month = :m
+                          {meta_filter_sql}
+                        """
+                    ),
+                    meta_params,
+                )
+                .mappings()
+                .first()
+                or {}
+            )
+            meta_mes_total = int(mr.get("meta") or 0)
+            base_mes_total = int(mr.get("base") or 0)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        meta_mes_total = 0
+        base_mes_total = 0
+
+    # Progreso hacia la meta (runway)
+    days_total = int((month_end - month_start).days + 1)
+    days_elapsed = int((min(today, month_end) - month_start).days + 1) if today >= month_start else 0
+    days_left = max(0, int((month_end - min(today, month_end)).days))
+    month_total_i = int(month.get("total") or 0)
+    meta_gap = max(0, int(meta_mes_total - month_total_i))
+    pace_current_per_day = (month_total_i / days_elapsed) if days_elapsed > 0 else None
+    pace_required_per_day = (meta_gap / days_left) if (meta_mes_total > 0 and days_left > 0) else None
+
     # Ventas diarias por marca (semana): rellenar todos los días Lun-Dom
     week_days = [week_start + timedelta(days=i) for i in range(7)]
     week_days_s = [str(d) for d in week_days]
@@ -4692,7 +4751,8 @@ def dashboard_v2(
                 f"""
                 SELECT
                   COUNT(*)::int AS cantidad,
-                  COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS monto
+                  COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS monto,
+                  MIN(l.fecha_evento::date) AS next_event
                 FROM public.leads l
                 WHERE l.id_estado = :eid
                   AND l.fecha_evento::date BETWEEN :d1 AND :d2
@@ -4701,6 +4761,42 @@ def dashboard_v2(
             ),
             {"eid": st_id, **params},
         ).mappings().first() or {}
+
+        channels: list[dict[str, Any]] = []
+        if source_col:
+            try:
+                ch_rows = (
+                    db.execute(
+                        text(
+                            f"""
+                            SELECT
+                              COALESCE(NULLIF(btrim(COALESCE(l.{source_col},'')),''),'—') AS canal,
+                              COUNT(*)::int AS cantidad,
+                              COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS monto
+                            FROM public.leads l
+                            WHERE l.id_estado = :eid
+                              AND l.fecha_evento::date BETWEEN :d1 AND :d2
+                              {marca_sql}
+                            GROUP BY 1
+                            ORDER BY 2 DESC, 1 ASC
+                            """
+                        ),
+                        {"eid": st_id, **params},
+                    )
+                    .mappings()
+                    .all()
+                )
+                channels = [
+                    {"canal": str(x.get("canal") or "—"), "cantidad": int(x.get("cantidad") or 0), "monto": int(x.get("monto") or 0)}
+                    for x in ch_rows
+                ]
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                channels = []
+
         estado_cards.append(
             {
                 "id_estado": st_id,
@@ -4708,8 +4804,72 @@ def dashboard_v2(
                 "color": st.get("color") or "",
                 "cantidad": int(r.get("cantidad") or 0),
                 "monto": int(r.get("monto") or 0),
+                "next_event": (str(r.get("next_event")) if r.get("next_event") else None),
+                "channels": channels,
             }
         )
+
+    # Prioridad: ordenar por el evento más próximo (fecha_evento mínima) asc, dejando None al final.
+    def _card_key(c: dict[str, Any]) -> tuple[int, str]:
+        ne = c.get("next_event")
+        if ne:
+            return (0, str(ne))
+        return (1, "9999-12-31")
+
+    estado_cards.sort(key=_card_key)
+
+    # Leads que llegaron hoy (por ingreso/created_at) + resumen por canal
+    entry_col = "fecha_ingreso" if _col_exists(db, "leads", "fecha_ingreso") else ("created_at" if _col_exists(db, "leads", "created_at") else None)
+    leads_today = {"date": str(today), "total_cnt": 0, "total_monto": 0, "by_channel": []}
+    if entry_col:
+        entry_expr = f"(l.{entry_col} AT TIME ZONE 'America/Santiago')::date"
+        base_params = {"d": str(today), **marca_params}
+        r = (
+            db.execute(
+                text(
+                    f"""
+                    SELECT
+                      COUNT(*)::int AS cnt,
+                      COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS monto
+                    FROM public.leads l
+                    WHERE {entry_expr} = :d
+                      {marca_sql}
+                    """
+                ),
+                base_params,
+            )
+            .mappings()
+            .first()
+            or {}
+        )
+        leads_today["total_cnt"] = int(r.get("cnt") or 0)
+        leads_today["total_monto"] = int(r.get("monto") or 0)
+
+        if source_col:
+            ch_rows = (
+                db.execute(
+                    text(
+                        f"""
+                        SELECT
+                          COALESCE(NULLIF(btrim(COALESCE(l.{source_col},'')),''),'—') AS canal,
+                          COUNT(*)::int AS cnt,
+                          COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS monto
+                        FROM public.leads l
+                        WHERE {entry_expr} = :d
+                          {marca_sql}
+                        GROUP BY 1
+                        ORDER BY 2 DESC, 1 ASC
+                        """
+                    ),
+                    base_params,
+                )
+                .mappings()
+                .all()
+            )
+            leads_today["by_channel"] = [
+                {"canal": str(x.get("canal") or ""), "cnt": int(x.get("cnt") or 0), "monto": int(x.get("monto") or 0)}
+                for x in ch_rows
+            ]
 
     # Eventos confirmados (semana, fecha_evento) + preview de productos (si existe pre_products_text)
     pre_products_expr = _lead_col(db, "pre_products_text")
@@ -4760,6 +4920,18 @@ def dashboard_v2(
             "ok": True,
             "confirmado_id": int(confirmado_id),
             "basis": {"dia": ("agenda_approved_at" if has_agenda else "fecha_evento"), "semana": ("agenda_approved_at" if has_agenda else "fecha_evento"), "mes": "fecha_evento"},
+            "meta_mes_total": int(meta_mes_total),
+            "base_mes_total": int(base_mes_total),
+            "vs_meta_pct": (round((month_total_i / meta_mes_total) * 100.0, 2) if meta_mes_total else None),
+            "vs_base_pct": (round((month_total_i / base_mes_total) * 100.0, 2) if base_mes_total else None),
+            "meta_gap": int(meta_gap),
+            "pace": {
+                "days_total": int(days_total),
+                "days_elapsed": int(days_elapsed),
+                "days_left": int(days_left),
+                "current_per_day": (round(float(pace_current_per_day), 2) if pace_current_per_day is not None else None),
+                "required_per_day": (round(float(pace_required_per_day), 2) if pace_required_per_day is not None else None),
+            },
             "venta_dia_total": day["total"],
             "venta_dia_neta": day["neto"],
             "venta_dia_traslado": day["traslado"],
@@ -4796,6 +4968,7 @@ def dashboard_v2(
             "mes_by_brand": month["by_brand"],
         },
         "estado_cards": estado_cards,
+        "leads_today": leads_today,
         "sales_week_daily_by_brand": {"days": week_days_s, "rows": daily_rows},
         "events_confirmed": events_confirmed,
     }

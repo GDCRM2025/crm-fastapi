@@ -534,8 +534,9 @@
 	        });
 	        tb.appendChild(tr);
 	      }
-	      qs("#hint").textContent = `${rows.length} resultados`;
-	    }
+		      const totalMonto = rows.reduce((a,x)=> a + Number(x?.monto_cotizado || 0), 0);
+		      qs("#hint").textContent = `${rows.length} resultados · Monto total: ${money(totalMonto)}`;
+		    }
 
     function applyFilters(all){
       const q=(qs("#q").value||"").trim().toLowerCase();

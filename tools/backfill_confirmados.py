@@ -20,11 +20,18 @@ se deja su `monto_cotizado` tal como está (pero se puede normalizar `tipo_clien
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
 
-from backend.core.database import engine
+# Permite ejecutar el script desde cualquier cwd (y sin instalar el paquete).
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from backend.core.database import engine  # noqa: E402
 
 
 def _cols(table: str) -> set[str]:
@@ -73,20 +80,41 @@ def main() -> int:
     if not has_cot_id:
         raise SystemExit("public.cotizaciones no tiene id_cotizacion; no puedo enlazar cotizaciones.")
 
-    # Expresión neta (productos): priorizamos subtotal_productos -> subtotal -> (total - iva - traslado) -> 0
-    parts = []
-    if "subtotal_productos" in cot_cols:
-        parts.append("c.subtotal_productos")
-    if "subtotal" in cot_cols:
-        parts.append("c.subtotal")
-    if "total" in cot_cols and ("iva" in cot_cols or "traslado" in cot_cols):
-        iva_expr = "COALESCE(c.iva,0)" if "iva" in cot_cols else "0"
-        tr_expr = "COALESCE(c.traslado,0)" if "traslado" in cot_cols else "0"
-        parts.append(f"(c.total - {iva_expr} - {tr_expr})")
-    base_neto_expr = "COALESCE(" + ", ".join(parts + ["0"]) + ")"
-
-    traslado_expr = "COALESCE(c.traslado,0)" if "traslado" in cot_cols else "0"
+    # total_neto (sin IVA) debe ser: (subtotal_productos - descuento) + traslado.
+    # Si existe una columna explícita (total_neto / monto_neto / neto), la preferimos.
     iva_expr = "COALESCE(c.iva,0)" if "iva" in cot_cols else "0"
+    traslado_expr = "COALESCE(c.traslado,0)" if "traslado" in cot_cols else "0"
+    parts_total_neto: list[str] = []
+    # Columnas explícitas
+    for col in ("total_neto", "monto_neto", "neto"):
+        if col in cot_cols:
+            parts_total_neto.append(f"c.{col}")
+    # Fallback: subtotal_productos/subtotal + traslado - descuento
+    sub_parts = []
+    for col in ("subtotal_productos", "subtotal"):
+        if col in cot_cols:
+            sub_parts.append(f"c.{col}")
+    sub_expr = "COALESCE(" + ", ".join(sub_parts + ["0"]) + ")"
+    # descuento: puede venir como (descuento_valor, descuento_tipo) o como descuento directo
+    if "descuento_valor" in cot_cols:
+        if "descuento_tipo" in cot_cols:
+            desc_calc = (
+                f"CASE WHEN COALESCE(NULLIF(btrim(c.descuento_tipo),''),'$') = '%'"
+                f" THEN ({sub_expr} * (COALESCE(c.descuento_valor,0)/100.0))"
+                f" ELSE COALESCE(c.descuento_valor,0) END"
+            )
+        else:
+            desc_calc = "COALESCE(c.descuento_valor,0)"
+    elif "descuento" in cot_cols:
+        desc_calc = "COALESCE(c.descuento,0)"
+    else:
+        desc_calc = "0"
+    # Protege de descuentos > subtotal
+    parts_total_neto.append(f"(GREATEST(0, ({sub_expr} - ({desc_calc}))) + {traslado_expr})")
+    # Último fallback: total - iva
+    if "total" in cot_cols:
+        parts_total_neto.append(f"(COALESCE(c.total,0) - {iva_expr})")
+    total_neto_expr = "COALESCE(" + ", ".join(parts_total_neto + ["0"]) + ")"
 
     plan: list[str] = []
     if not has_tipo:
@@ -105,8 +133,7 @@ def main() -> int:
         print()
         print("INFO:")
         print("confirm_id=", confirm_id)
-        print("base_neto_expr=", base_neto_expr)
-        print("traslado_expr=", traslado_expr)
+        print("total_neto_expr=", total_neto_expr)
         print("iva_expr=", iva_expr)
         return 0
 
@@ -168,7 +195,7 @@ def main() -> int:
                 f"""
                 UPDATE public.leads l
                 SET
-                  monto_cotizado = ({base_neto_expr} + {traslado_expr}),
+                  monto_cotizado = ({total_neto_expr}),
                   tipo_cliente   = CASE WHEN {iva_expr} > 0 THEN 'EMPRESA' ELSE 'PARTICULAR' END
                   {", updated_at=now()" if has_updated_at else ""}
                 FROM public.cotizaciones c

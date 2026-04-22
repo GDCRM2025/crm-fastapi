@@ -116,7 +116,7 @@ const MENU = [
     ico: "🧾",
     title: "Cotizador",
     items: [
-      { id: "cotizador_view", label: "Cotizador", url: "/web/views/cotizador.html" },
+      { id: "cotizador_view", label: "Cotizador", url: "/web/views/cotizador.html?v=20260421-cotpretty3" },
       { id: "historial", label: "Historial", url: "/web/views/historial_cotizaciones.html" },
     ],
   },
