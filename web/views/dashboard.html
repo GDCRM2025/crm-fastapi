@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="gd-build" content="20260421-kpis8" />
+  <meta name="gd-build" content="20260421-kpis9" />
   <title>Dashboard</title>
   <link rel="stylesheet" href="../styles.css?v=20260320-6" />
   <script src="../js/iframe-theme.js"></script>
@@ -518,10 +518,10 @@
       $("#eventsCard").style.display = isOps ? "none" : "";
     }
 
-    function renderEstadoCards(items, leadsToday){
-      const box = $("#estadoCards");
-      if (!box) return;
-      const arr = Array.isArray(items) ? items : [];
+	    function renderEstadoCards(items, leadsToday){
+	      const box = $("#estadoCards");
+	      if (!box) return;
+	      const arr = Array.isArray(items) ? items : [];
 
       const totalCount = arr.reduce((a,x)=> a + Number(x?.cantidad||0), 0);
       const totalAmt = arr.reduce((a,x)=> a + Number(x?.monto||0), 0);
@@ -582,7 +582,7 @@
         return `<span class="chip linkish" data-lt-channel="${esc(canalEnc)}">${label}: ${cnt}${amt ? " · " + fmtMoney(amt) : ""}</span>`;
       }).join("");
       const ltCard = `
-        <div class="state" style="grid-column: span 12; cursor:pointer;" data-lt="1" title="Click: ver leads ingresados hoy">
+        <div class="state" style="grid-column: span 3; cursor:pointer;" data-lt="1" title="Click: ver leads ingresados hoy">
           <div class="head">
             <div class="name">HOY LLEGARON</div>
             ${ltDate ? `<div class="muted" style="margin-top:6px">${ltDate}</div>` : ""}
@@ -595,7 +595,8 @@
         </div>
       `;
 
-      box.innerHTML = ltCard + mk({}, true) + arr.map(x=>mk(x,false)).join("");
+      // Orden deseado: TOTAL primero, luego HOY LLEGARON, luego estados.
+      box.innerHTML = mk({}, true) + ltCard + arr.map(x=>mk(x,false)).join("");
 
       // Click: abre filtro leads por ingreso de hoy (opcional canal)
       const ltEl = box.querySelector?.("[data-lt='1']");
@@ -614,29 +615,18 @@
       // y puede no coincidir con el filtro estándar del módulo Leads.
     }
 
-    function renderSalesDaily(dv2){
-      const box = $("#salesDaily");
-      if (!box) return;
-      const week = dv2?.week || {};
-      const sales = dv2?.sales || {};
-      let daily = Array.isArray(sales?.semana_daily_by_brand) ? sales.semana_daily_by_brand : [];
-      // Fallback: estructura compacta {days,rows}
-      if (!daily.length && dv2?.sales_week_daily_by_brand && Array.isArray(dv2.sales_week_daily_by_brand.days) && Array.isArray(dv2.sales_week_daily_by_brand.rows)){
-        try{
-          const dd = dv2.sales_week_daily_by_brand.days;
-          const rr = dv2.sales_week_daily_by_brand.rows;
-          daily = [];
-          rr.forEach(r=>{
-            (dd||[]).forEach(d=>{
-              const v = Number(r?.days?.[d] || 0);
-              if (v) daily.push({ dia:d, marca:r?.marca, monto:v });
-            });
-          });
-        }catch(_){}
-      }
+	    function renderSalesDaily(dv2){
+	      const box = $("#salesDaily");
+	      if (!box) return;
+	      const week = dv2?.week || {};
+	      const sales = dv2?.sales || {};
+	      const packed = (dv2?.sales_week_daily_by_brand && Array.isArray(dv2.sales_week_daily_by_brand.days) && Array.isArray(dv2.sales_week_daily_by_brand.rows))
+	        ? dv2.sales_week_daily_by_brand
+	        : null;
+	      let daily = Array.isArray(sales?.semana_daily_by_brand) ? sales.semana_daily_by_brand : [];
 
-      const ws = String(week?.start || "");
-      const days = [];
+	      const ws = String(week?.start || "");
+	      const days = [];
       if (/^\d{4}-\d{2}-\d{2}$/.test(ws)){
         const dt0 = new Date(ws + "T00:00:00");
         for (let i=0;i<7;i++){
@@ -647,58 +637,65 @@
         days.push(...[...new Set(daily.map(x=>String(x?.dia||"").slice(0,10)).filter(Boolean))].sort());
       }
 
-      const brands = [...new Set([
-        ...daily.map(x=>String(x?.marca||"").toUpperCase()).filter(Boolean),
-        ...(Array.isArray(sales?.semana_by_brand) ? sales.semana_by_brand.map(x=>String(x?.marca||"").toUpperCase()).filter(Boolean) : []),
-      ])].sort();
-      const cell = (b,d) => {
-        const row = daily.find(x => String(x?.marca||"").toUpperCase()===b && String(x?.dia||"").slice(0,10)===d);
-        const val = Number(row?.monto || 0);
-        return val ? fmtMoney(val) : "—";
-      };
-      const rowTotal = (b) => daily.filter(x=>String(x?.marca||"").toUpperCase()===b).reduce((a,x)=>a+Number(x?.monto||0),0);
-      const colTotal = (d) => daily.filter(x=>String(x?.dia||"").slice(0,10)===d).reduce((a,x)=>a+Number(x?.monto||0),0);
-      const total = Number(sales?.venta_semana_total ?? sales?.venta_semana ?? 0);
+	      let rows = [];
+	      if (packed){
+	        rows = (packed.rows || []).map(r => ({
+	          marca: String(r?.marca || "").toUpperCase(),
+	          id_marca: r?.id_marca ?? null,
+	          total: Number(r?.total || 0),
+	          days: r?.days || {},
+	        })).filter(r => r.marca);
+	      } else {
+	        // fallback: reconstruir rows desde lista plana (no tiene id_marca)
+	        const brands = [...new Set([
+	          ...daily.map(x=>String(x?.marca||"").toUpperCase()).filter(Boolean),
+	          ...(Array.isArray(sales?.semana_by_brand) ? sales.semana_by_brand.map(x=>String(x?.marca||"").toUpperCase()).filter(Boolean) : []),
+	        ])].sort();
+	        rows = brands.map(b => ({
+	          marca: b,
+	          id_marca: null,
+	          total: daily.filter(x=>String(x?.marca||"").toUpperCase()===b).reduce((a,x)=>a+Number(x?.monto||0),0),
+	          days: Object.fromEntries(days.map(d => [d, daily.find(x => String(x?.marca||"").toUpperCase()===b && String(x?.dia||"").slice(0,10)===d)?.monto || 0])),
+	        }));
+	      }
 
-      if (!brands.length){
-        box.innerHTML = `<div class="muted">Sin ventas confirmadas en la semana.</div>`;
-        return;
-      }
+	      const colTotal = (d) => {
+	        if (rows.length){
+	          return rows.reduce((a,r)=> a + Number(r?.days?.[d] || 0), 0);
+	        }
+	        return daily.filter(x=>String(x?.dia||"").slice(0,10)===d).reduce((a,x)=>a+Number(x?.monto||0),0);
+	      };
+	      const total = Number(sales?.venta_semana_total ?? sales?.venta_semana ?? 0);
+
+	      if (!rows.length){
+	        box.innerHTML = `<div class="muted">Sin ventas confirmadas en la semana.</div>`;
+	        return;
+	      }
 
 	      let table = `<div class="scroll-x"><table class="table-mini"><thead><tr><th>Marca</th>`;
 	      days.forEach(d => table += `<th class="right day-head" data-day="${d}"><span class="daylink">${d.slice(8,10)}/${d.slice(5,7)}</span></th>`);
 	      table += `<th class="right">Total</th></tr></thead><tbody>`;
-	      brands.forEach(b=>{
-	        table += `<tr><td><strong>${b}</strong></td>`;
+	      rows.forEach(r=>{
+	        table += `<tr><td><strong>${esc(r.marca)}</strong></td>`;
 	        days.forEach(d=>{
-	          const row = daily.find(x => String(x?.marca||"").toUpperCase()===b && String(x?.dia||"").slice(0,10)===d);
-	          const val = Number(row?.monto || 0);
+	          const val = Number(r?.days?.[d] || 0);
 	          const txt = val ? fmtMoney(val) : "—";
-	          table += `<td class="right cell-sale ${val ? "clickable" : ""}" data-day="${d}" data-brand="${esc(b)}" data-val="${String(val||0)}">${txt}</td>`;
+	          const mid = (r.id_marca != null) ? String(r.id_marca) : "";
+	          table += `<td class="right cell-sale ${val ? "clickable" : ""}" data-day="${d}" data-brand-id="${esc(mid)}" data-val="${String(val||0)}">${txt}</td>`;
 	        });
-	        table += `<td class="right"><strong>${fmtMoney(rowTotal(b))}</strong></td></tr>`;
+	        table += `<td class="right"><strong>${fmtMoney(Number(r.total||0))}</strong></td></tr>`;
 	      });
-      table += `<tr><td class="muted"><strong>Total</strong></td>`;
-      days.forEach(d=> table += `<td class="right muted"><strong>${fmtMoney(colTotal(d))}</strong></td>`);
-      table += `<td class="right"><strong>${fmtMoney(total)}</strong></td></tr>`;
-      table += `</tbody></table></div><div class="scroll-hint">Desliza horizontal para ver Lun→Dom</div>`;
-      box.innerHTML = table;
+	      table += `<tr><td class="muted"><strong>Total</strong></td>`;
+	      days.forEach(d=> table += `<td class="right muted"><strong>${fmtMoney(colTotal(d))}</strong></td>`);
+	      table += `<td class="right"><strong>${fmtMoney(total)}</strong></td></tr>`;
+	      table += `</tbody></table></div><div class="scroll-hint">Desliza horizontal para ver Lun→Dom</div>`;
+	      box.innerHTML = table;
 
-	      const brandIdFromName = (brandUpper) => {
-	        const up = String(brandUpper || "").trim().toUpperCase();
-	        if (!up) return "";
-	        const entries = Object.entries(state.marcasMap || {});
-	        for (const [id, name] of entries){
-	          if (String(name || "").trim().toUpperCase() === up) return String(id);
-	        }
-	        return "";
-	      };
 	      $$(".cell-sale.clickable", box).forEach(td=>{
 	        td.addEventListener("click", ()=>{
 	          const d = String(td.getAttribute("data-day") || "").slice(0,10);
-	          const b = String(td.getAttribute("data-brand") || "").trim();
 	          if (!d) return;
-	          const bid = brandIdFromName(b);
+	          const bid = String(td.getAttribute("data-brand-id") || "").trim();
 	          openConfirmedSales(d, d, bid || (state.idMarca || ""), "agenda");
 	        });
 	      });
@@ -955,29 +952,33 @@
       $("#kpiVentaSemanaCounts").textContent = `Leads: ${wCnt} · Emp: ${wEmp} · Part: ${wPar}`;
 	      $("#kpiVentaMesCounts").textContent = `Leads: ${mCnt} · Emp: ${mEmp} · Part: ${mPar}`;
 
-	      // Meta / Año pasado / Runway (mes)
-	      try{
-	        const meta = Number(sale?.meta_mes_total || 0);
-	        const base = Number(sale?.base_mes_total || 0);
-	        const vsMeta = sale?.vs_meta_pct;
-	        const vsBase = sale?.vs_base_pct;
-	        const gap = Number(sale?.meta_gap || 0);
-	        const pace = sale?.pace || {};
-	        const curDay = pace?.current_per_day;
-	        const reqDay = pace?.required_per_day;
-	        const daysLeft = Number(pace?.days_left || 0);
+	      // Meta / Año pasado / Runway (mes) — nunca dejarlo en "—" si ya tenemos mesTotal
+	      (() => {
+	        const el = $("#kpiMetaLine");
+	        if (!el) return;
+	        const safe = (fn, fallback) => { try{ return fn(); }catch(e){ console.warn("kpiMetaLine failed", e); return fallback; } };
+	        const meta = safe(()=> Number(sale?.meta_mes_total || 0), 0);
+	        const base = safe(()=> Number(sale?.base_mes_total || 0), 0);
+	        const vsMeta = safe(()=> sale?.vs_meta_pct, null);
+	        const vsBase = safe(()=> sale?.vs_base_pct, null);
+	        const gap = safe(()=> Number(sale?.meta_gap || 0), 0);
+	        const pace = safe(()=> sale?.pace || {}, {});
+	        const reqDay = safe(()=> pace?.required_per_day, null);
+	        const curDay = safe(()=> pace?.current_per_day, null);
+	        const daysLeft = safe(()=> Number(pace?.days_left || 0), 0);
+	
 	        const parts = [];
-	        if (meta > 0) parts.push(`Meta mes: <strong>${fmtMoney(meta)}</strong>`);
+	        parts.push(`Mes actual: <strong>${fmtMoney(mesTotal)}</strong>`);
+	        parts.push(`Meta mes: <strong>${meta > 0 ? fmtMoney(meta) : "—"}</strong>`);
 	        if (base > 0) parts.push(`Año pasado: <strong>${fmtMoney(base)}</strong>`);
 	        if (typeof vsMeta === "number") parts.push(`Avance meta: <strong>${vsMeta}%</strong>`);
 	        if (typeof vsBase === "number") parts.push(`Vs LY: <strong>${vsBase}%</strong>`);
 	        if (meta > 0) parts.push(`Faltan: <strong>${fmtMoney(gap)}</strong>`);
 	        if (typeof reqDay === "number" && daysLeft > 0) parts.push(`Requiere/día: <strong>${fmtMoney(reqDay)}</strong> (${daysLeft} día(s))`);
 	        else if (typeof curDay === "number") parts.push(`Ritmo actual/día: <strong>${fmtMoney(curDay)}</strong>`);
-	        const line = parts.length ? parts.join(" · ") : "—";
-	        const el = $("#kpiMetaLine");
-	        if (el) el.innerHTML = line;
-	      }catch(_){}
+	
+	        el.innerHTML = parts.join(" · ");
+	      })();
 
 	      renderEstadoCards(j.estado_cards_total || j.estado_cards || [], j.leads_today || {});
 	      renderSalesDaily(j);

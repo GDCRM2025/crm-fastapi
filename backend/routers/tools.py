@@ -4658,6 +4658,38 @@ def dashboard_v2(
         meta_mes_total = 0
         base_mes_total = 0
 
+    # Fallback: si no hay base/meta configuradas, calcula base del año pasado desde leads confirmados (fecha_evento).
+    try:
+        if base_mes_total <= 0:
+            ly_start = date(int(month_start.year) - 1, int(month_start.month), 1)
+            ly_end = (date(int(month_end.year) - 1, int(month_end.month), 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+            ly = (
+                db.execute(
+                    text(
+                        f"""
+                        SELECT COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS total
+                        FROM public.leads l
+                        WHERE l.id_estado = :conf
+                          AND l.fecha_evento::date BETWEEN :d1 AND :d2
+                          {marca_sql}
+                        """
+                    ),
+                    {"conf": int(confirmado_id), "d1": str(ly_start), "d2": str(ly_end), **marca_params},
+                )
+                .mappings()
+                .first()
+                or {}
+            )
+            base_mes_total = int(ly.get("total") or 0)
+        if meta_mes_total <= 0 and base_mes_total > 0:
+            # Regla simple: meta = base LY * 1.12 si no hay configuración.
+            meta_mes_total = int(round(float(base_mes_total) * 1.12))
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
     # Progreso hacia la meta (runway)
     days_total = int((month_end - month_start).days + 1)
     days_elapsed = int((min(today, month_end) - month_start).days + 1) if today >= month_start else 0
@@ -4676,6 +4708,7 @@ def dashboard_v2(
             f"""
             SELECT
               ({agenda_expr})::date AS dia,
+              l.id_marca::int AS id_marca,
               COALESCE(m.nombre,m.marca,'') AS marca,
               COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS monto
             FROM public.leads l
@@ -4683,27 +4716,29 @@ def dashboard_v2(
             WHERE l.id_estado = :conf
               AND ({agenda_expr}) BETWEEN :d1 AND :d2
               {marca_sql}
-            GROUP BY 1,2
-            ORDER BY 1 ASC, 2 ASC
+            GROUP BY 1,2,3
+            ORDER BY 1 ASC, 3 ASC
             """
         ),
         params,
     ).mappings().all()
-    day_brand_map: dict[str, dict[str, int]] = {}
-    brands: set[str] = set()
+    day_brand_map: dict[tuple[str, int], dict[str, int]] = {}
+    brands: dict[tuple[str, int], str] = {}
     for r in rows:
         d = str(r.get("dia") or "")
         b = str(r.get("marca") or "").upper()
+        mid = int(r.get("id_marca") or 0)
         if not d or not b:
             continue
-        brands.add(b)
-        day_brand_map.setdefault(b, {})[d] = int(r.get("monto") or 0)
-    brand_list = sorted(brands)
+        key = (b, mid)
+        brands[key] = b
+        day_brand_map.setdefault(key, {})[d] = int(r.get("monto") or 0)
+    brand_list = sorted(brands.keys(), key=lambda x: (x[0], x[1]))
     daily_rows = []
-    for b in brand_list:
-        out = {"marca": b, "total": 0, "days": {}}
+    for (b, mid) in brand_list:
+        out = {"marca": b, "id_marca": int(mid), "total": 0, "days": {}}
         for d in week_days_s:
-            v = int(day_brand_map.get(b, {}).get(d, 0))
+            v = int(day_brand_map.get((b, mid), {}).get(d, 0))
             out["days"][d] = v
             out["total"] += v
         daily_rows.append(out)
