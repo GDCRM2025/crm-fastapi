@@ -1432,11 +1432,15 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
-    # 4b) Insert COBRO PENDIENTE (Finanzas): eventos confirmados con abono y saldo pendiente (2do pago).
+    # 4b) Insert COBRO PENDIENTE (Finanzas): eventos confirmados con saldo pendiente (abono y/o pago final).
     # Nota: esto NO es una tarea de lead, porque los leads confirmados se ocultan del módulo de tareas.
     # Usamos entity_type='fin_evento' (fin_eventos.id_evento) para mantenerlo visible.
     try:
         if _table_exists(db, "fin_eventos") and _col_exists(db, "fin_eventos", "id_evento") and _col_exists(db, "fin_eventos", "id_lead"):
+            # En algunos esquemas legacy NO existe `leads.id_usuario`, por lo que el SQL `assigned_sql`
+            # rompe (UndefinedColumn) aunque :is_admin sea true. En ese caso asignamos cobros por scope de marca.
+            has_leads_owner = _col_exists(db, "leads", "id_usuario")
+            cobro_assign_sql = assigned_sql if has_leads_owner else scope_sql
             db.execute(
                 text(
                     f"""
@@ -1445,35 +1449,40 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                       'COBRO_PENDIENTE',
                       'Cobro pendiente',
                       CASE
-                        WHEN fe.fecha_evento < {today} THEN 'Cobro atrasado (evento pasado). Saldo pendiente: $' || to_char(COALESCE(fe.saldo,0), 'FM999G999G999G999')
-                        WHEN fe.fecha_evento = {today} THEN 'Cobro pendiente hoy. Saldo pendiente: $' || to_char(COALESCE(fe.saldo,0), 'FM999G999G999G999')
-                        ELSE 'Cobro pendiente. Evento en ' || GREATEST(0, (fe.fecha_evento - {today}))::int || ' día(s). Saldo: $' || to_char(COALESCE(fe.saldo,0), 'FM999G999G999G999')
+                        WHEN COALESCE(fe.abono_due_date, fe.fecha_evento) < {today} THEN 'Cobro atrasado. Saldo pendiente: $' || to_char(COALESCE(fe.saldo,0), 'FM999G999G999G999')
+                        WHEN COALESCE(fe.abono_due_date, fe.fecha_evento) = {today} THEN 'Cobro vence hoy. Saldo: $' || to_char(COALESCE(fe.saldo,0), 'FM999G999G999G999')
+                        ELSE 'Cobro pendiente. Vence en ' || GREATEST(0, (COALESCE(fe.abono_due_date, fe.fecha_evento) - {today}))::int || ' día(s). Saldo: $' || to_char(COALESCE(fe.saldo,0), 'FM999G999G999G999')
                       END,
                       'fin_evento',
                       fe.id_evento,
                       :uid,
                       :uname,
-                      (fe.fecha_evento::timestamp + INTERVAL '23 hours 59 minutes'),
-                      CASE WHEN fe.fecha_evento <= {today} THEN 6 ELSE 14 END,
+                      (COALESCE(fe.abono_due_date, fe.fecha_evento)::timestamp + INTERVAL '23 hours 59 minutes'),
+                      CASE
+                        WHEN COALESCE(fe.abono_due_date, fe.fecha_evento) <= {today} THEN 6
+                        WHEN (COALESCE(fe.abono_due_date, fe.fecha_evento) - {today}) <= 2 THEN 8
+                        ELSE 14
+                      END,
                       jsonb_build_object(
                         'rule','cobro_pendiente',
                         'id_lead', fe.id_lead,
                         'marca', COALESCE(NULLIF(btrim(fe.marca),''), NULL),
                         'fecha_evento', fe.fecha_evento,
+                        'abono_due_date', fe.abono_due_date,
+                        'monto_bruto', COALESCE(fe.monto_bruto,0),
                         'abono', COALESCE(fe.abono,0),
                         'saldo', COALESCE(fe.saldo,0)
                       )
 	                    FROM public.fin_eventos fe
 	                    JOIN public.leads l ON l.id_lead = fe.id_lead
 	                    WHERE COALESCE(fe.fecha_evento, NULL) IS NOT NULL
-	                      AND fe.fecha_evento >= {month_start} AND fe.fecha_evento < {month_end}
-	                      AND COALESCE(fe.saldo,0) > 0
-	                      AND fe.fecha_evento <= {today}
-	                      AND l.id_estado = :conf
-	                      -- Cobros: siempre por dueño del lead (no por marca).
-	                      AND (:is_admin OR {assigned_sql})
-	                    ON CONFLICT DO NOTHING
-	                    """
+		                      AND fe.fecha_evento >= {month_start} AND fe.fecha_evento < {month_end}
+		                      AND COALESCE(fe.saldo,0) > 0
+		                      AND l.id_estado = :conf
+		                      -- Cobros: por dueño del lead si existe, si no por scope de marca.
+		                      AND (:is_admin OR {cobro_assign_sql})
+		                    ON CONFLICT DO NOTHING
+		                    """
                 ),
                 {
                     "uid": int(user_id),
@@ -1588,6 +1597,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     # 6b) Auto-close: cobros que ya no aplican (saldo pagado / fuera de mes / lead no confirmado / no asignado)
     try:
         if _table_exists(db, "fin_eventos") and _col_exists(db, "fin_eventos", "id_evento"):
+            has_leads_owner = _col_exists(db, "leads", "id_usuario")
+            cobro_assign_sql = assigned_sql if has_leads_owner else scope_sql
             db.execute(
                 text(
                     f"""
@@ -1605,10 +1616,9 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                         WHERE fe.id_evento = t.entity_id
                           AND fe.fecha_evento IS NOT NULL
                           AND fe.fecha_evento >= {month_start} AND fe.fecha_evento < {month_end}
-                          AND COALESCE(fe.abono,0) > 0
                           AND COALESCE(fe.saldo,0) > 0
                           AND l.id_estado = :conf
-                          AND (:is_admin OR {assigned_sql})
+                          AND (:is_admin OR {cobro_assign_sql})
                       )
                     """
                 ),

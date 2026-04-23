@@ -71,7 +71,7 @@
           <input id="fCot" />
         </div>
         <div>
-          <div class="label">Monto bruto</div>
+          <div class="label">Monto bruto (con IVA si aplica)</div>
           <input id="fBruto" />
         </div>
         <div>
@@ -88,7 +88,7 @@
           <input id="fComPct" value="3" />
         </div>
         <div>
-          <div class="label">Neto (auto)</div>
+          <div class="label">Neto (productos + traslado)</div>
           <input id="fNeto" disabled />
         </div>
 
@@ -220,24 +220,28 @@
       const pct = Number($("#fComPct").value || 0);
       const tipo = $("#fTipo").value;
 
-      let neto = bruto;
       let iva = 0;
+      let neto = Math.max(bruto, 0);
       if (tipo === "EMPRESA"){
+        // bruto = neto + iva => neto = bruto/1.19
         neto = bruto / 1.19;
         iva = bruto - neto;
       }
-      const baseComision = Math.max(neto - traslado, 0);
+      // neto mostrado es productos + traslado
+      const netoSinIva = round(neto);
+      const productos = Math.max(netoSinIva - traslado, 0);
+      const baseComision = Math.max(productos, 0);
       const comision = baseComision * (pct / 100);
       const saldo = bruto - abono;
 
       $("#fBruto").value = round(bruto);
       $("#fTraslado").value = round(traslado);
       $("#fAbono").value = round(abono);
-      $("#fNeto").value = fmt.format(round(neto || 0));
+      $("#fNeto").value = fmt.format(round(netoSinIva || 0));
       $("#fIva").value = fmt.format(round(iva || 0));
       $("#fSaldo").value = fmt.format(round(saldo || 0));
       $("#fComMonto").value = fmt.format(round(comision || 0));
-      return { neto: round(neto), iva: round(iva), saldo: round(saldo), comision: round(comision), bruto, traslado, abono };
+      return { neto: round(netoSinIva), iva: round(iva), saldo: round(saldo), comision: round(comision), bruto, traslado, abono };
     }
 
     let eventosByLead = new Map(); // id_lead -> evento
@@ -254,12 +258,24 @@
         }
       }catch(_){ eventosByLead = new Map(); }
 
-      // 2) Leads confirmados
+      // 2) Leads confirmados (solo mes actual por defecto)
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth(); // 0-11
+      const monthStart = new Date(y, m, 1);
+      const monthEnd = new Date(y, m + 1, 1);
+
       const res = await api("/leads?limit=2000");
       const items = res.items || [];
       const conf = items.filter(l => (l.estado_nombre||"" ).toUpperCase().includes("CONFIRM"));
+      const confMonth = conf.filter(l => {
+        const fe = String(l.fecha_evento || "").slice(0,10);
+        if (!fe || fe.length !== 10) return false;
+        const d = new Date(fe + "T00:00:00");
+        return (d >= monthStart) && (d < monthEnd);
+      });
       // por defecto, no mostrar leads ya completamente pagados (saldo <= 0)
-      const usable = conf.filter(l => {
+      const usable = confMonth.filter(l => {
         const e = eventosByLead.get(Number(l.id_lead || 0));
         if (!e) return true;
         return Number(e.saldo || 0) > 0;

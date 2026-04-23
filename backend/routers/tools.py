@@ -729,23 +729,88 @@ def metas_init(
         raise HTTPException(status_code=400, detail="month inválido (1-12)")
     by = (me.get("username") or me.get("id") or me.get("nombre") or "admin")
 
+    # Construye base desde tabla baseline (ventas_baseline) por mes+marca.
+    # Fallback: si no hay baseline, usa confirmados del mismo mes del año pasado (fecha_evento).
+    _ensure_baseline(db)
+    confirmado_id = _estado_id(db, "CONFIRM") or 0
+    ly_start = date(y - 1, m, 1)
+    ly_end = (date(y - 1, m, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    base_rows: dict[int, int] = {}
+    mode = "baseline"
+    try:
+        if _table_exists_pg(db, "ventas_baseline") and _table_exists_pg(db, "marcas"):
+            q = db.execute(
+                text(
+                    """
+                    SELECT
+                      ma.id_marca::int AS id_marca,
+                      COALESCE(vb.monto,0)::bigint AS monto
+                    FROM public.marcas ma
+                    LEFT JOIN public.ventas_baseline vb
+                      ON vb.mes = :m
+                     AND UPPER(vb.marca) = UPPER(COALESCE(ma.nombre, ma.marca,''))
+                    ORDER BY ma.id_marca ASC
+                    """
+                ),
+                {"m": int(m)},
+            ).fetchall()
+            base_rows = {int(r[0]): int(r[1] or 0) for r in q if r and str(r[0] or "").isdigit()}
+        else:
+            mode = "ly_leads"
+            if confirmado_id:
+                q = db.execute(
+                    text(
+                        """
+                        SELECT id_marca::int AS id_marca, COALESCE(SUM(COALESCE(monto_cotizado,0)),0)::bigint AS monto
+                        FROM public.leads
+                        WHERE id_estado=:conf
+                          AND fecha_evento::date BETWEEN :d1 AND :d2
+                        GROUP BY 1
+                        """
+                    ),
+                    {"conf": int(confirmado_id), "d1": str(ly_start), "d2": str(ly_end)},
+                ).fetchall()
+                base_rows = {int(r[0]): int(r[1] or 0) for r in q if r and str(r[0] or "").isdigit()}
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        base_rows = {}
+        mode = "error"
+
     marcas = db.execute(text("SELECT id_marca FROM marcas ORDER BY id_marca ASC")).fetchall()
-    created = 0
+    upserted = 0
     for r in marcas:
         mid = int(r[0])
+        venta_base = float(base_rows.get(mid, 0))
+        crec = 12.0
+        meta = round(venta_base * (1.0 + (crec / 100.0)), 2)
         db.execute(
             text(
                 """
                 INSERT INTO metas_marca_mensual(year, month, id_marca, venta_base, crecimiento_pct, meta, updated_by, updated_at)
-                VALUES (:y, :m, :id_marca, 0, 12, 0, :by, now())
-                ON CONFLICT (year, month, id_marca) DO NOTHING
+                VALUES (:y, :m, :id_marca, :venta, :crec, :meta, :by, now())
+                ON CONFLICT (year, month, id_marca) DO UPDATE
+                  SET venta_base = CASE WHEN COALESCE(metas_marca_mensual.venta_base,0)=0 THEN EXCLUDED.venta_base ELSE metas_marca_mensual.venta_base END,
+                      crecimiento_pct = CASE WHEN COALESCE(metas_marca_mensual.crecimiento_pct,0)=0 THEN EXCLUDED.crecimiento_pct ELSE metas_marca_mensual.crecimiento_pct END,
+                      meta = CASE WHEN COALESCE(metas_marca_mensual.meta,0)=0 THEN EXCLUDED.meta ELSE metas_marca_mensual.meta END,
+                      updated_by = EXCLUDED.updated_by,
+                      updated_at = now()
                 """
             ),
-            {"y": y, "m": m, "id_marca": mid, "by": by},
+            {"y": y, "m": m, "id_marca": mid, "venta": venta_base, "crec": crec, "meta": meta, "by": by},
         )
-        created += 1
+        upserted += 1
     db.commit()
-    return {"ok": True, "year": y, "month": m, "created": created}
+    return {
+        "ok": True,
+        "year": y,
+        "month": m,
+        "upserted": upserted,
+        "mode": mode,
+        "ly_range": {"start": str(ly_start), "end": str(ly_end)},
+    }
 
 @router.get("/gcal/status")
 def gcal_status(db: Session = Depends(get_db)):
@@ -4615,6 +4680,8 @@ def dashboard_v2(
     month = _agg("l.fecha_evento::date", month_start, month_end)
 
     # Meta/Base (año pasado) del mes (metas_marca_mensual)
+    # Regla negocio: meta por marca = venta_base(=año pasado mismo mes) * (1 + crecimiento_pct/100),
+    # a menos que exista meta explícita en la tabla.
     meta_mes_total = 0
     base_mes_total = 0
     try:
@@ -4634,8 +4701,13 @@ def dashboard_v2(
                     text(
                         f"""
                         SELECT
-                          COALESCE(SUM(COALESCE(mm.meta,0)),0)::bigint AS meta,
-                          COALESCE(SUM(COALESCE(mm.venta_base,0)),0)::bigint AS base
+                          COALESCE(SUM(COALESCE(mm.venta_base,0)),0)::bigint AS base,
+                          COALESCE(SUM(
+                            COALESCE(
+                              NULLIF(mm.meta,0),
+                              (COALESCE(mm.venta_base,0) * (1.0 + (COALESCE(mm.crecimiento_pct,0) / 100.0)))
+                            )
+                          ),0)::bigint AS meta
                         FROM public.metas_marca_mensual mm
                         WHERE mm.year = :y
                           AND mm.month = :m
@@ -4648,8 +4720,8 @@ def dashboard_v2(
                 .first()
                 or {}
             )
-            meta_mes_total = int(mr.get("meta") or 0)
             base_mes_total = int(mr.get("base") or 0)
+            meta_mes_total = int(mr.get("meta") or 0)
     except Exception:
         try:
             db.rollback()
@@ -4658,37 +4730,7 @@ def dashboard_v2(
         meta_mes_total = 0
         base_mes_total = 0
 
-    # Fallback: si no hay base/meta configuradas, calcula base del año pasado desde leads confirmados (fecha_evento).
-    try:
-        if base_mes_total <= 0:
-            ly_start = date(int(month_start.year) - 1, int(month_start.month), 1)
-            ly_end = (date(int(month_end.year) - 1, int(month_end.month), 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-            ly = (
-                db.execute(
-                    text(
-                        f"""
-                        SELECT COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::bigint AS total
-                        FROM public.leads l
-                        WHERE l.id_estado = :conf
-                          AND l.fecha_evento::date BETWEEN :d1 AND :d2
-                          {marca_sql}
-                        """
-                    ),
-                    {"conf": int(confirmado_id), "d1": str(ly_start), "d2": str(ly_end), **marca_params},
-                )
-                .mappings()
-                .first()
-                or {}
-            )
-            base_mes_total = int(ly.get("total") or 0)
-        if meta_mes_total <= 0 and base_mes_total > 0:
-            # Regla simple: meta = base LY * 1.12 si no hay configuración.
-            meta_mes_total = int(round(float(base_mes_total) * 1.12))
-    except Exception:
-        try:
-            db.rollback()
-        except Exception:
-            pass
+    # Si no hay metas cargadas, no inventamos; la UI muestra "—".
 
     # Progreso hacia la meta (runway)
     days_total = int((month_end - month_start).days + 1)

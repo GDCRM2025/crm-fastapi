@@ -200,10 +200,16 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
     if doc_mode in ("sin", "sin_documento", "particular"):
         is_empresa = False
 
+    # Canon Finanzas:
+    # - productos = subtotal_productos
+    # - neto = productos + traslado (SIN IVA)
+    # - bruto = neto + IVA (si aplica EMPRESA)
+    # - saldo = bruto - abonos
+    productos = 0.0
     traslado = 0.0
-    neto = _to_number(lead.get("monto_cotizado") or 0)
+    neto = _to_number(lead.get("monto_cotizado") or 0)  # fallback: ya viene como (productos + traslado)
     iva = 0.0
-    total = neto
+    bruto = neto
     num_cot = str(lead.get("num_cotizacion") or "").strip() or None
     abono = _to_number(payload.get("abono") or 0)
     abono_mode = str(payload.get("abono_mode") or "").strip().lower()
@@ -233,10 +239,11 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     if row:
                         if row.get("numero") is not None:
                             num_cot = str(row.get("numero"))
-                        neto = _to_number(row.get("subtotal_productos") or row.get("subtotal") or neto)
-                        iva = _to_number(row.get("iva") or 0)
-                        total = _to_number(row.get("total") or (neto + iva))
+                        productos = _to_number(row.get("subtotal_productos") or row.get("subtotal") or 0)
                         traslado = _to_number(row.get("traslado") or 0)
+                        neto = float(productos) + float(traslado)
+                        iva = _to_number(row.get("iva") or 0)
+                        bruto = _to_number(row.get("total") or 0) or (float(neto) + float(iva))
                         if abono <= 0:
                             abono = _to_number(row.get("abono") or 0)
                         tcl = str(row.get("tipo_cliente") or "").upper()
@@ -246,23 +253,21 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
     except Exception:
         pass
 
-    # Recalcula IVA/total si corresponde.
+    # Recalcular IVA/BRUTO si corresponde.
     try:
         if not is_empresa:
             iva = 0.0
-            total = float(neto) + float(traslado)
         else:
-            base = float(neto) + float(traslado)
+            # IVA informativo (si no viene desde cotización lo estimamos).
             if iva <= 0:
-                iva = round(base * 0.19, 2)
-            if total <= 0:
-                total = float(base + iva)
+                iva = round(float(neto) * 0.19, 2)
+        bruto = float(neto) + float(iva)
     except Exception:
         pass
 
     if abono < 0:
         abono = 0.0
-    saldo = max(0.0, float(total) - float(abono))
+    saldo = max(0.0, float(bruto) - float(abono))
 
     # Normaliza regla: si abono=0, guardamos referencia OC o fecha (para finanzas).
     if not (abono > 0):
@@ -330,7 +335,7 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     "mar": marca_txt,
                     "tc": tipo_cliente,
                     "fe": fecha_evento,
-                    "br": float(total),
+                    "br": float(bruto),
                     "ne": float(neto),
                     "iv": float(iva),
                     "tr": float(traslado),
@@ -369,7 +374,7 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     "mar": marca_txt,
                     "tc": tipo_cliente,
                     "fe": fecha_evento,
-                    "br": float(total),
+                    "br": float(bruto),
                     "ne": float(neto),
                     "iv": float(iva),
                     "tr": float(traslado),
@@ -1894,6 +1899,53 @@ def move_lead_and_maybe_agenda(
             if not items_manual:
                 raise HTTPException(400, detail="No hay cotización seleccionada ni productos manuales para calcular montaje")
 
+        # Regla negocio: al confirmar (con cotización), el lead debe quedar con monto_cotizado = subtotal_productos + traslado (sin IVA).
+        # Además asignamos tipo_cliente = EMPRESA si IVA>0, si no PARTICULAR.
+        if id_cot and quote_source != "manual" and not dry_run:
+            try:
+                with engine.begin() as cn:
+                    cn.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS tipo_cliente TEXT"))
+            except Exception:
+                pass
+            try:
+                with engine.connect() as cn:
+                    ok = cn.execute(text("SELECT to_regclass('public.cotizaciones')")).scalar()
+                    if ok:
+                        row_c = cn.execute(
+                            text(
+                                """
+                                SELECT numero, subtotal_productos, subtotal, traslado, iva
+                                FROM public.cotizaciones
+                                WHERE id_cotizacion=:id
+                                LIMIT 1
+                                """
+                            ),
+                            {"id": int(id_cot)},
+                        ).mappings().first()
+                    else:
+                        row_c = None
+                if row_c:
+                    neto_prod = _to_number(row_c.get("subtotal_productos") or row_c.get("subtotal") or 0)
+                    tr = _to_number(row_c.get("traslado") or 0)
+                    iva = _to_number(row_c.get("iva") or 0)
+                    monto_cot = float(neto_prod) + float(tr)
+                    tipo_cli = "EMPRESA" if float(iva) > 0 else "PARTICULAR"
+                    data_up = {
+                        "id_cotizacion_vigente": int(id_cot),
+                        "monto_cotizado": float(monto_cot),
+                        "tipo_cliente": tipo_cli,
+                    }
+                    if row_c.get("numero") is not None:
+                        data_up["num_cotizacion"] = str(row_c.get("numero"))
+                    _update_row("leads", "id_lead", id_lead, data_up)
+                    lead["id_cotizacion_vigente"] = int(id_cot)
+                    lead["monto_cotizado"] = float(monto_cot)
+                    lead["tipo_cliente"] = tipo_cli
+                    if row_c.get("numero") is not None:
+                        lead["num_cotizacion"] = str(row_c.get("numero"))
+            except Exception:
+                pass
+
         telefono = str(payload.get("telefono") or lead.get("telefono") or "").strip()
         direccion = str(payload.get("direccion") or lead.get("direccion") or "").strip()
         agenda_notes = str(payload.get("agenda_notes") or payload.get("notas_agenda") or payload.get("notas") or "").strip() or None
@@ -1983,6 +2035,22 @@ def move_lead_and_maybe_agenda(
             marca2 = _infer_marca_from_cotizacion(id_cot)
             if marca2:
                 marca = marca2
+
+        # Finanzas: registrar/actualizar fin_eventos + abono (si aplica) al momento de agendar.
+        # Esto alimenta "Registrar evento" y tareas de cobro.
+        if not dry_run:
+            try:
+                fin_payload = dict(payload or {})
+                if id_cot and quote_source != "manual":
+                    fin_payload["id_cotizacion"] = int(id_cot)
+                _upsert_fin_evento_for_lead_confirm(
+                    lead=lead,
+                    payload=fin_payload,
+                    comuna={"comuna": comuna} if comuna else None,
+                    marca={"marca": marca} if marca else None,
+                )
+            except Exception:
+                pass
 
         # overrides globales
         override_title = str(payload.get("override_title") or "").strip() or None

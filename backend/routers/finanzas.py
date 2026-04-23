@@ -595,6 +595,7 @@ def get_evento_by_lead(
 def list_eventos(
     month: int = Query(0, ge=0, le=12),
     year: int = Query(0, ge=0, le=2100),
+    all: bool = Query(False, alias="all"),
     only_pending: bool = Query(False),
     me=Depends(get_current_user),
 ):
@@ -603,6 +604,14 @@ def list_eventos(
         _ensure_tables(conn)
         where = ""
         params = {}
+        if not all and not (month and year):
+            try:
+                today = date.today()
+                month = int(today.month)
+                year = int(today.year)
+            except Exception:
+                month = 0
+                year = 0
         if month and year:
             where = "WHERE EXTRACT(MONTH FROM fecha_evento)=:m AND EXTRACT(YEAR FROM fecha_evento)=:y"
             params = {"m": month, "y": year}
@@ -645,10 +654,18 @@ def sync_confirmados_a_fin_eventos(
         # Detectar columnas opcionales en leads (muy defensivo).
         has_num_cot = _has_column(conn, "leads", "num_cotizacion")
         has_id_cot = _has_column(conn, "leads", "id_cotizacion")
+        has_id_cot_vig = _has_column(conn, "leads", "id_cotizacion_vigente")
         has_tipo_cli = _has_column(conn, "leads", "tipo_cliente")
         has_id_tipo_cli = _has_column(conn, "leads", "id_tipo_cliente")
-        has_traslado = _has_column(conn, "leads", "traslado")
         has_com_pct = _has_column(conn, "leads", "comision_pct")
+        has_cot = bool(conn.execute(text("SELECT to_regclass('public.cotizaciones')")).scalar())
+        has_cot_numero = has_cot and _has_column(conn, "cotizaciones", "numero")
+        has_cot_subtotal_prod = has_cot and _has_column(conn, "cotizaciones", "subtotal_productos")
+        has_cot_subtotal = has_cot and _has_column(conn, "cotizaciones", "subtotal")
+        has_cot_traslado = has_cot and _has_column(conn, "cotizaciones", "traslado")
+        has_cot_iva = has_cot and _has_column(conn, "cotizaciones", "iva")
+        has_cot_total = has_cot and _has_column(conn, "cotizaciones", "total")
+        has_cot_tipo = has_cot and _has_column(conn, "cotizaciones", "tipo_cliente")
 
         # Cliente: preferimos nombre_cliente si existe.
         name_expr = "COALESCE(NULLIF(btrim(l.nombre_cliente),''), NULLIF(btrim(l.cliente),''), NULLIF(btrim(l.nombre),''), '—')"
@@ -670,38 +687,60 @@ def sync_confirmados_a_fin_eventos(
         id_cot_expr = "NULL"
         if has_id_cot:
             id_cot_expr = "l.id_cotizacion"
+        if has_id_cot_vig:
+            id_cot_expr = "l.id_cotizacion_vigente"
 
-        traslado_expr = "0"
-        if has_traslado:
-            traslado_expr = "COALESCE(l.traslado,0)"
         com_pct_expr = "0"
         if has_com_pct:
             com_pct_expr = "COALESCE(l.comision_pct,0)"
 
-        # Upsert DEFENSIVO (sin depender de UNIQUE INDEX):
-        # - UPDATE de existentes (NO toca abono/saldo)
-        # - INSERT de faltantes (saldo inicia = monto + traslado)
+        # Upsert DEFENSIVO (sin depender de UNIQUE INDEX).
+        # Canon:
+        # - monto_neto = productos + traslado (SIN IVA)
+        # - monto_bruto = monto_neto + IVA (si aplica EMPRESA)
+        # - saldo = monto_bruto - abono
+        join_cot = "LEFT JOIN public.cotizaciones q ON q.id_cotizacion = %s" % id_cot_expr if has_cot else ""
+        if has_cot_subtotal_prod and has_cot_subtotal:
+            prod_expr = "COALESCE(q.subtotal_productos, q.subtotal, 0)"
+        elif has_cot_subtotal_prod:
+            prod_expr = "COALESCE(q.subtotal_productos, 0)"
+        elif has_cot_subtotal:
+            prod_expr = "COALESCE(q.subtotal, 0)"
+        else:
+            prod_expr = "0"
+        traslado_expr = "COALESCE(q.traslado, 0)" if has_cot_traslado else "0"
+        tipo_expr2 = "COALESCE(NULLIF(btrim(UPPER(q.tipo_cliente)),''), %s)" % tipo_expr if has_cot_tipo else tipo_expr
+        is_emp_expr = "(%s ILIKE '%%EMP%%' OR %s ILIKE '%%FACT%%')" % (tipo_expr2, tipo_expr2)
+        neto_expr = f"({prod_expr} + {traslado_expr})::numeric(14,2)"
+        if has_cot_iva:
+            iva_expr = f"CASE WHEN {is_emp_expr} THEN COALESCE(q.iva, ROUND(({neto_expr}) * 0.19, 2)) ELSE 0 END::numeric(14,2)"
+        else:
+            iva_expr = f"CASE WHEN {is_emp_expr} THEN ROUND(({neto_expr}) * 0.19, 2) ELSE 0 END::numeric(14,2)"
+        bruto_expr = f"({neto_expr} + ({iva_expr}))::numeric(14,2)"
+        numero_expr = "NULLIF(btrim(q.numero::text),'')" if has_cot_numero else "NULL"
+
         q = f"""
             WITH src AS (
               SELECT
                 l.id_lead,
-                {num_cot_expr} AS num_cotizacion,
+                COALESCE({numero_expr}, {num_cot_expr}) AS num_cotizacion,
                 {id_cot_expr} AS id_cotizacion,
                 {name_expr} AS cliente,
                 COALESCE(NULLIF(btrim(c.nombre),''), '—') AS comuna,
                 COALESCE(NULLIF(btrim(m.nombre),''), NULLIF(btrim(m.marca),''), '—') AS marca,
-                {tipo_expr} AS tipo_cliente,
+                {tipo_expr2} AS tipo_cliente,
                 l.fecha_evento::date AS fecha_evento,
-                COALESCE(l.monto_cotizado,0)::numeric(14,2) AS monto_bruto,
-                COALESCE(l.monto_cotizado,0)::numeric(14,2) AS monto_neto,
-                0::numeric(14,2) AS iva,
+                {bruto_expr} AS monto_bruto,
+                {neto_expr} AS monto_neto,
+                {iva_expr} AS iva,
                 {traslado_expr}::numeric(14,2) AS traslado,
                 {com_pct_expr}::numeric(6,2) AS comision_pct,
-                (COALESCE(l.monto_cotizado,0) * COALESCE({com_pct_expr},0) / 100.0)::numeric(14,2) AS comision_monto,
-                (COALESCE(l.monto_cotizado,0) + COALESCE({traslado_expr},0))::numeric(14,2) AS saldo_init
+                (({neto_expr}) * COALESCE({com_pct_expr},0) / 100.0)::numeric(14,2) AS comision_monto,
+                ({bruto_expr})::numeric(14,2) AS saldo_init
               FROM public.leads l
               LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
               LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
+              {join_cot}
               {join_tipo}
               WHERE l.id_estado=:conf
                 AND l.fecha_evento IS NOT NULL
@@ -722,7 +761,8 @@ def sync_confirmados_a_fin_eventos(
                   iva            = s.iva,
                   traslado       = s.traslado,
                   comision_pct   = s.comision_pct,
-                  comision_monto = s.comision_monto
+                  comision_monto = s.comision_monto,
+                  saldo          = GREATEST(0, s.monto_bruto - COALESCE(f.abono,0))
               FROM src s
               WHERE f.id_lead = s.id_lead
               RETURNING f.id_lead

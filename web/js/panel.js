@@ -2851,7 +2851,7 @@ function bindTopbar() {
   var _a, _b, _c, _d;
   (_a = qs("#brandHome")) == null ? void 0 : _a.addEventListener("click", () => {
     if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {
-      openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260421-kpis9" });
+      openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260421-kpis12" });
     } else {
       const first = findFirstAllowedItem();
       if (first) openItem(first);
@@ -3077,7 +3077,7 @@ function openDefault() {
     return;
   }
   if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {
-    openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260421-kpis9" });
+    openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260421-kpis12" });
     return;
   }
   const first = findFirstAllowedItem();

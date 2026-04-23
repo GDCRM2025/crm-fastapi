@@ -367,6 +367,10 @@ def today_status(db: Session = Depends(get_db), user: dict = Depends(get_current
     Usado para UX: pedir IN al iniciar sesión solo 1 vez por día.
     """
     _ensure(db)
+    try:
+        db.rollback()
+    except Exception:
+        pass
     uid = user.get("id")
     if not str(uid or "").isdigit():
         raise HTTPException(status_code=401, detail="Usuario inválido")
@@ -421,21 +425,32 @@ def today_status(db: Session = Depends(get_db), user: dict = Depends(get_current
                     {"sid": sid},
                 ).scalar()
     except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         default_punto = None
 
-    rows = db.execute(
-        text(
-            """
-            SELECT tipo, method, created_at
-            FROM public.sgjo_marcaciones
-            WHERE id_usuario=:u
-              AND ok IS TRUE
-              AND ((created_at AT TIME ZONE 'America/Santiago')::date = (now() AT TIME ZONE 'America/Santiago')::date)
-            ORDER BY created_at ASC
-            """
-        ),
-        {"u": uid_int},
-    ).mappings().all()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT tipo, method, created_at
+                FROM public.sgjo_marcaciones
+                WHERE id_usuario=:u
+                  AND ok IS TRUE
+                  AND ((created_at AT TIME ZONE 'America/Santiago')::date = (now() AT TIME ZONE 'America/Santiago')::date)
+                ORDER BY created_at ASC
+                """
+            ),
+            {"u": uid_int},
+        ).mappings().all()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        rows = []
     tipos = [str(r.get("tipo") or "").upper() for r in rows]
     has_in = "IN" in tipos
     has_out = "OUT" in tipos

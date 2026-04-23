@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
@@ -11,6 +11,8 @@ import json
 import datetime
 import os
 import threading
+import re
+import unicodedata
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
@@ -46,6 +48,32 @@ NOMINA_FIELDS = [
     "sobrante",
     "observaciones",
 ]
+
+def _norm_person_key(name: str) -> str:
+    """
+    Normaliza nombres para matching (RRHH) entre fuentes heterogéneas:
+    - trim + colapsa espacios
+    - lower
+    - elimina tildes/diacríticos
+    """
+    s = str(name or "").strip()
+    if not s:
+        return ""
+    s = re.sub(r"\s+", " ", s)
+    try:
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    except Exception:
+        pass
+    return s.lower().strip()
+
+def _norm_person_tokens_key(name: str) -> str:
+    s = _norm_person_key(name)
+    if not s:
+        return ""
+    toks = [t for t in re.split(r"\s+", s) if t]
+    toks.sort()
+    return " ".join(toks)
 
 
 def _ensure_tables(db: Session) -> None:
@@ -1037,51 +1065,106 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
             )
         ).mappings().all()
 
-        # adelantos por colaborador
+        # adelantos por colaborador (robusto a acentos/espacios/orden)
         adel_rows = db.execute(
             text(
                 """
-                SELECT lower(colaborador) AS c, COALESCE(SUM(monto),0) AS total
+                SELECT colaborador, COALESCE(SUM(monto),0) AS total
                 FROM rrhh_adelantos
-                GROUP BY lower(colaborador)
+                GROUP BY colaborador
                 """
             )
         ).fetchall()
-        adel_map = {str(r[0]): float(r[1] or 0) for r in adel_rows}
+        adel_map: dict[str, float] = {}
+        adel_tokens_map: dict[str, float] = {}
+        for r in adel_rows:
+            raw = str(r[0] or "")
+            total = float(r[1] or 0)
+            k = _norm_person_key(raw)
+            kt = _norm_person_tokens_key(raw)
+            if k:
+                adel_map[k] = float(adel_map.get(k, 0) or 0) + total
+            if kt:
+                adel_tokens_map[kt] = float(adel_tokens_map.get(kt, 0) or 0) + total
+
+        # Si existen adelantos de colaboradores que no están en rrhh_staff, los incluimos igual (para que nómina no "oculte" pagos).
+        staff_keys = {_norm_person_key(r.get("colaborador") or "") for r in staff_rows}
+        for k in sorted(set(adel_map.keys()) - set(staff_keys)):
+            if not str(k or "").strip():
+                continue
+            staff_rows.append(
+                {
+                    "id_staff": None,
+                    "colaborador": str(k).title(),
+                    "centro_costo": "",
+                    "rol": "",
+                    "afp": "",
+                    "afp_pct": None,
+                    "salud_tipo": "",
+                    "salud_pct": None,
+                    "fecha_ingreso": None,
+                    "observaciones": "Auto: colaborador no está en rrhh_staff (tiene adelantos).",
+                    "ficha": {},
+                }
+            )
 
         # inasistencias del mes actual
         faltas_map = {}
+        faltas_tokens_map = {}
         try:
             faltas_rows = db.execute(
                 text(
                     """
-                    SELECT lower(colaborador) AS c, COALESCE(SUM(dias),0) AS dias
+                    SELECT colaborador, COALESCE(SUM(dias),0) AS dias
                     FROM rrhh_inasistencias
                     WHERE fecha >= date_trunc('month', current_date)
                       AND fecha < (date_trunc('month', current_date) + interval '1 month')
-                    GROUP BY lower(colaborador)
+                    GROUP BY colaborador
                     """
                 )
             ).fetchall()
-            faltas_map = {str(r[0]): float(r[1] or 0) for r in faltas_rows}
+            faltas_map = {}
+            faltas_tokens_map = {}
+            for r in faltas_rows:
+                raw = str(r[0] or "")
+                dias = float(r[1] or 0)
+                k = _norm_person_key(raw)
+                kt = _norm_person_tokens_key(raw)
+                if k:
+                    faltas_map[k] = float(faltas_map.get(k, 0) or 0) + dias
+                if kt:
+                    faltas_tokens_map[kt] = float(faltas_tokens_map.get(kt, 0) or 0) + dias
         except Exception:
             faltas_map = {}
+            faltas_tokens_map = {}
 
         # vacaciones acumuladas/tomadas
         vac_map = {}
+        vac_tokens_map = {}
         try:
             vac_rows = db.execute(
                 text(
                     """
-                    SELECT lower(colaborador) AS c, COALESCE(SUM(dias),0) AS dias
+                    SELECT colaborador, COALESCE(SUM(dias),0) AS dias
                     FROM rrhh_vacaciones
-                    GROUP BY lower(colaborador)
+                    GROUP BY colaborador
                     """
                 )
             ).fetchall()
-            vac_map = {str(r[0]): float(r[1] or 0) for r in vac_rows}
+            vac_map = {}
+            vac_tokens_map = {}
+            for r in vac_rows:
+                raw = str(r[0] or "")
+                dias = float(r[1] or 0)
+                k = _norm_person_key(raw)
+                kt = _norm_person_tokens_key(raw)
+                if k:
+                    vac_map[k] = float(vac_map.get(k, 0) or 0) + dias
+                if kt:
+                    vac_tokens_map[kt] = float(vac_tokens_map.get(kt, 0) or 0) + dias
         except Exception:
             vac_map = {}
+            vac_tokens_map = {}
 
         items = []
         def _num(v):
@@ -1102,8 +1185,11 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
                     ficha = json.loads(ficha)
                 except Exception:
                     ficha = {}
-            key = str((d.get("colaborador") or "")).lower()
+            key = _norm_person_key(d.get("colaborador") or "")
+            key_tokens = _norm_person_tokens_key(d.get("colaborador") or "")
             faltas = float(faltas_map.get(key, 0) or 0)
+            if not faltas and key_tokens:
+                faltas = float(faltas_tokens_map.get(key_tokens, 0) or 0)
             sueldo = _num(
                 ficha.get("hh_liquido")
                 or ficha.get("renta_liquida")
@@ -1111,7 +1197,11 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
                 or 0
             )
             adel = float(adel_map.get(key, 0) or 0)
+            if not adel and key_tokens:
+                adel = float(adel_tokens_map.get(key_tokens, 0) or 0)
             vac_tomadas = float(vac_map.get(key, 0) or 0)
+            if not vac_tomadas and key_tokens:
+                vac_tomadas = float(vac_tokens_map.get(key_tokens, 0) or 0)
             fecha_ingreso = d.get("fecha_ingreso")
             vac_acumuladas = 0.0
             if fecha_ingreso:
@@ -2611,6 +2701,51 @@ def solicitudes_update(id_solicitud: int, body: dict, db: Session = Depends(get_
             {"id": id_solicitud, "estado": body.get("estado"), "motivo": body.get("motivo")},
         )
         db.commit()
+
+        # Si se aprueba un adelanto, reflejar inmediatamente en rrhh_adelantos (nómina).
+        try:
+            new_estado = str(body.get("estado") or "").strip().lower()
+            tipo = str((prev or {}).get("tipo") or "").strip().lower()
+            if tipo == "adelanto" and new_estado in ("aprobada", "aprobado", "aprobado_rrhh", "approved"):
+                colab = str((prev or {}).get("colaborador") or "").strip()
+                monto = (prev or {}).get("monto")
+                if colab and monto is not None:
+                    fecha = (prev or {}).get("fecha_inicio") or None
+                    # Evitar duplicados (mismo colaborador+monto+fecha).
+                    exists = db.execute(
+                        text(
+                            """
+                            SELECT 1
+                            FROM rrhh_adelantos
+                            WHERE lower(btrim(colaborador)) = lower(btrim(:c))
+                              AND COALESCE(monto,0) = COALESCE(:m,0)
+                              AND (:f IS NULL OR fecha = :f)
+                            LIMIT 1
+                            """
+                        ),
+                        {"c": colab, "m": monto, "f": fecha},
+                    ).scalar()
+                    if not exists:
+                        db.execute(
+                            text(
+                                """
+                                INSERT INTO rrhh_adelantos(colaborador, monto, fecha, motivo)
+                                VALUES (:c, :m, COALESCE(:f, CURRENT_DATE), :mot)
+                                """
+                            ),
+                            {
+                                "c": colab,
+                                "m": monto,
+                                "f": fecha,
+                                "mot": f"Auto: solicitud aprobada #{int(id_solicitud)}",
+                            },
+                        )
+                        db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
         # Notificaciones (correo + alertas) cuando cambia estado.
         try:
