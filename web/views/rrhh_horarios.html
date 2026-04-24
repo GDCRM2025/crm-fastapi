@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>RRHH · Horarios</title>
+  <meta name="gd-build" content="20260423-rrhh2" />
+  <title>RRHH · Planificador</title>
   <link rel="stylesheet" href="/web/styles.css" />
   <script src="/web/js/iframe-theme.js"></script>
   <style>
@@ -23,15 +24,35 @@
     .dow{ display:flex; gap:8px; flex-wrap:wrap; }
     .chk{ display:flex; gap:8px; align-items:center; font-weight:900; font-size:12px; opacity:.9; }
     .pill{ padding:4px 10px; border-radius:999px; border:1px solid rgba(148,163,184,.18); background:rgba(2,6,23,.18); font-weight:950; font-size:12px; }
+    .hrGrid{ display:grid; grid-template-columns: repeat(7, 1fr); gap:10px; margin-top:12px; }
+    @media (max-width: 980px){ .hrGrid{ grid-template-columns: repeat(2, 1fr);} }
+    .dayCol{ border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:10px; background: rgba(2,6,23,.12); min-height:140px; }
+    :root.light .dayCol{ background: rgba(255,255,255,.55); border-color: rgba(0,0,0,.10); }
+    .dayHead{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .dayName{ font-weight:1100; letter-spacing:.08em; text-transform:uppercase; font-size:11px; opacity:.85; }
+    .dropHint{ font-size:11px; opacity:.7; font-weight:850; margin-top:6px; }
+    .turnoPill{ display:inline-flex; align-items:center; gap:8px; border-radius:999px; padding:6px 10px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.18); font-weight:1000; cursor:grab; user-select:none; }
+    .turnoPill:active{ cursor:grabbing; }
+    .turnoPill small{ opacity:.7; font-weight:900; }
+    .slot{ margin-top:10px; border-radius:12px; border:1px dashed rgba(148,163,184,.28); padding:10px; min-height:70px; }
+    .slot.dragover{ background: rgba(59,130,246,.12); border-color: rgba(59,130,246,.45); }
+    .assignBox{ display:flex; flex-direction:column; gap:8px; }
+    .assignTop{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .xbtn{ height:28px; min-width:28px; border-radius:10px; border:1px solid rgba(255,255,255,.14); background:transparent; color:inherit; cursor:pointer; font-weight:1100; }
+    .xbtn:hover{ background: rgba(255,255,255,.06); }
+    .bar{ height:10px; border-radius:999px; background: rgba(148,163,184,.20); overflow:hidden; }
+    .bar > i{ display:block; height:100%; width:0%; background: linear-gradient(90deg, rgba(34,197,94,.75), rgba(59,130,246,.75)); }
+    .kpiLine{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    details.card{ padding:12px 14px; }
+    details.card > summary{ list-style:none; cursor:pointer; font-weight:1000; font-size:14px; opacity:.9; }
+    details.card > summary::-webkit-details-marker{ display:none; }
   </style>
 </head>
 <body>
-  <section class="card">
-    <div class="row" style="justify-content:space-between;">
-      <div>
-        <div class="title">Horarios teóricos</div>
-        <div class="muted">Asigna un turno a un colaborador (semanal) para comparar con marcaciones.</div>
-      </div>
+  <details class="card" id="advBox">
+    <summary>Avanzado: horarios teóricos</summary>
+    <div class="row" style="justify-content:space-between; margin-top:10px;">
+      <div class="muted">Solo para auditoría/eliminación. El flujo recomendado es usar el Planificador.</div>
       <div class="row">
         <button class="btn" id="btnTurnos">Turnos</button>
         <button class="btn" id="btnReload">Actualizar</button>
@@ -39,7 +60,6 @@
     </div>
 
     <div class="row" style="margin-top:12px;">
-      <select class="inp" id="selStaff"><option value="">Colaborador…</option></select>
       <select class="inp" id="selTurno"><option value="">Turno…</option></select>
       <input class="inp" id="hDesde" type="date" />
       <input class="inp" id="hHasta" type="date" />
@@ -60,6 +80,7 @@
             <th>Desde</th>
             <th>Hasta</th>
             <th>Días</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="rows">
@@ -67,6 +88,40 @@
         </tbody>
       </table>
     </div>
+  </details>
+
+  <section class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;">
+      <div>
+        <div class="title">Planificador</div>
+        <div class="muted">Arrastra turnos hacia días. Puedes guardar por semana o como base indefinida (repite semanalmente).</div>
+      </div>
+      <div class="row">
+        <select class="inp" id="selStaff"><option value="">Colaborador…</option></select>
+        <input class="inp" id="weekStart" type="date" style="min-width:210px" />
+        <button class="btn" id="btnLoadWeek">Cargar semana</button>
+        <label class="chk" style="min-width:auto;"><input type="checkbox" id="chkPlanIndef" /> Indefinido</label>
+        <button class="btn" id="btnSaveWeek">Guardar</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <select class="inp" id="selCopyStaff" style="min-width:220px"><option value="">Copiar a…</option></select>
+      <button class="btn" id="btnCopyPlan">Copiar</button>
+      <div class="muted" style="font-weight:900">Copia el plan cargado al colaborador seleccionado (mismo modo semana/indefinido).</div>
+    </div>
+    <div class="kpiLine">
+      <span class="pill" id="kpiWeek">Semana: —</span>
+      <span class="pill" id="kpiHours">Horas aprox: —</span>
+      <span class="pill" id="kpiTurnos">Turnos asignados: —</span>
+      <div style="flex:1; min-width:220px">
+        <div class="bar" title="Cobertura de semana (días con turno)"><i id="barCov"></i></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div class="muted" style="font-weight:900">Turnos disponibles:</div>
+      <div class="row" id="turnosPills"></div>
+    </div>
+    <div class="hrGrid" id="weekGrid"></div>
   </section>
 
   <script>
@@ -87,6 +142,9 @@
     }
     function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+    function getV(){
+      try{ return new URLSearchParams(location.search).get("v") || ""; }catch(_){ return ""; }
+    }
     function toast(msg){
       const t = document.createElement("div");
       t.textContent = msg;
@@ -124,18 +182,59 @@
       }
       return out.join(",");
     }
+    function iso(d){
+      const x = new Date(d.getTime());
+      x.setHours(0,0,0,0);
+      return x.toISOString().slice(0,10);
+    }
+    function slice10(v){ return String(v || "").slice(0,10); }
+    function parseHM(s){
+      const m = String(s||"").trim().match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return null;
+      const hh = Math.max(0, Math.min(23, Number(m[1] || 0)));
+      const mm = Math.max(0, Math.min(59, Number(m[2] || 0)));
+      return (hh*60+mm);
+    }
+    function turnoHours(t){
+      const a = parseHM(t?.hora_entrada);
+      const b0 = parseHM(t?.hora_salida);
+      if (a == null || b0 == null) return 0;
+      let b = b0;
+      if (b <= a) b += 24*60;
+      let dur = Math.max(0, b-a);
+      if (t?.colacion_auto) dur = Math.max(0, dur-60);
+      return dur/60.0;
+    }
 
     async function loadStaff(){
       const r = await fetch(apiURL("/rrhh/staff/assignable"), { headers: headers() });
       const data = await r.json().catch(()=>({}));
       const items = data.items || [];
+      window.__STAFF_ITEMS = items;
+      const prev = String(qs("#selStaff").value || "");
       qs("#selStaff").innerHTML = `<option value="">Colaborador…</option>` + items.map(s=>`<option value="${s.id_staff}">${s.colaborador || ("#"+s.id_staff)}</option>`).join("");
+      if (prev && items.some(s => String(s.id_staff) === prev)) qs("#selStaff").value = prev;
+      renderCopyStaff();
+    }
+    function renderCopyStaff(){
+      const items = window.__STAFF_ITEMS || [];
+      const cur = String(qs("#selStaff").value || "");
+      const copyItems = items.filter(s => String(s.id_staff) !== cur);
+      const prev = String(qs("#selCopyStaff").value || "");
+      qs("#selCopyStaff").innerHTML = `<option value="">Copiar a…</option>` + copyItems.map(s=>`<option value="${s.id_staff}">${s.colaborador || ("#"+s.id_staff)}</option>`).join("");
+      if (prev && copyItems.some(s => String(s.id_staff) === prev)) qs("#selCopyStaff").value = prev;
     }
     async function loadTurnos(){
       const r = await fetch(apiURL("/rrhh/turnos"), { headers: headers() });
       const data = await r.json().catch(()=>({}));
       const items = data.items || [];
       qs("#selTurno").innerHTML = `<option value="">Turno…</option>` + items.map(t=>`<option value="${t.id_turno}">${t.nombre} (${t.hora_entrada}-${t.hora_salida})</option>`).join("");
+      window.__TURNOS = items;
+      qs("#turnosPills").innerHTML = items.map(t => `
+        <span class="turnoPill" draggable="true" data-turno="${t.id_turno}">
+          ${t.nombre || "Turno"} <small>${t.hora_entrada || "??:??"}–${t.hora_salida || "??:??"}</small>
+        </span>
+      `).join("");
     }
     async function loadHorarios(){
       const r = await fetch(apiURL("/rrhh/horarios"), { headers: headers() });
@@ -153,8 +252,134 @@
           <td>${String(h.desde||"").slice(0,10) || "—"}</td>
           <td>${h.hasta ? String(h.hasta).slice(0,10) : "Indefinido"}</td>
           <td>${fmtMask(h.dow_mask)}</td>
+          <td style="text-align:right;">
+            <button class="btn" data-act="delHorario" data-id="${h.id_horario}">Eliminar</button>
+          </td>
         </tr>
       `).join("") || `<tr><td class="muted">Sin horarios.</td></tr>`;
+    }
+
+    async function loadWeek(){
+      const idStaff = Number(qs("#selStaff").value || 0);
+      const ws = qs("#weekStart").value;
+      if (!idStaff || !ws){
+        toast("Selecciona colaborador y fecha semana");
+        return;
+      }
+      const d0 = new Date(ws + "T00:00:00");
+      const d6 = new Date(d0.getTime() + 6*24*3600*1000);
+      qs("#kpiWeek").textContent = `Semana: ${ws} → ${iso(d6)}`;
+
+      const r = await fetch(apiURL(`/rrhh/horarios?id_staff=${encodeURIComponent(String(idStaff))}`), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      const hs = data.items || [];
+
+      const weekEnd = iso(d6);
+
+      function matchesDay(h, dayIso, dow){
+        const desde = slice10(h?.desde);
+        const hasta = h?.hasta ? slice10(h?.hasta) : "";
+        if (!desde) return false;
+        if (desde > dayIso) return false;
+        if (hasta && hasta < dayIso) return false;
+        const m0 = h?.dow_mask;
+        if (m0 == null) return true;
+        const m = Number(m0 || 0);
+        return ((m & (1<<dow)) !== 0);
+      }
+      function better(a, b){
+        // return true if a is better than b
+        if (!b) return true;
+        const aDesde = slice10(a?.desde);
+        const bDesde = slice10(b?.desde);
+        if (aDesde !== bDesde) return (aDesde > bDesde);
+        const ai = Number(a?.id_horario || 0);
+        const bi = Number(b?.id_horario || 0);
+        return ai > bi;
+      }
+
+      window.__WEEK_PLAN = {};
+      window.__WEEK_MATCH = {};
+      for (let k=0;k<7;k++){
+        const dayIso = iso(new Date(d0.getTime() + k*24*3600*1000));
+        let best = null;
+        for (const h of hs){
+          if (!matchesDay(h, dayIso, k)) continue;
+          if (better(h, best)) best = h;
+        }
+        if (best?.id_turno){
+          window.__WEEK_PLAN[k] = Number(best.id_turno);
+          window.__WEEK_MATCH[k] = best;
+        }
+      }
+      renderWeekGrid();
+      renderWeekKPIs();
+    }
+
+    function renderWeekKPIs(){
+      const plan = window.__WEEK_PLAN || {};
+      const ids = new Set(Object.values(plan || {}).map(x=>Number(x||0)).filter(Boolean));
+      const turnos = window.__TURNOS || [];
+      const byId = {};
+      turnos.forEach(t => byId[String(t.id_turno)] = t);
+      let hrs = 0;
+      let days = 0;
+      for (let k=0;k<7;k++){
+        const tid = plan[k];
+        if (!tid) continue;
+        days += 1;
+        hrs += turnoHours(byId[String(tid)]);
+      }
+      qs("#kpiHours").textContent = `Horas aprox: ${hrs.toFixed(1)}h`;
+      qs("#kpiTurnos").textContent = `Turnos asignados: ${days}`;
+      const pct = Math.max(0, Math.min(100, (days/7)*100));
+      qs("#barCov").style.width = pct.toFixed(0) + "%";
+    }
+
+    function renderWeekGrid(){
+      const turnos = window.__TURNOS || [];
+      const byId = {};
+      turnos.forEach(t => byId[String(t.id_turno)] = t);
+      const plan = window.__WEEK_PLAN || {};
+      const match = window.__WEEK_MATCH || {};
+      const ws = qs("#weekStart").value || "";
+      const d0 = ws ? new Date(ws + "T00:00:00") : null;
+      const we = d0 ? iso(new Date(d0.getTime() + 6*24*3600*1000)) : "";
+      qs("#weekGrid").innerHTML = DOW.map(d => {
+        const tid = plan[d.k] || 0;
+        const t = tid ? byId[String(tid)] : null;
+        const label = t ? `${t.nombre || "Turno"} · ${t.hora_entrada || "??:??"}–${t.hora_salida || "??:??"}` : "";
+        const lunch = (t && t.colacion_auto) ? `Colación: ${(t.colacion_ini || "13:30")}–${(t.colacion_fin || "14:30")}` : "";
+        const h = match[d.k] || null;
+        let src = "";
+        if (h){
+          const hd = slice10(h.desde);
+          const hh = h.hasta ? slice10(h.hasta) : "";
+          if (!hh) src = `Base (indefinido) · desde ${hd}`;
+          else if (ws && hd === ws && we && hh === we) src = `Semana · ${hd} → ${hh}`;
+          else src = `Rango · ${hd} → ${hh}`;
+        }
+        return `
+          <div class="dayCol" data-dow="${d.k}">
+            <div class="dayHead">
+              <div class="dayName">${d.n}</div>
+              <button class="xbtn" data-act="clearDay" data-dow="${d.k}" title="Quitar turno">×</button>
+            </div>
+            <div class="slot" data-slot="${d.k}">
+              ${t ? `
+                <div class="assignBox">
+                  <div class="assignTop">
+                    <div style="font-weight:1100">${label}</div>
+                  </div>
+                  ${lunch ? `<div class="muted">${lunch}</div>` : `<div class="muted">Sin colación</div>`}
+                  <div class="muted">Horas: ${turnoHours(t).toFixed(1)}h</div>
+                  ${src ? `<div class="muted">${src}</div>` : ``}
+                </div>
+              ` : `<div class="dropHint">Suelta un turno aquí</div>`}
+            </div>
+          </div>
+        `;
+      }).join("");
     }
 
     qs("#btnAsignar").addEventListener("click", async ()=>{
@@ -179,12 +404,145 @@
       await loadHorarios();
     });
 
+    document.addEventListener("click", async (ev)=>{
+      const b = ev.target?.closest?.("button[data-act]");
+      if (!b) return;
+      const act = b.getAttribute("data-act");
+      if (act === "delHorario"){
+        const id = Number(b.getAttribute("data-id") || 0);
+        if (!id) return;
+        if (!confirm("¿Eliminar este horario?")) return;
+        let r = await fetch(apiURL(`/rrhh/horarios/${encodeURIComponent(String(id))}`), { method:"DELETE", headers: headers() });
+        // Fallback: algunos front/proxies no pasan DELETE. Si 404, reintenta por POST.
+        if (!r.ok && r.status === 404){
+          r = await fetch(apiURL(`/rrhh/horarios/${encodeURIComponent(String(id))}/delete`), { method:"POST", headers: headers() });
+        }
+        if (!r.ok){
+          const t = await r.text().catch(()=> "");
+          toast("Error: " + (t || r.status));
+          return;
+        }
+        toast("Horario eliminado");
+        await loadHorarios();
+        return;
+      }
+      if (act === "clearDay"){
+        const dow = Number(b.getAttribute("data-dow"));
+        if (Number.isFinite(dow)) {
+          window.__WEEK_PLAN = window.__WEEK_PLAN || {};
+          delete window.__WEEK_PLAN[dow];
+          renderWeekGrid();
+          renderWeekKPIs();
+        }
+        return;
+      }
+    });
+
+    // Drag & drop turnos → días
+    document.addEventListener("dragstart", (ev)=>{
+      const el = ev.target?.closest?.(".turnoPill");
+      if (!el) return;
+      const tid = el.getAttribute("data-turno");
+      try{ ev.dataTransfer.setData("text/plain", String(tid||"")); }catch(_){}
+    });
+    document.addEventListener("dragover", (ev)=>{
+      const slot = ev.target?.closest?.(".slot[data-slot]");
+      if (!slot) return;
+      ev.preventDefault();
+      slot.classList.add("dragover");
+    });
+    document.addEventListener("dragleave", (ev)=>{
+      const slot = ev.target?.closest?.(".slot[data-slot]");
+      if (!slot) return;
+      slot.classList.remove("dragover");
+    });
+    document.addEventListener("drop", (ev)=>{
+      const slot = ev.target?.closest?.(".slot[data-slot]");
+      if (!slot) return;
+      ev.preventDefault();
+      slot.classList.remove("dragover");
+      const dow = Number(slot.getAttribute("data-slot"));
+      let tid = "";
+      try{ tid = String(ev.dataTransfer.getData("text/plain") || ""); }catch(_){}
+      const idt = Number(tid || 0);
+      if (!idt || !Number.isFinite(dow)) return;
+      window.__WEEK_PLAN = window.__WEEK_PLAN || {};
+      window.__WEEK_PLAN[dow] = idt;
+      renderWeekGrid();
+      renderWeekKPIs();
+    });
+
+    qs("#btnLoadWeek").addEventListener("click", loadWeek);
+    qs("#selStaff").addEventListener("change", ()=>{
+      renderCopyStaff();
+    });
+
+    qs("#btnSaveWeek").addEventListener("click", async ()=>{
+      const idStaff = Number(qs("#selStaff").value || 0);
+      const ws = qs("#weekStart").value;
+      if (!idStaff || !ws){
+        toast("Selecciona colaborador y fecha semana");
+        return;
+      }
+      const days = window.__WEEK_PLAN || {};
+      const isIndef = !!qs("#chkPlanIndef")?.checked;
+      const payload = isIndef ? { id_staff: idStaff, start: ws, days } : { id_staff: idStaff, week_start: ws, days };
+      const url = isIndef ? "/rrhh/horarios/plan_template" : "/rrhh/horarios/plan_week";
+      const r = await fetch(apiURL(url), { method:"POST", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("Error: " + (t || r.status));
+        return;
+      }
+      toast(isIndef ? "Base indefinida guardada" : "Semana guardada");
+      await loadHorarios();
+      await loadWeek();
+    });
+
+    qs("#btnCopyPlan").addEventListener("click", async ()=>{
+      const srcStaff = Number(qs("#selStaff").value || 0);
+      const dstStaff = Number(qs("#selCopyStaff").value || 0);
+      const ws = qs("#weekStart").value;
+      if (!srcStaff){
+        toast("Selecciona colaborador origen");
+        return;
+      }
+      if (!dstStaff){
+        toast("Selecciona colaborador destino");
+        return;
+      }
+      if (dstStaff === srcStaff){
+        toast("Destino debe ser distinto al origen");
+        return;
+      }
+      if (!ws){
+        toast("Selecciona fecha semana");
+        return;
+      }
+      const days = window.__WEEK_PLAN || {};
+      if (!days || !Object.keys(days).length){
+        toast("No hay turnos asignados para copiar");
+        return;
+      }
+      const isIndef = !!qs("#chkPlanIndef")?.checked;
+      const payload = isIndef ? { id_staff: dstStaff, start: ws, days } : { id_staff: dstStaff, week_start: ws, days };
+      const url = isIndef ? "/rrhh/horarios/plan_template" : "/rrhh/horarios/plan_week";
+      const r = await fetch(apiURL(url), { method:"POST", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("Error: " + (t || r.status));
+        return;
+      }
+      toast("Copiado");
+    });
+
     qs("#btnReload").addEventListener("click", async ()=>{
       await loadStaff(); await loadTurnos(); await loadHorarios();
     });
     qs("#btnTurnos").addEventListener("click", ()=>{
       const base = API_BASE || "";
-      window.location.href = `${base}/web/views/rrhh_turnos.html`;
+      const v = getV();
+      window.location.href = `${base}/web/views/rrhh_turnos.html${v ? `?v=${encodeURIComponent(v)}` : ""}`;
     });
     qs("#chkIndef")?.addEventListener("change", ()=>{
       const on = !!qs("#chkIndef").checked;
@@ -192,6 +550,13 @@
       if (on) qs("#hHasta").value = "";
     });
     renderDow();
+    // default weekStart: lunes de la semana actual
+    try{
+      const now = new Date();
+      const dow = (now.getDay() + 6) % 7; // 0=lun
+      const mon = new Date(now.getTime() - dow*24*3600*1000);
+      qs("#weekStart").value = iso(mon);
+    }catch(_){}
     loadStaff(); loadTurnos(); loadHorarios();
   </script>
 </body>

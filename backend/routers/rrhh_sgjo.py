@@ -574,10 +574,37 @@ def enroll_device(
                 ),
                 {"u": uid_int, "d": device_id, "h": h},
             )
+            # Relee id_request recién creado para notificación interna.
+            pending = db.execute(
+                text(
+                    """
+                    SELECT id_request
+                    FROM public.sgjo_device_requests
+                    WHERE id_usuario=:u AND device_id=:d AND status='pending'
+                    ORDER BY id_request DESC
+                    LIMIT 1
+                    """
+                ),
+                {"u": uid_int, "d": device_id},
+            ).scalar()
         db.commit()
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"No pude crear solicitud: {e}")
+
+    # Notificación interna (roles) para aprobación. No depende de push del usuario.
+    try:
+        from backend.core.system_notifs import push_system_notif
+
+        rid = int(pending) if str(pending or "").isdigit() else int(uid_int)
+        title = "RRHH · Enrolamiento de dispositivo"
+        body_txt = f"Pendiente: {user.get('name') or user.get('username')} · UID {uid_int}"
+        payload = {"id_request": int(pending) if str(pending or "").isdigit() else None, "id_usuario": uid_int, "device_id": device_id}
+        push_system_notif(db, kind="RRHH_DEVICE_ENROLL", role_target="RRHH", id_lead=rid, title=title, body=body_txt, payload=payload)
+        push_system_notif(db, kind="RRHH_DEVICE_ENROLL", role_target="ADMIN", id_lead=rid, title=title, body=body_txt, payload=payload)
+        push_system_notif(db, kind="RRHH_DEVICE_ENROLL", role_target="SUPERADMIN", id_lead=rid, title=title, body=body_txt, payload=payload)
+    except Exception:
+        pass
 
     # Aviso por correo (best-effort). Push no sirve aquí porque aún no está enrolado.
     try:

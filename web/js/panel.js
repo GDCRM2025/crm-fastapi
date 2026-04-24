@@ -4,6 +4,37 @@ function setPrefKey(username) {
   const key = (username || "default").toString().trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
   PREF_KEY = `gd_prefs_${key}`;
 }
+
+// Shared hosting stability mode: disable chat (polling) to reduce concurrent load.
+const CHAT_ENABLED = false;
+
+function _b64urlToUtf8(b64url) {
+  try {
+    const s = String(b64url || "").replace(/-/g, "+").replace(/_/g, "/");
+    const pad = s.length % 4 ? "=".repeat(4 - s.length % 4) : "";
+    const bin = atob(s + pad);
+    try {
+      return decodeURIComponent(Array.from(bin).map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join(""));
+    } catch (_) {
+      return bin;
+    }
+  } catch (_) {
+    return "";
+  }
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const t = String(token || "");
+    const parts = t.split(".");
+    if (parts.length < 2) return null;
+    const json = _b64urlToUtf8(parts[1]);
+    const obj = JSON.parse(json);
+    return obj && typeof obj === "object" ? obj : null;
+  } catch (_) {
+    return null;
+  }
+}
 const API_BASE = (() => {
   try {
     const h = String(location.hostname || "").toLowerCase();
@@ -400,16 +431,58 @@ function normalizeUserMenuLayout(menu) {
 }
 let _chatWatchTimer = null;
 function setupChatWatch() {
+  if (!CHAT_ENABLED) {
+    try {
+      const btnTop = qs("#btnChatTop");
+      if (btnTop) btnTop.style.display = "none";
+    } catch (_) {
+    }
+    try {
+      qs("#chatLauncher")?.remove?.();
+    } catch (_) {
+    }
+    try {
+      qs("#chatDock")?.remove?.();
+    } catch (_) {
+    }
+    try {
+      qs("#chatModal")?.remove?.();
+    } catch (_) {
+    }
+    return;
+  }
   if (_chatWatchTimer) return;
   const onceOpts = { once: true, capture: true, passive: true };
   window.addEventListener("pointerdown", enableSoundOnce, onceOpts);
   window.addEventListener("keydown", enableSoundOnce, onceOpts);
   window.addEventListener("touchstart", enableSoundOnce, onceOpts);
-  _chatWatchTimer = setInterval(() => {
-    if (document.hidden) return;
-    pollChatThreads();
-  }, 5e3);
-  pollChatThreads();
+  const isChatActive = () => {
+    try {
+      if (document.hidden) return false;
+      const chatModal = qs("#chatModal");
+      if (chatModal && chatModal.classList.contains("open")) return true;
+      const dock = qs("#chatDock");
+      if (dock && dock.querySelector(".chat-win.open")) return true;
+    } catch (_) {
+    }
+    return false;
+  };
+  const baseDelay = 25e3;
+  const activeDelay = 5e3;
+  const tick = async () => {
+    try {
+      if (!getToken()) return;
+      if (document.hidden) {
+        _chatWatchTimer = setTimeout(tick, baseDelay);
+        return;
+      }
+      await pollChatThreads();
+    } catch (_) {
+    } finally {
+      _chatWatchTimer = setTimeout(tick, isChatActive() ? activeDelay : baseDelay);
+    }
+  };
+  tick();
   _ensureChatLauncher();
 }
 let _chatLauncher = null;
@@ -829,6 +902,10 @@ function _ensureChatDock() {
   return d;
 }
 function openChatThread(threadId) {
+  if (!CHAT_ENABLED) {
+    toast("Chat deshabilitado (modo estabilidad).", { kind: "info", ms: 5e3 });
+    return;
+  }
   enableSoundOnce();
   try {
     const chatModal = qs("#chatModal");
@@ -1207,6 +1284,29 @@ function bindNotifications() {
   const btn = qs("#btnNotifs");
   const menu = qs("#notifMenu");
   if (!btn || !menu) return;
+  // Shared hosting: keep background polling minimal.
+  // Requirement: notifications only for RRHH topics.
+  try {
+    const me = (window.GD && window.GD.me) || {};
+    const roleName = String(me.role || me.rol || "").toUpperCase();
+    const can = roleName.includes("RRHH");
+    if (!can) {
+      btn.style.display = "none";
+      return;
+    }
+  } catch (_) {
+    try {
+      btn.style.display = "none";
+    } catch (_2) {
+    }
+    return;
+  }
+  // Evita polling agresivo en roles masivos (operadores/conductores) cuando están usando el CRM general.
+  // En portal_ops.html tienen su propia UI.
+  try {
+    if (CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7) return;
+  } catch (_) {
+  }
   const openMenu = async () => {
     const data = await fetchNotifications();
     renderNotifications(data);
@@ -1244,12 +1344,20 @@ function bindNotifications() {
   document.addEventListener("click", enableSoundOnce, { once: true, capture: true });
   document.addEventListener("pointerdown", enableSoundOnce, { once: true, capture: true });
   document.addEventListener("keydown", enableSoundOnce, { once: true, capture: true });
-  let delay = 5e3;
+  const baseDelay = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 2) ? 2e4 : 45e3;
+  let delay = baseDelay;
   const maxDelay = 12e4;
   const tick = async () => {
+    try {
+      if (document.hidden) {
+        setTimeout(tick, Math.min(maxDelay, Math.max(3e4, delay)));
+        return;
+      }
+    } catch (_) {
+    }
     const data = await fetchNotifications();
     if (data && data.ok) {
-      delay = 5e3;
+      delay = baseDelay;
       renderNotifications(data);
       renderLeadLock(data);
     } else {
@@ -1257,7 +1365,8 @@ function bindNotifications() {
     }
     setTimeout(tick, delay);
   };
-  tick();
+  // Avoid a thundering herd on login: add jitter before the first poll.
+  setTimeout(tick, 8e3 + Math.floor(Math.random() * 6e3));
 }
 async function fetchMe() {
   var _a, _b, _c, _d, _e, _f, _g;
@@ -1266,7 +1375,19 @@ async function fetchMe() {
       location.href = `${API_BASE}/web/login.html`;
       return;
     }
-    const r = await fetch(`${API_BASE}/me`, { headers: authHeaders() });
+    const ctrl = new AbortController();
+    const to = setTimeout(() => {
+      try {
+        ctrl.abort();
+      } catch (_) {
+      }
+    }, 6e3);
+    let r;
+    try {
+      r = await fetch(`${API_BASE}/me`, { headers: authHeaders(), signal: ctrl.signal });
+    } finally {
+      clearTimeout(to);
+    }
     if (r.status === 401 || r.status === 403) {
       location.href = `${API_BASE}/web/login.html`;
       return;
@@ -1337,6 +1458,58 @@ async function fetchMe() {
   }
 }
 
+function bootstrapFromToken() {
+  try {
+    const token = getToken();
+    if (!token) return { ok: false, redirected: false };
+    const payload = decodeJwtPayload(token);
+    if (!payload) return { ok: false, redirected: false };
+    const roleName = String(payload.role || payload.rol || "").toUpperCase();
+    const name = String(payload.name || payload.nombre || payload.username || payload.sub || "Usuario");
+    const marcas = Array.isArray(payload.marcas) ? payload.marcas : [];
+    window.GD = window.GD || {};
+    window.GD.me = window.GD.me || {};
+    Object.assign(window.GD.me, {
+      role: payload.role || payload.rol || "",
+      rol: payload.role || payload.rol || "",
+      name,
+      nombre: name,
+      username: payload.sub || "",
+      marcas
+    });
+    try {
+      setPrefKey(payload.sub || name);
+    } catch (_) {
+    }
+    CURRENT_ROLE_ID = ROLE_IDS[roleName] || null;
+    try {
+      const sysBackup = qs("#sysBackup");
+      if (sysBackup) sysBackup.style.display = CURRENT_ROLE_ID === 1 ? "" : "none";
+    } catch (_) {
+    }
+    const isOpsOnly = CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7 || isOpsAppRole(roleName);
+    if (isOpsOnly) {
+      try {
+        const here = String(location.pathname || "");
+        if (here.endsWith("/web/index.html") || here.endsWith("/web/") || here.endsWith("/web")) {
+          location.replace(`${API_BASE}/web/views/portal_ops.html?v=20260305-opsportal2`);
+          return { ok: true, redirected: true };
+        }
+      } catch (_) {
+      }
+      try {
+        document.body.classList.add("ops-mode");
+      } catch (_) {
+      }
+    }
+    buildMenu();
+    startTasksBadgePolling();
+    return { ok: true, redirected: false };
+  } catch (_) {
+    return { ok: false, redirected: false };
+  }
+}
+
 async function maybePromptSgjoMarkIn(me) {
   try {
     if (!getToken()) return;
@@ -1346,10 +1519,20 @@ async function maybePromptSgjoMarkIn(me) {
     if (!(j && j.ok)) return;
     const today = String(j.today || "").trim();
     if (!today) return;
-    if (j.puede_marcar === false) return;
+    // Solo aplica a usuarios que realmente deben/pueden marcar.
+    // SUPERADMIN/ADMIN típicamente devuelven puede_marcar=null: no los molestamos.
+    if (j.puede_marcar !== true) return;
     if (j.has_in) return;
     const k = `gd_sgjo_in_dismissed_${today}`;
-    if (localStorage.getItem(k) === "1") return;
+    // Fallback: algunos entornos no persisten localStorage (iframes/privado). Usamos sessionStorage también.
+    try {
+      if (localStorage.getItem(k) === "1") return;
+    } catch (_) {
+    }
+    try {
+      if (sessionStorage.getItem(k) === "1") return;
+    } catch (_) {
+    }
     const punto = String(j.default_punto_code || "").trim();
     const markURL = punto ? `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto)}&v=${Date.now()}` : `/web/views/rrhh_portal.html?v=${Date.now()}`;
     const openMark = () => {
@@ -1366,11 +1549,29 @@ async function maybePromptSgjoMarkIn(me) {
         cancelButtonText: "Más tarde"
       });
       if (res.isConfirmed) openMark();
-      else localStorage.setItem(k, "1");
+      else {
+        try {
+          localStorage.setItem(k, "1");
+        } catch (_) {
+        }
+        try {
+          sessionStorage.setItem(k, "1");
+        } catch (_) {
+        }
+      }
       return;
     }
     if (confirm("RRHH: registra tu ENTRADA ahora?")) openMark();
-    else localStorage.setItem(k, "1");
+    else {
+      try {
+        localStorage.setItem(k, "1");
+      } catch (_) {
+      }
+      try {
+        sessionStorage.setItem(k, "1");
+      } catch (_) {
+      }
+    }
   } catch (_) {
   }
 }
@@ -1913,7 +2114,7 @@ const MENU = [
     ico: "\u{1F465}",
     title: "RRHH",
     items: [
-      { id: "rrhh_hub", label: "RRHH", url: "/web/views/rrhh.html?v=20260402-2" }
+      { id: "rrhh_hub", label: "RRHH", url: "/web/views/rrhh.html?v=20260423-rrhh2" }
     ]
   },
 	  {
@@ -1924,7 +2125,7 @@ const MENU = [
 	      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260327-tools7#correo" },
 	      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260327-tools7#instagram" },
 	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260327-tools7#whatsapp" },
-	      { id: "tool_chat", label: "Chat (instalable)", url: "/web/views/tools.html?v=20260327-tools7#chat" },
+      { id: "tool_chat", label: "Chat (deshabilitado)", url: "/web/views/tools.html?v=20260327-tools7#chat", disabled: true },
 	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260327-tools7#calc" },
 	      // Clima removido (Tools unificado). Si lo reactivamos, vuelve como item de Tools.
 	    ]
@@ -1975,13 +2176,13 @@ function toggleFav(id) {
   setFavIds(next);
 }
 function listVisibleMenuItems() {
-  const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : null;
+  const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : /* @__PURE__ */ new Set();
   const isDriver = CURRENT_ROLE_ID === 6;
   const isAdmin = CURRENT_ROLE_ID === 1;
   const out = [];
   for (const g of MENU) {
     for (const it of g.items) {
-      if (it.sep || it.noSidebar || !it.url) continue;
+      if (it.sep || it.noSidebar || it.disabled || !it.url) continue;
       if (allowed && !allowed.has(it.id)) continue;
       if (it.driverOnly && !isDriver && !isAdmin) continue;
       out.push({ ...it, groupId: g.id, groupTitle: g.title, groupIco: g.ico });
@@ -1991,7 +2192,7 @@ function listVisibleMenuItems() {
 }
 let ACTIVE_ITEM_ID = null;
 let CURRENT_ROLE_ID = null;
-let CURRENT_ALLOWED = null;
+let CURRENT_ALLOWED = /* @__PURE__ */ new Set();
 let TASKS_BADGE = { open_total: 0, overdue_total: 0, open_contactar: 0, overdue_contactar: 0 };
 let TASKS_POLL_HANDLE = null;
 let TASKS_SYNC_INFLIGHT = false;
@@ -2287,7 +2488,7 @@ const PERMISSIONS = {
 function buildMenu() {
   const nav = qs("#sideMenu");
   nav.innerHTML = "";
-  const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : null;
+  const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : /* @__PURE__ */ new Set();
   CURRENT_ALLOWED = allowed;
   const isDriver = CURRENT_ROLE_ID === 6;
   const isAdmin = CURRENT_ROLE_ID === 1;
@@ -2353,7 +2554,7 @@ function buildMenu() {
   } catch (_) {
   }
   for (const g of MENU) {
-    const visibleItems = allowed ? g.items.filter((it) => !it.sep && !it.noSidebar && allowed.has(it.id) && (!it.driverOnly || isDriver)) : g.items.filter((it) => !it.sep && !it.noSidebar && (!it.driverOnly || isDriver));
+    const visibleItems = allowed ? g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && allowed.has(it.id) && (!it.driverOnly || isDriver)) : g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && (!it.driverOnly || isDriver));
     if (!visibleItems.length) continue;
     if (lastGroupId === "operadores" && (g.id === "rrhh" || g.id === "tools" || g.id === "settings")) {
       const divider = document.createElement("div");
@@ -2382,6 +2583,7 @@ function buildMenu() {
         continue;
       }
       if (it.noSidebar) continue;
+      if (it.disabled) continue;
       if (allowed && !allowed.has(it.id)) continue;
       if (it.driverOnly && !isDriver && !isAdmin) continue;
       const b = document.createElement("button");
@@ -2508,13 +2710,16 @@ async function syncTasksOnce() {
 function startTasksBadgePolling() {
   if (!canUseTasksBadge()) return;
   if (TASKS_POLL_HANDLE) return;
-  fetchTasksSummary();
+  // Shared hosting: avoid heavy background activity on every login.
+  // - No auto-sync (can be triggered from the Tasks view when needed).
+  // - Poll summary less frequently with initial jitter.
+  const jitter = Math.floor(Math.random() * 8e3);
   setTimeout(() => {
-    syncTasksOnce();
-  }, 800);
+    fetchTasksSummary();
+  }, 12e3 + jitter);
   TASKS_POLL_HANDLE = setInterval(() => {
     fetchTasksSummary();
-  }, 5 * 60 * 1000);
+  }, 12 * 60 * 1000);
 }
 
 function closeAllGroups() {
@@ -3064,7 +3269,7 @@ function findFirstAllowedItem() {
   const allowed = CURRENT_ALLOWED;
   for (const g of MENU) {
     for (const it of g.items) {
-      if (it.sep || !it.url) continue;
+      if (it.sep || it.disabled || !it.url) continue;
       if (allowed && !allowed.has(it.id)) continue;
       return it;
     }
@@ -3072,6 +3277,7 @@ function findFirstAllowedItem() {
   return null;
 }
 function openDefault() {
+  if (ACTIVE_ITEM_ID) return;
   if (CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7) {
     openItem({ id: "ops_portal", url: "/web/views/portal_ops.html?v=20260305-opsportal2" });
     return;
@@ -3085,14 +3291,16 @@ function openDefault() {
 }
 (function init() {
   if (!requireAuth()) return;
+  const boot = bootstrapFromToken();
+  if (boot.redirected) return;
   setupIdleLogout();
   renderTopTools();
-  buildMenu();
   bindSidebarBehavior();
   bindSidebarTools();
   bindTopbar();
   bindNotifications();
   startClock();
+  openDefault();
   fetchMe().finally(() => {
     initThemeToggle();
     initUserMenu();

@@ -1246,6 +1246,101 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
         return {"ok": False, "detail": str(e)}
 
 
+@router.get("/push/status")
+def rrhh_push_status(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """
+    Control de compliance de notificaciones:
+    lista colaboradores RRHH con su usuario linkeado y si tienen suscripciones push activas.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT s.id_staff, s.colaborador, s.id_usuario,
+                       COALESCE(s.rol,'') AS rol,
+                       COALESCE(s.centro_costo,'') AS centro_costo,
+                       COALESCE(cnt.cnt,0)::int AS push_active
+                FROM rrhh_staff s
+                LEFT JOIN (
+                  SELECT user_id, COUNT(*)::int AS cnt
+                  FROM public.push_subscriptions
+                  WHERE active IS TRUE
+                  GROUP BY user_id
+                ) cnt ON cnt.user_id = s.id_usuario
+                WHERE s.is_active IS TRUE
+                ORDER BY COALESCE(s.centro_costo,''), COALESCE(s.rol,''), s.colaborador ASC, s.id_staff ASC
+                """
+            )
+        ).mappings().all()
+        items = [dict(r) for r in rows]
+        missing = [x for x in items if int(x.get("id_usuario") or 0) > 0 and int(x.get("push_active") or 0) <= 0]
+        unlinked = [x for x in items if not x.get("id_usuario")]
+        return {"ok": True, "items": items, "missing_push": len(missing), "unlinked_users": len(unlinked)}
+    except Exception as e:
+        db.rollback()
+        return {"ok": False, "detail": str(e)}
+
+
+@router.post("/reminders/run")
+def rrhh_reminders_run(
+    dry: int | None = None,
+    force: int | None = None,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Ejecuta el motor de recordatorios IN/OUT manualmente (para pruebas).
+    En producción corre automáticamente via middleware, pero este endpoint ayuda a depurar.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        from backend.core.rrhh_reminders import run_rrhh_mark_reminders
+
+        return run_rrhh_mark_reminders(dry_run=bool(int(dry or 0)), force_run=bool(int(force or 0)))
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "detail": str(e)}
+
+
+@router.get("/reminders/state")
+def rrhh_reminders_state(
+    date: str | None = None,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        if date:
+            d = str(date)[:10]
+        else:
+            d = db.execute(text("SELECT (now() AT TIME ZONE 'America/Santiago')::date")).scalar()
+            d = str(d)[:10]
+        rows = db.execute(
+            text(
+                """
+                SELECT fecha, id_staff, kind, attempt, last_sent_at, updated_at
+                FROM rrhh_reminder_state
+                WHERE fecha=:d
+                ORDER BY updated_at DESC NULLS LAST, id_staff ASC
+                LIMIT :lim
+                """
+            ),
+            {"d": d, "lim": max(1, min(2000, int(limit)))},
+        ).mappings().all()
+        return {"ok": True, "date": d, "items": [dict(r) for r in rows]}
+    except Exception as e:
+        db.rollback()
+        return {"ok": False, "detail": str(e)}
+
+
 # -----------------------------
 # RRHH Portal (colaborador)
 # -----------------------------
@@ -1545,6 +1640,33 @@ def turnos_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(
     return {"ok": True}
 
 
+@router.delete("/turnos/{id_turno}")
+def turnos_delete(id_turno: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        tid = int(id_turno)
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_turno inválido")
+
+    in_use = db.execute(
+        text(
+            """
+            SELECT COUNT(*)::int
+            FROM rrhh_horarios
+            WHERE is_active IS TRUE AND id_turno=:t
+            """
+        ),
+        {"t": tid},
+    ).scalar()
+    if int(in_use or 0) > 0:
+        raise HTTPException(status_code=400, detail="Turno en uso en horarios activos. Elimina/desactiva esos horarios primero.")
+
+    db.execute(text("UPDATE rrhh_turnos SET is_active=FALSE, updated_at=now() WHERE id_turno=:t"), {"t": tid})
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/horarios")
 def horarios_assign(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
@@ -1621,13 +1743,44 @@ def horarios_assign(body: dict, db: Session = Depends(get_db), me: dict = Depend
     db.commit()
     try:
         st = db.execute(
-            text("SELECT colaborador, COALESCE(centro_costo,''), COALESCE(rol,'') FROM rrhh_staff WHERE id_staff=:id LIMIT 1"),
+            text(
+                """
+                SELECT colaborador, COALESCE(centro_costo,''), COALESCE(rol,''), id_usuario
+                FROM rrhh_staff
+                WHERE id_staff=:id
+                LIMIT 1
+                """
+            ),
             {"id": int(id_staff)},
         ).first()
         tn = db.execute(
             text("SELECT nombre, hora_entrada, hora_salida FROM rrhh_turnos WHERE id_turno=:id LIMIT 1"),
             {"id": int(id_turno)},
         ).first()
+        # Notificar al colaborador (si está linkeado a un usuario del sistema).
+        try:
+            uid = int(st[3]) if (st and st[3]) else None
+        except Exception:
+            uid = None
+        if uid:
+            try:
+                from backend.core.webpush import send_webpush_to_users
+
+                title = "RRHH · Nuevo horario asignado"
+                body_txt = (
+                    f"{(tn[0] if tn else 'Turno')} · {(tn[1] if tn else '')}-{(tn[2] if tn else '')}\n"
+                    f"Desde: {desde}\n"
+                    f"Hasta: {hasta or 'Indefinido'}"
+                )
+                send_webpush_to_users(
+                    user_ids=[uid],
+                    title=title,
+                    body=body_txt[:180],
+                    url="/crm/web/views/rrhh_portal.html?v=rrhh-horario",
+                    tag=f"rrhh-horario-{uid}-{id_staff}",
+                )
+            except Exception:
+                pass
         _notify_rrhh_admins(
             db,
             subject="RRHH · Horario asignado",
@@ -1646,6 +1799,257 @@ def horarios_assign(body: dict, db: Session = Depends(get_db), me: dict = Depend
     return {"ok": True}
 
 
+@router.post("/horarios/plan_week")
+def horarios_plan_week(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """
+    Asigna horarios por semana (día a día) sin destruir el "horario base" (si existe).
+    Estrategia:
+    - Inserta 1 fila por día (dow_mask=bit) con rango [week_start, week_end].
+    - Desactiva solamente filas previas del mismo staff y mismo rango [week_start, week_end]
+      (para que re-planificar la semana sea idempotente).
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        id_staff = int(body.get("id_staff"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_staff requerido")
+    week_start = (body.get("week_start") or "").strip()
+    if not week_start:
+        raise HTTPException(status_code=400, detail="week_start requerido (YYYY-MM-DD)")
+    try:
+        d0 = datetime.date.fromisoformat(week_start[:10])
+    except Exception:
+        raise HTTPException(status_code=400, detail="week_start inválido")
+    d6 = d0 + datetime.timedelta(days=6)
+
+    days = body.get("days") or {}
+    # Acepta {0: id_turno, 1: id_turno, ...} o {"0": id_turno, ...} o lista len=7.
+    mapping: dict[int, int] = {}
+    if isinstance(days, list):
+        for i, v in enumerate(days[:7]):
+            try:
+                if v is None or str(v).strip() == "":
+                    continue
+                mapping[int(i)] = int(v)
+            except Exception:
+                continue
+    elif isinstance(days, dict):
+        for k, v in days.items():
+            try:
+                if v is None or str(v).strip() == "":
+                    continue
+                mapping[int(k)] = int(v)
+            except Exception:
+                continue
+
+    if not mapping:
+        raise HTTPException(status_code=400, detail="days vacío: asigna al menos 1 día")
+
+    # Validar turnos existen y activos
+    ids = sorted(set(int(x) for x in mapping.values()))
+    ok_turnos = db.execute(
+        text("SELECT id_turno FROM rrhh_turnos WHERE is_active IS TRUE AND id_turno = ANY(:ids)"),
+        {"ids": ids},
+    ).fetchall()
+    ok_set = {int(r[0]) for r in ok_turnos}
+    missing = [t for t in ids if t not in ok_set]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Turnos inválidos/inactivos: {missing}")
+
+    # Desactiva planificación anterior de esa semana (mismo rango), sin tocar el horario base.
+    db.execute(
+        text(
+            """
+            UPDATE rrhh_horarios
+            SET is_active=FALSE
+            WHERE is_active IS TRUE
+              AND id_staff=:s
+              AND desde=:d0
+              AND hasta=:d6
+            """
+        ),
+        {"s": id_staff, "d0": d0, "d6": d6},
+    )
+
+    created = 0
+    for dow, id_turno in mapping.items():
+        if dow < 0 or dow > 6:
+            continue
+        db.execute(
+            text(
+                """
+                INSERT INTO rrhh_horarios(id_staff,id_turno,desde,hasta,dow_mask,is_active)
+                VALUES (:s,:t,:d0,:d6,:m,TRUE)
+                """
+            ),
+            {"s": id_staff, "t": int(id_turno), "d0": d0, "d6": d6, "m": int(1 << int(dow))},
+        )
+        created += 1
+
+    db.commit()
+
+    # Notifica al colaborador si está linkeado
+    try:
+        st = db.execute(
+            text("SELECT colaborador, id_usuario FROM rrhh_staff WHERE id_staff=:s LIMIT 1"),
+            {"s": int(id_staff)},
+        ).first()
+        uid = int(st[1]) if (st and st[1]) else None
+        if uid:
+            try:
+                from backend.core.webpush import send_webpush_to_users
+
+                title = "RRHH · Horario semanal asignado"
+                body_txt = f"Semana {d0.isoformat()} → {d6.isoformat()}"
+                send_webpush_to_users(
+                    user_ids=[uid],
+                    title=title,
+                    body=body_txt,
+                    url="/crm/web/views/rrhh_portal.html?v=rrhh-horario-week",
+                    tag=f"rrhh-week-{uid}-{d0.isoformat()}",
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return {"ok": True, "week_start": d0.isoformat(), "week_end": d6.isoformat(), "created": created}
+
+
+@router.post("/horarios/plan_template")
+def horarios_plan_template(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """
+    Asigna un "horario base" indefinido (repite semanalmente desde una fecha).
+    Estrategia:
+    - Desactiva filas previas indefinidas (hasta IS NULL) del staff.
+    - Inserta 1 fila por día (dow_mask=bit) con desde=start y hasta=NULL.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        id_staff = int(body.get("id_staff"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_staff requerido")
+
+    start = (body.get("start") or body.get("desde") or body.get("week_start") or "").strip()
+    if not start:
+        raise HTTPException(status_code=400, detail="start requerido (YYYY-MM-DD)")
+    try:
+        d0 = datetime.date.fromisoformat(start[:10])
+    except Exception:
+        raise HTTPException(status_code=400, detail="start inválido")
+
+    days = body.get("days") or {}
+    mapping: dict[int, int] = {}
+    if isinstance(days, list):
+        for i, v in enumerate(days[:7]):
+            try:
+                if v is None or str(v).strip() == "":
+                    continue
+                mapping[int(i)] = int(v)
+            except Exception:
+                continue
+    elif isinstance(days, dict):
+        for k, v in days.items():
+            try:
+                if v is None or str(v).strip() == "":
+                    continue
+                mapping[int(k)] = int(v)
+            except Exception:
+                continue
+
+    if not mapping:
+        raise HTTPException(status_code=400, detail="days vacío: asigna al menos 1 día")
+
+    ids = sorted(set(int(x) for x in mapping.values()))
+    ok_turnos = db.execute(
+        text("SELECT id_turno FROM rrhh_turnos WHERE is_active IS TRUE AND id_turno = ANY(:ids)"),
+        {"ids": ids},
+    ).fetchall()
+    ok_set = {int(r[0]) for r in ok_turnos}
+    missing = [t for t in ids if t not in ok_set]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Turnos inválidos/inactivos: {missing}")
+
+    # Reemplaza el "base" indefinido actual (si existe)
+    db.execute(
+        text(
+            """
+            UPDATE rrhh_horarios
+            SET is_active=FALSE
+            WHERE is_active IS TRUE
+              AND id_staff=:s
+              AND hasta IS NULL
+            """
+        ),
+        {"s": int(id_staff)},
+    )
+
+    created = 0
+    for dow, id_turno in mapping.items():
+        if dow < 0 or dow > 6:
+            continue
+        db.execute(
+            text(
+                """
+                INSERT INTO rrhh_horarios(id_staff,id_turno,desde,hasta,dow_mask,is_active)
+                VALUES (:s,:t,:d0,NULL,:m,TRUE)
+                """
+            ),
+            {"s": id_staff, "t": int(id_turno), "d0": d0, "m": int(1 << int(dow))},
+        )
+        created += 1
+
+    db.commit()
+
+    # Notifica al colaborador si está linkeado
+    try:
+        st = db.execute(
+            text("SELECT colaborador, id_usuario FROM rrhh_staff WHERE id_staff=:s LIMIT 1"),
+            {"s": int(id_staff)},
+        ).first()
+        uid = int(st[1]) if (st and st[1]) else None
+        if uid:
+            try:
+                from backend.core.webpush import send_webpush_to_users
+
+                title = "RRHH · Horario indefinido asignado"
+                body_txt = f"Desde {d0.isoformat()} (semanal)"
+                send_webpush_to_users(
+                    user_ids=[uid],
+                    title=title,
+                    body=body_txt,
+                    url="/crm/web/views/rrhh_portal.html?v=rrhh-horario-template",
+                    tag=f"rrhh-template-{uid}-{d0.isoformat()}",
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return {"ok": True, "start": d0.isoformat(), "created": created}
+
+
+@router.delete("/horarios/{id_horario}")
+def horarios_delete(id_horario: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        hid = int(id_horario)
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_horario inválido")
+    db.execute(text("UPDATE rrhh_horarios SET is_active=FALSE WHERE id_horario=:id"), {"id": hid})
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/horarios/{id_horario}/delete")
+def horarios_delete_post(id_horario: int, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    # Fallback para entornos donde DELETE puede fallar/interceptarse.
+    return horarios_delete(id_horario=id_horario, db=db, me=me)
+
+
 @router.get("/horarios")
 def horarios_list(id_staff: int | None = None, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
@@ -1654,7 +2058,9 @@ def horarios_list(id_staff: int | None = None, db: Session = Depends(get_db), me
         rows = db.execute(
             text(
                 """
-                SELECT h.*, t.nombre AS turno_nombre, t.hora_entrada, t.hora_salida
+                SELECT h.*,
+                       t.nombre AS turno_nombre, t.hora_entrada, t.hora_salida, t.tolerancia_min,
+                       t.colacion_auto, t.colacion_ini, t.colacion_fin
                 FROM rrhh_horarios h
                 JOIN rrhh_turnos t ON t.id_turno=h.id_turno
                 WHERE h.is_active IS TRUE AND h.id_staff=:s
@@ -1667,7 +2073,9 @@ def horarios_list(id_staff: int | None = None, db: Session = Depends(get_db), me
         rows = db.execute(
             text(
                 """
-                SELECT h.*, t.nombre AS turno_nombre, t.hora_entrada, t.hora_salida
+                SELECT h.*,
+                       t.nombre AS turno_nombre, t.hora_entrada, t.hora_salida, t.tolerancia_min,
+                       t.colacion_auto, t.colacion_ini, t.colacion_fin
                 FROM rrhh_horarios h
                 JOIN rrhh_turnos t ON t.id_turno=h.id_turno
                 WHERE h.is_active IS TRUE

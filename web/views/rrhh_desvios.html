@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="gd-build" content="20260423-rrhh2" />
   <title>RRHH · Desvíos</title>
   <link rel="stylesheet" href="../styles.css"/>
   <script src="../js/iframe-theme.js"></script>
@@ -47,6 +48,7 @@
             <option value="">Todos</option>
           </select>
           <button class="btn primary" id="btnDetect">Detectar hoy</button>
+          <button class="btn" id="btnRemind">Recordatorios (force)</button>
           <button class="btn" id="btnReload">Actualizar</button>
         </div>
       </div>
@@ -136,6 +138,26 @@
       setLog("Cargando…");
       const res = await apiJSON(`/rrhh/desvios?${q.toString()}`);
       const items = Array.isArray(res?.items) ? res.items : [];
+      const statusPrio = { "pendiente": 0, "": 1, "aprobado": 2, "rechazado": 3 };
+      const tipoPrio = { "MISSING_IN": 0, "MISSING_OUT": 1, "LATE_IN": 2, "EARLY_OUT": 3, "EARLY_IN": 4, "LATE_OUT": 5 };
+      items.sort((a,b)=>{
+        const sa = String(a.status||"").toLowerCase();
+        const sb = String(b.status||"").toLowerCase();
+        const pa = statusPrio[sa] ?? 9;
+        const pb = statusPrio[sb] ?? 9;
+        if (pa !== pb) return pa - pb;
+        const ta = String(a.tipo||"").toUpperCase();
+        const tb = String(b.tipo||"").toUpperCase();
+        const pta = tipoPrio[ta] ?? 9;
+        const ptb = tipoPrio[tb] ?? 9;
+        if (pta !== ptb) return pta - ptb;
+        const da = String(a.fecha||"");
+        const db = String(b.fecha||"");
+        if (da !== db) return db.localeCompare(da);
+        const ia = Number(a.impact_min || 0);
+        const ib = Number(b.impact_min || 0);
+        return ib - ia;
+      });
       qs("#meta").textContent = `${items.length} desvío(s)`;
       const tb = qs("#tbody");
       if(!items.length){
@@ -178,6 +200,14 @@
       await load();
     }
 
+    async function remindForce(){
+      setLog("Ejecutando recordatorios…");
+      const res = await apiJSON(`/rrhh/reminders/run?force=1`, { method:"POST" });
+      if (res?.skipped) setLog("Recordatorios: skipped (throttle)");
+      else setLog(`Recordatorios: sent=${res?.sent||0} · desvios=${res?.created_desvios||0}`);
+      await load();
+    }
+
     document.addEventListener("click", async (e)=>{
       const b = e.target.closest("button[data-act]");
       if(!b) return;
@@ -207,6 +237,7 @@
       }catch(_){}
       qs("#btnReload").addEventListener("click", load);
       qs("#btnDetect").addEventListener("click", detect);
+      qs("#btnRemind").addEventListener("click", remindForce);
       qs("#fEstado").addEventListener("change", load);
       qs("#fDate").addEventListener("change", load);
       await load();
@@ -214,4 +245,3 @@
   </script>
 </body>
 </html>
-

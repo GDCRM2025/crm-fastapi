@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+import threading
 import uuid
 from pathlib import Path
+import base64
+import hmac
+import hashlib
+import json
 from fastapi import FastAPI
 from fastapi import Request
 from fastapi.responses import FileResponse
@@ -19,6 +25,7 @@ from dotenv import load_dotenv
 from backend.core.logging_setup import setup_logging
 from fastapi import HTTPException
 from backend.core.settings import settings
+from fastapi.openapi.utils import get_openapi
 
 
 def include_router_safe(app: FastAPI, module_path: str, attr: str = "router") -> None:
@@ -47,6 +54,24 @@ app = FastAPI(title="CRM BDGD")
 setup_logging(BASE_DIR)
 log = logging.getLogger("crm")
 
+_OPENAPI_CACHE: dict | None = None
+
+
+def _cached_openapi() -> dict:
+    global _OPENAPI_CACHE
+    if _OPENAPI_CACHE is not None:
+        return _OPENAPI_CACHE
+    _OPENAPI_CACHE = get_openapi(
+        title=app.title,
+        version=getattr(app, "version", "0.0.0"),
+        description=getattr(app, "description", None),
+        routes=app.routes,
+    )
+    return _OPENAPI_CACHE
+
+
+app.openapi = _cached_openapi  # type: ignore[assignment]
+
 def _apply_security_headers(request: Request, resp):
     """
     Hardening básico sin romper el CRM embebido (iframes same-origin) ni la PWA.
@@ -74,6 +99,85 @@ def _apply_security_headers(request: Request, resp):
     except Exception:
         pass
     return resp
+
+
+_RRHH_TICK_LOCK = threading.Lock()
+_RRHH_TICK_LAST = 0.0
+_RRHH_TICK_INFLIGHT = False
+
+
+def _should_tick_rrhh(request: Request) -> bool:
+    """
+    Evita meter carga extra en cada request (especialmente /login y /web/*).
+    El tick se limita a tráfico RRHH/SGJO y se throttlea in-process.
+    """
+    try:
+        p = str(request.url.path or "/")
+        if p.startswith("/web/"):
+            return False
+        if p in ("/", "/login", "/logout", "/openapi.json", "/docs", "/redoc", "/favicon.ico", "/healthz"):
+            return False
+        if not (p.startswith("/rrhh") or p.startswith("/sgjo")):
+            return False
+        if str(request.method or "").upper() == "OPTIONS":
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _b64url_decode(s: str) -> bytes:
+    s = (s or "").strip()
+    pad = "=" * ((4 - (len(s) % 4)) % 4)
+    return base64.urlsafe_b64decode((s + pad).encode("ascii"))
+
+
+def _jwt_payload_verified(token: str) -> dict | None:
+    """
+    Decodifica y verifica JWT (HS256) sin tocar BD.
+    Usado SOLO para guards rápidos en middleware.
+    """
+    tok = (token or "").strip()
+    if not tok or tok.count(".") != 2:
+        return None
+
+    # Preferimos libs si existen (y soportan el algoritmo configurado).
+    try:
+        from backend.routers.auth import SECRET_KEY, ALGORITHM, _jose_jwt, _pyjwt  # type: ignore
+
+        if _jose_jwt is not None:
+            return _jose_jwt.decode(tok, SECRET_KEY, algorithms=[ALGORITHM])
+        if _pyjwt is not None:
+            return _pyjwt.decode(tok, SECRET_KEY, algorithms=[ALGORITHM])  # type: ignore
+
+        alg = str(ALGORITHM or "HS256").upper()
+        if alg != "HS256":
+            return None
+
+        header_b64, payload_b64, sig_b64 = tok.split(".", 2)
+        msg = f"{header_b64}.{payload_b64}".encode("ascii")
+        key = str(SECRET_KEY or "").encode("utf-8")
+        if not key:
+            return None
+        sig = _b64url_decode(sig_b64)
+        exp = hmac.new(key, msg, hashlib.sha256).digest()
+        if not hmac.compare_digest(sig, exp):
+            return None
+        payload = json.loads(_b64url_decode(payload_b64).decode("utf-8", "ignore") or "{}")
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+def _role_from_bearer(authorization: str) -> str:
+    try:
+        if not authorization or not authorization.lower().startswith("bearer "):
+            return ""
+        tok = authorization.split(" ", 1)[1]
+        payload = _jwt_payload_verified(tok) or {}
+        return str(payload.get("role") or payload.get("rol") or "").upper()
+    except Exception:
+        return ""
 
 def _safe_web_path(rel: str) -> Path | None:
     """
@@ -157,14 +261,46 @@ async def rid_middleware(request: Request, call_next):
     rid = uuid.uuid4().hex[:8]
     request.state.rid = rid
     try:
+        # Tick RRHH reminders (best-effort throttled).
+        # Important on shared hosting: never block the only Passenger worker with background jobs.
+        try:
+            if _should_tick_rrhh(request):
+                now = time.monotonic()
+                do = False
+                with _RRHH_TICK_LOCK:
+                    global _RRHH_TICK_LAST
+                    global _RRHH_TICK_INFLIGHT
+                    if (now - float(_RRHH_TICK_LAST or 0.0)) >= 25.0:
+                        # If a previous tick is still running, skip this one.
+                        if not _RRHH_TICK_INFLIGHT:
+                            _RRHH_TICK_LAST = now
+                            _RRHH_TICK_INFLIGHT = True
+                            do = True
+                if do:
+                    from backend.core.rrhh_reminders import run_rrhh_mark_reminders
+
+                    def _bg_tick():
+                        global _RRHH_TICK_INFLIGHT
+                        try:
+                            run_rrhh_mark_reminders(dry_run=False)
+                        except Exception:
+                            pass
+                        finally:
+                            try:
+                                with _RRHH_TICK_LOCK:
+                                    _RRHH_TICK_INFLIGHT = False
+                            except Exception:
+                                _RRHH_TICK_INFLIGHT = False
+
+                    threading.Thread(target=_bg_tick, daemon=True).start()
+        except Exception:
+            pass
+
         # Guard: rol FINANZAS solo puede usar endpoints de finanzas (+ auth/me + web estático).
         try:
             auth = request.headers.get("authorization") or ""
             if auth.lower().startswith("bearer "):
-                from backend.routers.auth import get_current_user as _get_user  # lazy import
-
-                u = _get_user(authorization=auth)
-                role = str((u or {}).get("role") or (u or {}).get("rol") or "").upper()
+                role = _role_from_bearer(auth)
                 if "FINAN" in role:
                     p = request.url.path or "/"
                     # Permitimos historial (quotes) para FINANZAS (requerimiento: FINANZAS ve finanzas + historial).
@@ -261,6 +397,15 @@ if WEB_DIR.exists():
     print(f"[main] Static /web OK -> {WEB_DIR}")
 else:
     print(f"[main] Static /web SKIP (no existe) -> {WEB_DIR}")
+
+# Health check (no DB). Use for external keep-warm pings on shared hosting.
+@app.get("/healthz", include_in_schema=False)
+def healthz() -> JSONResponse:
+    return JSONResponse({"ok": True, "ts": int(time.time())})
+
+@app.head("/healthz", include_in_schema=False)
+def healthz_head() -> JSONResponse:
+    return healthz()
 
 # Root: manda al login
 @app.get("/", include_in_schema=False)

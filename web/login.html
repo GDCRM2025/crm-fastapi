@@ -139,17 +139,28 @@
         fire('Error', err.message||'No se pudo enviar la solicitud', 'error');
       }
     });
-    // Evita bucle infinito: si hay token guardado pero está vencido/invalid, el index rebota al login.
-    // Validamos contra /me antes de redirigir.
-    (async()=>{
+    // Shared hosting: NO llamamos /me aquí (puede colgarse y dejar el login “muerto”).
+    // En su lugar, validamos exp del JWT (best-effort) y redirigimos por rol.
+    (function(){
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       if (!token) return;
       try{
-        const r = await fetch(`${API_BASE}/me`, {
-          headers: { "Authorization": "Bearer " + token, "Accept": "application/json" }
-        });
-        if (r.ok){
-          location.href = `${WEB_BASE}/index.html`;
+        const parts = String(token||"").split(".");
+        if (parts.length === 3){
+          const payloadJson = b64urlToUtf8(parts[1]);
+          const payload = payloadJson ? JSON.parse(payloadJson) : null;
+          const exp = Number(payload?.exp || 0) || 0;
+          if (exp && (Date.now()/1000) > (exp - 30)){
+            throw new Error("expired");
+          }
+          const roleGuess = String(payload?.role || payload?.rol || "").toUpperCase();
+          const isOps = ["OPERADOR","CONDUCTOR","CHOFER","CHOP","CONDUCTOR (CHOP)"].includes(roleGuess);
+          const nextURL = normalizeNext();
+          if (!nextURL && isOps){
+            location.replace(`${WEB_BASE}/views/portal_ops.html?v=${Date.now()}`);
+            return;
+          }
+          location.replace(nextURL || `${WEB_BASE}/index.html`);
           return;
         }
       }catch(_){}
@@ -159,7 +170,6 @@
         localStorage.removeItem("gd_token");
         sessionStorage.removeItem("token");
         sessionStorage.removeItem("gd_token");
-        // Cookie cross-subdomain (www <-> non-www)
         document.cookie = "gd_token=; path=/; max-age=0; samesite=lax";
         document.cookie = "gd_token=; path=/; max-age=0; samesite=lax; domain=.greendiamond.cl";
       }catch(_){}
@@ -184,6 +194,33 @@
         if (n.startsWith("/web/")) return API_BASE + n;
         return "";
       } catch (_) {
+        return "";
+      }
+    }
+
+    function b64urlToUtf8(b64url){
+      try{
+        const s = String(b64url||"").replace(/-/g, "+").replace(/_/g, "/");
+        const pad = "=".repeat((4 - (s.length % 4)) % 4);
+        const bin = atob(s + pad);
+        // decode binary string to utf-8
+        const bytes = new Uint8Array(bin.length);
+        for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+        return new TextDecoder("utf-8").decode(bytes);
+      }catch(_){
+        return "";
+      }
+    }
+
+    function guessRoleFromJwt(tok){
+      try{
+        const parts = String(tok||"").split(".");
+        if (parts.length !== 3) return "";
+        const payloadJson = b64urlToUtf8(parts[1]);
+        const payload = payloadJson ? JSON.parse(payloadJson) : null;
+        const role = String(payload?.role || payload?.rol || "").toUpperCase();
+        return role;
+      }catch(_){
         return "";
       }
     }
@@ -229,13 +266,23 @@
         (remember?localStorage:sessionStorage).setItem('nombre', data.nombre||username);
         await fire({icon:'success',title:`¡Bienvenido, ${data.nombre||username}!`,timer:900,showConfirmButton:false});
         const nextURL = normalizeNext();
+
+        // Importante: NO bloqueamos la redirección esperando /me (puede ponerse lento en shared).
+        // Para decidir el destino, inferimos el rol desde el JWT (solo para routing; permisos reales se validan en backend).
         try{
-          const me = await fetch(`${API_BASE}/me`, { headers: { Authorization: 'Bearer ' + tok } }).then(r=>r.json());
-          const role = String(me.role || me.rol || me.user?.role || '').toUpperCase();
-          location.href = nextURL || `${WEB_BASE}/index.html`;
-        }catch(_){
-          location.href = nextURL || `${WEB_BASE}/index.html`;
-        }
+          const roleGuess = guessRoleFromJwt(tok);
+          const isOps = ["OPERADOR","CONDUCTOR","CHOFER","CHOP","CONDUCTOR (CHOP)"].includes(roleGuess);
+          const isPatio = roleGuess.includes("OPERADOR PATIO") || roleGuess.includes("PATIO");
+          if (!nextURL && isOps){
+            location.href = `${WEB_BASE}/views/portal_ops.html?v=${Date.now()}`;
+            return;
+          }
+          if (!nextURL && isPatio){
+            location.href = `${WEB_BASE}/views/rrhh_portal.html?v=${Date.now()}`;
+            return;
+          }
+        }catch(_){}
+        location.href = nextURL || `${WEB_BASE}/index.html`;
       }catch(err){ fire('Error', err.message||'No se pudo iniciar sesión', 'error'); }
     });
   })();

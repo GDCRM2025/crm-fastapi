@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="gd-build" content="20260423-rrhh2" />
   <title>RRHH</title>
   <link rel="stylesheet" href="/web/styles.css" />
   <script src="/web/js/iframe-theme.js"></script>
@@ -101,15 +102,16 @@
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
     function esc(s){ return String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('\"',"&quot;"); }
 
-    const V = "20260402-2";
+    const V = "20260423-rrhh2";
 	    const URLS = {
 	      portal: `/web/views/rrhh_portal.html?v=${V}`,
 	      colab: `/web/views/rrhh_colaboradores.html?v=${V}`,
-	      turnos: `/web/views/rrhh_turnos.html?v=${V}`,
+	      turnos: `/web/views/rrhh_horarios.html?v=${V}`,
 	      nomina: `/web/views/rrhh_nomina.html?v=${V}`,
 	      marc: `/web/views/rrhh_marcaciones.html?v=${V}`,
 	      sol: `/web/views/rrhh_solicitudes.html?v=${V}`,
 	      desv: `/web/views/rrhh_desvios.html?v=${V}`,
+	      push: `/web/views/rrhh_push.html?v=${V}`,
 	      sgjo: `/web/views/rrhh_sgjo.html?v=${V}`,
 	      puntos: `/web/views/rrhh_puntos.html?v=${V}`,
 	    };
@@ -151,7 +153,8 @@
 	        tabs.push(
 	          { id:"colab", label:"Colaboradores", url: URLS.colab },
 	          { id:"nomina", label:"Nómina", url: URLS.nomina },
-	          { id:"turnos", label:"Turnos + horarios", url: URLS.turnos },
+	          { id:"turnos", label:"Planificador", url: URLS.turnos },
+	          { id:"push", label:"Notificaciones", url: URLS.push },
 	          { id:"puntos", label:"Puntos + QR", url: URLS.puntos },
 	          { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
 	          { id:"sol", label:"Solicitudes (admin)", url: URLS.sol },
@@ -159,7 +162,7 @@
 	        );
 	      }else if (managerRRHH){
 	        tabs.push(
-	          { id:"turnos", label:"Turnos + horarios", url: URLS.turnos },
+	          { id:"turnos", label:"Planificador", url: URLS.turnos },
 	          { id:"marc", label:"Marcaciones (admin)", url: URLS.marc },
 	          { id:"desv", label:"Desvíos (aprobación)", url: URLS.desv },
 	        );

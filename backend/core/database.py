@@ -101,7 +101,23 @@ try:
 except Exception:
     connect_args = {}
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True, connect_args=connect_args)
+_pool_kwargs = {}
+try:
+    # Defaults de SQLAlchemy son ok para dev, pero en Passenger con muchos usuarios se necesita ajustar.
+    # Solo activamos si vienen como env (para no romper entornos chicos).
+    ps = str(os.getenv("CRM_DB_POOL_SIZE") or "").strip()
+    mo = str(os.getenv("CRM_DB_MAX_OVERFLOW") or "").strip()
+    pt = str(os.getenv("CRM_DB_POOL_TIMEOUT") or "").strip()
+    if ps:
+        _pool_kwargs["pool_size"] = max(1, int(ps))
+    if mo:
+        _pool_kwargs["max_overflow"] = max(0, int(mo))
+    if pt:
+        _pool_kwargs["pool_timeout"] = max(1, int(pt))
+except Exception:
+    _pool_kwargs = {}
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True, connect_args=connect_args, **_pool_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 

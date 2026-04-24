@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="gd-build" content="20260423-rrhh2" />
+  <title>RRHH · Notificaciones</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="/web/js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:14px;background:transparent;color:var(--text);}
+    .wrap{max-width:1200px;margin:0 auto;display:grid;gap:12px;}
+    .card{border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.26);border-radius:18px;padding:14px;backdrop-filter: blur(10px);}
+    :root.light .card{background:rgba(255,255,255,.86);border-color:rgba(0,0,0,.10);}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    .ttl{font-weight:1200;font-size:18px;}
+    .muted{opacity:.8;font-weight:850;font-size:12px;}
+    .btn{height:38px;border-radius:12px;border:1px solid rgba(148,163,184,.22);background:rgba(2,6,23,.18);color:inherit;padding:0 12px;font-weight:1100;cursor:pointer;}
+    .btn.primary{background:color-mix(in srgb, var(--accent) 22%, transparent);border-color:color-mix(in srgb, var(--accent) 55%, transparent);}
+    .inp{height:38px;border-radius:12px;border:1px solid rgba(148,163,184,.22);background:rgba(2,6,23,.12);color:inherit;padding:0 12px;font-weight:1000;outline:none;}
+    table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border-radius:14px;border:1px solid rgba(148,163,184,.18);}
+    th,td{padding:10px 10px;border-bottom:1px solid rgba(148,163,184,.14);font-size:12px;text-align:left;vertical-align:middle;}
+    th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.8;}
+    tr:hover td{background:rgba(148,163,184,.06);}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.12);font-weight:1100;}
+    .pill.bad{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.10);}
+    .pill.warn{border-color:rgba(234,179,8,.35);background:rgba(234,179,8,.10);}
+    .pill.ok{border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.10);}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <div class="ttl">RRHH · Notificaciones</div>
+          <div class="muted">Control de quién tiene notificaciones push activas (para recordatorios de marcación y alertas).</div>
+        </div>
+        <div class="row">
+          <input class="inp" id="q" placeholder="Buscar colaborador…" style="min-width:220px" />
+          <button class="btn primary" id="btnReload">Actualizar</button>
+          <button class="btn" id="btnCopyMsg">Copiar instrucciones</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <span class="pill" id="kTotal">Total: —</span>
+        <span class="pill warn" id="kMissing">Sin push: —</span>
+        <span class="pill bad" id="kUnlinked">Sin usuario: —</span>
+        <span class="muted" id="log">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="muted">Tip: “Sin usuario” significa que el colaborador no está linkeado a un usuario del CRM (no se puede enviar push).</div>
+      <div style="overflow:auto;margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th>Colaborador</th>
+              <th>Centro</th>
+              <th>Rol</th>
+              <th>ID usuario</th>
+              <th>Push</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="6" class="muted">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = (()=> {
+      try{
+        const h = String(location.hostname||"").toLowerCase();
+        const isLocal = (h==="localhost" || h==="127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const qs = (s, el=document)=> el.querySelector(s);
+    function getToken(){
+      return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    }
+    function authHeaders(h){
+      const tok = getToken();
+      return tok ? ({...h, "Authorization":"Bearer "+tok}) : h;
+    }
+    async function apiJSON(path, opt){
+      const r = await fetch(`${API_BASE}${path}`, { ...(opt||{}), headers: authHeaders({ "Accept":"application/json", ...((opt||{}).headers||{}) })});
+      const t = await r.text();
+      let j=null; try{ j = t ? JSON.parse(t) : null; }catch(_){}
+      if(!r.ok){
+        throw new Error((j && (j.detail||j.error||j.message)) ? (j.detail||j.error||j.message) : (t || ("HTTP "+r.status)));
+      }
+      return j;
+    }
+    function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m])); }
+    function setLog(s){ qs("#log").textContent = String(s||"—"); }
+    function pill(status){
+      const st = String(status||"");
+      if (st === "OK") return `<span class="pill ok">OK</span>`;
+      if (st === "SIN PUSH") return `<span class="pill warn">SIN PUSH</span>`;
+      return `<span class="pill bad">${esc(st)}</span>`;
+    }
+
+    function instructionsText(){
+      const base = `${location.origin}${API_BASE || ""}`;
+      return [
+        "RRHH · Activar notificaciones (push)",
+        "",
+        "1) Entra al CRM desde tu celular o PC.",
+        "2) Cuando el navegador pida permisos, elige “Permitir notificaciones”.",
+        "3) Si lo bloqueaste: revisa permisos del navegador (Notificaciones) y vuelve a abrir el CRM.",
+        "",
+        `Link: ${base}/`,
+        "",
+        "Después de eso, los recordatorios IN/OUT llegan por notificación.",
+      ].join("\\n");
+    }
+
+    async function load(){
+      setLog("Cargando…");
+      const res = await apiJSON("/rrhh/push/status");
+      const items = Array.isArray(res?.items) ? res.items : [];
+      const q = String(qs("#q").value||"").trim().toUpperCase();
+      const filtered = q ? items.filter(x => String(x.colaborador||\"\").toUpperCase().includes(q)) : items;
+
+      qs("#kTotal").textContent = `Total: ${items.length}`;
+      qs("#kMissing").textContent = `Sin push: ${Number(res?.missing_push||0)}`;
+      qs("#kUnlinked").textContent = `Sin usuario: ${Number(res?.unlinked_users||0)}`;
+
+      const tb = qs("#tbody");
+      if(!filtered.length){
+        tb.innerHTML = `<tr><td colspan="6" class="muted">Sin resultados.</td></tr>`;
+        setLog("Listo");
+        return;
+      }
+
+      function rowStatus(x){
+        const uid = Number(x.id_usuario || 0);
+        const push = Number(x.push_active || 0);
+        if (!uid) return "SIN USUARIO";
+        if (push <= 0) return "SIN PUSH";
+        return "OK";
+      }
+
+      // Orden: SIN PUSH, SIN USUARIO, OK
+      const prio = { "SIN PUSH": 0, "SIN USUARIO": 1, "OK": 2 };
+      const sorted = [...filtered].sort((a,b)=>{
+        const sa = rowStatus(a), sb = rowStatus(b);
+        const pa = prio[sa] ?? 9, pb = prio[sb] ?? 9;
+        if (pa !== pb) return pa - pb;
+        return String(a.colaborador||\"\").localeCompare(String(b.colaborador||\"\"), \"es\", { sensitivity:\"base\" });
+      });
+
+      tb.innerHTML = sorted.map(x=>{
+        const uid = x.id_usuario ? String(x.id_usuario) : \"—\";
+        const push = Number(x.push_active || 0);
+        const st = rowStatus(x);
+        return `
+          <tr>
+            <td><b>${esc(x.colaborador||\"—\")}</b><div class="muted mono">#${esc(String(x.id_staff||\"\"))}</div></td>
+            <td>${esc(x.centro_costo||\"\")}</td>
+            <td>${esc(x.rol||\"\")}</td>
+            <td class="mono">${esc(uid)}</td>
+            <td class="mono">${esc(String(push))}</td>
+            <td>${pill(st)}</td>
+          </tr>
+        `;
+      }).join(\"\");
+      setLog(\"Listo\");
+    }
+
+    qs(\"#btnReload\").addEventListener(\"click\", load);
+    qs(\"#q\").addEventListener(\"input\", ()=>{ load(); });
+    qs(\"#btnCopyMsg\").addEventListener(\"click\", async ()=>{
+      const txt = instructionsText();
+      try{
+        await navigator.clipboard.writeText(txt);
+        setLog(\"Instrucciones copiadas\");
+      }catch(_){
+        try{
+          const ta = document.createElement(\"textarea\");
+          ta.value = txt;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand(\"copy\");
+          ta.remove();
+          setLog(\"Instrucciones copiadas\");
+        }catch(e){
+          alert(txt);
+        }
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>

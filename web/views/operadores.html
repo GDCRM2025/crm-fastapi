@@ -775,13 +775,36 @@
     if(logoutLink){ logoutLink.addEventListener('click', doLogout); }
 
     try{
-      const me = await fetch(apiURL('/me'), { headers:{ Authorization: 'Bearer ' + token } }).then(r=>r.json());
-      const role = String(me.role || me.rol || '').toUpperCase();
-      const name = me.nombre || me.name || me.username || 'Operador';
+      // Evita pegarle a /me (DB) en shared hosting: derivamos rol/nombre desde el JWT.
+      const b64urlToText = (b64url) => {
+        try{
+          const s = String(b64url || '').replace(/-/g,'+').replace(/_/g,'/');
+          const pad = (s.length % 4) ? '='.repeat(4 - (s.length % 4)) : '';
+          const bin = atob(s + pad);
+          try{
+            return decodeURIComponent(Array.from(bin).map(c => '%' + c.charCodeAt(0).toString(16).padStart(2,'0')).join(''));
+          }catch(_){
+            return bin;
+          }
+        }catch(_){ return ''; }
+      };
+      const decodeJwtPayload = (tok) => {
+        try{
+          const parts = String(tok||'').split('.');
+          if(parts.length < 2) return null;
+          const j = JSON.parse(b64urlToText(parts[1]) || '{}');
+          return (j && typeof j === 'object') ? j : null;
+        }catch(_){ return null; }
+      };
+      const payload = decodeJwtPayload(token) || {};
+      const role = String(payload.role || payload.rol || '').toUpperCase();
+      const name = String(payload.name || payload.nombre || payload.sub || 'Operador');
+
       document.getElementById('bienvenida-title').textContent = `Bienvenido, ${name}`;
       const topWho = document.getElementById('topWho');
       if (topWho) topWho.textContent = name;
-      const opsRoles = ['OPERADOR','CHOP','CHOFER','CONDUCTOR','CONDUCTOR (CHOP)','OPERACIONES','JEFE DE OPERACIONES','COMPRAS','BODEGA','ADMIN','SUPERADMIN'];
+
+      const opsRoles = ['OPERADOR','CHOP','CHOFER','CONDUCTOR','CONDUCTOR (CHOP)','OPERACIONES','JEFE DE OPERACIONES','COMPRAS','BODEGA','BODEGUERO','ADMIN','SUPERADMIN'];
       if (!opsRoles.includes(role)){
         location.href = apiURL('/web/index.html');
         return;
@@ -791,7 +814,6 @@
         document.querySelectorAll('.driver-only').forEach(el => el.style.display = 'none');
       }
     }catch(_){
-      // si falla /me, forzamos login
       location.href = apiURL('/web/login.html');
     }
 

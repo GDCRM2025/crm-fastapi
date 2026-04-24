@@ -109,15 +109,39 @@ def get_engine():
     if _engine is None:
         _patch_sqlalchemy_pg_version_bytes()
         dsn = _get_dsn()
-        # Force UTF-8 at connect time to avoid UnicodeDecodeError in some hostings
-        # where the client encoding ends up as SQL_ASCII.
+        # --- Stability knobs (shared hosting) ---
+        # Goal: fail fast instead of hanging the only Passenger worker.
+        pool_size = int(os.getenv("CRM_DB_POOL_SIZE", "3") or "3")
+        max_overflow = int(os.getenv("CRM_DB_MAX_OVERFLOW", "2") or "2")
+        pool_timeout = int(os.getenv("CRM_DB_POOL_TIMEOUT", "5") or "5")
+        pool_recycle = int(os.getenv("CRM_DB_POOL_RECYCLE", "300") or "300")
+        connect_timeout = int(os.getenv("CRM_DB_CONNECT_TIMEOUT", "5") or "5")
+        stmt_timeout_ms = int(os.getenv("CRM_DB_STATEMENT_TIMEOUT_MS", "15000") or "15000")
+        lock_timeout_ms = int(os.getenv("CRM_DB_LOCK_TIMEOUT_MS", "5000") or "5000")
+
         connect_args = {}
         if dsn.startswith("postgresql"):
-            connect_args = {"options": "-c client_encoding=UTF8"}
+            # Force UTF-8 at connect time to avoid UnicodeDecodeError in some hostings
+            # where the client encoding ends up as SQL_ASCII.
+            # Also add statement/lock timeouts to prevent indefinite waits.
+            # (These are server-side timeouts, so they work even if the client can't cancel.)
+            options = [
+                "-c client_encoding=UTF8",
+                f"-c statement_timeout={max(1000, stmt_timeout_ms)}",
+                f"-c lock_timeout={max(500, lock_timeout_ms)}",
+            ]
+            connect_args = {
+                "options": " ".join(options),
+                "connect_timeout": max(1, connect_timeout),
+            }
 
         _engine = create_engine(
             dsn,
             pool_pre_ping=True,
+            pool_size=max(1, pool_size),
+            max_overflow=max(0, max_overflow),
+            pool_timeout=max(1, pool_timeout),
+            pool_recycle=max(0, pool_recycle),
             future=True,
             connect_args=connect_args,
         )
