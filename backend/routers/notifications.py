@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import os
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 
@@ -115,6 +116,32 @@ def _ensure_system_notifs(conn) -> None:
         conn.commit()
     except Exception:
         pass
+
+def _col_exists_conn(conn, table: str, col: str) -> bool:
+    try:
+        return bool(
+            conn.execute(
+                text(
+                    """
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name=:t AND column_name=:c
+                    """
+                ),
+                {"t": table, "c": col},
+            ).first()
+        )
+    except Exception:
+        return False
+
+def _estado_id_conn(conn, name_like: str) -> int | None:
+    try:
+        r = conn.execute(
+            text("SELECT id_estado FROM estados_lead WHERE UPPER(nombre) LIKE :n LIMIT 1"),
+            {"n": f"%{name_like.upper()}%"},
+        ).fetchone()
+        return int(r[0]) if r else None
+    except Exception:
+        return None
 
 def _touch_once_per(path: str, every_seconds: int) -> bool:
     """
@@ -278,7 +305,7 @@ def _estado_id(name_like: str) -> int | None:
 
 
 @router.get("")
-def get_notifications(user=Depends(get_current_user), force_jobs: int = 0):
+def get_notifications(user=Depends(get_current_user), force_jobs: int = 0, light: int = 0):
     items = []
     counts = {}
     system_notifs_preview = []
@@ -292,13 +319,17 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0):
     marcas = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
     only_own = not _is_admin(role)
 
+    run_jobs = str(os.getenv("CRM_NOTIFS_RUN_JOBS") or "").strip().lower() in ("1", "true", "yes", "on")
+    include_stale = str(os.getenv("CRM_NOTIFS_INCLUDE_STALE") or "").strip().lower() in ("1", "true", "yes", "on")
+    is_light = int(light or 0) == 1
+
     with get_connection() as conn:
         _ensure_system_notifs(conn)
-        confirmado_id = _estado_id("CONFIRM")
-        declinado_id = _estado_id("DECLIN")
-        nuevo_id = _estado_id("NUEVO")
-        contactado_id = _estado_id("CONTACT")
-        cotizado_id = _estado_id("COTIZ")
+        confirmado_id = _estado_id_conn(conn, "CONFIRM")
+        declinado_id = _estado_id_conn(conn, "DECLIN")
+        nuevo_id = _estado_id_conn(conn, "NUEVO")
+        contactado_id = _estado_id_conn(conn, "CONTACT")
+        cotizado_id = _estado_id_conn(conn, "COTIZ")
 
         # Auto-decline for "evento pasado" is cheap and should be automatic.
         # Throttle to run at most once per 30 minutes per server process.
@@ -306,7 +337,7 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0):
             from pathlib import Path
             root = Path(__file__).resolve().parents[2]
             stamp = str(root / "data" / "debug" / "auto_decline_past_events.stamp")
-            if int(force_jobs or 0) == 1 or _touch_once_per(stamp, every_seconds=1800):
+            if run_jobs and (int(force_jobs or 0) == 1 or _touch_once_per(stamp, every_seconds=1800)):
                 try:
                     changed = _apply_past_event_auto_decline(
                         conn,
@@ -336,7 +367,7 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0):
             from pathlib import Path
             root = Path(__file__).resolve().parents[2]
             stamp = str(root / "data" / "debug" / "normalize_cotizado.stamp")
-            if int(force_jobs or 0) == 1 or _touch_once_per(stamp, every_seconds=900):
+            if run_jobs and (int(force_jobs or 0) == 1 or _touch_once_per(stamp, every_seconds=900)):
                 changed = _apply_quote_state_normalize(
                     conn,
                     cotizado_id=cotizado_id,
@@ -351,7 +382,7 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0):
 
         # If caller explicitly requests jobs, allow applying stale rules (declinar) as well.
         # This is heavier than the other jobs; we only run it for admin.
-        if int(force_jobs or 0) == 1 and _is_admin(role):
+        if run_jobs and int(force_jobs or 0) == 1 and _is_admin(role):
             try:
                 res = auto_decline_stale_leads(dry_run=False, triggered_by="NOTIFICATIONS(force_jobs)", conn=conn)
                 if isinstance(res, dict) and res.get("ok") and not res.get("dry_run"):
@@ -360,7 +391,7 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0):
                 job_errors["stale_decline"] = "error"
 
         # A) Eventos de hoy / mañana (confirmados, por marca)
-        if confirmado_id and _col_exists("leads", "fecha_evento"):
+        if (not is_light) and confirmado_id and _col_exists_conn(conn, "leads", "fecha_evento"):
             params = {"e": confirmado_id}
             marca_sql = ""
             if only_own and marcas:
@@ -406,9 +437,9 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0):
         # A2) Leads nuevos de hoy (para sonido + badge en frontend).
         # Nota: el panel usa el delta de este contador para reproducir "Nuevo lead".
         try:
-            if _col_exists("leads", "created_at"):
+            if _col_exists_conn(conn, "leads", "created_at"):
                 date_col = "created_at"
-            elif _col_exists("leads", "fecha_ingreso"):
+            elif _col_exists_conn(conn, "leads", "fecha_ingreso"):
                 date_col = "fecha_ingreso"
             else:
                 date_col = "updated_at"
@@ -444,77 +475,76 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0):
         # B) Leads sin movimiento (solo lectura): usamos el motor oficial stale_leads (dry_run)
         stale_ids: list[int] = []
         stale_by_status: dict[str, list] = {"NUEVO": [], "CONTACTADO": [], "COTIZADO": []}
-        try:
-            dry = auto_decline_stale_leads(dry_run=True, triggered_by="NOTIFICATIONS", conn=conn)
-            raw_items = dry.get("items") or []
-            # Enriquecemos con datos del lead (cliente + timestamps) y filtramos por marca si corresponde.
-            ids = [int(x.get("id_lead")) for x in raw_items if str(x.get("id_lead", "")).isdigit()]
-            if ids:
-                rows = conn.execute(
-                    text(
-                        """
-                        SELECT id_lead, id_marca, cliente, created_at, updated_at
-                        FROM leads
-                        WHERE id_lead = ANY(:ids)
-                        """
-                    ),
-                    {"ids": ids},
-                ).fetchall()
-                lead_meta = {
-                    int(r[0]): {
-                        "id_marca": int(r[1] or 0),
-                        "cliente": r[2],
-                        "created_at": r[3],
-                        "updated_at": r[4],
+        if (not is_light) and (include_stale or (int(force_jobs or 0) == 1 and _is_admin(role))):
+            try:
+                dry = auto_decline_stale_leads(dry_run=True, triggered_by="NOTIFICATIONS", conn=conn)
+                raw_items = dry.get("items") or []
+                # Enriquecemos con datos del lead (cliente + timestamps) y filtramos por marca si corresponde.
+                ids = [int(x.get("id_lead")) for x in raw_items if str(x.get("id_lead", "")).isdigit()]
+                if ids:
+                    rows = conn.execute(
+                        text(
+                            """
+                            SELECT id_lead, id_marca, cliente, created_at, updated_at
+                            FROM leads
+                            WHERE id_lead = ANY(:ids)
+                            """
+                        ),
+                        {"ids": ids},
+                    ).fetchall()
+                    lead_meta = {
+                        int(r[0]): {
+                            "id_marca": int(r[1] or 0),
+                            "cliente": r[2],
+                            "created_at": r[3],
+                            "updated_at": r[4],
+                        }
+                        for r in rows
                     }
-                    for r in rows
-                }
-            else:
-                lead_meta = {}
+                else:
+                    lead_meta = {}
 
-            for it in raw_items:
-                try:
-                    lid = int(it.get("id_lead"))
-                except Exception:
-                    continue
-                if only_own and marcas:
-                    mid = (lead_meta.get(lid) or {}).get("id_marca")
-                    if not mid or mid not in marcas:
+                for it in raw_items:
+                    try:
+                        lid = int(it.get("id_lead"))
+                    except Exception:
                         continue
-                motivo = str(it.get("motivo") or "")
-                stale_ids.append(lid)
-                meta = lead_meta.get(lid) or {}
-                cliente = meta.get("cliente") or ""
-                # Usamos "created_at" como campo UI para mostrar "último movimiento".
-                # (panel.js lo muestra como texto secundario)
-                last_dt = meta.get("updated_at") or meta.get("created_at")
-                last_txt = ""
-                try:
-                    if isinstance(last_dt, (datetime,)):
-                        last_txt = last_dt.isoformat()
-                    elif last_dt:
-                        last_txt = str(last_dt)
-                except Exception:
+                    if only_own and marcas:
+                        mid = (lead_meta.get(lid) or {}).get("id_marca")
+                        if not mid or mid not in marcas:
+                            continue
+                    motivo = str(it.get("motivo") or "")
+                    stale_ids.append(lid)
+                    meta = lead_meta.get(lid) or {}
+                    cliente = meta.get("cliente") or ""
+                    last_dt = meta.get("updated_at") or meta.get("created_at")
                     last_txt = ""
-                payload = {"id_lead": lid, "motivo": motivo, "cliente": cliente, "created_at": last_txt}
-                if "NUEVO" in motivo:
-                    stale_by_status["NUEVO"].append(payload)
-                elif "CONTACTADO" in motivo:
-                    stale_by_status["CONTACTADO"].append(payload)
-                elif "COTIZADO" in motivo:
-                    stale_by_status["COTIZADO"].append(payload)
+                    try:
+                        if isinstance(last_dt, (datetime,)):
+                            last_txt = last_dt.isoformat()
+                        elif last_dt:
+                            last_txt = str(last_dt)
+                    except Exception:
+                        last_txt = ""
+                    payload = {"id_lead": lid, "motivo": motivo, "cliente": cliente, "created_at": last_txt}
+                    if "NUEVO" in motivo:
+                        stale_by_status["NUEVO"].append(payload)
+                    elif "CONTACTADO" in motivo:
+                        stale_by_status["CONTACTADO"].append(payload)
+                    elif "COTIZADO" in motivo:
+                        stale_by_status["COTIZADO"].append(payload)
 
-            counts["leads_sin_mov"] = int(len(stale_ids))
-            if counts["leads_sin_mov"] > 0:
-                qparam = ",".join(str(x) for x in stale_ids[:200])
-                items.append({
-                    "key": "leads_sin_mov",
-                    "title": "Leads sin movimiento (requieren acción)",
-                    "count": counts["leads_sin_mov"],
-                    "url": f"/web/views/leads.html?stale_ids={qparam}"
-                })
-        except Exception:
-            pass
+                counts["leads_sin_mov"] = int(len(stale_ids))
+                if counts["leads_sin_mov"] > 0:
+                    qparam = ",".join(str(x) for x in stale_ids[:200])
+                    items.append({
+                        "key": "leads_sin_mov",
+                        "title": "Leads sin movimiento (requieren acción)",
+                        "count": counts["leads_sin_mov"],
+                        "url": f"/web/views/leads.html?stale_ids={qparam}"
+                    })
+            except Exception:
+                pass
 
         # C) Notificaciones internas por rol (eventos agendados, etc.)
         try:
@@ -709,5 +739,53 @@ def mark_system_notifs_read_all(user=Depends(get_current_user)):
             ),
             {"roles": role_targets, "who": who},
         )
-        conn.commit()
+    conn.commit()
     return {"ok": True}
+
+
+@router.get("/sold_latest")
+def sold_latest(user=Depends(get_current_user)):
+    """
+    Lightweight helper for SUPERADMIN: returns latest unread EVENT_SOLD notif (if any).
+    Intended to be checked infrequently (e.g., on dashboard load / every few minutes).
+    """
+    role = (user.get("role") or user.get("rol") or "").upper()
+    # Safety: only SUPERADMIN should see these alerts.
+    if "SUPER" not in role:
+        return {"ok": True, "item": None}
+    uname = (user.get("username") or user.get("email") or user.get("name") or "").strip()
+    if uname and "@" in uname:
+        uname = uname.split("@", 1)[0]
+    role_targets = _role_targets(role) or [role]
+
+    with get_connection() as conn:
+        _ensure_system_notifs(conn)
+        where = ["kind='EVENT_SOLD'", "read_at IS NULL", "role_target = ANY(:roles)"]
+        if uname:
+            where.append("(payload->>'username_target' IS NULL OR payload->>'username_target' = :uname)")
+        r = conn.execute(
+            text(
+                f"""
+                SELECT id, created_at, id_lead, title, body, payload
+                FROM public.system_notifs
+                WHERE {' AND '.join(where)}
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
+            ),
+            {"roles": role_targets, "uname": uname},
+        ).fetchone()
+        if not r:
+            return {"ok": True, "item": None}
+        created_at = r[1]
+        return {
+            "ok": True,
+            "item": {
+                "id": int(r[0]),
+                "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at or ""),
+                "id_lead": int(r[2]) if r[2] else None,
+                "title": str(r[3] or ""),
+                "body": str(r[4] or ""),
+                "payload": r[5] or {},
+            },
+        }

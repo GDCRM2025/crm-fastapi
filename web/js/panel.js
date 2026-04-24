@@ -702,7 +702,7 @@ function startClock() {
 async function fetchNotifications() {
   try {
     if (!getToken()) return { ok: false, total: 0, items: [] };
-    const r = await fetch(`${API_BASE}/notifications`, { headers: authHeaders() });
+    const r = await fetch(`${API_BASE}/notifications?light=1`, { headers: authHeaders() });
     if (r.status === 401 || r.status === 403) {
       location.href = `${API_BASE}/web/login.html`;
       return { ok: false, total: 0, items: [] };
@@ -711,6 +711,29 @@ async function fetchNotifications() {
     return await r.json();
   } catch (_) {
     return { ok: false, total: 0, items: [] };
+  }
+}
+async function fetchSoldLatest() {
+  try {
+    if (!getToken()) return { ok: false, item: null };
+    const r = await fetch(`${API_BASE}/notifications/sold_latest`, { headers: authHeaders() });
+    if (r.status === 401 || r.status === 403) return { ok: false, item: null };
+    if (!r.ok) return { ok: false, item: null };
+    return await r.json();
+  } catch (_) {
+    return { ok: false, item: null };
+  }
+}
+async function markSystemNotifRead(id) {
+  try {
+    if (!getToken()) return false;
+    const r = await fetch(`${API_BASE}/notifications/system/${encodeURIComponent(String(id))}/read`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" })
+    });
+    return r.ok;
+  } catch (_) {
+    return false;
   }
 }
 let lastNotifCount = null;
@@ -1181,6 +1204,14 @@ function renderNotifications(data) {
 }
 let leadLockEl = null;
 let pendingLeadOpen = null;
+function openLeadById(id) {
+  const frame = qs("#mainFrame");
+  if (!frame) return;
+  const lid = Number(id || 0);
+  if (!lid) return;
+  pendingLeadOpen = { id: lid };
+  frame.src = viewURL(`/web/views/leads.html?v=20260326-leads2`);
+}
 function openLeadsFromLock(openId, ids) {
   const frame = qs("#mainFrame");
   if (!frame) return;
@@ -1368,6 +1399,66 @@ function bindNotifications() {
   // Avoid a thundering herd on login: add jitter before the first poll.
   setTimeout(tick, 8e3 + Math.floor(Math.random() * 6e3));
 }
+
+let soldWatcherStarted = false;
+function startSoldEventPolling() {
+  try {
+    if (soldWatcherStarted) return;
+    const me = (window.GD && window.GD.me) || {};
+    const roleName = String(me.role || me.rol || "").toUpperCase();
+    if (!roleName.includes("SUPER")) return;
+    soldWatcherStarted = true;
+  } catch (_) {
+    return;
+  }
+  // Near-real-time for SUPERADMIN only. Keep it lightweight to avoid shared-host queue full.
+  const baseDelay = 15e3;
+  let delay = baseDelay;
+  const maxDelay = 60e3;
+  const jitter = () => Math.floor(Math.random() * 2500);
+  const tick = async () => {
+    try {
+      if (document.hidden) {
+        setTimeout(tick, Math.min(maxDelay, Math.max(30e3, delay)));
+        return;
+      }
+    } catch (_) {
+    }
+    const data = await fetchSoldLatest();
+    const item = (data && data.item) || null;
+    if (!(data && data.ok)) {
+      delay = Math.min(maxDelay, Math.max(5e3, delay * 2));
+      setTimeout(tick, delay + jitter());
+      return;
+    }
+    delay = baseDelay;
+    if (item && item.id) {
+      const lastId = Number(localStorage.getItem("gd_sold_last_id") || "0");
+      if (Number(item.id) !== lastId) {
+        localStorage.setItem("gd_sold_last_id", String(item.id));
+        try {
+          const res = await Swal.fire({
+            title: item.title || "Evento vendido",
+            text: item.body || "",
+            showCancelButton: true,
+            confirmButtonText: "Abrir lead",
+            cancelButtonText: "Marcar leído"
+          });
+          try {
+            await markSystemNotifRead(item.id);
+          } catch (_) {
+          }
+          if (res && res.isConfirmed) {
+            openLeadById(item.id_lead);
+          }
+        } catch (_) {
+        }
+      }
+    }
+    setTimeout(tick, delay + jitter());
+  };
+  setTimeout(tick, 4e3 + jitter());
+}
 async function fetchMe() {
   var _a, _b, _c, _d, _e, _f, _g;
   try {
@@ -1452,6 +1543,7 @@ async function fetchMe() {
     }
     buildMenu();
     startTasksBadgePolling();
+    startSoldEventPolling();
   } catch (_) {
     const userNameEl = qs("#userName");
     if (userNameEl) userNameEl.textContent = "Usuario";
@@ -1504,6 +1596,7 @@ function bootstrapFromToken() {
     }
     buildMenu();
     startTasksBadgePolling();
+    startSoldEventPolling();
     return { ok: true, redirected: false };
   } catch (_) {
     return { ok: false, redirected: false };

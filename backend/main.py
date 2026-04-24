@@ -112,6 +112,10 @@ def _should_tick_rrhh(request: Request) -> bool:
     El tick se limita a tráfico RRHH/SGJO y se throttlea in-process.
     """
     try:
+        # Shared hosting: disable automatic RRHH ticking unless explicitly enabled.
+        # Prefer running reminders on-demand or via cron endpoints.
+        if str(os.getenv("CRM_RRHH_TICK_ENABLED") or "").strip().lower() not in ("1", "true", "yes", "on"):
+            return False
         p = str(request.url.path or "/")
         if p.startswith("/web/"):
             return False
@@ -365,6 +369,7 @@ include_router_safe(app, "backend.routers.productos")
 include_router_safe(app, "backend.routers.cotizaciones")
 include_router_safe(app, "backend.routers.leads_agenda")
 include_router_safe(app, "backend.routers.notifications")
+include_router_safe(app, "backend.routers.cron")
 include_router_safe(app, "backend.routers.tools")
 include_router_safe(app, "backend.routers.gps")
 include_router_safe(app, "backend.routers.recetas")

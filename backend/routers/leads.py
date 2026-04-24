@@ -1774,9 +1774,12 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             confirmado_id = conn.execute(
                 text("SELECT id_estado FROM public.estados_lead WHERE UPPER(nombre) LIKE 'CONFIRM%' ORDER BY id_estado LIMIT 1")
             ).scalar()
+            confirmado_id = int(confirmado_id) if confirmado_id is not None else None
         except Exception:
             confirmado_id = None
-        if (confirmado_id and int(id_estado) == int(confirmado_id)) or ("CONFIRM" in est_name):
+
+        is_confirming = bool((confirmado_id and int(id_estado) == int(confirmado_id)) or ("CONFIRM" in est_name))
+        if is_confirming:
             row = conn.execute(
                 text(
                     """
@@ -1924,6 +1927,75 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             pass
 
         conn.commit()
+
+        # Notificación inmediata a SUPERADMIN al confirmar venta (para SweetAlert).
+        try:
+            old_estado_i = int(old_estado) if str(old_estado or "").isdigit() else None
+        except Exception:
+            old_estado_i = None
+        try:
+            if is_confirming and confirmado_id and (old_estado_i is None or int(old_estado_i) != int(confirmado_id)):
+                try:
+                    conn.execute(
+                        text(
+                            """
+                            CREATE TABLE IF NOT EXISTS public.system_notifs (
+                              id BIGSERIAL PRIMARY KEY,
+                              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                              kind TEXT NOT NULL,
+                              role_target TEXT NOT NULL,
+                              id_lead BIGINT,
+                              title TEXT NOT NULL,
+                              body TEXT NOT NULL,
+                              payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                              read_at TIMESTAMPTZ,
+                              read_by TEXT,
+                              UNIQUE(kind, role_target, id_lead)
+                            )
+                            """
+                        )
+                    )
+                except Exception:
+                    pass
+
+                row2 = conn.execute(
+                    text("SELECT cliente, fecha_evento, monto_cotizado, id_marca FROM public.leads WHERE id_lead=:id"),
+                    {"id": int(id_lead)},
+                ).fetchone()
+                cliente = str((row2[0] if row2 else "") or "").strip() or f"Lead #{int(id_lead)}"
+                fecha_evento = (row2[1] if row2 else None)
+                monto = (row2[2] if row2 else None)
+                id_marca = (row2[3] if row2 else None)
+                parts = [cliente]
+                if fecha_evento:
+                    parts.append(f"Fecha: {fecha_evento}")
+                if monto is not None:
+                    parts.append(f"Monto: {monto}")
+                body2 = " | ".join(parts)
+
+                import json as _json
+                payload_json = {"id_lead": int(id_lead), "cliente": cliente}
+                if fecha_evento:
+                    payload_json["fecha_evento"] = str(fecha_evento)
+                if id_marca is not None:
+                    try:
+                        payload_json["id_marca"] = int(id_marca)
+                    except Exception:
+                        pass
+
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO public.system_notifs(kind, role_target, id_lead, title, body, payload)
+                        VALUES ('EVENT_SOLD', 'SUPERADMIN', :id, 'Evento vendido (confirmado)', :body, CAST(:payload AS jsonb))
+                        ON CONFLICT (kind, role_target, id_lead) DO NOTHING
+                        """
+                    ),
+                    {"id": int(id_lead), "body": body2, "payload": _json.dumps(payload_json)},
+                )
+                conn.commit()
+        except Exception:
+            pass
 
     if undo_preagenda:
         _clear_preagenda_fields(id_lead)
