@@ -1,4 +1,5 @@
 import json
+import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -129,6 +130,17 @@ def _enrich_user(user: dict) -> dict:
 
 @router.get("/me")
 def me(user=Depends(get_current_user)):
+    # Shared hosting: for high-volume portal roles (operators/drivers), avoid DB hits on /me.
+    # The token already carries the minimal info required to render the portal.
+    try:
+        light_ops = str(os.getenv("CRM_ME_LIGHT_OPS") or "").strip().lower() in ("1", "true", "yes", "on")
+        if light_ops:
+            role = str(user.get("role") or user.get("rol") or "").strip().lower()
+            # support numeric role ids too (6 conductor, 7 operador, 9 operador patio)
+            if role in ("6", "7", "9") or ("conductor" in role) or ("operador" in role):
+                return dict(user or {})
+    except Exception:
+        pass
     return _enrich_user(user)
 
 # Aliases legacy/compat (algunos frontends llaman /auth/me)

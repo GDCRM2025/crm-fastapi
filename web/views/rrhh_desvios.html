@@ -48,7 +48,7 @@
             <option value="">Todos</option>
           </select>
           <button class="btn primary" id="btnDetect">Detectar hoy</button>
-          <button class="btn" id="btnRemind">Recordatorios (force)</button>
+          <button class="btn" id="btnEmail">Enviar reporte (correo)</button>
           <button class="btn" id="btnReload">Actualizar</button>
         </div>
       </div>
@@ -136,8 +136,9 @@
       if (d) q.set("date", d);
       if (st) q.set("estado", st);
       setLog("Cargando…");
-      const res = await apiJSON(`/rrhh/desvios?${q.toString()}`);
-      const items = Array.isArray(res?.items) ? res.items : [];
+      const rep = await apiJSON(`/rrhh/desvios/report?${q.toString()}`);
+      const groups = Array.isArray(rep?.groups) ? rep.groups : [];
+      const items = groups.flatMap(g=> Array.isArray(g?.items) ? g.items : []);
       const statusPrio = { "pendiente": 0, "": 1, "aprobado": 2, "rechazado": 3 };
       const tipoPrio = { "MISSING_IN": 0, "MISSING_OUT": 1, "LATE_IN": 2, "EARLY_OUT": 3, "EARLY_IN": 4, "LATE_OUT": 5 };
       items.sort((a,b)=>{
@@ -158,7 +159,14 @@
         const ib = Number(b.impact_min || 0);
         return ib - ia;
       });
-      qs("#meta").textContent = `${items.length} desvío(s)`;
+      try{
+        const t = rep?.totals || {};
+        const pend = Number(t.pendientes || 0);
+        const impact = Number(t.impact_total_min || 0);
+        qs("#meta").textContent = `${items.length} desvío(s) · ${groups.length} colaborador(es) · pendientes=${pend} · impacto=${impact}m`;
+      }catch(_){
+        qs("#meta").textContent = `${items.length} desvío(s)`;
+      }
       const tb = qs("#tbody");
       if(!items.length){
         tb.innerHTML = `<tr><td colspan="9" class="muted">Sin desvíos.</td></tr>`;
@@ -200,12 +208,14 @@
       await load();
     }
 
-    async function remindForce(){
-      setLog("Ejecutando recordatorios…");
-      const res = await apiJSON(`/rrhh/reminders/run?force=1`, { method:"POST" });
-      if (res?.skipped) setLog("Recordatorios: skipped (throttle)");
-      else setLog(`Recordatorios: sent=${res?.sent||0} · desvios=${res?.created_desvios||0}`);
-      await load();
+    async function sendEmail(){
+      const d = qs("#fDate").value || "";
+      const st = qs("#fEstado").value || "";
+      if(!confirm("Enviar reporte por correo a RRHH/Admin?")) return;
+      setLog("Enviando correo…");
+      const res = await apiJSON(`/rrhh/desvios/report_email`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ date: d || null, estado: st || null }) });
+      if(res?.sent) setLog("Correo enviado ✓");
+      else setLog("Correo: intento realizado (verifica SMTP/sendmail)");
     }
 
     document.addEventListener("click", async (e)=>{
@@ -237,7 +247,7 @@
       }catch(_){}
       qs("#btnReload").addEventListener("click", load);
       qs("#btnDetect").addEventListener("click", detect);
-      qs("#btnRemind").addEventListener("click", remindForce);
+      qs("#btnEmail").addEventListener("click", sendEmail);
       qs("#fEstado").addEventListener("change", load);
       qs("#fDate").addEventListener("change", load);
       await load();

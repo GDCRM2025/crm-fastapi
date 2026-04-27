@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, Dict, List
 import os
 import secrets
+import threading
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
@@ -22,6 +24,96 @@ except Exception:  # pragma: no cover
 
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+_drive_refresh_lock = threading.Lock()
+_drive_refresh_state: Dict[str, Dict[str, Any]] = {}
+
+
+def _drive_refresh_cooldown_seconds() -> int:
+    try:
+        v = (os.getenv("CRM_DRIVE_REFRESH_COOLDOWN_SECONDS") or "").strip()
+        if not v:
+            return 120
+        n = int(float(v))
+        return max(0, min(n, 3600))
+    except Exception:
+        return 120
+
+
+def _drive_refresh_enqueue(
+    *,
+    marca_key: str,
+    folder_id: str,
+    resolve_fn,
+) -> Dict[str, Any]:
+    """
+    Shared-hosting safety: do NOT run Drive refresh synchronously on the request thread.
+    Enqueue a single background refresh per brand, with cooldown and status snapshot.
+    """
+    now = time.time()
+    with _drive_refresh_lock:
+        st = dict(_drive_refresh_state.get(marca_key) or {})
+        if st.get("running"):
+            st.update({"ok": True, "queued": False, "running": True})
+            return st
+
+        # Global limit: Drive refresh is network+CPU heavy. Keep max 1 running to avoid saturating Passenger.
+        for other_key, other in (_drive_refresh_state or {}).items():
+            try:
+                if other_key != marca_key and (other or {}).get("running"):
+                    return {
+                        "ok": True,
+                        "queued": False,
+                        "running": False,
+                        "busy": True,
+                        "busy_marca": other_key,
+                    }
+            except Exception:
+                continue
+
+        done_ts = float(st.get("done_ts") or 0.0)
+        cooldown = _drive_refresh_cooldown_seconds()
+        if done_ts and cooldown and (now - done_ts) < cooldown and (not st.get("error")):
+            st.update({"ok": True, "queued": False, "cooldown": True, "cooldown_seconds": cooldown})
+            return st
+
+        _drive_refresh_state[marca_key] = {
+            "ok": True,
+            "marca": marca_key,
+            "folder_id": folder_id,
+            "queued": True,
+            "running": True,
+            "started_ts": now,
+            "done_ts": done_ts,
+            "error": "",
+            "assets": st.get("assets") or {},
+        }
+
+    def _bg():
+        assets = {}
+        err = ""
+        try:
+            # refresh=True + ttl=0 forces re-list & re-download (heavy); run off the request thread.
+            assets = resolve_fn(marca_key, folder_id, refresh=True, ttl_seconds=0)
+        except Exception as e:
+            err = f"{type(e).__name__}: {str(e)[:240]}"
+        done = time.time()
+        with _drive_refresh_lock:
+            _drive_refresh_state[marca_key] = {
+                "ok": True,
+                "marca": marca_key,
+                "folder_id": folder_id,
+                "queued": False,
+                "running": False,
+                "started_ts": float(_drive_refresh_state.get(marca_key, {}).get("started_ts") or 0.0),
+                "done_ts": done,
+                "error": err,
+                "assets": assets or {},
+            }
+
+    threading.Thread(target=_bg, daemon=True).start()
+    with _drive_refresh_lock:
+        return dict(_drive_refresh_state.get(marca_key) or {"ok": True, "queued": True})
 
 def _ensure_productos_brochure_cols() -> None:
     """
@@ -579,10 +671,60 @@ def refresh_drive_assets(payload: Dict[str, Any] = Body(...), user: dict = Depen
     mkey = normalize_marca(marca_in)
     folder_id = DRIVE_ASSET_FOLDERS.get(mkey, "") or ""
     if not folder_id:
+        # Fallback: allow configuring per-brand folder_id in DB to avoid code deploys.
+        try:
+            with engine.begin() as cn:
+                # Allow configuring Drive folder id per brand without code deploys.
+                try:
+                    cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS drive_assets_folder_id TEXT"))
+                    cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS drive_folder_id TEXT"))
+                except Exception:
+                    pass
+                mcols = {r[0] for r in cn.execute(text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='marcas'
+                """)).fetchall()}
+                cand_cols = [
+                    "drive_assets_folder_id",
+                    "drive_folder_id",
+                    "folder_id_drive",
+                    "drive_folder",
+                ]
+                existing = [c for c in cand_cols if c in mcols]
+                if existing:
+                    name_expr = "marca"
+                    if ("marca" in mcols) and ("nombre" in mcols):
+                        name_expr = "COALESCE(marca, nombre)"
+                    elif "nombre" in mcols:
+                        name_expr = "nombre"
+                    row = cn.execute(
+                        text(
+                            f"""
+                            SELECT {", ".join(existing)}
+                            FROM public.marcas
+                            WHERE UPPER({name_expr}) = UPPER(:m)
+                            ORDER BY id_marca DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {"m": mkey},
+                    ).fetchone()
+                    if row:
+                        for v in row:
+                            vv = (str(v or "")).strip()
+                            if vv:
+                                folder_id = vv
+                                break
+        except Exception:
+            folder_id = folder_id or ""
+
+    if not folder_id:
         raise HTTPException(status_code=404, detail=f"Marca sin carpeta Drive configurada: {mkey}")
 
-    assets = resolve_brand_assets_from_folder(mkey, folder_id, refresh=True, ttl_seconds=0)
-    return {"ok": True, "marca": mkey, "folder_id": folder_id, "assets": assets}
+    # IMPORTANT: shared hosting. Do not block Passenger workers with Drive I/O.
+    st = _drive_refresh_enqueue(marca_key=mkey, folder_id=folder_id, resolve_fn=resolve_brand_assets_from_folder)
+    return st
 
 def _require_admin(user: dict) -> None:
     """

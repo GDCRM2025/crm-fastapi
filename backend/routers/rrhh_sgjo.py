@@ -545,6 +545,14 @@ def enroll_device(
     if not device_id or len(device_id) < 12:
         raise HTTPException(status_code=400, detail="device_id requerido")
     h = ua_hash(user_agent or "")
+    rut_hint = str(payload.get("rut") or payload.get("rut_hint") or "").strip()[:32]
+    tel_hint = str(payload.get("telefono") or payload.get("phone") or payload.get("tel") or "").strip()[:40]
+    note_hint = ""
+    if rut_hint:
+        note_hint += f"RUT_HINT={rut_hint}\n"
+    if tel_hint:
+        note_hint += f"TEL_HINT={tel_hint}\n"
+    note_hint = note_hint.strip() or None
 
     # Ya enrolado (con UA actual) => OK directo.
     if _device_enrolled(db, uid_int, device_id, user_agent or ""):
@@ -568,11 +576,11 @@ def enroll_device(
             db.execute(
                 text(
                     """
-                    INSERT INTO public.sgjo_device_requests(id_usuario, device_id, ua_hash, status)
-                    VALUES (:u,:d,:h,'pending')
+                    INSERT INTO public.sgjo_device_requests(id_usuario, device_id, ua_hash, status, note)
+                    VALUES (:u,:d,:h,'pending', :n)
                     """
                 ),
-                {"u": uid_int, "d": device_id, "h": h},
+                {"u": uid_int, "d": device_id, "h": h, "n": note_hint},
             )
             # Relee id_request recién creado para notificación interna.
             pending = db.execute(
@@ -587,6 +595,22 @@ def enroll_device(
                 ),
                 {"u": uid_int, "d": device_id},
             ).scalar()
+        else:
+            # Si ya existe, intentamos guardar hints en note (best-effort).
+            if note_hint:
+                try:
+                    db.execute(
+                        text(
+                            """
+                            UPDATE public.sgjo_device_requests
+                            SET note = COALESCE(NULLIF(note,''), :n)
+                            WHERE id_request=:id
+                            """
+                        ),
+                        {"id": int(pending), "n": note_hint},
+                    )
+                except Exception:
+                    pass
         db.commit()
     except Exception as e:
         db.rollback()
@@ -614,11 +638,31 @@ def enroll_device(
         rrhh_cc = [x.strip() for x in str(os.getenv("RRHH_NOTIFY_CC") or "").split(",") if x.strip()]
         to_list = [rrhh_to] + rrhh_cc if rrhh_to else rrhh_cc
         if to_list:
+            rut = ""
+            tel = ""
+            try:
+                rut = get_user_rut(db, uid_int) or ""
+            except Exception:
+                rut = ""
+            try:
+                tel = str(user.get("telefono") or "").strip()
+                if not tel:
+                    tel = str(
+                        db.execute(
+                            text("SELECT COALESCE(NULLIF(btrim(telefono),''), '') FROM public.usuarios WHERE id_usuario=:u LIMIT 1"),
+                            {"u": uid_int},
+                        ).scalar()
+                        or ""
+                    ).strip()
+            except Exception:
+                tel = ""
             subj = f"RRHH · Solicitud enrolamiento dispositivo · {user.get('name') or user.get('username')}"
             body = (
                 f"Usuario ID: {uid_int}\n"
                 f"Usuario: {user.get('username')}\n"
                 f"Nombre: {user.get('name') or user.get('nombre')}\n"
+                f"RUT: {rut}\n"
+                f"Teléfono: {tel}\n"
                 f"Device ID: {device_id}\n"
                 f"UA hash: {h}\n\n"
                 f"Aprueba desde RRHH → Puntos + QR → 'Solicitudes de dispositivos'.\n"
@@ -656,9 +700,21 @@ def admin_device_requests(
         text(
             f"""
             SELECT r.id_request, r.created_at, r.decided_at, r.status, r.id_usuario, r.device_id,
-                   u.username, COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display
+                   u.username, COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display,
+                   COALESCE(u.email,'') AS email,
+                   COALESCE(u.telefono,'') AS telefono,
+                   COALESCE(s.rut,'') AS rut_rrhh,
+                   COALESCE(s.telefono,'') AS telefono_rrhh,
+                   COALESCE(s.marcacion_method,'') AS marcacion_method
             FROM public.sgjo_device_requests r
             LEFT JOIN public.usuarios u ON u.id_usuario = r.id_usuario
+            LEFT JOIN LATERAL (
+              SELECT rut, telefono, marcacion_method
+              FROM public.rrhh_staff
+              WHERE id_usuario = r.id_usuario AND is_active IS TRUE
+              ORDER BY id_staff DESC
+              LIMIT 1
+            ) s ON TRUE
             {where}
             ORDER BY r.created_at DESC, r.id_request DESC
             LIMIT 200

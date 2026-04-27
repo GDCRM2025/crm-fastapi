@@ -72,6 +72,7 @@
 
       <div class="row" style="margin-top:14px">
         <button class="btn primary" id="btnEnroll" type="button">Enrolar dispositivo</button>
+        <button class="btn" id="btnLogin" type="button">Iniciar sesión</button>
       </div>
       <div class="row" style="margin-top:8px">
         <select class="sel" id="selMethod" title="Método de marcación">
@@ -116,7 +117,14 @@
       );
     }
 
-    function ensureTokenOrRedirect(punto_code){
+    function goLogin(punto_code){
+      try{
+        const next = `${API_BASE}/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto_code)}`;
+        location.href = `${API_BASE}/web/login.html?next=${encodeURIComponent(next)}`;
+      }catch(_){}
+    }
+
+    function ensureToken(punto_code){
       const t = getToken();
       if (t) return true;
       // Intentar tomar token desde cookie (login.html siempre la setea como gd_token).
@@ -128,14 +136,7 @@
         }catch(_){}
         return true;
       }
-      // No hay token: guiar al login y volver a esta misma marcación (sin re-scan).
-      try{
-        const next = `${API_BASE}/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto_code)}`;
-        log("Debes iniciar sesión para marcar. Abriendo login…");
-        location.href = `${API_BASE}/web/login.html?next=${encodeURIComponent(next)}`;
-      }catch(_){
-        log("Debes iniciar sesión para marcar (Token requerido).");
-      }
+      log("Debes iniciar sesión para marcar/enrolar. Toca “Iniciar sesión”.");
       return false;
     }
     function authHeaders(extra={}){
@@ -200,7 +201,7 @@
         log("Falta parámetro ?p=SGJO-ROLFIS o ?p=SGJO-GREENDIAMOND (desde el QR).");
         return;
       }
-      if (!ensureTokenOrRedirect(punto_code)) return;
+      if (!ensureToken(punto_code)) return;
       try{
         const cfg = await apiJSON("/rrhh/sgjo/config");
         const pt = (cfg.puntos||[]).find(x=>String(x.code||"").toUpperCase()===punto_code);
@@ -216,6 +217,9 @@
         const pol = String(me?.marcacion_method || "BOTH").toUpperCase();
         const can = (me?.puede_marcar === false) ? "NO" : "SÍ";
         qs("#pPolicy").textContent = `Método: ${pol} · Puede marcar: ${can}`;
+        if (!me?.rut){
+          log("Tu usuario no tiene RUT en el sistema. Enrola el dispositivo y pide a RRHH/Admin que registre tu RUT para poder marcar.");
+        }
         // Ajustar selector según política RRHH (si existe)
         try{
           const sel = qs("#selMethod");
@@ -229,19 +233,46 @@
             sel.disabled = false;
           }
         }catch(_){}
-        qs("#btnMark").disabled = false;
-        log("Listo. Enrola el dispositivo la primera vez, luego marca (QR o GPS según tu permiso RRHH).");
+        qs("#btnMark").disabled = (me?.puede_marcar === false);
+        if (me?.puede_marcar === false){
+          log("No tienes permiso RRHH para marcar (puede_marcar=false). Contacta a RRHH.");
+        } else {
+          log("Listo. Enrola el dispositivo la primera vez, luego marca (QR o GPS según tu permiso RRHH).");
+        }
       }catch(e){
         log("Error: " + (e?.message||e));
       }
     }
 
+    qs("#btnLogin").addEventListener("click", ()=>{
+      const punto_code = getPuntoCode();
+      goLogin(punto_code || "");
+    });
+
     qs("#btnEnroll").addEventListener("click", async ()=>{
       try{
         const punto_code = getPuntoCode();
-        if (!ensureTokenOrRedirect(punto_code)) return;
+        if (!ensureToken(punto_code)) return;
         const device_id = getDeviceId();
-        const out = await apiJSON("/rrhh/sgjo/device/enroll", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ device_id }) });
+        // Si falta RUT/teléfono, lo pedimos como "hint" para que RRHH/Admin lo vea al aprobar.
+        let rut_hint = "";
+        let tel_hint = "";
+        try{
+          const me = await apiJSON("/rrhh/sgjo/me");
+          rut_hint = String(me?.rut || "").trim();
+          tel_hint = String(me?.telefono_rrhh || "").trim();
+        }catch(_){}
+        if (!rut_hint){
+          rut_hint = String(prompt("Ingresa tu RUT (sin puntos, con guion si corresponde):") || "").trim();
+        }
+        if (!tel_hint){
+          tel_hint = String(prompt("Ingresa tu teléfono (ej: +56912345678):") || "").trim();
+        }
+        const out = await apiJSON("/rrhh/sgjo/device/enroll", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ device_id, rut: rut_hint, telefono: tel_hint }),
+        });
         if (out && out.ok){
           log("Dispositivo enrolado OK.");
         } else if (out && out.pending_approval){
@@ -257,7 +288,7 @@
     qs("#btnMark").addEventListener("click", async ()=>{
       const punto_code = getPuntoCode();
       try{
-        if (!ensureTokenOrRedirect(punto_code)) return;
+        if (!ensureToken(punto_code)) return;
         qs("#btnMark").disabled = true;
         const device_id = getDeviceId();
         const loc = await getLocation();

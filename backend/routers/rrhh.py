@@ -682,6 +682,192 @@ def list_desvios(
     ).mappings().all()
     return {"ok": True, "items": [dict(r) for r in rows]}
 
+@router.get("/desvios/report")
+def report_desvios(
+    estado: str | None = None,
+    date: str | None = None,
+    include_items: int = 1,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Reporte diario de desvíos agrupado por colaborador, con impacto.
+    Pensado para shared hosting: 1 query acotada por fecha.
+    """
+    _ensure_tables(db)
+    if not _is_rrhh_admin(me):
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    try:
+        if date:
+            d = str(date)[:10]
+        else:
+            d0 = db.execute(text("SELECT (now() AT TIME ZONE 'America/Santiago')::date")).scalar()
+            d = str(d0)[:10]
+    except Exception:
+        d = str(date or "")[:10] or ""
+
+    role = _role_key(me)
+    uid = _user_id(me) or 0
+    jefe_staff_id = None
+    try:
+        if uid:
+            jefe_staff_id = db.execute(
+                text("SELECT id_staff FROM rrhh_staff WHERE id_usuario=:u AND is_active IS TRUE ORDER BY id_staff DESC LIMIT 1"),
+                {"u": int(uid)},
+            ).scalar()
+            jefe_staff_id = int(jefe_staff_id) if jefe_staff_id else None
+    except Exception:
+        jefe_staff_id = None
+
+    where = ["fecha = :d"]
+    params: dict[str, Any] = {"d": d}
+    if estado:
+        where.append("status = :st")
+        params["st"] = str(estado).strip().lower()
+
+    # scope por rol
+    if (("SUPERADMIN" in role) or (role == "ADMIN") or ("FINAN" in role) or ("RRHH" in role) or ("RECURSOS" in role)):
+        pass
+    else:
+        if jefe_staff_id:
+            where.append("id_staff IN (SELECT id_staff FROM rrhh_staff WHERE jefe_id_staff=:j AND is_active IS TRUE)")
+            params["j"] = int(jefe_staff_id)
+        else:
+            return {"ok": True, "date": d, "groups": [], "totals": {"desvios": 0, "colaboradores": 0}}
+
+    rows = db.execute(
+        text(
+            f"""
+            SELECT id_desvio, created_at, fecha, id_staff, id_usuario, rut, colaborador, rol, centro_costo,
+                   tipo, status, decided_at, decided_by, note,
+                   expected_in, expected_out, actual_in, actual_out, diff_in_min, diff_out_min,
+                   impact_kind, impact_min
+            FROM rrhh_desvios
+            WHERE {' AND '.join(where)}
+            ORDER BY colaborador ASC, id_desvio DESC
+            """
+        ),
+        params,
+    ).mappings().all()
+
+    groups_map: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        sid = int(r.get("id_staff") or 0) or 0
+        if sid not in groups_map:
+            groups_map[sid] = {
+                "id_staff": sid,
+                "colaborador": r.get("colaborador"),
+                "rol": r.get("rol"),
+                "centro_costo": r.get("centro_costo"),
+                "counts": {"pendiente": 0, "aprobado": 0, "rechazado": 0, "otros": 0},
+                "by_tipo": {},
+                "impact": {"DESCUENTO_HORAS": 0, "HORAS_EXTRA": 0, "AUSENCIA": 0, "OTROS": 0},
+                "impact_total_min": 0,
+                "items": [],
+            }
+        g = groups_map[sid]
+        st = str(r.get("status") or "").strip().lower()
+        if st in ("pendiente", "aprobado", "rechazado"):
+            g["counts"][st] = int(g["counts"].get(st) or 0) + 1
+        else:
+            g["counts"]["otros"] = int(g["counts"].get("otros") or 0) + 1
+
+        tp = str(r.get("tipo") or "").strip().upper() or "OTRO"
+        g["by_tipo"][tp] = int(g["by_tipo"].get(tp) or 0) + 1
+
+        ik = str(r.get("impact_kind") or "").strip().upper()
+        im = r.get("impact_min")
+        try:
+            im_i = int(im) if im is not None and str(im).strip() != "" else 0
+        except Exception:
+            im_i = 0
+        if ik in ("DESCUENTO_HORAS", "HORAS_EXTRA", "AUSENCIA"):
+            g["impact"][ik] = int(g["impact"].get(ik) or 0) + int(abs(im_i))
+        else:
+            g["impact"]["OTROS"] = int(g["impact"].get("OTROS") or 0) + int(abs(im_i))
+        g["impact_total_min"] = int(g.get("impact_total_min") or 0) + int(abs(im_i))
+
+        if int(include_items or 0) == 1:
+            g["items"].append(dict(r))
+
+    groups = list(groups_map.values())
+    groups.sort(key=lambda x: (str(x.get("centro_costo") or ""), str(x.get("colaborador") or "")))
+
+    totals = {
+        "desvios": int(len(rows)),
+        "colaboradores": int(len(groups)),
+        "impact_total_min": int(sum(int(g.get("impact_total_min") or 0) for g in groups)),
+        "impact_descuento_min": int(sum(int((g.get("impact") or {}).get("DESCUENTO_HORAS") or 0) for g in groups)),
+        "impact_extra_min": int(sum(int((g.get("impact") or {}).get("HORAS_EXTRA") or 0) for g in groups)),
+        "pendientes": int(sum(int((g.get("counts") or {}).get("pendiente") or 0) for g in groups)),
+    }
+    return {"ok": True, "date": d, "groups": groups, "totals": totals}
+
+@router.post("/desvios/report_email")
+def email_desvios_report(
+    body: dict = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Envía por correo el reporte diario de desvíos (best-effort).
+    Reemplaza cualquier necesidad de "push"/recordatorios automáticos.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    date = str(body.get("date") or "").strip() or None
+    estado = str(body.get("estado") or "").strip() or None
+
+    rep = report_desvios(estado=estado, date=date, include_items=1, db=db, me=me)
+    if not rep.get("ok"):
+        return rep
+
+    d = str(rep.get("date") or "")
+    totals = rep.get("totals") or {}
+    groups = rep.get("groups") or []
+
+    lines: list[str] = []
+    lines.append(f"RRHH · Reporte de desvíos · {d}")
+    lines.append("")
+    lines.append(f"Colaboradores con desvíos: {totals.get('colaboradores', 0)}")
+    lines.append(f"Desvíos total: {totals.get('desvios', 0)}")
+    lines.append(f"Pendientes: {totals.get('pendientes', 0)}")
+    lines.append(f"Impacto total (min): {totals.get('impact_total_min', 0)}")
+    lines.append(f"Descuento (min): {totals.get('impact_descuento_min', 0)}")
+    lines.append(f"Horas extra (min): {totals.get('impact_extra_min', 0)}")
+    lines.append("")
+
+    for g in groups:
+        col = str(g.get("colaborador") or "")
+        cc = str(g.get("centro_costo") or "")
+        rol = str(g.get("rol") or "")
+        counts = g.get("counts") or {}
+        impact = g.get("impact") or {}
+        lines.append(f"- {col} [{cc}] ({rol})")
+        lines.append(f"  Pend:{counts.get('pendiente',0)} Apr:{counts.get('aprobado',0)} Rech:{counts.get('rechazado',0)}")
+        lines.append(f"  Impacto: desc={impact.get('DESCUENTO_HORAS',0)}m extra={impact.get('HORAS_EXTRA',0)}m total={g.get('impact_total_min',0)}m")
+        for it in (g.get("items") or []):
+            try:
+                tipo = str(it.get("tipo") or "")
+                st = str(it.get("status") or "")
+                ik = str(it.get("impact_kind") or "")
+                im = it.get("impact_min")
+                exp_in = it.get("expected_in") or ""
+                exp_out = it.get("expected_out") or ""
+                lines.append(f"    · {tipo} [{st}] {ik} {im}m (exp {exp_in}->{exp_out})")
+            except Exception:
+                continue
+        lines.append("")
+
+    subject = f"RRHH · Desvíos {d} · Pendientes {totals.get('pendientes',0)}"
+    body_txt = "\n".join(lines).strip() + "\n"
+    try:
+        _notify_rrhh_admins(db, subject=subject, body=body_txt)
+        return {"ok": True, "sent": True, "date": d, "to": "RRHH_NOTIFY_TO/CC + roles admin"}
+    except Exception as e:
+        return {"ok": True, "sent": False, "detail": str(e)}
+
 
 @router.put("/desvios/{id_desvio}")
 def decide_desvio(
@@ -1296,6 +1482,8 @@ def rrhh_reminders_run(
     """
     _ensure_tables(db)
     _require_rrhh_admin(me)
+    if str(os.getenv("CRM_RRHH_REMINDERS_ENABLED") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        raise HTTPException(status_code=403, detail="Reminders deshabilitados")
     try:
         from backend.core.rrhh_reminders import run_rrhh_mark_reminders
 

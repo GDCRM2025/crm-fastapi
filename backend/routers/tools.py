@@ -5961,8 +5961,16 @@ def approve_agenda(
     first_link: str | None = None
     first_eid: str | None = None
     gcal_error: str | None = None
+    got_lock: bool = False
     try:
         _ensure_lead_calendar_cols(db)
+        # Shared hosting safety: prevent concurrent Google Calendar sync from saturating Passenger.
+        try:
+            got_lock = bool(db.execute(text("SELECT pg_try_advisory_lock(26042401)")).scalar())
+        except Exception:
+            got_lock = False
+        if not got_lock:
+            raise HTTPException(status_code=429, detail="Agenda ocupada. Reintenta en 10 segundos.")
 
         name_expr = _lead_name_expr(db)
         lead_extra: dict[str, Any] = {}
@@ -6327,6 +6335,13 @@ def approve_agenda(
         confirmado_id = _estado_id(db, "CONFIRM")
         declinado_id = _estado_id(db, "DECLIN")
 
+        old_estado = None
+        try:
+            old_estado = db.execute(text("SELECT id_estado FROM leads WHERE id_lead=:id LIMIT 1"), {"id": int(id_lead)}).scalar()
+            old_estado = int(old_estado) if old_estado is not None else None
+        except Exception:
+            old_estado = None
+
         db.execute(
             text(
                 """
@@ -6390,6 +6405,109 @@ def approve_agenda(
             pass
 
         db.commit()
+
+        # Notificación inmediata: evento vendido/confirmado (solo si la agenda se aprobó con calendar_event_id real).
+        try:
+            if ok_calendar and confirmado_id and (old_estado is None or int(old_estado) != int(confirmado_id)):
+                try:
+                    from backend.core.system_notifs import push_system_notif
+                    cn = db.connection()
+                    who = (x_user or me.get("username") or me.get("email") or me.get("name") or "usuario")
+                    cliente = str(row.get("lead_nombre") or "").strip() or f"Lead #{int(id_lead)}"
+                    fe = row.get("fecha_evento")
+                    marca_nombre = ""
+                    try:
+                        if id_marca is not None:
+                            marca_nombre = (
+                                db.execute(
+                                    text("SELECT COALESCE(nombre, marca, '') FROM public.marcas WHERE id_marca=:id LIMIT 1"),
+                                    {"id": int(id_marca)},
+                                ).scalar()
+                                or ""
+                            )
+                    except Exception:
+                        marca_nombre = ""
+
+                    productos = []
+                    try:
+                        cid = None
+                        try:
+                            cid = db.execute(
+                                text("SELECT id_cotizacion FROM public.cotizaciones WHERE id_lead=:id ORDER BY id_cotizacion DESC LIMIT 1"),
+                                {"id": int(id_lead)},
+                            ).scalar()
+                        except Exception:
+                            cid = None
+                        if cid:
+                            rows_it = db.execute(
+                                text(
+                                    """
+                                    SELECT COALESCE(producto,'') AS producto, cantidad
+                                    FROM public.cotizacion_items
+                                    WHERE id_cotizacion=:cid
+                                    ORDER BY COALESCE(total_linea,0) DESC, COALESCE(cantidad,0) DESC
+                                    LIMIT 6
+                                    """
+                                ),
+                                {"cid": int(cid)},
+                            ).fetchall()
+                            for rr in rows_it:
+                                p = str(rr[0] or "").strip()
+                                if not p:
+                                    continue
+                                productos.append({"producto": p, "cantidad": rr[1]})
+                    except Exception:
+                        productos = []
+                    parts = [cliente]
+                    if marca_nombre:
+                        parts.append(f"Marca: {marca_nombre}")
+                    if fe:
+                        parts.append(f"Fecha: {str(fe)[:10]}")
+                    if monto_cotizado is not None:
+                        try:
+                            parts.append(f"Monto: {float(monto_cotizado):,.0f}".replace(",", "."))
+                        except Exception:
+                            parts.append(f"Monto: {monto_cotizado}")
+                    if num_cotizacion:
+                        parts.append(f"Cot: {num_cotizacion}")
+                    if productos:
+                        parts.append(f"Productos: {', '.join([p['producto'] for p in productos[:4]])}" + ("..." if len(productos) > 4 else ""))
+                    body = " | ".join(parts)
+                    payload = {
+                        "id_lead": int(id_lead),
+                        "cliente": cliente,
+                        "fecha_evento": (str(fe)[:10] if fe else None),
+                        "id_marca": id_marca,
+                        "marca": (marca_nombre or None),
+                        "monto_cotizado": monto_cotizado,
+                        "productos": productos,
+                        "id_comuna": id_comuna,
+                        "calendar_event_id": first_eid,
+                        "calendar_html_link": first_link,
+                        "who": who,
+                        # Si quieres que solo Oscar lo vea, descomenta:
+                        # "username_target": "oscarmendoza",
+                    }
+                    push_system_notif(
+                        cn,
+                        kind="EVENT_SOLD",
+                        role_target="SUPERADMIN",
+                        id_lead=int(id_lead),
+                        title="Evento vendido (confirmado)",
+                        body=body,
+                        payload=payload,
+                    )
+                    try:
+                        db.commit()
+                    except Exception:
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         # Regla negocio: SIEMPRE se debe agendar (calendar_event_id). Si falla, avisar a Oscar y
         # devolver error para forzar retry (evita el “hay que hacerlo 2 veces”).
@@ -6481,6 +6599,12 @@ def approve_agenda(
         except Exception:
             pass
         return JSONResponse(status_code=500, content={"ok": False, "where": "tools.approve_agenda", "error": str(e)})
+    finally:
+        if got_lock:
+            try:
+                db.execute(text("SELECT pg_advisory_unlock(26042401)"))
+            except Exception:
+                pass
 
 
 @router.put("/agenda/{id_lead}/edit_confirmed")

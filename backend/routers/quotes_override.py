@@ -49,6 +49,21 @@ def _has(cols: List[str], col: str) -> bool:
     return col in cols
 
 
+def _marcas_name_expr(cols: List[str]) -> str:
+    """
+    Devuelve el nombre de la marca (columna variable según entorno).
+    """
+    # Algunos entornos tienen ambas columnas. Para compatibilidad, permitimos match por cualquiera.
+    if ("marca" in cols) and ("nombre" in cols):
+        return "COALESCE(marca, nombre)"
+    if "marca" in cols:
+        return "marca"
+    if "nombre" in cols:
+        return "nombre"
+    # fallback: si no hay, devuelve string vacío
+    return "''"
+
+
 @router.get("/history")
 def history(
     id_lead: Optional[int] = Query(default=None),
@@ -339,8 +354,36 @@ def pdf_placeholder(
         safe = (filename or "cotizacion.pdf").replace('"', "")
         return f'{kind}; filename="{safe}"'
 
+    def _pdf_headers(filename: str) -> dict:
+        # Evitar cache del navegador/proxy: cuando se "versionan" assets de marca, el mismo URL debe refrescar.
+        return {
+            "Content-Disposition": _disp(filename),
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+        }
+
     refresh_assets = int(refresh or 0) == 1
     force_rebuild = int(rebuild or 0) == 1
+
+    def _to_ts(v) -> float:
+        try:
+            if v is None:
+                return 0.0
+            if hasattr(v, "timestamp"):
+                return float(v.timestamp())
+            s = str(v).strip()
+            if not s:
+                return 0.0
+            # tolerate "2026-04-24 12:34:56" and ISO
+            s2 = s.replace("Z", "+00:00")
+            try:
+                return datetime.fromisoformat(s2).timestamp()
+            except Exception:
+                # fallback: keep only first 19 chars "YYYY-MM-DD HH:MM:SS"
+                s3 = s2[:19].replace(" ", "T")
+                return datetime.fromisoformat(s3).timestamp()
+        except Exception:
+            return 0.0
 
     # cargar cotización + items + lead
     with get_connection() as cn:
@@ -362,10 +405,24 @@ def pdf_placeholder(
                 if not p.is_absolute():
                     p = root / p0
                 if p.exists() and p.is_file() and (not refresh_assets) and (not force_rebuild) and (not debug):
+                    # If the quote was updated after the PDF was generated (e.g., versioned templates/items),
+                    # do not serve a stale PDF.
+                    try:
+                        pdf_ts = float(p.stat().st_mtime)
+                        cot_ts = max(
+                            _to_ts(cot.get("updated_at")),
+                            _to_ts(cot.get("modified_at")),
+                            _to_ts(cot.get("updated")),
+                        )
+                        if cot_ts and cot_ts > (pdf_ts + 1.0):
+                            raise RuntimeError("stale_pdf")
+                    except Exception as _st:
+                        if str(_st) == "stale_pdf":
+                            raise
                     return FileResponse(
                         str(p),
                         media_type="application/pdf",
-                        headers={"Content-Disposition": _disp(p.name)},
+                        headers=_pdf_headers(p.name),
                     )
         except Exception:
             pass
@@ -563,8 +620,9 @@ def pdf_placeholder(
                     return n
                 except Exception:
                     pass
-        # Default: 60s (balance entre frescura y no pegarle tanto a Drive).
-        return 60
+        # Default: 10 min. Los refresh "urgentes" se hacen vía /settings/marcas/refresh_drive_assets (async)
+        # o vía cron off-peak.
+        return 600
 
     def _latest_drive_cache_mtime(mkey: str) -> float:
         """
@@ -633,7 +691,7 @@ def pdf_placeholder(
                 return FileResponse(
                     str(pdf_path),
                     media_type="application/pdf",
-                    headers={"Content-Disposition": _disp(pdf_path.name)},
+                    headers=_pdf_headers(pdf_path.name),
                 )
     except Exception:
         pass
@@ -838,8 +896,13 @@ def pdf_placeholder(
                     {"id": lead.get("id_marca")},
                 ).mappings().first()
             if not mrow and marca_raw:
+                try:
+                    mcols = _cols_for("marcas")
+                except Exception:
+                    mcols = []
+                name_expr = _marcas_name_expr(mcols)
                 mrow = cn2.execute(
-                    text("SELECT * FROM marcas WHERE UPPER(marca)=UPPER(:m)"),
+                    text(f"SELECT * FROM marcas WHERE UPPER({name_expr})=UPPER(:m) ORDER BY id_marca DESC LIMIT 1"),
                     {"m": marca_raw},
                 ).mappings().first()
     except Exception:
@@ -866,11 +929,12 @@ def pdf_placeholder(
     term_url = _pick("pdf_terminos_url", "terminos_url", "terminos")
     banco_url = _pick("pdf_banco_url", "banco_url", "banco")
     logo_url = (mrow or {}).get("logo_url") or (mrow or {}).get("logo_path") or ""
+    drive_folder_id = _pick("drive_assets_folder_id", "drive_folder_id", "folder_id_drive", "drive_folder")
 
     # Drive folders (si está configurado): permite reemplazar archivos manteniendo nombre, sin tocar FILE_ID.
     # Requiere Service Account + compartir carpetas con el email del SA.
     try:
-        folder_id = DRIVE_ASSET_FOLDERS.get(marca_key or "", "")
+        folder_id = DRIVE_ASSET_FOLDERS.get(marca_key or "", "") or (str(drive_folder_id or "").strip())
         if folder_id:
             from backend.core.drive_assets import resolve_brand_assets_from_folder
             da = resolve_brand_assets_from_folder(
@@ -2108,10 +2172,12 @@ def pdf_placeholder(
                 return FileResponse(
                     str(pdf_path),
                     media_type="application/pdf",
-                    headers={"Content-Disposition": _disp(pdf_path.name)},
+                    headers=_pdf_headers(pdf_path.name),
                 )
         except Exception:
             pass
+    except Exception:
+        pass
 
         # Fallback: si existe un pdf_path previo, úsalo (solo si NO estamos forzando refresh).
         if not refresh_assets:
@@ -2166,8 +2232,8 @@ def pdf_placeholder(
                        {"p": str(pdf_path), "id": id_cotizacion})
             cn.commit()
 
-    return FileResponse(
-        str(pdf_path),
-        media_type="application/pdf",
-        headers={"Content-Disposition": _disp(pdf_path.name)},
-    )
+        return FileResponse(
+            str(pdf_path),
+            media_type="application/pdf",
+            headers=_pdf_headers(pdf_path.name),
+        )

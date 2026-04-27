@@ -2661,12 +2661,27 @@ async function handleConfirmado(lead, newEstado){
             <div class="muted agSmall" id="ag_duracion" style="align-self:center;margin-top:26px">Duración: —</div>
           </div>
 
-          <div class="agRow" style="gap:12px;align-items:center">
-            <label style="display:flex;align-items:center;gap:8px">
-              <input id="ag_multiloc" type="checkbox" />
-              <span class="muted" style="font-weight:1000">Multi-locación</span>
-            </label>
-            <div class="muted agSmall" id="ag_multiloc_hint">Varias paradas en el mismo día (dirección/horario/productos/OPS por segmento).</div>
+          <div class="agCard" style="padding:12px;gap:8px">
+            <div class="muted" style="font-weight:1100">Set up de agendamiento</div>
+            <div class="agRow" style="gap:12px;align-items:center;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:8px">
+                <input type="radio" name="ag_mode" value="simple" checked />
+                <span class="muted" style="font-weight:1000">Simple</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px">
+                <input type="radio" name="ag_mode" value="multiloc" />
+                <span class="muted" style="font-weight:1000">Multi locación</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px">
+                <input type="radio" name="ag_mode" value="blocks" />
+                <span class="muted" style="font-weight:1000">Evento por bloques</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px">
+                <input type="radio" name="ag_mode" value="multiday" />
+                <span class="muted" style="font-weight:1000">Multi día</span>
+              </label>
+            </div>
+            <div class="muted agSmall" id="ag_mode_hint">Simple: 1 evento (aunque la cotización tenga varios días). Multi día: 1 evento por día (si la cotización/productos traen días). Bloques: 1 solo evento con bloques en descripción. Multi locación: 1 evento por segmento.</div>
           </div>
 
           <div class="agRow" style="gap:12px">
@@ -2697,6 +2712,15 @@ async function handleConfirmado(lead, newEstado){
             </div>
             <div class="muted agSmall">Crea 1 segmento por parada. Cada segmento crea un evento en Calendar.</div>
             <div id="ag_seg_list" style="display:grid;gap:10px"></div>
+          </div>
+
+          <div id="ag_blocks_wrap" style="display:none;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.10);display:grid;gap:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <div class="muted" style="font-weight:1000">Bloques (multi-día / multi-locación)</div>
+              <button type="button" class="swBtn secondary" id="ag_blk_add" style="white-space:nowrap">Agregar bloque</button>
+            </div>
+            <div class="muted agSmall">1 solo evento en Calendar. Los bloques se listan en la descripción por horario (como “BLOQUE A: ENTREGA 15.30 – 16.00”).</div>
+            <div id="ag_blk_list" style="display:grid;gap:10px"></div>
           </div>
 
           <div class="agPreview" id="ag_products_wrap" style="max-height:none">
@@ -2762,8 +2786,9 @@ async function handleConfirmado(lead, newEstado){
   let selectedIdx = 0;
   let TIMES = [];
   let TIMES_OPT = "";
-  let multiLocOn = false;
+  let agendaMode = "simple"; // simple | multiloc | blocks | multiday
   let segState = []; // [{comuna,direccion,start_time,end_time,ops,products_text,montaje_text}]
+  let blockState = []; // [{day,comuna,direccion,start_time,end_time,hr_tbd,ops,products_text,montaje_text,label}]
   const dayEdits = {}; // day -> { ops, montaje }
   const touchedDay = {}; // day -> { ops, montaje }
 
@@ -2793,6 +2818,9 @@ async function handleConfirmado(lead, newEstado){
   const _segWrap = ()=> qs("#ag_segments_wrap");
   const _segList = ()=> qs("#ag_seg_list");
   const _segAddBtn = ()=> qs("#ag_seg_add");
+  const _blkWrap = ()=> qs("#ag_blocks_wrap");
+  const _blkList = ()=> qs("#ag_blk_list");
+  const _blkAddBtn = ()=> qs("#ag_blk_add");
   const _dayEditorWrap = ()=> qs("#ag_day_editor_wrap");
   const _productsWrap = ()=> qs("#ag_products_wrap");
   let _segDebounce = null;
@@ -2936,16 +2964,137 @@ async function handleConfirmado(lead, newEstado){
     }
   };
 
-	  const _applyMultiLocUI = ()=>{
-	    const on = !!multiLocOn;
+  const _readBlockStateFromDOM = ()=>{
+    try{
+      const list = _blkList();
+      if (!list) return blockState || [];
+      const cards = [...list.querySelectorAll("[data-blk-idx]")];
+      const next = [];
+      for (const card of cards){
+        const day = (card.querySelector("[data-f='day']")?.value || "").trim();
+        const label = (card.querySelector("[data-f='label']")?.value || "").trim();
+        const comuna = (card.querySelector("[data-f='comuna']")?.value || "").trim();
+        const direccion = (card.querySelector("[data-f='direccion']")?.value || "").trim();
+        const start_time = (card.querySelector("[data-f='start_time']")?.value || "").trim();
+        const end_time = (card.querySelector("[data-f='end_time']")?.value || "").trim();
+        const hr_tbd = !!card.querySelector("[data-f='hr_tbd']")?.checked;
+        const ops = Number((card.querySelector("[data-f='ops']")?.value || "").trim() || 0);
+        const products_text = (card.querySelector("[data-f='products_text']")?.value || "").trim();
+        const montaje_text = (card.querySelector("[data-f='montaje_text']")?.value || "").trim();
+        next.push({ day, label, comuna, direccion, start_time, end_time, hr_tbd, ops, products_text, montaje_text });
+      }
+      blockState = next;
+      return blockState;
+    }catch(_){
+      return blockState || [];
+    }
+  };
+
+  const _renderBlocks = ()=>{
+    const wrap = _blkWrap();
+    const list = _blkList();
+    if (!wrap || !list) return;
+    wrap.style.display = blocksOn ? "grid" : "none";
+    if (!blocksOn){
+      list.innerHTML = "";
+      return;
+    }
+    const blks = Array.isArray(blockState) ? blockState : [];
+    const parts = [];
+    for (let i=0;i<blks.length;i++){
+      const b = blks[i] || {};
+      parts.push(`
+        <div data-blk-idx="${i}" style="border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.08);display:grid;gap:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div class="muted" style="font-weight:1000">Bloque ${i+1}/${blks.length}</div>
+            <button type="button" class="swBtn secondary" data-blk-del="${i}" ${blks.length<=1 ? "disabled" : ""} style="white-space:nowrap">Quitar</button>
+          </div>
+          <div class="agRow" style="gap:12px;flex-wrap:wrap">
+            <label class="agLabel" style="flex:1;min-width:180px">
+              <div class="muted">Día</div>
+              <input class="swInp" type="date" data-f="day" value="${escapeHtml(String(b.day||"").slice(0,10))}" />
+            </label>
+            <label class="agLabel" style="flex:1;min-width:200px">
+              <div class="muted">Etiqueta (opcional)</div>
+              <input class="swInp" data-f="label" value="${escapeHtml(b.label||"")}" placeholder="Montaje / Bloque 1 / etc" />
+            </label>
+            <label class="agLabel" style="width:140px">
+              <div class="muted">OPS</div>
+              <input class="swInp" type="number" min="0" step="1" data-f="ops" value="${escapeHtml(String((b.ops!=null)?b.ops:""))}" />
+            </label>
+          </div>
+          <div class="agRow" style="gap:12px;flex-wrap:wrap">
+            <label class="agLabel" style="flex:1;min-width:220px">
+              <div class="muted">Comuna</div>
+              <input class="swInp" data-f="comuna" value="${escapeHtml(b.comuna||"")}" placeholder="Las Condes" />
+            </label>
+            <label class="agLabel" style="flex:2;min-width:260px">
+              <div class="muted">Dirección</div>
+              <input class="swInp" data-f="direccion" value="${escapeHtml(b.direccion||"")}" placeholder="Dirección completa" />
+            </label>
+          </div>
+          <div class="agRow">
+            <label class="agLabel">
+              <div class="muted">Inicio</div>
+              <input class="swInp" data-f="start_time" value="${escapeHtml(b.start_time||"")}" placeholder="18:00" />
+            </label>
+            <label class="agLabel">
+              <div class="muted">Fin</div>
+              <input class="swInp" data-f="end_time" value="${escapeHtml(b.end_time||"")}" placeholder="23:00" />
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:26px">
+              <input data-f="hr_tbd" type="checkbox" ${b.hr_tbd ? "checked" : ""} />
+              <span class="muted" style="font-weight:1000">HR TBD</span>
+            </label>
+          </div>
+          <label class="agLabel">
+            <div class="muted">Productos (opcional; si lo dejas vacío se calcula por día)</div>
+            <textarea class="swTa" rows="4" data-f="products_text" placeholder="• ...">${escapeHtml(b.products_text||"")}</textarea>
+          </label>
+          <label class="agLabel">
+            <div class="muted">Montaje (opcional; si lo dejas vacío se sugiere)</div>
+            <textarea class="swTa" rows="4" data-f="montaje_text" placeholder="• ...">${escapeHtml(b.montaje_text||"")}</textarea>
+          </label>
+        </div>
+      `);
+    }
+    list.innerHTML = parts.join("");
+    list.querySelectorAll("[data-blk-idx] input,[data-blk-idx] textarea").forEach((inp)=>{
+      inp.addEventListener("input", ()=>{ _readBlockStateFromDOM(); _schedulePreview(); });
+      inp.addEventListener("change", ()=>{ _readBlockStateFromDOM(); _schedulePreview(); });
+    });
+    list.querySelectorAll("button[data-blk-del]").forEach((b)=>{
+      b.addEventListener("click", ()=>{
+        const idx = Number(b.getAttribute("data-blk-del") || -1);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        if ((blockState||[]).length <= 1) return;
+        _readBlockStateFromDOM();
+        blockState.splice(idx, 1);
+        _renderBlocks();
+        _schedulePreview();
+      });
+    });
+  };
+
+  const _getAgendaMode = ()=>{
+    try{
+      const v = (qs("input[name='ag_mode']:checked")?.value || "simple").toString().trim();
+      return (v === "multiloc" || v === "blocks" || v === "multiday") ? v : "simple";
+    }catch(_){ return "simple"; }
+  };
+
+  const _applyMultiLocUI = ()=>{
+	    const mode = (agendaMode === "blocks") ? "blocks" : ((agendaMode === "multiloc") ? "segments" : "day");
 	    const wrap = _segWrap();
+	    const wrapB = _blkWrap();
 	    const dayHdr = qs("#ag_day_hdr");
 	    const dayMont = qs("#ag_day_montaje_wrap");
 	    const prodW = _productsWrap();
-	    if (wrap) wrap.style.display = on ? "grid" : "none";
-	    if (dayHdr) dayHdr.textContent = on ? "Segmentos" : "Agenda por día";
-	    if (dayMont) dayMont.style.display = on ? "none" : "";
-	    if (prodW) prodW.style.display = on ? "none" : "";
+	    if (wrap) wrap.style.display = (mode === "segments") ? "grid" : "none";
+	    if (wrapB) wrapB.style.display = (mode === "blocks") ? "grid" : "none";
+	    if (dayHdr) dayHdr.textContent = (mode === "segments") ? "Segmentos" : ((mode === "blocks") ? "Bloques" : "Agenda por día");
+	    if (dayMont) dayMont.style.display = (mode === "day") ? "" : "none";
+	    if (prodW) prodW.style.display = (mode === "day") ? "" : "none";
 	  };
 
   const renderDayTabs = ()=>{
@@ -2953,7 +3102,8 @@ async function handleConfirmado(lead, newEstado){
     if (!wrap) return;
     const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
     const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
-    const showTabs = ((quoteSource === "manual") || !!multiLocOn) && (previewEvents.length > 1);
+    const mode = (agendaMode === "blocks") ? "blocks" : ((agendaMode === "multiloc") ? "segments" : "day");
+    const showTabs = (mode !== "blocks") && (previewEvents.length > 1);
     wrap.style.display = showTabs ? "flex" : "none";
     if (!showTabs){
       wrap.innerHTML = "";
@@ -3012,11 +3162,14 @@ async function handleConfirmado(lead, newEstado){
     const tel = (qs("#ag_tel")?.value || "").trim();
     const dir = (qs("#ag_dir")?.value || "").trim();
     const notes = (qs("#ag_notes")?.value || "").trim();
-    multiLocOn = !!qs("#ag_multiloc")?.checked;
-    if (multiLocOn){
-      // Mantener segState actualizado con lo que el usuario tiene en pantalla.
-      _readSegStateFromDOM();
-    }
+    agendaMode = _getAgendaMode();
+    const isBlocks = (agendaMode === "blocks");
+    const isMultiLoc = (agendaMode === "multiloc");
+    const isDayMode = !isBlocks && !isMultiLoc;
+    if (isBlocks) _readBlockStateFromDOM();
+    if (isMultiLoc) _readSegStateFromDOM();
+    _applyMultiLocUI();
+    _renderBlocks();
 
     if (st) st.textContent = "Calculando…";
     try{
@@ -3032,8 +3185,8 @@ async function handleConfirmado(lead, newEstado){
           telefono: tel,
           direccion: dir,
           ...(notes ? { agenda_notes: notes } : {}),
-          ...(hrTbd ? { hr_tbd: true } : { start_time: hIni, end_time: hFin, hr_tbd: false }),
-          ...(multiLocOn ? { segments: (segState || []) } : {}),
+          ...( (isBlocks || isMultiLoc) ? { hr_tbd: false, start_time: hIni, end_time: hFin } : (hrTbd ? { hr_tbd: true } : { start_time: hIni, end_time: hFin, hr_tbd: false }) ),
+          ...(isBlocks ? { blocks: (blockState || []) } : (isMultiLoc ? { segments: (segState || []) } : { force_single_day: (agendaMode === "simple") ? 1 : 0 })),
         })
       });
       previewEvents = (Array.isArray(out?.eventos) && out.eventos.length) ? out.eventos : (out?.evento ? [out.evento] : []);
@@ -3247,6 +3400,11 @@ async function handleConfirmado(lead, newEstado){
 	      if (ml){
 	        ml.addEventListener("change", ()=>{
 	          multiLocOn = !!ml.checked;
+	          if (multiLocOn){
+	            // Modos excluyentes.
+	            blocksOn = false;
+	            try{ const bk = qs("#ag_blocks"); if (bk) bk.checked = false; }catch(_){}
+	          }
 	          if (multiLocOn && (!Array.isArray(segState) || segState.length === 0)){
 	            _seedSegmentsFromCurrent();
 	          }
@@ -3257,6 +3415,40 @@ async function handleConfirmado(lead, newEstado){
 	          _schedulePreview();
 	        });
 	      }
+	      // Bloques
+	      try{
+	        const bk = qs("#ag_blocks");
+	        if (bk){
+	          bk.addEventListener("change", ()=>{
+	            blocksOn = !!bk.checked;
+	            if (blocksOn){
+	              // Modos excluyentes.
+	              multiLocOn = false;
+	              try{ const ml2 = qs("#ag_multiloc"); if (ml2) ml2.checked = false; }catch(_){}
+	              if (!Array.isArray(blockState) || blockState.length === 0){
+	                const d0 = String(lead.fecha_evento || "").slice(0,10) || (new Date()).toISOString().slice(0,10);
+	                blockState = [{ day: d0, label:"", comuna:(qs("#ag_loc")?.value || "").trim(), direccion:(qs("#ag_dir")?.value || "").trim(), start_time:(qs("#ag_hini")?.value || "").trim(), end_time:(qs("#ag_hfin")?.value || "").trim(), hr_tbd: !!qs("#ag_hrtbd")?.checked, ops:1, products_text:"", montaje_text:"" }];
+	              }
+	            }
+	            _renderBlocks();
+	            _applyMultiLocUI();
+	            _schedulePreview();
+	          });
+	        }
+	        const addBlk = _blkAddBtn();
+	        if (addBlk){
+	          addBlk.addEventListener("click", ()=>{
+	            _readBlockStateFromDOM();
+	            const d0 = String(lead.fecha_evento || "").slice(0,10) || (new Date()).toISOString().slice(0,10);
+	            blockState.push({ day: d0, label:"", comuna:(qs("#ag_loc")?.value || "").trim(), direccion:(qs("#ag_dir")?.value || "").trim(), start_time:(qs("#ag_hini")?.value || "").trim(), end_time:(qs("#ag_hfin")?.value || "").trim(), hr_tbd: !!qs("#ag_hrtbd")?.checked, ops:1, products_text:"", montaje_text:"" });
+	            blocksOn = true;
+	            try{ const bk2 = qs("#ag_blocks"); if (bk2) bk2.checked = true; }catch(_){}
+	            _renderBlocks();
+	            _applyMultiLocUI();
+	            _schedulePreview();
+	          });
+	        }
+	      }catch(_){}
 	      const addSeg = _segAddBtn();
 	      if (addSeg){
 	        addSeg.addEventListener("click", ()=>{
@@ -3276,6 +3468,7 @@ async function handleConfirmado(lead, newEstado){
 	        });
 	      }
 	      _applyMultiLocUI();
+	      _renderBlocks();
 	      updDur();
 	      await runPreview();
 		    },
@@ -3284,10 +3477,11 @@ async function handleConfirmado(lead, newEstado){
 	      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
 	      const idCot = (quoteSource === "cotizador") ? qSel : null;
 		      const multiLoc = !!qs("#ag_multiloc")?.checked;
+		      const blocks = !!qs("#ag_blocks")?.checked;
 		      const hrTbd = !!qs("#ag_hrtbd")?.checked;
 		      const hIni = (qs("#ag_hini")?.value || "").trim();
 		      const hFin = (qs("#ag_hfin")?.value || "").trim();
-		      if (!multiLoc){
+		      if (!multiLoc && !blocks){
 		        if (!hrTbd && (!hIni || !hFin)) return Swal.showValidationMessage("Debes indicar horas o marcar HR TBD.");
 		        saveCurrentDay();
 		      }
@@ -3341,6 +3535,45 @@ async function handleConfirmado(lead, newEstado){
 		          });
 		        }
 		        segsOut = cleaned;
+		      }
+
+		      let blksOut = null;
+		      if (blocks){
+		        _readBlockStateFromDOM();
+		        const blks = Array.isArray(blockState) ? blockState : [];
+		        if (blks.length < 1){
+		          Swal.showValidationMessage("Bloques requiere al menos 1 bloque.");
+		          return false;
+		        }
+		        const cleaned = [];
+		        for (let i=0;i<blks.length;i++){
+		          const b = blks[i] || {};
+		          const day = String(b.day || "").trim();
+		          if (!day){
+		            Swal.showValidationMessage(`Falta día en Bloque ${i+1}.`);
+		            return false;
+		          }
+		          const hrb = !!b.hr_tbd;
+		          const st = String(b.start_time || "").trim();
+		          const en = String(b.end_time || "").trim();
+		          if (!hrb && (!st || !en)){
+		            Swal.showValidationMessage(`Faltan horas en Bloque ${i+1} (o marca HR TBD).`);
+		            return false;
+		          }
+		          cleaned.push({
+		            day,
+		            label: String(b.label || "").trim(),
+		            comuna: String(b.comuna || "").trim(),
+		            direccion: String(b.direccion || "").trim(),
+		            start_time: st,
+		            end_time: en,
+		            hr_tbd: hrb,
+		            ops: Number(b.ops || 0),
+		            products_text: String(b.products_text || "").trim(),
+		            montaje_text: String(b.montaje_text || "").trim(),
+		          });
+		        }
+		        blksOut = cleaned;
 		      }
 
 		      const overrideByDay = [];
@@ -3423,9 +3656,13 @@ async function handleConfirmado(lead, newEstado){
 					    return {
 					        quote_source: quoteSource,
 					        id_cotizacion: idCot ? Number(idCot) : null,
-					        hr_tbd: segsOut ? false : hrTbd,
-			        start_time: segsOut ? String((segsOut[0]||{}).start_time || "").trim() : hIni,
-			        end_time: segsOut ? String((segsOut[0]||{}).end_time || "").trim() : hFin,
+					        hr_tbd: (segsOut || blksOut) ? false : hrTbd,
+			        start_time: segsOut
+			          ? String((segsOut[0]||{}).start_time || "").trim()
+			          : (blksOut ? String((blksOut[0]||{}).start_time || "").trim() : hIni),
+			        end_time: segsOut
+			          ? String((segsOut[0]||{}).end_time || "").trim()
+			          : (blksOut ? String((blksOut[0]||{}).end_time || "").trim() : hFin),
 				        abono: abonoVal,
 			        abono_mode: abMode,
 			        abono_oc: abOC,
@@ -3437,7 +3674,7 @@ async function handleConfirmado(lead, newEstado){
 			        override_title: (qs("#ag_title")?.value || "").trim(),
 			        override_location: (qs("#ag_loc")?.value || "").trim(),
 			        override_description: (qs("#ag_desc")?.value || "").trim(),
-			        ...(segsOut ? { segments: segsOut } : { override_by_day: overrideByDay }),
+			        ...(blksOut ? { blocks: blksOut } : (segsOut ? { segments: segsOut } : { override_by_day: overrideByDay })),
 			      };
 				    }
 		  });

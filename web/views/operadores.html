@@ -106,7 +106,6 @@
     header nav a.danger{ border-color: rgba(239,68,68,.40); color:#fff; background: rgba(239,68,68,.10); }
     header nav a.menu-camaleon{ background:rgba(67,181,22,.25); border-color:rgba(67,181,22,.65); color:#eaffea; }
     header nav a.menu-gourmet{ background:rgba(251,181,49,.18); border-color:rgba(251,181,49,.65); color:#fff6e6; }
-    header nav a.menu-delsabor{ background:rgba(242,140,26,.18); border-color:rgba(242,140,26,.65); color:#fff0e6; }
     header nav a.menu-express{ background:rgba(232,81,76,.18); border-color:rgba(232,81,76,.65); color:#ffecec; }
     header nav a.menu-petras{ background:rgba(59,130,246,.16); border-color:rgba(59,130,246,.55); color:#eaf2ff; }
     header nav a.menu-masflow{ background:rgba(168,85,247,.14); border-color:rgba(168,85,247,.50); color:#f4eaff; }
@@ -164,7 +163,7 @@
     .side-nav a:hover{ opacity:.9; }
     .side-sep{ height:10px; margin:4px 12px; border-bottom:1px solid rgba(255,255,255,.15); }
     .menu-camaleon{ background:rgba(67,181,22,.8); } .menu-gourmet{ background:rgba(251,181,49,.8); }
-    .menu-delsabor{ background:rgba(242,140,26,.8); } .menu-express{ background:rgba(232,81,76,.8); }
+    .menu-express{ background:rgba(232,81,76,.8); }
     .menu-petras{ background:rgba(59,130,246,.78); } .menu-masflow{ background:rgba(168,85,247,.76); }
 
     /* Tarjetas de contacto */
@@ -337,7 +336,6 @@
     <div class="who" id="topWho">Operadores</div>
     <ul>
       <li><a class="primary" href="#calendario">Calendario</a></li>
-      <li><a href="staff.html">Chat + Alertas</a></li>
       <li><a href="instalar.html">Instalar</a></li>
       <li class="driver-only"><a href="#gps">Conectar GPS</a></li>
       <li class="driver-only"><a href="#ruta">Ver Ruta</a></li>
@@ -660,6 +658,7 @@
   async function loadRecipes(){
     const data = JSON.parse(document.getElementById('recipes-data').textContent);
     const container = document.getElementById('recipes-container');
+    // El JSON histórico puede traer marcas adicionales; se renderizan normalmente.
 
     // Extiende menú con marcas nuevas (Petras / Mas Flow) desde BD.
     // Esto evita re-escribir el JSON gigante en el HTML.

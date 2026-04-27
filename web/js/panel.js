@@ -1315,6 +1315,12 @@ function bindNotifications() {
   const btn = qs("#btnNotifs");
   const menu = qs("#notifMenu");
   if (!btn || !menu) return;
+  // Shared hosting: notifications menu disabled (keep only "evento vendido" alert for SUPERADMIN).
+  try {
+    btn.style.display = "none";
+  } catch (_) {
+  }
+  return;
   // Shared hosting: keep background polling minimal.
   // Requirement: notifications only for RRHH topics.
   try {
@@ -1437,9 +1443,38 @@ function startSoldEventPolling() {
       if (Number(item.id) !== lastId) {
         localStorage.setItem("gd_sold_last_id", String(item.id));
         try {
+          const p = (item && item.payload) || {};
+          const marca = (p.marca || "").toString().trim();
+          const montoRaw = p.monto_cotizado ?? p.monto ?? p.total ?? null;
+          const productos = Array.isArray(p.productos) ? p.productos : [];
+          const fmtCLP = (v) => {
+            try {
+              const n = Number(v);
+              if (!Number.isFinite(n)) return "";
+              return `$${Math.round(n).toLocaleString("es-CL")}`;
+            } catch (_) {
+              return "";
+            }
+          };
+          const prodsTxt = (() => {
+            try {
+              const names = productos.map((x) => (x && x.producto ? String(x.producto) : "")).filter(Boolean);
+              if (!names.length) return "";
+              return names.slice(0, 6).join(", ") + (names.length > 6 ? "..." : "");
+            } catch (_) {
+              return "";
+            }
+          })();
+          const lines = [];
+          if (marca) lines.push(`<b>Marca:</b> ${escapeHtml(marca)}`);
+          const mfmt = montoRaw != null ? fmtCLP(montoRaw) : "";
+          if (mfmt) lines.push(`<b>Monto:</b> ${escapeHtml(mfmt)}`);
+          if (prodsTxt) lines.push(`<b>Productos:</b> ${escapeHtml(prodsTxt)}`);
+          if (item.body) lines.push(`<div style="opacity:.7;margin-top:.4rem">${escapeHtml(item.body)}</div>`);
+          const html = lines.join("<br/>") || escapeHtml(item.body || "");
           const res = await Swal.fire({
             title: item.title || "Evento vendido",
-            text: item.body || "",
+            html,
             showCancelButton: true,
             confirmButtonText: "Abrir lead",
             cancelButtonText: "Marcar leído"
@@ -2196,6 +2231,8 @@ const MENU = [
       { id: "op_menu_gou", label: "Menu Gourmet", url: "/web/views/operadores.html?only=menu&brand=GOURMET&v=20260305-m1#recetas" },
       { id: "op_menu_exp", label: "Menu Express", url: "/web/views/operadores.html?only=menu&brand=EXPRESS&v=20260305-m1#recetas" },
       { id: "op_menu_del", label: "Menu Del Sabor", url: "/web/views/operadores.html?only=menu&brand=DEL%20SABOR&v=20260305-m1#recetas" },
+      { id: "op_menu_pet", label: "Menu Petras", url: "/web/views/operadores.html?only=menu&brand=PETRAS&v=20260305-m1#recetas" },
+      { id: "op_menu_mf", label: "Menu Mas Flow", url: "/web/views/operadores.html?only=menu&brand=MAS%20FLOW&v=20260305-m1#recetas" },
       { id: "op_sep2", label: "\u2014", url: null, sep: true },
       { id: "op_uni", label: "Universidad GD", url: "/web/views/operadores.html?only=uni&v=20260305-m1#videos" },
       { id: "op_sep3", label: "\u2014", url: null, sep: true },
@@ -2322,6 +2359,8 @@ const PERMISSIONS = {
     "op_menu_gou",
     "op_menu_exp",
     "op_menu_del",
+    "op_menu_pet",
+    "op_menu_mf",
     "op_uni",
     "op_vruta2",
     "leads_ver",
@@ -2542,6 +2581,8 @@ const PERMISSIONS = {
     "op_menu_gou",
     "op_menu_exp",
     "op_menu_del",
+    "op_menu_pet",
+    "op_menu_mf",
     "op_uni",
     "op_vruta2"
   ]),
@@ -2552,6 +2593,8 @@ const PERMISSIONS = {
     "op_menu_gou",
     "op_menu_exp",
     "op_menu_del",
+    "op_menu_pet",
+    "op_menu_mf",
     "op_uni",
     "op_vruta2"
   ]),

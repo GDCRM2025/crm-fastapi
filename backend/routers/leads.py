@@ -1966,11 +1966,61 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                 fecha_evento = (row2[1] if row2 else None)
                 monto = (row2[2] if row2 else None)
                 id_marca = (row2[3] if row2 else None)
+                marca_nombre = ""
+                try:
+                    if id_marca is not None:
+                        marca_nombre = (
+                            conn.execute(
+                                text("SELECT COALESCE(nombre, marca, '') FROM public.marcas WHERE id_marca=:id LIMIT 1"),
+                                {"id": int(id_marca)},
+                            ).scalar()
+                            or ""
+                        )
+                except Exception:
+                    marca_nombre = ""
+
+                productos: list[dict] = []
+                try:
+                    cid = None
+                    try:
+                        cid = conn.execute(
+                            text("SELECT id_cotizacion FROM public.cotizaciones WHERE id_lead=:id ORDER BY id_cotizacion DESC LIMIT 1"),
+                            {"id": int(id_lead)},
+                        ).scalar()
+                    except Exception:
+                        cid = None
+                    if cid:
+                        rows_it = conn.execute(
+                            text(
+                                """
+                                SELECT COALESCE(producto,'') AS producto, cantidad
+                                FROM public.cotizacion_items
+                                WHERE id_cotizacion=:cid
+                                ORDER BY COALESCE(total_linea,0) DESC, COALESCE(cantidad,0) DESC
+                                LIMIT 6
+                                """
+                            ),
+                            {"cid": int(cid)},
+                        ).fetchall()
+                        for rr in rows_it:
+                            p = str(rr[0] or "").strip()
+                            if not p:
+                                continue
+                            productos.append({"producto": p, "cantidad": rr[1]})
+                except Exception:
+                    productos = []
                 parts = [cliente]
+                if marca_nombre:
+                    parts.append(f"Marca: {marca_nombre}")
                 if fecha_evento:
                     parts.append(f"Fecha: {fecha_evento}")
                 if monto is not None:
-                    parts.append(f"Monto: {monto}")
+                    try:
+                        parts.append(f"Monto: {float(monto):,.0f}".replace(",", "."))
+                    except Exception:
+                        parts.append(f"Monto: {monto}")
+                if productos:
+                    parts.append(f"Productos: {', '.join([p['producto'] for p in productos[:4]])}" + ("..." if len(productos) > 4 else ""))
                 body2 = " | ".join(parts)
 
                 import json as _json
@@ -1982,6 +2032,12 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                         payload_json["id_marca"] = int(id_marca)
                     except Exception:
                         pass
+                if marca_nombre:
+                    payload_json["marca"] = str(marca_nombre)
+                if monto is not None:
+                    payload_json["monto_cotizado"] = monto
+                if productos:
+                    payload_json["productos"] = productos
 
                 conn.execute(
                     text(

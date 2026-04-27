@@ -265,6 +265,15 @@ async def rid_middleware(request: Request, call_next):
     rid = uuid.uuid4().hex[:8]
     request.state.rid = rid
     try:
+        # Shared hosting: allow disabling chat endpoints server-side to reduce load.
+        try:
+            chat_enabled = str(os.getenv("CRM_CHAT_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+            if (not chat_enabled) and str(request.url.path or "").startswith("/chat"):
+                resp = JSONResponse({"detail": "Chat disabled"}, status_code=404, headers={"X-RID": rid})
+                return _apply_security_headers(request, resp)
+        except Exception:
+            pass
+
         # Tick RRHH reminders (best-effort throttled).
         # Important on shared hosting: never block the only Passenger worker with background jobs.
         try:

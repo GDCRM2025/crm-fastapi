@@ -1590,6 +1590,415 @@ def _bullets(text_value: str) -> list[str]:
     return out
 
 
+def _fmt_hhmm_dot(hhmm: str) -> str:
+    v = _safe_time_hhmm(hhmm) or ""
+    if not v:
+        return ""
+    return v.replace(":", ".")
+
+
+def _to_minutes(hhmm: str) -> int | None:
+    v = _safe_time_hhmm(hhmm) or ""
+    if not v:
+        return None
+    try:
+        hh, mm = _parse_hhmm(v)
+        return int(hh) * 60 + int(mm)
+    except Exception:
+        return None
+
+
+def _block_letter(i: int) -> str:
+    # 1->A, 2->B... 26->Z, luego 27->27
+    if 1 <= i <= 26:
+        return chr(ord("A") + i - 1)
+    return str(i)
+
+
+def _build_event_for_blocks_day(
+    *,
+    lead: dict,
+    day: date,
+    marca: str,
+    telefono: str,
+    agenda_notes: str | None,
+    blocks_day: list[dict],
+    items_day: list[dict],
+    comuna_fallback: str,
+    direccion_fallback: str,
+    override_ops: int | None,
+    override_montaje_text: str | None,
+    hr_tbd_fallback: bool,
+) -> dict:
+    if ZoneInfo is None:
+        raise HTTPException(500, detail="Timezone no soportada (ZoneInfo).")
+    tz = ZoneInfo("America/Santiago")
+
+    # Sugeridos por productos del día (si hay).
+    _, ops_sug, montaje_sug, products_sug = _calcular_montaje(items_day or [])
+
+    # Orden de bloques: por hora inicio si existe, si no mantiene orden.
+    def _blk_sort_key(b: dict, idx: int) -> tuple[int, int]:
+        m = _to_minutes(str(b.get("start_time") or ""))
+        return (m if m is not None else 10**9, idx)
+
+    ordered = sorted(list(enumerate(blocks_day)), key=lambda t: _blk_sort_key(t[1], t[0]))
+    blocks_day_sorted = [b for _, b in ordered]
+
+    any_hr_tbd = bool(hr_tbd_fallback) or any(bool(b.get("hr_tbd")) for b in blocks_day_sorted)
+
+    mins = [_to_minutes(str(b.get("start_time") or "")) for b in blocks_day_sorted]
+    ends = [_to_minutes(str(b.get("end_time") or "")) for b in blocks_day_sorted]
+    mins_ok = [m for m in mins if m is not None]
+    ends_ok = [m for m in ends if m is not None]
+
+    # Rango del evento (para Calendar header).
+    if mins_ok and ends_ok and not any_hr_tbd:
+        start_time = "%02d:%02d" % (min(mins_ok) // 60, min(mins_ok) % 60)
+        end_time = "%02d:%02d" % (max(ends_ok) // 60, max(ends_ok) % 60)
+    else:
+        any_hr_tbd = True
+        start_time = "11:00"
+        end_time = "13:00"
+
+    hh, mm = _parse_hhmm(start_time)
+    dt_start = datetime.combine(day, time(hh, mm), tzinfo=tz)
+    hh2, mm2 = _parse_hhmm(end_time)
+    dt_end = datetime.combine(day, time(hh2, mm2), tzinfo=tz)
+    if dt_end <= dt_start:
+        dt_end = dt_end + timedelta(days=1)
+
+    cliente = _as_text(lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)").strip() or "(Sin nombre)"
+    marca_txt = _as_text(marca).strip() if marca else "Sin Marca"
+    title = ("%s - %s" % (cliente, marca_txt)).upper()
+    if any_hr_tbd:
+        title = f"{title} - HR TBD"
+
+    # Location: primera comuna válida del día (si hay); si no, fallback del lead.
+    comuna0 = ""
+    for b in blocks_day_sorted:
+        comuna0 = str(b.get("comuna") or "").strip()
+        if comuna0:
+            break
+    location = comuna0 or _as_text(comuna_fallback).strip() or "COMUNA TBD"
+
+    # Ops: si vienen por bloque tomamos el máximo; si no, sugerido/override.
+    ops_vals = []
+    for b in blocks_day_sorted:
+        try:
+            v = int(b.get("ops") or 0)
+        except Exception:
+            v = 0
+        if v > 0:
+            ops_vals.append(v)
+    ops = int(override_ops) if override_ops is not None else (max(ops_vals) if ops_vals else int(ops_sug or 1))
+    if ops < 1:
+        ops = 1
+
+    # Montaje: sugerido global + (opcional) montaje por bloque; se deduplica.
+    montage_lines: list[str] = []
+    seen = set()
+    for ln in _bullets((override_montaje_text or "").strip() or (montaje_sug or "")):
+        if ln not in seen:
+            montage_lines.append(ln)
+            seen.add(ln)
+    for b in blocks_day_sorted:
+        mt = str(b.get("montaje_text") or "").strip()
+        if not mt:
+            continue
+        for ln in _bullets(mt):
+            if ln not in seen:
+                montage_lines.append(ln)
+                seen.add(ln)
+    if not montage_lines:
+        montage_lines = ["• —"]
+
+    # Direcciones por bloque (para multi-locación dentro del día).
+    addr_pairs: list[str] = []
+    for b in blocks_day_sorted:
+        c = str(b.get("comuna") or "").strip()
+        d = str(b.get("direccion") or "").strip()
+        if c or d:
+            addr_pairs.append((c + " · " + d).strip(" ·"))
+    distinct_addrs = [a for a in dict.fromkeys([a for a in addr_pairs if a]).keys() if a]
+    multi_addr = len(distinct_addrs) > 1
+
+    phone_label = _as_text(telefono).strip() or "POR CONFIRMAR"
+    dir_label = ""
+    if multi_addr:
+        dir_label = "Ver bloques (múltiples direcciones)"
+    else:
+        # 1 dirección: preferir del lead; si no, la del bloque.
+        dir_label = _as_text(direccion_fallback).strip() or (distinct_addrs[0] if distinct_addrs else "") or "DIR TBD"
+
+    # PRODUCTOS: con bloques (como en screenshot).
+    prod_block_lines: list[str] = []
+    for idx, b in enumerate(blocks_day_sorted, start=1):
+        lab_raw = str(b.get("label") or "").strip()
+        lab = lab_raw or f"Bloque {_block_letter(idx)}"
+        lab_up = lab.upper()
+        st = _fmt_hhmm_dot(str(b.get("start_time") or ""))
+        en = _fmt_hhmm_dot(str(b.get("end_time") or ""))
+        hr_blk = bool(b.get("hr_tbd")) or (not st) or (not en)
+        if hr_blk:
+            head = f"{lab_up}: HR TBD"
+        else:
+            head = f"{lab_up}: ENTREGA {st} – {en}"
+        prod_block_lines.append(head)
+
+        # Si hay dirección/comuna por bloque, la mostramos aquí.
+        c = str(b.get("comuna") or "").strip()
+        d = str(b.get("direccion") or "").strip()
+        if (c or d) and multi_addr:
+            prod_block_lines.append(f"📍 {(c + ' · ' + d).strip(' ·')}")
+
+        ptxt = str(b.get("products_text") or "").strip() or (products_sug or "")
+        blines = _bullets(ptxt) or ["• —"]
+        prod_block_lines.extend(blines)
+        prod_block_lines.append("")  # espacio entre bloques
+    # quitar última línea vacía
+    while prod_block_lines and not prod_block_lines[-1].strip():
+        prod_block_lines.pop()
+
+    notes = _as_text(agenda_notes).strip()
+    desc_lines: list[str] = []
+    if notes:
+        desc_lines += [
+            "🟨 NOTAS (IMPORTANTE):",
+            notes,
+            "",
+        ]
+
+    desc_lines += [
+        "🛒 PRODUCTOS:",
+        "",
+        *prod_block_lines,
+        "",
+        "🧰 MONTAJE:",
+        "",
+        *montage_lines,
+        "",
+        "👥 OPS: %s" % int(ops),
+        "",
+        "📞 TELEFONO: %s" % phone_label,
+        "📍 DIRECCION: %s" % dir_label,
+    ]
+    description = "\n".join(desc_lines).strip()
+
+    return {
+        "day": day.isoformat(),
+        "title": title,
+        "start_at": dt_start.isoformat(),
+        "end_at": dt_end.isoformat(),
+        "location": location,
+        "description": description,
+        "ops": int(ops),
+        "montaje_text": "\n".join(montage_lines).strip(),
+        # Mantener texto útil para preview (sin headers).
+        "products_text": "\n".join([ln for ln in prod_block_lines if ln.strip()]).strip(),
+    }
+
+
+def _build_event_for_blocks_single(
+    *,
+    lead: dict,
+    marca: str,
+    telefono: str,
+    agenda_notes: str | None,
+    blocks_all: list[dict],
+    items_all: list[dict],
+    comuna_fallback: str,
+    direccion_fallback: str,
+    override_ops: int | None,
+    override_montaje_text: str | None,
+    hr_tbd_fallback: bool,
+) -> dict:
+    if not blocks_all:
+        raise HTTPException(status_code=400, detail="Bloques vacíos.")
+    # Orden: por día + hora inicio
+    def _key(b: dict, idx: int) -> tuple[str, int, int]:
+        dd = b.get("day")
+        ds = dd.isoformat() if isinstance(dd, date) else "9999-12-31"
+        m = _to_minutes(str(b.get("start_time") or ""))
+        return (ds, m if m is not None else 10**9, idx)
+
+    ordered = sorted(list(enumerate(blocks_all)), key=lambda t: _key(t[1], t[0]))
+    blocks_sorted = [b for _, b in ordered]
+
+    # Días del evento
+    days = [b.get("day") for b in blocks_sorted if isinstance(b.get("day"), date)]
+    start_day = min(days) if days else (date.today())
+    end_day = max(days) if days else start_day
+    multi_day = end_day != start_day
+
+    any_hr_tbd = bool(hr_tbd_fallback) or any(bool(b.get("hr_tbd")) for b in blocks_sorted)
+    mins = []
+    ends = []
+    for b in blocks_sorted:
+        ms = _to_minutes(str(b.get("start_time") or ""))
+        me = _to_minutes(str(b.get("end_time") or ""))
+        if ms is not None:
+            mins.append((b.get("day"), ms))
+        if me is not None:
+            ends.append((b.get("day"), me))
+
+    # Rango de calendario (un solo evento). Si hay HR TBD => rango default.
+    if mins and ends and not any_hr_tbd:
+        (dmin, ms_min) = min(mins, key=lambda t: (t[0].isoformat() if isinstance(t[0], date) else "9999-12-31", t[1]))
+        (dmax, me_max) = max(ends, key=lambda t: (t[0].isoformat() if isinstance(t[0], date) else "0000-01-01", t[1]))
+        start_day = dmin if isinstance(dmin, date) else start_day
+        end_day = dmax if isinstance(dmax, date) else end_day
+        start_time = "%02d:%02d" % (ms_min // 60, ms_min % 60)
+        end_time = "%02d:%02d" % (me_max // 60, me_max % 60)
+        multi_day = end_day != start_day
+    else:
+        any_hr_tbd = True
+        start_time = "11:00"
+        end_time = "13:00"
+
+    if ZoneInfo is None:
+        raise HTTPException(500, detail="Timezone no soportada (ZoneInfo).")
+    tz = ZoneInfo("America/Santiago")
+    hh, mm = _parse_hhmm(start_time)
+    dt_start = datetime.combine(start_day, time(hh, mm), tzinfo=tz)
+    hh2, mm2 = _parse_hhmm(end_time)
+    dt_end = datetime.combine(end_day, time(hh2, mm2), tzinfo=tz)
+    if dt_end <= dt_start:
+        dt_end = dt_end + timedelta(days=1)
+
+    cliente = _as_text(lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)").strip() or "(Sin nombre)"
+    marca_txt = _as_text(marca).strip() if marca else "Sin Marca"
+    title = ("%s - %s" % (cliente, marca_txt)).upper()
+    if any_hr_tbd:
+        title = f"{title} - HR TBD"
+
+    # Sugeridos globales
+    _, ops_sug, montaje_sug, products_sug = _calcular_montaje(items_all or [])
+
+    # Location: primera comuna válida
+    comuna0 = ""
+    for b in blocks_sorted:
+        comuna0 = str(b.get("comuna") or "").strip()
+        if comuna0:
+            break
+    location = comuna0 or _as_text(comuna_fallback).strip() or "COMUNA TBD"
+
+    # Ops: máximo por bloque o override/sugerido
+    ops_vals = []
+    for b in blocks_sorted:
+        try:
+            v = int(b.get("ops") or 0)
+        except Exception:
+            v = 0
+        if v > 0:
+            ops_vals.append(v)
+    ops = int(override_ops) if override_ops is not None else (max(ops_vals) if ops_vals else int(ops_sug or 1))
+    if ops < 1:
+        ops = 1
+
+    # Montaje: sugerido + por bloque (dedup)
+    montage_lines: list[str] = []
+    seen = set()
+    for ln in _bullets((override_montaje_text or "").strip() or (montaje_sug or "")):
+        if ln not in seen:
+            montage_lines.append(ln)
+            seen.add(ln)
+    for b in blocks_sorted:
+        mt = str(b.get("montaje_text") or "").strip()
+        if not mt:
+            continue
+        for ln in _bullets(mt):
+            if ln not in seen:
+                montage_lines.append(ln)
+                seen.add(ln)
+    if not montage_lines:
+        montage_lines = ["• —"]
+
+    # Direcciones (para multi locación)
+    addr_keys = []
+    for b in blocks_sorted:
+        d = b.get("day")
+        d0 = d.isoformat() if isinstance(d, date) else ""
+        c = str(b.get("comuna") or "").strip()
+        a = str(b.get("direccion") or "").strip()
+        if c or a:
+            addr_keys.append((d0, c, a))
+    distinct_addrs = list(dict.fromkeys(addr_keys).keys())
+    multi_addr = len(distinct_addrs) > 1
+
+    phone_label = _as_text(telefono).strip() or "POR CONFIRMAR"
+    if multi_addr:
+        dir_label = "Ver bloques (múltiples direcciones)"
+    else:
+        # 1 dirección: preferir lead; si no, la del bloque
+        one = distinct_addrs[0] if distinct_addrs else ("", "", "")
+        one_txt = " · ".join([x for x in [one[1], one[2]] if x]).strip()
+        dir_label = _as_text(direccion_fallback).strip() or one_txt or "DIR TBD"
+
+    # PRODUCTOS: listar bloques (y mostrar fecha cuando hay multi-día).
+    prod_block_lines: list[str] = []
+    for idx, b in enumerate(blocks_sorted, start=1):
+        dd = b.get("day")
+        day_txt = dd.isoformat() if isinstance(dd, date) else ""
+        lab_raw = str(b.get("label") or "").strip()
+        lab = lab_raw or f"BLOQUE {_block_letter(idx)}"
+        lab_up = lab.upper()
+        st = _fmt_hhmm_dot(str(b.get("start_time") or ""))
+        en = _fmt_hhmm_dot(str(b.get("end_time") or ""))
+        hr_blk = bool(b.get("hr_tbd")) or (not st) or (not en)
+        if hr_blk:
+            head = f"{lab_up}: HR TBD"
+        else:
+            head = f"{lab_up}: ENTREGA {st} – {en}"
+        if multi_day and day_txt:
+            head = f"{day_txt} · {head}"
+        prod_block_lines.append(head)
+
+        c = str(b.get("comuna") or "").strip()
+        a = str(b.get("direccion") or "").strip()
+        if (c or a) and multi_addr:
+            prod_block_lines.append(f"📍 {(c + ' · ' + a).strip(' ·')}")
+
+        ptxt = str(b.get("products_text") or "").strip() or (products_sug or "")
+        blines = _bullets(ptxt) or ["• —"]
+        prod_block_lines.extend(blines)
+        prod_block_lines.append("")
+    while prod_block_lines and not prod_block_lines[-1].strip():
+        prod_block_lines.pop()
+
+    notes = _as_text(agenda_notes).strip()
+    desc_lines: list[str] = []
+    if notes:
+        desc_lines += ["🟨 NOTAS (IMPORTANTE):", notes, ""]
+    desc_lines += [
+        "🛒 PRODUCTOS:",
+        "",
+        *prod_block_lines,
+        "",
+        "🧰 MONTAJE:",
+        "",
+        *montage_lines,
+        "",
+        "👥 OPS: %s" % int(ops),
+        "",
+        "📞 TELEFONO: %s" % phone_label,
+        "📍 DIRECCION: %s" % dir_label,
+    ]
+    description = "\n".join(desc_lines).strip()
+
+    return {
+        "day": start_day.isoformat(),
+        "title": title,
+        "start_at": dt_start.isoformat(),
+        "end_at": dt_end.isoformat(),
+        "location": location,
+        "description": description,
+        "ops": int(ops),
+        "montaje_text": "\n".join(montage_lines).strip(),
+        "products_text": "\n".join([ln for ln in prod_block_lines if ln.strip()]).strip(),
+    }
+
+
 def _build_event_from_segment(
     *,
     lead: dict,
@@ -1605,10 +2014,19 @@ def _build_event_from_segment(
     products_text: str,
     montaje_text: str,
     label: str | None = None,
+    hr_tbd: bool = False,
 ) -> dict:
     if ZoneInfo is None:
         raise HTTPException(500, detail="Timezone no soportada (ZoneInfo).")
     tz = ZoneInfo("America/Santiago")
+    # HR TBD: si faltan horas o se pide explícito, usamos un rango por defecto.
+    start_time = _safe_time_hhmm(start_time) or start_time
+    end_time = _safe_time_hhmm(end_time) or end_time
+    if hr_tbd or (not _safe_time_hhmm(start_time)) or (not _safe_time_hhmm(end_time)):
+        start_time = "11:00"
+        end_time = "13:00"
+        hr_tbd = True
+
     hh, mm = _parse_hhmm(start_time)
     dt_start = datetime.combine(day, time(hh, mm), tzinfo=tz)
     hh2, mm2 = _parse_hhmm(end_time)
@@ -1619,6 +2037,10 @@ def _build_event_from_segment(
     cliente = _as_text(lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)").strip() or "(Sin nombre)"
     marca_txt = _as_text(marca).strip() if marca else "Sin Marca"
     title = ("%s - %s" % (cliente, marca_txt)).upper()
+    if hr_tbd:
+        title = f"{title} - HR TBD"
+    if label:
+        title = f"{title} - {label}".upper()
 
     loc = _as_text(comuna).strip() or "COMUNA TBD"
     dir_label = _as_text(direccion).strip() or "DIR TBD"
@@ -1957,9 +2379,46 @@ def move_lead_and_maybe_agenda(
             start_time = None
             end_time = None
 
+        # Bloques explícitos: multi-día + multi-locación + horarios distintos por bloque.
+        # Esto permite agendar correctamente incluso cuando la cotización (manual o sistema)
+        # no tiene estructura por bloques.
+        raw_blocks = payload.get("blocks") or payload.get("bloques") or payload.get("agenda_blocks") or None
+        blocks: list[dict] = []
+        blocks_used = False
+        if isinstance(raw_blocks, list) and raw_blocks:
+            for b in raw_blocks:
+                if not isinstance(b, dict):
+                    continue
+                d0 = str(b.get("day") or b.get("fecha") or b.get("service_date") or "").strip()[:10]
+                try:
+                    dd = date.fromisoformat(d0) if d0 else None
+                except Exception:
+                    dd = None
+                if not dd:
+                    continue
+                blocks.append(
+                    {
+                        "day": dd,
+                        "comuna": str(b.get("comuna") or b.get("location") or "").strip(),
+                        "direccion": str(b.get("direccion") or b.get("address") or "").strip(),
+                        "start_time": _safe_time_hhmm(b.get("start_time") or b.get("inicio") or ""),
+                        "end_time": _safe_time_hhmm(b.get("end_time") or b.get("fin") or ""),
+                        "hr_tbd": bool(b.get("hr_tbd", False)),
+                        "ops": _safe_int(b.get("ops") or 0, 0),
+                        "products_text": str(b.get("products_text") or b.get("productos") or "").strip(),
+                        "montaje_text": str(b.get("montaje_text") or b.get("montaje") or "").strip(),
+                        "label": str(b.get("label") or b.get("nombre") or "").strip() or None,
+                    }
+                )
+            # Seguridad shared hosting: muchas llamadas a GCal pueden saturar.
+            if len(blocks) > 12:
+                raise HTTPException(status_code=400, detail="Máximo 12 bloques por agendamiento.")
+            if blocks:
+                blocks_used = True
+
 
         # Multi-locación: segmentos explícitos (misma fecha_evento; 1 evento por segmento)
-        raw_segments = payload.get("segments") or payload.get("segmentos") or None
+        raw_segments = None if blocks_used else (payload.get("segments") or payload.get("segmentos") or None)
         segments: list[dict] = []
         segments_used = False
         if isinstance(raw_segments, list) and raw_segments:
@@ -2094,7 +2553,29 @@ def move_lead_and_maybe_agenda(
         base_day = date.fromisoformat(str(lead.get("fecha_evento"))[:10]) if lead.get("fecha_evento") else date.today()
 
         eventos: list[dict] = []
-        if segments_used:
+        if blocks_used:
+            grouped = _items_grouped_by_day(items, base_day)
+            by_day: dict[str, list[dict]] = {d.isoformat(): (its or []) for d, its in (grouped or [])}
+            # Regla bloques: NO crear 1 evento por bloque. Bloques = 1 solo evento
+            # y renderizamos los bloques dentro de la descripción (por horario).
+            # Nueva regla: bloques = SIEMPRE 1 solo evento (múltiples horarios en descripción).
+            # Se soporta multi-día en el mismo evento (se muestra fecha en cada bloque).
+            eventos.append(
+                _build_event_for_blocks_single(
+                    lead=lead,
+                    marca=marca,
+                    telefono=telefono,
+                    agenda_notes=agenda_notes,
+                    blocks_all=blocks,
+                    items_all=(items or []),
+                    comuna_fallback=(comuna or ""),
+                    direccion_fallback=(direccion or ""),
+                    override_ops=override_ops_global,
+                    override_montaje_text=override_montaje_global,
+                    hr_tbd_fallback=bool(hr_tbd),
+                )
+            )
+        elif segments_used:
             if not lead.get("fecha_evento"):
                 raise HTTPException(400, detail="Multi-locación requiere fecha_evento en el lead.")
             nseg = len(segments)
@@ -2111,6 +2592,7 @@ def move_lead_and_maybe_agenda(
                         direccion=str(s.get("direccion") or ""),
                         start_time=str(s.get("start_time") or ""),
                         end_time=str(s.get("end_time") or ""),
+                        hr_tbd=bool(hr_tbd),
                         ops=int(s.get("ops") or 1),
                         products_text=str(s.get("products_text") or ""),
                         montaje_text=str(s.get("montaje_text") or ""),

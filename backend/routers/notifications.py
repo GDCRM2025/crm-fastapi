@@ -306,6 +306,25 @@ def _estado_id(name_like: str) -> int | None:
 
 @router.get("")
 def get_notifications(user=Depends(get_current_user), force_jobs: int = 0, light: int = 0):
+    # Shared hosting: allow disabling the notifications module completely.
+    # Keep the endpoint fast (return empty) to avoid Passenger queue full from legacy polling.
+    try:
+        notifs_enabled = str(os.getenv("CRM_NOTIFS_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        notifs_enabled = True
+    if not notifs_enabled:
+        return {
+            "ok": True,
+            "total": 0,
+            "items": [],
+            "counts": {},
+            "system_notifs_preview": [],
+            "jobs": {"past_event_declined": 0, "quote_normalized": 0, "stale_declined": 0},
+            "job_errors": {},
+            "stale_leads": {"NUEVO": [], "CONTACTADO": [], "COTIZADO": []},
+            "lock": False,
+        }
+
     items = []
     counts = {}
     system_notifs_preview = []
@@ -318,6 +337,25 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0, light
     role = (user.get("role") or user.get("rol") or "").upper()
     marcas = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
     only_own = not _is_admin(role)
+
+    # Shared hosting: optionally disable the whole notifications module for non-RRHH.
+    # This protects the server if some clients are still polling /notifications.
+    try:
+        rrhh_only = str(os.getenv("CRM_NOTIFS_RRHH_ONLY") or "").strip().lower() in ("1", "true", "yes", "on")
+        if rrhh_only and ("RRHH" not in role):
+            return {
+                "ok": True,
+                "total": 0,
+                "items": [],
+                "counts": {},
+                "system_notifs_preview": [],
+                "jobs": {"past_event_declined": 0, "quote_normalized": 0, "stale_declined": 0},
+                "job_errors": {},
+                "stale_leads": {"NUEVO": [], "CONTACTADO": [], "COTIZADO": []},
+                "lock": False,
+            }
+    except Exception:
+        pass
 
     run_jobs = str(os.getenv("CRM_NOTIFS_RUN_JOBS") or "").strip().lower() in ("1", "true", "yes", "on")
     include_stale = str(os.getenv("CRM_NOTIFS_INCLUDE_STALE") or "").strip().lower() in ("1", "true", "yes", "on")
