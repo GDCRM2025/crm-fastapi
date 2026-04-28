@@ -216,10 +216,17 @@
             const when = String(it.created_at||"").replace("T"," ").slice(0,16);
             const who = `${String(it.display||it.username||("ID "+it.id_usuario))}`;
             const dev = String(it.device_id||"");
+            const note = String(it.note||"").trim();
+            const mail = String(it.email||"").trim();
+            const tel = String(it.telefono_rrhh||it.telefono||"").trim();
             return `
               <tr>
                 <td class="small muted">${when}</td>
-                <td><div style="font-weight:1000">${who}</div><div class="small muted">ID ${it.id_usuario}</div></td>
+                <td>
+                  <div style="font-weight:1000">${who}</div>
+                  <div class="small muted">ID ${it.id_usuario}${mail ? (" · " + mail) : ""}${tel ? (" · " + tel) : ""}</div>
+                  ${note ? `<div class="small muted" style="margin-top:4px;white-space:pre-wrap">${note.replace(/</g,"&lt;")}</div>` : ""}
+                </td>
                 <td class="code small">${dev}</td>
                 <td>
                   <button class="btn primary" data-act="approve" data-id="${id}" type="button">Aprobar</button>

@@ -671,7 +671,12 @@ def enroll_device(
     except Exception:
         pass
 
-    return {"ok": False, "pending_approval": True, "detail": "Solicitud enviada. Un admin debe aprobar este dispositivo."}
+    return {
+        "ok": False,
+        "pending_approval": True,
+        "id_request": int(pending) if str(pending or "").isdigit() else None,
+        "detail": "Solicitud enviada. Un admin debe aprobar este dispositivo.",
+    }
 
 
 @router.get("/admin/device_requests")
@@ -700,6 +705,7 @@ def admin_device_requests(
         text(
             f"""
             SELECT r.id_request, r.created_at, r.decided_at, r.status, r.id_usuario, r.device_id,
+                   COALESCE(r.note,'') AS note,
                    u.username, COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display,
                    COALESCE(u.email,'') AS email,
                    COALESCE(u.telefono,'') AS telefono,

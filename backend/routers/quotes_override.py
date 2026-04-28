@@ -247,6 +247,23 @@ def history(
     return jsonable_encoder({"items": list(rows)})
 
 
+@router.get("/_debug/drive")
+def debug_drive(user: dict = Depends(get_current_user)):
+    role = str((user or {}).get("role") or "")
+    if "admin" not in role.lower():
+        raise HTTPException(403, "Forbidden")
+    try:
+        from backend.core.drive_assets import drive_sa_info
+
+        return {
+            "ok": True,
+            "drive": drive_sa_info(),
+            "drive_asset_folders": DRIVE_ASSET_FOLDERS,
+        }
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 @router.get("/{id_cotizacion}")
 def get_cotizacion(id_cotizacion: int):
     if not _table_exists("cotizaciones"):
@@ -260,6 +277,15 @@ def get_cotizacion(id_cotizacion: int):
             text("SELECT * FROM cotizaciones WHERE id_cotizacion=:id"),
             {"id": id_cotizacion},
         ).mappings().first()
+        # Fallback: muchos usuarios se refieren al "N° de cotización" (campo `numero`),
+        # no al PK `id_cotizacion`. Si no existe por PK, intentamos por `numero`.
+        if (not row) and ("numero" in cols):
+            row = cn.execute(
+                text(
+                    "SELECT * FROM cotizaciones WHERE numero=:n ORDER BY id_cotizacion DESC LIMIT 1"
+                ),
+                {"n": id_cotizacion},
+            ).mappings().first()
     if not row:
         raise HTTPException(404, "Cotización no existe")
     data = dict(row)
@@ -391,6 +417,19 @@ def pdf_placeholder(
             text("SELECT * FROM cotizaciones WHERE id_cotizacion=:id"),
             {"id": id_cotizacion},
         ).mappings().first()
+        # fallback por `numero` (ver comentario en get_cotizacion)
+        if (not cot) and _table_exists("cotizaciones"):
+            try:
+                cols = _cols_for("cotizaciones")
+                if "numero" in cols:
+                    cot = cn.execute(
+                        text(
+                            "SELECT * FROM cotizaciones WHERE numero=:n ORDER BY id_cotizacion DESC LIMIT 1"
+                        ),
+                        {"n": id_cotizacion},
+                    ).mappings().first()
+            except Exception:
+                pass
         if not cot:
             raise HTTPException(404, "Cotización no existe")
         cot = dict(cot)
@@ -707,6 +746,26 @@ def pdf_placeholder(
                 if p.exists():
                     # usa ruta absoluta del archivo (WeasyPrint la resuelve con base_url)
                     return p.as_uri()
+        except Exception:
+            pass
+        # Drive privado: intenta descargar vía Service Account si existe.
+        try:
+            if "drive.google.com" in url or "googleusercontent.com" in url:
+                from backend.core.quote_assets import _drive_id
+                fid = _drive_id(url)
+                if fid:
+                    try:
+                        from backend.core.drive_assets import download_file_by_id
+                        p = download_file_by_id(
+                            fid,
+                            dest_stem=f"asset_{marca_key or 'GENERICA'}",
+                            refresh=refresh_assets,
+                            ttl_seconds=int(os.getenv("QUOTE_ASSET_TTL_SECONDS", "600") or "600"),
+                        )
+                        if p:
+                            return p
+                    except Exception:
+                        pass
         except Exception:
             pass
         # cache por url (drive id)

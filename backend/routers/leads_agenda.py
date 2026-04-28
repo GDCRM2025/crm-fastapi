@@ -2425,6 +2425,12 @@ def move_lead_and_maybe_agenda(
             for s in raw_segments:
                 if not isinstance(s, dict):
                     continue
+                # day opcional para multi-día × multi-locación
+                d0 = str(s.get("day") or s.get("fecha") or s.get("service_date") or "").strip()[:10]
+                try:
+                    dd = date.fromisoformat(d0) if d0 else None
+                except Exception:
+                    dd = None
                 comuna_s = str(s.get("comuna") or s.get("location") or "").strip()
                 direccion_s = str(s.get("direccion") or s.get("address") or "").strip()
                 st_s = _safe_time_hhmm(s.get("start_time") or s.get("inicio") or "")
@@ -2439,6 +2445,7 @@ def move_lead_and_maybe_agenda(
                     continue
                 segments.append(
                     {
+                        "day": dd,
                         "comuna": comuna_s,
                         "direccion": direccion_s,
                         "start_time": st_s,
@@ -2450,6 +2457,28 @@ def move_lead_and_maybe_agenda(
                 )
             if segments:
                 segments_used = True
+
+        # Montaje previo (evento separado)
+        montaje_event = payload.get("montaje_event") or payload.get("montaje_previo") or None
+        montaje_ev: dict | None = None
+        if isinstance(montaje_event, dict):
+            d0 = str(montaje_event.get("day") or montaje_event.get("fecha") or "").strip()[:10]
+            try:
+                dd = date.fromisoformat(d0) if d0 else None
+            except Exception:
+                dd = None
+            comuna_m = str(montaje_event.get("comuna") or montaje_event.get("location") or "").strip()
+            dir_m = str(montaje_event.get("direccion") or montaje_event.get("address") or "").strip()
+            st_m = _safe_time_hhmm(montaje_event.get("start_time") or montaje_event.get("inicio") or "")
+            en_m = _safe_time_hhmm(montaje_event.get("end_time") or montaje_event.get("fin") or "")
+            if dd and comuna_m and dir_m and st_m and en_m:
+                montaje_ev = {
+                    "day": dd,
+                    "comuna": comuna_m,
+                    "direccion": dir_m,
+                    "start_time": st_m,
+                    "end_time": en_m,
+                }
 
         items = []
         if not segments_used:
@@ -2581,10 +2610,11 @@ def move_lead_and_maybe_agenda(
             nseg = len(segments)
             for i, s in enumerate(segments, start=1):
                 lab = f"Seg {i}/{nseg} · {str(s.get('comuna') or '').strip()}"
+                seg_day = s.get("day") if isinstance(s.get("day"), date) else base_day
                 eventos.append(
                     _build_event_from_segment(
                         lead=lead,
-                        day=base_day,
+                        day=seg_day,
                         marca=marca,
                         telefono=telefono,
                         agenda_notes=agenda_notes,
@@ -2600,7 +2630,14 @@ def move_lead_and_maybe_agenda(
                     )
                 )
         else:
-            grouped = _items_grouped_by_day(items, base_day)
+            force_single_day = False
+            try:
+                v = payload.get("force_single_day", 0)
+                force_single_day = bool(int(v)) if str(v).strip() != "" else False
+            except Exception:
+                force_single_day = False
+
+            grouped = [(base_day, items or [])] if force_single_day else _items_grouped_by_day(items, base_day)
             total_days = len(grouped) if grouped else 1
             for idx, (day, items_day) in enumerate(grouped or [(base_day, items)], start=1):
                 obd = overrides_by_day.get(day.isoformat(), {}) if overrides_by_day else {}
@@ -2619,7 +2656,7 @@ def move_lead_and_maybe_agenda(
                 except Exception:
                     mt_day = None
 
-                day_label = f"Día {idx}/{total_days} · {day.isoformat()}" if total_days > 1 else day.isoformat()
+                day_label = "Evento (simple)" if force_single_day else (f"Día {idx}/{total_days} · {day.isoformat()}" if total_days > 1 else day.isoformat())
 
                 eventos.append(
                     _build_event_for_day(
@@ -2642,6 +2679,32 @@ def move_lead_and_maybe_agenda(
                         day_label=day_label,
                     )
                 )
+
+        # Inserta evento montaje previo (si viene) al inicio (para que se vea primero).
+        if montaje_ev:
+            try:
+                mt_txt = (override_montaje_global or "").strip() or (montaje_text or "").strip()
+                if not mt_txt and items:
+                    _, _, mt_txt, _ = _calcular_montaje(items)
+                evm = _build_event_from_segment(
+                    lead=lead,
+                    day=montaje_ev["day"],
+                    marca=marca,
+                    telefono=telefono,
+                    agenda_notes=agenda_notes,
+                    comuna=str(montaje_ev.get("comuna") or ""),
+                    direccion=str(montaje_ev.get("direccion") or ""),
+                    start_time=str(montaje_ev.get("start_time") or ""),
+                    end_time=str(montaje_ev.get("end_time") or ""),
+                    hr_tbd=False,
+                    ops=1,
+                    products_text="• —",
+                    montaje_text=str(mt_txt or "").strip() or "• —",
+                    label="MONTAJE",
+                )
+                eventos.insert(0, evm)
+            except Exception:
+                pass
 
         ev = eventos[0] if eventos else None
         if not ev:

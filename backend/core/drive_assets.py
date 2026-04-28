@@ -82,6 +82,129 @@ def _drive_service():
         return None
 
 
+def drive_sa_info() -> dict:
+    """
+    Devuelve información NO sensible del Service Account configurado (si existe).
+    """
+    json_path = (os.getenv("GD_DRIVE_SA_JSON") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
+    chosen = ""
+    if not json_path:
+        try:
+            base = Path(__file__).resolve().parents[2]
+            for name in ("drive_sa.json", "drive.json"):
+                p = base / "data" / name
+                if p.exists() and p.is_file():
+                    json_path = str(p)
+                    chosen = name
+                    break
+        except Exception:
+            json_path = ""
+    if not json_path:
+        return {"ok": False, "configured": False}
+    info = {"ok": True, "configured": True, "json_path": json_path, "json_name": chosen or Path(json_path).name}
+    try:
+        import json
+        obj = json.load(open(json_path, "r", encoding="utf-8"))
+        ce = (obj.get("client_email") or "").strip()
+        if ce:
+            info["client_email"] = ce
+    except Exception:
+        pass
+    return info
+
+
+def download_file_by_id(
+    file_id: str,
+    *,
+    dest_stem: str,
+    refresh: bool = False,
+    ttl_seconds: int = 600,
+) -> str:
+    """
+    Descarga un archivo de Drive por file_id usando Service Account.
+
+    Retorna una ruta `file://...` (as_uri) del archivo descargado cacheado.
+    Si no hay service account disponible o falla, retorna "".
+    """
+    file_id = (file_id or "").strip()
+    if not file_id:
+        return ""
+
+    svc = _drive_service()
+    if not svc:
+        return ""
+
+    try:
+        base = Path(__file__).resolve().parents[2] / "data" / "quote_assets" / "cache"
+        base.mkdir(parents=True, exist_ok=True)
+        stem = (dest_stem or "drive").strip()[:80]
+        fp_raw = base / f"{stem}_{file_id}"
+
+        def _is_fresh(p: Path) -> bool:
+            try:
+                if refresh:
+                    return False
+                return (time.time() - float(p.stat().st_mtime)) < float(ttl_seconds)
+            except Exception:
+                return False
+
+        for ext in (".png", ".jpg", ".jpeg", ".webp", ".pdf"):
+            p = fp_raw.with_suffix(ext)
+            if p.exists() and p.is_file() and _is_fresh(p):
+                return p.as_uri()
+
+        # Descargar metadata para inferir extensión
+        meta = (
+            svc.files()
+            .get(
+                fileId=file_id,
+                fields="id,name,mimeType,modifiedTime",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+        mime = (meta.get("mimeType") or "").lower()
+        if "png" in mime:
+            ext = ".png"
+        elif "jpeg" in mime or "jpg" in mime:
+            ext = ".jpg"
+        elif "webp" in mime:
+            ext = ".webp"
+        elif "pdf" in mime:
+            ext = ".pdf"
+        else:
+            # fallback: sin extensión (igualmente servible para base64)
+            ext = ""
+
+        out_path = fp_raw.with_suffix(ext) if ext else fp_raw
+
+        # Descarga binaria
+        from googleapiclient.http import MediaIoBaseDownload  # type: ignore
+        import io
+
+        req = svc.files().get_media(fileId=file_id, supportsAllDrives=True)
+        fh = io.BytesIO()
+        dl = MediaIoBaseDownload(fh, req)
+        done = False
+        while not done:
+            _status, done = dl.next_chunk()
+
+        content = fh.getvalue() or b""
+        if not content:
+            return ""
+        try:
+            if out_path.exists() and out_path.read_bytes() == content:
+                # no tocar mtime si no cambió
+                return out_path.as_uri()
+        except Exception:
+            pass
+        out_path.write_bytes(content)
+        return out_path.as_uri()
+    except Exception as e:
+        _log_once("download", f"Drive download falló. file_id={file_id} err={type(e).__name__}", every_seconds=120)
+        return ""
+
+
 def _rfc3339_to_ts(s: str) -> float:
     try:
         # Example: 2026-02-25T13:10:22.123Z

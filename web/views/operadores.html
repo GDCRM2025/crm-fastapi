@@ -336,9 +336,6 @@
     <div class="who" id="topWho">Operadores</div>
     <ul>
       <li><a class="primary" href="#calendario">Calendario</a></li>
-      <li><a href="instalar.html">Instalar</a></li>
-      <li class="driver-only"><a href="#gps">Conectar GPS</a></li>
-      <li class="driver-only"><a href="#ruta">Ver Ruta</a></li>
       <li class="brandSelect">
         <select id="brandSel" aria-label="Menú por marca">
           <option value="">Menú (marca)…</option>
@@ -356,8 +353,7 @@
       <li class="brandLink"><a class="menu-delsabor" href="#menu-carritos-del-sabor">Menu Del Sabor</a></li>
       <li class="brandLink"><a class="menu-petras" href="#menu-petras">Menu Petras</a></li>
       <li class="brandLink"><a class="menu-masflow" href="#menu-mas-flow">Menu Mas Flow</a></li>
-      <li><a href="#videos">Universidad GD</a></li>
-      <li><a class="soon" href="#ruta-futura" aria-disabled="true">Ver Ruta (próx.)</a></li>
+      <li><a href="#recetas">Menú</a></li>
       <li><a class="danger" href="#" id="logoutLink">Salir</a></li>
     </ul>
   </nav>
@@ -377,7 +373,7 @@
 
 <section id="operadores" class="section dark">
   <div id="rotateHint">Para terreno: <b>gira el teléfono</b> (horizontal) para ver el calendario completo.</div>
-  <div id="compromiso" class="sub-block">
+  <div id="compromiso" class="sub-block" style="display:none">
     <h2>Nuestro compromiso</h2>
     <p style="text-align:center; max-width:800px; margin:0 auto 2rem;">
       Tú eres la chispa que hace brillar nuestros eventos. Cada preparación es una oportunidad
@@ -385,7 +381,7 @@
     </p>
   </div>
 
-  <div id="contactos-operaciones" class="sub-block">
+  <div id="contactos-operaciones" class="sub-block" style="display:none">
     <h2>Contactos del Equipo de Operaciones</h2>
     <div class="contactos-grid">
       <div class="contact-card">
@@ -469,7 +465,7 @@
     </div>
   </div>
 
-	  <div id="gps" class="sub-block driver-only">
+	  <div id="gps" class="sub-block driver-only" style="display:none">
 	    <h2>Conectar GPS</h2>
 	    <p class="muted">Disponible para conductores.</p>
 	    <div class="iframe-wrap">
@@ -477,7 +473,7 @@
 	    </div>
 	  </div>
 
-	  <div id="ruta" class="sub-block driver-only">
+	  <div id="ruta" class="sub-block driver-only" style="display:none">
 	    <h2>Ver Ruta (actual)</h2>
 	    <p class="muted">Disponible para conductores.</p>
 	    <div class="iframe-wrap">
@@ -490,7 +486,7 @@
     <div id="recipes-container"></div>
   </div>
 
-  <div id="videos" class="sub-block">
+  <div id="videos" class="sub-block" style="display:none">
     <h2>Universidad GD</h2>
     <p style="text-align:center; max-width:800px; margin:0 auto 2rem;">Accede a tutoriales y capacitaciones en nuestro canal de YouTube Universidad GD.</p>
     <div class="videos-list">
@@ -852,16 +848,6 @@
           }
         }
         try{ location.hash = "#recetas"; }catch(_){}
-      } else if (only === "contactos"){
-        hideAll();
-        const sec = document.getElementById("contactos-operaciones");
-        if (sec) sec.style.display = "";
-        try{ location.hash = "#contactos-operaciones"; }catch(_){}
-      } else if (only === "uni"){
-        hideAll();
-        const sec = document.getElementById("videos");
-        if (sec) sec.style.display = "";
-        try{ location.hash = "#videos"; }catch(_){}
       } else if (only === "cal"){
         hideAll();
         const sec = document.getElementById("calendario");

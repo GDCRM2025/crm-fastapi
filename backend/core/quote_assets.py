@@ -71,10 +71,12 @@ PDF_ASSETS: Dict[str, Dict[str, str]] = {
         "portada": drive_direct("https://drive.google.com/file/d/1e39CHNFeaSp2xjFevFYvtiL_seEcJI0g/view?usp=sharing"),
     },
     "EXPRESS": {
-        "banco": drive_direct("https://drive.google.com/file/d/12nl4sr4KGm9TlftQj6Gb2LqTVRf_j_9U/view?usp=drive_link"),
-        "cotizacion": drive_direct("https://drive.google.com/file/d/1u1k2I9e5BoCpMNhO-y17uhdCAHxvv1wM/view?usp=drive_link"),
-        "terminos": drive_direct("https://drive.google.com/file/d/1kZ1mC0j0clMiDatNKmSmhPIzMzHR_onu/view?usp=drive_link"),
-        "portada": drive_direct("https://drive.google.com/file/d/11veDhBcHD7oNOrcai3sjSMuSQAmqy-qq/view?usp=drive_link"),
+        # Actualizado Abril 2026 (links Drive "file/d/<id>/view")
+        "banco": drive_direct("https://drive.google.com/file/d/1-ZAymkyofwdjJz0kgicKvOvVXbPWS40F/view?usp=drive_link"),
+        # "fondo" (background) corresponde a `cotizacion`
+        "cotizacion": drive_direct("https://drive.google.com/file/d/1YUujz90Bk0hv60eMuFOJd3ChxcgvKU7o/view?usp=drive_link"),
+        "terminos": drive_direct("https://drive.google.com/file/d/1g8TJ1nlmwMT2xyk9pjCCF_z5tTRUYhIH/view?usp=drive_link"),
+        "portada": drive_direct("https://drive.google.com/file/d/1Cnr-9lTKrMHOnTG6uy4FNb1qRLF3NSq8/view?usp=drive_link"),
     },
     "GOURMET": {
         "banco": drive_direct("https://drive.google.com/file/d/1KkN0CSKU0p6Add_EUPfM89r_ZbFEJqCD/view?usp=drive_link"),

@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>RRHH · SGJO · Marcación</title>
   <link rel="stylesheet" href="../styles.css" />
@@ -99,6 +102,23 @@
       }catch(_){ return ""; }
     })();
     const qs = (s, el=document)=> el.querySelector(s);
+    // Mostrar errores JS en pantalla (Safari/iOS a veces “silencia” y parece que botones no funcionan).
+    try{
+      window.addEventListener("error", (ev)=>{
+        try{
+          const msg = (ev && ev.message) ? ev.message : "Error";
+          const file = (ev && ev.filename) ? ("\n" + ev.filename + ":" + (ev.lineno || "")) : "";
+          log("Error JS: " + msg + file);
+        }catch(_){}
+      });
+      window.addEventListener("unhandledrejection", (ev)=>{
+        try{
+          const r = ev ? ev.reason : null;
+          const msg = (r && r.message) ? r.message : (r != null ? String(r) : "Error");
+          log("Promise error: " + msg);
+        }catch(_){}
+      });
+    }catch(_){}
 
     function getCookie(name){
       try{
@@ -119,7 +139,10 @@
 
     function goLogin(punto_code){
       try{
-        const next = `${API_BASE}/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto_code)}`;
+        // Si falta punto_code, volvemos a esta misma URL completa.
+        const next = punto_code
+          ? `${API_BASE}/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto_code)}`
+          : (location.pathname + location.search);
         location.href = `${API_BASE}/web/login.html?next=${encodeURIComponent(next)}`;
       }catch(_){}
     }
@@ -166,7 +189,16 @@
     function getDeviceId(){
       let id = localStorage.getItem("sgjo_device_id") || "";
       if (!id){
-        id = (crypto?.randomUUID ? crypto.randomUUID() : ("dev-"+Math.random().toString(16).slice(2)+Date.now()));
+        // Evitar syntax/features que rompen en Safari viejo (optional chaining).
+        try{
+          if (window.crypto && typeof window.crypto.randomUUID === "function"){
+            id = window.crypto.randomUUID();
+          } else {
+            id = "dev-" + Math.random().toString(16).slice(2) + Date.now();
+          }
+        }catch(_){
+          id = "dev-" + Math.random().toString(16).slice(2) + Date.now();
+        }
         localStorage.setItem("sgjo_device_id", id);
       }
       return id;
@@ -189,7 +221,13 @@
               accuracy_m: pos.coords.accuracy
             });
           },
-          (err)=> reject(new Error(err?.message || "No pude obtener ubicación.")),
+          (err)=> {
+            try{
+              reject(new Error((err && err.message) ? err.message : "No pude obtener ubicación."));
+            }catch(_){
+              reject(new Error("No pude obtener ubicación."));
+            }
+          },
           { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
       });
@@ -198,7 +236,7 @@
     async function init(){
       const punto_code = getPuntoCode();
       if (!punto_code){
-        log("Falta parámetro ?p=SGJO-ROLFIS o ?p=SGJO-GREENDIAMOND (desde el QR).");
+        log("Falta parámetro ?p=… (debes entrar desde el QR). Puedes iniciar sesión igual y luego reintentar desde el QR.");
         return;
       }
       if (!ensureToken(punto_code)) return;
@@ -210,37 +248,39 @@
           return;
         }
         const sede = (cfg.sedes||[]).find(s=>String(s.id_sede)==String(pt.id_sede));
-        qs("#pSede").textContent = "Sede: " + (sede?.nombre || "—");
-        qs("#pPunto").textContent = "Punto: " + (pt?.nombre || punto_code);
+        qs("#pSede").textContent = "Sede: " + ((sede && sede.nombre) ? sede.nombre : "—");
+        qs("#pPunto").textContent = "Punto: " + ((pt && pt.nombre) ? pt.nombre : punto_code);
         const me = await apiJSON("/rrhh/sgjo/me");
-        qs("#pModo").textContent = "Modo: " + String(me?.modality_today || "—");
-        const pol = String(me?.marcacion_method || "BOTH").toUpperCase();
-        const can = (me?.puede_marcar === false) ? "NO" : "SÍ";
+        qs("#pModo").textContent = "Modo: " + String((me && me.modality_today) ? me.modality_today : "—");
+        const pol = String((me && me.marcacion_method) ? me.marcacion_method : "BOTH").toUpperCase();
+        const can = (me && me.puede_marcar === false) ? "NO" : "SÍ";
         qs("#pPolicy").textContent = `Método: ${pol} · Puede marcar: ${can}`;
-        if (!me?.rut){
+        if (!(me && me.rut)){
           log("Tu usuario no tiene RUT en el sistema. Enrola el dispositivo y pide a RRHH/Admin que registre tu RUT para poder marcar.");
         }
         // Ajustar selector según política RRHH (si existe)
         try{
           const sel = qs("#selMethod");
-          if (pol === "QR"){
-            sel.value = "QR";
-            sel.disabled = true;
-          } else if (pol === "GPS" || pol === "GEO"){
-            sel.value = "GEO";
-            sel.disabled = true;
-          } else {
-            sel.disabled = false;
+          if (sel){
+            if (pol === "QR"){
+              sel.value = "QR";
+              sel.disabled = true;
+            } else if (pol === "GPS" || pol === "GEO"){
+              sel.value = "GEO";
+              sel.disabled = true;
+            } else {
+              sel.disabled = false;
+            }
           }
         }catch(_){}
-        qs("#btnMark").disabled = (me?.puede_marcar === false);
-        if (me?.puede_marcar === false){
+        qs("#btnMark").disabled = (me && me.puede_marcar === false);
+        if (me && me.puede_marcar === false){
           log("No tienes permiso RRHH para marcar (puede_marcar=false). Contacta a RRHH.");
         } else {
           log("Listo. Enrola el dispositivo la primera vez, luego marca (QR o GPS según tu permiso RRHH).");
         }
       }catch(e){
-        log("Error: " + (e?.message||e));
+        log("Error: " + ((e && e.message) ? e.message : e));
       }
     }
 
@@ -259,8 +299,8 @@
         let tel_hint = "";
         try{
           const me = await apiJSON("/rrhh/sgjo/me");
-          rut_hint = String(me?.rut || "").trim();
-          tel_hint = String(me?.telefono_rrhh || "").trim();
+          rut_hint = String((me && me.rut) ? me.rut : "").trim();
+          tel_hint = String((me && me.telefono_rrhh) ? me.telefono_rrhh : "").trim();
         }catch(_){}
         if (!rut_hint){
           rut_hint = String(prompt("Ingresa tu RUT (sin puntos, con guion si corresponde):") || "").trim();
@@ -276,12 +316,13 @@
         if (out && out.ok){
           log("Dispositivo enrolado OK.");
         } else if (out && out.pending_approval){
-          log("Solicitud enviada. Un admin debe aprobar este dispositivo (RRHH).\nLuego vuelve a intentar marcar.");
+          const rid = out.id_request ? `\nID solicitud: ${out.id_request}` : "";
+          log("Solicitud enviada. Un admin debe aprobar este dispositivo (RRHH)." + rid + "\nLuego vuelve a intentar marcar.");
         } else {
           log("Solicitud enviada. Espera aprobación y recarga.");
         }
       }catch(e){
-        log("No pude enrolar: " + (e?.message||e));
+        log("No pude enrolar: " + ((e && e.message) ? e.message : e));
       }
     });
 
@@ -292,16 +333,17 @@
         qs("#btnMark").disabled = true;
         const device_id = getDeviceId();
         const loc = await getLocation();
-        const method = String(qs("#selMethod")?.value || "QR").toUpperCase();
+        const sel = qs("#selMethod");
+        const method = String((sel && sel.value) ? sel.value : "QR").toUpperCase();
         const out = await apiJSON("/rrhh/sgjo/marcar", {
           method:"POST",
           headers:{ "Content-Type":"application/json" },
           body: JSON.stringify({ punto_code, device_id, method, ...loc }),
         });
-        const dist = (out?.distance_m != null) ? (Number(out.distance_m).toFixed(1) + "m") : "—";
-        log(`OK · ${out.tipo} · ${out.sede}\nDistancia: ${dist}\nFallback: ${out.used_fallback ? "sí" : "no"}\nModo: ${out.modality}`);
+        const dist = (out && out.distance_m != null) ? (Number(out.distance_m).toFixed(1) + "m") : "—";
+        log(`OK · ${(out && out.tipo) ? out.tipo : "—"} · ${(out && out.sede) ? out.sede : "—"}\nDistancia: ${dist}\nFallback: ${(out && out.used_fallback) ? "sí" : "no"}\nModo: ${(out && out.modality) ? out.modality : "—"}`);
       }catch(e){
-        log("Error: " + (e?.message||e));
+        log("Error: " + ((e && e.message) ? e.message : e));
       }finally{
         qs("#btnMark").disabled = false;
       }

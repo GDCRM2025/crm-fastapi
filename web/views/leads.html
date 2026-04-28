@@ -2016,6 +2016,8 @@ function onDragOver(e, listEl){
 
 async function setLeadEstado(leadId, newEstado, extra = {}){
   const payloads = [
+    // Prefer nuevo endpoint unificado (incluye auditoría y evita desalineación de routers).
+    { url: `/leads/${leadId}/move`,      method:"POST", body: { id_estado: Number(newEstado), ...extra } },
     { url: `/leads/${leadId}/estado_ex`, method:"POST", body: { id_estado: Number(newEstado), ...extra } },
     { url: `/leads/${leadId}/estado`,    method:"POST", body: { id_estado: Number(newEstado), ...extra } },
     { url: `/leads/${leadId}`,           method:"PUT",  body: { id_estado: Number(newEstado), ...extra } },
@@ -2606,6 +2608,92 @@ async function handleConfirmado(lead, newEstado){
       .gdAgenda .swal2-html-container:hover::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.42); background-clip: content-box; }
     </style>
     <div style="text-align:left;display:grid;gap:12px">
+      <div class="agCard" style="padding:12px;gap:10px">
+        <div class="muted" style="font-weight:1200">Set up de agendamiento</div>
+        <div class="agRow" style="gap:14px;align-items:center;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="ag_flag_blocks" />
+            <span class="muted" style="font-weight:1000">Evento por bloques</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="ag_flag_multiday" />
+            <span class="muted" style="font-weight:1000">Multi día</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="ag_flag_multiloc" />
+            <span class="muted" style="font-weight:1000">Multi locación</span>
+          </label>
+          <div class="muted agSmall" style="flex:1;min-width:280px">Bloques => <b>1 solo evento</b>. Sin bloques => eventos por <b>Día × Locación</b> (si aplica). Al elegir flags se modela abajo sin “aplicar”.</div>
+        </div>
+
+        <div class="agRow" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
+          <label class="agLabel" id="ag_blocks_n_wrap" style="width:180px;display:none">
+            <div class="muted">Cantidad de bloques</div>
+            <input id="ag_blocks_n" class="swInp" type="number" min="1" step="1" placeholder="Ej: 2" disabled />
+          </label>
+          <label class="agLabel" id="ag_locs_n_wrap" style="width:180px;display:none">
+            <div class="muted">Cantidad de locaciones</div>
+            <input id="ag_locs_n" class="swInp" type="number" min="1" step="1" placeholder="Ej: 2" disabled />
+          </label>
+          <label class="agLabel" id="ag_days_n_wrap" style="width:220px;display:none">
+            <div class="muted">Días (cuando Multi día)</div>
+            <input id="ag_days_n" class="swInp" type="number" min="1" step="1" placeholder="Ej: 2" disabled />
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:26px">
+            <input id="ag_flag_montaje_event" type="checkbox" />
+            <span class="muted" style="font-weight:1000">Agendar montaje previo</span>
+          </label>
+        </div>
+
+        <div style="border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.08);display:grid;gap:10px">
+          <div class="muted" style="font-weight:1100">Montaje general (editable)</div>
+          <div class="muted agSmall">Se calcula por productos. Puedes corregirlo antes de confirmar. (Esto NO es el montaje previo.)</div>
+          <textarea id="ag_mont_manual" class="swTa" rows="4" placeholder="Ej: 2 x Carro Clásico&#10;1 x Máquina café"></textarea>
+        </div>
+
+        <div id="ag_montaje_event_box" style="display:none;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.08);display:grid;gap:10px">
+          <div class="muted" style="font-weight:1100">Montaje previo (evento separado)</div>
+          <div class="muted agSmall">Se crea un evento adicional “MONTAJE …” con fecha/hora/dirección. Montaje general se usa como descripción.</div>
+          <div class="agRow" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
+            <label class="agLabel" style="width:180px">
+              <div class="muted">Día montaje</div>
+              <input id="ag_mont_day" class="swInp" type="date" />
+            </label>
+            <label class="agLabel">
+              <div class="muted">Inicio</div>
+              <select id="ag_mont_hini" class="swSel"></select>
+            </label>
+            <label class="agLabel">
+              <div class="muted">Fin</div>
+              <select id="ag_mont_hfin" class="swSel"></select>
+            </label>
+            <label class="agLabel" style="flex:1;min-width:220px">
+              <div class="muted">Comuna</div>
+              <input id="ag_mont_loc" class="swInp" placeholder="Ej: Las Condes" />
+            </label>
+          </div>
+          <label class="agLabel">
+            <div class="muted">Dirección</div>
+            <input id="ag_mont_dir" class="swInp" placeholder="Ej: Av. Apoquindo 2730" />
+          </label>
+        </div>
+
+        <div id="ag_setup_editor" style="display:grid;gap:10px">
+          <div class="muted" style="font-weight:1100">Modelador</div>
+          <div class="muted agSmall">Se cargan productos de la cotización (o Manual). Si hay 1 solo grupo, se asigna automático. Si hay varios, asigna hasta que diga “OK”.</div>
+          <div id="ag_setup_alert" style="display:none;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.10);border-radius:14px;padding:10px 12px">
+            <div class="muted" style="font-weight:1100;color:rgba(239,68,68,.95)">Faltan productos por asignar</div>
+            <div class="muted agSmall" id="ag_setup_alert_body" style="margin-top:4px;color:rgba(239,68,68,.92)">—</div>
+          </div>
+          <div id="ag_group_editor" style="display:grid;gap:10px"></div>
+          <div id="ag_products_allocator" style="display:grid;gap:10px;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.08)">
+            <div class="muted" style="font-weight:1100">Productos (asignación)</div>
+            <div class="muted agSmall" id="ag_alloc_hint">—</div>
+            <div id="ag_alloc_pool" style="display:grid;gap:8px"></div>
+            <div id="ag_alloc_status" class="muted agSmall">—</div>
+          </div>
+        </div>
+      </div>
       <div class="agGrid">
         <!-- Izquierda: datos + notas + productos (por día) -->
         <div class="agCard">
@@ -2661,29 +2749,8 @@ async function handleConfirmado(lead, newEstado){
             <div class="muted agSmall" id="ag_duracion" style="align-self:center;margin-top:26px">Duración: —</div>
           </div>
 
-          <div class="agCard" style="padding:12px;gap:8px">
-            <div class="muted" style="font-weight:1100">Set up de agendamiento</div>
-            <div class="agRow" style="gap:12px;align-items:center;flex-wrap:wrap">
-              <label style="display:flex;align-items:center;gap:8px">
-                <input type="radio" name="ag_mode" value="simple" checked />
-                <span class="muted" style="font-weight:1000">Simple</span>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px">
-                <input type="radio" name="ag_mode" value="multiloc" />
-                <span class="muted" style="font-weight:1000">Multi locación</span>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px">
-                <input type="radio" name="ag_mode" value="blocks" />
-                <span class="muted" style="font-weight:1000">Evento por bloques</span>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px">
-                <input type="radio" name="ag_mode" value="multiday" />
-                <span class="muted" style="font-weight:1000">Multi día</span>
-              </label>
-            </div>
-            <div class="muted agSmall" id="ag_mode_hint">Simple: 1 evento (aunque la cotización tenga varios días). Multi día: 1 evento por día (si la cotización/productos traen días). Bloques: 1 solo evento con bloques en descripción. Multi locación: 1 evento por segmento.</div>
-          </div>
-
+          <!-- El setup va ARRIBA (full width). Aquí solo datos del evento. -->
+          <div id="ag_after_setup" style="display:grid;gap:12px">
           <div class="agRow" style="gap:12px">
             <label class="agLabel" style="flex:1;min-width:240px">
               <div class="muted">Teléfono</div>
@@ -2726,6 +2793,7 @@ async function handleConfirmado(lead, newEstado){
           <div class="agPreview" id="ag_products_wrap" style="max-height:none">
             <div class="muted" style="margin-bottom:6px;font-weight:1000">Productos (día seleccionado)</div>
             <pre id="ag_products_day" class="agMono">(cargando…)</pre>
+          </div>
           </div>
         </div>
 
@@ -2786,11 +2854,383 @@ async function handleConfirmado(lead, newEstado){
   let selectedIdx = 0;
   let TIMES = [];
   let TIMES_OPT = "";
-  let agendaMode = "simple"; // simple | multiloc | blocks | multiday
+  let agendaMode = "simple"; // derived from flags
+  let setupApplied = false; // true after "Armar set up"
   let segState = []; // [{comuna,direccion,start_time,end_time,ops,products_text,montaje_text}]
   let blockState = []; // [{day,comuna,direccion,start_time,end_time,hr_tbd,ops,products_text,montaje_text,label}]
   const dayEdits = {}; // day -> { ops, montaje }
   const touchedDay = {}; // day -> { ops, montaje }
+
+  // ===== Modelador (setup) =====
+  let setupGroups = []; // [{kind:'block'|'segment', key, day, comuna, direccion, start_time, end_time, hr_tbd, label, loc_idx, day_idx, ops, products_map:{prod:qty}}]
+  let allocPool = [];   // [{producto, cantidad}]
+  let allocTotals = {}; // producto -> total qty
+
+  const _flags = ()=>({
+    blocks: !!qs("#ag_flag_blocks")?.checked,
+    multiday: !!qs("#ag_flag_multiday")?.checked,
+    multiloc: !!qs("#ag_flag_multiloc")?.checked,
+  });
+
+  const _setCountsEnabled = ()=>{
+    const f = _flags();
+    const elB = qs("#ag_blocks_n");
+    const elL = qs("#ag_locs_n");
+    const elD = qs("#ag_days_n");
+    const wB = qs("#ag_blocks_n_wrap");
+    const wL = qs("#ag_locs_n_wrap");
+    const wD = qs("#ag_days_n_wrap");
+    if (wB) wB.style.display = f.blocks ? "" : "none";
+    if (wD) wD.style.display = f.multiday ? "" : "none";
+    if (wL) wL.style.display = f.multiloc ? "" : "none";
+    if (elB) elB.disabled = !f.blocks;
+    if (elD) elD.disabled = !f.multiday;
+    if (elL) elL.disabled = !f.multiloc;
+    // defaults razonables (solo cuando se habilita y está vacío)
+    if (f.blocks && elB && !String(elB.value||"").trim()) elB.value = "2";
+    if (f.multiday && elD && !String(elD.value||"").trim()) elD.value = "2";
+    if (f.multiloc && elL && !String(elL.value||"").trim()) elL.value = "2";
+  };
+
+  const _datePlusDays = (d0, add)=>{
+    try{
+      const d = new Date(String(d0).slice(0,10) + "T00:00:00");
+      if (isNaN(d.getTime())) return String(d0).slice(0,10);
+      d.setDate(d.getDate() + Number(add||0));
+      return d.toISOString().slice(0,10);
+    }catch(_){ return String(d0).slice(0,10); }
+  };
+
+  const _groupLabel = (g, idx)=>{
+    if (!g) return `Grupo ${idx+1}`;
+    if (g.kind === "block"){
+      const lab = String(g.label || "").trim() || `BLOQUE ${String.fromCharCode(65 + (idx % 26))}`;
+      const d = String(g.day||"").slice(0,10) || "—";
+      const st = String(g.start_time||"").trim() || "HR TBD";
+      const en = String(g.end_time||"").trim() || "";
+      const hr = (st && en) ? `${st}-${en}` : st;
+      return `${lab} · ${d} · ${hr}`;
+    }
+    // segment
+    const d = String(g.day||"").slice(0,10) || "—";
+    const l = (g.multiloc ? `Loc ${Number(g.loc_idx||0)+1}` : "Loc");
+    const st = String(g.start_time||"").trim() || "HR TBD";
+    const en = String(g.end_time||"").trim() || "";
+    const hr = (st && en) ? `${st}-${en}` : st;
+    return `${d} · ${l} · ${hr}`;
+  };
+
+  const _renderGroupEditor = ()=>{
+    const wrap = qs("#ag_group_editor");
+    if (!wrap) return;
+    if (!Array.isArray(setupGroups) || !setupGroups.length){
+      wrap.innerHTML = `<div class="muted">Arma el set up para continuar.</div>`;
+      return;
+    }
+    const cards = setupGroups.map((g, i)=>{
+      const lab = _groupLabel(g, i);
+      const comuna = escapeHtml(String(g.comuna||""));
+      const direccion = escapeHtml(String(g.direccion||""));
+      const day = escapeHtml(String(g.day||"").slice(0,10));
+      return `
+        <div data-g-idx="${i}" style="border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.08);display:grid;gap:10px">
+          <div class="muted" style="font-weight:1100">${escapeHtml(lab)}</div>
+          <div class="agRow" style="gap:12px">
+            <label class="agLabel" style="width:180px">
+              <div class="muted">Día</div>
+              <input class="swInp" type="date" data-f="day" value="${day}" />
+            </label>
+            <label class="agLabel">
+              <div class="muted">Inicio</div>
+              <select class="swSel" data-f="start_time">${TIMES_OPT || `<option value=\"\">—</option>`}</select>
+            </label>
+            <label class="agLabel">
+              <div class="muted">Fin</div>
+              <select class="swSel" data-f="end_time">${TIMES_OPT || `<option value=\"\">—</option>`}</select>
+            </label>
+            <label class="agLabel" style="width:140px">
+              <div class="muted">OPS</div>
+              <input class="swInp" type="number" min="1" step="1" data-f="ops" value="${escapeHtml(String(g.ops ?? 1))}" />
+            </label>
+          </div>
+          <div class="agRow" style="gap:12px">
+            <label class="agLabel" style="flex:1;min-width:220px">
+              <div class="muted">Comuna</div>
+              <input class="swInp" data-f="comuna" value="${comuna}" placeholder="Ej: Las Condes" />
+            </label>
+            <label class="agLabel" style="flex:2;min-width:240px">
+              <div class="muted">Dirección</div>
+              <input class="swInp" data-f="direccion" value="${direccion}" placeholder="Ej: Av. Apoquindo 2730" />
+            </label>
+          </div>
+          ${g.kind === "block" ? `
+            <label class="agLabel">
+              <div class="muted">Etiqueta bloque (opcional)</div>
+              <input class="swInp" data-f="label" value="${escapeHtml(String(g.label||""))}" placeholder="Ej: ENTREGA / BLOQUE A" />
+            </label>
+          ` : ``}
+          <div style="border-top:1px solid rgba(255,255,255,.08);padding-top:10px;display:grid;gap:8px">
+            <div class="muted" style="font-weight:1000">Productos asignados</div>
+            <div data-f="plist" class="muted agSmall">${escapeHtml(_productsMapToText(g.products_map||{})) || "—"}</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+    wrap.innerHTML = cards;
+
+    // seed selects to values
+    wrap.querySelectorAll("[data-g-idx]").forEach(card=>{
+      const idx = Number(card.getAttribute("data-g-idx")||-1);
+      const g = setupGroups[idx];
+      if (!g) return;
+      const selS = card.querySelector("[data-f='start_time']");
+      const selE = card.querySelector("[data-f='end_time']");
+      if (selS && g.start_time) selS.value = g.start_time;
+      if (selE && g.end_time) selE.value = g.end_time;
+    });
+
+    // wire edits
+    wrap.querySelectorAll("[data-g-idx] input,[data-g-idx] select").forEach(inp=>{
+      inp.addEventListener("input", ()=>{ _readGroupsFromDOM(); _schedulePreview(); });
+      inp.addEventListener("change", ()=>{ _readGroupsFromDOM(); _schedulePreview(); });
+    });
+  };
+
+  const _productsMapToText = (m)=>{
+    try{
+      const lines = [];
+      const keys = Object.keys(m||{}).sort((a,b)=>a.localeCompare(b));
+      for (const k of keys){
+        const q = Number(m[k]||0);
+        if (!(q>0)) continue;
+        lines.push(`${q} x ${k}`);
+      }
+      return lines.join(" • ");
+    }catch(_){ return ""; }
+  };
+
+  const _readGroupsFromDOM = ()=>{
+    try{
+      const wrap = qs("#ag_group_editor");
+      if (!wrap) return setupGroups;
+      const cards = [...wrap.querySelectorAll("[data-g-idx]")];
+      for (const card of cards){
+        const idx = Number(card.getAttribute("data-g-idx")||-1);
+        const g = setupGroups[idx];
+        if (!g) continue;
+        g.day = String(card.querySelector("[data-f='day']")?.value || g.day || "").slice(0,10);
+        g.start_time = String(card.querySelector("[data-f='start_time']")?.value || "").trim();
+        g.end_time = String(card.querySelector("[data-f='end_time']")?.value || "").trim();
+        g.ops = Number(String(card.querySelector("[data-f='ops']")?.value || "").trim() || 1) || 1;
+        g.comuna = String(card.querySelector("[data-f='comuna']")?.value || "").trim();
+        g.direccion = String(card.querySelector("[data-f='direccion']")?.value || "").trim();
+        if (g.kind === "block"){
+          g.label = String(card.querySelector("[data-f='label']")?.value || "").trim();
+        }
+      }
+    }catch(_){}
+    return setupGroups;
+  };
+
+  const _buildGroupsFromFlags = ()=>{
+    const f = _flags();
+    const d0 = String(lead.fecha_evento || "").slice(0,10) || (new Date()).toISOString().slice(0,10);
+    const daysN = Math.max(1, Number(qs("#ag_days_n")?.value || 1) || 1);
+    const locN = Math.max(1, Number(qs("#ag_locs_n")?.value || 1) || 1);
+    const blkN = Math.max(1, Number(qs("#ag_blocks_n")?.value || 2) || 2);
+    const hIni = (qs("#ag_hini")?.value || "").trim();
+    const hFin = (qs("#ag_hfin")?.value || "").trim();
+    const comuna0 = (qs("#ag_loc")?.value || "").trim();
+    const dir0 = (qs("#ag_dir")?.value || "").trim();
+
+    const groups = [];
+    if (f.blocks){
+      for (let i=0;i<blkN;i++){
+        const day = f.multiday ? _datePlusDays(d0, i) : d0;
+        groups.push({
+          kind:"block",
+          key:`blk_${i}`,
+          day,
+          comuna: comuna0,
+          direccion: dir0,
+          start_time: hIni,
+          end_time: hFin,
+          hr_tbd: false,
+          ops: 1,
+          label: "",
+          products_map: {},
+        });
+      }
+    }else{
+      const days = f.multiday ? Array.from({length:daysN}, (_,i)=>_datePlusDays(d0,i)) : [d0];
+      for (let di=0;di<days.length;di++){
+        const day = days[di];
+        const locCount = f.multiloc ? locN : 1;
+        for (let li=0;li<locCount;li++){
+          groups.push({
+            kind:"segment",
+            key:`seg_${di}_${li}`,
+            day,
+            day_idx: di,
+            loc_idx: li,
+            multiloc: !!f.multiloc,
+            comuna: comuna0,
+            direccion: dir0,
+            start_time: hIni,
+            end_time: hFin,
+            hr_tbd: false,
+            ops: 1,
+            products_map: {},
+          });
+        }
+      }
+    }
+    setupGroups = groups;
+    return setupGroups;
+  };
+
+  const _renderAllocPool = ()=>{
+    const box = qs("#ag_alloc_pool");
+    const status = qs("#ag_alloc_status");
+    if (!box) return;
+    const groups = Array.isArray(setupGroups) ? setupGroups : [];
+    const opts = groups.map((g,i)=>`<option value="${i}">${escapeHtml(_groupLabel(g,i))}</option>`).join("");
+
+    const rows = (allocPool||[]).map((it, idx)=>{
+      const prod = String(it.producto||"").trim();
+      const total = Number(it.cantidad||0) || 0;
+      const used = _allocatedTotalFor(prod);
+      const rem = Math.max(0, total - used);
+      return `
+        <div data-alloc-row="${idx}" data-prod="${escapeHtml(prod)}" style="display:grid;grid-template-columns:1fr 110px 1fr 110px 140px;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.08)">
+          <div style="font-weight:1000">${escapeHtml(prod)}</div>
+          <div class="muted">${escapeHtml(String(total))}</div>
+          <select class="swSel" data-alloc-g>${opts}</select>
+          <input class="swInp" data-alloc-q type="number" min="0" step="0.01" value="${escapeHtml(String(rem))}" />
+          <button type="button" class="swBtn secondary" data-alloc-add ${rem<=0 ? "disabled" : ""}>Asignar</button>
+        </div>
+      `;
+    }).join("");
+    box.innerHTML = rows || `<div class="muted">Sin productos cargados.</div>`;
+
+    box.querySelectorAll("[data-alloc-add]").forEach((btn)=>{
+      btn.addEventListener("click", ()=>{
+        const row = btn.closest("[data-alloc-row]");
+        const prod = String(row?.getAttribute("data-prod") || "").trim();
+        const sel = row?.querySelector("[data-alloc-g]");
+        const inp = row?.querySelector("[data-alloc-q]");
+        const gi = Number(sel && sel.value ? sel.value : 0);
+        const qty = Number(String(inp && inp.value ? inp.value : "").trim() || 0) || 0;
+        if (!(qty>0)) return;
+        _assignProductToGroup(prod, qty, gi);
+        _renderGroupEditor();
+        _renderAllocPool();
+        _updateAllocStatus();
+        _schedulePreview();
+      });
+    });
+    _updateAllocStatus();
+    if (status) status.textContent = status.textContent || "—";
+  };
+
+  const _allocatedTotalFor = (producto)=>{
+    let sum = 0;
+    const groups = Array.isArray(setupGroups) ? setupGroups : [];
+    for (const g of groups){
+      const m = g.products_map || {};
+      const v = Number(m[producto] || 0) || 0;
+      sum += v;
+    }
+    return sum;
+  };
+
+  const _assignProductToGroup = (producto, qty, groupIdx)=>{
+    const g = setupGroups[groupIdx];
+    if (!g) return;
+    const total = Number((allocTotals||{})[producto] || 0) || 0;
+    const used = _allocatedTotalFor(producto);
+    const rem = Math.max(0, total - used);
+    const q = Math.min(rem, Number(qty||0) || 0);
+    if (!(q>0)) return;
+    g.products_map ||= {};
+    g.products_map[producto] = (Number(g.products_map[producto] || 0) || 0) + q;
+  };
+
+  const _updateAllocStatus = ()=>{
+    const st = qs("#ag_alloc_status");
+    if (!st) return;
+    const missing = [];
+    for (const it of (allocPool||[])){
+      const prod = String(it.producto||"").trim();
+      const total = Number(it.cantidad||0) || 0;
+      const used = _allocatedTotalFor(prod);
+      const rem = total - used;
+      if (rem > 0.0001) missing.push(`${prod} (${rem.toFixed(2)})`);
+    }
+    if (missing.length){
+      st.textContent = "Falta asignar: " + missing.slice(0,6).join(", ") + (missing.length>6 ? "…" : "");
+      _showMissingAllocAlert(missing.map(x=>String(x).replace(/\s*\([^)]*\)\s*$/,"")));
+    }else{
+      st.textContent = "OK: todos los productos están asignados.";
+      _showMissingAllocAlert([]);
+    }
+  };
+
+  const _showMissingAllocAlert = (missingProds)=>{
+    // No debe cerrar ni sacar del modal: mostramos alerta inline arriba del modelador.
+    try{
+      const wrap = qs("#ag_setup_alert");
+      const body = qs("#ag_setup_alert_body");
+      if (!wrap || !body) return;
+      const arr = (missingProds||[]).map(x=>String(x||"").trim()).filter(Boolean);
+      const msg = arr.slice(0, 10).join(", ") + (arr.length > 10 ? "…" : "");
+      body.textContent = msg || "—";
+      wrap.style.display = arr.length ? "block" : "none";
+      // Scroll suave a la alerta
+      try{ wrap.scrollIntoView({ behavior:"smooth", block:"nearest" }); }catch(_){}
+    }catch(_){}
+  };
+
+  const _groupsToPayload = ()=>{
+    const f = _flags();
+    if (f.blocks){
+      const blocks = (setupGroups||[]).filter(g=>g.kind==="block").map((g, idx)=>({
+        day: String(g.day||"").slice(0,10),
+        label: String(g.label||"").trim(),
+        comuna: String(g.comuna||"").trim(),
+        direccion: String(g.direccion||"").trim(),
+        start_time: String(g.start_time||"").trim(),
+        end_time: String(g.end_time||"").trim(),
+        hr_tbd: false,
+        ops: Number(g.ops||1) || 1,
+        products_text: _mapToLines(g.products_map||{}),
+        montaje_text: "", // montaje global se maneja aparte
+      }));
+      return { blocks };
+    }
+    const segments = (setupGroups||[]).filter(g=>g.kind==="segment").map((g)=>({
+      day: String(g.day||"").slice(0,10),
+      comuna: String(g.comuna||"").trim(),
+      direccion: String(g.direccion||"").trim(),
+      start_time: String(g.start_time||"").trim(),
+      end_time: String(g.end_time||"").trim(),
+      ops: Number(g.ops||1) || 1,
+      products_text: _mapToLines(g.products_map||{}),
+      montaje_text: "", // montage global
+    }));
+    return { segments };
+  };
+
+  const _mapToLines = (m)=>{
+    const lines = [];
+    const keys = Object.keys(m||{}).sort((a,b)=>a.localeCompare(b));
+    for (const k of keys){
+      const q = Number(m[k]||0) || 0;
+      if (!(q>0)) continue;
+      lines.push(`${q} ${k}`);
+    }
+    return lines.join("\n").trim();
+  };
 
   const saveCurrentDay = ()=>{
     const e = previewEvents[selectedIdx];
@@ -2994,8 +3434,9 @@ async function handleConfirmado(lead, newEstado){
     const wrap = _blkWrap();
     const list = _blkList();
     if (!wrap || !list) return;
-    wrap.style.display = blocksOn ? "grid" : "none";
-    if (!blocksOn){
+    const isBlocks = (agendaMode === "blocks");
+    wrap.style.display = isBlocks ? "grid" : "none";
+    if (!isBlocks){
       list.innerHTML = "";
       return;
     }
@@ -3076,11 +3517,12 @@ async function handleConfirmado(lead, newEstado){
     });
   };
 
-  const _getAgendaMode = ()=>{
-    try{
-      const v = (qs("input[name='ag_mode']:checked")?.value || "simple").toString().trim();
-      return (v === "multiloc" || v === "blocks" || v === "multiday") ? v : "simple";
-    }catch(_){ return "simple"; }
+  const _deriveAgendaMode = ()=>{
+    const f = _flags();
+    if (f.blocks) return "blocks";
+    if (f.multiloc) return "multiloc";
+    if (f.multiday) return "multiday";
+    return "simple";
   };
 
   const _applyMultiLocUI = ()=>{
@@ -3090,8 +3532,9 @@ async function handleConfirmado(lead, newEstado){
 	    const dayHdr = qs("#ag_day_hdr");
 	    const dayMont = qs("#ag_day_montaje_wrap");
 	    const prodW = _productsWrap();
-	    if (wrap) wrap.style.display = (mode === "segments") ? "grid" : "none";
-	    if (wrapB) wrapB.style.display = (mode === "blocks") ? "grid" : "none";
+	    // Con el nuevo "modelador", NO mostramos los editores legacy de segmentos/bloques.
+	    if (wrap) wrap.style.display = "none";
+	    if (wrapB) wrapB.style.display = "none";
 	    if (dayHdr) dayHdr.textContent = (mode === "segments") ? "Segmentos" : ((mode === "blocks") ? "Bloques" : "Agenda por día");
 	    if (dayMont) dayMont.style.display = (mode === "day") ? "" : "none";
 	    if (prodW) prodW.style.display = (mode === "day") ? "" : "none";
@@ -3153,6 +3596,10 @@ async function handleConfirmado(lead, newEstado){
 
   const runPreview = async ()=>{
     const st = qs("#ag_calc_status");
+    if (!setupApplied){
+      if (st) st.textContent = "Arma el set up para previsualizar…";
+      return;
+    }
     const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
     const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
     const idCot = (quoteSource === "cotizador") ? qSel : null;
@@ -3162,17 +3609,35 @@ async function handleConfirmado(lead, newEstado){
     const tel = (qs("#ag_tel")?.value || "").trim();
     const dir = (qs("#ag_dir")?.value || "").trim();
     const notes = (qs("#ag_notes")?.value || "").trim();
-    agendaMode = _getAgendaMode();
+    const montGlobal = (qs("#ag_mont_manual")?.value || "").trim();
+    _readGroupsFromDOM();
+    agendaMode = _deriveAgendaMode();
     const isBlocks = (agendaMode === "blocks");
     const isMultiLoc = (agendaMode === "multiloc");
-    const isDayMode = !isBlocks && !isMultiLoc;
-    if (isBlocks) _readBlockStateFromDOM();
-    if (isMultiLoc) _readSegStateFromDOM();
     _applyMultiLocUI();
-    _renderBlocks();
+
+    // Si hay más de 1 grupo, exige asignación completa antes de previsualizar (evita eventos incorrectos).
+    try{
+      if (Array.isArray(setupGroups) && setupGroups.length > 1){
+        _updateAllocStatus();
+        const missing = [];
+        for (const it of (allocPool||[])){
+          const prod = String(it.producto||"").trim();
+          const total = Number(it.cantidad||0) || 0;
+          const used = _allocatedTotalFor(prod);
+          const rem = total - used;
+          if (rem > 0.0001) missing.push(prod);
+        }
+        if (missing.length){
+          if (st) st.textContent = "Asigna productos para previsualizar (faltan: " + missing.slice(0,4).join(", ") + (missing.length>4 ? "…" : "") + ")";
+          return;
+        }
+      }
+    }catch(_){}
 
     if (st) st.textContent = "Calculando…";
     try{
+      const modelPayload = _groupsToPayload();
       const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
         method:"POST",
         headers: {"Content-Type":"application/json"},
@@ -3185,8 +3650,19 @@ async function handleConfirmado(lead, newEstado){
           telefono: tel,
           direccion: dir,
           ...(notes ? { agenda_notes: notes } : {}),
+          ...(montGlobal ? { override_montaje_text: montGlobal } : {}),
+          ...(qs("#ag_flag_montaje_event")?.checked ? {
+            montaje_event: {
+              day: String(qs("#ag_mont_day")?.value || "").slice(0,10),
+              start_time: String(qs("#ag_mont_hini")?.value || "").trim(),
+              end_time: String(qs("#ag_mont_hfin")?.value || "").trim(),
+              comuna: String(qs("#ag_mont_loc")?.value || "").trim(),
+              direccion: String(qs("#ag_mont_dir")?.value || "").trim(),
+            }
+          } : {}),
           ...( (isBlocks || isMultiLoc) ? { hr_tbd: false, start_time: hIni, end_time: hFin } : (hrTbd ? { hr_tbd: true } : { start_time: hIni, end_time: hFin, hr_tbd: false }) ),
-          ...(isBlocks ? { blocks: (blockState || []) } : (isMultiLoc ? { segments: (segState || []) } : { force_single_day: (agendaMode === "simple") ? 1 : 0 })),
+          ...modelPayload,
+          ...( (!isBlocks && !isMultiLoc) ? { force_single_day: (agendaMode === "simple") ? 1 : 0 } : {}),
         })
       });
       previewEvents = (Array.isArray(out?.eventos) && out.eventos.length) ? out.eventos : (out?.evento ? [out.evento] : []);
@@ -3234,6 +3710,8 @@ async function handleConfirmado(lead, newEstado){
 	      };
 	      fillSel("#ag_hini");
 	      fillSel("#ag_hfin");
+        fillSel("#ag_mont_hini");
+        fillSel("#ag_mont_hfin");
 
       const timeFromDT = (v) => {
         if (!v) return "";
@@ -3257,6 +3735,17 @@ async function handleConfirmado(lead, newEstado){
         if (qs("#ag_hrtbd")) qs("#ag_hrtbd").checked = true;
       }
 
+      // Defaults montaje previo: día anterior, misma comuna/dirección y rango 09:00-10:00.
+      try{
+        const dLead = String(lead.fecha_evento || "").slice(0,10) || (new Date()).toISOString().slice(0,10);
+        const dMont = _datePlusDays(dLead, -1);
+        if (qs("#ag_mont_day")) qs("#ag_mont_day").value = dMont;
+        if (qs("#ag_mont_hini")) qs("#ag_mont_hini").value = "09:00";
+        if (qs("#ag_mont_hfin")) qs("#ag_mont_hfin").value = "10:00";
+        if (qs("#ag_mont_loc")) qs("#ag_mont_loc").value = (qs("#ag_loc")?.value || "").trim();
+        if (qs("#ag_mont_dir")) qs("#ag_mont_dir").value = (qs("#ag_dir")?.value || "").trim();
+      }catch(_){}
+
 	      const editManualBtn = qs("#ag_edit_manual");
 	      const refreshManualBtn = ()=>{
 	        const v = (qs("#ag_quote")?.value || "").toString().trim();
@@ -3269,6 +3758,112 @@ async function handleConfirmado(lead, newEstado){
 	      qs("#ag_loc") && qs("#ag_loc").addEventListener("input", ()=>{ touched.loc=true; });
 	      qs("#ag_desc") && qs("#ag_desc").addEventListener("input", ()=>{ touched.desc=true; });
 	      qs("#ag_notes") && qs("#ag_notes").addEventListener("input", runPreview);
+        // Montaje global: debe reflejarse de inmediato en preview (no solo al final).
+        try{
+          let _mtDeb = null;
+          const mt = qs("#ag_mont_manual");
+          if (mt){
+            mt.addEventListener("input", ()=>{
+              try{ clearTimeout(_mtDeb); }catch(_){}
+              _mtDeb = setTimeout(()=>{ try{ runPreview(); }catch(_){ } }, 250);
+            });
+          }
+        }catch(_){}
+        // Modelador: reacciona EN VIVO a flags/cantidades/cotización.
+        try{
+          const st0 = qs("#ag_calc_status");
+          const hint = qs("#ag_alloc_hint");
+
+          const loadPool = async ()=>{
+            const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
+            const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
+            if (hint) hint.textContent = (quoteSource === "cotizador")
+              ? "Productos desde cotización (cotizador). Asigna por grupo."
+              : "Productos manuales (lead_mice_items). Asigna por grupo.";
+            let items = [];
+            if (quoteSource === "cotizador"){
+              try{
+                const out = await apiJSON(`/quotes/${Number(qSel)}/items`);
+                items = Array.isArray(out?.items) ? out.items : [];
+              }catch(_){ items = []; }
+            }else{
+              try{
+                const out = await apiJSON(`/leads/${lead.id_lead}/mice_items`);
+                items = Array.isArray(out?.items) ? out.items : [];
+              }catch(_){ items = []; }
+            }
+            const map = {};
+            for (const it of (items||[])){
+              const p = String(it.producto || it.nombre || "").trim();
+              const q = Number(it.cantidad || it.qty || 0) || 0;
+              if (!p || !(q>0)) continue;
+              map[p] = (Number(map[p]||0) || 0) + q;
+            }
+            allocPool = Object.keys(map).sort((a,b)=>a.localeCompare(b)).map(p=>({ producto:p, cantidad: map[p] }));
+            allocTotals = {};
+            for (const it of allocPool) allocTotals[it.producto] = Number(it.cantidad||0) || 0;
+          };
+
+          const clearAlloc = ()=>{
+            for (const g of (setupGroups||[])){
+              g.products_map = {};
+            }
+          };
+
+          const autoAllocateIfSingle = ()=>{
+            if (!Array.isArray(setupGroups) || setupGroups.length !== 1) return;
+            const g = setupGroups[0];
+            g.products_map = {};
+            for (const it of (allocPool||[])){
+              const p = String(it.producto||"").trim();
+              const q = Number(it.cantidad||0) || 0;
+              if (!p || !(q>0)) continue;
+              g.products_map[p] = q;
+            }
+          };
+
+          const rebuild = async (why="")=>{
+            setupApplied = true;
+            _setCountsEnabled();
+            agendaMode = _deriveAgendaMode();
+            _buildGroupsFromFlags();
+            await loadPool();
+            // Si cambia estructura, limpiamos asignación (salvo modo simple 1 grupo).
+            clearAlloc();
+            autoAllocateIfSingle();
+            _renderGroupEditor();
+            _renderAllocPool();
+            _updateAllocStatus();
+            if (st0){
+              st0.textContent = (why ? (`Modelador: ${why}`) : "Modelador listo");
+            }
+            await runPreview();
+          };
+
+          // wire flags + counts
+          ["#ag_flag_blocks","#ag_flag_multiday","#ag_flag_multiloc","#ag_blocks_n","#ag_locs_n","#ag_days_n"].forEach((id)=>{
+            const el = qs(id);
+            if (!el) return;
+            el.addEventListener("change", ()=>{ rebuild("cambio set up").catch(_=>{}); });
+            el.addEventListener("input", ()=>{ rebuild("cambio set up").catch(_=>{}); });
+          });
+
+          // montaje previo (evento separado)
+          const chkM = qs("#ag_flag_montaje_event");
+          const boxM = qs("#ag_montaje_event_box");
+          if (chkM && boxM){
+            chkM.addEventListener("change", ()=>{
+              boxM.style.display = chkM.checked ? "grid" : "none";
+            });
+            boxM.style.display = chkM.checked ? "grid" : "none";
+          }
+
+          // quote change: recarga pool + reasigna si 1 grupo
+          q && q.addEventListener("change", ()=>{ rebuild("cambio cotización").catch(_=>{}); });
+
+          // Inicial: arma setup base
+          rebuild("inicio").catch(_=>{});
+        }catch(_){}
 
 	      // Abono: si es 0, exige OC o fecha de abono (para que finanzas tenga trazabilidad).
 	      const abEl = qs("#ag_abono");
@@ -3389,86 +3984,106 @@ async function handleConfirmado(lead, newEstado){
         el.textContent = `Duración: ${hh}h ${mm.toString().padStart(2,"0")}m`;
       };
 
-	      qs("#ag_hrtbd") && qs("#ag_hrtbd").addEventListener("change", ()=>{ updDur(); runPreview(); });
-	      qs("#ag_hini") && qs("#ag_hini").addEventListener("change", ()=>{ updDur(); runPreview(); });
-	      qs("#ag_hfin") && qs("#ag_hfin").addEventListener("change", ()=>{ updDur(); runPreview(); });
-	      qs("#ag_tel") && qs("#ag_tel").addEventListener("change", runPreview);
-	      qs("#ag_dir") && qs("#ag_dir").addEventListener("change", runPreview);
-	
-	      // Multi-locación (segmentos)
-	      const ml = qs("#ag_multiloc");
-	      if (ml){
-	        ml.addEventListener("change", ()=>{
-	          multiLocOn = !!ml.checked;
-	          if (multiLocOn){
-	            // Modos excluyentes.
-	            blocksOn = false;
-	            try{ const bk = qs("#ag_blocks"); if (bk) bk.checked = false; }catch(_){}
-	          }
-	          if (multiLocOn && (!Array.isArray(segState) || segState.length === 0)){
-	            _seedSegmentsFromCurrent();
-	          }
-	          if (multiLocOn){
-	            _renderSegments();
-	          }
-	          _applyMultiLocUI();
-	          _schedulePreview();
-	        });
-	      }
-	      // Bloques
-	      try{
-	        const bk = qs("#ag_blocks");
-	        if (bk){
-	          bk.addEventListener("change", ()=>{
-	            blocksOn = !!bk.checked;
-	            if (blocksOn){
-	              // Modos excluyentes.
-	              multiLocOn = false;
-	              try{ const ml2 = qs("#ag_multiloc"); if (ml2) ml2.checked = false; }catch(_){}
-	              if (!Array.isArray(blockState) || blockState.length === 0){
-	                const d0 = String(lead.fecha_evento || "").slice(0,10) || (new Date()).toISOString().slice(0,10);
-	                blockState = [{ day: d0, label:"", comuna:(qs("#ag_loc")?.value || "").trim(), direccion:(qs("#ag_dir")?.value || "").trim(), start_time:(qs("#ag_hini")?.value || "").trim(), end_time:(qs("#ag_hfin")?.value || "").trim(), hr_tbd: !!qs("#ag_hrtbd")?.checked, ops:1, products_text:"", montaje_text:"" }];
-	              }
-	            }
-	            _renderBlocks();
-	            _applyMultiLocUI();
-	            _schedulePreview();
-	          });
-	        }
-	        const addBlk = _blkAddBtn();
-	        if (addBlk){
-	          addBlk.addEventListener("click", ()=>{
-	            _readBlockStateFromDOM();
-	            const d0 = String(lead.fecha_evento || "").slice(0,10) || (new Date()).toISOString().slice(0,10);
-	            blockState.push({ day: d0, label:"", comuna:(qs("#ag_loc")?.value || "").trim(), direccion:(qs("#ag_dir")?.value || "").trim(), start_time:(qs("#ag_hini")?.value || "").trim(), end_time:(qs("#ag_hfin")?.value || "").trim(), hr_tbd: !!qs("#ag_hrtbd")?.checked, ops:1, products_text:"", montaje_text:"" });
-	            blocksOn = true;
-	            try{ const bk2 = qs("#ag_blocks"); if (bk2) bk2.checked = true; }catch(_){}
-	            _renderBlocks();
-	            _applyMultiLocUI();
-	            _schedulePreview();
-	          });
-	        }
-	      }catch(_){}
-	      const addSeg = _segAddBtn();
-	      if (addSeg){
-	        addSeg.addEventListener("click", ()=>{
-	          _readSegStateFromDOM();
-	          const last = (segState && segState.length) ? (segState[segState.length-1] || {}) : {};
-	          segState.push({
-	            comuna: String(last.comuna || "").trim(),
-	            direccion: String(last.direccion || "").trim(),
-	            start_time: String(last.start_time || (qs("#ag_hini")?.value || "")).trim(),
-	            end_time: String(last.end_time || (qs("#ag_hfin")?.value || "")).trim(),
-	            ops: Number.isFinite(Number(last.ops)) && Number(last.ops) > 0 ? Number(last.ops) : 1,
-	            products_text: "",
-	            montaje_text: "",
-	          });
-	          _renderSegments();
-	          _schedulePreview();
-	        });
-	      }
+      qs("#ag_hrtbd") && qs("#ag_hrtbd").addEventListener("change", ()=>{ updDur(); runPreview(); });
+      qs("#ag_hini") && qs("#ag_hini").addEventListener("change", ()=>{ updDur(); runPreview(); });
+      qs("#ag_hfin") && qs("#ag_hfin").addEventListener("change", ()=>{ updDur(); runPreview(); });
+      qs("#ag_tel") && qs("#ag_tel").addEventListener("change", runPreview);
+      qs("#ag_dir") && qs("#ag_dir").addEventListener("change", runPreview);
+
+      // Montaje builder (manual vs lista)
+      const montWrap = qs("#ag_mont_list_wrap");
+      const montManual = qs("#ag_mont_manual");
+      const montList = qs("#ag_mont_list");
+      const montHint = qs("#ag_mont_list_hint");
+      let invCache = null; // [{id_producto,nombre,categoria}]
+      let invSel = {}; // id_producto -> qty
+      const getMontMode = ()=> (qs("input[name='ag_mont_mode']:checked")?.value || "manual").toString();
+      const setMontUI = ()=>{
+        const mode = getMontMode();
+        if (montWrap) montWrap.style.display = (mode === "lista") ? "grid" : "none";
+        if (montManual) montManual.style.display = "";
+      };
+      document.querySelectorAll("input[name='ag_mont_mode']").forEach(r=>{
+        r.addEventListener("change", ()=>{ setMontUI(); });
+      });
+      setMontUI();
+
+      const renderInv = (q="")=>{
+        if (!montList) return;
+        const qq = String(q||"").trim().toLowerCase();
+        const items = Array.isArray(invCache) ? invCache : [];
+        const filtered = qq ? items.filter(it=>{
+          const n = String(it.nombre||"").toLowerCase();
+          const c = String(it.categoria||"").toLowerCase();
+          return n.includes(qq) || c.includes(qq);
+        }) : items;
+        const take = filtered.slice(0, 80);
+        montList.innerHTML = take.map(it=>{
+          const id = Number(it.id_producto||0);
+          const qty = invSel[id] != null ? Number(invSel[id]) : 0;
+          return `
+            <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px;background:rgba(0,0,0,.10)">
+              <div style="min-width:0">
+                <div style="font-weight:1000;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(String(it.nombre||"Producto"))}</div>
+                <div class="muted agSmall" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(String(it.categoria||""))}</div>
+              </div>
+              <input class="swInp" data-inv-qty="${id}" type="number" min="0" step="1" value="${escapeHtml(String(qty||0))}" style="width:96px;text-align:center" />
+            </div>
+          `;
+        }).join("") || `<div class="muted">Sin items.</div>`;
+        montList.querySelectorAll("input[data-inv-qty]").forEach(inp=>{
+          inp.addEventListener("input", ()=>{
+            const id = Number(inp.getAttribute("data-inv-qty")||0);
+            const v = Number(String(inp.value||"").trim()||0);
+            if (Number.isFinite(id) && id>0){
+              if (Number.isFinite(v) && v>0) invSel[id] = v;
+              else delete invSel[id];
+            }
+          });
+        });
+      };
+
+      qs("#ag_mont_search") && qs("#ag_mont_search").addEventListener("input", ()=>{
+        renderInv(qs("#ag_mont_search")?.value||"");
+      });
+
+      const loadInv = async ()=>{
+        try{
+          if (montHint) montHint.textContent = "Cargando desde Inventario…";
+          const out = await apiJSON("/ops/inventario/productos?q=");
+          const items = Array.isArray(out?.items) ? out.items : [];
+          invCache = items.map(it=>({
+            id_producto: it.id_producto,
+            nombre: String(it.nombre||"").trim(),
+            categoria: String(it.categoria||"").trim(),
+          })).filter(x=>x.id_producto && x.nombre);
+          if (montHint) montHint.textContent = `Lista cargada: ${invCache.length} items.`;
+          renderInv(qs("#ag_mont_search")?.value||"");
+        }catch(e){
+          if (montHint) montHint.textContent = "No pude cargar Inventario (sin permisos o error). Usa Manual.";
+        }
+      };
+      qs("#ag_mont_reload") && qs("#ag_mont_reload").addEventListener("click", ()=>{ loadInv(); });
+
+      qs("#ag_mont_apply") && qs("#ag_mont_apply").addEventListener("click", ()=>{
+        const items = Array.isArray(invCache) ? invCache : [];
+        const lines = [];
+        for (const [idStr, qty] of Object.entries(invSel||{})){
+          const id = Number(idStr||0);
+          const it = items.find(x=>Number(x.id_producto)===id);
+          if (!it) continue;
+          const q = Number(qty||0);
+          if (!(q>0)) continue;
+          lines.push(`${q} x ${it.nombre}`);
+        }
+        const txt = lines.join("\n").trim();
+        if (montManual){
+          montManual.value = txt || montManual.value || "";
+        }
+        toast("Montaje aplicado", "success");
+      });
+	      // Modelador: el armado de set up se hace con el botón "Armar set up".
 	      _applyMultiLocUI();
-	      _renderBlocks();
 	      updDur();
 	      await runPreview();
 		    },
@@ -3476,104 +4091,61 @@ async function handleConfirmado(lead, newEstado){
 	      const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
 	      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
 	      const idCot = (quoteSource === "cotizador") ? qSel : null;
-		      const multiLoc = !!qs("#ag_multiloc")?.checked;
-		      const blocks = !!qs("#ag_blocks")?.checked;
+		      agendaMode = _deriveAgendaMode();
+		      const blocks = (agendaMode === "blocks");
+		      const multiLoc = (agendaMode === "multiloc");
+		      const multiDay = (agendaMode === "multiday");
+		      const forceSingleDay = (agendaMode === "simple") ? 1 : 0;
 		      const hrTbd = !!qs("#ag_hrtbd")?.checked;
 		      const hIni = (qs("#ag_hini")?.value || "").trim();
 		      const hFin = (qs("#ag_hfin")?.value || "").trim();
+		      if (!setupApplied){
+		        Swal.showValidationMessage("Primero debes armar el set up.");
+		        return false;
+		      }
+		      _readGroupsFromDOM();
+		      _updateAllocStatus();
+		      // Validación: no puede quedar producto sin asignar
+		      const missing = [];
+		      for (const it of (allocPool||[])){
+		        const prod = String(it.producto||"").trim();
+		        const total = Number(it.cantidad||0) || 0;
+		        const used = _allocatedTotalFor(prod);
+		        const rem = total - used;
+		        if (rem > 0.0001) missing.push(prod);
+		      }
+		      if (missing.length){
+            _showMissingAllocAlert(missing);
+		        Swal.showValidationMessage("Faltan productos por asignar. Revisa el listado en Set up.");
+		        return false;
+		      }
 		      if (!multiLoc && !blocks){
 		        if (!hrTbd && (!hIni || !hFin)) return Swal.showValidationMessage("Debes indicar horas o marcar HR TBD.");
 		        saveCurrentDay();
 		      }
 
-		      let segsOut = null;
-		      if (multiLoc){
-		        _readSegStateFromDOM();
-		        const segs = Array.isArray(segState) ? segState : [];
-		        if (segs.length < 2){
-		          Swal.showValidationMessage("Multi-locación requiere al menos 2 segmentos.");
-		          return false;
+		      const model = _groupsToPayload();
+		      let segsOut = model.segments ? model.segments : null;
+		      let blksOut = model.blocks ? model.blocks : null;
+		      if (blksOut){
+		        for (let i=0;i<blksOut.length;i++){
+		          const b = blksOut[i] || {};
+		          if (!String(b.day||"").trim()) return Swal.showValidationMessage(`Falta día en Bloque ${i+1}.`);
+		          if (!String(b.comuna||"").trim()) return Swal.showValidationMessage(`Falta comuna en Bloque ${i+1}.`);
+		          if (!String(b.direccion||"").trim()) return Swal.showValidationMessage(`Falta dirección en Bloque ${i+1}.`);
+		          if (!String(b.start_time||"").trim() || !String(b.end_time||"").trim()) return Swal.showValidationMessage(`Faltan horas en Bloque ${i+1}.`);
+		          if (!String(b.products_text||"").trim()) return Swal.showValidationMessage(`Faltan productos en Bloque ${i+1}.`);
 		        }
-		        const cleaned = [];
-		        for (let i=0;i<segs.length;i++){
-		          const s = segs[i] || {};
-		          const comuna = String(s.comuna || "").trim();
-		          const direccion = String(s.direccion || "").trim();
-		          const start_time = String(s.start_time || "").trim();
-		          const end_time = String(s.end_time || "").trim();
-		          const ops = Number(s.ops || 0);
-		          const products_text = (String(s.products_text || "").trim());
-		          const montaje_text = (String(s.montaje_text || "").trim());
-		          if (!comuna){
-		            Swal.showValidationMessage(`Falta comuna en Segmento ${i+1}.`);
-		            return false;
-		          }
-		          if (!direccion){
-		            Swal.showValidationMessage(`Falta dirección en Segmento ${i+1}.`);
-		            return false;
-		          }
-		          if (!start_time || !end_time){
-		            Swal.showValidationMessage(`Faltan horas (inicio/fin) en Segmento ${i+1}.`);
-		            return false;
-		          }
-		          if (!Number.isFinite(ops) || ops < 1){
-		            Swal.showValidationMessage(`Falta OPS (>=1) en Segmento ${i+1}.`);
-		            return false;
-		          }
-		          if (!products_text){
-		            Swal.showValidationMessage(`Faltan productos en Segmento ${i+1}.`);
-		            return false;
-		          }
-		          cleaned.push({
-		            comuna,
-		            direccion,
-		            start_time,
-		            end_time,
-		            ops: Math.round(ops),
-		            products_text: _normalizeBullets(products_text).join("\n"),
-		            montaje_text: _normalizeBullets(montaje_text).join("\n"),
-		          });
-		        }
-		        segsOut = cleaned;
 		      }
-
-		      let blksOut = null;
-		      if (blocks){
-		        _readBlockStateFromDOM();
-		        const blks = Array.isArray(blockState) ? blockState : [];
-		        if (blks.length < 1){
-		          Swal.showValidationMessage("Bloques requiere al menos 1 bloque.");
-		          return false;
+		      if (segsOut){
+		        for (let i=0;i<segsOut.length;i++){
+		          const s = segsOut[i] || {};
+		          if (!String(s.day||"").trim()) return Swal.showValidationMessage(`Falta día en Grupo ${i+1}.`);
+		          if (!String(s.comuna||"").trim()) return Swal.showValidationMessage(`Falta comuna en Grupo ${i+1}.`);
+		          if (!String(s.direccion||"").trim()) return Swal.showValidationMessage(`Falta dirección en Grupo ${i+1}.`);
+		          if (!String(s.start_time||"").trim() || !String(s.end_time||"").trim()) return Swal.showValidationMessage(`Faltan horas en Grupo ${i+1}.`);
+		          if (!String(s.products_text||"").trim()) return Swal.showValidationMessage(`Faltan productos en Grupo ${i+1}.`);
 		        }
-		        const cleaned = [];
-		        for (let i=0;i<blks.length;i++){
-		          const b = blks[i] || {};
-		          const day = String(b.day || "").trim();
-		          if (!day){
-		            Swal.showValidationMessage(`Falta día en Bloque ${i+1}.`);
-		            return false;
-		          }
-		          const hrb = !!b.hr_tbd;
-		          const st = String(b.start_time || "").trim();
-		          const en = String(b.end_time || "").trim();
-		          if (!hrb && (!st || !en)){
-		            Swal.showValidationMessage(`Faltan horas en Bloque ${i+1} (o marca HR TBD).`);
-		            return false;
-		          }
-		          cleaned.push({
-		            day,
-		            label: String(b.label || "").trim(),
-		            comuna: String(b.comuna || "").trim(),
-		            direccion: String(b.direccion || "").trim(),
-		            start_time: st,
-		            end_time: en,
-		            hr_tbd: hrb,
-		            ops: Number(b.ops || 0),
-		            products_text: String(b.products_text || "").trim(),
-		            montaje_text: String(b.montaje_text || "").trim(),
-		          });
-		        }
-		        blksOut = cleaned;
 		      }
 
 		      const overrideByDay = [];
@@ -3653,6 +4225,32 @@ async function handleConfirmado(lead, newEstado){
 				        }
 				      }
 
+              // Aplica montaje global a bloques/segmentos si no viene por item.
+              const montGlobal = (qs("#ag_mont_manual")?.value || "").trim();
+              if (montGlobal){
+                try{
+                  if (blksOut){
+                    blksOut = blksOut.map(b=>({ ...b, montaje_text: (String(b.montaje_text||"").trim() || montGlobal) }));
+                  }
+                  if (segsOut){
+                    segsOut = segsOut.map(s=>({ ...s, montaje_text: (String(s.montaje_text||"").trim() || montGlobal) }));
+                  }
+                }catch(_){}
+              }
+
+              // Montaje previo: validación mínima si está activado
+              if (qs("#ag_flag_montaje_event")?.checked){
+                const md = String(qs("#ag_mont_day")?.value || "").slice(0,10);
+                const mhi = String(qs("#ag_mont_hini")?.value || "").trim();
+                const mhf = String(qs("#ag_mont_hfin")?.value || "").trim();
+                const ml = String(qs("#ag_mont_loc")?.value || "").trim();
+                const mdir = String(qs("#ag_mont_dir")?.value || "").trim();
+                if (!md || !mhi || !mhf || !ml || !mdir){
+                  Swal.showValidationMessage("Montaje previo: faltan datos (día/horas/comuna/dirección).");
+                  return false;
+                }
+              }
+
 					    return {
 					        quote_source: quoteSource,
 					        id_cotizacion: idCot ? Number(idCot) : null,
@@ -3671,10 +4269,22 @@ async function handleConfirmado(lead, newEstado){
 			        telefono: (qs("#ag_tel")?.value || "").trim(),
 			        direccion: (qs("#ag_dir")?.value || "").trim(),
 			        agenda_notes: (qs("#ag_notes")?.value || "").trim(),
+              override_montaje_text: (qs("#ag_mont_manual")?.value || "").trim(),
 			        override_title: (qs("#ag_title")?.value || "").trim(),
 			        override_location: (qs("#ag_loc")?.value || "").trim(),
 			        override_description: (qs("#ag_desc")?.value || "").trim(),
-			        ...(blksOut ? { blocks: blksOut } : (segsOut ? { segments: segsOut } : { override_by_day: overrideByDay })),
+              ...( (qs("#ag_flag_montaje_event")?.checked)
+                ? {
+                    montaje_event: {
+                      day: String(qs("#ag_mont_day")?.value || "").slice(0,10),
+                      start_time: String(qs("#ag_mont_hini")?.value || "").trim(),
+                      end_time: String(qs("#ag_mont_hfin")?.value || "").trim(),
+                      comuna: String(qs("#ag_mont_loc")?.value || "").trim(),
+                      direccion: String(qs("#ag_mont_dir")?.value || "").trim(),
+                    }
+                  }
+                : {}),
+			        ...(blksOut ? { blocks: blksOut } : (segsOut ? { segments: segsOut } : { override_by_day: overrideByDay, force_single_day: forceSingleDay, multi_day_mode: (multiDay ? 1 : 0) })),
 			      };
 				    }
 		  });
@@ -3700,6 +4310,22 @@ async function handleConfirmado(lead, newEstado){
     });
     if (!ok.isConfirmed) return false;
 	  }
+
+    const approveAgendaWithRetry = async ()=>{
+      let lastErr = null;
+      for (let i=0;i<3;i++){
+        try{
+          return await apiJSON(`/tools/agenda/${lead.id_lead}/approve`, { method:"PUT" });
+        }catch(err){
+          lastErr = err;
+          const msg = String(err?.message || err || "");
+          const retryable = /Agenda ocupada|Reintenta|429/i.test(msg);
+          if (!retryable) throw err;
+          await new Promise(r=>setTimeout(r, 1200 + i*600));
+        }
+      }
+      throw lastErr || new Error("No se pudo agendar");
+    };
 
 	  // Validación final abono: si abono = 0, exige OC o fecha de abono.
 	  try{
@@ -3732,11 +4358,14 @@ async function handleConfirmado(lead, newEstado){
 				    ...(v.hr_tbd ? { hr_tbd: true } : { start_time: v.start_time, end_time: v.end_time, hr_tbd: false }),
 				    created_by: (localStorage.getItem("nombre") || sessionStorage.getItem("nombre") || "").trim(),
 			    ...(v.agenda_notes ? { agenda_notes: v.agenda_notes } : {}),
+          ...(v.override_montaje_text ? { override_montaje_text: v.override_montaje_text } : {}),
 			    ...(v.override_title ? { override_title: v.override_title } : {}),
 			    ...(v.override_location ? { override_location: v.override_location } : {}),
 		    ...(v.override_description ? { override_description: v.override_description } : {}),
 		    ...(Array.isArray(v.override_by_day) && v.override_by_day.length ? { override_by_day: v.override_by_day } : {}),
 		    ...(Array.isArray(v.segments) && v.segments.length ? { segments: v.segments } : {}),
+		    ...(Array.isArray(v.blocks) && v.blocks.length ? { blocks: v.blocks } : {}),
+		    ...(v.force_single_day ? { force_single_day: 1 } : {}),
 		  };
 
   const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
@@ -3748,7 +4377,7 @@ async function handleConfirmado(lead, newEstado){
 
   let gcal = null;
   try{
-    gcal = await apiJSON(`/tools/agenda/${lead.id_lead}/approve`, { method:"PUT" });
+    gcal = await approveAgendaWithRetry();
   }catch(err){
     await Swal.fire({
       icon:"error",
@@ -3763,7 +4392,8 @@ async function handleConfirmado(lead, newEstado){
   const gcalCalId = (Array.isArray(gcal?.calendar_ids) && gcal.calendar_ids.length) ? String(gcal.calendar_ids[0] || "") : "";
   const gcalLead = (gcal && typeof gcal === "object" && gcal.lead && typeof gcal.lead === "object") ? gcal.lead : {};
 
-  if (!gcalEid){
+  const hasAnyId = !!gcalEid || (Array.isArray(gcal?.calendar_ids) && gcal.calendar_ids.some(x=>String(x||"").trim()));
+  if (!hasAnyId){
     await Swal.fire({
       icon:"error",
       title:"No se pudo agendar",

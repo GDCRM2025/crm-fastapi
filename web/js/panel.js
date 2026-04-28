@@ -1445,6 +1445,8 @@ function startSoldEventPolling() {
         try {
           const p = (item && item.payload) || {};
           const marca = (p.marca || "").toString().trim();
+          const cliente = (p.cliente || "").toString().trim();
+          const fecha = (p.fecha_evento || "").toString().trim();
           const montoRaw = p.monto_cotizado ?? p.monto ?? p.total ?? null;
           const productos = Array.isArray(p.productos) ? p.productos : [];
           const fmtCLP = (v) => {
@@ -1456,22 +1458,36 @@ function startSoldEventPolling() {
               return "";
             }
           };
-          const prodsTxt = (() => {
+          const mfmt = montoRaw != null ? fmtCLP(montoRaw) : "";
+          const prodsHtml = (() => {
             try {
-              const names = productos.map((x) => (x && x.producto ? String(x.producto) : "")).filter(Boolean);
-              if (!names.length) return "";
-              return names.slice(0, 6).join(", ") + (names.length > 6 ? "..." : "");
+              const rows = [];
+              for (const x of productos.slice(0, 10)) {
+                const nm = x && x.producto ? String(x.producto).trim() : "";
+                if (!nm) continue;
+                const qty = x && x.cantidad != null ? String(x.cantidad) : "";
+                rows.push(`<li style="margin:.15rem 0"><b>${escapeHtml(qty || "•")}</b> ${escapeHtml(nm)}</li>`);
+              }
+              return rows.length ? `<ul style="margin:.35rem 0 0 .95rem;padding:0">${rows.join("")}</ul>` : "";
             } catch (_) {
               return "";
             }
           })();
-          const lines = [];
-          if (marca) lines.push(`<b>Marca:</b> ${escapeHtml(marca)}`);
-          const mfmt = montoRaw != null ? fmtCLP(montoRaw) : "";
-          if (mfmt) lines.push(`<b>Monto:</b> ${escapeHtml(mfmt)}`);
-          if (prodsTxt) lines.push(`<b>Productos:</b> ${escapeHtml(prodsTxt)}`);
-          if (item.body) lines.push(`<div style="opacity:.7;margin-top:.4rem">${escapeHtml(item.body)}</div>`);
-          const html = lines.join("<br/>") || escapeHtml(item.body || "");
+          const metaRows = [];
+          if (cliente) metaRows.push(`<div style="margin:.15rem 0"><span style="opacity:.7;font-weight:1000">Cliente:</span> <b>${escapeHtml(cliente)}</b></div>`);
+          if (marca) metaRows.push(`<div style="margin:.15rem 0"><span style="opacity:.7;font-weight:1000">Marca:</span> <b>${escapeHtml(marca)}</b></div>`);
+          if (fecha) metaRows.push(`<div style="margin:.15rem 0"><span style="opacity:.7;font-weight:1000">Fecha:</span> <b>${escapeHtml(fecha)}</b></div>`);
+          if (mfmt) metaRows.push(`<div style="margin:.15rem 0"><span style="opacity:.7;font-weight:1000">Monto:</span> <b>${escapeHtml(mfmt)}</b></div>`);
+          if (item && item.id_lead) metaRows.push(`<div style="margin:.15rem 0"><span style="opacity:.7;font-weight:1000">Lead:</span> <b>#${escapeHtml(String(item.id_lead))}</b></div>`);
+          const html = `
+            <div style="text-align:left">
+              <div style="padding:10px 12px;border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.18)">
+                ${metaRows.join("") || ""}
+                ${prodsHtml ? `<div style="margin-top:.45rem;opacity:.85;font-weight:1100">Productos:</div>${prodsHtml}` : ""}
+                ${item.body ? `<div style="opacity:.65;margin-top:.55rem;font-size:12px">${escapeHtml(item.body)}</div>` : ""}
+              </div>
+            </div>
+          `.trim();
           const res = await Swal.fire({
             title: item.title || "Evento vendido",
             html,
