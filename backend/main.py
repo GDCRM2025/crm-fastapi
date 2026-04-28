@@ -224,6 +224,10 @@ include_router_safe(app, "backend.routers.lead_estados")
 include_router_safe(app, "backend.routers.settings_live")
 include_router_safe(app, "backend.routers.settings")
 include_router_safe(app, "backend.routers.cotizador")
+# Debe ir ANTES de quotes_override: FastAPI resuelve primero la ruta registrada.
+# Esta ruta fuerza refresh/rebuild de PDF para que los assets versionados en Drive
+# se reflejen en la cotizacion sin quedar pegados al pdf_path/cache anterior.
+include_router_safe(app, "backend.routers.quotes_fresh")
 include_router_safe(app, "backend.routers.quotes_override")
 include_router_safe(app, "backend.routers.productos")
 include_router_safe(app, "backend.routers.cotizaciones")
