@@ -1304,6 +1304,18 @@ def _calcular_montaje_single(items):
         add_eq("Mesa", 1)
         ops += 1
 
+    # Fallback: si no pudimos inferir equipamiento pero sí hay productos,
+    # evitamos dejar MONTAJE en "—" (se ve como bug). En shared hosting
+    # preferimos sugerir al menos 1 carro por defecto.
+    try:
+        has_products = len(lines_prod) > 1
+    except Exception:
+        has_products = bool(items)
+    if has_products and not montaje:
+        add_eq("Carro Clásico", 1)
+        if ops < 1:
+            ops = 1
+
     lines_m = []
     pref_order = [
         "Carro Clásico",

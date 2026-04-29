@@ -128,13 +128,26 @@
     }
 
     function getToken(){
-      return (
-        localStorage.getItem("token") ||
-        localStorage.getItem("gd_token") ||
-        sessionStorage.getItem("token") ||
-        sessionStorage.getItem("gd_token") ||
-        ""
-      );
+      // iOS/Safari puede bloquear localStorage (modo privado / políticas).
+      // En esos casos usamos cookie `gd_token` como fallback.
+      let t = "";
+      try{
+        t =
+          localStorage.getItem("token") ||
+          localStorage.getItem("gd_token") ||
+          sessionStorage.getItem("token") ||
+          sessionStorage.getItem("gd_token") ||
+          "";
+      }catch(_){
+        t = "";
+      }
+      t = String(t || "").trim();
+      if (t) return t;
+      try{
+        const ck = String(getCookie("gd_token") || "").trim();
+        if (ck) return ck;
+      }catch(_){}
+      return "";
     }
 
     function goLogin(punto_code){
@@ -153,6 +166,7 @@
       // Intentar tomar token desde cookie (login.html siempre la setea como gd_token).
       const ck = getCookie("gd_token");
       if (ck){
+        // localStorage puede fallar en iOS; no dependemos de esto.
         try{
           localStorage.setItem("token", ck);
           localStorage.setItem("gd_token", ck);

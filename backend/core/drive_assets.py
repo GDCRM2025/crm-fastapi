@@ -113,6 +113,43 @@ def drive_sa_info() -> dict:
     return info
 
 
+def drive_can_access_file(file_id: str) -> dict:
+    """
+    Chequeo liviano de acceso a un file_id (metadata), sin descargar contenido.
+    """
+    file_id = (file_id or "").strip()
+    if not file_id:
+        return {"ok": False, "error": "missing_file_id"}
+    svc = _drive_service()
+    if not svc:
+        return {"ok": False, "error": "no_service_account"}
+    try:
+        meta = (
+            svc.files()
+            .get(
+                fileId=file_id,
+                fields="id,name,mimeType,modifiedTime,size",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+        out = {
+            "ok": True,
+            "id": meta.get("id"),
+            "name": meta.get("name"),
+            "mimeType": meta.get("mimeType"),
+            "modifiedTime": meta.get("modifiedTime"),
+        }
+        try:
+            if meta.get("size") is not None:
+                out["size"] = int(meta.get("size"))
+        except Exception:
+            pass
+        return out
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 def download_file_by_id(
     file_id: str,
     *,

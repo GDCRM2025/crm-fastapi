@@ -264,6 +264,95 @@ def debug_drive(user: dict = Depends(get_current_user)):
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+def _drive_folder_assets_enabled(marca_key: str) -> bool:
+    """
+    Permite desactivar assets por carpeta Drive por marca (para forzar URLs/IDs).
+    Env: GD_DRIVE_FOLDER_ASSETS_DISABLE_BRANDS="EXPRESS,GOURMET"
+    """
+    try:
+        disabled = (os.getenv("GD_DRIVE_FOLDER_ASSETS_DISABLE_BRANDS") or "").strip()
+        if not disabled:
+            return True
+        s = disabled.upper().replace(";", ",")
+        parts = [p.strip() for p in s.split(",") if p.strip()]
+        return (marca_key or "").upper() not in parts
+    except Exception:
+        return True
+
+
+@router.get("/_debug/assets")
+def debug_assets(
+    marca: str = Query(default=""),
+    user: dict = Depends(get_current_user),
+):
+    role = str((user or {}).get("role") or "")
+    if "admin" not in role.lower():
+        raise HTTPException(403, "Forbidden")
+    mk = normalize_marca(marca)
+    folder_id = DRIVE_ASSET_FOLDERS.get(mk or "", "")
+    enabled = _drive_folder_assets_enabled(mk)
+    assets = PDF_ASSETS.get(mk, {}) if mk else {}
+    # Mostrar qué hay en drive_cache local (sin tocar Drive)
+    cache = []
+    try:
+        base = Path(__file__).resolve().parents[2] / "data" / "quote_assets" / "drive_cache"
+        if mk and base.exists():
+            for pat in (
+                f"{mk}_portada_*",
+                f"{mk}_cotizacion_*",
+                f"{mk}_terminos_*",
+                f"{mk}_banco_*",
+                f"{mk}_logo_*",
+            ):
+                for p in sorted(base.glob(pat)):
+                    try:
+                        cache.append(
+                            {
+                                "name": p.name,
+                                "bytes": int(p.stat().st_size),
+                                "mtime": float(p.stat().st_mtime),
+                            }
+                        )
+                    except Exception:
+                        continue
+    except Exception:
+        cache = []
+
+    return {
+        "ok": True,
+        "marca_key": mk,
+        "folder_id": folder_id,
+        "drive_folder_assets_enabled": enabled,
+        "disabled_brands_env": (os.getenv("GD_DRIVE_FOLDER_ASSETS_DISABLE_BRANDS") or ""),
+        "pdf_assets_constants": assets,
+        "drive_cache_files": cache,
+    }
+
+
+@router.get("/_debug/assets_access")
+def debug_assets_access(
+    marca: str = Query(default=""),
+    user: dict = Depends(get_current_user),
+):
+    role = str((user or {}).get("role") or "")
+    if "admin" not in role.lower():
+        raise HTTPException(403, "Forbidden")
+    mk = normalize_marca(marca)
+    assets = PDF_ASSETS.get(mk, {}) if mk else {}
+    try:
+        from backend.core.quote_assets import _drive_id
+        from backend.core.drive_assets import drive_can_access_file
+
+        checks = {}
+        for k in ("portada", "cotizacion", "terminos", "banco"):
+            u = (assets.get(k) or "").strip()
+            fid = _drive_id(u) if u else ""
+            checks[k] = {"url": u, "file_id": fid, "access": drive_can_access_file(fid) if fid else {"ok": False, "error": "no_file_id"}}
+        return {"ok": True, "marca_key": mk, "checks": checks}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 @router.get("/{id_cotizacion}")
 def get_cotizacion(id_cotizacion: int):
     if not _table_exists("cotizaciones"):
@@ -994,7 +1083,7 @@ def pdf_placeholder(
     # Requiere Service Account + compartir carpetas con el email del SA.
     try:
         folder_id = DRIVE_ASSET_FOLDERS.get(marca_key or "", "") or (str(drive_folder_id or "").strip())
-        if folder_id:
+        if folder_id and _drive_folder_assets_enabled(marca_key or ""):
             from backend.core.drive_assets import resolve_brand_assets_from_folder
             da = resolve_brand_assets_from_folder(
                 marca_key,
