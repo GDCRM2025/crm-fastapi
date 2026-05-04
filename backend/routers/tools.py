@@ -5568,6 +5568,77 @@ def _expand_ingredientes_for_producto(
     return (out, None)
 
 
+@router.get("/mice/ingredients_catalog")
+def mice_ingredients_catalog(
+    q: str = "",
+    limit: int = 500,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Catálogo de ingredientes (distintos) usado por todas las recetas.
+    Útil para clasificar/perfilarlas (MICE vs OPS, perecible, etc.).
+    """
+    role = (me.get("role") or me.get("rol") or "").upper()
+    if not _is_admin(role) and role not in ("JEFE DE OPERACIONES", "OPERACIONES", "COMPRAS", "MICE", "BODEGUERO", "RRHH", "FINANZAS"):
+        raise HTTPException(403, detail="No autorizado")
+
+    if not _table_exists_pg(db, "recetas") or not _table_exists_pg(db, "receta_items"):
+        raise HTTPException(400, detail="No existe recetas/receta_items en esta BD.")
+
+    q_txt = str(q or "").strip().lower()
+    try:
+        lim = int(limit)
+    except Exception:
+        lim = 500
+    if lim < 1:
+        lim = 1
+    if lim > 2000:
+        lim = 2000
+
+    where = "WHERE btrim(i.ingrediente) <> ''"
+    params: Dict[str, Any] = {"lim": lim}
+    if q_txt:
+        where += " AND lower(i.ingrediente) LIKE :q"
+        params["q"] = "%" + q_txt + "%"
+
+    rows = db.execute(
+        text(
+            f"""
+            SELECT
+              lower(btrim(i.ingrediente)) AS ingrediente_key,
+              max(btrim(i.ingrediente)) AS ingrediente,
+              count(DISTINCT btrim(r.producto))::int AS products_count,
+              count(*)::int AS uses_count,
+              array_agg(DISTINCT btrim(r.producto) ORDER BY btrim(r.producto))[:6] AS sample_products,
+              array_agg(DISTINCT COALESCE(NULLIF(btrim(r.marca),''),'(sin marca)') ORDER BY COALESCE(NULLIF(btrim(r.marca),''),'(sin marca)'))[:6] AS sample_marcas
+            FROM receta_items i
+            JOIN recetas r ON r.id_receta = i.id_receta
+            {where}
+            GROUP BY lower(btrim(i.ingrediente))
+            ORDER BY lower(btrim(i.ingrediente))
+            LIMIT :lim
+            """
+        ),
+        params,
+    ).mappings().all()
+
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "ingrediente_key": r.get("ingrediente_key") or "",
+                "ingrediente": r.get("ingrediente") or "",
+                "products_count": int(r.get("products_count") or 0),
+                "uses_count": int(r.get("uses_count") or 0),
+                "sample_products": list(r.get("sample_products") or []),
+                "sample_marcas": list(r.get("sample_marcas") or []),
+            }
+        )
+
+    return {"ok": True, "q": q_txt, "items": items, "limit": lim}
+
+
 @router.get("/mice/day")
 def mice_day_report(
     day: str,
@@ -6978,6 +7049,68 @@ def edit_confirmed_event(
         except Exception:
             try:
                 db.rollback()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Correo a MICE + Operaciones (best-effort)
+    try:
+        from backend.core.email import send_email_group
+
+        def _emails_for_roles(role_names: list[str]) -> list[str]:
+            try:
+                names_u = [str(r).upper().strip() for r in (role_names or []) if str(r).strip()]
+                if not names_u:
+                    return []
+                rows = db.execute(
+                    text(
+                        """
+                        SELECT DISTINCT u.email
+                        FROM public.usuarios u
+                        LEFT JOIN public.roles r ON r.id_rol=u.id_rol
+                        WHERE COALESCE(u.is_active, TRUE) = TRUE
+                          AND u.email IS NOT NULL AND u.email <> ''
+                          AND (
+                            UPPER(COALESCE(r.nombre,'')) = ANY(:role_names)
+                            OR UPPER(COALESCE(u.rol,'')) = ANY(:role_names)
+                          )
+                        """
+                    ),
+                    {"role_names": names_u},
+                ).fetchall()
+                out: list[str] = []
+                for rr in rows:
+                    e = str((rr[0] or "")).strip()
+                    if "@" in e and "." in e:
+                        out.append(e)
+                return sorted(set(out))
+            except Exception:
+                return []
+
+        to = _emails_for_roles(["OPERACIONES", "JEFE DE OPERACIONES", "MICE"])
+        extra = [x.strip() for x in str(os.getenv("EVENT_EDIT_NOTIFY_TO") or "").split(",") if x.strip()]
+        to = sorted(set(to + extra))
+        if to:
+            who = (x_user or me.get("username") or me.get("email") or me.get("name") or "usuario")
+            cal_link = str(gcal.get("calendar_html_link") or "") or str(lead.get("calendar_html_link") or "")
+            change_list = ", ".join(list(changes.keys())[:25]) if changes else "(sin campos)"
+            subj = f"Evento modificado · Lead #{int(id_lead)}"
+            txt = "\n".join(
+                [
+                    "Se modificó un evento confirmado.",
+                    "",
+                    f"Lead: #{int(id_lead)}",
+                    f"Por: {who}",
+                    f"Cambios: {change_list}",
+                    *( [f"Calendar: {cal_link}"] if cal_link else [] ),
+                    "",
+                    "--",
+                    "CRM Green Diamond",
+                ]
+            )
+            try:
+                send_email_group(to, subj, txt)
             except Exception:
                 pass
     except Exception:

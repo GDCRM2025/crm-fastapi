@@ -796,17 +796,18 @@
       $("#modal").classList.add("open");
     }
 
-    async function save(){
-      if (state.tab === "stock"){
-        const payloadProd = {
-          sku: $("#fSku")?.value?.trim() || null,
-          nombre: $("#fNombre")?.value?.trim() || "",
-          id_categoria: Number($("#fCat")?.value || 0) || null,
-          id_unidad: Number($("#fUni")?.value || 0) || null,
-          id_proveedor: Number($("#fProv")?.value || 0) || null,
-          precio: Number($("#fPrecio")?.value || 0) || null,
-          pack_cantidad: null
-        };
+	    async function save(){
+	      if (state.tab === "stock"){
+	        const payloadProd = {
+	          sku: $("#fSku")?.value?.trim() || null,
+	          nombre: $("#fNombre")?.value?.trim() || "",
+	          id_categoria: Number($("#fCat")?.value || 0) || null,
+	          id_unidad: Number($("#fUni")?.value || 0) || null,
+	          id_proveedor: Number($("#fProv")?.value || 0) || null,
+	          precio: Number($("#fPrecio")?.value || 0) || null,
+	          pack_cantidad: null,
+	          clasificacion: $("#fClas")?.value || null
+	        };
         const payloadStock = {
           stock_inicial: Number($("#fStockInicial")?.value || 0) || null,
           stock_bodega: Number($("#fStockBodega")?.value || 0) || null,
@@ -891,22 +892,30 @@
       await load();
     }
 
-    function openStockModal(item){
-      state.editing = item || null;
-      const f = $("#modalForm");
-      const cats = state.catalogos?.categorias || [];
-      const unis = state.catalogos?.unidades || [];
-      const prov = state.catalogos?.proveedores || [];
-      const total = item?.stock_total ?? item?.stock_actual ?? "";
-      f.innerHTML = `
-        <div><label>SKU</label><input id="fSku" value="${item?.sku || ""}" ${item ? "disabled" : ""} placeholder="Auto"></div>
-        <div><label>Ingrediente</label><input id="fNombre" value="${item?.nombre || ""}"></div>
-        <div><label>Categoría</label>
-          <select id="fCat">
-            <option value="">—</option>
-            ${cats.map(c => `<option value="${c.id_categoria}" ${c.nombre===item?.categoria?"selected":""}>${c.nombre}</option>`).join("")}
-          </select>
-        </div>
+	    function openStockModal(item){
+	      state.editing = item || null;
+	      const f = $("#modalForm");
+	      const cats = state.catalogos?.categorias || [];
+	      const unis = state.catalogos?.unidades || [];
+	      const prov = state.catalogos?.proveedores || [];
+	      const total = item?.stock_total ?? item?.stock_actual ?? "";
+	      const clas = String(item?.clasificacion || "").toUpperCase();
+	      f.innerHTML = `
+	        <div><label>SKU</label><input id="fSku" value="${item?.sku || ""}" ${item ? "disabled" : ""} placeholder="Auto"></div>
+	        <div><label>Ingrediente</label><input id="fNombre" value="${item?.nombre || ""}"></div>
+	        <div><label>Clasificación</label>
+	          <select id="fClas">
+	            <option value="" ${!clas ? "selected" : ""}>—</option>
+	            <option value="MICE" ${clas==="MICE" ? "selected" : ""}>MICE</option>
+	            <option value="OPERACIONES" ${clas==="OPERACIONES" ? "selected" : ""}>OPERACIONES</option>
+	          </select>
+	        </div>
+	        <div><label>Categoría</label>
+	          <select id="fCat">
+	            <option value="">—</option>
+	            ${cats.map(c => `<option value="${c.id_categoria}" ${c.nombre===item?.categoria?"selected":""}>${c.nombre}</option>`).join("")}
+	          </select>
+	        </div>
         <div><label>Unidad</label>
           <select id="fUni">
             <option value="">—</option>

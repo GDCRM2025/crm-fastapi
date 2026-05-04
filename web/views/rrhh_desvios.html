@@ -41,6 +41,7 @@
         </div>
         <div class="row">
           <input class="inp" id="fDate" type="date"/>
+          <input class="inp" id="fUid" placeholder="ID usuario (opcional)" style="min-width:170px"/>
           <select class="inp" id="fEstado">
             <option value="pendiente">Pendiente</option>
             <option value="aprobado">Aprobado</option>
@@ -132,13 +133,17 @@
     async function load(){
       const d = qs("#fDate").value || "";
       const st = qs("#fEstado").value || "";
+      const uidFilter = String(qs("#fUid")?.value || "").trim();
       const q = new URLSearchParams();
       if (d) q.set("date", d);
       if (st) q.set("estado", st);
       setLog("Cargando…");
       const rep = await apiJSON(`/rrhh/desvios/report?${q.toString()}`);
       const groups = Array.isArray(rep?.groups) ? rep.groups : [];
-      const items = groups.flatMap(g=> Array.isArray(g?.items) ? g.items : []);
+      let items = groups.flatMap(g=> Array.isArray(g?.items) ? g.items : []);
+      if (uidFilter){
+        items = items.filter(it => String(it?.id_usuario ?? "").trim() === uidFilter);
+      }
       const statusPrio = { "pendiente": 0, "": 1, "aprobado": 2, "rechazado": 3 };
       const tipoPrio = { "MISSING_IN": 0, "MISSING_OUT": 1, "LATE_IN": 2, "EARLY_OUT": 3, "EARLY_IN": 4, "LATE_OUT": 5 };
       items.sort((a,b)=>{
@@ -192,6 +197,7 @@
               <div class="actions">
                 <button class="btn ok" data-act="aprobado" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Aprobar</button>
                 <button class="btn bad" data-act="rechazado" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Rechazar</button>
+                <button class="btn" data-act="solicitar" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Pedir aprobación (correo)</button>
               </div>
             </td>
           </tr>
@@ -224,6 +230,18 @@
       const id = Number(b.dataset.id||0);
       const st = String(b.dataset.act||"");
       if(!id) return;
+      if (st === "solicitar"){
+        if(!confirm("Enviar correo al colaborador para que apruebe/rechace este desvío?")) return;
+        b.disabled = true;
+        try{
+          await apiJSON(`/rrhh/desvios/${id}/request_approval`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({}) });
+          setLog("Correo enviado ✓");
+        }catch(err){
+          alert(String(err?.message||err));
+          b.disabled = false;
+        }
+        return;
+      }
       let note = "";
       try{
         note = prompt(`Obs (${st}):`, "") || "";
@@ -241,15 +259,23 @@
     (async ()=>{
       // default date = hoy Chile
       try{
-        const now = new Date();
-        const iso = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,10);
-        qs("#fDate").value = iso;
+        const u = new URL(location.href);
+        const qd = String(u.searchParams.get("date") || "").slice(0,10);
+        const qu = String(u.searchParams.get("uid") || "").trim();
+        if (qd) qs("#fDate").value = qd;
+        else{
+          const now = new Date();
+          const iso = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+          qs("#fDate").value = iso;
+        }
+        if (qu && qs("#fUid")) qs("#fUid").value = qu;
       }catch(_){}
       qs("#btnReload").addEventListener("click", load);
       qs("#btnDetect").addEventListener("click", detect);
       qs("#btnEmail").addEventListener("click", sendEmail);
       qs("#fEstado").addEventListener("change", load);
       qs("#fDate").addEventListener("change", load);
+      qs("#fUid") && qs("#fUid").addEventListener("change", load);
       await load();
     })();
   </script>

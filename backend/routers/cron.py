@@ -6,6 +6,7 @@ import time
 import threading
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Header
 from fastapi.responses import JSONResponse
@@ -109,6 +110,272 @@ def _ensure_system_notifs(conn) -> None:
         conn.commit()
     except Exception:
         pass
+
+
+def _dow_mask_allows(mask: int | None, dow: int) -> bool:
+    if mask is None:
+        return True
+    try:
+        m = int(mask)
+    except Exception:
+        return True
+    if dow < 0 or dow > 6:
+        return True
+    return bool(m & (1 << dow))
+
+
+def _job_rrhh_auto_out(conn, *, force: bool = False) -> dict:
+    """
+    Auto-marca salida (OUT) a las 18:00 si:
+      - Hora Chile >= 18:30 (o force)
+      - Existe IN OK hoy
+      - No existe OUT OK hoy
+    Además crea un desvío tipo AUTO_OUT (pendiente) y envía correo al colaborador
+    con links de aprobar/rechazar.
+    """
+    try:
+        tz = ZoneInfo("America/Santiago")
+    except Exception:
+        tz = None
+    now = datetime.now(tz) if tz else datetime.now()
+    if not force:
+        try:
+            if (now.hour, now.minute) < (18, 30):
+                return {"ok": True, "skipped": True, "reason": "before_18_30"}
+        except Exception:
+            pass
+
+    try:
+        d = conn.execute(text("SELECT (now() AT TIME ZONE 'America/Santiago')::date")).scalar()
+        day = str(d)[:10]
+    except Exception:
+        day = now.strftime("%Y-%m-%d")
+
+    # Email base URL
+    base = (os.getenv("APP_URL") or "").strip().rstrip("/")
+    if not base:
+        base = "https://greendiamond.cl"
+
+    created = 0
+    emailed = 0
+    skipped_no_shift = 0
+
+    try:
+        staff_rows = conn.execute(
+            text(
+                """
+                SELECT id_staff, id_usuario, colaborador, rut,
+                       COALESCE(NULLIF(btrim(email),''), NULL) AS email,
+                       jefe_id_staff
+                FROM public.rrhh_staff
+                WHERE is_active IS TRUE
+                  AND id_usuario IS NOT NULL
+                  AND id_usuario > 0
+                ORDER BY id_staff ASC
+                """
+            )
+        ).mappings().all()
+    except Exception:
+        staff_rows = []
+
+    # helper: resolve email via usuarios if missing
+    def _user_email(uid: int) -> str | None:
+        try:
+            e = conn.execute(
+                text("SELECT COALESCE(NULLIF(btrim(email),''), NULL) FROM public.usuarios WHERE id_usuario=:u LIMIT 1"),
+                {"u": int(uid)},
+            ).scalar()
+            e = str(e or "").strip()
+            return e or None
+        except Exception:
+            return None
+
+    # send email
+    def _send(to_email: str, subject: str, body: str) -> None:
+        nonlocal emailed
+        try:
+            from backend.core.email import send_email_group
+            send_email_group([to_email], subject, body)
+            emailed += 1
+        except Exception:
+            return
+
+    from backend.core import public_tokens  # local import (uses JWT secret)
+
+    for st in staff_rows:
+        try:
+            id_staff = int(st.get("id_staff") or 0)
+            id_usuario = int(st.get("id_usuario") or 0)
+            if id_staff <= 0 or id_usuario <= 0:
+                continue
+
+            # shift hoy (si no existe, no auto-marcamos)
+            try:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT h.desde, h.hasta, h.dow_mask,
+                               t.hora_entrada, t.hora_salida
+                        FROM public.rrhh_horarios h
+                        JOIN public.rrhh_turnos t ON t.id_turno=h.id_turno
+                        WHERE h.is_active IS TRUE
+                          AND t.is_active IS TRUE
+                          AND h.id_staff=:s
+                          AND h.desde <= :d
+                          AND (h.hasta IS NULL OR h.hasta >= :d)
+                        ORDER BY h.desde DESC, h.id_horario DESC
+                        """
+                    ),
+                    {"s": id_staff, "d": day},
+                ).mappings().all()
+                dow = int(datetime.fromisoformat(day).weekday())
+                shift = None
+                for r in rows:
+                    if _dow_mask_allows(r.get("dow_mask"), dow):
+                        shift = dict(r)
+                        break
+                if not shift:
+                    skipped_no_shift += 1
+                    continue
+                exp_in = str(shift.get("hora_entrada") or "").strip() or "09:00"
+                exp_out = str(shift.get("hora_salida") or "").strip() or "18:00"
+            except Exception:
+                skipped_no_shift += 1
+                continue
+
+            # marks hoy
+            m = conn.execute(
+                text(
+                    """
+                    SELECT
+                      max(CASE WHEN upper(tipo)='IN' AND ok IS TRUE THEN created_at END) AS in_at,
+                      max(CASE WHEN upper(tipo)='OUT' AND ok IS TRUE THEN created_at END) AS out_at
+                    FROM public.sgjo_marcaciones
+                    WHERE id_usuario=:u
+                      AND ((created_at AT TIME ZONE 'America/Santiago')::date = :d::date)
+                    """
+                ),
+                {"u": id_usuario, "d": day},
+            ).mappings().first() or {}
+            if not m.get("in_at"):
+                continue
+            if m.get("out_at"):
+                continue
+
+            # 1) Inserta OUT automático 18:00 (idempotente)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.sgjo_marcaciones(
+                      created_at, id_usuario, rut, tipo, method,
+                      id_sede, id_punto,
+                      lat, lng, accuracy_m, distance_m,
+                      within_radius, used_fallback,
+                      ok, error, meta
+                    )
+                    VALUES (
+                      ((:d || ' 18:00:00')::timestamp AT TIME ZONE 'America/Santiago'),
+                      :u, :rut, 'OUT', 'AUTO',
+                      NULL, NULL,
+                      NULL, NULL, NULL, NULL,
+                      TRUE, FALSE,
+                      TRUE, NULL,
+                      jsonb_build_object('auto_out', true, 'auto_out_at', '18:00', 'threshold', '18:30')
+                    )
+                    """
+                ),
+                {"d": day, "u": id_usuario, "rut": str(st.get("rut") or "")},
+            )
+
+            # 2) Crea/actualiza desvío AUTO_OUT y obtiene id_desvio
+            desvio = conn.execute(
+                text(
+                    """
+                    INSERT INTO public.rrhh_desvios(
+                      fecha, id_staff, id_usuario, rut, colaborador, rol, centro_costo,
+                      tipo, status,
+                      expected_in, expected_out, actual_in, actual_out,
+                      diff_in_min, diff_out_min,
+                      impact_kind, impact_min,
+                      meta
+                    ) VALUES (
+                      :f,:s,:u,:rut,:c,:r,:cc,
+                      'AUTO_OUT','pendiente',
+                      :ein,:eout,:ain, ((:f || ' 18:00:00')::timestamp AT TIME ZONE 'America/Santiago'),
+                      NULL,NULL,
+                      'JUSTIFICADO', 0,
+                      jsonb_build_object('auto_out', true, 'auto_out_at', '18:00', 'threshold', '18:30')
+                    )
+                    ON CONFLICT (fecha, id_staff, tipo) DO UPDATE SET
+                      id_usuario=EXCLUDED.id_usuario,
+                      rut=EXCLUDED.rut,
+                      colaborador=EXCLUDED.colaborador,
+                      expected_in=EXCLUDED.expected_in,
+                      expected_out=EXCLUDED.expected_out,
+                      actual_in=EXCLUDED.actual_in,
+                      actual_out=EXCLUDED.actual_out,
+                      impact_kind=EXCLUDED.impact_kind,
+                      impact_min=EXCLUDED.impact_min,
+                      meta=EXCLUDED.meta,
+                      status=CASE WHEN rrhh_desvios.status IN ('aprobado','rechazado') THEN rrhh_desvios.status ELSE 'pendiente' END
+                    RETURNING id_desvio
+                    """
+                ),
+                {
+                    "f": day,
+                    "s": id_staff,
+                    "u": id_usuario,
+                    "rut": str(st.get("rut") or ""),
+                    "c": str(st.get("colaborador") or ""),
+                    "r": str(st.get("rol") or ""),
+                    "cc": str(st.get("centro_costo") or ""),
+                    "ein": exp_in,
+                    "eout": exp_out,
+                    "ain": m.get("in_at"),
+                },
+            ).scalar()
+
+            created += 1
+
+            # 3) Email al colaborador para aprobar/rechazar
+            did = int(desvio) if desvio is not None else 0
+            to_email = str(st.get("email") or "").strip() or (_user_email(id_usuario) or "")
+            if did and to_email:
+                tok_ok = public_tokens.sign({"k": "desvio", "id": did, "st": "aprobado"}, ttl_seconds=7 * 24 * 3600)
+                tok_no = public_tokens.sign({"k": "desvio", "id": did, "st": "rechazado"}, ttl_seconds=7 * 24 * 3600)
+                link_ok = f"{base}/crm/rrhh/desvios/action?t={tok_ok}"
+                link_no = f"{base}/crm/rrhh/desvios/action?t={tok_no}"
+                subj = f"RRHH · Salida automática · {day} · {st.get('colaborador') or ''}".strip()
+                body = (
+                    f"Hola {st.get('colaborador') or 'colaborador'},\n\n"
+                    f"Hoy ({day}) no registraste tu SALIDA.\n"
+                    f"Para cerrar la jornada, el sistema registró una salida automática a las 18:00.\n\n"
+                    f"Turno esperado: {exp_in} → {exp_out}\n"
+                    f"Salida registrada: 18:00 (AUTO)\n\n"
+                    f"Por favor confirma:\n"
+                    f"- Aprobar (correcto): {link_ok}\n"
+                    f"- Rechazar (no corresponde): {link_no}\n\n"
+                    f"Si rechazas, RRHH revisará tu caso.\n"
+                )
+                _send(to_email, subj, body)
+
+        except Exception:
+            continue
+
+    try:
+        conn.commit()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "date": day,
+        "created": int(created),
+        "emailed": int(emailed),
+        "skipped_no_shift": int(skipped_no_shift),
+        "threshold": "18:30",
+        "out_at": "18:00",
+    }
 
 
 def _job_past_event_decline(conn) -> dict:
@@ -464,6 +731,14 @@ def cron_run(
             return _job_stale_decline(conn)
         if name in ("rrhh_reminders", "rrhh_tick"):
             return _job_rrhh_reminders()
+        if name in ("rrhh_auto_out", "rrhh_auto_mark_out", "auto_out"):
+            force = False
+            try:
+                if isinstance(payload, dict) and payload.get("force") is not None:
+                    force = bool(int(payload.get("force")))
+            except Exception:
+                force = False
+            return _job_rrhh_auto_out(conn, force=force)
         return {"ok": False, "error": "unknown_job"}
 
     def _spawn(name: str) -> None:
@@ -495,7 +770,7 @@ def cron_run(
         threading.Thread(target=_bg, daemon=True).start()
 
     # In shared hosting, these can take long and should not block the request queue.
-    heavy = {"stale_decline", "auto_decline_stale", "refresh_drive_assets", "drive_assets_refresh"}
+    heavy = {"stale_decline", "auto_decline_stale", "refresh_drive_assets", "drive_assets_refresh", "rrhh_auto_out", "rrhh_auto_mark_out", "auto_out"}
 
     with get_connection() as conn:
         for j in jobs:

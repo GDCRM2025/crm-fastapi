@@ -110,6 +110,24 @@
       </div>
 
       <div class="card">
+        <h3 class="secTitle">Mis desvíos (pendientes)</h3>
+        <div class="muted" style="margin-top:6px">Si hay desvíos, aprueba/rechaza. Se notificará a tu jefe directo y a RRHH.</div>
+        <div class="table" style="margin-top:10px;max-height:32vh">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Impacto</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="rowsDesv">
+              <tr><td class="muted">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
         <h3 class="secTitle">Solicitud</h3>
         <div class="muted" style="margin-top:6px">Vacaciones / Permiso / Adelanto / Documento / Regularización.</div>
 
@@ -318,6 +336,55 @@
       }).join("") || `<tr><td class="muted">Sin solicitudes.</td></tr>`;
     }
 
+    async function loadDesvios(){
+      const r = await fetch(apiURL("/rrhh/desvios/me?status=pendiente&limit=60"), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      if (!r.ok || !data.ok){
+        qs("#rowsDesv").innerHTML = `<tr><td class="muted" colspan="4">Error: ${(data.detail||r.status)}</td></tr>`;
+        return;
+      }
+      const items = data.items || [];
+      if (!items.length){
+        qs("#rowsDesv").innerHTML = `<tr><td class="muted" colspan="4">Sin desvíos pendientes.</td></tr>`;
+        return;
+      }
+      qs("#rowsDesv").innerHTML = items.map(x=>{
+        const imp = `${x.impact_kind||"—"}${x.impact_min ? (" · "+x.impact_min+"m") : ""}`;
+        return `
+          <tr>
+            <td>${String(x.fecha||"")}</td>
+            <td><strong>${String(x.tipo||"")}</strong></td>
+            <td>${imp}</td>
+            <td>
+              <button class="btn primary" data-desv-act="aprobado" data-id="${String(x.id_desvio||"")}">Aprobar</button>
+              <button class="btn" data-desv-act="rechazado" data-id="${String(x.id_desvio||"")}">Rechazar</button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    document.addEventListener("click", async (e)=>{
+      const b = e.target.closest("button[data-desv-act]");
+      if(!b) return;
+      const id = Number(b.getAttribute("data-id")||0);
+      const st = String(b.getAttribute("data-desv-act")||"").trim();
+      if(!id || !st) return;
+      let note = "";
+      try{ note = prompt("Observación (opcional):", "") || ""; }catch(_){}
+      b.disabled = true;
+      try{
+        const r = await fetch(apiURL(`/rrhh/desvios/${id}/respond`), { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify({ status: st, note }) });
+        const data = await r.json().catch(()=>({}));
+        if (!r.ok || !data.ok) throw new Error(data.detail || r.status);
+        toast("Respuesta registrada");
+        await loadDesvios();
+      }catch(err){
+        alert(String(err?.message || err));
+        b.disabled = false;
+      }
+    });
+
     qs("#btnEnviar").addEventListener("click", async ()=>{
       const tipo = String(qs("#tipo").value||"").trim();
       const payload = {
@@ -354,6 +421,7 @@
 
     loadPortal();
     loadMarcaciones();
+    loadDesvios();
     loadSolicitudes();
   </script>
 </body>

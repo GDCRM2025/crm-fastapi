@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
@@ -16,6 +16,7 @@ import unicodedata
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
+from backend.core import public_tokens
 
 router = APIRouter(prefix="/rrhh", tags=["rrhh"])
 
@@ -627,6 +628,7 @@ def detect_desvios(
 def list_desvios(
     estado: str | None = None,
     date: str | None = None,
+    id_usuario: int | None = None,
     db: Session = Depends(get_db),
     me: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -654,6 +656,12 @@ def list_desvios(
     if date:
         where.append("fecha = :d")
         params["d"] = str(date)[:10]
+    if id_usuario is not None:
+        try:
+            where.append("id_usuario = :uid_filter")
+            params["uid_filter"] = int(id_usuario)
+        except Exception:
+            pass
     # scope por rol
     if (("SUPERADMIN" in role) or (role == "ADMIN") or ("FINAN" in role) or ("RRHH" in role) or ("RECURSOS" in role)):
         pass
@@ -869,21 +877,65 @@ def email_desvios_report(
         return {"ok": True, "sent": False, "detail": str(e)}
 
 
-@router.put("/desvios/{id_desvio}")
-def decide_desvio(
+def _staff_contact(db: Session, *, id_staff: int) -> dict[str, Any]:
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT id_staff, id_usuario, colaborador,
+                       COALESCE(NULLIF(btrim(email),''), NULL) AS email,
+                       jefe_id_staff
+                FROM rrhh_staff
+                WHERE id_staff=:s
+                LIMIT 1
+                """
+            ),
+            {"s": int(id_staff)},
+        ).mappings().first()
+        return dict(row) if row else {}
+    except Exception:
+        return {}
+
+
+def _user_email(db: Session, *, id_usuario: int | None) -> str | None:
+    if not id_usuario:
+        return None
+    try:
+        e = db.execute(
+            text("SELECT COALESCE(NULLIF(btrim(email),''), NULL) FROM public.usuarios WHERE id_usuario=:u LIMIT 1"),
+            {"u": int(id_usuario)},
+        ).scalar()
+        e = str(e or "").strip()
+        return e or None
+    except Exception:
+        return None
+
+
+def _notify_email(to_list: list[str], subject: str, body: str) -> None:
+    try:
+        from backend.core.email import send_email_group
+        to_clean = [x.strip() for x in (to_list or []) if x and str(x).strip()]
+        if not to_clean:
+            return
+        send_email_group(to_clean, subject, body)
+    except Exception:
+        return
+
+
+def _apply_desvio_decision(
+    db: Session,
+    *,
     id_desvio: int,
-    body: dict,
-    db: Session = Depends(get_db),
-    me: dict = Depends(get_current_user),
+    estado: str,
+    note: str,
+    decided_by: int | None,
+    source: str,
+    force: bool = False,
 ) -> dict[str, Any]:
-    _ensure_tables(db)
-    if not _is_rrhh_admin(me):
-        raise HTTPException(status_code=403, detail="No autorizado")
-    estado = str(body.get("status") or "").strip().lower()
+    estado = str(estado or "").strip().lower()
     if estado not in ("aprobado", "rechazado"):
         raise HTTPException(status_code=400, detail="status inválido")
-    note = str(body.get("note") or "").strip()
-    uid = _user_id(me) or 0
+    note = str(note or "").strip()
 
     row = db.execute(
         text(
@@ -897,7 +949,7 @@ def decide_desvio(
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Desvío no existe")
-    if str(row.get("status") or "").lower() in ("aprobado", "rechazado") and not body.get("force"):
+    if str(row.get("status") or "").lower() in ("aprobado", "rechazado") and not force:
         return {"ok": True, "already": True}
 
     db.execute(
@@ -908,10 +960,9 @@ def decide_desvio(
             WHERE id_desvio=:id
             """
         ),
-        {"id": int(id_desvio), "st": estado, "by": int(uid) if uid else None, "n": note or None},
+        {"id": int(id_desvio), "st": estado, "by": int(decided_by) if decided_by else None, "n": note or None},
     )
 
-    # Impacto (reglas usuario: 4=C, 5=C).
     tipo = str(row.get("tipo") or "").upper()
     impact_kind = str(row.get("impact_kind") or "").upper()
     impact_min = int(row.get("impact_min") or 0) if str(row.get("impact_min") or "").strip() != "" else 0
@@ -920,10 +971,12 @@ def decide_desvio(
     colaborador = str(row.get("colaborador") or "Colaborador")
 
     try:
+        # AUTO_OUT: es una regularización automática (no implica ajuste de sueldo por sí misma).
+        # La decisión sirve para auditoría y notificación; no crea rrhh_ajustes.
+        if tipo == "AUTO_OUT":
+            raise RuntimeError("SKIP_AJUSTES_AUTO_OUT")
         if estado == "rechazado":
-            # No aprobado => ausencias o descuento horas
             if tipo in ("MISSING_IN", "MISSING_OUT"):
-                # ausencia día completo
                 db.execute(
                     text(
                         """
@@ -943,7 +996,6 @@ def decide_desvio(
                     {"f": fecha, "s": id_staff, "d": int(id_desvio), "n": note or None},
                 )
             else:
-                # descuento proporcional por minutos
                 mins = abs(int(impact_min or 0))
                 db.execute(
                     text(
@@ -955,7 +1007,6 @@ def decide_desvio(
                     {"f": fecha, "s": id_staff, "d": int(id_desvio), "m": int(mins), "n": note or None},
                 )
         else:
-            # aprobado => justificado o horas extra según caso
             if impact_kind == "HORAS_EXTRA" and tipo in ("EARLY_IN", "LATE_OUT"):
                 mins = abs(int(impact_min or 0))
                 db.execute(
@@ -968,7 +1019,6 @@ def decide_desvio(
                     {"f": fecha, "s": id_staff, "d": int(id_desvio), "m": int(mins), "n": note or None},
                 )
             else:
-                # justificado: no ajuste
                 db.execute(
                     text(
                         """
@@ -978,28 +1028,210 @@ def decide_desvio(
                     ),
                     {"f": fecha, "s": id_staff, "d": int(id_desvio), "n": note or None},
                 )
-    except Exception:
-        pass
+    except Exception as _e:
+        # SKIP_AJUSTES_AUTO_OUT: intencional
+        _ = _e
 
     db.commit()
 
     # Notificar siempre (correo + alertas internas)
     try:
         subj = f"RRHH · Desvío {tipo} · {colaborador} · {estado.upper()}"
-        txt = f"Colaborador: {colaborador}\nFecha: {fecha}\nTipo: {tipo}\nEstado: {estado}\nObs: {note or ''}\n"
+        txt = f"Fuente: {source}\nColaborador: {colaborador}\nFecha: {fecha}\nTipo: {tipo}\nEstado: {estado}\nObs: {note or ''}\n"
         _notify_rrhh_admins(db, subject=subj, body=txt)
     except Exception:
         pass
+
+    # Si lo decide el colaborador, notificar a jefe directo + RRHH (correo claro).
+    if str(source or "").upper().startswith("COLAB"):
+        try:
+            st_row = _staff_contact(db, id_staff=id_staff)
+            jefe_id = st_row.get("jefe_id_staff")
+            jefe_email = None
+            if jefe_id:
+                jefe = _staff_contact(db, id_staff=int(jefe_id))
+                jefe_email = (jefe.get("email") or _user_email(db, id_usuario=jefe.get("id_usuario"))) if jefe else None
+            col_email = (st_row.get("email") or _user_email(db, id_usuario=st_row.get("id_usuario"))) if st_row else None
+            to = [x for x in [jefe_email, col_email] if x]
+            if to:
+                body2 = (
+                    f"RRHH · Aprobación de desvío\n\n"
+                    f"Colaborador: {colaborador}\n"
+                    f"Fecha: {fecha}\n"
+                    f"Tipo: {tipo}\n"
+                    f"Decisión colaborador: {estado.upper()}\n"
+                    f"Observación: {note or '(sin obs)'}\n"
+                )
+                _notify_email(to, f"RRHH · {colaborador} · {fecha} · {tipo} · {estado.upper()}", body2)
+        except Exception:
+            pass
+
     try:
         from backend.core.system_notifs import push_system_notif
         lid = int(row.get("id_usuario") or 0) or int(id_desvio)
-        push_system_notif(db, kind="RRHH_DESVIO", role_target="RRHH", id_lead=lid, title="RRHH · Desvío", body=f"{colaborador} · {tipo} · {estado}", payload={"id_desvio": int(id_desvio), "estado": estado, "tipo": tipo, "fecha": fecha})
-        push_system_notif(db, kind="RRHH_DESVIO", role_target="FINANZAS", id_lead=lid, title="RRHH · Desvío", body=f"{colaborador} · {tipo} · {estado}", payload={"id_desvio": int(id_desvio), "estado": estado, "tipo": tipo, "fecha": fecha})
-        push_system_notif(db, kind="RRHH_DESVIO", role_target="ADMIN", id_lead=lid, title="RRHH · Desvío", body=f"{colaborador} · {tipo} · {estado}", payload={"id_desvio": int(id_desvio), "estado": estado, "tipo": tipo, "fecha": fecha})
-        push_system_notif(db, kind="RRHH_DESVIO", role_target="SUPERADMIN", id_lead=lid, title="RRHH · Desvío", body=f"{colaborador} · {tipo} · {estado}", payload={"id_desvio": int(id_desvio), "estado": estado, "tipo": tipo, "fecha": fecha})
+        for role_target in ("RRHH", "FINANZAS", "ADMIN", "SUPERADMIN"):
+            push_system_notif(db, kind="RRHH_DESVIO", role_target=role_target, id_lead=lid, title="RRHH · Desvío", body=f"{colaborador} · {tipo} · {estado}", payload={"id_desvio": int(id_desvio), "estado": estado, "tipo": tipo, "fecha": fecha})
     except Exception:
         pass
     return {"ok": True}
+
+
+@router.put("/desvios/{id_desvio}")
+def decide_desvio(
+    id_desvio: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    if not _is_rrhh_admin(me):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    estado = str(body.get("status") or "").strip().lower()
+    note = str(body.get("note") or "").strip()
+    uid = _user_id(me) or 0
+    force = bool(body.get("force"))
+    return _apply_desvio_decision(db, id_desvio=id_desvio, estado=estado, note=note, decided_by=int(uid) if uid else None, source="ADMIN", force=force)
+
+
+@router.get("/desvios/me")
+def my_desvios(
+    status: str | None = "pendiente",
+    limit: int = 80,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    uid = _user_id(me) or 0
+    if not uid:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    st = str(status or "").strip().lower()
+    where = ["id_usuario=:u"]
+    params: dict[str, Any] = {"u": int(uid), "lim": max(1, min(200, int(limit)))}
+    if st:
+        where.append("status=:st")
+        params["st"] = st
+    rows = db.execute(
+        text(
+            f"""
+            SELECT id_desvio, created_at, fecha, tipo, status, expected_in, expected_out, actual_in, actual_out, impact_kind, impact_min, note
+            FROM rrhh_desvios
+            WHERE {' AND '.join(where)}
+            ORDER BY fecha DESC, id_desvio DESC
+            LIMIT :lim
+            """
+        ),
+        params,
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.post("/desvios/{id_desvio}/respond")
+def respond_desvio(
+    id_desvio: int,
+    body: dict = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    uid = _user_id(me) or 0
+    if not uid:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    estado = str(body.get("status") or "").strip().lower()
+    note = str(body.get("note") or "").strip()
+    row_uid = db.execute(text("SELECT id_usuario FROM rrhh_desvios WHERE id_desvio=:id LIMIT 1"), {"id": int(id_desvio)}).scalar()
+    if not row_uid:
+        raise HTTPException(status_code=404, detail="Desvío no existe")
+    if int(row_uid) != int(uid):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    return _apply_desvio_decision(db, id_desvio=id_desvio, estado=estado, note=note, decided_by=int(uid), source="COLAB_PORTAL", force=False)
+
+
+@router.post("/desvios/{id_desvio}/request_approval")
+def request_desvio_approval(
+    id_desvio: int,
+    body: dict = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    if not _is_rrhh_admin(me):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    row = db.execute(
+        text(
+            """
+            SELECT id_desvio, fecha, id_staff, id_usuario, colaborador, tipo, expected_in, expected_out, impact_kind, impact_min, status
+            FROM rrhh_desvios
+            WHERE id_desvio=:id
+            LIMIT 1
+            """
+        ),
+        {"id": int(id_desvio)},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Desvío no existe")
+    if str(row.get("status") or "").lower() != "pendiente":
+        return {"ok": True, "skipped": True, "detail": "No pendiente"}
+
+    id_staff = int(row.get("id_staff") or 0)
+    st_row = _staff_contact(db, id_staff=id_staff)
+    col_email = (st_row.get("email") or _user_email(db, id_usuario=st_row.get("id_usuario"))) if st_row else None
+    if not col_email:
+        raise HTTPException(status_code=400, detail="Colaborador sin email")
+
+    base = (os.getenv("APP_URL") or "").rstrip("/")
+    tok_ok = public_tokens.sign({"k": "desvio", "id": int(id_desvio), "st": "aprobado"}, ttl_seconds=7 * 24 * 3600)
+    tok_no = public_tokens.sign({"k": "desvio", "id": int(id_desvio), "st": "rechazado"}, ttl_seconds=7 * 24 * 3600)
+    link_ok = f"{base}/crm/rrhh/desvios/action?t={tok_ok}" if base else f"/crm/rrhh/desvios/action?t={tok_ok}"
+    link_no = f"{base}/crm/rrhh/desvios/action?t={tok_no}" if base else f"/crm/rrhh/desvios/action?t={tok_no}"
+    portal = f"{base}/crm/web/views/rrhh_portal.html" if base else "/crm/web/views/rrhh_portal.html"
+
+    fecha = str(row.get("fecha") or "")[:10]
+    tipo = str(row.get("tipo") or "")
+    impact_kind = str(row.get("impact_kind") or "")
+    impact_min = row.get("impact_min")
+    exp = f"{row.get('expected_in') or '—'} → {row.get('expected_out') or '—'}"
+    body_txt = (
+        f"Hola {row.get('colaborador') or 'colaborador'},\n\n"
+        f"Detectamos un desvío en tu marcación:\n"
+        f"- Fecha: {fecha}\n"
+        f"- Tipo: {tipo}\n"
+        f"- Esperado: {exp}\n"
+        f"- Impacto: {impact_kind} {impact_min if impact_min is not None else ''}\n\n"
+        f"Por favor confirma si corresponde APROBAR o RECHAZAR:\n"
+        f"- Aprobar: {link_ok}\n"
+        f"- Rechazar: {link_no}\n\n"
+        f"Portal (también puedes responder ahí): {portal}\n"
+    )
+    _notify_email([col_email], f"RRHH · Revisión de desvío · {fecha} · {tipo}", body_txt)
+    return {"ok": True, "sent": True, "to": col_email}
+
+
+@router.get("/desvios/action", response_class=HTMLResponse)
+def desvio_action(
+    t: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    _ensure_tables(db)
+    ok, payload, err = public_tokens.verify(t)
+    if not ok or not payload:
+        return HTMLResponse(f"<h3>Link inválido</h3><p>{err}</p>", status_code=400)
+    if str(payload.get("k") or "") != "desvio":
+        return HTMLResponse("<h3>Link inválido</h3>", status_code=400)
+    try:
+        did = int(payload.get("id") or 0)
+    except Exception:
+        did = 0
+    st = str(payload.get("st") or "").strip().lower()
+    if not did or st not in ("aprobado", "rechazado"):
+        return HTMLResponse("<h3>Link inválido</h3>", status_code=400)
+    try:
+        res = _apply_desvio_decision(db, id_desvio=did, estado=st, note="(confirmado por email)", decided_by=None, source="COLAB_EMAIL", force=False)
+        if res.get("already"):
+            return HTMLResponse("<h3>Listo</h3><p>Este desvío ya estaba decidido.</p>", status_code=200)
+        return HTMLResponse("<h3>Listo</h3><p>Tu respuesta fue registrada.</p>", status_code=200)
+    except Exception as e:
+        return HTMLResponse(f"<h3>Error</h3><p>{str(e)}</p>", status_code=400)
 
     # Seed AFP commissions if empty
     try:
@@ -2322,8 +2554,19 @@ def marcaciones_list(
     rows = db.execute(
         text(
             f"""
-            SELECT m.id_marcacion, m.created_at, m.id_usuario, m.rut, m.tipo, m.method, m.ok, m.error, m.distance_m, m.within_radius, m.used_fallback
+            SELECT m.id_marcacion, m.created_at,
+                   m.id_usuario,
+                   COALESCE(NULLIF(btrim(s.colaborador),''), NULLIF(btrim(u.nombre),''), u.username, '') AS colaborador,
+                   m.rut, m.tipo, m.method, m.ok, m.error, m.distance_m, m.within_radius, m.used_fallback
             FROM public.sgjo_marcaciones m
+            LEFT JOIN public.usuarios u ON u.id_usuario = m.id_usuario
+            LEFT JOIN LATERAL (
+              SELECT colaborador
+              FROM public.rrhh_staff
+              WHERE id_usuario = m.id_usuario AND is_active IS TRUE
+              ORDER BY id_staff DESC
+              LIMIT 1
+            ) s ON TRUE
             {w}
             ORDER BY m.created_at DESC
             LIMIT :lim

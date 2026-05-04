@@ -59,7 +59,7 @@
       <div class="row">
         <input class="inp" id="fd" type="date" />
         <input class="inp" id="td" type="date" />
-        <input class="inp" id="uid" placeholder="ID usuario (opcional)" style="min-width:200px" />
+        <input class="inp" id="uid" placeholder="ID usuario (opcional)" style="min-width:160px" />
         <input class="inp" id="rut" placeholder="RUT (opcional)" style="min-width:200px" />
         <select id="tipo" class="inp" style="min-width:150px">
           <option value="">Tipo</option>
@@ -72,6 +72,7 @@
           <option value="0">Con error</option>
         </select>
         <button class="btn primary" id="btnLoad">Buscar</button>
+        <button class="btn" id="btnDesvios">Ver desvíos</button>
       </div>
     </div>
 
@@ -81,7 +82,8 @@
           <thead>
             <tr>
               <th>Fecha</th>
-              <th>ID usuario</th>
+              <th>Colaborador</th>
+              <th>ID</th>
               <th>RUT</th>
               <th>Tipo</th>
               <th>Método</th>
@@ -126,6 +128,70 @@
       }catch(_){ return String(v||""); }
     }
 
+    function dateOnly(v){
+      try{
+        if(!v) return "";
+        const s = String(v);
+        // ISO
+        if (s.length >= 10 && s[4] === "-" && s[7] === "-") return s.slice(0,10);
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) return "";
+        const y = d.getFullYear();
+        const m = String(d.getMonth()+1).padStart(2,"0");
+        const dd = String(d.getDate()).padStart(2,"0");
+        return `${y}-${m}-${dd}`;
+      }catch(_){ return ""; }
+    }
+
+    function daysBetween(a,b){
+      try{
+        const da = new Date(a+"T00:00:00");
+        const db = new Date(b+"T00:00:00");
+        const diff = Math.floor((db-da)/(24*3600*1000));
+        return diff;
+      }catch(_){ return 0; }
+    }
+
+    function addDays(d, n){
+      try{
+        const dt = new Date(d+"T00:00:00");
+        dt.setDate(dt.getDate() + Number(n||0));
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth()+1).padStart(2,"0");
+        const dd = String(dt.getDate()).padStart(2,"0");
+        return `${y}-${m}-${dd}`;
+      }catch(_){ return d; }
+    }
+
+    async function loadDesviosMap(fd, td){
+      // Mapa: date|id_usuario => true (pendiente)
+      const map = new Map();
+      const a = String(fd||"").slice(0,10);
+      const b = String(td||"").slice(0,10) || a;
+      if (!a) return map;
+      const span = Math.abs(daysBetween(a,b));
+      if (span > 14){
+        // Evita saturar Passenger: pedimos máximo 15 días.
+        return map;
+      }
+      const n = span + 1;
+      for (let i=0;i<n;i++){
+        const day = addDays(a, i);
+        try{
+          const r = await fetch(apiURL(`/rrhh/desvios?date=${encodeURIComponent(day)}&estado=pendiente`), { headers: headers() });
+          const j = await r.json().catch(()=>({}));
+          if (!r.ok || !j.ok) continue;
+          const items = Array.isArray(j.items) ? j.items : [];
+          for (const it of items){
+            const uid = String(it.id_usuario||"").trim();
+            if (!uid) continue;
+            map.set(`${day}|${uid}`, it);
+          }
+        }catch(_){}
+      }
+      return map;
+    }
+
     async function load(){
       const q = new URLSearchParams();
       if (qs("#fd").value) q.set("from_date", qs("#fd").value);
@@ -142,12 +208,25 @@
         return;
       }
       const items = data.items || [];
+      const fd = qs("#fd").value || "";
+      const td = qs("#td").value || "";
+      const desvMap = await loadDesviosMap(fd, td);
       qs("#rows").innerHTML = items.map(m=>{
         const ok = !!m.ok;
         const dist = (m.distance_m == null) ? "—" : (Number(m.distance_m||0).toFixed(0) + "m");
+        const day = dateOnly(m.created_at);
+        const uid = String(m.id_usuario||"").trim();
+        const desv = (day && uid) ? desvMap.get(`${day}|${uid}`) : null;
+        const hasDesv = !!desv;
         return `
-          <tr>
+          <tr ${hasDesv ? `style="background:rgba(239,68,68,.08);border-left:3px solid rgba(239,68,68,.55);cursor:pointer" data-desv="1" data-date="${esc(day)}" data-uid="${esc(uid)}"` : ""}>
             <td>${esc(fmtDT(m.created_at))}</td>
+            <td>
+              <div style="display:flex;gap:8px;align-items:center">
+                <b>${esc(m.colaborador || m.username || m.nombre || "") || "—"}</b>
+                ${hasDesv ? `<span class="bad" style="font-size:11px;border:1px solid rgba(239,68,68,.35);padding:2px 8px;border-radius:999px;background:rgba(239,68,68,.10)">DESVÍO</span>` : ``}
+              </div>
+            </td>
             <td>${esc(m.id_usuario)}</td>
             <td>${esc(m.rut || "")}</td>
             <td><strong>${esc(String(m.tipo||"").toUpperCase())}</strong></td>
@@ -162,6 +241,16 @@
     }
 
     qs("#btnLoad").addEventListener("click", load);
+    qs("#btnDesvios").addEventListener("click", ()=>{
+      // Abre RRHH Desvíos con fecha preseleccionada (misma que filtro desde).
+      const d = (qs("#fd").value || "").trim();
+      const url = `/web/views/rrhh_desvios.html${d ? ("?date=" + encodeURIComponent(d)) : ""}`;
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"rrhh_desvios", url }, "*");
+        return;
+      }catch(_){}
+      location.href = apiURL(url);
+    });
     // default: hoy
     const d = new Date();
     const y = d.getFullYear();
@@ -170,6 +259,20 @@
     qs("#fd").value = `${y}-${m}-${dd}`;
     qs("#td").value = `${y}-${m}-${dd}`;
     load();
+
+    // Click en fila con desvío: abre panel de desvíos en la misma fecha.
+    document.addEventListener("click", (ev)=>{
+      const tr = ev.target.closest("tr[data-desv='1']");
+      if (!tr) return;
+      const day = String(tr.getAttribute("data-date")||"").slice(0,10);
+      const uid = String(tr.getAttribute("data-uid")||"").trim();
+      const url = `/web/views/rrhh_desvios.html?date=${encodeURIComponent(day||"")}${uid ? ("&uid=" + encodeURIComponent(uid)) : ""}`;
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"rrhh_desvios", url }, "*");
+        return;
+      }catch(_){}
+      location.href = apiURL(url);
+    });
   </script>
 </body>
 </html>

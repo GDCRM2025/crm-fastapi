@@ -78,6 +78,13 @@
         <button class="btn" id="btnLogin" type="button">Iniciar sesión</button>
       </div>
       <div class="row" style="margin-top:8px">
+        <span class="pill" id="pillTipo">Tipo sugerido: —</span>
+        <button class="btn" id="btnToggleTipo" type="button" style="min-width:220px;flex:1">Cambiar a salida</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select class="sel" id="selPunto" title="Punto de marcación" style="display:none">
+          <option value="">Selecciona punto…</option>
+        </select>
         <select class="sel" id="selMethod" title="Método de marcación">
           <option value="QR">QR</option>
           <option value="GEO">GPS</option>
@@ -92,275 +99,401 @@
   </div>
 
   <script>
-    const API_BASE = (()=> {
-      try{
-        const h = String(location.hostname||"").toLowerCase();
-        const isLocal = (h==="localhost" || h==="127.0.0.1");
+    // ES5-compatible script (iOS/Safari old): no async/await, no arrows, no template literals.
+    var API_BASE = (function () {
+      try {
+        var h = String(location.hostname || "").toLowerCase();
+        var isLocal = h === "localhost" || h === "127.0.0.1";
         if (isLocal) return "";
-        const p = String(location.pathname||"");
-        return (p.startsWith("/crm/") || p === "/crm") ? "/crm" : "";
-      }catch(_){ return ""; }
+        var p = String(location.pathname || "");
+        return p.indexOf("/crm/") === 0 || p === "/crm" ? "/crm" : "";
+      } catch (e) {
+        return "";
+      }
     })();
-    const qs = (s, el=document)=> el.querySelector(s);
-    // Mostrar errores JS en pantalla (Safari/iOS a veces “silencia” y parece que botones no funcionan).
-    try{
-      window.addEventListener("error", (ev)=>{
-        try{
-          const msg = (ev && ev.message) ? ev.message : "Error";
-          const file = (ev && ev.filename) ? ("\n" + ev.filename + ":" + (ev.lineno || "")) : "";
-          log("Error JS: " + msg + file);
-        }catch(_){}
-      });
-      window.addEventListener("unhandledrejection", (ev)=>{
-        try{
-          const r = ev ? ev.reason : null;
-          const msg = (r && r.message) ? r.message : (r != null ? String(r) : "Error");
-          log("Promise error: " + msg);
-        }catch(_){}
-      });
-    }catch(_){}
 
-    function getCookie(name){
-      try{
-        const m = String(document.cookie||"").match(new RegExp("(^|;\\s*)"+name.replace(/[-[\\]{}()*+?.,\\\\^$|#\\s]/g,"\\\\$&")+"=([^;]*)"));
-        return m ? decodeURIComponent(m[2] || "") : "";
-      }catch(_){ return ""; }
+    function qs(sel, root) {
+      return (root || document).querySelector(sel);
     }
 
-    function getToken(){
-      // iOS/Safari puede bloquear localStorage (modo privado / políticas).
-      // En esos casos usamos cookie `gd_token` como fallback.
-      let t = "";
-      try{
+    function log(s) {
+      var el = qs("#log");
+      if (!el) return;
+      el.textContent = String(s || "").trim() || "—";
+    }
+
+    // Mostrar errores JS en pantalla (Safari/iOS a veces “silencia” y parece que botones no funcionan).
+    try {
+      window.addEventListener("error", function (ev) {
+        try {
+          var msg = ev && ev.message ? ev.message : "Error";
+          var file = ev && ev.filename ? "\n" + ev.filename + ":" + (ev.lineno || "") : "";
+          log("Error JS: " + msg + file);
+        } catch (e) {}
+      });
+      window.addEventListener("unhandledrejection", function (ev) {
+        try {
+          var r = ev ? ev.reason : null;
+          var msg2 = r && r.message ? r.message : r != null ? String(r) : "Error";
+          log("Promise error: " + msg2);
+        } catch (e2) {}
+      });
+    } catch (e3) {}
+
+    function getCookie(name) {
+      try {
+        var esc = name.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+        var m = String(document.cookie || "").match(new RegExp("(^|;\\s*)" + esc + "=([^;]*)"));
+        return m ? decodeURIComponent(m[2] || "") : "";
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function getToken() {
+      var t = "";
+      try {
         t =
           localStorage.getItem("token") ||
           localStorage.getItem("gd_token") ||
           sessionStorage.getItem("token") ||
           sessionStorage.getItem("gd_token") ||
           "";
-      }catch(_){
+      } catch (e) {
         t = "";
       }
       t = String(t || "").trim();
       if (t) return t;
-      try{
-        const ck = String(getCookie("gd_token") || "").trim();
+      try {
+        var ck = String(getCookie("gd_token") || "").trim();
         if (ck) return ck;
-      }catch(_){}
+      } catch (e2) {}
       return "";
     }
 
-    function goLogin(punto_code){
-      try{
-        // Si falta punto_code, volvemos a esta misma URL completa.
-        const next = punto_code
-          ? `${API_BASE}/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto_code)}`
-          : (location.pathname + location.search);
-        location.href = `${API_BASE}/web/login.html?next=${encodeURIComponent(next)}`;
-      }catch(_){}
+    function goLogin(punto_code) {
+      try {
+        var next = punto_code
+          ? API_BASE + "/web/views/rrhh_sgjo_marcacion.html?p=" + encodeURIComponent(punto_code)
+          : location.pathname + location.search;
+        location.href = API_BASE + "/web/login.html?next=" + encodeURIComponent(next);
+      } catch (e) {}
     }
 
-    function ensureToken(punto_code){
-      const t = getToken();
+    function ensureToken(punto_code) {
+      var t = getToken();
       if (t) return true;
-      // Intentar tomar token desde cookie (login.html siempre la setea como gd_token).
-      const ck = getCookie("gd_token");
-      if (ck){
-        // localStorage puede fallar en iOS; no dependemos de esto.
-        try{
+      var ck = getCookie("gd_token");
+      if (ck) {
+        try {
           localStorage.setItem("token", ck);
           localStorage.setItem("gd_token", ck);
-        }catch(_){}
+        } catch (e) {}
         return true;
       }
       log("Debes iniciar sesión para marcar/enrolar. Toca “Iniciar sesión”.");
       return false;
     }
-    function authHeaders(extra={}){
-      const t = getToken();
-      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+
+    function apiURL(path) {
+      if (String(path || "").indexOf("http") === 0) return path;
+      var p = String(path || "");
+      return API_BASE + (p.charAt(0) === "/" ? "" : "/") + p;
     }
-    function apiURL(path){
-      if (String(path||"").startsWith("http")) return path;
-      const p = String(path||"");
-      return `${API_BASE}${p.startsWith("/") ? "" : "/"}${p}`;
+
+    function apiJSON(path, opt) {
+      opt = opt || {};
+      var headers = opt.headers || {};
+      var t = getToken();
+      if (t) headers.Authorization = "Bearer " + t;
+      opt.headers = headers;
+      return fetch(apiURL(path), opt)
+        .then(function (r) {
+          return r.text().then(function (txt) {
+            var j = null;
+            try {
+              j = txt ? JSON.parse(txt) : null;
+            } catch (e) {
+              j = null;
+            }
+            if (r.status === 401 || r.status === 403) {
+              try { clearToken(); } catch (e0) {}
+              // Importante: NO sacar del flujo con modal. Redirigimos a login
+              // preservando el punto del QR para que al volver siga en la pantalla.
+              try { goLogin(getPuntoCode() || ""); } catch (e1) {}
+              throw new Error("Token inválido. Inicia sesión nuevamente.");
+            }
+            if (!r.ok) {
+              var msg = j && (j.detail || j.error || j.message) ? j.detail || j.error || j.message : txt || "HTTP " + r.status;
+              throw new Error(msg);
+            }
+            return j;
+          });
+        });
     }
-    async function apiJSON(path, opt={}){
-      const r = await fetch(apiURL(path), { ...opt, headers: authHeaders(opt.headers||{}) });
-      const txt = await r.text();
-      let j = null; try{ j = txt ? JSON.parse(txt) : null; }catch(_){}
-      if (!r.ok){
-        const msg = (j && (j.detail||j.error||j.message)) ? (j.detail||j.error||j.message) : (txt || ("HTTP "+r.status));
-        throw new Error(msg);
+
+    function clearToken() {
+      try { localStorage.removeItem("token"); } catch (e) {}
+      try { localStorage.removeItem("gd_token"); } catch (e2) {}
+      try { sessionStorage.removeItem("token"); } catch (e3) {}
+      try { sessionStorage.removeItem("gd_token"); } catch (e4) {}
+      // Best-effort: si no es HttpOnly, lo borramos.
+      try { document.cookie = "gd_token=; Max-Age=0; path=/"; } catch (e5) {}
+      try { document.cookie = "gd_token=; Max-Age=0; path=/crm"; } catch (e6) {}
+    }
+
+    function getDeviceId() {
+      var id = "";
+      try {
+        id = localStorage.getItem("sgjo_device_id") || "";
+      } catch (e) {
+        id = "";
       }
-      return j;
-    }
-
-    function log(s){
-      qs("#log").textContent = String(s||"").trim() || "—";
-    }
-
-    function getDeviceId(){
-      let id = localStorage.getItem("sgjo_device_id") || "";
-      if (!id){
-        // Evitar syntax/features que rompen en Safari viejo (optional chaining).
-        try{
-          if (window.crypto && typeof window.crypto.randomUUID === "function"){
-            id = window.crypto.randomUUID();
-          } else {
-            id = "dev-" + Math.random().toString(16).slice(2) + Date.now();
-          }
-        }catch(_){
+      if (!id) {
+        try {
+          if (window.crypto && typeof window.crypto.randomUUID === "function") id = window.crypto.randomUUID();
+          else id = "dev-" + Math.random().toString(16).slice(2) + Date.now();
+        } catch (e2) {
           id = "dev-" + Math.random().toString(16).slice(2) + Date.now();
         }
-        localStorage.setItem("sgjo_device_id", id);
+        try {
+          localStorage.setItem("sgjo_device_id", id);
+        } catch (e3) {}
       }
       return id;
     }
 
-    function getPuntoCode(){
-      const u = new URL(location.href);
-      const p = (u.searchParams.get("p") || u.searchParams.get("punto") || "").trim().toUpperCase();
-      return p;
+    function getPuntoCodeFromQuery() {
+      try {
+        var href = String(location.href || "");
+        var i = href.indexOf("?");
+        if (i < 0) return "";
+        var q = href.slice(i + 1);
+        var parts = q.split("&");
+        for (var k = 0; k < parts.length; k++) {
+          var kv = parts[k].split("=");
+          var key = decodeURIComponent(kv[0] || "");
+          if (key === "p" || key === "punto") {
+            return decodeURIComponent(kv[1] || "").trim().toUpperCase();
+          }
+        }
+      } catch (e) {}
+      return "";
     }
 
-    async function getLocation(){
-      if (!navigator.geolocation) throw new Error("Geolocalización no disponible.");
-      return await new Promise((resolve, reject)=>{
+    function getPuntoCode() {
+      var q = "";
+      try { q = getPuntoCodeFromQuery(); } catch (e) { q = ""; }
+      if (q) return q;
+      try {
+        var sel = qs("#selPunto");
+        if (sel && sel.value) return String(sel.value || "").trim().toUpperCase();
+      } catch (e2) {}
+      return "";
+    }
+
+    function getLocation() {
+      return new Promise(function (resolve, reject) {
+        if (!navigator.geolocation) return reject(new Error("Geolocalización no disponible."));
         navigator.geolocation.getCurrentPosition(
-          (pos)=>{
-            resolve({
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              accuracy_m: pos.coords.accuracy
-            });
+          function (pos) {
+            resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy_m: pos.coords.accuracy });
           },
-          (err)=> {
-            try{
-              reject(new Error((err && err.message) ? err.message : "No pude obtener ubicación."));
-            }catch(_){
-              reject(new Error("No pude obtener ubicación."));
-            }
+          function (err) {
+            reject(new Error((err && err.message) ? err.message : "No pude obtener ubicación."));
           },
           { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
       });
     }
 
-    async function init(){
-      const punto_code = getPuntoCode();
-      if (!punto_code){
-        log("Falta parámetro ?p=… (debes entrar desde el QR). Puedes iniciar sesión igual y luego reintentar desde el QR.");
-        return;
+    function init() {
+      var punto_code = getPuntoCodeFromQuery();
+      if (!ensureToken(punto_code || "")) {
+        // Sin token: permitimos igual cargar UI básica y el botón "Iniciar sesión".
       }
-      if (!ensureToken(punto_code)) return;
-      try{
-        const cfg = await apiJSON("/rrhh/sgjo/config");
-        const pt = (cfg.puntos||[]).find(x=>String(x.code||"").toUpperCase()===punto_code);
-        if (!pt){
-          log("Punto no existe: " + punto_code);
-          return;
-        }
-        const sede = (cfg.sedes||[]).find(s=>String(s.id_sede)==String(pt.id_sede));
-        qs("#pSede").textContent = "Sede: " + ((sede && sede.nombre) ? sede.nombre : "—");
-        qs("#pPunto").textContent = "Punto: " + ((pt && pt.nombre) ? pt.nombre : punto_code);
-        const me = await apiJSON("/rrhh/sgjo/me");
-        qs("#pModo").textContent = "Modo: " + String((me && me.modality_today) ? me.modality_today : "—");
-        const pol = String((me && me.marcacion_method) ? me.marcacion_method : "BOTH").toUpperCase();
-        const can = (me && me.puede_marcar === false) ? "NO" : "SÍ";
-        qs("#pPolicy").textContent = `Método: ${pol} · Puede marcar: ${can}`;
-        if (!(me && me.rut)){
-          log("Tu usuario no tiene RUT en el sistema. Enrola el dispositivo y pide a RRHH/Admin que registre tu RUT para poder marcar.");
-        }
-        // Ajustar selector según política RRHH (si existe)
-        try{
-          const sel = qs("#selMethod");
-          if (sel){
-            if (pol === "QR"){
-              sel.value = "QR";
-              sel.disabled = true;
-            } else if (pol === "GPS" || pol === "GEO"){
-              sel.value = "GEO";
-              sel.disabled = true;
-            } else {
-              sel.disabled = false;
+      apiJSON("/rrhh/sgjo/config")
+        .then(function (cfg) {
+          var puntos = (cfg && cfg.puntos) ? cfg.puntos : [];
+          var sedes = (cfg && cfg.sedes) ? cfg.sedes : [];
+          // Si no viene punto por QR, permitimos seleccionar.
+          var selP = qs("#selPunto");
+          if (selP) {
+            if (!punto_code) selP.style.display = "";
+            // Poblar options (siempre).
+            try { selP.innerHTML = '<option value=\"\">Selecciona punto…</option>'; } catch (e0) {}
+            for (var i = 0; i < puntos.length; i++) {
+              var c = String(puntos[i].code || "").toUpperCase();
+              var nm = String(puntos[i].nombre || c);
+              var opt = document.createElement("option");
+              opt.value = c;
+              opt.textContent = nm + " (" + c + ")";
+              selP.appendChild(opt);
             }
+            if (punto_code) selP.value = punto_code;
           }
-        }catch(_){}
-        qs("#btnMark").disabled = (me && me.puede_marcar === false);
-        if (me && me.puede_marcar === false){
-          log("No tienes permiso RRHH para marcar (puede_marcar=false). Contacta a RRHH.");
-        } else {
-          log("Listo. Enrola el dispositivo la primera vez, luego marca (QR o GPS según tu permiso RRHH).");
-        }
-      }catch(e){
-        log("Error: " + ((e && e.message) ? e.message : e));
-      }
+
+          function paintPunto(code) {
+            code = String(code || "").toUpperCase();
+            var pt = null;
+            for (var k = 0; k < puntos.length; k++) {
+              var c2 = String(puntos[k].code || "").toUpperCase();
+              if (c2 === code) { pt = puntos[k]; break; }
+            }
+            var sede = null;
+            if (pt) {
+              for (var j = 0; j < sedes.length; j++) {
+                if (String(sedes[j].id_sede) == String(pt.id_sede)) { sede = sedes[j]; break; }
+              }
+            }
+            qs("#pSede").textContent = "Sede: " + ((sede && sede.nombre) ? sede.nombre : "—");
+            qs("#pPunto").textContent = "Punto: " + ((pt && pt.nombre) ? pt.nombre : (code || "—"));
+          }
+
+          paintPunto(punto_code || "");
+          if (selP) {
+            selP.addEventListener("change", function () {
+              try { paintPunto(getPuntoCode()); } catch (e1) {}
+            });
+          }
+
+          // Si el usuario entra sin QR, guiamos pero no bloqueamos.
+          if (!punto_code) {
+            log("Selecciona un punto para marcar. Si vienes desde el QR, el punto se preselecciona.");
+          }
+          return apiJSON("/rrhh/sgjo/me");
+        })
+        .then(function (me) {
+          qs("#pModo").textContent = "Modo: " + String((me && me.modality_today) ? me.modality_today : "—");
+          var pol = String((me && me.marcacion_method) ? me.marcacion_method : "BOTH").toUpperCase();
+          var can = (me && me.puede_marcar === false) ? "NO" : "SÍ";
+          qs("#pPolicy").textContent = "Método: " + pol + " · Puede marcar: " + can;
+          if (!(me && me.rut)) {
+            log("Tu usuario no tiene RUT en el sistema. Pide a RRHH/Admin que registre tu RUT para poder marcar.");
+            try { qs("#btnMark").disabled = true; } catch (e0) {}
+          }
+          var sel = qs("#selMethod");
+          if (sel) {
+            if (pol === "QR") { sel.value = "QR"; sel.disabled = true; }
+            else if (pol === "GPS" || pol === "GEO") { sel.value = "GEO"; sel.disabled = true; }
+            else sel.disabled = false;
+          }
+          // Si no puede marcar por policy RRHH, deshabilitar.
+          if (me && me.puede_marcar === false) qs("#btnMark").disabled = true;
+          if (me && me.puede_marcar === false) log("No tienes permiso RRHH para marcar (puede_marcar=false). Contacta a RRHH.");
+          else log("Listo. Enrola el dispositivo la primera vez, luego marca (Entrada/Salida + QR o GPS según tu permiso RRHH).");
+          // Sugerir tipo IN/OUT según estado del día.
+          return apiJSON("/rrhh/sgjo/today");
+        })
+        .then(function (st) {
+          try {
+            window.__TIPO = "IN";
+            // Si ya tiene IN hoy => sugerir OUT; si no => IN.
+            if (st && st.ok && st.has_in && !st.has_out) window.__TIPO = "OUT";
+            renderTipo();
+          } catch (e) {}
+        })
+        .catch(function (e) {
+          log("Error: " + (e && e.message ? e.message : e));
+        });
     }
 
-    qs("#btnLogin").addEventListener("click", ()=>{
-      const punto_code = getPuntoCode();
+    function renderTipo(){
+      try{
+        var t = String(window.__TIPO || "IN").toUpperCase();
+        window.__TIPO = (t === "OUT") ? "OUT" : "IN";
+        var pill = qs("#pillTipo");
+        var btn = qs("#btnToggleTipo");
+        if (pill) pill.textContent = "Tipo sugerido: " + (window.__TIPO === "OUT" ? "Salida (OUT)" : "Entrada (IN)");
+        if (btn) btn.textContent = (window.__TIPO === "OUT" ? "Cambiar a entrada" : "Cambiar a salida");
+      }catch(e){}
+    }
+
+    qs("#btnToggleTipo").addEventListener("click", function(){
+      try{
+        window.__TIPO = (String(window.__TIPO || "IN").toUpperCase() === "OUT") ? "IN" : "OUT";
+        renderTipo();
+      }catch(e){}
+    });
+
+    qs("#btnLogin").addEventListener("click", function () {
+      var punto_code = getPuntoCode();
       goLogin(punto_code || "");
     });
 
-    qs("#btnEnroll").addEventListener("click", async ()=>{
-      try{
-        const punto_code = getPuntoCode();
+    qs("#btnEnroll").addEventListener("click", function () {
+      try {
+        var punto_code = getPuntoCode();
         if (!ensureToken(punto_code)) return;
-        const device_id = getDeviceId();
-        // Si falta RUT/teléfono, lo pedimos como "hint" para que RRHH/Admin lo vea al aprobar.
-        let rut_hint = "";
-        let tel_hint = "";
-        try{
-          const me = await apiJSON("/rrhh/sgjo/me");
-          rut_hint = String((me && me.rut) ? me.rut : "").trim();
-          tel_hint = String((me && me.telefono_rrhh) ? me.telefono_rrhh : "").trim();
-        }catch(_){}
-        if (!rut_hint){
-          rut_hint = String(prompt("Ingresa tu RUT (sin puntos, con guion si corresponde):") || "").trim();
-        }
-        if (!tel_hint){
-          tel_hint = String(prompt("Ingresa tu teléfono (ej: +56912345678):") || "").trim();
-        }
-        const out = await apiJSON("/rrhh/sgjo/device/enroll", {
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ device_id, rut: rut_hint, telefono: tel_hint }),
-        });
-        if (out && out.ok){
-          log("Dispositivo enrolado OK.");
-        } else if (out && out.pending_approval){
-          const rid = out.id_request ? `\nID solicitud: ${out.id_request}` : "";
-          log("Solicitud enviada. Un admin debe aprobar este dispositivo (RRHH)." + rid + "\nLuego vuelve a intentar marcar.");
-        } else {
-          log("Solicitud enviada. Espera aprobación y recarga.");
-        }
-      }catch(e){
-        log("No pude enrolar: " + ((e && e.message) ? e.message : e));
+        var device_id = getDeviceId();
+        var rut_hint = "";
+        var tel_hint = "";
+        apiJSON("/rrhh/sgjo/me")
+          .then(function (me) {
+            rut_hint = String((me && me.rut) ? me.rut : "").trim();
+            tel_hint = String((me && me.telefono_rrhh) ? me.telefono_rrhh : "").trim();
+          })
+          .catch(function () {})
+          .then(function () {
+            if (!rut_hint) rut_hint = String(prompt("Ingresa tu RUT (sin puntos, con guion si corresponde):") || "").trim();
+            if (!tel_hint) tel_hint = String(prompt("Ingresa tu teléfono (ej: +56912345678):") || "").trim();
+            return apiJSON("/rrhh/sgjo/device/enroll", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ device_id: device_id, rut: rut_hint, telefono: tel_hint })
+            });
+          })
+          .then(function (out) {
+            if (out && out.ok) log("Dispositivo enrolado OK.");
+            else if (out && out.pending_approval) {
+              var rid = out.id_request ? "\nID solicitud: " + out.id_request : "";
+              log("Solicitud enviada. Un admin debe aprobar este dispositivo (RRHH)." + rid + "\nLuego vuelve a intentar marcar.");
+            } else log("Solicitud enviada. Espera aprobación y recarga.");
+          })
+          .catch(function (e) {
+            log("No pude enrolar: " + (e && e.message ? e.message : e));
+          });
+      } catch (e2) {
+        log("No pude enrolar: " + (e2 && e2.message ? e2.message : e2));
       }
     });
 
-    qs("#btnMark").addEventListener("click", async ()=>{
-      const punto_code = getPuntoCode();
-      try{
-        if (!ensureToken(punto_code)) return;
-        qs("#btnMark").disabled = true;
-        const device_id = getDeviceId();
-        const loc = await getLocation();
-        const sel = qs("#selMethod");
-        const method = String((sel && sel.value) ? sel.value : "QR").toUpperCase();
-        const out = await apiJSON("/rrhh/sgjo/marcar", {
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ punto_code, device_id, method, ...loc }),
-        });
-        const dist = (out && out.distance_m != null) ? (Number(out.distance_m).toFixed(1) + "m") : "—";
-        log(`OK · ${(out && out.tipo) ? out.tipo : "—"} · ${(out && out.sede) ? out.sede : "—"}\nDistancia: ${dist}\nFallback: ${(out && out.used_fallback) ? "sí" : "no"}\nModo: ${(out && out.modality) ? out.modality : "—"}`);
-      }catch(e){
-        log("Error: " + ((e && e.message) ? e.message : e));
-      }finally{
-        qs("#btnMark").disabled = false;
+    qs("#btnMark").addEventListener("click", function () {
+      var punto_code = getPuntoCode();
+      if (!punto_code) {
+        log("Debes seleccionar un punto antes de marcar (o entrar desde el QR con ?p=...).");
+        return;
       }
+      if (!ensureToken(punto_code)) return;
+      var btn = qs("#btnMark");
+      btn.disabled = true;
+      var device_id = getDeviceId();
+      getLocation()
+        .then(function (loc) {
+          var sel = qs("#selMethod");
+          var method = String((sel && sel.value) ? sel.value : "QR").toUpperCase();
+          var tipo = String(window.__TIPO || "IN").toUpperCase();
+          var payload = { punto_code: punto_code, device_id: device_id, method: method, lat: loc.lat, lng: loc.lng, accuracy_m: loc.accuracy_m };
+          payload.tipo = (tipo === "OUT") ? "OUT" : "IN";
+          return apiJSON("/rrhh/sgjo/marcar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        })
+        .then(function (out) {
+          var dist = (out && out.distance_m != null) ? (Number(out.distance_m).toFixed(1) + "m") : "—";
+          log("OK · " + ((out && out.tipo) ? out.tipo : "—") + " · " + ((out && out.sede) ? out.sede : "—") +
+              "\nDistancia: " + dist +
+              "\nFallback: " + ((out && out.used_fallback) ? "sí" : "no") +
+              "\nModo: " + ((out && out.modality) ? out.modality : "—"));
+        })
+        .catch(function (e) {
+          log("Error: " + (e && e.message ? e.message : e));
+        })
+        .then(function () {
+          btn.disabled = false;
+        });
     });
 
     init();

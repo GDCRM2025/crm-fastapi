@@ -1225,8 +1225,8 @@ def _calcular_montaje_single(items):
 
     lines_prod = ["PRODUCTOS"]
     for it in items:
-        qty = float(it.get("cantidad") or 0)
-        prod = _as_text(it.get("producto") or "").strip()
+        qty = float(it.get("cantidad") or it.get("c") or 0)
+        prod = _as_text(it.get("producto") or it.get("p") or it.get("nombre") or "").strip()
         if not prod or qty <= 0:
             continue
         qty_str = str(int(qty)) if abs(qty - int(qty)) < 1e-9 else str(qty)
@@ -1368,11 +1368,11 @@ def _calcular_montaje(items):
         day_items = by_day.get(d) or []
         prod_sum = {}
         for it in day_items:
-            prod = _as_text(it.get("producto") or "").strip()
+            prod = _as_text(it.get("producto") or it.get("p") or it.get("nombre") or "").strip()
             if not prod:
                 continue
             try:
-                qty = float(it.get("cantidad") or 0)
+                qty = float(it.get("cantidad") or it.get("c") or 0)
             except Exception:
                 qty = 0
             if qty <= 0:
@@ -1439,7 +1439,7 @@ def _is_missing_dir(value):
     v = _as_text(value).strip()
     if not v:
         return True
-    return v.upper() in ("POR CONFIRMAR", "DIR TBD", "DIRECCION TBD")
+    return v.upper() in ("POR CONFIRMAR", "DIR TBD", "DIRECCION TBD", "DIRECCIÓN TBD")
 
 
 def _title_suffix(missing_time, missing_dir):
@@ -1515,10 +1515,15 @@ def _build_event(
     cliente = _as_text(lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)").strip() or "(Sin nombre)"
     marca_txt = _as_text(marca).strip() if marca else "Sin Marca"
 
+    # Título: Cliente + Marca + sufijo solo si faltan datos (regla de negocio).
+    # - Si falta dirección: DIR TBD
+    # - Si falta horario: HR TBD
+    # - Si faltan ambas: HR Y DIR TBD
     suffix = _title_suffix(missing_time, missing_dir)
     title = "%s - %s" % (cliente, marca_txt)
     if suffix:
         title = "%s - %s" % (title, suffix)
+    title = title.upper()
 
     # Regla: LOCATION debe ser SOLO la comuna (la dirección completa va en la descripción).
     # Si no hay comuna, dejamos marcador para que sea visible en calendario.
@@ -1531,11 +1536,23 @@ def _build_event(
     if not prod_lines:
         prod_lines = ["• —"]
 
-    m_lines_raw = [ln.strip() for ln in montaje_text.replace("Montaje sugerido", "").split("\n") if ln.strip()]
-    m_lines = [("• " + ln) if not ln.startswith("•") else ln for ln in m_lines_raw] or ["• —"]
+    m_lines_raw = [ln.strip() for ln in (montaje_text or "").replace("Montaje sugerido", "").split("\n") if ln.strip()]
+    m_lines = [("• " + ln) if not ln.startswith("•") else ln for ln in m_lines_raw]
+    # Si no vino montaje (bug upstream), intentamos recalcular desde items del día.
+    if not m_lines or m_lines == ["• —"]:
+        try:
+            _, _ops2, mt2, _pt2 = _calcular_montaje(items)
+            m2_raw = [ln.strip() for ln in (mt2 or "").replace("Montaje sugerido", "").split("\n") if ln.strip()]
+            m2 = [("• " + ln) if not ln.startswith("•") else ln for ln in m2_raw]
+            if m2:
+                m_lines = m2
+        except Exception:
+            pass
+    if not m_lines:
+        m_lines = ["• —"]
 
     # Regla: la dirección completa va en la descripción (sin forzar comuna acá).
-    dir_label = "DIR TBD" if missing_dir else _as_text(direccion).strip()
+    dir_label = "POR CONFIRMAR" if missing_dir else _as_text(direccion).strip()
     phone_label = _as_text(telefono).strip() or "POR CONFIRMAR"
 
     # Formato requerido para Calendar:
@@ -2048,14 +2065,14 @@ def _build_event_from_segment(
 
     cliente = _as_text(lead.get("nombre_cliente") or lead.get("cliente") or "(Sin nombre)").strip() or "(Sin nombre)"
     marca_txt = _as_text(marca).strip() if marca else "Sin Marca"
+    # Título: solo Cliente + Marca (sin leyendas extra).
     title = ("%s - %s" % (cliente, marca_txt)).upper()
-    if hr_tbd:
-        title = f"{title} - HR TBD"
-    if label:
-        title = f"{title} - {label}".upper()
+    # label solo se permite para "MONTAJE" (evento separado).
+    if label and str(label).strip().upper() == "MONTAJE":
+        title = f"{title} - MONTAJE".upper()
 
     loc = _as_text(comuna).strip() or "COMUNA TBD"
-    dir_label = _as_text(direccion).strip() or "DIR TBD"
+    dir_label = _as_text(direccion).strip() or "POR CONFIRMAR"
     phone_label = _as_text(telefono).strip() or "POR CONFIRMAR"
 
     prod_lines = _bullets(products_text) or ["• —"]
@@ -2224,6 +2241,116 @@ def move_lead_and_maybe_agenda(
                     pass
 
         if int(id_estado) != confirmado_id:
+            # Si el lead estaba CONFIRMADO y ahora se mueve a otro estado:
+            # - Debe eliminarse del Google Calendar (comportamiento histórico)
+            # - Y se limpian campos calendar_* del lead para que no aparezca agendado.
+            try:
+                if confirmado_id and old_estado_id and int(old_estado_id) == int(confirmado_id):
+                    # 1) Eliminar eventos en Google Calendar (best-effort).
+                    try:
+                        from backend.routers.tools import _gcal_service, _gcal_default_calendar_id  # type: ignore
+                    except Exception:
+                        _gcal_service = None  # type: ignore
+                        _gcal_default_calendar_id = None  # type: ignore
+
+                    gcal_error = None
+                    deleted_any = False
+                    try:
+                        # Shared hosting safety: misma advisory lock que approve_agenda.
+                        got_lock = False
+                        try:
+                            got_lock = bool(DB.execute(text("SELECT pg_try_advisory_lock(26042401)")).scalar())
+                        except Exception:
+                            got_lock = False
+
+                        if got_lock and _gcal_service and _gcal_default_calendar_id:
+                            svc = _gcal_service(DB)
+                            if svc:
+                                cal_id = _gcal_default_calendar_id(DB, None)
+                                # event ids guardados en lead
+                                row_cal = (
+                                    DB.execute(
+                                        text(
+                                            """
+                                            SELECT calendar_event_id, calendar_event_ids_json
+                                            FROM public.leads
+                                            WHERE id_lead=:id
+                                            LIMIT 1
+                                            """
+                                        ),
+                                        {"id": int(id_lead)},
+                                    )
+                                    .mappings()
+                                    .first()
+                                    or {}
+                                )
+                                eids: list[str] = []
+                                try:
+                                    if row_cal.get("calendar_event_id"):
+                                        eids.append(str(row_cal["calendar_event_id"]).strip())
+                                except Exception:
+                                    pass
+                                try:
+                                    raw = str(row_cal.get("calendar_event_ids_json") or "").strip()
+                                    if raw:
+                                        arr = json.loads(raw)
+                                        if isinstance(arr, list):
+                                            for x in arr:
+                                                s = str(x or "").strip()
+                                                if s:
+                                                    eids.append(s)
+                                except Exception:
+                                    pass
+                                eids = [x for x in dict.fromkeys(eids).keys() if x]
+                                for eid in eids:
+                                    try:
+                                        svc.events().delete(calendarId=cal_id, eventId=eid).execute()
+                                        deleted_any = True
+                                    except Exception as e_del:
+                                        msg = str(e_del)
+                                        # 404/notFound: ya no existe, lo damos por eliminado.
+                                        low = msg.lower()
+                                        if "404" in low or "notfound" in low or "not found" in low:
+                                            deleted_any = True
+                                            continue
+                                        gcal_error = msg
+                                        # no cortamos: intentamos el resto
+                    except Exception as e:
+                        gcal_error = str(e)
+                    finally:
+                        try:
+                            DB.execute(text("SELECT pg_advisory_unlock(26042401)"))
+                        except Exception:
+                            pass
+
+                    # 2) Limpiar tracking calendar_* (siempre).
+                    cols = _cols_pg(DB, "leads")
+                    upd = {}
+                    for k, v in (
+                        ("calendar_start", None),
+                        ("calendar_end", None),
+                        ("calendar_html_link", None),
+                        ("calendar_html_links_json", None),
+                        ("calendar_event_id", None),
+                        ("calendar_event_ids_json", None),
+                        ("agenda_approved_by", None),
+                        ("agenda_approved_at", None),
+                        ("pendiente_agendar", False),
+                    ):
+                        if k in cols:
+                            upd[k] = v
+                    if upd:
+                        _update_row("leads", "id_lead", id_lead, upd)
+
+                    # Auditoría mínima si falló la eliminación.
+                    try:
+                        if gcal_error:
+                            stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                            _append_lead_notas(id_lead, f"[AGENDA {stamp}] No pude eliminar evento en Calendar: {gcal_error}")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             return {"ok": True, "ask_agendar": False}
 
         # Importante negocio: CONFIRMADO se consolida solo cuando el approve de Agenda logra
@@ -2512,6 +2639,25 @@ def move_lead_and_maybe_agenda(
             ops = int((segments[0] or {}).get("ops") or 1)
             montaje_text = str((segments[0] or {}).get("montaje_text") or "").strip()
             products_text = str((segments[0] or {}).get("products_text") or "").strip()
+            # Fallback: si el frontend envió segmentos pero no trajo montaje/productos
+            # (o vienen vacíos), recalculamos desde cotización/lead para no dejar "—".
+            if (not montaje_text) or (montaje_text.strip() in ("—", "-")) or (not products_text):
+                try:
+                    items_fb = []
+                    if id_cot and quote_source != "manual":
+                        items_fb = _cotizacion_detalle_resumen(int(id_cot))
+                    if not items_fb:
+                        items_fb = _lead_mice_items_resumen_by_day(id_lead)
+                    if items_fb:
+                        _, ops_fb, mt_fb, pt_fb = _calcular_montaje(items_fb)
+                        if mt_fb:
+                            montaje_text = mt_fb
+                        if pt_fb:
+                            products_text = pt_fb
+                        if (ops or 0) <= 0 and (ops_fb or 0) > 0:
+                            ops = int(ops_fb)
+                except Exception:
+                    pass
 
         try:
             if payload.get("override_ops") is not None:

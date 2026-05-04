@@ -136,7 +136,9 @@
 
     function isSuperRole(role){
       const r = String(role||"").toUpperCase();
-      return r.includes("SUPERADMIN") || r === "ADMIN" || r.includes("FINAN") || r === "RRHH" || r.includes("RECURSOS HUMANOS");
+      // "RRHH" a secas puede ser colaborador (solo portal). Para habilitar tabs admin,
+      // exigimos que el rol sea explícitamente admin/super/finanzas.
+      return r.includes("SUPER") || r === "ADMIN" || r.includes("ADMIN") || r.includes("FINAN") || r.includes("RRHH ADMIN") || r.includes("ADMIN RRHH");
     }
     function isManagerRole(role){
       const r = String(role||"").toUpperCase();

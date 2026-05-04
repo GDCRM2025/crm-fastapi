@@ -121,6 +121,69 @@ function clearAuth() {
   } catch (_) {
   }
 }
+
+function enterRrhhOnlyMode(reason) {
+  try {
+    document.body.classList.add("rrhh-only");
+  } catch (_) {
+  }
+  try {
+    const sidebar = qs("#sidebar");
+    if (sidebar) sidebar.style.display = "none";
+    const btnSidebar = qs("#btnSidebar");
+    if (btnSidebar) btnSidebar.style.display = "none";
+    const btnSidebarPinTop = qs("#btnSidebarPinTop");
+    if (btnSidebarPinTop) btnSidebarPinTop.style.display = "none";
+  } catch (_) {
+  }
+  try {
+    const btnNotifs = qs("#btnNotifs");
+    const btnGpt = qs("#btnGpt");
+    const btnChat = qs("#btnChatTop");
+    if (btnNotifs) btnNotifs.style.display = "none";
+    if (btnGpt) btnGpt.style.display = "none";
+    if (btnChat) btnChat.style.display = "none";
+  } catch (_) {
+  }
+  try {
+    const fr = qs("#mainFrame");
+    if (fr) {
+      const v = "20260423-rrhh2";
+      fr.src = viewURL(`/web/views/rrhh.html?v=${v}#portal`);
+    }
+  } catch (_) {
+  }
+  try {
+    if (reason) console.log("RRHH-only mode:", reason);
+  } catch (_) {
+  }
+}
+
+function leaveRrhhOnlyMode() {
+  try {
+    document.body.classList.remove("rrhh-only");
+  } catch (_) {
+  }
+  // Rehabilita UI principal (sidebar + botones) si antes se ocultó.
+  try {
+    const sidebar = qs("#sidebar");
+    if (sidebar) sidebar.style.display = "";
+    const btnSidebar = qs("#btnSidebar");
+    if (btnSidebar) btnSidebar.style.display = "";
+    const btnSidebarPinTop = qs("#btnSidebarPinTop");
+    if (btnSidebarPinTop) btnSidebarPinTop.style.display = "";
+  } catch (_) {
+  }
+  try {
+    const btnNotifs = qs("#btnNotifs");
+    const btnGpt = qs("#btnGpt");
+    const btnChat = qs("#btnChatTop");
+    if (btnNotifs) btnNotifs.style.display = "";
+    if (btnGpt) btnGpt.style.display = "";
+    if (btnChat) btnChat.style.display = "";
+  } catch (_) {
+  }
+}
 async function _serverLogout(reason = "manual") {
   try {
     const t = getToken();
@@ -1074,7 +1137,7 @@ function renderNotifications(data) {
   const badge = qs("#notifBadge");
   const menu = qs("#notifMenu");
   const btn = qs("#btnNotifs");
-  const canSeeLeadAlerts = CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 2;
+  const canSeeLeadAlerts = CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12 || CURRENT_ROLE_ID === 2;
   let items = Array.isArray(data == null ? void 0 : data.items) ? data.items.slice() : [];
   if (!canSeeLeadAlerts) {
     items = items.filter((it) => !["leads_nuevos", "leads_sin_mov"].includes(it.key));
@@ -1381,7 +1444,7 @@ function bindNotifications() {
   document.addEventListener("click", enableSoundOnce, { once: true, capture: true });
   document.addEventListener("pointerdown", enableSoundOnce, { once: true, capture: true });
   document.addEventListener("keydown", enableSoundOnce, { once: true, capture: true });
-  const baseDelay = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 2) ? 2e4 : 45e3;
+  const baseDelay = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12 || CURRENT_ROLE_ID === 2) ? 2e4 : 45e3;
   let delay = baseDelay;
   const maxDelay = 12e4;
   const tick = async () => {
@@ -1536,6 +1599,7 @@ async function fetchMe() {
     }
     if (!r.ok) throw new Error("me failed");
     const me = await r.json();
+    window.GD = window.GD || {};
     window.GD.me = me;
     try {
       await maybeShowAutoDecline(me);
@@ -1564,11 +1628,23 @@ async function fetchMe() {
         avatarEl.textContent = initials;
       }
     }
-    const roleName = (me.role || me.rol || "").toString().toUpperCase();
+    const roleName = normalizeRoleName((me.role || me.rol || "").toString());
     CURRENT_ROLE_ID = ROLE_IDS[roleName] || null;
+    // Si el rol no está mapeado, no mostramos el CRM “vacío”.
+    // EXCEPCIÓN: SUPERADMIN debe quedar con acceso total aunque el rol venga raro.
+    if (!CURRENT_ROLE_ID) {
+      if (roleName.includes("SUPER")) {
+        CURRENT_ROLE_ID = 12;
+      } else {
+      enterRrhhOnlyMode(roleName || "UNKNOWN");
+      return;
+      }
+    }
+    // Si estamos en RRHH-only por alguna sesión anterior, salimos al tener rol válido.
+    leaveRrhhOnlyMode();
     try {
       const sysBackup = qs("#sysBackup");
-      if (sysBackup) sysBackup.style.display = CURRENT_ROLE_ID === 1 ? "" : "none";
+      if (sysBackup) sysBackup.style.display = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12) ? "" : "none";
     } catch (_) {
     }
     const isOpsOnly = CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7 || isOpsAppRole(roleName);
@@ -1607,7 +1683,7 @@ function bootstrapFromToken() {
     if (!token) return { ok: false, redirected: false };
     const payload = decodeJwtPayload(token);
     if (!payload) return { ok: false, redirected: false };
-    const roleName = String(payload.role || payload.rol || "").toUpperCase();
+    const roleName = normalizeRoleName(String(payload.role || payload.rol || ""));
     const name = String(payload.name || payload.nombre || payload.username || payload.sub || "Usuario");
     const marcas = Array.isArray(payload.marcas) ? payload.marcas : [];
     window.GD = window.GD || {};
@@ -1625,9 +1701,14 @@ function bootstrapFromToken() {
     } catch (_) {
     }
     CURRENT_ROLE_ID = ROLE_IDS[roleName] || null;
+    if (!CURRENT_ROLE_ID) {
+      enterRrhhOnlyMode(roleName || "UNKNOWN");
+      return { ok: true, redirected: true };
+    }
+    leaveRrhhOnlyMode();
     try {
       const sysBackup = qs("#sysBackup");
-      if (sysBackup) sysBackup.style.display = CURRENT_ROLE_ID === 1 ? "" : "none";
+      if (sysBackup) sysBackup.style.display = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12) ? "" : "none";
     } catch (_) {
     }
     const isOpsOnly = CURRENT_ROLE_ID === 6 || CURRENT_ROLE_ID === 7 || isOpsAppRole(roleName);
@@ -1678,7 +1759,8 @@ async function maybePromptSgjoMarkIn(me) {
     } catch (_) {
     }
     const punto = String(j.default_punto_code || "").trim();
-    const markURL = punto ? `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto)}&v=${Date.now()}` : `/web/views/rrhh_portal.html?v=${Date.now()}`;
+    // Si no hay punto default, igual abrimos la vista de marcación para que el usuario seleccione el punto.
+    const markURL = punto ? `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto)}&v=${Date.now()}` : `/web/views/rrhh_sgjo_marcacion.html?v=${Date.now()}`;
     const openMark = () => {
       const frame = qs("#mainFrame");
       if (frame) frame.src = viewURL(markURL);
@@ -2215,6 +2297,7 @@ const MENU = [
       { id: "inv_tomar", label: "Tomar inventario", url: "/web/views/inventario_mercancia.html#tomar" },
       { id: "inv_sep1", label: "\u2014", url: null, sep: true },
       { id: "inv_stock", label: "Stock ingredientes", url: "/web/views/inventario_mercancia.html#stock" },
+      { id: "inv_class", label: "Clasificación MICE/OPS", url: "/web/views/inventario_clasificacion.html?v=20260504-1" },
       { id: "inv_cat", label: "Categor\xEDas", url: "/web/views/inventario_mercancia.html#categorias" },
       { id: "inv_uni", label: "Unidades", url: "/web/views/inventario_mercancia.html#unidades" },
       { id: "inv_prov", label: "Proveedores", url: "/web/views/inventario_mercancia.html#proveedores" },
@@ -2324,7 +2407,7 @@ function toggleFav(id) {
 function listVisibleMenuItems() {
   const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : /* @__PURE__ */ new Set();
   const isDriver = CURRENT_ROLE_ID === 6;
-  const isAdmin = CURRENT_ROLE_ID === 1;
+  const isAdmin = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12);
   const out = [];
   for (const g of MENU) {
     for (const it of g.items) {
@@ -2343,10 +2426,8 @@ let TASKS_BADGE = { open_total: 0, overdue_total: 0, open_contactar: 0, overdue_
 let TASKS_POLL_HANDLE = null;
 let TASKS_SYNC_INFLIGHT = false;
 const ROLE_IDS = {
-  "SUPERADMIN": 1,
-  "SUPER_ADMIN": 1,
-  "SUPER ADMIN": 1,
-  "ADMIN": 10,
+  // IMPORTANT: must match Settings → roles table (id_rol).
+  "ADMIN": 1,
   "EJECUTIVO DE VENTAS": 2,
   "VENDEDOR": 2,
   "JEFE DE OPERACIONES": 3,
@@ -2355,17 +2436,53 @@ const ROLE_IDS = {
   "CONDUCTOR": 6,
   "CONDUCTOR (CHOP)": 6,
   "CHOP": 6,
+  "CHOFER": 6,
   "OPERADOR": 7,
   "MICE": 8,
-  "FINANZAS": 9
+  "OPERADOR PATIO": 9,
+  "OPERADOR DE PATIO": 9,
+  "OP PATIO": 9,
+  "FINANZAS": 11,
+  "SUPERADMIN": 12,
+  "SUPER_ADMIN": 12,
+  "SUPER ADMIN": 12,
+  "MARKETING": 13,
+  "RRHH": 14,
+  "RECURSOS HUMANOS": 14
 };
 
+function normalizeRoleName(roleName) {
+  const r = String(roleName || "").trim().toUpperCase();
+  if (!r) return "";
+  if (/^\\d+$/.test(r)) {
+    const mp = {
+      // From Settings → roles (id_rol)
+      "1": "ADMIN",
+      "2": "EJECUTIVO DE VENTAS",
+      "3": "JEFE DE OPERACIONES",
+      "4": "BODEGUERO",
+      "5": "COMPRAS",
+      "6": "CONDUCTOR",
+      "7": "OPERADOR",
+      "8": "MICE",
+      "9": "OPERADOR PATIO",
+      "11": "FINANZAS",
+      "12": "SUPERADMIN",
+      "13": "MARKETING",
+      "14": "RRHH"
+    };
+    return mp[r] || r;
+  }
+  return r;
+}
+
 function isOpsAppRole(roleName) {
-  const v = String(roleName || "").trim().toUpperCase();
+  const v = normalizeRoleName(roleName);
+  // OJO: "OPERADOR PATIO" NO es portal de Operaciones; va a RRHH portal (marcación/horario).
   return v === "OPERADOR" || v === "CONDUCTOR" || v === "CHOFER" || v === "CHOP" || v === "CONDUCTOR (CHOP)";
 }
 const PERMISSIONS = {
-	  1: /* @__PURE__ */ new Set([
+		  1: /* @__PURE__ */ new Set([
     "dash_home",
     "rrhh_hub",
     "op_gps",
@@ -2403,13 +2520,14 @@ const PERMISSIONS = {
     "op_ca_ficha",
     "op_ca_ent",
     "op_ca_dev",
-    "inv_tomar",
-    "inv_stock",
-    "inv_prod",
-    "inv_cat",
-    "inv_uni",
-    "inv_prov",
-    "inv_mov",
+	    "inv_tomar",
+	    "inv_stock",
+	    "inv_prod",
+	    "inv_class",
+	    "inv_cat",
+	    "inv_uni",
+	    "inv_prov",
+	    "inv_mov",
 	    "tool_gmail",
 	    "tool_wapp",
 	    "tool_ig",
@@ -2550,7 +2668,17 @@ const PERMISSIONS = {
 	    "vruta",
 	    "set_prod"
 	  ]),
-	  9: /* @__PURE__ */ new Set([
+	  // FINANZAS (id_rol=11): ve RRHH + Finanzas + Historial (cotizaciones)
+	  11: /* @__PURE__ */ new Set([
+	    "rrhh_hub",
+	    "pl",
+	    "gast",
+	    "evt",
+	    "plan_cuentas",
+	    "historial"
+	  ]),
+	  // RRHH (id_rol=14): ve RRHH + Finanzas + Historial (para auditoría/abonos)
+	  14: /* @__PURE__ */ new Set([
 	    "rrhh_hub",
 	    "pl",
 	    "gast",
@@ -2637,13 +2765,31 @@ const PERMISSIONS = {
     ,"set_prod"
   ])
 };
+
+// Alias: SUPER ADMIN (id_rol=12) debe tener exactamente los permisos del ADMIN (id_rol=1),
+// de lo contrario el menú queda vacío y el sistema lo manda erróneamente al portal RRHH-only.
+try {
+  if (PERMISSIONS[1] && !PERMISSIONS[12]) {
+    PERMISSIONS[12] = PERMISSIONS[1];
+  }
+} catch (_) {
+}
 function buildMenu() {
   const nav = qs("#sideMenu");
   nav.innerHTML = "";
-  const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : /* @__PURE__ */ new Set();
+  let allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : /* @__PURE__ */ new Set();
+  // Safety: SUPERADMIN siempre debe tener menú completo aunque CURRENT_ROLE_ID venga raro.
+  try {
+    const me = (window.GD && window.GD.me) || {};
+    const rk = normalizeRoleName(me.role || me.rol || "");
+    if ((rk === "SUPERADMIN" || rk === "SUPER ADMIN" || rk === "SUPER_ADMIN") && PERMISSIONS[1]) {
+      allowed = PERMISSIONS[1];
+    }
+  } catch (_) {
+  }
   CURRENT_ALLOWED = allowed;
   const isDriver = CURRENT_ROLE_ID === 6;
-  const isAdmin = CURRENT_ROLE_ID === 1;
+  const isAdmin = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12);
   let lastGroupId = null;
 
   // Favoritos (items fijados)
@@ -2765,12 +2911,21 @@ function buildMenu() {
     nav.appendChild(group);
     lastGroupId = g.id;
   }
+
+  // Si el menú queda vacío (por rol sin permisos), entramos al portal RRHH.
+  try {
+    const anyItem = nav.querySelector(".menu-item");
+    if (!anyItem && getToken()) {
+      enterRrhhOnlyMode("EMPTY_MENU");
+    }
+  } catch (_) {
+  }
 }
 
 function canUseTasksBadge() {
   const me = (window.GD && window.GD.me) || {};
   const roleName = String(me.role || me.rol || "").toUpperCase();
-  return CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 2 || roleName.includes("EJECUTIVO");
+  return CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12 || CURRENT_ROLE_ID === 2 || roleName.includes("EJECUTIVO");
 }
 
 function renderTasksBadge() {
@@ -3459,7 +3614,7 @@ function openDefault() {
     // Solo Admin necesita el watcher de backups; y solo si hay job_id guardado.
     try {
       const jobId = localStorage.getItem("gd_backup_job_id") || "";
-      if (jobId && CURRENT_ROLE_ID === 1) setupBackupJobWatch();
+      if (jobId && (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12)) setupBackupJobWatch();
     } catch (_) {
     }
     setupChatWatch();
@@ -3511,7 +3666,7 @@ function openDefault() {
       // Además, requiere permiso explícito en el menú (para evitar que otros roles vean toasts).
       try{
         const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : null;
-        const can = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 2) && (!!allowed && allowed.has("tool_gmail"));
+        const can = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12 || CURRENT_ROLE_ID === 2) && (!!allowed && allowed.has("tool_gmail"));
         if (!can) return;
       }catch(_){ return; }
       const lastMax = Number(localStorage.getItem("gd_gia_email_max_id") || "0") || 0;

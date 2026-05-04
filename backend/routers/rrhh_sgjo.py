@@ -754,6 +754,20 @@ def admin_device_request_approve(
         {"id": int(id_request)},
     ).mappings().first()
     if not req:
+        # Si ya fue aprobada/rechazada, devolvemos estado sin fallar (evita confusión en UI/QR).
+        prev = db.execute(
+            text(
+                """
+                SELECT id_request, status, decided_at
+                FROM public.sgjo_device_requests
+                WHERE id_request=:id
+                LIMIT 1
+                """
+            ),
+            {"id": int(id_request)},
+        ).mappings().first()
+        if prev:
+            return {"ok": True, "already_decided": True, "status": prev.get("status"), "decided_at": str(prev.get("decided_at") or "")}
         raise HTTPException(status_code=404, detail="Solicitud no existe.")
 
     db.execute(
@@ -949,20 +963,64 @@ def marcar(
             ok = False
             err = "No pude calcular distancia"
 
-    # tipo IN/OUT: alterna según última marcación OK del usuario (últimas 24h).
-    last = db.execute(
-        text(
-            """
-            SELECT tipo
-            FROM public.sgjo_marcaciones
-            WHERE id_usuario=:u AND ok IS TRUE AND created_at >= (now() - interval '24 hours')
-            ORDER BY created_at DESC
-            LIMIT 1
-            """
-        ),
-        {"u": uid_int},
-    ).scalar()
-    tipo = "IN" if str(last or "").upper() != "IN" else "OUT"
+    # tipo IN/OUT:
+    # - Si viene explícito en payload => lo respetamos (valida duplicados básicos).
+    # - Si no viene => alterna según última marcación OK (últimas 24h).
+    tipo_in = str(payload.get("tipo") or payload.get("kind") or "").strip().upper()
+    if tipo_in in ("ENTRADA", "IN"):
+        tipo_in = "IN"
+    elif tipo_in in ("SALIDA", "OUT"):
+        tipo_in = "OUT"
+    else:
+        tipo_in = ""
+
+    # Estado del día (Chile) para evitar dobles IN/OUT por error.
+    tipos_hoy = []
+    try:
+        rows_hoy = db.execute(
+            text(
+                """
+                SELECT tipo
+                FROM public.sgjo_marcaciones
+                WHERE id_usuario=:u
+                  AND ok IS TRUE
+                  AND ((created_at AT TIME ZONE 'America/Santiago')::date = (now() AT TIME ZONE 'America/Santiago')::date)
+                ORDER BY created_at ASC
+                """
+            ),
+            {"u": uid_int},
+        ).mappings().all()
+        tipos_hoy = [str(r.get("tipo") or "").upper() for r in rows_hoy]
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        tipos_hoy = []
+
+    has_in_today = "IN" in tipos_hoy
+    has_out_today = "OUT" in tipos_hoy
+
+    if tipo_in:
+        if tipo_in == "IN" and has_in_today and not has_out_today:
+            raise HTTPException(status_code=400, detail="Ya marcaste ENTRADA hoy.")
+        if tipo_in == "OUT" and (not has_in_today) and (not has_out_today):
+            raise HTTPException(status_code=400, detail="Primero debes marcar ENTRADA.")
+        tipo = tipo_in
+    else:
+        last = db.execute(
+            text(
+                """
+                SELECT tipo
+                FROM public.sgjo_marcaciones
+                WHERE id_usuario=:u AND ok IS TRUE AND created_at >= (now() - interval '24 hours')
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
+            ),
+            {"u": uid_int},
+        ).scalar()
+        tipo = "IN" if str(last or "").upper() != "IN" else "OUT"
 
     db.execute(
         text(

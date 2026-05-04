@@ -97,6 +97,7 @@ def _ensure_tables(conn):
                 id_proveedor INT REFERENCES inv_proveedores(id_proveedor),
                 precio NUMERIC(12,2),
                 pack_cantidad NUMERIC(12,3),
+                clasificacion TEXT,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT now(),
                 updated_at TIMESTAMP DEFAULT now()
@@ -105,6 +106,7 @@ def _ensure_tables(conn):
         )
     )
     conn.execute(text("ALTER TABLE inv_productos ADD COLUMN IF NOT EXISTS pack_cantidad NUMERIC(12,3)"))
+    conn.execute(text("ALTER TABLE inv_productos ADD COLUMN IF NOT EXISTS clasificacion TEXT"))
     conn.execute(
         text(
             """
@@ -354,7 +356,19 @@ class ProductoIn(BaseModel):
     id_proveedor: Optional[int] = None
     precio: Optional[float] = None
     pack_cantidad: Optional[float] = None
+    clasificacion: Optional[str] = None  # MICE | OPERACIONES | None
     is_active: Optional[bool] = True
+
+
+def _norm_clasificacion(v: Optional[str]) -> Optional[str]:
+    s = str(v or "").strip().upper()
+    if not s:
+        return None
+    if s in ("OPS", "OPERACION", "OPERACIONES"):
+        return "OPERACIONES"
+    if s in ("MICE",):
+        return "MICE"
+    raise HTTPException(status_code=400, detail="clasificacion inválida (usa MICE u OPERACIONES)")
 
 
 class MarcasIn(BaseModel):
@@ -682,6 +696,8 @@ def update_proveedor(id_proveedor: int, body: ProveedorIn, me=Depends(get_curren
 def list_productos(
     q: str = Query("", max_length=120),
     marca: str = Query("", max_length=80),
+    limit: int = Query(200, ge=1, le=2000),
+    offset: int = Query(0, ge=0, le=500000),
     me=Depends(get_current_user),
 ):
     _ensure_role(me)
@@ -702,7 +718,8 @@ def list_productos(
             params["marca"] = marca
         where_sql = ("WHERE " + " AND ".join(base_where)) if base_where else ""
         q_sql = f"""
-            SELECT p.id_producto, p.sku, p.nombre, p.precio, p.pack_cantidad, p.is_active,
+            SELECT p.id_producto, p.sku, p.nombre, p.id_categoria, p.id_unidad, p.id_proveedor,
+                   p.precio, p.pack_cantidad, p.clasificacion, p.is_active,
                    c.nombre AS categoria, u.nombre AS unidad, pr.nombre AS proveedor
             FROM inv_productos p
             LEFT JOIN inv_categorias c ON c.id_categoria=p.id_categoria
@@ -710,9 +727,13 @@ def list_productos(
             LEFT JOIN inv_proveedores pr ON pr.id_proveedor=p.id_proveedor
             {where_sql}
             ORDER BY c.nombre NULLS LAST, p.nombre, p.sku
+            LIMIT :lim OFFSET :off
         """
+        params["lim"] = int(limit)
+        params["off"] = int(offset)
         rows = conn.execute(text(q_sql), params).mappings().all()
-    return {"ok": True, "items": list(rows)}
+        total = conn.execute(text(f"SELECT count(*) FROM inv_productos p {where_sql}"), params).scalar()
+    return {"ok": True, "items": list(rows), "limit": int(limit), "offset": int(offset), "total": int(total or 0)}
 
 
 @router.post("/productos")
@@ -722,14 +743,15 @@ def create_producto(body: ProductoIn, me=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="nombre requerido")
     with get_connection() as conn:
         _ensure_tables(conn)
+        clasif = _norm_clasificacion(body.clasificacion)
         sku = (body.sku or "").strip()
         if not sku:
             sku = _gen_sku(conn, body.id_categoria)
         row = conn.execute(
             text(
                 """
-                INSERT INTO inv_productos(sku, nombre, id_categoria, id_unidad, id_proveedor, precio, pack_cantidad, is_active)
-                VALUES (:sku,:n,:cat,:uni,:prov,:precio,:pack,:act)
+                INSERT INTO inv_productos(sku, nombre, id_categoria, id_unidad, id_proveedor, precio, pack_cantidad, clasificacion, is_active)
+                VALUES (:sku,:n,:cat,:uni,:prov,:precio,:pack,:clasif,:act)
                 ON CONFLICT (sku) DO UPDATE
                 SET nombre=EXCLUDED.nombre,
                     id_categoria=EXCLUDED.id_categoria,
@@ -737,6 +759,7 @@ def create_producto(body: ProductoIn, me=Depends(get_current_user)):
                     id_proveedor=EXCLUDED.id_proveedor,
                     precio=EXCLUDED.precio,
                     pack_cantidad=EXCLUDED.pack_cantidad,
+                    clasificacion=EXCLUDED.clasificacion,
                     is_active=EXCLUDED.is_active,
                     updated_at=now()
                 RETURNING id_producto, sku
@@ -750,6 +773,7 @@ def create_producto(body: ProductoIn, me=Depends(get_current_user)):
                 "prov": body.id_proveedor,
                 "precio": body.precio,
                 "pack": body.pack_cantidad,
+                "clasif": clasif,
                 "act": True if body.is_active is None else body.is_active,
             },
         ).first()
@@ -1164,6 +1188,7 @@ def update_producto(id_producto: int, body: ProductoIn, me=Depends(get_current_u
         raise HTTPException(status_code=400, detail="nombre requerido")
     with get_connection() as conn:
         _ensure_tables(conn)
+        clasif = _norm_clasificacion(body.clasificacion)
         # Detectar cambio de precio/nombre para propagar a recetas (costo_unitario).
         prev = conn.execute(
             text("SELECT COALESCE(sku,''), COALESCE(nombre,''), precio FROM inv_productos WHERE id_producto=:id LIMIT 1"),
@@ -1183,6 +1208,7 @@ def update_producto(id_producto: int, body: ProductoIn, me=Depends(get_current_u
                     id_proveedor=:prov,
                     precio=:precio,
                     pack_cantidad=:pack,
+                    clasificacion=:clasif,
                     is_active=:act,
                     updated_at=now()
                 WHERE id_producto=:id
@@ -1197,6 +1223,7 @@ def update_producto(id_producto: int, body: ProductoIn, me=Depends(get_current_u
                 "prov": body.id_proveedor,
                 "precio": body.precio,
                 "pack": body.pack_cantidad,
+                "clasif": clasif,
                 "act": True if body.is_active is None else body.is_active,
             },
         )

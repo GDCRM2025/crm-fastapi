@@ -54,6 +54,18 @@ app = FastAPI(title="CRM BDGD")
 setup_logging(BASE_DIR)
 log = logging.getLogger("crm")
 
+# === Security warnings (best-effort, no-break) ===
+try:
+    if not str(os.getenv("DEV_NO_AUTH") or "").strip().lower() in ("1", "true", "yes", "on"):
+        if (getattr(settings, "JWT_SECRET", None) or "").strip():
+            pass
+        else:
+            sk = str(getattr(settings, "SECRET_KEY", "") or "")
+            if sk.strip() == "dev-secret-change-me":
+                log.warning("[SECURITY] Using default SECRET_KEY. Set JWT_SECRET in .env for production.")
+except Exception:
+    pass
+
 _OPENAPI_CACHE: dict | None = None
 
 
@@ -309,15 +321,15 @@ async def rid_middleware(request: Request, call_next):
         except Exception:
             pass
 
-        # Guard: rol FINANZAS solo puede usar endpoints de finanzas (+ auth/me + web estático).
+        # Guard: roles con scope acotado (evita exponer todo el CRM).
+        # Importante: FINANZAS y RRHH necesitan ver ambos módulos + historial de cotizaciones.
         try:
             auth = request.headers.get("authorization") or ""
             if auth.lower().startswith("bearer "):
                 role = _role_from_bearer(auth)
-                if "FINAN" in role:
+                if ("FINAN" in role) or ("RRHH" in role) or ("RECURSOS" in role):
                     p = request.url.path or "/"
-                    # Permitimos historial (quotes) para FINANZAS (requerimiento: FINANZAS ve finanzas + historial).
-                    allowed_prefixes = ("/finanzas", "/quotes", "/auth", "/login", "/logout", "/me", "/web")
+                    allowed_prefixes = ("/finanzas", "/quotes", "/rrhh", "/auth", "/login", "/logout", "/me", "/web")
                     if not (p == "/" or p.startswith(allowed_prefixes)):
                         resp = JSONResponse(
                             {"detail": "Sin permiso"},

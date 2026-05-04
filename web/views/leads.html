@@ -2609,7 +2609,11 @@ async function handleConfirmado(lead, newEstado){
     </style>
     <div style="text-align:left;display:grid;gap:12px">
       <div class="agCard" style="padding:12px;gap:10px">
-        <div class="muted" style="font-weight:1200">Set up de agendamiento</div>
+        <div class="agRow" style="justify-content:space-between;align-items:center;gap:10px">
+          <div class="muted" style="font-weight:1200">Set up de agendamiento</div>
+          <button type="button" class="swBtn secondary" id="ag_setup_toggle" style="white-space:nowrap">Ocultar</button>
+        </div>
+        <div id="ag_setup_body" style="display:grid;gap:10px">
         <div class="agRow" style="gap:14px;align-items:center;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:8px">
             <input type="checkbox" id="ag_flag_blocks" />
@@ -2692,6 +2696,7 @@ async function handleConfirmado(lead, newEstado){
             <div id="ag_alloc_pool" style="display:grid;gap:8px"></div>
             <div id="ag_alloc_status" class="muted agSmall">—</div>
           </div>
+        </div>
         </div>
       </div>
       <div class="agGrid">
@@ -3638,6 +3643,21 @@ async function handleConfirmado(lead, newEstado){
     if (st) st.textContent = "Calculando…";
     try{
       const modelPayload = _groupsToPayload();
+      // Overrides por día (OPS/Montaje) deben entrar en el preview (dry_run)
+      // para que se vea el resultado antes de confirmar.
+      const overrideByDay = [];
+      try{
+        for (const [day, ed] of Object.entries(dayEdits || {})){
+          const d = String(day || "").slice(0,10);
+          if (!d) continue;
+          const row = { day: d };
+          const opsV = String(ed?.ops ?? "").trim();
+          const mtV = String(ed?.montaje ?? "").trim();
+          if (opsV !== "") row.ops = Number(opsV);
+          if (mtV) row.montaje_text = mtV;
+          if (row.ops != null || row.montaje_text) overrideByDay.push(row);
+        }
+      }catch(_){}
       const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
         method:"POST",
         headers: {"Content-Type":"application/json"},
@@ -3651,6 +3671,7 @@ async function handleConfirmado(lead, newEstado){
           direccion: dir,
           ...(notes ? { agenda_notes: notes } : {}),
           ...(montGlobal ? { override_montaje_text: montGlobal } : {}),
+          ...(overrideByDay.length ? { override_by_day: overrideByDay } : {}),
           ...(qs("#ag_flag_montaje_event")?.checked ? {
             montaje_event: {
               day: String(qs("#ag_mont_day")?.value || "").slice(0,10),
@@ -3834,6 +3855,15 @@ async function handleConfirmado(lead, newEstado){
             _renderGroupEditor();
             _renderAllocPool();
             _updateAllocStatus();
+            // UX: en evento simple (sin flags), ocultar modelador/allocator (se autoasigna).
+            try{
+              const f = _flags();
+              const simple = (!f.blocks && !f.multiday && !f.multiloc);
+              const ed = qs("#ag_setup_editor");
+              const alloc = qs("#ag_products_allocator");
+              if (ed) ed.style.display = simple ? "none" : "grid";
+              if (alloc) alloc.style.display = simple ? "none" : "grid";
+            }catch(_){}
             if (st0){
               st0.textContent = (why ? (`Modelador: ${why}`) : "Modelador listo");
             }
@@ -3864,6 +3894,19 @@ async function handleConfirmado(lead, newEstado){
           // Inicial: arma setup base
           rebuild("inicio").catch(_=>{});
         }catch(_){}
+
+      // Toggle: ocultar/mostrar bloque de set up completo (sin perder estado)
+      try{
+        const btnT = qs("#ag_setup_toggle");
+        const bodyT = qs("#ag_setup_body");
+        if (btnT && bodyT){
+          btnT.addEventListener("click", ()=>{
+            const isHidden = bodyT.style.display === "none";
+            bodyT.style.display = isHidden ? "grid" : "none";
+            btnT.textContent = isHidden ? "Ocultar" : "Mostrar";
+          });
+        }
+      }catch(_){}
 
 	      // Abono: si es 0, exige OC o fecha de abono (para que finanzas tenga trazabilidad).
 	      const abEl = qs("#ag_abono");
@@ -3914,17 +3957,27 @@ async function handleConfirmado(lead, newEstado){
         return String(e.day || "").slice(0,10);
       };
 
+      // Al editar OPS/Montaje por día, debe reflejarse de inmediato (sin esperar confirmar).
+      // Debounce para no saturar Passenger.
+      let _dayDeb = null;
+      const _debPreview = ()=>{
+        try{ clearTimeout(_dayDeb); }catch(_){}
+        _dayDeb = setTimeout(()=>{ try{ runPreview(); }catch(_){ } }, 260);
+      };
+
       qs("#ag_ops_day") && qs("#ag_ops_day").addEventListener("input", ()=>{
         const day = currentDay();
         const td = ensureDayTouched(day);
         td.ops = true;
         saveCurrentDay();
+        _debPreview();
       });
       qs("#ag_montaje_day") && qs("#ag_montaje_day").addEventListener("input", ()=>{
         const day = currentDay();
         const td = ensureDayTouched(day);
         td.montaje = true;
         saveCurrentDay();
+        _debPreview();
       });
 
 	      qs("#ag_montaje_edit") && (qs("#ag_montaje_edit").onclick = ()=>{
@@ -4103,30 +4156,61 @@ async function handleConfirmado(lead, newEstado){
 		        Swal.showValidationMessage("Primero debes armar el set up.");
 		        return false;
 		      }
-		      _readGroupsFromDOM();
-		      _updateAllocStatus();
-		      // Validación: no puede quedar producto sin asignar
-		      const missing = [];
-		      for (const it of (allocPool||[])){
-		        const prod = String(it.producto||"").trim();
-		        const total = Number(it.cantidad||0) || 0;
-		        const used = _allocatedTotalFor(prod);
-		        const rem = total - used;
-		        if (rem > 0.0001) missing.push(prod);
-		      }
-		      if (missing.length){
-            _showMissingAllocAlert(missing);
-		        Swal.showValidationMessage("Faltan productos por asignar. Revisa el listado en Set up.");
-		        return false;
-		      }
+          // En modo SIMPLE no se duplica info: NO usamos modelador/grupos ni asignación por producto.
+          // Solo se usan los campos globales (tel/dir/location/horas) y el backend construye el evento.
+          const isSimple = (!multiLoc && !blocks && !multiDay);
+          if (!isSimple){
+		        _readGroupsFromDOM();
+		        _updateAllocStatus();
+		        // Validación: no puede quedar producto sin asignar
+		        const missing = [];
+		        for (const it of (allocPool||[])){
+		          const prod = String(it.producto||"").trim();
+		          const total = Number(it.cantidad||0) || 0;
+		          const used = _allocatedTotalFor(prod);
+		          const rem = total - used;
+		          if (rem > 0.0001) missing.push(prod);
+		        }
+		        if (missing.length){
+              _showMissingAllocAlert(missing);
+		          Swal.showValidationMessage("Faltan productos por asignar. Revisa el listado en Set up.");
+		          return false;
+		        }
+          }
 		      if (!multiLoc && !blocks){
-		        if (!hrTbd && (!hIni || !hFin)) return Swal.showValidationMessage("Debes indicar horas o marcar HR TBD.");
+            // Horas globales: en evento simple no obligamos a llenar horas.
+            // Si faltan, el backend caerá a horario por defecto (11:00-13:00) y marcará HR TBD en título.
+            // Solo exigimos horas cuando el usuario modela segmentos/bloques (validación por grupo).
 		        saveCurrentDay();
 		      }
 
-		      const model = _groupsToPayload();
-		      let segsOut = model.segments ? model.segments : null;
-		      let blksOut = model.blocks ? model.blocks : null;
+		      const model = isSimple ? {} : _groupsToPayload();
+		      let segsOut = (!isSimple && model.segments) ? model.segments : null;
+		      let blksOut = (!isSimple && model.blocks) ? model.blocks : null;
+
+          // Defaults: si el usuario llenó Location/Dirección global, pero el grupo/bloque quedó vacío
+          // (por ejemplo en evento simple donde el editor está oculto), completamos antes de validar.
+          const comunaDef = String(qs("#ag_loc")?.value || "").trim() || String(lead?.comuna_nombre || lead?.comuna || "").trim();
+          const dirDef = String(qs("#ag_dir")?.value || "").trim() || String(lead?.direccion || "").trim();
+          try{
+            if (blksOut){
+              blksOut = blksOut.map(b=>{
+                const bb = { ...(b||{}) };
+                if (!String(bb.comuna||"").trim() && comunaDef) bb.comuna = comunaDef;
+                if (!String(bb.direccion||"").trim() && dirDef) bb.direccion = dirDef;
+                return bb;
+              });
+            }
+            if (segsOut){
+              segsOut = segsOut.map(s=>{
+                const ss = { ...(s||{}) };
+                if (!String(ss.comuna||"").trim() && comunaDef) ss.comuna = comunaDef;
+                if (!String(ss.direccion||"").trim() && dirDef) ss.direccion = dirDef;
+                return ss;
+              });
+            }
+          }catch(_){}
+
 		      if (blksOut){
 		        for (let i=0;i<blksOut.length;i++){
 		          const b = blksOut[i] || {};
@@ -4586,7 +4670,7 @@ async function handleConfirmado(lead, newEstado){
 NOMBRE CLIENTE: ${[clienteNom, marcaNom].filter(Boolean).join(" - ") || "—"}
 COMUNA: ${(comunaNom || "—").toUpperCase()}
 Valor TOTAL: ${moneyCLP(total)}
-Abono: ${abono != null && Number.isFinite(Number(abono)) ? (moneyCLP(abono) + " (SE QUITA)") : "—"}
+Abono: ${abono != null && Number.isFinite(Number(abono)) ? moneyCLP(abono) : "—"}
 COT Nº: ${cotN || "—"}
 ${EMO.doc} Documento: ${isEmpresa ? `Con Documento (IVA: ${moneyCLP(ivaVal || 0)})` : "Sin Documento"}
 ${EMO.clock} HORARIO: ${hrLine}

@@ -112,12 +112,15 @@ def load_users() -> Dict[str, Dict[str, str]]:
         if users:
             return users
 
-    # Defaults: lo que tu UI sugiere + admin clásico
-    return {
-        "admin": {"password": "admin", "role": "admin"},
-        # Cuenta bootstrap (si NO existe en BD). En prod, idealmente deshabilitar via ENV CRM_USERS.
-        "greengd": {"password": "green123", "role": "superadmin"},
-    }
+    # Defaults (INSEGURO): mantener solo si se habilita explícitamente por env.
+    # En prod esto debe ir apagado (usar BD o CRM_USERS).
+    allow_defaults = str(os.getenv("CRM_ALLOW_DEFAULT_USERS") or "").strip().lower() in ("1", "true", "yes", "on")
+    if allow_defaults:
+        return {
+            "admin": {"password": "admin", "role": "admin"},
+            "greengd": {"password": "green123", "role": "superadmin"},
+        }
+    return {}
 
 
 USERS = load_users()

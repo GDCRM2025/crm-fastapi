@@ -490,27 +490,15 @@
       const i = $("#repIngs").innerHTML || "";
       const l = $("#repLeads").innerHTML || "";
       const m = ($("#repMissingBox").style.display !== "none") ? $("#repMissing").innerHTML : "";
-      const w = window.open("", "_blank", "noopener");
-      if (!w) return;
-      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
-        <style>
-          body{font-family: ui-sans-serif, system-ui; padding:18px; color:#0b1320;}
-          h2{margin:0 0 4px 0} .muted{color:#475569}
-          h3{margin:18px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155}
-          table{width:100%; border-collapse:collapse; font-size:13px;}
-          th,td{padding:8px 8px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top;}
-          th{text-transform:uppercase; font-size:11px; letter-spacing:.12em;}
-          .right{text-align:right;}
-        </style></head><body>
-        <h2>${title}</h2><div class="muted">${sub}</div>
-        <h3>Productos</h3>${p}
-        <h3>Ingredientes</h3>${i}
-        <h3>Eventos</h3>${l}
-        ${m ? `<h3>Faltan Recetas</h3>${m}` : ``}
-        </body></html>`);
-      w.document.close();
-      w.focus();
-      setTimeout(()=>{ try{ w.print(); }catch(_){ } }, 250);
+      const body = `
+        <div class="muted">${sub}</div>
+        <h3 style="margin:14px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155">Productos</h3>${p}
+        <h3 style="margin:14px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155">Ingredientes</h3>${i}
+        <h3 style="margin:14px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155">Eventos</h3>${l}
+        ${m ? `<h3 style="margin:14px 0 8px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#334155">Faltan Recetas</h3>${m}` : ``}
+      `;
+      // Reusa motor de impresión (A4) sin popup
+      printWindow({ title, subtitle:"", bodyHTML: body, mode:"a4", kind:"day" });
     };
 
     function render(events, week){
@@ -791,8 +779,8 @@
     }
 
     function printWindow({ title, subtitle, bodyHTML, mode, kind }){
-      const w = window.open("", "_blank", "noopener");
-      if (!w) return;
+      // No usar window.open(): en iOS/iframes suele bloquearse y "no imprime".
+      // Usamos iframe oculto con srcdoc.
       const is80 = mode === "80mm";
       const page = is80 ? "80mm auto" : "A4";
       const breaks = (() => {
@@ -807,7 +795,7 @@
           .leadSheet{break-inside:avoid; page-break-inside:avoid;}
         `;
       })();
-      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc2(title||"Impresión")}</title>
+      const htmlDoc = `<!doctype html><html><head><meta charset="utf-8"><title>${esc2(title||"Impresión")}</title>
         <style>
           @page{ size:${page}; margin:${is80 ? "6mm" : "12mm"}; }
           *{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -828,10 +816,31 @@
         <h2>${esc2(title||"Impresión")}</h2>
         ${subtitle ? `<div class="muted">${esc2(subtitle)}</div>` : ``}
         <div style="margin-top:10px">${bodyHTML||""}</div>
-      </body></html>`);
-      w.document.close();
-      w.focus();
-      setTimeout(()=>{ try{ w.print(); }catch(_){ } }, 250);
+      </body></html>`;
+
+      try{
+        const ifr = document.createElement("iframe");
+        ifr.style.position = "fixed";
+        ifr.style.right = "0";
+        ifr.style.bottom = "0";
+        ifr.style.width = "0";
+        ifr.style.height = "0";
+        ifr.style.border = "0";
+        ifr.style.opacity = "0";
+        ifr.setAttribute("aria-hidden","true");
+        document.body.appendChild(ifr);
+        const done = ()=>{ try{ document.body.removeChild(ifr); }catch(_){ } };
+        const w = ifr.contentWindow;
+        const d = ifr.contentDocument || w.document;
+        d.open();
+        d.write(htmlDoc);
+        d.close();
+        setTimeout(()=>{
+          try{ w.focus(); }catch(_){}
+          try{ w.print(); }catch(_){}
+          setTimeout(done, 800);
+        }, 350);
+      }catch(_){}
     }
 
     $("#btnDetPrint").onclick = ()=>{
