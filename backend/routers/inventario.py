@@ -821,6 +821,7 @@ def list_stock(q: str = Query("", max_length=120), me=Depends(get_current_user))
             text(
                 f"""
                 SELECT p.id_producto, p.sku, p.nombre, p.precio, p.pack_cantidad,
+                       p.clasificacion,
                        c.nombre AS categoria, u.nombre AS unidad, pr.nombre AS proveedor,
                        p.id_categoria, p.id_unidad, p.id_proveedor,
                        s.stock_inicial, s.stock_bodega, s.stock_delivery, s.stock_cocina,

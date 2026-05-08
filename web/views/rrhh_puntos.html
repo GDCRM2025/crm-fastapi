@@ -216,6 +216,7 @@
             const when = String(it.created_at||"").replace("T"," ").slice(0,16);
             const who = `${String(it.display||it.username||("ID "+it.id_usuario))}`;
             const dev = String(it.device_id||"");
+            const dn = String(it.device_name||"").trim();
             const note = String(it.note||"").trim();
             const mail = String(it.email||"").trim();
             const tel = String(it.telefono_rrhh||it.telefono||"").trim();
@@ -227,7 +228,7 @@
                   <div class="small muted">ID ${it.id_usuario}${mail ? (" · " + mail) : ""}${tel ? (" · " + tel) : ""}</div>
                   ${note ? `<div class="small muted" style="margin-top:4px;white-space:pre-wrap">${note.replace(/</g,"&lt;")}</div>` : ""}
                 </td>
-                <td class="code small">${dev}</td>
+                <td class="code small">${dn ? (dn + " · " + dev) : dev}</td>
                 <td>
                   <button class="btn primary" data-act="approve" data-id="${id}" type="button">Aprobar</button>
                   <button class="btn" data-act="reject" data-id="${id}" type="button">Rechazar</button>

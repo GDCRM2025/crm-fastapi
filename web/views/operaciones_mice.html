@@ -819,7 +819,9 @@
       </body></html>`;
 
       try{
-        const ifr = document.createElement("iframe");
+        const topWin = window.top || window;
+        const doc = topWin.document;
+        const ifr = doc.createElement("iframe");
         ifr.style.position = "fixed";
         ifr.style.right = "0";
         ifr.style.bottom = "0";
@@ -828,10 +830,11 @@
         ifr.style.border = "0";
         ifr.style.opacity = "0";
         ifr.setAttribute("aria-hidden","true");
-        document.body.appendChild(ifr);
-        const done = ()=>{ try{ document.body.removeChild(ifr); }catch(_){ } };
+        doc.body.appendChild(ifr);
+        const done = ()=>{ try{ doc.body.removeChild(ifr); }catch(_){ } };
         const w = ifr.contentWindow;
-        const d = ifr.contentDocument || w.document;
+        const d = ifr.contentDocument || (w ? w.document : null);
+        if (!d) { done(); return; }
         d.open();
         d.write(htmlDoc);
         d.close();

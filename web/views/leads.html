@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Leads</title>
   <!-- build: GD-LEADS-2026-02-25-13 -->
@@ -1343,13 +1346,23 @@ async function loadCatalogos(){
     }catch(_){}
   }
 
-  // 2) estados: endpoint real
-  const est = await apiJSON("/lead-estados");
-  // Importante: CONFIRMADO/DECLINADO pueden venir como inactivos (is_active=false),
-  // pero igual deben mostrarse (solo sin banderas/puntos/colores).
-  const estados = (est.items || est || [])
+  // 2) estados: endpoint real (con fallback). Importante:
+  // En producción han existido catálogos donde estados "cerrados" o poco usados quedan is_active=false,
+  // pero igual deben aparecer para poder mover leads (drag&drop / cambios de estado).
+  let est = null;
+  try{
+    est = await apiJSON("/lead-estados");
+  }catch(_){
+    // compat antigua
+    try{ est = await apiJSON("/settings/estados_lead"); }catch(__){}
+  }
+  // fallback final: algunos deployments anidan `catalogos.estados` en /leads/catalogos
+  const estadosRaw =
+    (est && (est.items || est.estados || est)) ||
+    (cat && (cat.estados || cat.catalogos?.estados || cat.items?.estados)) ||
+    [];
+  const estados = (Array.isArray(estadosRaw) ? estadosRaw : [])
     .map(normEstado)
-    .filter(x => x.is_active || isClosedEstadoName(String(x.nombre || "").toUpperCase()))
     .sort((a,b)=>a.orden-b.orden);
 
   // 3) tipos: opcional
@@ -2045,6 +2058,12 @@ function estadoNombre(id){
   return (est?.nombre || est?.estado || "").toString().toUpperCase();
 }
 
+function isConfirmEstadoName(nameUpper){
+  const s = String(nameUpper || "").toUpperCase();
+  // Backend bloquea CONFIRM* (y a veces “vendido” se usa como sinónimo).
+  return s.includes("CONFIRM") || s.includes("VENDID") || s.includes("VENDIDO") || s.includes("EVENTO VEND");
+}
+
 /* ========= Mensajes predefinidos ========= */
 const DECLINE_TEMPLATES = [
   { id:"no_responde", label:"Cliente no contesta", text:"Cliente no contesta. Cierro el lead por falta de respuesta." },
@@ -2561,6 +2580,9 @@ async function handleConfirmado(lead, newEstado){
     return "$" + new Intl.NumberFormat("es-CL",{maximumFractionDigits:0}).format(x);
   };
 
+  const leadCot = lead.id_cotizacion_vigente;
+  const leadCotId = (leadCot != null && String(leadCot).trim() != "") ? String(leadCot).trim() : null;
+
   const quoteOptions = (()=>{
     const opts = [];
     const manualLabel = (()=>{
@@ -2572,8 +2594,10 @@ async function handleConfirmado(lead, newEstado){
       return `Manual (${nTxt}${mTxt}${itTxt})`;
     })();
     opts.push(`<option value="manual">${escapeHtml(manualLabel)}</option>`);
+    const seen = new Set();
     qItems.forEach(q=>{
       const id = q.id_cotizacion || q.id;
+      if (id != null) seen.add(String(id).trim());
       const num = q.numero ? `N°${q.numero}` : `#${id}`;
       const rev = (q.revision != null) ? Number(q.revision) : Number(q.version || 0);
       const ver = rev > 0 ? ` (${rev})` : "";
@@ -2581,11 +2605,16 @@ async function handleConfirmado(lead, newEstado){
       const fecha = q.fecha_evento || q.fecha_emision || q.created_at || "";
       opts.push(`<option value="${id}">${escapeHtml(num + ver + total + (fecha ? " · " + fecha : ""))}</option>`);
     });
+    // Si el lead tiene id_cotizacion_vigente pero no vino en history (por caché/migración),
+    // igual lo dejamos seleccionable (anti-tontos).
+    try{
+      if (leadCotId && !seen.has(String(leadCotId))){
+        opts.push(`<option value="${escapeHtml(leadCotId)}">#${escapeHtml(leadCotId)} · (cotización vigente)</option>`);
+      }
+    }catch(_){}
     return opts.join("");
   })();
 
-  const leadCot = lead.id_cotizacion_vigente;
-  const leadCotId = (leadCot != null && String(leadCot).trim() != "") ? String(leadCot) : null;
   const defCotId = leadCotId || (qItems[0] ? String(qItems[0].id_cotizacion || qItems[0].id || "").trim() : null);
   const defaultSel = (manualAvailable && manualItems.length) ? "manual" : (defCotId || (qItems[0] ? String(qItems[0].id_cotizacion || qItems[0].id || "") : "manual"));
 
@@ -3683,7 +3712,8 @@ async function handleConfirmado(lead, newEstado){
           } : {}),
           ...( (isBlocks || isMultiLoc) ? { hr_tbd: false, start_time: hIni, end_time: hFin } : (hrTbd ? { hr_tbd: true } : { start_time: hIni, end_time: hFin, hr_tbd: false }) ),
           ...modelPayload,
-          ...( (!isBlocks && !isMultiLoc) ? { force_single_day: (agendaMode === "simple") ? 1 : 0 } : {}),
+          // Si es Multi día, NO forzar evento único aunque el modo diga "simple".
+          ...( (!isBlocks && !isMultiLoc) ? { force_single_day: (agendaMode === "simple" && !_flags().multiday) ? 1 : 0 } : {}),
         })
       });
       previewEvents = (Array.isArray(out?.eventos) && out.eventos.length) ? out.eventos : (out?.evento ? [out.evento] : []);
@@ -3691,13 +3721,15 @@ async function handleConfirmado(lead, newEstado){
       renderDayTabs();
       renderPreviewForSelectedDay();
       if (st) st.textContent = "Listo";
-    }catch(err){
-      previewEvents = [];
-      if (qs("#ag_products_day")) qs("#ag_products_day").textContent = "(sin productos)";
-      if (qs("#ag_preview_day")) qs("#ag_preview_day").textContent = "";
-      if (st) st.textContent = String(err?.message || err);
-    }
-  };
+	    }catch(err){
+	      previewEvents = [];
+	      if (qs("#ag_products_day")) qs("#ag_products_day").textContent = "(sin productos)";
+	      if (qs("#ag_preview_day")) qs("#ag_preview_day").textContent = "";
+	      const msg = String(err?.message || err);
+	      if (st) st.textContent = msg;
+	      try{ toast("Error en previsualización: " + msg, "error"); }catch(_){}
+	    }
+	  };
 
 			  const res = await Swal.fire({
 			    title:"Confirmar + Agenda",
@@ -3709,9 +3741,28 @@ async function handleConfirmado(lead, newEstado){
 		    cancelButtonText:"Cancelar",
 		    heightAuto:false,
 			    customClass: { popup: "gdAgenda" },
-			    didOpen: async ()=>{
-		      const q = qs("#ag_quote");
-		      if (q) q.value = defaultSel || "manual";
+				    didOpen: async ()=>{
+              // Guard anti-caídas: si hay error JS dentro del modal, mostramos feedback y evitamos quedar “en blanco”.
+              // Importante: NO cerramos el modal (anti-tontos).
+              try{
+                const onErr = (ev)=>{
+                  try{
+                    const msg = String(ev?.message || ev?.error?.message || ev?.error || "Error interno");
+                    const st = qs("#ag_calc_status");
+                    if (st) st.textContent = "Error: " + msg;
+                    toast("Error interno en Agenda: " + msg, "error");
+                  }catch(_){}
+                };
+                window.addEventListener("error", onErr);
+                window.addEventListener("unhandledrejection", (ev)=>onErr({ message: (ev?.reason?.message || ev?.reason || "Promise rechazada") }));
+                // cleanup
+                Swal.getPopup()?.addEventListener("swal2:close", ()=>{
+                  try{ window.removeEventListener("error", onErr); }catch(_){}
+                }, { once:true });
+              }catch(_){}
+
+			      const q = qs("#ag_quote");
+			      if (q) q.value = defaultSel || "manual";
 	
 	      // Horas (24h) - selector estable en iOS/Android (evita pickers 12h).
 	      TIMES = (() => {
@@ -3806,7 +3857,13 @@ async function handleConfirmado(lead, newEstado){
               try{
                 const out = await apiJSON(`/quotes/${Number(qSel)}/items`);
                 items = Array.isArray(out?.items) ? out.items : [];
-              }catch(_){ items = []; }
+              }catch(e){
+                items = [];
+                try{
+                  const m = String(e?.message || e || "");
+                  if (st0) st0.textContent = m;
+                }catch(_){}
+              }
             }else{
               try{
                 const out = await apiJSON(`/leads/${lead.id_lead}/mice_items`);
@@ -4140,11 +4197,11 @@ async function handleConfirmado(lead, newEstado){
 	      updDur();
 	      await runPreview();
 		    },
-		    preConfirm: ()=>{
-	      const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
-	      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
-	      const idCot = (quoteSource === "cotizador") ? qSel : null;
-		      agendaMode = _deriveAgendaMode();
+			    preConfirm: ()=>{
+		      const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
+		      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
+		      const idCot = (quoteSource === "cotizador") ? qSel : null;
+			      agendaMode = _deriveAgendaMode();
 		      const blocks = (agendaMode === "blocks");
 		      const multiLoc = (agendaMode === "multiloc");
 		      const multiDay = (agendaMode === "multiday");
@@ -4152,10 +4209,21 @@ async function handleConfirmado(lead, newEstado){
 		      const hrTbd = !!qs("#ag_hrtbd")?.checked;
 		      const hIni = (qs("#ag_hini")?.value || "").trim();
 		      const hFin = (qs("#ag_hfin")?.value || "").trim();
-		      if (!setupApplied){
-		        Swal.showValidationMessage("Primero debes armar el set up.");
-		        return false;
-		      }
+			      if (!setupApplied){
+			        Swal.showValidationMessage("Primero debes armar el set up.");
+			        return false;
+			      }
+            // Anti-tontos: si el preview no tiene productos/montaje, NO dejamos confirmar
+            // (esto evita eventos en Calendar con MONTAJE: — y sin lista de productos).
+            try{
+              const ev0 = (Array.isArray(previewEvents) && previewEvents.length) ? (previewEvents[0] || {}) : null;
+              const pt = String(ev0?.products_text || ev0?.productos || "").trim();
+              const hasPt = pt && pt.toUpperCase() !== "PRODUCTOS" && pt.length >= 6;
+              if (!hasPt){
+                Swal.showValidationMessage("Faltan productos para calcular montaje. Revisa la cotización seleccionada o carga Manual.");
+                return false;
+              }
+            }catch(_){}
           // En modo SIMPLE no se duplica info: NO usamos modelador/grupos ni asignación por producto.
           // Solo se usan los campos globales (tel/dir/location/horas) y el backend construye el evento.
           const isSimple = (!multiLoc && !blocks && !multiDay);
@@ -4368,7 +4436,7 @@ async function handleConfirmado(lead, newEstado){
                     }
                   }
                 : {}),
-			        ...(blksOut ? { blocks: blksOut } : (segsOut ? { segments: segsOut } : { override_by_day: overrideByDay, force_single_day: forceSingleDay, multi_day_mode: (multiDay ? 1 : 0) })),
+			        ...(blksOut ? { blocks: blksOut } : (segsOut ? { segments: segsOut } : { override_by_day: overrideByDay, force_single_day: (multiDay ? 0 : forceSingleDay), multi_day_mode: (multiDay ? 1 : 0) })),
 			      };
 				    }
 		  });
@@ -4784,14 +4852,14 @@ async function onDrop(e, newEstado){
   const nextName = estadoNombre(newEstado);
 
   try{
-    if (nextName.includes("CONFIRMADO")){
+    if (isConfirmEstadoName(nextName)){
       const ok = await handleConfirmado(lead, newEstado);
       if (!ok){ onDragEnd(); render(); return; }
     } else if (nextName.includes("DECLINADO")){
       const ok = await handleDeclinado(lead, newEstado);
       if (!ok){ onDragEnd(); render(); return; }
     } else {
-      if (prevName.includes("CONFIRMADO") && !nextName.includes("CONFIRMADO")){
+      if (isConfirmEstadoName(prevName) && !isConfirmEstadoName(nextName)){
         const res = await Swal.fire({
           icon:"warning",
           title:"¿Salir de Confirmado?",

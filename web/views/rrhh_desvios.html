@@ -60,6 +60,19 @@
         <div class="muted" id="meta">—</div>
         <div class="muted" id="log">—</div>
       </div>
+      <div class="row" style="justify-content:space-between;margin-top:10px">
+        <div class="row">
+          <select class="inp" id="pageSize" style="min-width:120px">
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+          </select>
+          <button class="btn" id="btnPrev">Prev</button>
+          <button class="btn" id="btnNext">Next</button>
+        </div>
+        <div class="muted" id="pageInfo">—</div>
+      </div>
       <div style="overflow:auto;margin-top:10px">
         <table>
           <thead>
@@ -130,6 +143,22 @@
     function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m])); }
     function setLog(s){ qs("#log").textContent = String(s||"—"); }
 
+    let PAGE = 0;
+    function pageSize(){ return Math.max(1, Number(qs("#pageSize")?.value || 100) || 100); }
+    function applyPaging(items){
+      const size = pageSize();
+      const total = items.length;
+      const pages = Math.max(1, Math.ceil(total / size));
+      if (PAGE >= pages) PAGE = pages - 1;
+      if (PAGE < 0) PAGE = 0;
+      const start = PAGE * size;
+      const end = Math.min(start + size, total);
+      qs("#btnPrev").disabled = PAGE <= 0;
+      qs("#btnNext").disabled = PAGE >= (pages - 1);
+      qs("#pageInfo").textContent = total ? `${start + 1}-${end} / ${total}` : "0 / 0";
+      return items.slice(start, end);
+    }
+
     async function load(){
       const d = qs("#fDate").value || "";
       const st = qs("#fEstado").value || "";
@@ -178,7 +207,8 @@
         setLog("Listo");
         return;
       }
-      tb.innerHTML = items.map(x=>{
+      const pageItems = applyPaging(items);
+      tb.innerHTML = pageItems.map(x=>{
         const exp = `${x.expected_in||"—"} → ${x.expected_out||"—"}`;
         const real = `${(x.actual_in||"—").toString().replace("T"," ").slice(0,16)} / ${(x.actual_out||"—").toString().replace("T"," ").slice(0,16)}`;
         const imp = `${x.impact_kind||"—"}${x.impact_min ? (" · "+x.impact_min+"m") : ""}`;
@@ -206,6 +236,10 @@
       setLog("Listo");
     }
 
+    qs("#pageSize").addEventListener("change", function(){ PAGE = 0; load(); });
+    qs("#btnPrev").addEventListener("click", function(){ PAGE = Math.max(0, PAGE - 1); load(); });
+    qs("#btnNext").addEventListener("click", function(){ PAGE = PAGE + 1; load(); });
+
     async function detect(){
       setLog("Detectando…");
       const d = qs("#fDate").value || "";
@@ -232,9 +266,21 @@
       if(!id) return;
       if (st === "solicitar"){
         if(!confirm("Enviar correo al colaborador para que apruebe/rechace este desvío?")) return;
+        // Anti-tontos: pedir propuesta de corrección antes de enviar.
+        // Se guarda en BD y se incluye en el correo.
+        let proposed_in = "";
+        let proposed_out = "";
+        try{
+          proposed_in = (prompt("Propuesta hora IN (HH:MM, opcional):", "") || "").trim();
+          proposed_out = (prompt("Propuesta hora OUT (HH:MM, opcional):", "") || "").trim();
+        }catch(_){}
         b.disabled = true;
         try{
-          await apiJSON(`/rrhh/desvios/${id}/request_approval`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({}) });
+          await apiJSON(`/rrhh/desvios/${id}/request_approval`, {
+            method:"POST",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify({ proposed_in: proposed_in || null, proposed_out: proposed_out || null })
+          });
           setLog("Correo enviado ✓");
         }catch(err){
           alert(String(err?.message||err));

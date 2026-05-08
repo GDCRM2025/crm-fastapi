@@ -36,7 +36,8 @@
       color:inherit;padding:0 14px;font-weight:1100;cursor:pointer;
     }
     .btn.primary{background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
-    table{width:100%;border-collapse:collapse;margin-top:12px;}
+    .table-wrap{margin-top:12px; overflow:auto; border-radius:14px; border:1px solid rgba(148,163,184,.16); max-height:70vh;}
+    table{width:100%;border-collapse:collapse; min-width:900px;}
     th,td{padding:10px 10px;border-bottom:1px solid rgba(148,163,184,.16);vertical-align:middle;}
     th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85;text-align:left;}
     .pill{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.18);opacity:.9;font-weight:1000;font-size:12px;}
@@ -78,20 +79,22 @@
         </div>
       </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>SKU</th>
-            <th class="w-name">Producto</th>
-            <th>Categoría</th>
-            <th>Clasificación</th>
-            <th>Estado</th>
-          </tr>
-        </thead>
-        <tbody id="rows">
-          <tr><td class="muted" colspan="5">Cargando…</td></tr>
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th class="w-name">Producto</th>
+              <th>Categoría</th>
+              <th>Clasificación</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td class="muted" colspan="5">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 

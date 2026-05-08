@@ -64,6 +64,7 @@ def _ensure(db: Session) -> None:
                       status TEXT NOT NULL DEFAULT 'pending', -- pending/approved/rejected
                       id_usuario BIGINT NOT NULL,
                       device_id TEXT NOT NULL,
+                      device_name TEXT,
                       ua_hash TEXT NOT NULL,
                       decided_by BIGINT,
                       note TEXT,
@@ -72,6 +73,14 @@ def _ensure(db: Session) -> None:
                     """
                 )
             )
+        except Exception:
+            pass
+        try:
+            db.execute(text("ALTER TABLE public.sgjo_device_requests ADD COLUMN IF NOT EXISTS device_name TEXT"))
+        except Exception:
+            pass
+        try:
+            db.execute(text("ALTER TABLE public.sgjo_dispositivos ADD COLUMN IF NOT EXISTS device_name TEXT"))
         except Exception:
             pass
         try:
@@ -547,11 +556,14 @@ def enroll_device(
     h = ua_hash(user_agent or "")
     rut_hint = str(payload.get("rut") or payload.get("rut_hint") or "").strip()[:32]
     tel_hint = str(payload.get("telefono") or payload.get("phone") or payload.get("tel") or "").strip()[:40]
+    device_name = str(payload.get("device_name") or payload.get("deviceName") or payload.get("name") or "").strip()[:80] or None
     note_hint = ""
     if rut_hint:
         note_hint += f"RUT_HINT={rut_hint}\n"
     if tel_hint:
         note_hint += f"TEL_HINT={tel_hint}\n"
+    if device_name:
+        note_hint += f"DEVICE_NAME={device_name}\n"
     note_hint = note_hint.strip() or None
 
     # Ya enrolado (con UA actual) => OK directo.
@@ -576,11 +588,11 @@ def enroll_device(
             db.execute(
                 text(
                     """
-                    INSERT INTO public.sgjo_device_requests(id_usuario, device_id, ua_hash, status, note)
-                    VALUES (:u,:d,:h,'pending', :n)
+                    INSERT INTO public.sgjo_device_requests(id_usuario, device_id, device_name, ua_hash, status, note)
+                    VALUES (:u,:d,:dn,:h,'pending', :n)
                     """
                 ),
-                {"u": uid_int, "d": device_id, "h": h, "n": note_hint},
+                {"u": uid_int, "d": device_id, "dn": device_name, "h": h, "n": note_hint},
             )
             # Relee id_request recién creado para notificación interna.
             pending = db.execute(
@@ -603,11 +615,12 @@ def enroll_device(
                         text(
                             """
                             UPDATE public.sgjo_device_requests
-                            SET note = COALESCE(NULLIF(note,''), :n)
+                            SET note = COALESCE(NULLIF(note,''), :n),
+                                device_name = COALESCE(NULLIF(device_name,''), :dn)
                             WHERE id_request=:id
                             """
                         ),
-                        {"id": int(pending), "n": note_hint},
+                        {"id": int(pending), "n": note_hint, "dn": device_name or ""},
                     )
                 except Exception:
                     pass
@@ -705,6 +718,7 @@ def admin_device_requests(
         text(
             f"""
             SELECT r.id_request, r.created_at, r.decided_at, r.status, r.id_usuario, r.device_id,
+                   COALESCE(r.device_name,'') AS device_name,
                    COALESCE(r.note,'') AS note,
                    u.username, COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display,
                    COALESCE(u.email,'') AS email,
@@ -731,6 +745,133 @@ def admin_device_requests(
     return {"ok": True, "items": [dict(r) for r in rows]}
 
 
+@router.get("/admin/devices")
+def admin_devices(
+    id_usuario: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    try:
+        uid = int(id_usuario)
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_usuario inválido")
+    rows = db.execute(
+        text(
+            """
+            SELECT d.id_device, d.id_usuario, d.device_id, COALESCE(d.device_name,'') AS device_name,
+                   d.enrolled_at, d.revoked_at,
+                   COALESCE(u.username,'') AS username,
+                   COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display
+            FROM public.sgjo_dispositivos d
+            LEFT JOIN public.usuarios u ON u.id_usuario = d.id_usuario
+            WHERE d.id_usuario=:u
+            ORDER BY (d.revoked_at IS NULL) DESC, d.enrolled_at DESC, d.id_device DESC
+            LIMIT 200
+            """
+        ),
+        {"u": uid},
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.get("/admin/hours_summary")
+def admin_hours_summary(
+    id_usuario: int = Query(ge=1),
+    from_date: str | None = Query(default=None),
+    to_date: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Resumen simple de horas marcadas por día (IN/OUT OK).
+    - Toma primera IN y última OUT del día (Chile).
+    - Devuelve minutos y horas decimales.
+    """
+    _ensure(db)
+    if not _is_admin(me):
+        raise HTTPException(status_code=403, detail="Sin permiso")
+    uid = int(id_usuario)
+    fd = str(from_date or "").strip()[:10] or None
+    td = str(to_date or "").strip()[:10] or None
+
+    where = ["m.id_usuario=:u", "m.ok IS TRUE"]
+    params: dict[str, Any] = {"u": uid}
+    if fd:
+        where.append("(m.created_at AT TIME ZONE 'America/Santiago')::date >= :fd::date")
+        params["fd"] = fd
+    if td:
+        where.append("(m.created_at AT TIME ZONE 'America/Santiago')::date <= :td::date")
+        params["td"] = td
+
+    rows = db.execute(
+        text(
+            f"""
+            WITH d AS (
+              SELECT (created_at AT TIME ZONE 'America/Santiago')::date AS day,
+                     MIN(created_at) FILTER (WHERE tipo='IN') AS in_at,
+                     MAX(created_at) FILTER (WHERE tipo='OUT') AS out_at
+              FROM public.sgjo_marcaciones m
+              WHERE {' AND '.join(where)}
+              GROUP BY 1
+            )
+            SELECT day,
+                   in_at,
+                   out_at,
+                   CASE
+                     WHEN in_at IS NOT NULL AND out_at IS NOT NULL THEN
+                       GREATEST(0, EXTRACT(EPOCH FROM (out_at - in_at))::int / 60)
+                     ELSE NULL
+                   END AS minutes
+            FROM d
+            ORDER BY day DESC
+            LIMIT 370
+            """
+        ),
+        params,
+    ).mappings().all()
+    total_min = 0
+    items = []
+    for r in rows:
+        m = r.get("minutes")
+        if m is not None:
+            try:
+                total_min += int(m)
+            except Exception:
+                pass
+        items.append(dict(r))
+    return {"ok": True, "id_usuario": uid, "total_minutes": int(total_min), "total_hours": round(total_min / 60.0, 2), "items": items}
+
+
+@router.post("/admin/devices/{id_device}/revoke")
+def admin_device_revoke(
+    id_device: int,
+    payload: dict = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    me_id = user.get("id")
+    me_id_int = int(me_id) if str(me_id or "").isdigit() else None
+    note = str(payload.get("note") or "").strip()[:200] or None
+    upd = db.execute(
+        text(
+            """
+            UPDATE public.sgjo_dispositivos
+            SET revoked_at=now(), revoked_by=:by, revoked_note=:n
+            WHERE id_device=:id AND revoked_at IS NULL
+            """
+        ),
+        {"id": int(id_device), "by": me_id_int, "n": note},
+    )
+    db.commit()
+    return {"ok": True, "revoked": int(getattr(upd, "rowcount", 0) or 0)}
+
+
 @router.post("/admin/device_requests/{id_request}/approve")
 def admin_device_request_approve(
     id_request: int,
@@ -745,7 +886,7 @@ def admin_device_request_approve(
     req = db.execute(
         text(
             """
-            SELECT id_request, id_usuario, device_id, ua_hash
+            SELECT id_request, id_usuario, device_id, device_name, ua_hash
             FROM public.sgjo_device_requests
             WHERE id_request=:id AND status='pending'
             LIMIT 1
@@ -773,13 +914,14 @@ def admin_device_request_approve(
     db.execute(
         text(
             """
-            INSERT INTO public.sgjo_dispositivos(id_usuario, device_id, ua_hash)
-            VALUES (:u,:d,:h)
+            INSERT INTO public.sgjo_dispositivos(id_usuario, device_id, device_name, ua_hash)
+            VALUES (:u,:d,:dn,:h)
             ON CONFLICT (id_usuario, device_id) DO UPDATE
-            SET ua_hash=EXCLUDED.ua_hash, revoked_at=NULL
+            SET device_name=COALESCE(NULLIF(EXCLUDED.device_name,''), sgjo_dispositivos.device_name),
+                ua_hash=EXCLUDED.ua_hash, revoked_at=NULL
             """
         ),
-        {"u": int(req["id_usuario"]), "d": str(req["device_id"]), "h": str(req["ua_hash"])},
+        {"u": int(req["id_usuario"]), "d": str(req["device_id"]), "dn": str(req.get("device_name") or ""), "h": str(req["ua_hash"])},
     )
     db.execute(
         text(
@@ -934,9 +1076,30 @@ def marcar(
     ok = True
     err = None
 
+    # UX/operación: iOS/Safari a veces bloquea geolocalización. Para evitar "no puedo marcar"
+    # en modo QR, permitimos marcar SIN GPS cuando:
+    # - método elegido es QR, y
+    # - el colaborador está autorizado para QR (staff_method != GEO-only), y
+    # - NO es modalidad REMOTO (en remoto siempre within=True igual).
+    allow_qr_without_gps = False
+    try:
+        staff_method = str((policy or {}).get("marcacion_method") or "BOTH").strip().upper()
+        if staff_method == "MIXTO":
+            staff_method = "BOTH"
+        allow_qr_without_gps = (method == "QR") and (staff_method in ("QR", "BOTH"))
+    except Exception:
+        allow_qr_without_gps = (method == "QR")
+
     if lat is None or lng is None:
-        ok = False
-        err = "Falta ubicación (lat/lng)"
+        if allow_qr_without_gps:
+            ok = True
+            within = True
+            used_fb = True
+            distance_m = None
+            err = None
+        else:
+            ok = False
+            err = "Falta ubicación (lat/lng)"
     else:
         try:
             lat_f = float(lat)
@@ -1002,12 +1165,18 @@ def marcar(
     has_out_today = "OUT" in tipos_hoy
 
     if tipo_in:
-        if tipo_in == "IN" and has_in_today and not has_out_today:
+        # Reglas estrictas: máximo 1 IN y 1 OUT por día (evita “marcó 5 veces”).
+        if tipo_in == "IN" and has_in_today:
             raise HTTPException(status_code=400, detail="Ya marcaste ENTRADA hoy.")
+        if tipo_in == "OUT" and has_out_today:
+            raise HTTPException(status_code=400, detail="Ya marcaste SALIDA hoy.")
         if tipo_in == "OUT" and (not has_in_today) and (not has_out_today):
             raise HTTPException(status_code=400, detail="Primero debes marcar ENTRADA.")
         tipo = tipo_in
     else:
+        # Si ya tiene IN y OUT OK hoy, no autogenerar más (evita ruido).
+        if has_in_today and has_out_today:
+            raise HTTPException(status_code=400, detail="Ya tienes ENTRADA y SALIDA hoy.")
         last = db.execute(
             text(
                 """
@@ -1075,3 +1244,49 @@ def marcar(
         "modality": modality,
         "presencial_dow": mod.get("presencial_dow"),
     }
+
+
+@router.get("/device/status")
+def device_status(
+    device_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Estado del dispositivo actual para UX:
+    - enrolled: existe en sgjo_dispositivos (aprobado)
+    - pending: existe solicitud pendiente en sgjo_device_requests
+    """
+    _ensure(db)
+    uid = user.get("id")
+    if not str(uid or "").isdigit():
+        raise HTTPException(status_code=401, detail="Usuario inválido")
+    uid_int = int(uid)
+    did = str(device_id or "").strip()
+    if not did:
+        raise HTTPException(status_code=400, detail="device_id requerido")
+    enrolled = bool(
+        db.execute(
+            text(
+                """
+                SELECT 1 FROM public.sgjo_dispositivos
+                WHERE id_usuario=:u AND device_id=:d AND revoked_at IS NULL
+                LIMIT 1
+                """
+            ),
+            {"u": uid_int, "d": did},
+        ).scalar()
+    )
+    pending = bool(
+        db.execute(
+            text(
+                """
+                SELECT 1 FROM public.sgjo_device_requests
+                WHERE id_usuario=:u AND device_id=:d AND status='pending'
+                LIMIT 1
+                """
+            ),
+            {"u": uid_int, "d": did},
+        ).scalar()
+    )
+    return {"ok": True, "device_id": did, "enrolled": enrolled, "pending": pending}

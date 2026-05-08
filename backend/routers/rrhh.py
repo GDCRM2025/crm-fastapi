@@ -176,6 +176,7 @@ def _ensure_tables(db: Session) -> None:
             """
             CREATE TABLE IF NOT EXISTS rrhh_inasistencias (
               id_inasistencia SERIAL PRIMARY KEY,
+              id_staff INTEGER,
               colaborador TEXT NOT NULL,
               fecha DATE NOT NULL,
               dias NUMERIC DEFAULT 1,
@@ -184,6 +185,11 @@ def _ensure_tables(db: Session) -> None:
             """
         )
     )
+    db.execute(text("ALTER TABLE rrhh_inasistencias ADD COLUMN IF NOT EXISTS id_staff INTEGER"))
+    try:
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_inasistencias_staff_fecha ON rrhh_inasistencias(id_staff, fecha)"))
+    except Exception:
+        pass
     db.execute(
         text(
             """
@@ -324,6 +330,29 @@ def _ensure_tables(db: Session) -> None:
         db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_desvios_fecha ON rrhh_desvios(fecha DESC)"))
         db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_desvios_staff ON rrhh_desvios(id_staff, fecha DESC)"))
         db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_desvios_status ON rrhh_desvios(status, fecha DESC)"))
+        # Propuesta de corrección (lo que RRHH sugiere aplicar si el colaborador aprueba)
+        try:
+            db.execute(text("ALTER TABLE rrhh_desvios ADD COLUMN IF NOT EXISTS proposed_in TEXT"))
+            db.execute(text("ALTER TABLE rrhh_desvios ADD COLUMN IF NOT EXISTS proposed_out TEXT"))
+        except Exception:
+            pass
+    except Exception:
+        pass
+    # Feriados configurables (Chile): usados por planificador mensual y reportes.
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS rrhh_feriados (
+                  day DATE PRIMARY KEY,
+                  name TEXT,
+                  is_active BOOLEAN DEFAULT TRUE,
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_feriados_active ON rrhh_feriados(is_active, day DESC)"))
     except Exception:
         pass
     # Ajustes por desvíos (para nómina/contabilidad)
@@ -349,6 +378,288 @@ def _ensure_tables(db: Session) -> None:
         pass
     db.commit()
     _RRHH_ENSURED = True
+
+
+@router.get("/feriados")
+def list_feriados(
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    where = ["is_active IS TRUE"]
+    params: dict[str, Any] = {}
+    if year:
+        where.append("EXTRACT(YEAR FROM day)=:y")
+        params["y"] = int(year)
+    rows = db.execute(
+        text(
+            f"""
+            SELECT day::text AS day, COALESCE(name,'') AS name
+            FROM rrhh_feriados
+            WHERE {' AND '.join(where)}
+            ORDER BY day ASC
+            """
+        ),
+        params,
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.post("/feriados")
+def upsert_feriado(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    day = str(body.get("day") or "").strip()[:10]
+    if not day:
+        raise HTTPException(status_code=400, detail="day requerido (YYYY-MM-DD)")
+    name = str(body.get("name") or "").strip()
+    db.execute(
+        text(
+            """
+            INSERT INTO rrhh_feriados(day,name,is_active,updated_at)
+            VALUES (:d,:n,TRUE,now())
+            ON CONFLICT (day) DO UPDATE
+            SET name=EXCLUDED.name, is_active=TRUE, updated_at=now()
+            """
+        ),
+        {"d": day, "n": name},
+    )
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/feriados/{day}")
+def delete_feriado(day: str, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    d = str(day or "").strip()[:10]
+    if not d:
+        raise HTTPException(status_code=400, detail="day inválido")
+    db.execute(text("UPDATE rrhh_feriados SET is_active=FALSE, updated_at=now() WHERE day=:d"), {"d": d})
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/horarios/plan_month")
+def horarios_plan_month(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """
+    Planifica un mes completo por día (drag&drop mensual).
+    body:
+      { id_staff:int, month_start:'YYYY-MM-01', days:{'YYYY-MM-DD': id_turno|null}, mode:'month' }
+    Estrategia:
+      - Inserta 1 fila por día (dow_mask=bit) con rango [week_start, week_end] por semana ISO.
+      - Desactiva solo filas previas del mismo staff y mismo rango [week_start, week_end].
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        id_staff = int(body.get("id_staff") or 0)
+    except Exception:
+        id_staff = 0
+    if not id_staff:
+        raise HTTPException(status_code=400, detail="id_staff requerido")
+    ms = str(body.get("month_start") or body.get("start") or "").strip()[:10]
+    if not ms:
+        raise HTTPException(status_code=400, detail="month_start requerido (YYYY-MM-01)")
+    try:
+        d0 = datetime.date.fromisoformat(ms)
+    except Exception:
+        raise HTTPException(status_code=400, detail="month_start inválido")
+    # Normalizar a primer día de mes
+    d0 = datetime.date(d0.year, d0.month, 1)
+    days = body.get("days") or {}
+    if not isinstance(days, dict) or not days:
+        raise HTTPException(status_code=400, detail="days requerido")
+
+    # Validar turnos
+    ids = sorted({int(v) for v in days.values() if v is not None and str(v).strip() != ""})
+    if ids:
+        ok_turnos = db.execute(
+            text("SELECT id_turno FROM rrhh_turnos WHERE is_active IS TRUE AND id_turno = ANY(:ids)"),
+            {"ids": ids},
+        ).fetchall()
+        ok_set = {int(r[0]) for r in ok_turnos}
+        missing = [t for t in ids if t not in ok_set]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Turnos inválidos/inactivos: {missing}")
+
+    # Agrupar por semana (lunes-domingo) usando ISO week start
+    def week_start(day: datetime.date) -> datetime.date:
+        return day - datetime.timedelta(days=day.weekday())
+
+    # days_map: date -> (dow, turno)
+    day_pairs: list[tuple[datetime.date, int, int]] = []
+    for k, v in days.items():
+        if v is None or str(v).strip() == "":
+            continue
+        try:
+            dd = datetime.date.fromisoformat(str(k)[:10])
+            tid = int(v)
+            dow = int(dd.weekday())  # 0 Mon .. 6 Sun
+            day_pairs.append((dd, dow, tid))
+        except Exception:
+            continue
+    if not day_pairs:
+        raise HTTPException(status_code=400, detail="days vacío: asigna al menos 1 día")
+
+    # group by week_start
+    by_week: dict[datetime.date, dict[int, int]] = {}
+    for dd, dow, tid in day_pairs:
+        ws = week_start(dd)
+        by_week.setdefault(ws, {})[dow] = tid
+
+    created = 0
+    for ws, mapping in sorted(by_week.items(), key=lambda x: x[0]):
+        we = ws + datetime.timedelta(days=6)
+        # idempotente por semana: desactiva solo el rango exacto
+        db.execute(
+            text(
+                """
+                UPDATE rrhh_horarios
+                SET is_active=FALSE
+                WHERE is_active IS TRUE
+                  AND id_staff=:s
+                  AND desde=:ws
+                  AND hasta=:we
+                """
+            ),
+            {"s": int(id_staff), "ws": ws, "we": we},
+        )
+        for dow, tid in mapping.items():
+            db.execute(
+                text(
+                    """
+                    INSERT INTO rrhh_horarios(id_staff,id_turno,desde,hasta,dow_mask,is_active)
+                    VALUES (:s,:t,:ws,:we,:m,TRUE)
+                    """
+                ),
+                {"s": int(id_staff), "t": int(tid), "ws": ws, "we": we, "m": int(1 << int(dow))},
+            )
+            created += 1
+
+    db.commit()
+    return {"ok": True, "month_start": d0.isoformat(), "weeks": len(by_week), "created": created}
+
+
+@router.get("/horarios/month")
+def horarios_month(
+    id_staff: int = Query(ge=1),
+    month: str = Query(min_length=7, max_length=7),  # YYYY-MM
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Devuelve la planificación del mes como mapping día->id_turno.
+    Expande rrhh_horarios por rango [desde,hasta] y dow_mask.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    ym = str(month or "").strip()
+    try:
+        y = int(ym.split("-")[0])
+        m = int(ym.split("-")[1])
+        if m < 1 or m > 12:
+            raise ValueError()
+        month_start = datetime.date(y, m, 1)
+    except Exception:
+        raise HTTPException(status_code=400, detail="month inválido (YYYY-MM)")
+    # end exclusive
+    month_end = (month_start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+
+    rows = db.execute(
+        text(
+            """
+            SELECT id_turno, desde, hasta, dow_mask
+            FROM rrhh_horarios
+            WHERE is_active IS TRUE
+              AND id_staff=:s
+              AND desde <= :me
+              AND COALESCE(hasta, :me) >= :ms
+            """
+        ),
+        {"s": int(id_staff), "ms": month_start, "me": month_end - datetime.timedelta(days=1)},
+    ).mappings().all()
+
+    out: dict[str, int] = {}
+
+    def _mask_days(mask: int | None) -> set[int]:
+        if mask is None:
+            return set(range(7))
+        s = set()
+        for k in range(7):
+            if int(mask) & (1 << k):
+                s.add(k)
+        return s
+
+    # Expand day by day inside month
+    d = month_start
+    while d < month_end:
+        dow = int(d.weekday())  # 0 Mon..6 Sun
+        for r in rows:
+            tid = int(r.get("id_turno") or 0)
+            if not tid:
+                continue
+            desde = r.get("desde")
+            hasta = r.get("hasta")
+            try:
+                if desde and isinstance(desde, datetime.date) and d < desde:
+                    continue
+                if hasta and isinstance(hasta, datetime.date) and d > hasta:
+                    continue
+            except Exception:
+                pass
+            dm = r.get("dow_mask")
+            if dow not in _mask_days(int(dm) if dm is not None else None):
+                continue
+            # last write wins (later rows can override)
+            out[d.isoformat()] = tid
+        d += datetime.timedelta(days=1)
+
+    return {"ok": True, "id_staff": int(id_staff), "month": ym, "days": out}
+
+
+@router.post("/horarios/clear_month")
+def horarios_clear_month(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        id_staff = int(body.get("id_staff") or 0)
+    except Exception:
+        id_staff = 0
+    if not id_staff:
+        raise HTTPException(status_code=400, detail="id_staff requerido")
+    ym = str(body.get("month") or body.get("month_start") or "").strip()
+    if not ym:
+        raise HTTPException(status_code=400, detail="month requerido (YYYY-MM)")
+    ym = ym[:7]
+    try:
+        y = int(ym.split("-")[0])
+        m = int(ym.split("-")[1])
+        if m < 1 or m > 12:
+            raise ValueError()
+        month_start = datetime.date(y, m, 1)
+    except Exception:
+        raise HTTPException(status_code=400, detail="month inválido (YYYY-MM)")
+    month_end = (month_start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+    # Desactiva horarios que intersecten el mes (solo los acotados por hasta, no plantillas indefinidas).
+    db.execute(
+        text(
+            """
+            UPDATE rrhh_horarios
+            SET is_active=FALSE
+            WHERE is_active IS TRUE
+              AND id_staff=:s
+              AND hasta IS NOT NULL
+              AND desde < :me
+              AND hasta >= :ms
+            """
+        ),
+        {"s": int(id_staff), "ms": month_start, "me": month_end},
+    )
+    db.commit()
+    return {"ok": True, "month": ym}
 
 
 def _tol_minutes_for_role(role: str) -> int:
@@ -629,6 +940,8 @@ def list_desvios(
     estado: str | None = None,
     date: str | None = None,
     id_usuario: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
     db: Session = Depends(get_db),
     me: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -673,6 +986,26 @@ def list_desvios(
             return {"ok": True, "items": []}
 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    lim = int(limit or 100)
+    if lim < 1:
+        lim = 1
+    if lim > 500:
+        lim = 500
+    off = int(offset or 0)
+    if off < 0:
+        off = 0
+
+    total = db.execute(
+        text(
+            f"""
+            SELECT COUNT(1)
+            FROM rrhh_desvios
+            {where_sql}
+            """
+        ),
+        params,
+    ).scalar() or 0
+
     rows = db.execute(
         text(
             f"""
@@ -683,12 +1016,12 @@ def list_desvios(
             FROM rrhh_desvios
             {where_sql}
             ORDER BY fecha DESC, status ASC, colaborador ASC, id_desvio DESC
-            LIMIT 500
+            LIMIT :lim OFFSET :off
             """
         ),
-        params,
+        dict(params, lim=lim, off=off),
     ).mappings().all()
-    return {"ok": True, "items": [dict(r) for r in rows]}
+    return {"ok": True, "items": [dict(r) for r in rows], "total": int(total), "limit": lim, "offset": off}
 
 @router.get("/desvios/report")
 def report_desvios(
@@ -1113,7 +1446,10 @@ def my_desvios(
     rows = db.execute(
         text(
             f"""
-            SELECT id_desvio, created_at, fecha, tipo, status, expected_in, expected_out, actual_in, actual_out, impact_kind, impact_min, note
+            SELECT id_desvio, created_at, fecha, tipo, status,
+                   expected_in, expected_out, actual_in, actual_out,
+                   proposed_in, proposed_out,
+                   impact_kind, impact_min, note
             FROM rrhh_desvios
             WHERE {' AND '.join(where)}
             ORDER BY fecha DESC, id_desvio DESC
@@ -1159,7 +1495,10 @@ def request_desvio_approval(
     row = db.execute(
         text(
             """
-            SELECT id_desvio, fecha, id_staff, id_usuario, colaborador, tipo, expected_in, expected_out, impact_kind, impact_min, status
+            SELECT id_desvio, fecha, id_staff, id_usuario, colaborador, tipo,
+                   expected_in, expected_out, actual_in, actual_out,
+                   proposed_in, proposed_out,
+                   impact_kind, impact_min, status
             FROM rrhh_desvios
             WHERE id_desvio=:id
             LIMIT 1
@@ -1185,17 +1524,55 @@ def request_desvio_approval(
     link_no = f"{base}/crm/rrhh/desvios/action?t={tok_no}" if base else f"/crm/rrhh/desvios/action?t={tok_no}"
     portal = f"{base}/crm/web/views/rrhh_portal.html" if base else "/crm/web/views/rrhh_portal.html"
 
+    # Guardar propuesta (si viene) antes de enviar correo
+    prop_in = str(body.get("proposed_in") or "").strip() or None
+    prop_out = str(body.get("proposed_out") or "").strip() or None
+    try:
+        if prop_in is not None or prop_out is not None:
+            db.execute(
+                text(
+                    """
+                    UPDATE rrhh_desvios
+                    SET proposed_in=COALESCE(:pi, proposed_in),
+                        proposed_out=COALESCE(:po, proposed_out)
+                    WHERE id_desvio=:id
+                    """
+                ),
+                {"id": int(id_desvio), "pi": prop_in, "po": prop_out},
+            )
+            db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
     fecha = str(row.get("fecha") or "")[:10]
     tipo = str(row.get("tipo") or "")
     impact_kind = str(row.get("impact_kind") or "")
     impact_min = row.get("impact_min")
     exp = f"{row.get('expected_in') or '—'} → {row.get('expected_out') or '—'}"
+    # propuesta final: prioridad body > ya guardado en BD > heurística simple desde actual/expected
+    prop_in_final = prop_in or (str(row.get("proposed_in") or "").strip() or None)
+    prop_out_final = prop_out or (str(row.get("proposed_out") or "").strip() or None)
+    if not prop_in_final and row.get("actual_in"):
+        try:
+            prop_in_final = str(row.get("actual_in")).replace("T", " ")[:16]
+        except Exception:
+            prop_in_final = None
+    if not prop_out_final and row.get("actual_out"):
+        try:
+            prop_out_final = str(row.get("actual_out")).replace("T", " ")[:16]
+        except Exception:
+            prop_out_final = None
+    propuesta_txt = f"{prop_in_final or '—'} → {prop_out_final or '—'}"
     body_txt = (
         f"Hola {row.get('colaborador') or 'colaborador'},\n\n"
         f"Detectamos un desvío en tu marcación:\n"
         f"- Fecha: {fecha}\n"
         f"- Tipo: {tipo}\n"
         f"- Esperado: {exp}\n"
+        f"- Propuesta RRHH: {propuesta_txt}\n"
         f"- Impacto: {impact_kind} {impact_min if impact_min is not None else ''}\n\n"
         f"Por favor confirma si corresponde APROBAR o RECHAZAR:\n"
         f"- Aprobar: {link_ok}\n"
@@ -1466,10 +1843,25 @@ def _today_theoretical_shift(db: Session, staff_id: int, on_date: datetime.date)
 
 
 @router.get("/nomina")
-def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+def nomina_list(
+    month: int | None = None,
+    year: int | None = None,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     _ensure_tables(db)
     _require_rrhh_admin(me)
     try:
+        # Periodo (por defecto: mes actual). Permite revisar meses anteriores para nómina/ajustes.
+        today = datetime.date.today()
+        m = int(month) if month and int(month) >= 1 and int(month) <= 12 else int(today.month)
+        y = int(year) if year and int(year) >= 2000 and int(year) <= 2100 else int(today.year)
+        period_start = datetime.date(y, m, 1)
+        if m == 12:
+            period_end = datetime.date(y + 1, 1, 1)
+        else:
+            period_end = datetime.date(y, m + 1, 1)
+
         # Base: colaboradores activos (rrhh_staff)
         staff_rows = db.execute(
             text(
@@ -1526,26 +1918,36 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
                 }
             )
 
-        # inasistencias del mes actual
+        # inasistencias del período
+        faltas_staff_map = {}
         faltas_map = {}
         faltas_tokens_map = {}
         try:
             faltas_rows = db.execute(
                 text(
                     """
-                    SELECT colaborador, COALESCE(SUM(dias),0) AS dias
+                    SELECT id_staff, colaborador, COALESCE(SUM(dias),0) AS dias
                     FROM rrhh_inasistencias
-                    WHERE fecha >= date_trunc('month', current_date)
-                      AND fecha < (date_trunc('month', current_date) + interval '1 month')
-                    GROUP BY colaborador
+                    WHERE fecha >= :from_d
+                      AND fecha < :to_d
+                    GROUP BY id_staff, colaborador
                     """
                 )
+            ,
+                {"from_d": period_start, "to_d": period_end},
             ).fetchall()
+            faltas_staff_map = {}
             faltas_map = {}
             faltas_tokens_map = {}
             for r in faltas_rows:
-                raw = str(r[0] or "")
-                dias = float(r[1] or 0)
+                id_staff = r[0]
+                raw = str(r[1] or "")
+                dias = float(r[2] or 0)
+                if id_staff is not None:
+                    try:
+                        faltas_staff_map[int(id_staff)] = float(faltas_staff_map.get(int(id_staff), 0) or 0) + dias
+                    except Exception:
+                        pass
                 k = _norm_person_key(raw)
                 kt = _norm_person_tokens_key(raw)
                 if k:
@@ -1553,6 +1955,7 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
                 if kt:
                     faltas_tokens_map[kt] = float(faltas_tokens_map.get(kt, 0) or 0) + dias
         except Exception:
+            faltas_staff_map = {}
             faltas_map = {}
             faltas_tokens_map = {}
 
@@ -1605,9 +2008,16 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
                     ficha = {}
             key = _norm_person_key(d.get("colaborador") or "")
             key_tokens = _norm_person_tokens_key(d.get("colaborador") or "")
-            faltas = float(faltas_map.get(key, 0) or 0)
-            if not faltas and key_tokens:
-                faltas = float(faltas_tokens_map.get(key_tokens, 0) or 0)
+            faltas = 0.0
+            try:
+                if d.get("id_staff") is not None:
+                    faltas = float(faltas_staff_map.get(int(d.get("id_staff")), 0) or 0)
+            except Exception:
+                faltas = 0.0
+            if not faltas:
+                faltas = float(faltas_map.get(key, 0) or 0)
+                if not faltas and key_tokens:
+                    faltas = float(faltas_tokens_map.get(key_tokens, 0) or 0)
             sueldo = _num(
                 ficha.get("hh_liquido")
                 or ficha.get("renta_liquida")
@@ -1636,6 +2046,7 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
             descuento_faltas = diario * faltas
             total_pagar = max(0.0, sueldo - descuento_faltas - adel)
             items.append({
+                "id_staff": d.get("id_staff"),
                 "colaborador": d.get("colaborador"),
                 "centro_costo": d.get("centro_costo"),
                 "cargo": ficha.get("cargo") or d.get("rol"),
@@ -1658,10 +2069,127 @@ def nomina_list(db: Session = Depends(get_db), me: dict = Depends(get_current_us
                 "total_pagar": round(total_pagar, 0),
                 "saldo": round(total_pagar, 0),
             })
-        return {"ok": True, "items": items}
+        return {"ok": True, "items": items, "period": {"year": y, "month": m, "from": str(period_start), "to": str(period_end)}}
     except Exception as e:
         db.rollback()
         return {"ok": False, "detail": str(e)}
+
+
+def _ensure_nomina_snapshots(db: Session) -> None:
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS rrhh_nomina_snapshots (
+                  id_snapshot SERIAL PRIMARY KEY,
+                  period_yyyymm TEXT NOT NULL,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  created_by INTEGER,
+                  payload JSONB NOT NULL DEFAULT '{}'::jsonb
+                )
+                """
+            )
+        )
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rrhh_nomina_snapshots_period ON rrhh_nomina_snapshots(period_yyyymm)"))
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+@router.post("/nomina/snapshot")
+def nomina_snapshot(
+    month: int | None = None,
+    year: int | None = None,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    _ensure_nomina_snapshots(db)
+    _require_rrhh_admin(me)
+    # Reusa cálculo existente (misma lógica), pero guarda snapshot.
+    out = nomina_list(month=month, year=year, db=db, me=me)
+    if not out or out.get("ok") is False:
+        return out
+    period = out.get("period") or {}
+    y = int(period.get("year") or 0) or int(datetime.date.today().year)
+    m = int(period.get("month") or 0) or int(datetime.date.today().month)
+    yyyymm = f"{y:04d}{m:02d}"
+    created_by = _user_id(me)
+    try:
+        row = db.execute(
+            text(
+                """
+                INSERT INTO rrhh_nomina_snapshots(period_yyyymm, created_by, payload)
+                VALUES (:p, :by, CAST(:pl AS JSONB))
+                RETURNING id_snapshot
+                """
+            ),
+            {"p": yyyymm, "by": created_by, "pl": json.dumps(out)},
+        ).fetchone()
+        db.commit()
+        sid = int(row[0]) if row and row[0] is not None else None
+        return {"ok": True, "id_snapshot": sid, "period_yyyymm": yyyymm}
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "detail": str(e)}
+
+
+@router.get("/nomina/snapshots")
+def nomina_snapshots_list(
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    _ensure_nomina_snapshots(db)
+    _require_rrhh_admin(me)
+    lim = max(1, min(int(limit or 50), 200))
+    off = max(0, int(offset or 0))
+    total = db.execute(text("SELECT COUNT(1) FROM rrhh_nomina_snapshots")).scalar() or 0
+    rows = db.execute(
+        text(
+            """
+            SELECT id_snapshot, period_yyyymm, created_at, created_by
+            FROM rrhh_nomina_snapshots
+            ORDER BY created_at DESC, id_snapshot DESC
+            LIMIT :lim OFFSET :off
+            """
+        ),
+        {"lim": lim, "off": off},
+    ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows], "total": int(total), "limit": lim, "offset": off}
+
+
+@router.get("/nomina/snapshots/{id_snapshot}")
+def nomina_snapshot_get(
+    id_snapshot: int,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure_tables(db)
+    _ensure_nomina_snapshots(db)
+    _require_rrhh_admin(me)
+    row = db.execute(
+        text(
+            """
+            SELECT id_snapshot, period_yyyymm, created_at, created_by, payload
+            FROM rrhh_nomina_snapshots
+            WHERE id_snapshot=:id
+            LIMIT 1
+            """
+        ),
+        {"id": int(id_snapshot)},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Snapshot no existe")
+    return {"ok": True, "item": dict(row)}
 
 
 @router.get("/push/status")
@@ -2335,6 +2863,70 @@ def horarios_plan_week(body: dict, db: Session = Depends(get_db), me: dict = Dep
         pass
 
     return {"ok": True, "week_start": d0.isoformat(), "week_end": d6.isoformat(), "created": created}
+
+
+@router.post("/horarios/clear_week")
+def horarios_clear_week(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """
+    Limpia la planificación semanal (rango [week_start, week_start+6]) para un colaborador.
+    No toca el "horario base" (hasta IS NULL).
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        id_staff = int(body.get("id_staff"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_staff requerido")
+    week_start = (body.get("week_start") or "").strip()
+    if not week_start:
+        raise HTTPException(status_code=400, detail="week_start requerido (YYYY-MM-DD)")
+    try:
+        d0 = datetime.date.fromisoformat(week_start[:10])
+    except Exception:
+        raise HTTPException(status_code=400, detail="week_start inválido")
+    d6 = d0 + datetime.timedelta(days=6)
+    upd = db.execute(
+        text(
+            """
+            UPDATE rrhh_horarios
+            SET is_active=FALSE
+            WHERE is_active IS TRUE
+              AND id_staff=:s
+              AND desde=:d0
+              AND hasta=:d6
+            """
+        ),
+        {"s": id_staff, "d0": d0, "d6": d6},
+    )
+    db.commit()
+    return {"ok": True, "week_start": d0.isoformat(), "week_end": d6.isoformat(), "cleared": int(getattr(upd, "rowcount", 0) or 0)}
+
+
+@router.post("/horarios/clear_template")
+def horarios_clear_template(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """
+    Limpia el horario base indefinido (hasta IS NULL) para un colaborador.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    try:
+        id_staff = int(body.get("id_staff"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_staff requerido")
+    upd = db.execute(
+        text(
+            """
+            UPDATE rrhh_horarios
+            SET is_active=FALSE
+            WHERE is_active IS TRUE
+              AND id_staff=:s
+              AND hasta IS NULL
+            """
+        ),
+        {"s": id_staff},
+    )
+    db.commit()
+    return {"ok": True, "cleared": int(getattr(upd, "rowcount", 0) or 0)}
 
 
 @router.post("/horarios/plan_template")
@@ -3354,35 +3946,92 @@ def staff_delete(id_staff: int, db: Session = Depends(get_db), me: dict = Depend
 def inasistencia_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
     _ensure_tables(db)
     _require_rrhh_admin(me)
+    id_staff = body.get("id_staff")
     colaborador = (body.get("colaborador") or "").strip()
     fecha = body.get("fecha")
     dias = body.get("dias") or 1
     motivo = (body.get("motivo") or "").strip()
-    if not colaborador or not fecha:
-        return {"ok": False, "detail": "colaborador y fecha requeridos"}
+    if not fecha:
+        return {"ok": False, "detail": "fecha requerida"}
+    if id_staff is not None:
+        try:
+            id_staff = int(id_staff)
+        except Exception:
+            return {"ok": False, "detail": "id_staff inválido"}
+        staff = db.execute(
+            text("SELECT colaborador FROM rrhh_staff WHERE id_staff=:id"),
+            {"id": id_staff},
+        ).fetchone()
+        if staff and staff[0]:
+            colaborador = str(staff[0]).strip()
+    if not colaborador:
+        return {"ok": False, "detail": "colaborador requerido"}
+    # Si no viene id_staff, intentamos enlazarlo por nombre (evita que la nómina no descuente por diferencias de escritura).
+    if id_staff is None and colaborador:
+        try:
+            # 1) match exacto case-insensitive
+            sid = db.execute(
+                text("SELECT id_staff FROM rrhh_staff WHERE lower(colaborador)=lower(:c) LIMIT 1"),
+                {"c": colaborador},
+            ).scalar()
+            if sid is not None:
+                id_staff = int(sid)
+            else:
+                # 2) match por normalización (tokens)
+                target = _norm_person_tokens_key(colaborador) or _norm_person_key(colaborador)
+                if target:
+                    rows = db.execute(text("SELECT id_staff, colaborador FROM rrhh_staff")).fetchall()
+                    for rr in rows:
+                        nm = str(rr[1] or "").strip()
+                        if not nm:
+                            continue
+                        k = _norm_person_tokens_key(nm) or _norm_person_key(nm)
+                        if k and k == target:
+                            id_staff = int(rr[0])
+                            colaborador = nm  # canonical
+                            break
+        except Exception:
+            id_staff = None
     db.execute(
         text(
             """
-            INSERT INTO rrhh_inasistencias(colaborador, fecha, dias, motivo)
-            VALUES (:c, :f, :d, :m)
+            INSERT INTO rrhh_inasistencias(id_staff, colaborador, fecha, dias, motivo)
+            VALUES (:id_staff, :c, :f, :d, :m)
             """
         ),
-        {"c": colaborador, "f": fecha, "d": dias, "m": motivo},
+        {"id_staff": id_staff, "c": colaborador, "f": fecha, "d": dias, "m": motivo},
     )
     db.commit()
     return {"ok": True}
 
 
 @router.get("/inasistencias")
-def inasistencia_list(colaborador: str | None = None, db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+def inasistencia_list(
+    colaborador: str | None = None,
+    id_staff: int | None = None,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     _ensure_tables(db)
     _require_rrhh_admin(me)
     try:
-        if colaborador:
+        if id_staff is not None:
             rows = db.execute(
                 text(
                     """
-                    SELECT id_inasistencia, colaborador, fecha, dias, motivo
+                    SELECT id_inasistencia, id_staff, colaborador, fecha, dias, motivo
+                    FROM rrhh_inasistencias
+                    WHERE id_staff = :id_staff
+                    ORDER BY fecha DESC, id_inasistencia DESC
+                    """
+                ),
+                {"id_staff": int(id_staff)},
+            ).mappings().all()
+        elif colaborador:
+            rows = db.execute(
+                text(
+                    """
+                    SELECT id_inasistencia, id_staff, colaborador, fecha, dias, motivo
                     FROM rrhh_inasistencias
                     WHERE lower(colaborador) = lower(:c)
                     ORDER BY fecha DESC, id_inasistencia DESC
@@ -3394,7 +4043,7 @@ def inasistencia_list(colaborador: str | None = None, db: Session = Depends(get_
             rows = db.execute(
                 text(
                     """
-                    SELECT id_inasistencia, colaborador, fecha, dias, motivo
+                    SELECT id_inasistencia, id_staff, colaborador, fecha, dias, motivo
                     FROM rrhh_inasistencias
                     ORDER BY fecha DESC, id_inasistencia DESC
                     """
@@ -3448,6 +4097,7 @@ def inasistencia_delete(id_inasistencia: int, db: Session = Depends(get_db), me:
 def solicitudes_list(
     estado: str | None = None,
     colaborador: str | None = None,
+    include_all: int | None = 0,
     db: Session = Depends(get_db),
     me: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -3456,6 +4106,8 @@ def solicitudes_list(
     try:
         where = []
         params: dict[str, Any] = {}
+        if not include_all:
+            where.append("created_at >= date_trunc('month', now()) AND created_at < (date_trunc('month', now()) + interval '1 month')")
         if estado:
             where.append("estado = :estado")
             params["estado"] = estado

@@ -167,7 +167,73 @@
           ${cell("Tipo cuenta", ficha.tipo_cuenta)}
           ${cell("N° cuenta", ficha.cuenta_numero)}
         </tbody></table>
+
+        <h3>Enrolamiento (dispositivos)</h3>
+        <div class="muted" id="devHint">Cargando dispositivos…</div>
+        <div id="devBox"></div>
       `;
+      loadDevices(item?.id_usuario);
+    }
+
+    async function loadDevices(idUsuario){
+      const box = qs("#devBox");
+      const hint = qs("#devHint");
+      if (!box || !hint) return;
+      const uid = Number(idUsuario || 0) || 0;
+      if (!uid){
+        hint.textContent = "Sin usuario CRM vinculado.";
+        box.innerHTML = "";
+        return;
+      }
+      try{
+        const r = await fetch(apiURL(`/rrhh/sgjo/admin/devices?id_usuario=${encodeURIComponent(String(uid))}`), { headers: headers() });
+        const j = await r.json().catch(()=>({}));
+        if (!r.ok || !j?.ok) throw new Error(j?.detail || String(r.status));
+        const items = Array.isArray(j.items) ? j.items : [];
+        if (!items.length){
+          hint.textContent = "Sin dispositivos enrolados.";
+          box.innerHTML = "";
+          return;
+        }
+        hint.textContent = "Dispositivos enrolados:";
+        box.innerHTML = `
+          <table><tbody>
+            ${items.map(d => `
+              <tr>
+                <td style="width:220px;font-weight:1100;opacity:.85">${esc(d.revoked_at ? "Revocado" : "Activo")}</td>
+                <td>
+                  <div style="font-weight:1100">${esc(d.device_name || "—")}</div>
+                  <div class="muted" style="margin-top:2px">Device ID: ${esc(d.device_id || "")}</div>
+                </td>
+                <td style="width:180px;text-align:right">
+                  ${d.revoked_at ? "" : `<button class="btn" data-revoke="${esc(d.id_device)}">Eliminar</button>`}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody></table>
+        `;
+        box.querySelectorAll("[data-revoke]").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const idDev = Number(btn.getAttribute("data-revoke") || 0) || 0;
+            if (!idDev) return;
+            if (!confirm("¿Revocar este dispositivo? El colaborador deberá enrolar de nuevo.")) return;
+            const r3 = await fetch(apiURL(`/rrhh/sgjo/admin/devices/${idDev}/revoke`), {
+              method: "POST",
+              headers: { "Content-Type":"application/json", ...headers() },
+              body: JSON.stringify({ note: "revocado por admin" })
+            });
+            const j3 = await r3.json().catch(()=>({}));
+            if (!r3.ok || !j3?.ok){
+              alert("No se pudo revocar: " + (j3?.detail || r3.status));
+              return;
+            }
+            await loadDevices(uid);
+          });
+        });
+      }catch(e){
+        hint.textContent = "No se pudo cargar dispositivos: " + String(e?.message || e);
+        box.innerHTML = "";
+      }
     }
 
     async function load(){

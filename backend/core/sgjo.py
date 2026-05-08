@@ -52,6 +52,7 @@ def ensure_sgjo_tables(db: Session) -> None:
               id_device SERIAL PRIMARY KEY,
               id_usuario INTEGER NOT NULL,
               device_id TEXT NOT NULL,
+              device_name TEXT,
               ua_hash TEXT NOT NULL,
               enrolled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
               revoked_at TIMESTAMPTZ,
@@ -60,6 +61,18 @@ def ensure_sgjo_tables(db: Session) -> None:
             """
         )
     )
+    try:
+        db.execute(text("ALTER TABLE public.sgjo_dispositivos ADD COLUMN IF NOT EXISTS device_name TEXT"))
+    except Exception:
+        pass
+    try:
+        db.execute(text("ALTER TABLE public.sgjo_dispositivos ADD COLUMN IF NOT EXISTS revoked_by INTEGER"))
+    except Exception:
+        pass
+    try:
+        db.execute(text("ALTER TABLE public.sgjo_dispositivos ADD COLUMN IF NOT EXISTS revoked_note TEXT"))
+    except Exception:
+        pass
     db.execute(
         text(
             """

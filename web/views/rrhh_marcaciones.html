@@ -73,6 +73,7 @@
         </select>
         <button class="btn primary" id="btnLoad">Buscar</button>
         <button class="btn" id="btnDesvios">Ver desvíos</button>
+        <button class="btn" id="btnHoras">Horas (uid)</button>
       </div>
     </div>
 
@@ -250,6 +251,23 @@
         return;
       }catch(_){}
       location.href = apiURL(url);
+    });
+    qs("#btnHoras").addEventListener("click", async ()=>{
+      const uid = String(qs("#uid")?.value||"").trim();
+      if(!uid) return alert("Ingresa ID usuario primero.");
+      const fd = (qs("#fd").value || "").trim();
+      const td = (qs("#td").value || "").trim();
+      try{
+        const u = `/rrhh/sgjo/admin/hours_summary?id_usuario=${encodeURIComponent(uid)}&from_date=${encodeURIComponent(fd)}&to_date=${encodeURIComponent(td)}`;
+        const r = await fetch(apiURL(u), { headers: headers() });
+        const j = await r.json().catch(()=>({}));
+        if (!r.ok || !j?.ok) throw new Error(j?.detail || String(r.status));
+        const m = Number(j.total_minutes||0);
+        const hh = Math.floor(m/60), mm = Math.floor(m%60);
+        alert(`Total: ${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")} (${j.total_hours}h)\nDías: ${(j.items||[]).length}`);
+      }catch(e){
+        alert(String(e?.message||e));
+      }
     });
     // default: hoy
     const d = new Date();

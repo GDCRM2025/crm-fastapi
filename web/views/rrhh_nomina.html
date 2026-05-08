@@ -35,7 +35,15 @@
       <div class="row" style="justify-content:space-between;">
         <div class="row">
           <input class="inp" id="q" placeholder="Buscar colaborador..." />
+          <select class="inp" id="selMonth" style="min-width:140px">
+            <option value="1">Ene</option><option value="2">Feb</option><option value="3">Mar</option><option value="4">Abr</option>
+            <option value="5">May</option><option value="6">Jun</option><option value="7">Jul</option><option value="8">Ago</option>
+            <option value="9">Sep</option><option value="10">Oct</option><option value="11">Nov</option><option value="12">Dic</option>
+          </select>
+          <input class="inp" id="selYear" style="min-width:120px" inputmode="numeric" placeholder="Año" />
           <button class="btn" id="btnReload">Actualizar</button>
+          <button class="btn" id="btnSnapshot">Guardar mes</button>
+          <button class="btn" id="btnPrint">Imprimir</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -51,10 +59,9 @@
               <th>Vac. acumuladas</th>
               <th>Vac. tomadas</th>
               <th>Vac. disponibles</th>
-              <th>A pagar</th>
               <th>Adelantos</th>
-              <th>Saldo</th>
               <th>Acciones</th>
+              <th>A pagar</th>
             </tr>
           </thead>
           <tbody id="rows">
@@ -192,7 +199,10 @@
     }
 
     async function load(){
-      const r = await fetch(apiURL("/rrhh/nomina"), { headers: headers() });
+      const m = Number(qs("#selMonth").value || 0) || 0;
+      const y = Number(qs("#selYear").value || 0) || 0;
+      const qsPeriod = (m && y) ? `?month=${encodeURIComponent(m)}&year=${encodeURIComponent(y)}` : "";
+      const r = await fetch(apiURL("/rrhh/nomina" + qsPeriod), { headers: headers() });
       if (!r.ok){
         const t = await r.text().catch(()=> "");
         qs("#rows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
@@ -220,7 +230,6 @@
       qs("#rows").innerHTML = items.map(i => {
         const adel = Number(i.adelantos_total || 0) || 0;
         const base = Number(i.total_pagar ?? i.a_pagar_liquido ?? i.sueldo_fijo ?? 0) || 0;
-        const saldo = Number(i.saldo ?? 0) || 0;
         return `
         <tr>
           <td><strong>${i.colaborador || "—"}</strong></td>
@@ -232,32 +241,62 @@
           <td>${fmt(i.vac_acumuladas)}</td>
           <td>${fmt(i.vac_tomadas)}</td>
           <td>${fmt(i.vac_disponibles)}</td>
-          <td>${base ? fmt(base) : "—"}</td>
           <td>${fmt(adel)}</td>
-          <td>${base ? fmt(saldo) : "—"}</td>
           <td>
-            <button class="btn" data-actions="${i.colaborador || ""}">Gestionar</button>
+            <button class="btn" data-actions-name="${(i.colaborador || "").replace(/\"/g,"")}" data-actions-idstaff="${i.id_staff ?? ""}">Gestionar</button>
           </td>
+          <td>${base ? fmt(base) : "—"}</td>
         </tr>
       `; }).join("") || `<tr><td class="muted">Sin datos.</td></tr>`;
-      qs("#rows").querySelectorAll("[data-actions]").forEach(b => {
+      qs("#rows").querySelectorAll("[data-actions-name]").forEach(b => {
         b.addEventListener("click", () => {
-          const name = b.dataset.actions || "";
+          const name = b.dataset.actionsName || "";
+          const idStaff = b.dataset.actionsIdstaff || "";
           qs("#actName").textContent = name || "Colaborador";
           qs("#actAdv").dataset.name = name;
+          qs("#actAdv").dataset.idstaff = idStaff;
           qs("#actAbs").dataset.name = name;
+          qs("#actAbs").dataset.idstaff = idStaff;
           qs("#actVac").dataset.name = name;
+          qs("#actVac").dataset.idstaff = idStaff;
           qs("#actModal").style.display = "flex";
         });
       });
     }
 
+    // Defaults periodo: mes/año actuales
+    try{
+      const now = new Date();
+      qs("#selMonth").value = String(now.getMonth() + 1);
+      qs("#selYear").value = String(now.getFullYear());
+    }catch(e){}
+
     qs("#btnReload").addEventListener("click", () => load());
     qs("#q").addEventListener("input", () => load());
+    qs("#selMonth").addEventListener("change", () => load());
+    qs("#selYear").addEventListener("change", () => load());
+    qs("#btnPrint").addEventListener("click", () => window.print());
+    qs("#btnSnapshot").addEventListener("click", async () => {
+      const m = Number(qs("#selMonth").value || 0) || 0;
+      const y = Number(qs("#selYear").value || 0) || 0;
+      if (!m || !y){ alert("Selecciona mes y año"); return; }
+      const r = await fetch(apiURL(`/rrhh/nomina/snapshot?month=${encodeURIComponent(m)}&year=${encodeURIComponent(y)}`), {
+        method: "POST",
+        headers: headers(),
+      });
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok || j?.ok === false){
+        alert("No se pudo guardar: " + (j?.detail || r.status));
+        return;
+      }
+      toast(`Snapshot guardado (${j.period_yyyymm || ""})`);
+    });
     qs("#actClose").addEventListener("click", () => qs("#actModal").style.display = "none");
     qs("#actAdv").addEventListener("click", (e) => {
       const name = e.currentTarget.dataset.name || "";
+      const idStaff = e.currentTarget.dataset.idstaff || "";
       qs("#advName").value = name;
+      qs("#advName").dataset.idstaff = idStaff;
       qs("#advMonto").value = "";
       qs("#advMotivo").value = "";
       qs("#advFecha").value = new Date().toISOString().slice(0,10);
@@ -267,17 +306,21 @@
     });
     qs("#actAbs").addEventListener("click", (e) => {
       const name = e.currentTarget.dataset.name || "";
+      const idStaff = e.currentTarget.dataset.idstaff || "";
       qs("#absName").value = name;
+      qs("#absName").dataset.idstaff = idStaff;
       qs("#absNewFecha").value = new Date().toISOString().slice(0,10);
       qs("#absNewDias").value = "1";
       qs("#absNewMotivo").value = "";
       qs("#actModal").style.display = "none";
-      loadAbsences(name);
+      loadAbsences(name, idStaff);
       qs("#absModal").style.display = "flex";
     });
     qs("#actVac").addEventListener("click", (e) => {
       const name = e.currentTarget.dataset.name || "";
+      const idStaff = e.currentTarget.dataset.idstaff || "";
       qs("#vacName").value = name;
+      qs("#vacName").dataset.idstaff = idStaff;
       qs("#vacIni").value = new Date().toISOString().slice(0,10);
       qs("#vacFin").value = new Date().toISOString().slice(0,10);
       qs("#vacDias").value = "";
@@ -288,7 +331,7 @@
 
     async function loadAdelantos(name){
       const url = name ? `/rrhh/adelantos?colaborador=${encodeURIComponent(name)}` : "/rrhh/adelantos";
-      const r = await fetch(url, { headers: headers() });
+      const r = await fetch(apiURL(url), { headers: headers() });
       if (!r.ok){
         const t = await r.text().catch(()=> "");
         qs("#advRows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
@@ -318,7 +361,7 @@
           const fecha = qs(`#advRows [data-date="${id}"]`)?.value || null;
           const monto = Number(qs(`#advRows [data-monto="${id}"]`)?.value || 0) || null;
           const motivo = qs(`#advRows [data-motivo="${id}"]`)?.value || "";
-          const r = await fetch(`/rrhh/adelantos/${id}`, {
+          const r = await fetch(apiURL(`/rrhh/adelantos/${id}`), {
             method: "PUT",
             headers: { "Content-Type":"application/json", ...headers() },
             body: JSON.stringify({ fecha, monto, motivo })
@@ -336,7 +379,7 @@
         const id = Number(b.dataset.delAdv || 0);
         b.addEventListener("click", async () => {
           if (!confirm("¿Eliminar adelanto?")) return;
-          const r = await fetch(`/rrhh/adelantos/${id}`, { method:"DELETE", headers: headers() });
+          const r = await fetch(apiURL(`/rrhh/adelantos/${id}`), { method:"DELETE", headers: headers() });
           if (!r.ok){
             const t = await r.text().catch(()=> "");
             toast("No se pudo eliminar: " + (t || r.status));
@@ -376,9 +419,9 @@
       await load();
     });
 
-    async function loadAbsences(name){
-      const url = name ? `/rrhh/inasistencias?colaborador=${encodeURIComponent(name)}` : "/rrhh/inasistencias";
-      const r = await fetch(url, { headers: headers() });
+    async function loadAbsences(name, idStaff){
+      const url = idStaff ? `/rrhh/inasistencias?id_staff=${encodeURIComponent(idStaff)}` : (name ? `/rrhh/inasistencias?colaborador=${encodeURIComponent(name)}` : "/rrhh/inasistencias");
+      const r = await fetch(apiURL(url), { headers: headers() });
       if (!r.ok){
         const t = await r.text().catch(()=> "");
         qs("#absRows").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
@@ -408,7 +451,7 @@
           const fecha = qs(`#absRows [data-date="${id}"]`)?.value || null;
           const dias = Number(qs(`#absRows [data-days="${id}"]`)?.value || 0) || null;
           const motivo = qs(`#absRows [data-motivo="${id}"]`)?.value || "";
-          const r = await fetch(`/rrhh/inasistencias/${id}`, {
+          const r = await fetch(apiURL(`/rrhh/inasistencias/${id}`), {
             method: "PUT",
             headers: { "Content-Type":"application/json", ...headers() },
             body: JSON.stringify({ fecha, dias, motivo })
@@ -426,32 +469,35 @@
         const id = Number(b.dataset.del || 0);
         b.addEventListener("click", async () => {
           if (!confirm("¿Eliminar inasistencia?")) return;
-          const r = await fetch(`/rrhh/inasistencias/${id}`, { method:"DELETE", headers: headers() });
+          const r = await fetch(apiURL(`/rrhh/inasistencias/${id}`), { method:"DELETE", headers: headers() });
           if (!r.ok){
             const t = await r.text().catch(()=> "");
             toast("No se pudo eliminar: " + (t || r.status));
             return;
           }
           toast("Inasistencia eliminada");
-          await loadAbsences(name);
+          await loadAbsences(name, idStaff);
           await load();
         });
       });
     }
 
     qs("#absClose").addEventListener("click", () => qs("#absModal").style.display = "none");
-    qs("#absReload").addEventListener("click", () => loadAbsences(qs("#absName").value));
+    qs("#absReload").addEventListener("click", () => loadAbsences(qs("#absName").value, qs("#absName").dataset.idstaff || ""));
     qs("#absNewSave").addEventListener("click", async () => {
+      const idStaff = qs("#absName").dataset.idstaff || "";
       const payload = {
+        id_staff: idStaff ? Number(idStaff) : null,
         colaborador: qs("#absName").value,
         fecha: qs("#absNewFecha").value,
         dias: Number(qs("#absNewDias").value || 1) || 1,
         motivo: qs("#absNewMotivo").value || "",
       };
       if (!payload.colaborador || !payload.fecha){ alert("Colaborador y fecha requeridos"); return; }
+      if (payload.id_staff == null) delete payload.id_staff;
       const r = await fetch(apiURL("/rrhh/inasistencias"), { method:"POST", headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
       if (!r.ok){ alert("No se pudo guardar"); return; }
-      await loadAbsences(payload.colaborador);
+      await loadAbsences(payload.colaborador, idStaff);
       await load();
     });
 

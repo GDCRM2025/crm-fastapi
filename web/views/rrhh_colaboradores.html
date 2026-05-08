@@ -434,8 +434,8 @@
         </select>
       </div>
 
-      <div style="margin-top:12px; padding:12px; border-radius:14px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.10);">
-        <h4>Solicitudes de enrolamiento (pendientes)</h4>
+	      <div style="margin-top:12px; padding:12px; border-radius:14px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.10);">
+	        <h4>Solicitudes de enrolamiento (pendientes)</h4>
         <div class="table-wrap" style="margin-top:8px; max-height:34vh;">
           <table>
             <thead>
@@ -450,7 +450,28 @@
               <tr><td class="muted">—</td></tr>
             </tbody>
           </table>
-        </div>
+	      </div>
+
+	      <div style="margin-top:12px; padding:12px; border-radius:14px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.10);">
+	        <h4>Dispositivos enrolados (aprobados)</h4>
+	        <div class="muted small">Si el colaborador marca desde otro navegador/celular, debe enrolar ese dispositivo también.</div>
+	        <div class="table-wrap" style="margin-top:8px; max-height:26vh;">
+	          <table>
+	            <thead>
+	              <tr>
+	                <th>Estado</th>
+	                <th>Nombre</th>
+	                <th>Device ID</th>
+	                <th>Enrolado</th>
+	                <th>Acciones</th>
+	              </tr>
+	            </thead>
+	            <tbody id="enrolDevRows">
+	              <tr><td class="muted">—</td></tr>
+	            </tbody>
+	          </table>
+	        </div>
+	      </div>
       </div>
 
       <div class="row" style="margin-top:12px; justify-content:flex-end;">
@@ -570,6 +591,23 @@
     }
     function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
     function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+
+    async function fetchJSON(url, opt){
+      const timeoutMs = Number(opt?.timeoutMs || 12000) || 12000;
+      const controller = ("AbortController" in window) ? new AbortController() : null;
+      const id = setTimeout(()=>{ try{ controller?.abort(); }catch(_){ } }, timeoutMs);
+      try{
+        const r = await fetch(url, { ...(opt||{}), signal: controller?.signal, headers: opt?.headers || headers() });
+        const j = await r.json().catch(()=>({}));
+        if (!r.ok || j?.ok === false) throw new Error(j?.detail || String(r.status));
+        return j;
+      }catch(e){
+        if (String(e?.name||"") === "AbortError") throw new Error("Timeout cargando datos (Passenger/BD lento). Reintenta.");
+        throw e;
+      }finally{
+        try{ clearTimeout(id); }catch(_){ }
+      }
+    }
 
     function escapeHtml(s){
       return String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -855,18 +893,37 @@
       openStep(1);
     }
 
-    async function loadEnrolRequestsForEditing(){
-      const box = qs("#enrolReqRows");
-      if (!box) return;
-      box.innerHTML = `<tr><td class="muted">Cargando...</td></tr>`;
+	    async function loadEnrolRequestsForEditing(){
+	      const box = qs("#enrolReqRows");
+	      if (!box) return;
+	      box.innerHTML = `<tr><td class="muted">Cargando...</td></tr>`;
 
-      const idu = Number(staffEditing?.id_usuario || 0) || 0;
-      if (!idu){
-        box.innerHTML = `<tr><td class="muted">Este colaborador no tiene usuario CRM vinculado. Vincúlalo en “Usuario CRM” para poder enrolar y aprobar dispositivos.</td></tr>`;
-        return;
-      }
+	      const box2 = qs("#enrolDevRows");
+	      if (box2) box2.innerHTML = `<tr><td class="muted" colspan="5">Cargando...</td></tr>`;
 
-      try{
+        // Anti “se queda pegado”: si en 15s no respondió, mostramos mensaje (sin depender de console).
+        let watchdog = null;
+        try{
+          watchdog = setTimeout(()=>{
+            try{
+              if (box && String(box.textContent||"").toLowerCase().includes("cargando")){
+                box.innerHTML = `<tr><td class="muted">Timeout cargando solicitudes. Aprieta Recargar o reabre la ficha.</td></tr>`;
+              }
+              if (box2 && String(box2.textContent||"").toLowerCase().includes("cargando")){
+                box2.innerHTML = `<tr><td class="muted" colspan="5">Timeout cargando dispositivos. Aprieta Recargar o reabre la ficha.</td></tr>`;
+              }
+            }catch(_){}
+          }, 15000);
+        }catch(_){}
+
+	      const idu = Number(staffEditing?.id_usuario || 0) || 0;
+	      if (!idu){
+	        box.innerHTML = `<tr><td class="muted">Este colaborador no tiene usuario CRM vinculado. Vincúlalo en “Usuario CRM” para poder enrolar y aprobar dispositivos.</td></tr>`;
+	        if (box2) box2.innerHTML = `<tr><td class="muted" colspan="5">Sin usuario CRM vinculado.</td></tr>`;
+	        return;
+	      }
+
+		      try{
         const url = `/rrhh/sgjo/admin/device_requests?status=pending&id_usuario=${encodeURIComponent(String(idu))}`;
         const r = await fetch(apiURL(url), { headers: headers() });
         const j = await r.json().catch(()=>({}));
@@ -874,23 +931,22 @@
           const msg = j?.detail || (await r.text().catch(()=> "")) || String(r.status);
           throw new Error(msg);
         }
-        const items = Array.isArray(j.items) ? j.items : [];
+	        const items = Array.isArray(j.items) ? j.items : [];
         if (!items.length){
           box.innerHTML = `<tr><td class="muted">Sin solicitudes pendientes.</td></tr>`;
-          return;
-        }
-        box.innerHTML = items.map(it => `
-          <tr>
-            <td><strong>#${escapeHtml(it.id_request)}</strong></td>
-            <td>${escapeHtml(it.created_at || "—")}</td>
-            <td>${escapeHtml(it.device_id || "—")}</td>
-            <td>
-              <button class="btn" data-enrol-approve="${escapeHtml(it.id_request)}">Aprobar</button>
-              <button class="btn" data-enrol-reject="${escapeHtml(it.id_request)}">Rechazar</button>
-            </td>
-          </tr>
-        `).join("");
-        box.querySelectorAll("[data-enrol-approve]").forEach(btn=>{
+        }else{
+	        box.innerHTML = items.map(it => `
+	          <tr>
+	            <td><strong>#${escapeHtml(it.id_request)}</strong></td>
+	            <td>${escapeHtml(it.created_at || "—")}</td>
+	            <td>${escapeHtml((String(it.device_name||"").trim() ? (it.device_name + " · " + it.device_id) : (it.device_id || "—")))}</td>
+	            <td>
+	              <button class="btn" data-enrol-approve="${escapeHtml(it.id_request)}">Aprobar</button>
+	              <button class="btn" data-enrol-reject="${escapeHtml(it.id_request)}">Rechazar</button>
+	            </td>
+	          </tr>
+	        `).join("");
+	        box.querySelectorAll("[data-enrol-approve]").forEach(btn=>{
           btn.addEventListener("click", async ()=>{
             const idr = Number(btn.getAttribute("data-enrol-approve") || 0) || 0;
             if (!idr) return;
@@ -901,10 +957,10 @@
               toast("No se pudo aprobar: " + (t || rr.status));
               return;
             }
-            toast("Dispositivo aprobado");
-            await loadEnrolRequestsForEditing();
-          });
-        });
+	            toast("Dispositivo aprobado");
+	            await loadEnrolRequestsForEditing();
+	          });
+	        });
         box.querySelectorAll("[data-enrol-reject]").forEach(btn=>{
           btn.addEventListener("click", async ()=>{
             const idr = Number(btn.getAttribute("data-enrol-reject") || 0) || 0;
@@ -924,10 +980,58 @@
             await loadEnrolRequestsForEditing();
           });
         });
-      }catch(err){
-        box.innerHTML = `<tr><td class="muted">No se pudo cargar solicitudes: ${escapeHtml(String(err?.message||err))}</td></tr>`;
-      }
-    }
+        }
+	      }catch(err){
+	        box.innerHTML = `<tr><td class="muted">No se pudo cargar solicitudes: ${escapeHtml(String(err?.message||err))}</td></tr>`;
+	        if (box2) box2.innerHTML = `<tr><td class="muted" colspan="5">—</td></tr>`;
+	      }
+
+	      // Cargar dispositivos aprobados
+	      try{
+	        const box2 = qs("#enrolDevRows");
+	        if (!box2) return;
+	        const j2 = await fetchJSON(apiURL(`/rrhh/sgjo/admin/devices?id_usuario=${encodeURIComponent(String(idu))}`), { timeoutMs: 12000 });
+	        const devs = Array.isArray(j2.items) ? j2.items : [];
+	        if (!devs.length){
+	          box2.innerHTML = `<tr><td class="muted" colspan="5">Sin dispositivos enrolados.</td></tr>`;
+	          return;
+	        }
+	        box2.innerHTML = devs.map(d=>`
+	          <tr>
+	            <td>${d.revoked_at ? `<span class="pill">Revocado</span>` : `<span class="pill ok">Activo</span>`}</td>
+	            <td>${escapeHtml((d.device_name||"") || "—")}</td>
+	            <td class="small code">${escapeHtml(d.device_id||"")}</td>
+	            <td class="small muted">${escapeHtml(String(d.enrolled_at||"").replace("T"," ").slice(0,16) || "—")}</td>
+	            <td>
+	              ${d.revoked_at ? `<span class="muted">—</span>` : `<button class="btn" data-dev-revoke="${escapeHtml(String(d.id_device||\"\"))}">Eliminar</button>`}
+	            </td>
+	          </tr>
+	        `).join("");
+	        box2.querySelectorAll("[data-dev-revoke]").forEach(btn=>{
+	          btn.addEventListener("click", async ()=>{
+	            const idDev = Number(btn.getAttribute("data-dev-revoke") || 0) || 0;
+	            if (!idDev) return;
+	            if (!confirm("¿Revocar este dispositivo? El colaborador deberá enrolar de nuevo.")) return;
+	            const rr = await fetch(apiURL(`/rrhh/sgjo/admin/devices/${idDev}/revoke`), {
+	              method:"POST",
+	              headers: { "Content-Type":"application/json", ...headers() },
+	              body: JSON.stringify({ note: "revocado por admin" }),
+	            });
+	            const jj = await rr.json().catch(()=>({}));
+	            if (!rr.ok || !jj?.ok){
+	              toast("No se pudo revocar: " + (jj?.detail || rr.status));
+	              return;
+	            }
+	            toast("Dispositivo revocado");
+	            await loadEnrolRequestsForEditing();
+	          });
+	        });
+		      }catch(_e){
+	        const box2 = qs("#enrolDevRows");
+	        if (box2) box2.innerHTML = `<tr><td class="muted" colspan="5">No se pudo cargar dispositivos: ${escapeHtml(String(_e?.message||_e))}</td></tr>`;
+		      }
+          try{ if (watchdog) clearTimeout(watchdog); }catch(_){}
+		    }
 
     function renderFamiliares(){
       const tb = qs("#famRows");
@@ -1125,13 +1229,8 @@
     if (btnSaveB) btnSaveB.onclick = saveStaffNow;
 
     async function loadStaff(){
-      const r = await fetch(apiURL("/rrhh/staff"), { headers: headers() });
-      if (!r.ok){
-        const t = await r.text().catch(()=> "");
-        qs("#rowsStaff").innerHTML = `<tr><td class="muted">No se pudo cargar: ${t || r.status}</td></tr>`;
-        return;
-      }
-      const data = await r.json().catch(()=>({}));
+      try{
+        const data = await fetchJSON(apiURL("/rrhh/staff"), { timeoutMs: 12000 });
       let items = data.items || [];
       const q = (qs("#qStaff").value || "").trim().toLowerCase();
       if (q){ items = items.filter(i => String(i.colaborador || "").toLowerCase().includes(q)); }
@@ -1319,8 +1418,11 @@
               <input type="checkbox" name="uMarca" value="${Number(m.id_marca)}" />
               <span>${escapeHtml(m.nombre)}</span>
             </label>
-          `).join("");
-        }
+      `).join("");
+      }catch(e){
+        qs("#rowsStaff").innerHTML = `<tr><td class="muted">No se pudo cargar: ${escapeHtml(String(e?.message||e))}</td></tr>`;
+      }
+    }
       }
       showUserModal(true);
 

@@ -1083,7 +1083,10 @@ def pdf_placeholder(
     # Requiere Service Account + compartir carpetas con el email del SA.
     try:
         folder_id = DRIVE_ASSET_FOLDERS.get(marca_key or "", "") or (str(drive_folder_id or "").strip())
-        if folder_id and _drive_folder_assets_enabled(marca_key or ""):
+        # Anti-tontos: aunque la marca esté deshabilitada por env, cuando vienen flags refresh/rebuild
+        # igual intentamos resolver desde Drive para actualizar assets (evita quedar pegado con assets locales viejos).
+        drive_enabled = _drive_folder_assets_enabled(marca_key or "")
+        if folder_id and (drive_enabled or refresh_assets):
             from backend.core.drive_assets import resolve_brand_assets_from_folder
             da = resolve_brand_assets_from_folder(
                 marca_key,

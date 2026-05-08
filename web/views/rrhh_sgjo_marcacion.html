@@ -56,6 +56,46 @@
       min-width:220px;
       outline:none;
     }
+    .modal{
+      position:fixed; inset:0; z-index:60;
+      display:none; align-items:center; justify-content:center;
+      background: rgba(0,0,0,.55);
+      padding: 14px;
+    }
+    .modal .mcard{
+      width:min(780px, 96vw);
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.88);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.28);
+    }
+    :root.light .modal .mcard{ background: rgba(255,255,255,.92); border-color: rgba(0,0,0,.10); }
+    .modal .mttl{ font-weight:1100; letter-spacing:.10em; text-transform:uppercase; font-size:12px; opacity:.9; }
+    .modal .mbig{ font-size:18px; font-weight:1200; margin-top:6px; }
+    .modal .mrow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    .inp{
+      height:42px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;
+      padding:0 12px;
+      font-weight:1100;
+      min-width:220px;
+      flex:1;
+      outline:none;
+    }
+    :root.light .inp{ background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10); }
+    .seg{
+      display:flex; gap:10px; flex-wrap:wrap;
+      padding:10px; border:1px solid rgba(148,163,184,.18); border-radius:14px;
+      background: rgba(2,6,23,.18);
+    }
+    :root.light .seg{ background: rgba(0,0,0,.03); border-color: rgba(0,0,0,.10); }
+    .seg label{ display:flex; gap:8px; align-items:center; font-weight:1100; cursor:pointer; }
+    .seg input{ transform: scale(1.1); }
+    .hint{ font-size:12px; opacity:.72; line-height:1.35; }
     pre{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.35;margin:10px 0 0 0;opacity:.85}
   </style>
 </head>
@@ -82,6 +122,9 @@
         <button class="btn" id="btnToggleTipo" type="button" style="min-width:220px;flex:1">Cambiar a salida</button>
       </div>
       <div class="row" style="margin-top:8px">
+        <span class="pill" id="pDev">Device: —</span>
+      </div>
+      <div class="row" style="margin-top:8px">
         <select class="sel" id="selPunto" title="Punto de marcación" style="display:none">
           <option value="">Selecciona punto…</option>
         </select>
@@ -95,6 +138,36 @@
       </div>
 
       <pre id="log">—</pre>
+    </div>
+  </div>
+
+  <div class="modal" id="enrollModal" role="dialog" aria-modal="true">
+    <div class="mcard">
+      <div class="mttl">RRHH · SGJO</div>
+      <div class="mbig">Enrolar dispositivo</div>
+      <div class="hint" style="margin-top:6px;">
+        El enrolamiento es por dispositivo/navegador. Si cambias de teléfono o navegador, debes enrolar de nuevo.
+      </div>
+
+      <div class="mrow">
+        <div class="seg" style="flex:1;min-width:260px;">
+          <label><input type="radio" name="enrollKind" value="PC" checked> Este PC (navegador actual)</label>
+          <label><input type="radio" name="enrollKind" value="PHONE"> Mi teléfono</label>
+        </div>
+      </div>
+
+      <div class="mrow">
+        <input class="inp" id="enrollDeviceName" placeholder="Nombre del dispositivo (ej: PC Oficina Chrome, iPhone Mauricio)" />
+      </div>
+
+      <div class="mrow" id="enrollPhoneRow" style="display:none;">
+        <input class="inp" id="enrollPhone" placeholder="Teléfono (ej: +56912345678)" />
+      </div>
+
+      <div class="mrow">
+        <button class="btn" id="enrollCancel" type="button" style="min-width:160px;flex:0">Cancelar</button>
+        <button class="btn primary" id="enrollDo" type="button" style="min-width:220px;flex:1">Enrolar PC</button>
+      </div>
     </div>
   </div>
 
@@ -121,6 +194,66 @@
       if (!el) return;
       el.textContent = String(s || "").trim() || "—";
     }
+
+    function openEnrollModal() {
+      try {
+        var m = qs("#enrollModal");
+        if (!m) return;
+        var suggested = getDeviceName();
+        if (!suggested) {
+          try {
+            var ua = String(navigator.userAgent || "");
+            if (/iphone|ipad|ipod/i.test(ua)) suggested = "iPhone";
+            else if (/android/i.test(ua)) suggested = "Android";
+            else suggested = "PC";
+          } catch (e1) { suggested = "PC"; }
+        }
+        qs("#enrollDeviceName").value = suggested;
+        qs("#enrollPhone").value = "";
+        // Preselección: si es móvil => teléfono, si no => PC.
+        var kind = "PC";
+        try {
+          var ua2 = String(navigator.userAgent || "");
+          if (/iphone|ipad|ipod|android/i.test(ua2)) kind = "PHONE";
+        } catch (e2) {}
+        var radios = document.querySelectorAll('input[name="enrollKind"]');
+        for (var i = 0; i < radios.length; i++) {
+          radios[i].checked = (radios[i].value === kind);
+        }
+        renderEnrollKind();
+        m.style.display = "flex";
+      } catch (e3) {}
+    }
+
+    function closeEnrollModal() {
+      try { var m = qs("#enrollModal"); if (m) m.style.display = "none"; } catch (e) {}
+    }
+
+    function getEnrollKind() {
+      try {
+        var sel = document.querySelector('input[name="enrollKind"]:checked');
+        return sel ? String(sel.value || "PC") : "PC";
+      } catch (e) { return "PC"; }
+    }
+
+    function renderEnrollKind() {
+      try {
+        var kind = getEnrollKind();
+        var row = qs("#enrollPhoneRow");
+        if (row) row.style.display = (kind === "PHONE") ? "flex" : "none";
+        var btn = qs("#enrollDo");
+        if (btn) btn.textContent = (kind === "PHONE") ? "Enrolar teléfono" : "Enrolar PC";
+      } catch (e) {}
+    }
+
+    qs("#enrollCancel").addEventListener("click", function () { closeEnrollModal(); });
+    qs("#enrollModal").addEventListener("click", function (ev) {
+      try { if (ev && ev.target && ev.target.id === "enrollModal") closeEnrollModal(); } catch (e) {}
+    });
+    (function () {
+      var radios = document.querySelectorAll('input[name="enrollKind"]');
+      for (var i = 0; i < radios.length; i++) radios[i].addEventListener("change", renderEnrollKind);
+    })();
 
     // Mostrar errores JS en pantalla (Safari/iOS a veces “silencia” y parece que botones no funcionan).
     try {
@@ -216,15 +349,16 @@
             } catch (e) {
               j = null;
             }
-            if (r.status === 401 || r.status === 403) {
+            // 401 => token inválido/expirado: limpiar y reenviar a login.
+            if (r.status === 401) {
               try { clearToken(); } catch (e0) {}
-              // Importante: NO sacar del flujo con modal. Redirigimos a login
-              // preservando el punto del QR para que al volver siga en la pantalla.
               try { goLogin(getPuntoCode() || ""); } catch (e1) {}
               throw new Error("Token inválido. Inicia sesión nuevamente.");
             }
             if (!r.ok) {
               var msg = j && (j.detail || j.error || j.message) ? j.detail || j.error || j.message : txt || "HTTP " + r.status;
+              // 403 se usa también para reglas de negocio (dispositivo no enrolado / método no permitido).
+              // No debemos tratarlo como token inválido.
               throw new Error(msg);
             }
             return j;
@@ -261,6 +395,21 @@
         } catch (e3) {}
       }
       return id;
+    }
+
+    function getDeviceName() {
+      var n = "";
+      try { n = localStorage.getItem("sgjo_device_name") || ""; } catch (e) { n = ""; }
+      n = String(n || "").trim();
+      if (n) return n;
+      try {
+        var ua = String(navigator.userAgent || "");
+        if (ua) {
+          // recorta para no meter basura enorme
+          n = ua.split("(")[0].trim();
+        }
+      } catch (e2) {}
+      return String(n || "").trim();
     }
 
     function getPuntoCodeFromQuery() {
@@ -300,6 +449,21 @@
             resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy_m: pos.coords.accuracy });
           },
           function (err) {
+            try{
+              var code = err && err.code ? Number(err.code) : 0;
+              if (code === 1) {
+                reject(new Error("User denied Geolocation. Activa Ubicación para este sitio en Safari/Chrome y recarga."));
+                return;
+              }
+              if (code === 2) {
+                reject(new Error("Ubicación no disponible. Revisa señal/GPS e inténtalo de nuevo."));
+                return;
+              }
+              if (code === 3) {
+                reject(new Error("Timeout obteniendo ubicación. Intenta de nuevo."));
+                return;
+              }
+            }catch(e0){}
             reject(new Error((err && err.message) ? err.message : "No pude obtener ubicación."));
           },
           { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -312,6 +476,25 @@
       if (!ensureToken(punto_code || "")) {
         // Sin token: permitimos igual cargar UI básica y el botón "Iniciar sesión".
       }
+      // UX: si el dispositivo ya está enrolado, no mostramos "Enrolar dispositivo".
+      try {
+        var did0 = getDeviceId();
+        apiJSON("/rrhh/sgjo/device/status?device_id=" + encodeURIComponent(did0))
+          .then(function (st) {
+            try {
+              var enrolled = !!(st && st.enrolled);
+              var pending = !!(st && st.pending);
+              var b = qs("#btnEnroll");
+              if (b) b.style.display = enrolled ? "none" : "";
+              // Si está pendiente, bloqueamos marcar para no generar frustración.
+              if (pending && !enrolled) {
+                try { qs("#btnMark").disabled = true; } catch (e0) {}
+                log("Tu enrolamiento está pendiente de aprobación. Un admin RRHH debe aprobar este dispositivo antes de marcar.");
+              }
+            } catch (e1) {}
+          })
+          .catch(function () {});
+      } catch (e2) {}
       apiJSON("/rrhh/sgjo/config")
         .then(function (cfg) {
           var puntos = (cfg && cfg.puntos) ? cfg.puntos : [];
@@ -364,13 +547,16 @@
           return apiJSON("/rrhh/sgjo/me");
         })
         .then(function (me) {
+          try{ qs("#pDev").textContent = "Device: " + String(getDeviceId() || "—"); }catch(_){}
           qs("#pModo").textContent = "Modo: " + String((me && me.modality_today) ? me.modality_today : "—");
           var pol = String((me && me.marcacion_method) ? me.marcacion_method : "BOTH").toUpperCase();
           var can = (me && me.puede_marcar === false) ? "NO" : "SÍ";
           qs("#pPolicy").textContent = "Método: " + pol + " · Puede marcar: " + can;
+          // Habilitar/Deshabilitar botón Marcar según reglas mínimas (sin bloquear por UX).
+          var allowMark = true;
           if (!(me && me.rut)) {
             log("Tu usuario no tiene RUT en el sistema. Pide a RRHH/Admin que registre tu RUT para poder marcar.");
-            try { qs("#btnMark").disabled = true; } catch (e0) {}
+            allowMark = false;
           }
           var sel = qs("#selMethod");
           if (sel) {
@@ -379,9 +565,13 @@
             else sel.disabled = false;
           }
           // Si no puede marcar por policy RRHH, deshabilitar.
-          if (me && me.puede_marcar === false) qs("#btnMark").disabled = true;
-          if (me && me.puede_marcar === false) log("No tienes permiso RRHH para marcar (puede_marcar=false). Contacta a RRHH.");
-          else log("Listo. Enrola el dispositivo la primera vez, luego marca (Entrada/Salida + QR o GPS según tu permiso RRHH).");
+          if (me && me.puede_marcar === false) allowMark = false;
+          try { qs("#btnMark").disabled = !allowMark; } catch (e0) {}
+          if (!allowMark) {
+            if (me && me.puede_marcar === false) log("No tienes permiso RRHH para marcar (puede_marcar=false). Contacta a RRHH.");
+          } else {
+            log("Listo. Enrola el dispositivo la primera vez, luego marca (Entrada/Salida + QR o GPS según tu permiso RRHH).");
+          }
           // Sugerir tipo IN/OUT según estado del día.
           return apiJSON("/rrhh/sgjo/today");
         })
@@ -422,39 +612,78 @@
     });
 
     qs("#btnEnroll").addEventListener("click", function () {
+      var punto_code = getPuntoCode();
+      if (!ensureToken(punto_code || "")) return;
+      // precargar datos para hints
+      apiJSON("/rrhh/sgjo/me")
+        .then(function (me) {
+          try { window.__ENROLL_ME = me || {}; } catch (e0) {}
+          try {
+            var tel = String((me && me.telefono_rrhh) ? me.telefono_rrhh : "").trim();
+            if (tel) qs("#enrollPhone").value = tel;
+          } catch (e1) {}
+        })
+        .catch(function () { try { window.__ENROLL_ME = {}; } catch (e2) {} })
+        .then(function () { openEnrollModal(); });
+    });
+
+    qs("#enrollDo").addEventListener("click", function () {
       try {
         var punto_code = getPuntoCode();
-        if (!ensureToken(punto_code)) return;
+        if (!ensureToken(punto_code || "")) return;
+        var kind = getEnrollKind();
         var device_id = getDeviceId();
-        var rut_hint = "";
-        var tel_hint = "";
-        apiJSON("/rrhh/sgjo/me")
-          .then(function (me) {
-            rut_hint = String((me && me.rut) ? me.rut : "").trim();
-            tel_hint = String((me && me.telefono_rrhh) ? me.telefono_rrhh : "").trim();
-          })
-          .catch(function () {})
-          .then(function () {
-            if (!rut_hint) rut_hint = String(prompt("Ingresa tu RUT (sin puntos, con guion si corresponde):") || "").trim();
-            if (!tel_hint) tel_hint = String(prompt("Ingresa tu teléfono (ej: +56912345678):") || "").trim();
-            return apiJSON("/rrhh/sgjo/device/enroll", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ device_id: device_id, rut: rut_hint, telefono: tel_hint })
-            });
-          })
+        var device_name = String(qs("#enrollDeviceName").value || "").trim();
+        var tel_hint = String(qs("#enrollPhone").value || "").trim();
+        var me = null;
+        try { me = window.__ENROLL_ME || null; } catch (e0) { me = null; }
+        var rut_hint = String((me && me.rut) ? me.rut : "").trim();
+
+        if (!device_name) { alert("Nombre del dispositivo requerido"); return; }
+        if (kind === "PHONE" && !tel_hint) { alert("Teléfono requerido para enrolar teléfono"); return; }
+        if (!rut_hint) rut_hint = String(prompt("Ingresa tu RUT (sin puntos, con guion si corresponde):") || "").trim();
+        if (!rut_hint) { alert("RUT requerido"); return; }
+
+        // PC: no pedir teléfono (solo si viene ya en RRHH lo enviamos como hint).
+        if (kind === "PC") {
+          try { localStorage.setItem("sgjo_device_name", device_name); } catch (e1) {}
+          // si el usuario escribió algo en teléfono igual lo ignoramos en PC para no confundir
+          if (tel_hint && tel_hint.length < 6) tel_hint = "";
+        }
+
+        qs("#enrollDo").disabled = true;
+        return apiJSON("/rrhh/sgjo/device/enroll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device_id: device_id, device_name: device_name, rut: rut_hint, telefono: (kind === "PHONE" ? tel_hint : "") })
+        })
           .then(function (out) {
-            if (out && out.ok) log("Dispositivo enrolado OK.");
+            closeEnrollModal();
+            if (out && out.ok && out.already) log("Este dispositivo ya estaba enrolado (aprobado). Ya puedes marcar.");
+            else if (out && out.ok) log("Dispositivo enrolado OK.");
             else if (out && out.pending_approval) {
               var rid = out.id_request ? "\nID solicitud: " + out.id_request : "";
               log("Solicitud enviada. Un admin debe aprobar este dispositivo (RRHH)." + rid + "\nLuego vuelve a intentar marcar.");
             } else log("Solicitud enviada. Espera aprobación y recarga.");
+
+            if (kind === "PC") {
+              try {
+                var wants = confirm("¿Quieres enrolar tu teléfono ahora?\n\nImportante: debes hacerlo desde tu teléfono (escaneando el QR), no desde este PC.");
+                if (wants) {
+                  log("En tu TELÉFONO: escanea el QR del punto y toca “Enrolar dispositivo”.\nPon nombre (ej: iPhone Mauricio) y tu teléfono.\nLuego RRHH debe aprobar y ya podrás marcar desde ese teléfono.");
+                }
+              } catch (e2) {}
+            }
           })
           .catch(function (e) {
             log("No pude enrolar: " + (e && e.message ? e.message : e));
+          })
+          .then(function () {
+            try { qs("#enrollDo").disabled = false; } catch (e3) {}
           });
-      } catch (e2) {
-        log("No pude enrolar: " + (e2 && e2.message ? e2.message : e2));
+      } catch (e4) {
+        try { qs("#enrollDo").disabled = false; } catch (e5) {}
+        log("No pude enrolar: " + (e4 && e4.message ? e4.message : e4));
       }
     });
 
