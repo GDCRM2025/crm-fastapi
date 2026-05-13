@@ -29,6 +29,8 @@
     .pill.ok{border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.10);}
     .pill.bad{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.10);}
     .actions{display:flex;gap:8px;flex-wrap:wrap;}
+    /* Lista larga: asegurar scroll (incl. iOS) */
+    #tableWrap{max-height:66vh;overflow:auto;-webkit-overflow-scrolling:touch;}
   </style>
 </head>
 <body>
@@ -73,7 +75,7 @@
         </div>
         <div class="muted" id="pageInfo">—</div>
       </div>
-      <div style="overflow:auto;margin-top:10px">
+      <div id="tableWrap" style="margin-top:10px">
         <table>
           <thead>
             <tr>
@@ -202,6 +204,7 @@
         qs("#meta").textContent = `${items.length} desvío(s)`;
       }
       const tb = qs("#tbody");
+      window.__DESVIOS_ITEMS = items;
       if(!items.length){
         tb.innerHTML = `<tr><td colspan="9" class="muted">Sin desvíos.</td></tr>`;
         setLog("Listo");
@@ -213,6 +216,8 @@
         const real = `${(x.actual_in||"—").toString().replace("T"," ").slice(0,16)} / ${(x.actual_out||"—").toString().replace("T"," ").slice(0,16)}`;
         const imp = `${x.impact_kind||"—"}${x.impact_min ? (" · "+x.impact_min+"m") : ""}`;
         const canAct = String(x.status||"").toLowerCase() === "pendiente";
+        const tipoCode = String(x.tipo||"").toUpperCase();
+        const canAbs = canAct && (tipoCode === "MISSING_IN" || tipoCode === "MISSING_OUT");
         return `
           <tr>
             <td>${esc(String(x.fecha||""))}</td>
@@ -227,6 +232,7 @@
               <div class="actions">
                 <button class="btn ok" data-act="aprobado" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Aprobar</button>
                 <button class="btn bad" data-act="rechazado" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Rechazar</button>
+                <button class="btn" data-act="ausencia" data-id="${x.id_desvio}" ${canAbs? "":"disabled"}>Ausencia</button>
                 <button class="btn" data-act="solicitar" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Pedir aprobación (correo)</button>
               </div>
             </td>
@@ -264,16 +270,139 @@
       const id = Number(b.dataset.id||0);
       const st = String(b.dataset.act||"");
       if(!id) return;
+      if (st === "ausencia"){
+        if(!confirm("Marcar AUSENCIA hoy para este colaborador?\n\nEsto rechaza el desvío y crea inasistencia/ajuste (idempotente).")) return;
+        setLog("Marcando ausencia…");
+        await apiJSON(`/rrhh/desvios/${id}`, { method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ status:"rechazado", note:"Ausencia (admin)", force:true }) });
+        await load();
+        return;
+      }
       if (st === "solicitar"){
         if(!confirm("Enviar correo al colaborador para que apruebe/rechace este desvío?")) return;
         // Anti-tontos: pedir propuesta de corrección antes de enviar.
         // Se guarda en BD y se incluye en el correo.
+        const items = window.__DESVIOS_ITEMS || [];
+        const x = (items || []).find(it => Number(it.id_desvio||0) === id) || null;
+        const exp = x ? `${x.expected_in||"—"} → ${x.expected_out||"—"}` : "—";
+        const realIn = x && x.actual_in ? String(x.actual_in).replace("T"," ").slice(0,16) : "—";
+        const realOut = x && x.actual_out ? String(x.actual_out).replace("T"," ").slice(0,16) : "—";
+        const real = `${realIn} → ${realOut}`;
+        const tipoTxt = x ? fmtTipo(x.tipo) : "desvío";
+        const who = x ? (x.colaborador || "colaborador") : "colaborador";
+        const fecha = x ? String(x.fecha||"") : "";
+
+        function normalizeHHMM(input){
+          let v = String(input || "").trim();
+          if (!v) return "";
+          // Normaliza formatos típicos: "10:00 AM", "10.00", "1000", "10", "10am", "10:00 a.m."
+          v = v.replace(/\s+/g, " ").trim();
+          const low = v.toLowerCase();
+          const hasAM = /\b(a\.?m\.?|am)\b/.test(low);
+          const hasPM = /\b(p\.?m\.?|pm)\b/.test(low);
+          v = v.replace(/\b(a\.?m\.?|am|p\.?m\.?|pm)\b/ig, "").trim();
+          v = v.replace(/\./g, ":").replace(/\s+/g, "");
+          // 1000 -> 10:00
+          if (/^\d{3,4}$/.test(v)) {
+            v = v.padStart(4, "0");
+            v = v.slice(0, 2) + ":" + v.slice(2);
+          }
+          // 10 -> 10:00
+          if (/^\d{1,2}$/.test(v)) v = v + ":00";
+          if (!/^\d{1,2}:\d{2}$/.test(v)) return null;
+          let hh = Number(v.split(":")[0] || 0);
+          const mm = Number(v.split(":")[1] || 0);
+          if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+          if (mm < 0 || mm > 59) return null;
+          if (hasAM || hasPM) {
+            // 12h -> 24h
+            if (hh < 1 || hh > 12) return null;
+            if (hasAM) hh = (hh === 12) ? 0 : hh;
+            if (hasPM) hh = (hh === 12) ? 12 : (hh + 12);
+          }
+          if (hh < 0 || hh > 23) return null;
+          return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+        }
+
+        function askHHMM(label, defv){
+          var def = String(defv||"").trim();
+          var msg =
+            "Pedir aprobación por correo\n\n" +
+            "Colaborador: " + who + "\n" +
+            "Fecha: " + fecha + "\n" +
+            "Tipo: " + tipoTxt + "\n\n" +
+            "Esperado (turno): " + exp + "\n" +
+            "Marcación registrada: " + real + "\n\n" +
+            label + "\n" +
+            "Formato 24h HH:MM (deja vacío para omitir)";
+          var v = (prompt(msg, def) || "").trim();
+          if (!v) return "";
+          const out = normalizeHHMM(v);
+          if (out == null) { alert("Formato inválido. Usa HH:MM (24h). Ej: 10:00"); return null; }
+          return out;
+        }
+
         let proposed_in = "";
         let proposed_out = "";
         try{
-          proposed_in = (prompt("Propuesta hora IN (HH:MM, opcional):", "") || "").trim();
-          proposed_out = (prompt("Propuesta hora OUT (HH:MM, opcional):", "") || "").trim();
-        }catch(_){}
+          var defIn = x ? (x.proposed_in || x.expected_in || "") : "";
+          var defOut = x ? (x.proposed_out || x.expected_out || "") : "";
+          function hasTimeVal(v){
+            const s = String(v ?? "").trim();
+            if (!s) return false;
+            if (s === "—" || s === "-" || s.toLowerCase() === "null") return false;
+            return true;
+          }
+	          const tipoCode = String((x && x.tipo) ? x.tipo : "").toUpperCase();
+	          const needIn = (tipoCode === "MISSING_IN") ? true : !(x && hasTimeVal(x.actual_in));
+	          const needOut = (tipoCode === "MISSING_OUT") ? true : !(x && hasTimeVal(x.actual_out));
+
+	          // Regla dura (sin ambigüedad):
+	          // - MISSING_IN => pedir SOLO ENTRADA
+	          // - MISSING_OUT => pedir SOLO SALIDA
+	          if (tipoCode === "MISSING_IN") {
+	            var ai = askHHMM("Propuesta RRHH: ENTRADA (IN)", defIn);
+	            if (ai === null) return;
+	            if (!ai) { alert("Debes ingresar hora propuesta para ENTRADA (IN)."); return; }
+	            proposed_in = ai;
+	            proposed_out = "";
+	            // saltar cualquier pregunta de salida
+	          } else if (tipoCode === "MISSING_OUT") {
+	            var ao = askHHMM("Propuesta RRHH: SALIDA (OUT)", defOut);
+	            if (ao === null) return;
+	            if (!ao) { alert("Debes ingresar hora propuesta para SALIDA (OUT)."); return; }
+	            proposed_in = "";
+	            proposed_out = ao;
+	            // saltar cualquier pregunta de entrada/salida adicional
+	          } else {
+
+	          if (needIn) {
+	            var a = askHHMM("Propuesta RRHH: ENTRADA (IN)", defIn);
+	            if (a === null) return;
+	            if (!a) { alert("Debes ingresar hora propuesta para ENTRADA (IN)."); return; }
+	            proposed_in = a;
+          } else {
+            var a0 = askHHMM("Propuesta RRHH: ENTRADA (IN)", defIn);
+            if (a0 === null) return;
+            proposed_in = a0 || "";
+          }
+
+	          // Regla solicitada: si el desvío es "Falta IN", preguntamos solo ENTRADA.
+	          if (tipoCode === "MISSING_IN") {
+	            proposed_out = "";
+	          }
+	          // Si falta OUT, pedimos OUT; si no falta, lo dejamos opcional.
+	          else if (needOut) {
+            var b2 = askHHMM("Propuesta RRHH: SALIDA (OUT)", defOut);
+            if (b2 === null) return;
+            if (!b2) { alert("Debes ingresar hora propuesta para SALIDA (OUT)."); return; }
+            proposed_out = b2;
+          } else if (!needIn) {
+            var b20 = askHHMM("Propuesta RRHH: SALIDA (OUT)", defOut);
+	            if (b20 === null) return;
+	            proposed_out = b20 || "";
+	          }
+	          } // end else (not missing_in/out)
+	        }catch(_){}
         b.disabled = true;
         try{
           await apiJSON(`/rrhh/desvios/${id}/request_approval`, {

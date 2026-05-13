@@ -1472,18 +1472,12 @@ def _build_event(
 
     base_day = date.fromisoformat(str(fe)[:10]) if isinstance(fe, str) else fe
 
-    days = []
-    for it in items or []:
-        d = _parse_iso_date(it.get("service_date") or it.get("fecha") or it.get("dia") or it.get("day"))
-        if d:
-            days.append(d)
-
-    if days:
-        start_day = min(days)
-        end_day = max(days)
-    else:
-        start_day = base_day
-        end_day = base_day
+    # Regla: el día del evento se define por `lead.fecha_evento` (o el día explícito que inyecta
+    # _build_event_for_day/_build_event_from_segment). NO inferimos rango por `items.service_date`
+    # porque en multi-día/segmentos eso puede mezclar días y terminar creando horarios absurdos
+    # (ej: start día 1 y end día N). Multi-día se representa como múltiples eventos (uno por día).
+    start_day = base_day
+    end_day = base_day
 
     start_time = _safe_time_hhmm(start_time)
     end_time = _safe_time_hhmm(end_time)
@@ -2641,7 +2635,11 @@ def move_lead_and_maybe_agenda(
             products_text = str((segments[0] or {}).get("products_text") or "").strip()
             # Fallback: si el frontend envió segmentos pero no trajo montaje/productos
             # (o vienen vacíos), recalculamos desde cotización/lead para no dejar "—".
-            if (not montaje_text) or (montaje_text.strip() in ("—", "-")) or (not products_text):
+            mt_s = (montaje_text or "").strip()
+            pt_s = (products_text or "").strip()
+            mt_is_empty = (not mt_s) or (mt_s in ("—", "-")) or (mt_s.replace("•", "").strip() in ("—", "-"))
+            pt_is_empty = (not pt_s) or (pt_s in ("—", "-")) or (pt_s.replace("•", "").strip() in ("—", "-"))
+            if mt_is_empty or pt_is_empty:
                 try:
                     items_fb = []
                     if id_cot and quote_source != "manual":

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import threading
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, Query
 from fastapi.responses import Response, RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -80,7 +80,32 @@ def _ensure(db: Session) -> None:
         except Exception:
             pass
         try:
+            db.execute(text("ALTER TABLE public.sgjo_device_requests ADD COLUMN IF NOT EXISTS device_kind TEXT"))
+        except Exception:
+            pass
+        try:
             db.execute(text("ALTER TABLE public.sgjo_dispositivos ADD COLUMN IF NOT EXISTS device_name TEXT"))
+        except Exception:
+            pass
+        try:
+            db.execute(text("ALTER TABLE public.sgjo_dispositivos ADD COLUMN IF NOT EXISTS device_kind TEXT"))
+        except Exception:
+            pass
+        # Backfill best-effort de device_kind para históricos (evita pruning incorrecto).
+        try:
+            db.execute(
+                text(
+                    """
+                    UPDATE public.sgjo_dispositivos
+                    SET device_kind = CASE
+                      WHEN lower(COALESCE(device_kind,'')) IN ('phone','pc') THEN upper(device_kind)
+                      WHEN lower(COALESCE(device_name,'')) ~ '(iphone|android|cel|phone|movil|móvil)' THEN 'PHONE'
+                      ELSE 'PC'
+                    END
+                    WHERE COALESCE(NULLIF(btrim(device_kind),''), '') = ''
+                    """
+                )
+            )
         except Exception:
             pass
         try:
@@ -556,6 +581,11 @@ def enroll_device(
     h = ua_hash(user_agent or "")
     rut_hint = str(payload.get("rut") or payload.get("rut_hint") or "").strip()[:32]
     tel_hint = str(payload.get("telefono") or payload.get("phone") or payload.get("tel") or "").strip()[:40]
+    device_kind = str(payload.get("device_kind") or payload.get("kind") or payload.get("device_type") or "").strip().upper()
+    if device_kind in ("CEL", "CELULAR", "MOBILE"):
+        device_kind = "PHONE"
+    if device_kind not in ("PHONE", "PC"):
+        device_kind = "PHONE" if tel_hint else "PC"
     device_name = str(payload.get("device_name") or payload.get("deviceName") or payload.get("name") or "").strip()[:80] or None
     note_hint = ""
     if rut_hint:
@@ -564,6 +594,8 @@ def enroll_device(
         note_hint += f"TEL_HINT={tel_hint}\n"
     if device_name:
         note_hint += f"DEVICE_NAME={device_name}\n"
+    if device_kind:
+        note_hint += f"DEVICE_KIND={device_kind}\n"
     note_hint = note_hint.strip() or None
 
     # Ya enrolado (con UA actual) => OK directo.
@@ -588,11 +620,11 @@ def enroll_device(
             db.execute(
                 text(
                     """
-                    INSERT INTO public.sgjo_device_requests(id_usuario, device_id, device_name, ua_hash, status, note)
-                    VALUES (:u,:d,:dn,:h,'pending', :n)
+                    INSERT INTO public.sgjo_device_requests(id_usuario, device_id, device_name, device_kind, ua_hash, status, note)
+                    VALUES (:u,:d,:dn,:dk,:h,'pending', :n)
                     """
                 ),
-                {"u": uid_int, "d": device_id, "dn": device_name, "h": h, "n": note_hint},
+                {"u": uid_int, "d": device_id, "dn": device_name, "dk": device_kind, "h": h, "n": note_hint},
             )
             # Relee id_request recién creado para notificación interna.
             pending = db.execute(
@@ -616,11 +648,12 @@ def enroll_device(
                             """
                             UPDATE public.sgjo_device_requests
                             SET note = COALESCE(NULLIF(note,''), :n),
-                                device_name = COALESCE(NULLIF(device_name,''), :dn)
+                                device_name = COALESCE(NULLIF(device_name,''), :dn),
+                                device_kind = COALESCE(NULLIF(device_kind,''), :dk)
                             WHERE id_request=:id
                             """
                         ),
-                        {"id": int(pending), "n": note_hint, "dn": device_name or ""},
+                        {"id": int(pending), "n": note_hint, "dn": device_name or "", "dk": device_kind or ""},
                     )
                 except Exception:
                     pass
@@ -762,6 +795,7 @@ def admin_devices(
         text(
             """
             SELECT d.id_device, d.id_usuario, d.device_id, COALESCE(d.device_name,'') AS device_name,
+                   COALESCE(d.device_kind,'') AS device_kind,
                    d.enrolled_at, d.revoked_at,
                    COALESCE(u.username,'') AS username,
                    COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display
@@ -872,6 +906,74 @@ def admin_device_revoke(
     return {"ok": True, "revoked": int(getattr(upd, "rowcount", 0) or 0)}
 
 
+@router.post("/admin/devices/prune")
+def admin_devices_prune(
+    id_usuario: int = Query(ge=1),
+    keep_phone: int = Query(default=2, ge=0, le=10),
+    keep_pc: int = Query(default=2, ge=0, le=10),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    me_id = user.get("id")
+    me_id_int = int(me_id) if str(me_id or "").isdigit() else None
+    try:
+        out = _prune_user_devices_by_kind(
+            db,
+            id_usuario=int(id_usuario),
+            keep_phone=int(keep_phone),
+            keep_pc=int(keep_pc),
+            revoked_by=me_id_int,
+            note="auto-prune: keep latest devices by kind",
+        )
+        db.commit()
+        return {"ok": True, "id_usuario": int(id_usuario), **out}
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"No pude podar dispositivos: {e}")
+
+
+@router.get("/admin/devices/overlimit")
+def admin_devices_overlimit(
+    phone_limit: int = Query(default=2, ge=0, le=10),
+    pc_limit: int = Query(default=2, ge=0, le=10),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    plim = int(phone_limit)
+    clim = int(pc_limit)
+    rows = db.execute(
+        text(
+            """
+            SELECT d.id_usuario,
+                   SUM(CASE WHEN COALESCE(d.device_kind,'PC')='PHONE' THEN 1 ELSE 0 END)::int AS phone_devices,
+                   SUM(CASE WHEN COALESCE(d.device_kind,'PC')='PC' THEN 1 ELSE 0 END)::int AS pc_devices,
+                   COUNT(*)::int AS active_devices,
+                   COALESCE(u.username,'') AS username,
+                   COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display
+            FROM public.sgjo_dispositivos d
+            LEFT JOIN public.usuarios u ON u.id_usuario = d.id_usuario
+            WHERE d.revoked_at IS NULL
+            GROUP BY d.id_usuario, u.username, u.nombre
+            HAVING SUM(CASE WHEN COALESCE(d.device_kind,'PC')='PHONE' THEN 1 ELSE 0 END) > :plim
+                OR SUM(CASE WHEN COALESCE(d.device_kind,'PC')='PC' THEN 1 ELSE 0 END) > :clim
+            ORDER BY COUNT(*) DESC, d.id_usuario ASC
+            LIMIT 500
+            """
+        ),
+        {"plim": plim, "clim": clim},
+    ).mappings().all()
+    return {"ok": True, "phone_limit": plim, "pc_limit": clim, "items": [dict(r) for r in rows]}
+
+
 @router.post("/admin/device_requests/{id_request}/approve")
 def admin_device_request_approve(
     id_request: int,
@@ -886,7 +988,7 @@ def admin_device_request_approve(
     req = db.execute(
         text(
             """
-            SELECT id_request, id_usuario, device_id, device_name, ua_hash
+            SELECT id_request, id_usuario, device_id, device_name, device_kind, ua_hash
             FROM public.sgjo_device_requests
             WHERE id_request=:id AND status='pending'
             LIMIT 1
@@ -914,14 +1016,21 @@ def admin_device_request_approve(
     db.execute(
         text(
             """
-            INSERT INTO public.sgjo_dispositivos(id_usuario, device_id, device_name, ua_hash)
-            VALUES (:u,:d,:dn,:h)
+            INSERT INTO public.sgjo_dispositivos(id_usuario, device_id, device_name, device_kind, ua_hash)
+            VALUES (:u,:d,:dn,:dk,:h)
             ON CONFLICT (id_usuario, device_id) DO UPDATE
             SET device_name=COALESCE(NULLIF(EXCLUDED.device_name,''), sgjo_dispositivos.device_name),
+                device_kind=COALESCE(NULLIF(EXCLUDED.device_kind,''), sgjo_dispositivos.device_kind),
                 ua_hash=EXCLUDED.ua_hash, revoked_at=NULL
             """
         ),
-        {"u": int(req["id_usuario"]), "d": str(req["device_id"]), "dn": str(req.get("device_name") or ""), "h": str(req["ua_hash"])},
+        {
+            "u": int(req["id_usuario"]),
+            "d": str(req["device_id"]),
+            "dn": str(req.get("device_name") or ""),
+            "dk": str(req.get("device_kind") or "")[:10],
+            "h": str(req["ua_hash"]),
+        },
     )
     db.execute(
         text(
@@ -933,6 +1042,18 @@ def admin_device_request_approve(
         ),
         {"id": int(id_request), "by": me_id_int},
     )
+    # Guardrail: deja solo 2 teléfonos + 2 PCs por usuario.
+    try:
+        _prune_user_devices_by_kind(
+            db,
+            id_usuario=int(req["id_usuario"]),
+            keep_phone=2,
+            keep_pc=2,
+            revoked_by=me_id_int,
+            note="auto-prune on approve",
+        )
+    except Exception:
+        pass
     db.commit()
     return {"ok": True}
 
@@ -1000,6 +1121,128 @@ def _device_enrolled(db: Session, uid: int, device_id: str, user_agent: str) -> 
         return bool(v)
     except Exception:
         return False
+
+
+def _prune_user_devices(
+    db: Session,
+    *,
+    id_usuario: int,
+    keep: int = 2,
+    revoked_by: int | None = None,
+    note: str | None = None,
+) -> dict[str, int]:
+    """
+    Deja solo los N dispositivos más recientes (aprobados) por usuario y revoca el resto.
+    Motivo: iOS/Safari/iframes pueden perder storage y generar múltiples device_id distintos.
+    """
+    try:
+        keep_n = max(1, min(10, int(keep)))
+    except Exception:
+        keep_n = 2
+
+    ids = (
+        db.execute(
+            text(
+                """
+                SELECT id_device
+                FROM public.sgjo_dispositivos
+                WHERE id_usuario=:u AND revoked_at IS NULL
+                ORDER BY enrolled_at DESC, id_device DESC
+                """
+            ),
+            {"u": int(id_usuario)},
+        )
+        .scalars()
+        .all()
+    )
+    ids = [int(x) for x in ids if str(x).isdigit()]
+    if len(ids) <= keep_n:
+        return {"kept": len(ids), "revoked": 0}
+
+    to_revoke = ids[keep_n:]
+    upd = db.execute(
+        text(
+            """
+            UPDATE public.sgjo_dispositivos
+            SET revoked_at=now(),
+                revoked_by=COALESCE(:by, revoked_by),
+                revoked_note=COALESCE(NULLIF(:n,''), revoked_note)
+            WHERE id_usuario=:u
+              AND revoked_at IS NULL
+              AND id_device = ANY(:ids)
+            """
+        ),
+        {"u": int(id_usuario), "ids": to_revoke, "by": revoked_by, "n": (note or "")[:200]},
+    )
+    return {"kept": keep_n, "revoked": int(getattr(upd, "rowcount", 0) or 0)}
+
+
+def _prune_user_devices_by_kind(
+    db: Session,
+    *,
+    id_usuario: int,
+    keep_phone: int = 2,
+    keep_pc: int = 2,
+    revoked_by: int | None = None,
+    note: str | None = None,
+) -> dict[str, int]:
+    """
+    Deja solo N dispositivos activos por tipo (PHONE/PC) y revoca el resto.
+    Los registros sin `device_kind` se consideran PC (por backfill en _ensure).
+    """
+    try:
+        kp = max(0, min(10, int(keep_phone)))
+    except Exception:
+        kp = 2
+    try:
+        kpc = max(0, min(10, int(keep_pc)))
+    except Exception:
+        kpc = 2
+
+    def _revoke_over(kind: str, keep_n: int) -> int:
+        if keep_n < 0:
+            keep_n = 0
+        ids = (
+            db.execute(
+                text(
+                    """
+                    SELECT id_device
+                    FROM public.sgjo_dispositivos
+                    WHERE id_usuario=:u
+                      AND revoked_at IS NULL
+                      AND COALESCE(device_kind,'PC') = :k
+                    ORDER BY enrolled_at DESC, id_device DESC
+                    """
+                ),
+                {"u": int(id_usuario), "k": kind},
+            )
+            .scalars()
+            .all()
+        )
+        ids = [int(x) for x in ids if str(x).isdigit()]
+        if len(ids) <= keep_n:
+            return 0
+        to_revoke = ids[keep_n:]
+        upd = db.execute(
+            text(
+                """
+                UPDATE public.sgjo_dispositivos
+                SET revoked_at=now(),
+                    revoked_by=COALESCE(:by, revoked_by),
+                    revoked_note=COALESCE(NULLIF(:n,''), revoked_note)
+                WHERE id_usuario=:u
+                  AND revoked_at IS NULL
+                  AND id_device = ANY(:ids)
+                """
+            ),
+            {"u": int(id_usuario), "ids": to_revoke, "by": revoked_by, "n": (note or "")[:200]},
+        )
+        return int(getattr(upd, "rowcount", 0) or 0)
+
+    revoked = 0
+    revoked += _revoke_over("PHONE", kp)
+    revoked += _revoke_over("PC", kpc)
+    return {"kept_phone": kp, "kept_pc": kpc, "revoked": revoked}
 
 
 @router.post("/marcar")

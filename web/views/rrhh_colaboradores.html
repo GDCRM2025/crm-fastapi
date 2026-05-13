@@ -986,27 +986,51 @@
 	        if (box2) box2.innerHTML = `<tr><td class="muted" colspan="5">—</td></tr>`;
 	      }
 
-	      // Cargar dispositivos aprobados
-	      try{
-	        const box2 = qs("#enrolDevRows");
-	        if (!box2) return;
-	        const j2 = await fetchJSON(apiURL(`/rrhh/sgjo/admin/devices?id_usuario=${encodeURIComponent(String(idu))}`), { timeoutMs: 12000 });
-	        const devs = Array.isArray(j2.items) ? j2.items : [];
-	        if (!devs.length){
-	          box2.innerHTML = `<tr><td class="muted" colspan="5">Sin dispositivos enrolados.</td></tr>`;
-	          return;
-	        }
-	        box2.innerHTML = devs.map(d=>`
-	          <tr>
-	            <td>${d.revoked_at ? `<span class="pill">Revocado</span>` : `<span class="pill ok">Activo</span>`}</td>
-	            <td>${escapeHtml((d.device_name||"") || "—")}</td>
-	            <td class="small code">${escapeHtml(d.device_id||"")}</td>
-	            <td class="small muted">${escapeHtml(String(d.enrolled_at||"").replace("T"," ").slice(0,16) || "—")}</td>
-	            <td>
-	              ${d.revoked_at ? `<span class="muted">—</span>` : `<button class="btn" data-dev-revoke="${escapeHtml(String(d.id_device||\"\"))}">Eliminar</button>`}
-	            </td>
-	          </tr>
-	        `).join("");
+		      // Cargar dispositivos aprobados
+		      try{
+		        const box2 = qs("#enrolDevRows");
+		        if (!box2) return;
+		        let j2 = null;
+		        try{
+		          j2 = await fetchJSON(apiURL(`/rrhh/sgjo/admin/devices?id_usuario=${encodeURIComponent(String(idu))}`), { timeoutMs: 12000 });
+		        }catch(e2){
+		          // Backward compatible fallback: si el backend no tiene /admin/devices, usar device_requests aprobadas.
+		          const msg = String(e2?.message||e2);
+		          if ((msg||"").toLowerCase().includes("not found") || (msg||"").includes("404")){
+		            const jx = await fetchJSON(apiURL(`/rrhh/sgjo/admin/device_requests?status=approved&id_usuario=${encodeURIComponent(String(idu))}`), { timeoutMs: 12000 });
+		            const items = Array.isArray(jx.items) ? jx.items : [];
+		            j2 = { ok:true, items: items.map(function(r){
+		              return {
+		                id_device: null,
+		                id_usuario: r.id_usuario,
+		                device_id: r.device_id,
+		                device_name: r.device_name || "",
+		                enrolled_at: r.decided_at || r.created_at,
+		                revoked_at: null,
+		                username: r.username || "",
+		                display: r.display || ""
+		              };
+		            }) };
+		          }else{
+		            throw e2;
+		          }
+		        }
+		        const devs = Array.isArray(j2.items) ? j2.items : [];
+		        if (!devs.length){
+		          box2.innerHTML = `<tr><td class="muted" colspan="5">Sin dispositivos enrolados.</td></tr>`;
+		          return;
+		        }
+		        box2.innerHTML = devs.map(d=>`
+		          <tr>
+		            <td>${d.revoked_at ? `<span class="pill">Revocado</span>` : `<span class="pill ok">Activo</span>`}</td>
+		            <td>${escapeHtml((d.device_name||"") || "—")}</td>
+		            <td class="small code">${escapeHtml(d.device_id||"")}</td>
+		            <td class="small muted">${escapeHtml(String(d.enrolled_at||"").replace("T"," ").slice(0,16) || "—")}</td>
+		            <td>
+		              ${d.revoked_at ? `<span class="muted">—</span>` : (d.id_device ? `<button class="btn" data-dev-revoke="${escapeHtml(String(d.id_device||""))}">Eliminar</button>` : `<span class="muted">—</span>`)}
+		            </td>
+		          </tr>
+		        `).join("");
 	        box2.querySelectorAll("[data-dev-revoke]").forEach(btn=>{
 	          btn.addEventListener("click", async ()=>{
 	            const idDev = Number(btn.getAttribute("data-dev-revoke") || 0) || 0;
@@ -1229,77 +1253,83 @@
     if (btnSaveB) btnSaveB.onclick = saveStaffNow;
 
     async function loadStaff(){
+      const tb = qs("#rowsStaff");
+      if (tb) tb.innerHTML = `<tr><td class="muted">Cargando...</td></tr>`;
       try{
         const data = await fetchJSON(apiURL("/rrhh/staff"), { timeoutMs: 12000 });
-      let items = data.items || [];
-      const q = (qs("#qStaff").value || "").trim().toLowerCase();
-      if (q){ items = items.filter(i => String(i.colaborador || "").toLowerCase().includes(q)); }
-      // Orden por defecto: alfabético, luego rol, luego centro.
-      const norm = (v) => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      items.sort((a,b) => {
-        const c1 = norm(a.colaborador).localeCompare(norm(b.colaborador), "es");
-        if (c1) return c1;
-        const c2 = norm(a.rol).localeCompare(norm(b.rol), "es");
-        if (c2) return c2;
-        return norm(a.centro_costo).localeCompare(norm(b.centro_costo), "es");
-      });
-      qs("#rowsStaff").innerHTML = items.map(i => `
-        <tr>
-          <td><strong>${i.colaborador || "—"}</strong></td>
-          <td>${i.rol || "—"}</td>
-          <td>${i.centro_costo || "—"}</td>
-          <td>${i.afp ? `${i.afp} (${fmt(i.afp_pct)}%)` : "—"}</td>
-          <td>${i.salud_tipo ? `${i.salud_tipo} (${fmt(i.salud_pct)}%)` : "—"}</td>
-          <td>${String(i.is_active ?? true) === "true" ? "Sí" : "No"}</td>
-          <td>
-            <span class="muted">${String(i.puede_marcar ?? true) === "true" ? "Habilitado" : "Bloqueado"}</span>
-            <div class="muted" style="opacity:.85;margin-top:2px">${(String(i.marcacion_method||"BOTH").toUpperCase()==="QR") ? "Solo QR" : (String(i.marcacion_method||"BOTH").toUpperCase()==="GEO") ? "Solo GPS" : "Mixto"}</div>
-          </td>
-          <td>
-            <button class="btn" data-edit="${i.id_staff}">Editar</button>
-            <button class="btn" data-ficha="${i.id_staff}">Ficha PDF</button>
-            <button class="btn" data-user="${i.id_staff}" title="${i.id_usuario ? `Vinculado (usuario #${i.id_usuario})` : "Crear o vincular usuario"}">${i.id_usuario ? "Usuario CRM ✓" : "Usuario CRM"}</button>
-            <button class="btn" data-del="${i.id_staff}">Eliminar</button>
-          </td>
-        </tr>
-      `).join("") || `<tr><td class="muted">Sin datos.</td></tr>`;
-      qs("#rowsStaff").querySelectorAll("[data-edit]").forEach(b => {
-        const id = Number(b.dataset.edit || 0);
-        const item = items.find(x => Number(x.id_staff) === id);
-        b.addEventListener("click", () => openStaffModal(item));
-      });
-      qs("#rowsStaff").querySelectorAll("[data-del]").forEach(b => {
-        const id = Number(b.dataset.del || 0);
-        b.addEventListener("click", async () => {
-          if (!confirm("¿Eliminar colaborador?")) return;
-          const r = await fetch(apiURL(`/rrhh/staff/${id}`), { method:"DELETE", headers: headers() });
-          if (!r.ok){ toast("No se pudo eliminar"); return; }
-          toast("Colaborador eliminado");
-          await loadStaff();
+        let items = data.items || [];
+        const q = (qs("#qStaff").value || "").trim().toLowerCase();
+        if (q){ items = items.filter(i => String(i.colaborador || "").toLowerCase().includes(q)); }
+        // Orden por defecto: alfabético, luego rol, luego centro.
+        const norm = (v) => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        items.sort((a,b) => {
+          const c1 = norm(a.colaborador).localeCompare(norm(b.colaborador), "es");
+          if (c1) return c1;
+          const c2 = norm(a.rol).localeCompare(norm(b.rol), "es");
+          if (c2) return c2;
+          return norm(a.centro_costo).localeCompare(norm(b.centro_costo), "es");
         });
-      });
-      qs("#rowsStaff").querySelectorAll("[data-ficha]").forEach(b => {
-        const id = Number(b.dataset.ficha || 0);
-        b.addEventListener("click", () => {
-          const url = `/web/views/rrhh_ficha.html?id_staff=${encodeURIComponent(String(id))}`;
-          try{
-            window.parent?.postMessage({ type:"openItem", id:"rrhh_ficha", url }, "*");
-          }catch(_){
-            window.open(apiURL(url), "_blank");
+        tb.innerHTML = items.map(i => `
+          <tr>
+            <td><strong>${i.colaborador || "—"}</strong></td>
+            <td>${i.rol || "—"}</td>
+            <td>${i.centro_costo || "—"}</td>
+            <td>${i.afp ? `${i.afp} (${fmt(i.afp_pct)}%)` : "—"}</td>
+            <td>${i.salud_tipo ? `${i.salud_tipo} (${fmt(i.salud_pct)}%)` : "—"}</td>
+            <td>${String(i.is_active ?? true) === "true" ? "Sí" : "No"}</td>
+            <td>
+              <span class="muted">${String(i.puede_marcar ?? true) === "true" ? "Habilitado" : "Bloqueado"}</span>
+              <div class="muted" style="opacity:.85;margin-top:2px">${(String(i.marcacion_method||"BOTH").toUpperCase()==="QR") ? "Solo QR" : (String(i.marcacion_method||"BOTH").toUpperCase()==="GEO") ? "Solo GPS" : "Mixto"}</div>
+            </td>
+            <td>
+              <button class="btn" data-edit="${i.id_staff}">Editar</button>
+              <button class="btn" data-ficha="${i.id_staff}">Ficha PDF</button>
+              <button class="btn" data-user="${i.id_staff}" title="${i.id_usuario ? `Vinculado (usuario #${i.id_usuario})` : "Crear o vincular usuario"}">${i.id_usuario ? "Usuario CRM ✓" : "Usuario CRM"}</button>
+              <button class="btn" data-del="${i.id_staff}">Eliminar</button>
+            </td>
+          </tr>
+        `).join("") || `<tr><td class="muted">Sin datos.</td></tr>`;
+
+        tb.querySelectorAll("[data-edit]").forEach(b => {
+          const id = Number(b.dataset.edit || 0);
+          const item = items.find(x => Number(x.id_staff) === id);
+          b.addEventListener("click", () => openStaffModal(item));
+        });
+        tb.querySelectorAll("[data-del]").forEach(b => {
+          const id = Number(b.dataset.del || 0);
+          b.addEventListener("click", async () => {
+            if (!confirm("¿Eliminar colaborador?")) return;
+            const r = await fetch(apiURL(`/rrhh/staff/${id}`), { method:"DELETE", headers: headers() });
+            if (!r.ok){ toast("No se pudo eliminar"); return; }
+            toast("Colaborador eliminado");
+            await loadStaff();
+          });
+        });
+        tb.querySelectorAll("[data-ficha]").forEach(b => {
+          const id = Number(b.dataset.ficha || 0);
+          b.addEventListener("click", () => {
+            const url = `/web/views/rrhh_ficha.html?id_staff=${encodeURIComponent(String(id))}`;
+            try{
+              window.parent?.postMessage({ type:"openItem", id:"rrhh_ficha", url }, "*");
+            }catch(_){
+              window.open(apiURL(url), "_blank");
+            }
+          });
+        });
+        tb.querySelectorAll("[data-user]").forEach(b => {
+          const id = Number(b.dataset.user || 0);
+          const item = items.find(x => Number(x.id_staff) === id);
+          const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
+          if (item?.id_usuario && !isSuper){
+            b.disabled = true;
+            b.title = `Ya vinculado (usuario #${item.id_usuario}). Solo SuperAdmin puede cambiarlo.`;
+            return;
           }
+          b.addEventListener("click", () => openUserModal(item));
         });
-      });
-      qs("#rowsStaff").querySelectorAll("[data-user]").forEach(b => {
-        const id = Number(b.dataset.user || 0);
-        const item = items.find(x => Number(x.id_staff) === id);
-        const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
-        if (item?.id_usuario && !isSuper){
-          b.disabled = true;
-          b.title = `Ya vinculado (usuario #${item.id_usuario}). Solo SuperAdmin puede cambiarlo.`;
-          return;
-        }
-        b.addEventListener("click", () => openUserModal(item));
-      });
+      }catch(e){
+        if (tb) tb.innerHTML = `<tr><td class="muted">No se pudo cargar: ${escapeHtml(String(e?.message||e))}</td></tr>`;
+      }
     }
 
     qs("#btnReloadStaff").addEventListener("click", () => loadStaff());
@@ -1418,11 +1448,8 @@
               <input type="checkbox" name="uMarca" value="${Number(m.id_marca)}" />
               <span>${escapeHtml(m.nombre)}</span>
             </label>
-      `).join("");
-      }catch(e){
-        qs("#rowsStaff").innerHTML = `<tr><td class="muted">No se pudo cargar: ${escapeHtml(String(e?.message||e))}</td></tr>`;
-      }
-    }
+          `).join("");
+        }
       }
       showUserModal(true);
 

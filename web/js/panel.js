@@ -378,6 +378,8 @@ function refreshMainFrame() {
   }
 }
 async function performLogout() {
+  const ok = await maybePromptSgjoMarkOutBeforeLogout();
+  if (!ok) return;
   await _serverLogout("manual");
   localStorage.removeItem("token");
   localStorage.removeItem("nombre");
@@ -1727,6 +1729,9 @@ function bootstrapFromToken() {
       }
     }
     buildMenu();
+    // Refuerzo UX: si el usuario debe marcar y aún no tiene IN hoy, dejamos una banda fija hasta que marque.
+    // (No bloquea el uso 100%, pero evita que "nadie marque" y reduce OUT perdidos con prompt al logout).
+    try { enforceSgjoMarkInGate().catch(()=>{}); } catch (_) {}
     startTasksBadgePolling();
     startSoldEventPolling();
     return { ok: true, redirected: false };
@@ -1765,14 +1770,18 @@ async function maybePromptSgjoMarkIn(me) {
       const frame = qs("#mainFrame");
       if (frame) frame.src = viewURL(markURL);
     };
+    const role = String((me && (me.role || me.rol)) || "").toUpperCase();
+    const isEjecutivo = role.includes("EJECUTIV");
     if (window.Swal) {
       const res = await Swal.fire({
         icon: "info",
         title: "Marcación de entrada",
         html: `<div style="text-align:left;opacity:.9">Para iniciar la jornada, registra tu <b>ENTRADA</b> (QR/GPS según tu permiso RRHH).</div>`,
-        showCancelButton: true,
+        showCancelButton: !isEjecutivo,
         confirmButtonText: "Marcar ahora",
-        cancelButtonText: "Más tarde"
+        cancelButtonText: "Más tarde",
+        allowOutsideClick: !isEjecutivo,
+        allowEscapeKey: !isEjecutivo
       });
       if (res.isConfirmed) openMark();
       else {
@@ -1799,6 +1808,157 @@ async function maybePromptSgjoMarkIn(me) {
       }
     }
   } catch (_) {
+  }
+}
+
+let _sgjoGateTimer = null;
+function _ensureSgjoGateHost() {
+  let el = document.getElementById("sgjoGateHost");
+  if (el) return el;
+  el = document.createElement("div");
+  el.id = "sgjoGateHost";
+  el.style.position = "fixed";
+  el.style.left = "0";
+  el.style.right = "0";
+  el.style.bottom = "0";
+  el.style.zIndex = "99998";
+  el.style.padding = "10px 12px";
+  el.style.display = "none";
+  el.style.gap = "10px";
+  el.style.alignItems = "center";
+  el.style.justifyContent = "center";
+  el.style.backdropFilter = "blur(10px)";
+  el.style.background = "rgba(2,6,23,.85)";
+  el.style.borderTop = "1px solid rgba(148,163,184,.18)";
+  el.style.color = "var(--text)";
+  el.innerHTML = `
+    <div style="max-width:1100px;width:100%;display:flex;gap:10px;align-items:center;justify-content:space-between">
+      <div style="font-weight:1100">
+        RRHH: debes registrar tu <b>ENTRADA (IN)</b> para iniciar la jornada.
+        <span style="opacity:.75;font-weight:900">Si estás saliendo, marca <b>SALIDA (OUT)</b>.</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button type="button" class="btn" id="sgjoGateGo" style="font-weight:1000">Ir a marcar</button>
+        <button type="button" class="btn" id="sgjoGateDismiss" style="opacity:.8">Ocultar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(el);
+  return el;
+}
+function _showSgjoGate({ onGo = null } = {}) {
+  const host = _ensureSgjoGateHost();
+  host.style.display = "flex";
+  const btnGo = host.querySelector("#sgjoGateGo");
+  const btnDismiss = host.querySelector("#sgjoGateDismiss");
+  if (btnGo) {
+    btnGo.onclick = () => {
+      try {
+        if (onGo) onGo();
+      } catch (_) {
+      }
+    };
+  }
+  // Regla negocio: ejecutivos NO pueden ocultar el recordatorio; deben marcar sí o sí.
+  try {
+    const role = String(((window.GD && (GD.me?.role || GD.me?.rol)) || "")).toUpperCase();
+    const isEjecutivo = role.includes("EJECUTIV");
+    if (btnDismiss) {
+      if (isEjecutivo) {
+        btnDismiss.style.display = "none";
+      } else {
+        btnDismiss.style.display = "";
+        btnDismiss.onclick = () => {
+          try {
+            host.style.display = "none";
+          } catch (_) {
+          }
+        };
+      }
+    }
+  } catch (_) {
+  }
+}
+function _hideSgjoGate() {
+  try {
+    const host = document.getElementById("sgjoGateHost");
+    if (host) host.style.display = "none";
+  } catch (_) {
+  }
+}
+async function enforceSgjoMarkInGate() {
+  try {
+    if (!getToken()) return;
+    const r = await fetch(`${API_BASE}/rrhh/sgjo/today`, { headers: authHeaders({ "Accept": "application/json" }) });
+    if (!r.ok) return;
+    const j = await r.json().catch(() => null);
+    if (!(j && j.ok)) return;
+    if (j.puede_marcar !== true) return;
+    const punto = String(j.default_punto_code || "").trim();
+    const markURL = punto ? `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto)}&v=${Date.now()}` : `/web/views/rrhh_sgjo_marcacion.html?v=${Date.now()}`;
+    const openMark = () => {
+      const frame = qs("#mainFrame");
+      if (frame) frame.src = viewURL(markURL);
+    };
+    if (j.has_in) {
+      _hideSgjoGate();
+      if (_sgjoGateTimer) {
+        clearInterval(_sgjoGateTimer);
+        _sgjoGateTimer = null;
+      }
+      return;
+    }
+    _showSgjoGate({ onGo: openMark });
+    if (!_sgjoGateTimer) {
+      _sgjoGateTimer = setInterval(() => {
+        enforceSgjoMarkInGate();
+      }, 35e3);
+    }
+  } catch (_) {
+  }
+}
+
+async function maybePromptSgjoMarkOutBeforeLogout() {
+  try {
+    if (!getToken()) return true;
+    const r = await fetch(`${API_BASE}/rrhh/sgjo/today`, { headers: authHeaders({ "Accept": "application/json" }) });
+    if (!r.ok) return true;
+    const j = await r.json().catch(() => null);
+    if (!(j && j.ok)) return true;
+    if (j.puede_marcar !== true) return true;
+    if (!(j.has_in && !j.has_out)) return true;
+    const punto = String(j.default_punto_code || "").trim();
+    const markURL = punto ? `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto)}&v=${Date.now()}` : `/web/views/rrhh_sgjo_marcacion.html?v=${Date.now()}`;
+    const openMark = () => {
+      const frame = qs("#mainFrame");
+      if (frame) frame.src = viewURL(markURL);
+    };
+    if (window.Swal) {
+      const res = await Swal.fire({
+        icon: "warning",
+        title: "¿Marcar salida antes de cerrar sesión?",
+        html: `<div style="text-align:left;opacity:.9">Detecté que hoy ya marcaste <b>ENTRADA</b>, pero no hay <b>SALIDA</b>.<br/>Si vas a terminar tu jornada, marca <b>SALIDA (OUT)</b> antes de cerrar sesión.</div>`,
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "Marcar salida",
+        denyButtonText: "Salir sin marcar",
+        cancelButtonText: "Cancelar"
+      });
+      if (res.isConfirmed) {
+        openMark();
+        toast("Marca tu SALIDA (OUT) y luego vuelve a cerrar sesión.", { kind: "info", ms: 9e3 });
+        return false;
+      }
+      if (res.isDenied) return true;
+      return false;
+    }
+    if (confirm("Hoy tienes IN pero no OUT. ¿Quieres marcar salida antes de cerrar sesión?")) {
+      openMark();
+      return false;
+    }
+    return true;
+  } catch (_) {
+    return true;
   }
 }
 
@@ -2240,7 +2400,7 @@ const MENU = [
     title: "Reportes",
     items: [
       // Un solo acceso: la vista Reportes maneja tabs internos.
-      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes.html?v=20260326-r3" }
+      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes_v2.html?v=20260512-rep2" }
     ]
   },
   {
@@ -2562,12 +2722,10 @@ const PERMISSIONS = {
 		    ,"events_calendar"
 		  ]),
 	  10: /* @__PURE__ */ new Set([
-	    "dash_home",
 	    "rrhh_hub",
 	    "leads_ver",
 	    "leads_fil",
 	    "historial",
-	    "rep_total",
 	    "system_notifs",
 	    "tool_wapp",
 	    "tool_calc",
@@ -2610,11 +2768,7 @@ const PERMISSIONS = {
 		    ,"events_calendar"
 		  ]),
 		  3: /* @__PURE__ */ new Set([
-		    "dash_home",
 		    "rrhh_hub",
-		    "rep_com",
-		    "rep_prod",
-		    "rep_cli",
 		    "system_notifs",
 		    "op_rec",
 		    "op_mice",
@@ -2649,9 +2803,7 @@ const PERMISSIONS = {
 			    "chk_hoy"
 		  ]),
 	  4: /* @__PURE__ */ new Set([
-	    "dash_home",
 	    "rrhh_hub",
-	    "rep_prod",
     "inv_tomar",
     "inv_stock",
     "inv_prod",
@@ -2687,9 +2839,7 @@ const PERMISSIONS = {
 	    "historial"
 	  ]),
 	  5: /* @__PURE__ */ new Set([
-	    "dash_home",
 	    "rrhh_hub",
-	    "rep_prod",
 	    "op_rec",
 	    "op_mice",
 	    "op_ruta",
@@ -2743,7 +2893,6 @@ const PERMISSIONS = {
     "op_vruta2"
   ]),
 		  8: /* @__PURE__ */ new Set([
-		    "dash_home",
 		    "rrhh_hub",
 		    "system_notifs",
 		    "op_rec",

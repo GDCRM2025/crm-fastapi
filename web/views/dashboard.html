@@ -325,6 +325,17 @@
         </div>
       </div>
     </section>
+
+    <section class="card" id="reportesCard" style="grid-column: span 12;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0">Reportes</h3>
+          <div class="muted" style="margin-top:6px">Analítica avanzada (Funnel, comunas, productos, clientes, finanzas).</div>
+        </div>
+        <button class="btn" id="btnGoReportes" type="button">Abrir Reportes</button>
+      </div>
+      <div class="muted" style="margin-top:12px">Tip: también está en el menú lateral (“Ir a Reportes”).</div>
+    </section>
   </div>
 
   <div class="modal" id="dayModal" role="dialog" aria-modal="true" aria-label="Eventos del día">
@@ -1008,6 +1019,7 @@
       $("#btnApply").addEventListener("click", ()=> refreshAll());
 
       $("#btnGoTasks").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260421-tasks9" }, "*"));
+      $("#btnGoReportes")?.addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes_v2.html?v=20260512-rep2" }, "*"));
       $("#kpiTaskNew").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260421-tasks9&tab=leads" }, "*"));
       $("#kpiTaskContact").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260421-tasks9&tab=leads" }, "*"));
       $("#kpiTaskQuote").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"tasks_my", url:"/web/views/tasks.html?v=20260421-tasks9&tab=leads" }, "*"));

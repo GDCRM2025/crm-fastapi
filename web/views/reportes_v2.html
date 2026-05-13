@@ -11,10 +11,92 @@
   <script src="../js/iframe-theme.js"></script>
   <style>
     html,body{height:100%;margin:0;}
-    body{background:transparent;padding:18px;overflow:auto;color:rgba(226,232,240,.96);}
-    :root.light body{ color:#0f172a; }
+    body{
+      padding:0;
+      overflow:hidden;
+      color:rgba(226,232,240,.96);
+      /* Reportes se ve mejor como dashboard dark (tipo NobleFinance/Sociafy) incluso en iframe */
+      background:
+        radial-gradient(1200px 680px at 10% 0%, rgba(96,165,250,.12), transparent 60%),
+        radial-gradient(900px 520px at 100% 0%, rgba(91,151,78,.20), transparent 55%),
+        radial-gradient(700px 520px at 40% 120%, rgba(150,194,81,.14), transparent 55%),
+        linear-gradient(180deg, rgba(3,7,18,.98), rgba(3,7,18,.86));
+    }
     /* Reportes usa tema global (XP). Solo mantenemos acento GD para gráficos. */
     :root{ --accent: #5B974E; }
+
+    /* Layout v2 (inspirado en NobleFinance/Sociafy): sidebar + contenido */
+    .app{
+      height:100%;
+      display:flex;
+      gap:14px;
+      padding:18px;
+      box-sizing:border-box;
+      overflow:hidden;
+      max-width:1720px;
+      margin:0 auto;
+    }
+    .side{
+      width:280px;
+      min-width:280px;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .main{
+      min-width:0;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      overflow:hidden;
+    }
+    @media (max-width: 980px){
+      .app{ flex-direction:column; padding:12px; }
+      .side{ width:auto; min-width:0; }
+    }
+
+    .sideTop{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .brand{display:flex;flex-direction:column;gap:4px;}
+    .brand .name{font-size:14px;font-weight:1200;letter-spacing:.14em;text-transform:uppercase;opacity:.92;}
+    .brand .hint{font-size:12px;font-weight:850;opacity:.66;line-height:1.25;}
+
+    .nav{display:flex;flex-direction:column;gap:8px;}
+    .nav .tab{
+      height:40px;
+      border-radius:14px;
+      padding:0 12px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      width:100%;
+      text-align:left;
+      background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+      border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+      cursor:pointer;
+      font-size:13px;
+      font-weight:1050;
+      user-select:none;
+    }
+    .nav .tab:hover{filter:brightness(1.06);}
+    .nav .tab.active{background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .nav small{opacity:.72;font-weight:900;}
+
+    .sideActions{display:flex;gap:8px;flex-wrap:wrap;}
+    .scroll{overflow:auto;padding-right:4px;display:flex;flex-direction:column;gap:12px;}
+    /* KPIs siempre visibles en todos los tabs */
+    #kpi_card{
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: color-mix(in srgb, var(--surface) 82%, transparent);
+      backdrop-filter: blur(8px);
+    }
+
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+    .topbar .left{min-width:260px;}
+    .topbar .right{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
 
     .rwrap{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
     .head{
@@ -57,11 +139,8 @@
       box-shadow: 0 22px 70px rgba(0,0,0,.18);
       padding:14px;
     }
-    :root.light .card{
-      background: rgba(255,255,255,.86);
-      border-color: rgba(15,23,42,.14);
-      box-shadow: 0 14px 40px rgba(2,6,23,.08);
-    }
+    /* Forzamos dark para reportes (evita ilegibilidad por theme global) */
+    :root.light .card{ background: rgba(2,6,23,.28); border-color: rgba(148,163,184,.18); box-shadow: 0 22px 70px rgba(0,0,0,.18); }
     .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
     .muted{opacity:.72; font-weight:850; font-size:12px;}
 
@@ -151,70 +230,91 @@
   </style>
 </head>
 <body>
-  <div class="rwrap">
-    <section class="card head">
-      <div>
-        <div class="ttl">Reportes</div>
-        <div class="sub">Funnel + cierre + ventas + top productos/comunas/clientes + finanzas. Todo sale del backend: `/tools/dashboard` y `/tools/dashboard/reportes`.</div>
-        <div class="tabs" id="tabs">
-          <button class="tab" type="button" data-tab="funnel">Funnel</button>
-          <button class="tab" type="button" data-tab="cierre">% cierre</button>
-          <button class="tab" type="button" data-tab="tipo_cliente">Tipo cliente</button>
-          <button class="tab" type="button" data-tab="total">Total venta</button>
-          <button class="tab" type="button" data-tab="comunas">Comunas</button>
-          <button class="tab" type="button" data-tab="productos">Productos</button>
-          <button class="tab" type="button" data-tab="clientes">Clientes</button>
-          <button class="tab" type="button" data-tab="leads_hoy">Leads hoy</button>
-          <button class="tab" type="button" data-tab="venta_diaria">Venta diaria</button>
-          <button class="tab" type="button" data-tab="cxc">Por cobrar</button>
-          <button class="tab" type="button" data-tab="cxp">Por pagar</button>
-
-          <div class="tabActions">
-            <button id="btnXlsx" class="btn" type="button" title="Exporta el reporte seleccionado a Excel (incluye el gráfico como imagen)">Export XLSX</button>
-            <button id="btnWsp" class="btn" type="button" title="Copia un resumen y abre WhatsApp Web (adjunta el archivo manualmente)">WhatsApp</button>
+  <div class="app">
+    <aside class="side">
+      <section class="card">
+        <div class="sideTop">
+          <div class="brand">
+            <div class="name">Reportes</div>
+            <div class="hint">MTD por defecto · KPIs + gráficos + export.</div>
           </div>
+          <button id="openDash" class="btn" type="button" title="Ir al Dashboard principal">Dashboard</button>
         </div>
-      </div>
-      <div class="row">
-        <select id="marca" class="sel" title="Marca">
-          <option value="">Todas las marcas</option>
-        </select>
-        <select id="ventaSource" class="sel" title="Fuente de venta">
-          <option value="confirmados" selected>Confirmados (monto cotizado)</option>
-          <option value="eventos">Eventos (finanzas)</option>
-        </select>
-        <select id="periodo" class="sel" title="Periodo">
-          <option value="mtd" selected>MTD</option>
-          <option value="ytd">YTD</option>
-          <option value="range">Rango</option>
-        </select>
-        <select id="topN" class="sel" title="Top">
-          <option value="5">Top 5</option>
-          <option value="10">Top 10</option>
-          <option value="20" selected>Top 20</option>
-          <option value="50">Top 50</option>
-        </select>
-        <select id="prodOrd" class="sel" title="Orden productos">
-          <option value="monto" selected>Prod: monto</option>
-          <option value="cantidad">Prod: cantidad</option>
-        </select>
-        <select id="comOrd" class="sel" title="Orden comunas">
-          <option value="monto" selected>Com: monto</option>
-          <option value="cantidad">Com: cantidad</option>
-        </select>
-        <select id="cliOrd" class="sel" title="Orden clientes">
-          <option value="monto" selected>Cli: monto</option>
-          <option value="cantidad">Cli: cantidad</option>
-        </select>
-        <input id="ini" class="inp" type="date" />
-        <input id="fin" class="inp" type="date" />
-        <button id="go" class="btn primary" type="button">Cargar</button>
-        <button id="openDash" class="btn" type="button">Abrir Dashboard</button>
-        <button id="viewAll" class="btn" type="button" style="display:none;">Ver todos</button>
-      </div>
-    </section>
+      </section>
 
-    <div class="muted" id="st">—</div>
+      <section class="card">
+        <div class="h2">Menú</div>
+        <nav class="nav" id="tabs">
+          <button class="tab" type="button" data-tab="total">Visión general <small>MTD/Meta/LY</small></button>
+          <button class="tab" type="button" data-tab="funnel">Funnel <small>etapas</small></button>
+          <button class="tab" type="button" data-tab="cierre">% cierre <small>ratios</small></button>
+          <button class="tab" type="button" data-tab="tipo_cliente">Tipo cliente <small>mix</small></button>
+          <button class="tab" type="button" data-tab="comunas">Comunas <small>top</small></button>
+          <button class="tab" type="button" data-tab="productos">Productos <small>top</small></button>
+          <button class="tab" type="button" data-tab="clientes">Clientes <small>top</small></button>
+          <button class="tab" type="button" data-tab="leads_hoy">Leads hoy <small>lista</small></button>
+          <button class="tab" type="button" data-tab="venta_diaria">Venta diaria <small>serie</small></button>
+          <button class="tab" type="button" data-tab="cxc">Por cobrar <small>CxC</small></button>
+          <button class="tab" type="button" data-tab="cxp">Por pagar <small>CxP</small></button>
+        </nav>
+      </section>
+
+      <section class="card">
+        <div class="h2">Acciones</div>
+        <div class="sideActions">
+          <button id="btnXlsx" class="btn" type="button" title="Exporta el reporte seleccionado a Excel (incluye el gráfico como imagen)">Export XLSX</button>
+          <button id="btnWsp" class="btn" type="button" title="Copia un resumen y abre WhatsApp Web (adjunta el archivo manualmente)">WhatsApp</button>
+          <button id="btnPrint" class="btn" type="button" title="Imprime la vista actual">Imprimir</button>
+        </div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="card topbar">
+        <div class="left">
+          <div class="ttl">Analítica</div>
+          <div class="sub">Funnel + ventas + top + finanzas. Backend: `/tools/dashboard` y `/tools/dashboard/reportes`.</div>
+        </div>
+        <div class="right">
+          <select id="marca" class="sel" title="Marca">
+            <option value="">Todas las marcas</option>
+          </select>
+          <select id="ventaSource" class="sel" title="Fuente de venta">
+            <option value="confirmados" selected>Confirmados (monto cotizado)</option>
+            <option value="eventos">Eventos (finanzas)</option>
+          </select>
+          <select id="periodo" class="sel" title="Periodo">
+            <option value="mtd" selected>MTD</option>
+            <option value="ytd">YTD</option>
+            <option value="range">Rango</option>
+          </select>
+          <select id="topN" class="sel" title="Top">
+            <option value="5">Top 5</option>
+            <option value="10">Top 10</option>
+            <option value="20" selected>Top 20</option>
+            <option value="50">Top 50</option>
+          </select>
+          <select id="prodOrd" class="sel" title="Orden productos">
+            <option value="monto" selected>Prod: monto</option>
+            <option value="cantidad">Prod: cantidad</option>
+          </select>
+          <select id="comOrd" class="sel" title="Orden comunas">
+            <option value="monto" selected>Com: monto</option>
+            <option value="cantidad">Com: cantidad</option>
+          </select>
+          <select id="cliOrd" class="sel" title="Orden clientes">
+            <option value="monto" selected>Cli: monto</option>
+            <option value="cantidad">Cli: cantidad</option>
+          </select>
+          <input id="ini" class="inp" type="date" />
+          <input id="fin" class="inp" type="date" />
+          <button id="go" class="btn primary" type="button">Cargar</button>
+          <button id="viewAll" class="btn" type="button" style="display:none;">Ver todos</button>
+        </div>
+      </section>
+
+      <div class="scroll">
+        <div class="muted" id="st">—</div>
 
     <section class="card" id="kpi_card">
       <div class="h2">KPIs</div>
@@ -242,6 +342,7 @@
       <section class="card" style="grid-column: span 6" id="cierre">
         <div class="h2">% cierre</div>
         <div class="muted">Calculado por backend (semana actual / marca seleccionada).</div>
+        <div class="chartBox" id="chCierre" style="margin-top:10px"></div>
         <div id="boxCierre" style="margin-top:10px"></div>
       </section>
 
@@ -283,6 +384,11 @@
           <button class="btn" id="expCom" type="button">Exportar CSV</button>
         </div>
         <div class="chartBox" id="chCom"></div>
+        <div class="chartBox" style="margin-top:10px">
+          <div class="h2" style="margin:0 0 8px 0">Heatmap (monto)</div>
+          <div class="muted" style="margin-bottom:10px">Intensidad por monto (no geográfico).</div>
+          <div id="heatCom" style="display:grid;grid-template-columns:repeat(2, minmax(0,1fr));gap:8px;"></div>
+        </div>
         <div style="max-height:420px;overflow:auto;margin-top:10px">
           <table class="tbl">
             <thead><tr><th>Comuna</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
@@ -345,6 +451,8 @@
         <div id="boxDaily" style="margin-top:10px; overflow:auto"></div>
       </section>
     </section>
+      </div>
+    </main>
   </div>
 
   <script>
@@ -397,24 +505,34 @@
     // ---------- charts (ECharts, BI look) ----------
     const EC = {};
     function hasECharts(){ return typeof window.echarts !== "undefined" && !!window.echarts; }
+    function __isLight(){
+      try{
+        return document.documentElement.classList.contains("light") || document.body.classList.contains("light");
+      }catch(_){ return false; }
+    }
 	    function ecColors(){
-	      const isLight = false; // reportes: siempre GD-dark (evita charts “blancos/rojos” por theme global)
-	      // Brandbook (GD Group) — verdes corporativos aproximados desde el arte compartido
-	      const g1 = "#587B0D"; // Pantone P155-16C (R88 G123 B13)
-	      const g2 = "#5B974E"; // Pantone P145-15C (R91 G151 B78)
-	      const g3 = "#96C251"; // Pantone P151-7C  (R150 G194 B81)
+	      const isLight = __isLight();
+	      // Colores vivos y consistentes (serie/leyenda/tooltip)
+        const actual = "#22d3ee"; // cyan
+        const meta = "#a3e635";   // lime
+        const base = "#a855f7";   // purple
+        const trend = "#f97316";  // orange
 	      return {
-	        axis: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.80)",
+	        axis: isLight ? "rgba(0,0,0,.78)" : "rgba(255,255,255,.84)",
 	        grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.16)",
-	        title: isLight ? "rgba(0,0,0,.85)" : "rgba(255,255,255,.88)",
-	        sub: isLight ? "rgba(0,0,0,.60)" : "rgba(255,255,255,.70)",
-	        accent: g2,
-	        accentDark: g1,
-	        accentLight: g3,
-	        accent2: "#22c55e",
+	        title: isLight ? "rgba(0,0,0,.88)" : "rgba(255,255,255,.90)",
+	        sub: isLight ? "rgba(0,0,0,.62)" : "rgba(255,255,255,.72)",
+	        accent: meta,
+	        accentDark: "#65a30d",
+	        accentLight: "#22c55e",
+	        accent2: actual,
 	        warn: "#f59e0b",
 	        bad: "#ef4444",
-	        cyan: "#22d3ee",
+	        cyan: actual,
+	        actual,
+	        meta,
+	        base,
+	        trend,
 	      };
 	    }
 
@@ -426,10 +544,10 @@
 
           const mk = (isLight) => {
             const c = (()=>{
-              // usa el mismo palette, solo cambia tintes base
-              const g1 = "#587B0D";
-              const g2 = "#5B974E";
-              const g3 = "#96C251";
+              // Palette tipo “NobleFinance”
+              const g1 = "#65a30d";
+              const g2 = "#a3e635";
+              const g3 = "#22c55e";
               return {
                 axis: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.80)",
                 grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.16)",
@@ -466,40 +584,9 @@
       }
       __registerGDThemes();
 
-      function __ecTheme(){
-        return "gd-dark";
-      }
+      function __ecTheme(){ return "gd-dark"; }
 
-	    function ecWatermark(c){
-	      // Watermark sutil con diamante + GD (sin assets externos)
-	      const op = 0.10;
-	      const x = "92%";
-	      const y = "90%";
-	      return [
-	        {
-	          type: "group",
-	          right: 10,
-	          bottom: 10,
-	          silent: true,
-	          opacity: op,
-	          children: [
-	            {
-	              type: "polygon",
-	              shape: { points: [[0,12],[12,0],[28,8],[16,28],[0,12]] },
-	              style: { fill: c.accentLight, stroke: c.accentDark, lineWidth: 1 }
-	            },
-	            {
-	              type: "text",
-	              style: { text: "GD", x: 34, y: 0, fill: c.title, font: "900 14px " + (getComputedStyle(document.documentElement).getPropertyValue("--font") || "system-ui") }
-	            },
-	            {
-	              type: "text",
-	              style: { text: "GROUP", x: 34, y: 16, fill: c.sub, font: "900 10px " + (getComputedStyle(document.documentElement).getPropertyValue("--font") || "system-ui"), letterSpacing: 2 }
-	            }
-	          ]
-	        }
-	      ];
-	    }
+	    function ecWatermark(_c){ return []; }
 
 	    function mergeGraphic(base, extra){
 	      const a = Array.isArray(base) ? base : (base ? [base] : []);
@@ -507,13 +594,15 @@
 	      return [...a, ...b];
 	    }
     function ecTooltipSkin(c){
-      const isLight = false;
+      const isLight = __isLight();
       return {
-        backgroundColor: isLight ? "rgba(255,255,255,.92)" : "rgba(10,18,28,.92)",
-        borderColor: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.20)",
+        appendToBody: true,
+        confine: false,
+        backgroundColor: isLight ? "rgba(255,255,255,.96)" : "rgba(9,15,24,.96)",
+        borderColor: isLight ? "rgba(0,0,0,.12)" : "rgba(148,163,184,.26)",
         borderWidth: 1,
-        textStyle: { color: c.axis, fontWeight: 850, fontSize: 12 },
-        extraCssText: "box-shadow:0 18px 50px rgba(0,0,0,.35);border-radius:14px;padding:10px 12px;"
+        textStyle: { color: isLight ? "rgba(0,0,0,.88)" : "rgba(255,255,255,.92)", fontWeight: 900, fontSize: 13 },
+        extraCssText: "box-shadow:0 22px 60px rgba(0,0,0,.45);border-radius:14px;padding:10px 12px;max-width:360px;white-space:normal;"
       };
     }
     function destroyEC(id){
@@ -610,10 +699,6 @@
 	        graphic: ecWatermark(c),
 	        dataZoom: needsZoom ? [
 	          { type:"inside", yAxisIndex:0, startValue: 0, endValue: windowSize - 1, zoomOnMouseWheel:true, moveOnMouseWheel:true, moveOnMouseMove:true },
-	          { type:"slider", yAxisIndex:0, startValue: 0, endValue: windowSize - 1, height: 16, bottom: 8, right: 20, left: 160,
-              borderColor:"rgba(148,163,184,.14)", backgroundColor:"rgba(148,163,184,.10)",
-              fillerColor: "rgba(91,151,78,.25)", handleStyle:{ color: c.accent, borderColor:"rgba(0,0,0,0)" },
-              textStyle:{ color: c.sub, fontWeight:900, fontSize:10 } }
 	        ] : [],
 	        series: [
 		          {
@@ -633,8 +718,8 @@
 		            z: 2,
 		            itemStyle: {
 		              borderRadius: 8,
-		              shadowBlur: 16,
-		              shadowColor: "rgba(0,0,0,.22)",
+		              shadowBlur: 0,
+		              shadowColor: "rgba(0,0,0,0)",
 		              color: {
 	                type: "linear", x: 0, y: 0, x2: 1, y2: 0,
 	                colorStops: [
@@ -657,9 +742,7 @@
 		                return `#${rank} · ${fmtV(v)}`;
 		              }
 		            },
-	            emphasis: {
-	              itemStyle: { shadowBlur: 22, shadowColor: "rgba(23,195,125,.25)" }
-	            },
+	            emphasis: { itemStyle: { opacity: 0.95 } },
 	            universalTransition: true,
 	          }
 	        ]
@@ -1116,6 +1199,11 @@
     }
 
     async function init(){
+      // Reportes: forzar dark siempre (mejor contraste en iframe).
+      try{
+        document.documentElement.classList.remove("light");
+        document.documentElement.classList.add("dark");
+      }catch(_){}
       CURRENT_TAB = getInitialTab();
       // bind tabs
       qs("#tabs")?.addEventListener("click", (ev)=>{
@@ -1150,8 +1238,9 @@
       }
 
       qs("#openDash").onclick = () => openInParent("/web/views/dashboard.html");
-      qs("#viewAll").onclick = () => openInParent("/web/views/reportes.html");
+      qs("#viewAll").onclick = () => openInParent("/web/views/reportes_v2.html");
       qs("#go").onclick = () => load().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
+      qs("#btnPrint")?.addEventListener("click", ()=> { try{ window.print(); }catch(_){ } });
 
       // Export (CSV)
       qs("#expFunnel")?.addEventListener("click", ()=> exportCSV("funnel"));
@@ -1257,9 +1346,18 @@
       const mm = String(now.getMonth()+1).padStart(2,"0");
       const dd = String(now.getDate()).padStart(2,"0");
       const today = `${yyyy}-${mm}-${dd}`;
+      const monthEnd = (() => {
+        try{
+          const d = new Date(yyyy, now.getMonth()+1, 0); // last day of current month
+          return fmtDate(d);
+        }catch(_){
+          return today;
+        }
+      })();
       if (per === "mtd"){
         iniEl.value = `${yyyy}-${mm}-01`;
-        finEl.value = today;
+        // Regla negocio: MTD aquí = mes completo (incluye futuros confirmados).
+        finEl.value = monthEnd;
         iniEl.disabled = true;
         finEl.disabled = true;
       }else if (per === "ytd"){
@@ -1300,7 +1398,7 @@
       repQs.set("clientes_order", cliOrd);
 
       const [dash, rep] = await Promise.all([
-        jget("/tools/dashboard" + (dashQs.toString() ? ("?"+dashQs.toString()) : "")),
+        jget("/tools/dashboard_v2" + (dashQs.toString() ? ("?"+dashQs.toString()) : "")),
         jget("/tools/dashboard/reportes" + (repQs.toString() ? ("?"+repQs.toString()) : "")),
       ]);
 
@@ -1313,28 +1411,38 @@
       renderKPIs(dash, rep, LAST.ini, LAST.fin, mid);
       await renderTab(CURRENT_TAB);
 
-      const perLbl = (periodo === "mtd") ? "MTD" : ((periodo === "ytd") ? "YTD" : "Rango");
+      const perLbl = (periodo === "mtd") ? "MES" : ((periodo === "ytd") ? "YTD" : "Rango");
       qs("#st").textContent = `OK · ${perLbl}: ${LAST.ini} → ${LAST.fin}${mid ? (" · Marca ID: " + mid) : ""}`;
     }
 
     function renderKPIs(dash, rep, ini, fin, mid){
-      const k = dash?.kpis || {};
+      const sales = dash?.sales || {};
+      const k = {
+        leads_hoy: Number(dash?.leads_today?.total_cnt || 0),
+        venta_dia: Number(sales?.venta_dia_total || 0),
+        venta_semana: Number(sales?.venta_semana_total || 0),
+        cierre_pct: Number(dash?.kpis?.cierre_pct || 0),
+      };
       const rk = rep?.kpis || {};
       const comp = Array.isArray(rep?.ventas_comparativo) ? rep.ventas_comparativo : [];
       const baseSum = comp.reduce((a,x)=> a + Number(x.base||0), 0);
       const metaSum = comp.reduce((a,x)=> a + Number(x.meta||0), 0);
       const actual = Number(rk.venta_total||0);
+      // Traslados: usar breakdown de dashboard_v2 (calza con cotizaciones)
+      const trasladoCobrado = Number(sales?.venta_mes_traslado ?? sales?.venta_semana_traslado ?? 0);
+      const trasladoCosto = 0;
+      const trasladoMargen = trasladoCobrado - trasladoCosto;
       const vsBase = baseSum ? ((actual/baseSum - 1)*100) : null;
       const vsMeta = metaSum ? ((actual/metaSum)*100) : null;
       const el = qs("#kpis");
       if (!el) return;
       const blocks = [
         { id:"k_venta_rango", l:"Venta", v: money(actual||0), s:`vs Base: ${vsBase===null?"—":vsBase.toFixed(1)+"%"} · vs Meta: ${vsMeta===null?"—":vsMeta.toFixed(1)+"%"}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
-        { id:"k_traslados_rango", l:"Traslados", v: money(rk.traslado_cobrado||0), s:`Costo: ${money(rk.traslado_costo||0)} · Margen: ${money(rk.traslado_margen||0)}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
+        { id:"k_traslados_rango", l:"Traslados", v: money(trasladoCobrado||0), s:`Costo: ${money(trasladoCosto||0)} · Margen: ${money(trasladoMargen||0)}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
         { id:"k_cierre_rango", l:"% cierre", v: `${Number(rk.cierre_pct||0).toFixed(2)}%`, s:`Confirmados/Leads (${rk.confirmados_total||0}/${rk.leads_total||0})`, on: () => { try{ selectTab("cierre"); }catch(_){ location.hash="#cierre"; } } },
-        { id:"k_leads_hoy", l:"Leads hoy", v:String(k.leads_hoy||0), s:"Dashboard (hoy)", on: () => openFilter({ campo:"ingreso", desde: fmtDate(new Date()), hasta: fmtDate(new Date()), ...(mid?{marca:mid}:{}) }) },
-        { id:"k_venta_dia", l:"Venta día", v: money(k.venta_dia||0), s:"Dashboard (confirmados)", on: () => openConfirmedSales(fmtDate(new Date()), fmtDate(new Date()), mid) },
-        { id:"k_venta_sem", l:"Venta semana", v: money(k.venta_semana||0), s:"Dashboard (confirmados)", on: () => openConfirmedSales(dash?.week?.start||ini, dash?.week?.end||fin, mid) },
+        { id:"k_leads_hoy", l:"Leads hoy", v:String(k.leads_hoy||0), s:"Dashboard v2 (hoy)", on: () => openFilter({ campo:"ingreso", desde: fmtDate(new Date()), hasta: fmtDate(new Date()), ...(mid?{marca:mid}:{}) }) },
+        { id:"k_venta_dia", l:"Venta día", v: money(k.venta_dia||0), s:"Dashboard v2 (confirmados)", on: () => openConfirmedSales(fmtDate(new Date()), fmtDate(new Date()), mid) },
+        { id:"k_venta_sem", l:"Venta semana", v: money(k.venta_semana||0), s:"Dashboard v2 (confirmados)", on: () => openConfirmedSales(dash?.week?.start||ini, dash?.week?.end||fin, mid) },
         { id:"k_cierre", l:"% cierre (semana)", v: `${Number(k.cierre_pct||0).toFixed(2)}%`, s:"Dashboard", on: () => { try{ selectTab("cierre"); }catch(_){ location.hash = "#cierre"; } } },
       ];
       el.innerHTML = blocks.map(b => `
@@ -1478,6 +1586,9 @@
           value: Number(x.monto||0),
           tooltip: `${Number(x.cantidad||0)} leads · prom ${money((Number(x.monto||0)/Math.max(1,Number(x.cantidad||0))))}`,
         })), money);
+
+        // RM geo heatmap (si existe geojson)
+        try{ renderRMGeoHeatmap(com); }catch(_){}
       }
       if (wantCli){
         ecBarH("chCli", "Top clientes (monto)", cli.slice(0,chartN).map(x => ({
@@ -1520,6 +1631,25 @@
             <td class="right">${esc(money(r.monto||0))}</td>
           </tr>
         `).join("") : `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
+
+        // “Heatmap” simple (no mapa geográfico): pills por comuna con intensidad por monto.
+        const heat = qs("#heatCom");
+        if (heat){
+          const topHeat = com.slice(0, Math.min(30, com.length));
+          const maxH = Math.max(1, ...topHeat.map(x => Number(x?.monto||0)));
+          heat.innerHTML = topHeat.map(r => {
+            const v = Number(r.monto||0);
+            const pct = Math.max(0, Math.min(1, v / maxH));
+            // Warm scale: amber -> red as amount grows (más intuitivo)
+            const a = (0.10 + 0.55*pct);
+            const bg = `rgba(245,158,11,${a.toFixed(3)})`;
+            const bd = `rgba(239,68,68,${(0.18 + 0.62*pct).toFixed(3)})`;
+            return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;border-radius:12px;border:1px solid ${bd};background:${bg};">
+              <div style="font-weight:1050;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.comuna||"—")}</div>
+              <div style="font-weight:1100;opacity:.92">${esc(money(v))}</div>
+            </div>`;
+          }).join("");
+        }
       }
 
       const tbU = qs("#tbCli");
@@ -1540,26 +1670,85 @@
       }
     }
 
+    async function renderRMGeoHeatmap(comunasRows){
+      if (!hasECharts()) return;
+      const el = qs("#chRM");
+      if (!el) return;
+      const c = ecColors();
+      let geo = null;
+      try{
+        const r = await fetch(apiURL("/web/data/rm_comunas.geojson?v=1"), { cache: "no-store" });
+        if (!r.ok) throw new Error("no_geojson");
+        geo = await r.json();
+      }catch(_){
+        try{
+          el.innerHTML = `<div class="muted">Falta <code>/web/data/rm_comunas.geojson</code> (GeoJSON RM comunas).</div>`;
+        }catch(__){}
+        return;
+      }
+      try{
+        echarts.registerMap("RM", geo);
+      }catch(_){}
+
+      const rows = Array.isArray(comunasRows) ? comunasRows : [];
+      const data = rows.map(r => ({
+        name: String(r.comuna||"").toUpperCase(),
+        value: Number(r.monto||0),
+      })).filter(x => x.name);
+      const maxV = Math.max(1, ...data.map(x => Number(x.value||0)));
+
+      // init chart
+      try{ destroyEC("chRM"); }catch(_){}
+      const chart = echarts.init(el, __ecTheme(), { renderer:"canvas" });
+      EC["chRM"] = chart;
+      chart.setOption({
+        tooltip: { trigger:"item", ...ecTooltipSkin(c), formatter:(p)=> `${esc(p.name||"")}: ${esc(money(p.value||0))}` },
+        visualMap: {
+          min: 0,
+          max: maxV,
+          left: 0,
+          bottom: 0,
+          text: ["Alto","Bajo"],
+          textStyle: { color: c.sub, fontWeight: 900 },
+          inRange: { color: ["rgba(34,211,238,.10)", "rgba(34,211,238,.55)", "rgba(163,230,53,.85)"] },
+          calculable: false,
+        },
+        geo: {
+          map: "RM",
+          roam: true,
+          zoom: 1.05,
+          label: { show: false },
+          itemStyle: { areaColor: "rgba(148,163,184,.08)", borderColor: "rgba(148,163,184,.18)" },
+          emphasis: { itemStyle: { areaColor: "rgba(34,211,238,.28)" } },
+        },
+        series: [
+          { type:"map", map:"RM", geoIndex: 0, data },
+        ],
+      }, true);
+      setTimeout(()=>{ try{ chart.resize(); }catch(_){ } }, 50);
+    }
+
     function renderCierre(dash){
-      const k = dash?.kpis || {};
+      // Usar KPIs de Reportes (rango) para no depender de kpis semanales que pueden venir vacíos
+      const rk = LAST?.rep?.kpis || {};
       const box = qs("#boxCierre");
       if (!box) return;
       box.innerHTML = `
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch">
           <div class="kpi" style="flex:1;min-width:220px">
             <div class="l">% cierre</div>
-            <div class="v">${esc((Number(k.cierre_pct||0)).toFixed(2))}%</div>
-            <div class="s">Semanal</div>
+            <div class="v">${esc((Number(rk.cierre_pct||0)).toFixed(2))}%</div>
+            <div class="s">Mes (01 → fin)</div>
           </div>
           <div class="kpi" style="flex:1;min-width:220px">
-            <div class="l">Confirmados semana</div>
-            <div class="v">${esc(k.confirmados_semana||0)}</div>
-            <div class="s">Total semana</div>
+            <div class="l">Confirmados</div>
+            <div class="v">${esc(rk.confirmados_total||0)}</div>
+            <div class="s">Total mes</div>
           </div>
           <div class="kpi" style="flex:1;min-width:220px">
-            <div class="l">Leads semana</div>
-            <div class="v">${esc(k.total_semana||0)}</div>
-            <div class="s">Total semana</div>
+            <div class="l">Leads</div>
+            <div class="v">${esc(rk.leads_total||0)}</div>
+            <div class="s">Total mes</div>
           </div>
         </div>
       `;
@@ -1655,9 +1844,10 @@
         const base = top.map(r => Number(r.baseline ?? r.base ?? 0));
         const meta = top.map(r => Number(r.meta ?? r.target ?? 0));
         const colors = top.map(r => brandColor(r.marca, r.color));
-        const actualData = actual.map((v,i) => ({ value: v, itemStyle:{ color: colors[i] } }));
-        const baseData = base.map((v,i) => ({ value: v, itemStyle:{ color: hexToRgba(colors[i], 0.32) } }));
-        const metaData = meta.map((v)=> ({ value: v, itemStyle:{ color: "#2563eb" } }));
+        // Series colors: Actual/Meta/Base distinguishable (like BI)
+        const actualData = actual.map((v)=> ({ value: v, itemStyle:{ color: c.actual } }));
+        const baseData = base.map((v,i) => ({ value: v, itemStyle:{ color: hexToRgba(c.base, 0.45) } }));
+        const metaData = meta.map((v)=> ({ value: v, itemStyle:{ color: c.meta } }));
 	        chart.setOption({
 	          title:{ text:"Total venta por marca (Actual vs Meta vs Base) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
           tooltip:{ trigger:"axis", axisPointer:{ type:"shadow" }, formatter:(p)=>{
@@ -1679,6 +1869,8 @@
 	            { name:"Actual", type:"bar", data: actualData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
 	            { name:"Meta", type:"bar", data: metaData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
 	            { name:"Base", type:"bar", data: baseData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
+	            // Línea de tendencia (Actual acumulado aprox en Top 10, visual)
+	            { name:"Tendencia", type:"line", data: actual, smooth:true, symbol:"circle", symbolSize:6, lineStyle:{ width:2, color:c.actual }, itemStyle:{ color:c.actual }, z: 5 }
 	          ]
 	        }, true);
       })();
@@ -1848,8 +2040,26 @@
 
     function renderDaily(dash, mid){
       const box = qs("#boxDaily");
-      const daily = dash?.sales_daily || [];
-      const days = dash?.week_days || [];
+      let daily = dash?.sales_daily || [];
+      let days = dash?.week_days || [];
+      // dashboard_v2 compat: viene como sales_week_daily_by_brand {days, rows}
+      try{
+        if ((!daily || !daily.length) && dash?.sales_week_daily_by_brand?.days?.length){
+          days = dash.sales_week_daily_by_brand.days || [];
+          const rows = dash.sales_week_daily_by_brand.rows || [];
+          daily = [];
+          rows.forEach(r=>{
+            const marca = r.marca || r.name || "";
+            const id_marca = r.id_marca || r.id || null;
+            const dmap = r.days || {};
+            (days||[]).forEach(d=>{
+              const monto = Number(dmap?.[d] || 0);
+              if (!monto) return;
+              daily.push({ dia: d, marca, id_marca, monto });
+            });
+          });
+        }
+      }catch(_){}
       if (!box) return;
       if (!daily.length || !days.length){
         box.innerHTML = `<div class="muted">Sin datos diarios.</div>`;

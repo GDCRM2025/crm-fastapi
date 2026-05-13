@@ -103,6 +103,12 @@
         <div class="bar" title="Cobertura del mes (días con turno)"><i id="barCov"></i></div>
       </div>
     </div>
+    <div class="table-wrap" style="margin-top:10px; max-height:220px">
+      <table>
+        <thead><tr><th>Semana</th><th>Horas</th><th>Estado</th></tr></thead>
+        <tbody id="weekRows"><tr><td class="muted">—</td></tr></tbody>
+      </table>
+    </div>
     <div class="row" style="margin-top:10px;">
       <div class="muted" style="font-weight:900">Turnos disponibles:</div>
       <div class="row" id="turnosPills"></div>
@@ -168,6 +174,7 @@
       {k:5, n:"Sáb"},
       {k:6, n:"Dom"},
     ];
+    const DOW_FULL = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
     function renderDow(){
       qs("#dowBox").innerHTML = DOW.map(d => `
         <label class="chk"><input type="checkbox" data-dow="${d.k}" /> ${d.n}</label>
@@ -338,7 +345,7 @@
         hrs += turnoHours(t);
         days += 1;
       }
-      const { over } = computeWeekSums(ym);
+      const { sums, over } = computeWeekSums(ym);
       qs("#kpiMonth").textContent = `Mes: ${ym}`;
       qs("#kpiHours").textContent = `Horas mes: ${hrs.toFixed(1)}h`;
       qs("#kpiWeeks").textContent = `Semanas sobre 42h: ${over.size}`;
@@ -348,6 +355,33 @@
       const daysInMonth = me.getDate();
       const pct = Math.max(0, Math.min(100, (days/daysInMonth)*100));
       qs("#barCov").style.width = pct.toFixed(0) + "%";
+
+      // detalle semanal (Lun–Dom)
+      const weekTb = qs("#weekRows");
+      if (weekTb){
+        const ms = monthStartDate(ym);
+        const me = new Date(ms.getFullYear(), ms.getMonth()+1, 0, 0, 0, 0, 0);
+        const first = mondayOf(ms);
+        const last = mondayOf(me);
+        const rows = [];
+        for (let cur = new Date(first.getTime()); cur <= last; cur = addDays(cur, 7)){
+          const ws = ymd(cur);
+          const we = ymd(addDays(cur, 6));
+          // mostrar solo semanas que intersectan el mes
+          const inter = (addDays(cur, 6) >= ms) && (cur <= me);
+          if (!inter) continue;
+          const h = Number(sums.get(ws) || 0);
+          const isOver = over.has(ws);
+          rows.push(`
+            <tr>
+              <td><strong>${ws}</strong> → ${we} <span class="muted">(${DOW_FULL[0]}–${DOW_FULL[6]})</span></td>
+              <td><strong>${h.toFixed(1)}h</strong></td>
+              <td>${isOver ? `<span class="pill" style="border-color:rgba(239,68,68,.55); background:rgba(239,68,68,.14)">Sobre 42h</span>` : `<span class="muted">OK</span>`}</td>
+            </tr>
+          `);
+        }
+        weekTb.innerHTML = rows.join("") || `<tr><td class="muted">Sin semanas.</td></tr>`;
+      }
     }
 
     function renderMonthGrid(){

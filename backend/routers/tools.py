@@ -614,6 +614,48 @@ def _ensure_metas(db: Session) -> None:
         return
 
 
+def _ensure_sales_snapshot(db: Session) -> None:
+    """
+    Cierres mensuales congelados (venta real) por marca.
+    - Se usa como fuente oficial para `venta_base` del año siguiente (mismo mes).
+    - Permite recalcular/ajustar sin depender de tablas hardcode (ventas_baseline).
+    """
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+    try:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS ventas_marca_mensual_cierre (
+                  id_cierre bigserial PRIMARY KEY,
+                  year integer NOT NULL,
+                  month integer NOT NULL,
+                  id_marca integer NOT NULL,
+                  monto numeric(16,2) NOT NULL DEFAULT 0,          -- monto_cotizado (neto+traslado, sin IVA)
+                  traslado numeric(16,2) NOT NULL DEFAULT 0,       -- suma cotizaciones.traslado (si existe)
+                  iva numeric(16,2) NOT NULL DEFAULT 0,            -- suma cotizaciones.iva (si existe)
+                  cnt_total integer NOT NULL DEFAULT 0,
+                  cnt_empresa integer NOT NULL DEFAULT 0,
+                  cnt_particular integer NOT NULL DEFAULT 0,
+                  updated_at timestamp without time zone NOT NULL DEFAULT now(),
+                  updated_by text,
+                  UNIQUE (year, month, id_marca)
+                )
+                """
+            )
+        )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return
+
+
 def _money_int(x: Any) -> int:
     try:
         return int(round(float(x or 0)))
@@ -623,6 +665,240 @@ def _money_int(x: Any) -> int:
 
 def _is_admin_strict(role: str) -> bool:
     return role in ("ADMIN", "SUPERADMIN")
+
+
+def _metas_rows_agg(rows: list[dict], months: list[int]) -> dict[int, dict[str, float]]:
+    """
+    Agrega metas por marca para un rango de meses.
+    - `venta_base` y `meta`: suma.
+    - `crecimiento_pct`: si es 1 mes -> ese valor; si son varios -> promedio ponderado por venta_base.
+      (Nunca se suma, porque rompe YTD/rangos largos).
+    """
+    out: dict[int, dict[str, float]] = {}
+    is_single_month = (len(set(int(m) for m in (months or []))) <= 1)
+    for r in (rows or []):
+        try:
+            mid = int(r.get("id_marca") or 0)
+        except Exception:
+            continue
+        if mid <= 0:
+            continue
+        base = float(r.get("venta_base") or 0.0)
+        meta = float(r.get("meta") or 0.0)
+        crec = float(r.get("crecimiento_pct") or 0.0)
+        cur = out.get(mid) or {"venta_base": 0.0, "meta": 0.0, "crecimiento_pct": 0.0, "_w": 0.0}
+        cur["venta_base"] = float(cur.get("venta_base") or 0.0) + base
+        cur["meta"] = float(cur.get("meta") or 0.0) + meta
+        if is_single_month:
+            # Para 1 mes, el crecimiento es el del registro (si existe).
+            # Si hay más de un registro por error, nos quedamos con el último no-cero.
+            if crec:
+                cur["crecimiento_pct"] = crec
+        else:
+            # Para varios meses, promedio ponderado por venta_base.
+            cur["_w"] = float(cur.get("_w") or 0.0) + max(base, 0.0)
+            cur["crecimiento_pct"] = float(cur.get("crecimiento_pct") or 0.0) + (max(base, 0.0) * crec)
+        out[mid] = cur
+
+    if not is_single_month:
+        for mid, cur in list(out.items()):
+            w = float(cur.get("_w") or 0.0)
+            if w > 0:
+                cur["crecimiento_pct"] = float(cur.get("crecimiento_pct") or 0.0) / w
+            else:
+                cur["crecimiento_pct"] = 0.0
+            cur.pop("_w", None)
+            out[mid] = cur
+    else:
+        for mid, cur in list(out.items()):
+            cur.pop("_w", None)
+            out[mid] = cur
+    return out
+
+
+def _metas_autofill_month_if_empty(db: Session, y: int, m: int, by: str = "auto") -> bool:
+    """
+    Crea metas para (year, month) si no existe ninguna fila.
+    - No requiere permisos (se usa para que el dashboard nunca quede sin metas).
+    - No pisa metas existentes: si ya hay al menos 1 fila para el mes, no hace nada.
+    Retorna True si insertó filas.
+    """
+    try:
+        _ensure_metas(db)
+    except Exception:
+        return False
+
+    try:
+        cnt = int(
+            db.execute(
+                text("SELECT COUNT(*)::int FROM metas_marca_mensual WHERE year=:y AND month=:m"),
+                {"y": int(y), "m": int(m)},
+            ).scalar_one()
+            or 0
+        )
+        if cnt > 0:
+            return False
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return False
+
+    try:
+        _ensure_baseline(db)
+    except Exception:
+        pass
+
+    confirmado_id = _estado_id(db, "CONFIRM") or 0
+    ly_start = date(int(y) - 1, int(m), 1)
+    ly_end = (date(int(y) - 1, int(m), 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
+    base_rows: dict[int, int] = {}
+    try:
+        if _table_exists_pg(db, "ventas_baseline") and _table_exists_pg(db, "marcas"):
+            q = db.execute(
+                text(
+                    """
+                    SELECT
+                      ma.id_marca::int AS id_marca,
+                      COALESCE(vb.monto,0)::bigint AS monto
+                    FROM public.marcas ma
+                    LEFT JOIN public.ventas_baseline vb
+                      ON vb.mes = :m
+                     AND UPPER(vb.marca) = UPPER(COALESCE(ma.nombre, ma.marca,''))
+                    ORDER BY ma.id_marca ASC
+                    """
+                ),
+                {"m": int(m)},
+            ).fetchall()
+            base_rows = {int(r[0]): int(r[1] or 0) for r in q if r and str(r[0] or "").isdigit()}
+        elif confirmado_id:
+            q = db.execute(
+                text(
+                    """
+                    SELECT id_marca::int AS id_marca, COALESCE(SUM(COALESCE(monto_cotizado,0)),0)::bigint AS monto
+                    FROM public.leads
+                    WHERE id_estado=:conf
+                      AND fecha_evento::date BETWEEN :d1 AND :d2
+                    GROUP BY 1
+                    """
+                ),
+                {"conf": int(confirmado_id), "d1": str(ly_start), "d2": str(ly_end)},
+            ).fetchall()
+            base_rows = {int(r[0]): int(r[1] or 0) for r in q if r and str(r[0] or "").isdigit()}
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        base_rows = {}
+
+    try:
+        marcas = db.execute(text("SELECT id_marca FROM marcas ORDER BY id_marca ASC")).fetchall()
+        for r in marcas:
+            mid = int(r[0])
+            venta_base = float(base_rows.get(mid, 0))
+            crec = 12.0
+            meta = round(venta_base * (1.0 + (crec / 100.0)), 2)
+            db.execute(
+                text(
+                    """
+                    INSERT INTO metas_marca_mensual(year, month, id_marca, venta_base, crecimiento_pct, meta, updated_by, updated_at)
+                    VALUES (:y, :m, :id_marca, :venta, :crec, :meta, :by, now())
+                    ON CONFLICT (year, month, id_marca) DO NOTHING
+                    """
+                ),
+                {"y": int(y), "m": int(m), "id_marca": int(mid), "venta": venta_base, "crec": crec, "meta": meta, "by": str(by or "auto")},
+            )
+        db.commit()
+        return True
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _metas_sync_from_baseline(db: Session, y: int, m: int, by: str = "sync", default_crec: float = 12.0) -> dict[str, Any]:
+    """
+    Sincroniza metas_marca_mensual(year,month) desde ventas_baseline(mes,marca).
+    - Crea filas faltantes para todas las marcas.
+    - Actualiza venta_base desde baseline.
+    - Mantiene crecimiento_pct existente si es >0, si no usa default_crec.
+    - Recalcula meta = venta_base*(1+crec/100).
+    Retorna resumen para debug/UI.
+    """
+    _ensure_metas(db)
+    _ensure_baseline(db)
+
+    if m < 1 or m > 12:
+        raise ValueError("month inválido (1-12)")
+
+    rows = db.execute(
+        text(
+            """
+            SELECT
+              ma.id_marca::int AS id_marca,
+              COALESCE(ma.nombre, ma.marca,'') AS marca,
+              COALESCE(vb.monto,0)::float AS venta_base
+            FROM public.marcas ma
+            LEFT JOIN public.ventas_baseline vb
+              ON vb.mes = :m
+             AND UPPER(vb.marca) = UPPER(COALESCE(ma.nombre, ma.marca,''))
+            ORDER BY ma.id_marca ASC
+            """
+        ),
+        {"m": int(m)},
+    ).mappings().all()
+
+    existing = db.execute(
+        text("SELECT id_marca, COALESCE(crecimiento_pct,0)::float AS crecimiento_pct FROM metas_marca_mensual WHERE year=:y AND month=:m"),
+        {"y": int(y), "m": int(m)},
+    ).mappings().all()
+    crec_map = {int(r["id_marca"]): float(r.get("crecimiento_pct") or 0.0) for r in existing if r.get("id_marca")}
+    # Base LY (año pasado) desde metas del año anterior, si existe.
+    ly_rows = db.execute(
+        text("SELECT id_marca, COALESCE(venta_base,0)::float AS venta_base FROM metas_marca_mensual WHERE year=:y AND month=:m"),
+        {"y": int(y) - 1, "m": int(m)},
+    ).mappings().all()
+    ly_base_map = {int(r["id_marca"]): float(r.get("venta_base") or 0.0) for r in ly_rows if r.get("id_marca")}
+
+    upserted = 0
+    for r in rows:
+        mid = int(r.get("id_marca") or 0)
+        if mid <= 0:
+            continue
+        # Regla negocio (Oscar): base de año actual viene de la tabla "metas ventas" del año pasado (metas_marca_mensual y-1).
+        # Si no existe, fallback a ventas_baseline.
+        venta_base = float(ly_base_map.get(mid, 0.0) or 0.0)
+        if venta_base <= 0:
+            venta_base = float(r.get("venta_base") or 0.0)
+        crec = float(crec_map.get(mid, 0.0) or 0.0)
+        if crec <= 0:
+            crec = float(default_crec)
+        meta = round(venta_base * (1.0 + (crec / 100.0)), 2)
+
+        db.execute(
+            text(
+                """
+                INSERT INTO metas_marca_mensual(year, month, id_marca, venta_base, crecimiento_pct, meta, updated_by, updated_at)
+                VALUES (:y,:m,:id_marca,:venta,:crec,:meta,:by, now())
+                ON CONFLICT (year, month, id_marca) DO UPDATE
+                  SET venta_base=EXCLUDED.venta_base,
+                      crecimiento_pct=CASE WHEN COALESCE(metas_marca_mensual.crecimiento_pct,0)=0 THEN EXCLUDED.crecimiento_pct ELSE metas_marca_mensual.crecimiento_pct END,
+                      meta=EXCLUDED.meta,
+                      updated_by=EXCLUDED.updated_by,
+                      updated_at=now()
+                """
+            ),
+            {"y": int(y), "m": int(m), "id_marca": int(mid), "venta": venta_base, "crec": crec, "meta": meta, "by": str(by)},
+        )
+        upserted += 1
+
+    db.commit()
+    return {"ok": True, "year": int(y), "month": int(m), "upserted": int(upserted)}
 
 
 @router.get("/metas")
@@ -729,16 +1005,31 @@ def metas_init(
         raise HTTPException(status_code=400, detail="month inválido (1-12)")
     by = (me.get("username") or me.get("id") or me.get("nombre") or "admin")
 
-    # Construye base desde tabla baseline (ventas_baseline) por mes+marca.
-    # Fallback: si no hay baseline, usa confirmados del mismo mes del año pasado (fecha_evento).
+    # Regla negocio (Oscar): la base del año actual se toma desde la tabla "metas ventas" del año pasado
+    # (metas_marca_mensual year-1, mismo mes). Fallback: ventas_baseline.
     _ensure_baseline(db)
+    _ensure_metas(db)
     confirmado_id = _estado_id(db, "CONFIRM") or 0
     ly_start = date(y - 1, m, 1)
     ly_end = (date(y - 1, m, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     base_rows: dict[int, int] = {}
-    mode = "baseline"
+    mode = "ly_metas"
     try:
-        if _table_exists_pg(db, "ventas_baseline") and _table_exists_pg(db, "marcas"):
+        if _table_exists_pg(db, "metas_marca_mensual") and _table_exists_pg(db, "marcas"):
+            mode = "ly_metas"
+            q = db.execute(
+                text(
+                    """
+                    SELECT mm.id_marca::int AS id_marca, COALESCE(mm.venta_base,0)::bigint AS monto
+                    FROM public.metas_marca_mensual mm
+                    WHERE mm.year=:y AND mm.month=:m
+                    """
+                ),
+                {"y": int(y) - 1, "m": int(m)},
+            ).fetchall()
+            base_rows = {int(r[0]): int(r[1] or 0) for r in q if r and str(r[0] or "").isdigit()}
+        elif _table_exists_pg(db, "ventas_baseline") and _table_exists_pg(db, "marcas"):
+            mode = "baseline"
             q = db.execute(
                 text(
                     """
@@ -811,6 +1102,132 @@ def metas_init(
         "mode": mode,
         "ly_range": {"start": str(ly_start), "end": str(ly_end)},
     }
+
+
+@router.post("/metas/sync")
+def metas_sync(
+    year: int | None = None,
+    month: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    role = (me.get("role") or me.get("rol") or "").upper()
+    if not _is_admin_strict(role):
+        raise HTTPException(status_code=403, detail="Solo admin puede sincronizar metas")
+    y = int(year or date.today().year)
+    m = int(month or date.today().month)
+    by = (me.get("username") or me.get("id") or me.get("nombre") or "admin")
+    try:
+        return _metas_sync_from_baseline(db, y, m, by=str(by), default_crec=12.0)
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"No se pudo sync metas: {e}")
+
+
+@router.post("/sales_snapshot/close")
+def sales_snapshot_close(
+    year: int | None = None,
+    month: int | None = None,
+    db: Session = Depends(get_db),
+    me=Depends(get_current_user),
+):
+    """
+    Congela (upsert) la venta real del mes por marca.
+    Fuente: leads CONFIRMADOS del mes por `fecha_evento` (monto_cotizado) + cotizaciones.traslado/iva si existen.
+    Uso recomendado: ejecutar 1 vez al fin de mes (o diario si quieres).
+    """
+    role = (me.get("role") or me.get("rol") or "").upper()
+    if not _is_admin_strict(role):
+        raise HTTPException(status_code=403, detail="Solo admin puede cerrar mes")
+
+    tz = ZoneInfo("America/Santiago")
+    today = datetime.now(tz).date()
+    y = int(year or today.year)
+    m = int(month or today.month)
+    if m < 1 or m > 12:
+        raise HTTPException(status_code=400, detail="month inválido (1-12)")
+
+    _ensure_sales_snapshot(db)
+    confirmado_id = _estado_id(db, "CONFIRM") or 0
+    if not confirmado_id:
+        raise HTTPException(status_code=400, detail="No existe estado CONFIRM")
+
+    month_start = date(y, m, 1)
+    month_end = (date(y, m, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    by = (me.get("username") or me.get("id") or me.get("nombre") or "admin")
+
+    # tipo_cliente existe (agregado en migración hotfix); fallback por IVA de cotización
+    has_tipo = _col_exists(db, "leads", "tipo_cliente")
+    tipo_expr = "COALESCE(UPPER(l.tipo_cliente),'SIN')" if has_tipo else "COALESCE(CASE WHEN COALESCE(c.iva,0) > 0 THEN 'EMPRESA' ELSE 'PARTICULAR' END,'SIN')"
+
+    try:
+        rows = db.execute(
+            text(
+                f"""
+                SELECT
+                  l.id_marca::int AS id_marca,
+                  COALESCE(SUM(COALESCE(l.monto_cotizado,0)),0)::float AS monto,
+                  COALESCE(SUM(COALESCE(c.traslado,0)),0)::float AS traslado,
+                  COALESCE(SUM(COALESCE(c.iva,0)),0)::float AS iva,
+                  COUNT(*)::int AS cnt_total,
+                  COUNT(*) FILTER (WHERE {tipo_expr}='EMPRESA')::int AS cnt_empresa,
+                  COUNT(*) FILTER (WHERE {tipo_expr}='PARTICULAR')::int AS cnt_particular
+                FROM public.leads l
+                LEFT JOIN public.cotizaciones c ON c.id_cotizacion=l.id_cotizacion_vigente
+                WHERE l.id_estado=:conf
+                  AND l.fecha_evento::date BETWEEN :d1 AND :d2
+                GROUP BY 1
+                """
+            ),
+            {"conf": int(confirmado_id), "d1": str(month_start), "d2": str(month_end)},
+        ).mappings().all()
+
+        upserted = 0
+        for r in rows:
+            mid = int(r.get("id_marca") or 0)
+            if mid <= 0:
+                continue
+            db.execute(
+                text(
+                    """
+                    INSERT INTO ventas_marca_mensual_cierre(year, month, id_marca, monto, traslado, iva, cnt_total, cnt_empresa, cnt_particular, updated_by, updated_at)
+                    VALUES (:y,:m,:id_marca,:monto,:traslado,:iva,:cnt_total,:cnt_empresa,:cnt_particular,:by, now())
+                    ON CONFLICT (year, month, id_marca) DO UPDATE
+                      SET monto=EXCLUDED.monto,
+                          traslado=EXCLUDED.traslado,
+                          iva=EXCLUDED.iva,
+                          cnt_total=EXCLUDED.cnt_total,
+                          cnt_empresa=EXCLUDED.cnt_empresa,
+                          cnt_particular=EXCLUDED.cnt_particular,
+                          updated_by=EXCLUDED.updated_by,
+                          updated_at=now()
+                    """
+                ),
+                {
+                    "y": int(y),
+                    "m": int(m),
+                    "id_marca": int(mid),
+                    "monto": float(r.get("monto") or 0),
+                    "traslado": float(r.get("traslado") or 0),
+                    "iva": float(r.get("iva") or 0),
+                    "cnt_total": int(r.get("cnt_total") or 0),
+                    "cnt_empresa": int(r.get("cnt_empresa") or 0),
+                    "cnt_particular": int(r.get("cnt_particular") or 0),
+                    "by": str(by),
+                },
+            )
+            upserted += 1
+        db.commit()
+        return {"ok": True, "year": y, "month": m, "upserted": upserted, "range": {"start": str(month_start), "end": str(month_end)}}
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"No se pudo cerrar mes: {e}")
 
 @router.get("/gcal/status")
 def gcal_status(db: Session = Depends(get_db)):
@@ -2341,9 +2758,14 @@ def dashboard(
         if name:
             actual_map[name] = float(r.get("monto") or 0)
 
-    # Metas mensuales (si existen), por marca.
+        # Metas mensuales (si existen), por marca.
     metas_by_marca: dict[str, dict[str, Any]] = {}
     try:
+        # Asegura metas del mes actual sincronizadas desde ventas_baseline (best-effort).
+        try:
+            _metas_sync_from_baseline(db, int(today.year), int(month), by="auto-dashboard", default_crec=12.0)
+        except Exception:
+            pass
         if _table_exists_pg(db, "metas_marca_mensual") and _table_exists_pg(db, "marcas"):
             rows = db.execute(
                 text(
@@ -2859,7 +3281,10 @@ def _dashboard_reportes_v2(
             fin_d = None
     if p in ("mtd", "mes", "month"):
         ini_d = date(today.year, today.month, 1)
-        fin_d = today
+        # Regla negocio: dashboard/reportes comparan contra meta mensual,
+        # por lo que el "MTD" en este contexto representa el MES COMPLETO
+        # (incluye eventos futuros confirmados dentro del mes).
+        fin_d = (date(today.year, today.month, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     elif p in ("ytd", "anio", "year"):
         ini_d = date(today.year, 1, 1)
         fin_d = today
@@ -3288,14 +3713,8 @@ def _dashboard_reportes_v2(
     years_extra: list[int] = []
     ventas_comparativo: list[dict] = []
     try:
-        same_year = (ini_d.year == fin_d.year)
-        months: list[int] = []
-        if same_year:
-            m0 = int(ini_d.month)
-            m1 = int(fin_d.month)
-            months = list(range(m0, m1 + 1)) if m0 <= m1 else [m0]
-        else:
-            months = [int(ini_d.month)]
+        # Metas son por MES: para dashboard/reporte siempre usamos el mes del término del rango (mes actual típicamente).
+        months = [int(fin_d.month)]
 
         metas_map: dict[int, dict[str, float]] = {}
         if _table_exists_pg(db, "metas_marca_mensual"):
@@ -3303,28 +3722,18 @@ def _dashboard_reportes_v2(
                 text(
                     """
                     SELECT id_marca,
-                           COALESCE(SUM(COALESCE(venta_base,0)),0)::float AS venta_base,
-                           COALESCE(SUM(COALESCE(meta,0)),0)::float AS meta,
-                           COALESCE(SUM(COALESCE(crecimiento_pct,0)),0)::float AS crecimiento_pct
+                           month,
+                           COALESCE(venta_base,0)::float AS venta_base,
+                           COALESCE(meta,0)::float AS meta,
+                           COALESCE(crecimiento_pct,0)::float AS crecimiento_pct
                     FROM metas_marca_mensual
                     WHERE year=:y AND month = ANY(:months)
-                    GROUP BY id_marca
                     """
                 ),
-                {"y": int(ini_d.year), "months": months},
+                # Regla negocio (Oscar): metas del año actual se calculan usando la tabla del año pasado (year-1).
+                {"y": int(fin_d.year) - 1, "months": months},
             ).mappings().all()
-            for r in mrows:
-                try:
-                    mid = int(r.get("id_marca") or 0)
-                except Exception:
-                    continue
-                if mid <= 0:
-                    continue
-                metas_map[mid] = {
-                    "venta_base": float(r.get("venta_base") or 0),
-                    "meta": float(r.get("meta") or 0),
-                    "crecimiento_pct": float(r.get("crecimiento_pct") or 0),
-                }
+            metas_map = _metas_rows_agg([dict(r) for r in mrows], months)
 
         params_ly = dict(params)
         params_ly["ini"] = ly_ini.isoformat()
@@ -3429,6 +3838,9 @@ def _dashboard_reportes_v2(
             crec_pct = float(meta_row.get("crecimiento_pct") or 0.0) or 12.0
 
             base = base_cfg if base_cfg > 0 else ly_val
+            # Para tooltips/YoY: si no hay LY por leads (CRM nuevo), usamos la "venta_base" histórica.
+            if (not ly_val) and base_cfg > 0:
+                ly_val = float(base_cfg)
             meta = meta_cfg if meta_cfg > 0 else (base * (1.0 + (crec_pct / 100.0)) if base > 0 else 0.0)
 
             share = (actual / venta_total * 100.0) if venta_total else 0.0
@@ -3577,19 +3989,10 @@ def dashboard_reportes(
                 fin_d = _parse_date(str(fecha_termino))
             except Exception:
                 fin_d = None
-        if p in ("mtd", "mes", "month"):
-            ini_d = date(today.year, today.month, 1)
-            fin_d = today
-        elif p in ("ytd", "anio", "year"):
-            ini_d = date(today.year, 1, 1)
-            fin_d = today
-        if ini_d and not fin_d:
-            fin_d = today
-        if fin_d and not ini_d:
-            ini_d = date(fin_d.year, fin_d.month, 1)
-        if not ini_d or not fin_d:
-            ini_d = date(today.year, today.month, 1)
-            fin_d = today
+        # Regla negocio (Oscar): reportes del dashboard SIEMPRE se calculan para el mes actual.
+        # Ignora `periodo`/fechas para no mezclar YTD/rangos con metas mensuales.
+        ini_d = date(today.year, today.month, 1)
+        fin_d = today
 
         def _shift_year_safe(d: date, years: int) -> date:
             y = d.year + years
@@ -3943,19 +4346,9 @@ def dashboard_reportes(
 
         ventas_comparativo: list[dict] = []
         try:
-            ym_year = int(ini_d.year)
-            same_year = (ini_d.year == fin_d.year)
-            months: list[int] = []
-            if same_year:
-                m0 = int(ini_d.month)
-                m1 = int(fin_d.month)
-                if m0 <= m1:
-                    months = list(range(m0, m1 + 1))
-                else:
-                    months = [m0]
-            else:
-                # Evita mezclar años para metas/históricos (por ahora).
-                months = [int(ini_d.month)]
+            # Metas son por MES: para dashboard/reportes usamos el mes del término del rango (mes actual típicamente).
+            ym_year = int(fin_d.year)
+            months: list[int] = [int(fin_d.month)]
 
             metas_map: dict[int, dict] = {}
             if _table_exists_pg(db, "metas_marca_mensual"):
@@ -3963,23 +4356,17 @@ def dashboard_reportes(
                     text(
                         """
                         SELECT id_marca,
-                               COALESCE(SUM(COALESCE(venta_base,0)),0)::float AS venta_base,
-                               COALESCE(SUM(COALESCE(meta,0)),0)::float AS meta
+                               month,
+                               COALESCE(venta_base,0)::float AS venta_base,
+                               COALESCE(meta,0)::float AS meta,
+                               COALESCE(crecimiento_pct,0)::float AS crecimiento_pct
                         FROM metas_marca_mensual
                         WHERE year=:y AND month = ANY(:months)
-                        GROUP BY id_marca
                         """
                     ),
                     {"y": ym_year, "months": months},
                 ).mappings().all()
-                for r in mrows:
-                    try:
-                        metas_map[int(r["id_marca"])] = {
-                            "venta_base": float(r.get("venta_base") or 0),
-                            "meta": float(r.get("meta") or 0),
-                        }
-                    except Exception:
-                        continue
+                metas_map = _metas_rows_agg([dict(r) for r in mrows], months)
 
             baseline_map: dict[str, float] = {}
             try:
@@ -4524,17 +4911,11 @@ def dashboard_v2(
     week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=int(week_offset or 0))
     week_end = week_start + timedelta(days=6)
 
-    # Mes completo (month_offset)
-    y = int(today.year)
-    m = int(today.month) + int(month_offset or 0)
-    while m < 1:
-        y -= 1
-        m += 12
-    while m > 12:
-        y += 1
-        m -= 12
-    month_start = date(y, m, 1)
-    month_end = (date(y, m, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    # Regla negocio (Oscar): el dashboard SIEMPRE usa el mes actual.
+    # Ignoramos `month_offset` para que no existan inconsistencias entre UI/reportes.
+    month_offset = 0
+    month_start = date(int(today.year), int(today.month), 1)
+    month_end = (date(int(today.year), int(today.month), 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
 
     role = (me.get("role") or me.get("rol") or "").upper().strip()
     marcas = _fetch_marcas_ids(db, me)
@@ -4548,7 +4929,7 @@ def dashboard_v2(
     if only_own and not marcas:
         return {
             "ok": True,
-            "filters": {"week_offset": int(week_offset or 0), "month_offset": int(month_offset or 0), "id_marca": None},
+            "filters": {"week_offset": int(week_offset or 0), "month_offset": 0, "id_marca": None},
             "week": {"start": str(week_start), "end": str(week_end)},
             "month": {"start": str(month_start), "end": str(month_end)},
             "sales": {"ok": True, "confirmado_id": 0},
@@ -4561,7 +4942,7 @@ def dashboard_v2(
     if not confirmado_id:
         return {
             "ok": True,
-            "filters": {"week_offset": int(week_offset or 0), "month_offset": int(month_offset or 0), "id_marca": None},
+            "filters": {"week_offset": int(week_offset or 0), "month_offset": 0, "id_marca": None},
             "week": {"start": str(week_start), "end": str(week_end)},
             "month": {"start": str(month_start), "end": str(month_end)},
             "sales": {"ok": True, "confirmado_id": 0},
@@ -4679,14 +5060,18 @@ def dashboard_v2(
     week = _agg(agenda_expr, week_start, week_end)
     month = _agg("l.fecha_evento::date", month_start, month_end)
 
-    # Meta/Base (año pasado) del mes (metas_marca_mensual)
-    # Regla negocio: meta por marca = venta_base(=año pasado mismo mes) * (1 + crecimiento_pct/100),
-    # a menos que exista meta explícita en la tabla.
+    # Meta/Base (año pasado) del mes:
+    # Regla negocio (Oscar): para el mes actual, la META se calcula usando la tabla "Metas ventas" del año pasado
+    # (metas_marca_mensual year-1, mismo mes), tanto para:
+    # - venta_base (año pasado),
+    # - % crecimiento,
+    # - y meta auto (base*(1+%/100)).
     meta_mes_total = 0
     base_mes_total = 0
+    meta_mes_by_brand: list[dict[str, Any]] = []
     try:
         if _table_exists_pg(db, "metas_marca_mensual"):
-            meta_params: dict[str, Any] = {"y": int(month_start.year), "m": int(month_start.month)}
+            meta_params: dict[str, Any] = {"y": int(month_start.year), "y_ly": int(month_start.year) - 1, "m": int(month_start.month)}
             meta_filter_sql = ""
             # aplica el mismo scope que el filtro de marcas del usuario
             if "id_marca" in marca_params and marca_params.get("id_marca"):
@@ -4701,17 +5086,17 @@ def dashboard_v2(
                     text(
                         f"""
                         SELECT
-                          COALESCE(SUM(COALESCE(mm.venta_base,0)),0)::bigint AS base,
+                          COALESCE(SUM(COALESCE(ly.venta_base,0)),0)::bigint AS base,
                           COALESCE(SUM(
                             COALESCE(
-                              NULLIF(mm.meta,0),
-                              (COALESCE(mm.venta_base,0) * (1.0 + (COALESCE(mm.crecimiento_pct,0) / 100.0)))
+                              NULLIF(ly.meta,0),
+                              (COALESCE(ly.venta_base,0) * (1.0 + (COALESCE(NULLIF(ly.crecimiento_pct,0), 12) / 100.0)))
                             )
                           ),0)::bigint AS meta
-                        FROM public.metas_marca_mensual mm
-                        WHERE mm.year = :y
-                          AND mm.month = :m
-                          {meta_filter_sql}
+                        FROM public.metas_marca_mensual ly
+                        WHERE ly.year = :y_ly
+                          AND ly.month = :m
+                          {meta_filter_sql.replace("mm.", "ly.")}
                         """
                     ),
                     meta_params,
@@ -4722,6 +5107,45 @@ def dashboard_v2(
             )
             base_mes_total = int(mr.get("base") or 0)
             meta_mes_total = int(mr.get("meta") or 0)
+
+            # Detalle por marca (solo ADMIN/SUPERADMIN): venta_base, % crec y meta calculada.
+            try:
+                if _is_admin_strict(role):
+                    bsql = ""
+                    bparams: dict[str, Any] = {"y": int(month_start.year), "y_ly": int(month_start.year) - 1, "m": int(month_start.month)}
+                    if "id_marca" in marca_params and marca_params.get("id_marca"):
+                        bsql = " AND mm.id_marca = :id_marca "
+                        bparams["id_marca"] = int(marca_params["id_marca"])
+                    elif only_own and marcas:
+                        bsql = " AND mm.id_marca = ANY(:marcas) "
+                        bparams["marcas"] = marcas
+                    meta_mes_by_brand = (
+                        db.execute(
+                            text(
+                                f"""
+                                SELECT
+                                  ly.id_marca::int AS id_marca,
+                                  COALESCE(ma.nombre, ma.marca,'') AS marca,
+                                  COALESCE(ly.venta_base,0)::float AS venta_base,
+                                  COALESCE(NULLIF(ly.crecimiento_pct,0), 12)::float AS crecimiento_pct,
+                                  COALESCE(
+                                    NULLIF(ly.meta,0),
+                                    (COALESCE(ly.venta_base,0) * (1.0 + (COALESCE(NULLIF(ly.crecimiento_pct,0), 12) / 100.0)))
+                                  )::float AS meta
+                                FROM public.metas_marca_mensual ly
+                                LEFT JOIN public.marcas ma ON ma.id_marca = ly.id_marca
+                                WHERE ly.year=:y_ly AND ly.month=:m
+                                  {bsql.replace("mm.", "ly.")}
+                                ORDER BY COALESCE(ma.nombre, ma.marca,'') ASC
+                                """
+                            ),
+                            bparams,
+                        )
+                        .mappings()
+                        .all()
+                    )
+            except Exception:
+                meta_mes_by_brand = []
     except Exception:
         try:
             db.rollback()
@@ -4729,6 +5153,7 @@ def dashboard_v2(
             pass
         meta_mes_total = 0
         base_mes_total = 0
+        meta_mes_by_brand = []
 
     # Si no hay metas cargadas, no inventamos; la UI muestra "—".
 
@@ -4999,6 +5424,7 @@ def dashboard_v2(
             "basis": {"dia": ("agenda_approved_at" if has_agenda else "fecha_evento"), "semana": ("agenda_approved_at" if has_agenda else "fecha_evento"), "mes": "fecha_evento"},
             "meta_mes_total": int(meta_mes_total),
             "base_mes_total": int(base_mes_total),
+            "meta_mes_by_brand": (list(meta_mes_by_brand) if _is_admin_strict(role) else []),
             "vs_meta_pct": (round((month_total_i / meta_mes_total) * 100.0, 2) if meta_mes_total else None),
             "vs_base_pct": (round((month_total_i / base_mes_total) * 100.0, 2) if base_mes_total else None),
             "meta_gap": int(meta_gap),

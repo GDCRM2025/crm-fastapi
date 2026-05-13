@@ -4224,14 +4224,16 @@ async function handleConfirmado(lead, newEstado){
                 return false;
               }
             }catch(_){}
-          // En modo SIMPLE no se duplica info: NO usamos modelador/grupos ni asignación por producto.
-          // Solo se usan los campos globales (tel/dir/location/horas) y el backend construye el evento.
-          const isSimple = (!multiLoc && !blocks && !multiDay);
-          if (!isSimple){
-		        _readGroupsFromDOM();
-		        _updateAllocStatus();
-		        // Validación: no puede quedar producto sin asignar
-		        const missing = [];
+	          // En modo SIMPLE (incluye MULTI-DÍA), no se duplica info:
+	          // NO usamos modelador/grupos ni asignación por producto.
+	          // Solo se usan los campos globales (tel/dir/location/horas) y el backend construye el/los evento(s).
+	          // Multi-día se resuelve por `multi_day_mode=1` + agrupación por día en backend.
+	          const isSimple = (!multiLoc && !blocks);
+	          if (!isSimple){
+			        _readGroupsFromDOM();
+			        _updateAllocStatus();
+			        // Validación: no puede quedar producto sin asignar
+			        const missing = [];
 		        for (const it of (allocPool||[])){
 		          const prod = String(it.producto||"").trim();
 		          const total = Number(it.cantidad||0) || 0;

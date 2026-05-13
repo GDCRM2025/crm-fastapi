@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
@@ -13,6 +13,7 @@ import os
 import threading
 import re
 import unicodedata
+import decimal
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
@@ -49,6 +50,27 @@ NOMINA_FIELDS = [
     "sobrante",
     "observaciones",
 ]
+
+
+def _json_default(o: Any) -> Any:
+    # Para snapshots/JSONB: evita crash por Decimal/dates.
+    if isinstance(o, decimal.Decimal):
+        try:
+            return float(o)
+        except Exception:
+            return str(o)
+    if isinstance(o, (datetime.date, datetime.datetime)):
+        try:
+            return o.isoformat()
+        except Exception:
+            return str(o)
+    if isinstance(o, set):
+        return list(o)
+    return str(o)
+
+
+def _json_dumps(o: Any) -> str:
+    return json.dumps(o, ensure_ascii=False, default=_json_default)
 
 def _norm_person_key(name: str) -> str:
     """
@@ -1310,11 +1332,15 @@ def _apply_desvio_decision(
             raise RuntimeError("SKIP_AJUSTES_AUTO_OUT")
         if estado == "rechazado":
             if tipo in ("MISSING_IN", "MISSING_OUT"):
+                # Idempotente: evita duplicados si se aprieta 2 veces (o retry por red).
                 db.execute(
                     text(
                         """
                         INSERT INTO rrhh_inasistencias(colaborador, fecha, dias, motivo)
-                        VALUES (:c, :f, 1, :m)
+                        SELECT :c, :f, 1, :m
+                        WHERE NOT EXISTS (
+                          SELECT 1 FROM rrhh_inasistencias WHERE colaborador=:c AND fecha=:f
+                        )
                         """
                     ),
                     {"c": colaborador, "f": fecha, "m": f"Auto (desvío {tipo})"},
@@ -1323,7 +1349,10 @@ def _apply_desvio_decision(
                     text(
                         """
                         INSERT INTO rrhh_ajustes(fecha, id_staff, id_desvio, kind, minutos, note)
-                        VALUES (:f,:s,:d,'AUSENCIA',0,:n)
+                        SELECT :f,:s,:d,'AUSENCIA',0,:n
+                        WHERE NOT EXISTS (
+                          SELECT 1 FROM rrhh_ajustes WHERE id_desvio=:d AND kind='AUSENCIA'
+                        )
                         """
                     ),
                     {"f": fecha, "s": id_staff, "d": int(id_desvio), "n": note or None},
@@ -1334,7 +1363,10 @@ def _apply_desvio_decision(
                     text(
                         """
                         INSERT INTO rrhh_ajustes(fecha, id_staff, id_desvio, kind, minutos, note)
-                        VALUES (:f,:s,:d,'DESCUENTO_HORAS',:m,:n)
+                        SELECT :f,:s,:d,'DESCUENTO_HORAS',:m,:n
+                        WHERE NOT EXISTS (
+                          SELECT 1 FROM rrhh_ajustes WHERE id_desvio=:d AND kind='DESCUENTO_HORAS'
+                        )
                         """
                     ),
                     {"f": fecha, "s": id_staff, "d": int(id_desvio), "m": int(mins), "n": note or None},
@@ -1346,7 +1378,10 @@ def _apply_desvio_decision(
                     text(
                         """
                         INSERT INTO rrhh_ajustes(fecha, id_staff, id_desvio, kind, minutos, note)
-                        VALUES (:f,:s,:d,'HORAS_EXTRA',:m,:n)
+                        SELECT :f,:s,:d,'HORAS_EXTRA',:m,:n
+                        WHERE NOT EXISTS (
+                          SELECT 1 FROM rrhh_ajustes WHERE id_desvio=:d AND kind='HORAS_EXTRA'
+                        )
                         """
                     ),
                     {"f": fecha, "s": id_staff, "d": int(id_desvio), "m": int(mins), "n": note or None},
@@ -1356,7 +1391,10 @@ def _apply_desvio_decision(
                     text(
                         """
                         INSERT INTO rrhh_ajustes(fecha, id_staff, id_desvio, kind, minutos, note)
-                        VALUES (:f,:s,:d,'JUSTIFICADO',0,:n)
+                        SELECT :f,:s,:d,'JUSTIFICADO',0,:n
+                        WHERE NOT EXISTS (
+                          SELECT 1 FROM rrhh_ajustes WHERE id_desvio=:d AND kind='JUSTIFICADO'
+                        )
                         """
                     ),
                     {"f": fecha, "s": id_staff, "d": int(id_desvio), "n": note or None},
@@ -1566,18 +1604,32 @@ def request_desvio_approval(
         except Exception:
             prop_out_final = None
     propuesta_txt = f"{prop_in_final or '—'} → {prop_out_final or '—'}"
+    act_in = row.get("actual_in")
+    act_out = row.get("actual_out")
+    try:
+        act_in = str(act_in).replace("T", " ")[:16] if act_in else None
+    except Exception:
+        act_in = None
+    try:
+        act_out = str(act_out).replace("T", " ")[:16] if act_out else None
+    except Exception:
+        act_out = None
+    actual_txt = f"{act_in or '—'} → {act_out or '—'}"
+    impact_txt = f"{impact_kind} {impact_min if impact_min is not None else ''}".strip()
     body_txt = (
         f"Hola {row.get('colaborador') or 'colaborador'},\n\n"
-        f"Detectamos un desvío en tu marcación:\n"
-        f"- Fecha: {fecha}\n"
-        f"- Tipo: {tipo}\n"
-        f"- Esperado: {exp}\n"
-        f"- Propuesta RRHH: {propuesta_txt}\n"
-        f"- Impacto: {impact_kind} {impact_min if impact_min is not None else ''}\n\n"
-        f"Por favor confirma si corresponde APROBAR o RECHAZAR:\n"
-        f"- Aprobar: {link_ok}\n"
-        f"- Rechazar: {link_no}\n\n"
-        f"Portal (también puedes responder ahí): {portal}\n"
+        f"RRHH detectó un posible desvío en tu marcación (hora servidor Chile / America/Santiago):\n\n"
+        f"Fecha: {fecha}\n"
+        f"Tipo de desvío: {tipo}\n\n"
+        f"Resumen\n"
+        f"- Esperado (turno): {exp}\n"
+        f"- Marcación registrada: {actual_txt}\n"
+        f"- Propuesta de corrección RRHH: {propuesta_txt}\n"
+        f"- Impacto estimado: {impact_txt or '—'}\n\n"
+        f"Acción requerida\n"
+        f"1) APROBAR (si estás de acuerdo con la propuesta): {link_ok}\n"
+        f"2) RECHAZAR (si NO estás de acuerdo): {link_no}\n\n"
+        f"También puedes revisar y responder desde tu portal: {portal}\n"
     )
     _notify_email([col_email], f"RRHH · Revisión de desvío · {fecha} · {tipo}", body_txt)
     return {"ok": True, "sent": True, "to": col_email}
@@ -1881,9 +1933,11 @@ def nomina_list(
                 """
                 SELECT colaborador, COALESCE(SUM(monto),0) AS total
                 FROM rrhh_adelantos
+                WHERE fecha >= :ps AND fecha < :pe
                 GROUP BY colaborador
                 """
-            )
+            ),
+            {"ps": period_start, "pe": period_end},
         ).fetchall()
         adel_map: dict[str, float] = {}
         adel_tokens_map: dict[str, float] = {}
@@ -2127,7 +2181,7 @@ def nomina_snapshot(
                 RETURNING id_snapshot
                 """
             ),
-            {"p": yyyymm, "by": created_by, "pl": json.dumps(out)},
+            {"p": yyyymm, "by": created_by, "pl": _json_dumps(out)},
         ).fetchone()
         db.commit()
         sid = int(row[0]) if row and row[0] is not None else None
@@ -2412,21 +2466,28 @@ def marcaciones_me(
 
 
 @router.get("/solicitudes/me")
-def solicitudes_me(db: Session = Depends(get_db), me: dict = Depends(get_current_user)) -> dict[str, Any]:
+def solicitudes_me(
+    include_all: int | None = 0,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     _ensure_tables(db)
     uid = _user_id(me)
     rut = _user_rut(db, me)
     staff = _staff_for_user(db, me)
     colab = (staff or {}).get("colaborador") or me.get("name") or me.get("nombre") or me.get("username") or ""
     try:
+        where = [
+            "((id_usuario=:u) OR (:r <> '' AND lower(rut)=lower(:r)) OR (lower(colaborador)=lower(:c)))"
+        ]
+        if not include_all:
+            where.append("created_at >= date_trunc('month', now()) AND created_at < (date_trunc('month', now()) + interval '1 month')")
         rows = db.execute(
             text(
-                """
+                f"""
                 SELECT id_solicitud, colaborador, tipo, doc_tipo, fecha_inicio, fecha_fin, dias, monto, motivo, estado, created_at
                 FROM rrhh_solicitudes
-                WHERE (id_usuario=:u)
-                   OR (:r <> '' AND lower(rut)=lower(:r))
-                   OR (lower(colaborador)=lower(:c))
+                WHERE {' AND '.join(where)}
                 ORDER BY created_at DESC, id_solicitud DESC
                 LIMIT 200
                 """
@@ -3635,7 +3696,7 @@ def staff_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(g
         return {"ok": False, "detail": "colaborador requerido"}
     ficha = body.get("ficha")
     if isinstance(ficha, (dict, list)):
-        ficha = json.dumps(ficha, ensure_ascii=False)
+        ficha = _json_dumps(ficha)
     data = {
         "colaborador": colaborador,
         "rut": body.get("rut"),
@@ -3742,7 +3803,7 @@ def staff_bulk_upsert(body: dict, db: Session = Depends(get_db), me: dict = Depe
                 if it.get(k) is not None and str(it.get(k)).strip() != "":
                     ficha[k] = it.get(k)
 
-            ficha_json = json.dumps(ficha, ensure_ascii=False)
+            ficha_json = _json_dumps(ficha)
 
             # Busca existente
             row = db.execute(
@@ -3855,7 +3916,7 @@ def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db), me: d
         prev = {}
     ficha = body.get("ficha")
     if isinstance(ficha, (dict, list)):
-        ficha = json.dumps(ficha, ensure_ascii=False)
+        ficha = _json_dumps(ficha)
     data = {
         "id_staff": id_staff,
         "colaborador": body.get("colaborador"),

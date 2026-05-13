@@ -10,8 +10,18 @@
   <link rel="stylesheet" href="../styles.css" />
   <script src="../js/iframe-theme.js"></script>
   <style>
-    body{margin:0;padding:14px;background:transparent;color:var(--text);}
-    .wrap{max-width:780px;margin:0 auto;}
+    html,body{height:100%;}
+    body{
+      margin:0;
+      padding:14px;
+      padding-bottom: max(18px, env(safe-area-inset-bottom));
+      background:transparent;
+      color:var(--text);
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior:contain;
+    }
+    .wrap{max-width:780px;margin:0 auto;padding-bottom:16px;}
     .card{
       border:1px solid rgba(148,163,184,.18);
       background: rgba(2,6,23,.32);
@@ -283,6 +293,22 @@
       }
     }
 
+    function setCookie(name, value, maxAgeSeconds, path) {
+      try {
+        var p = path || "/crm";
+        var age = Number(maxAgeSeconds || 0) || 0;
+        var v = encodeURIComponent(String(value || ""));
+        // iOS/Safari + iframe: requerimos SameSite=None; Secure (en HTTPS) para que el cookie no se pierda.
+        var isHttps = false;
+        try { isHttps = String(location.protocol || "").indexOf("https") === 0; } catch (e0) { isHttps = false; }
+        var ss = isHttps ? "None" : "Lax";
+        var parts = [name + "=" + v, "path=" + p, "SameSite=" + ss];
+        if (age > 0) parts.push("Max-Age=" + String(age));
+        if (isHttps) parts.push("Secure");
+        document.cookie = parts.join("; ");
+      } catch (e) {}
+    }
+
     function getToken() {
       var t = "";
       try {
@@ -379,9 +405,11 @@
     function getDeviceId() {
       var id = "";
       try {
-        id = localStorage.getItem("sgjo_device_id") || "";
-      } catch (e) {
-        id = "";
+        // Prioridad cookie -> localStorage (cookie es más estable en iOS/iframes).
+        id = String(getCookie("sgjo_device_id") || "").trim();
+      } catch (e0) { id = ""; }
+      if (!id) {
+        try { id = localStorage.getItem("sgjo_device_id") || ""; } catch (e) { id = ""; }
       }
       if (!id) {
         try {
@@ -393,6 +421,14 @@
         try {
           localStorage.setItem("sgjo_device_id", id);
         } catch (e3) {}
+        // Safari/ITP puede limpiar localStorage: guardamos respaldo en cookie (1 año).
+        try { setCookie("sgjo_device_id", id, 365 * 24 * 3600, "/crm"); } catch (e4) {}
+        try { setCookie("sgjo_device_id", id, 365 * 24 * 3600, "/"); } catch (e5) {}
+      } else {
+        // Sync ambos almacenamientos para evitar re-enrolamientos.
+        try { localStorage.setItem("sgjo_device_id", id); } catch (e6) {}
+        try { setCookie("sgjo_device_id", id, 365 * 24 * 3600, "/crm"); } catch (e7) {}
+        try { setCookie("sgjo_device_id", id, 365 * 24 * 3600, "/"); } catch (e8) {}
       }
       return id;
     }
@@ -400,6 +436,9 @@
     function getDeviceName() {
       var n = "";
       try { n = localStorage.getItem("sgjo_device_name") || ""; } catch (e) { n = ""; }
+      if (!n) {
+        try { n = String(getCookie("sgjo_device_name") || "").trim(); } catch (e0) { n = ""; }
+      }
       n = String(n || "").trim();
       if (n) return n;
       try {
@@ -441,29 +480,37 @@
       return "";
     }
 
-    function getLocation() {
+    function getLocation(allowEmpty) {
       return new Promise(function (resolve, reject) {
-        if (!navigator.geolocation) return reject(new Error("Geolocalización no disponible."));
+        var okEmpty = !!allowEmpty;
+        if (!navigator.geolocation) {
+          if (okEmpty) return resolve({ lat: null, lng: null, accuracy_m: null, denied: true });
+          return reject(new Error("Geolocalización no disponible."));
+        }
         navigator.geolocation.getCurrentPosition(
           function (pos) {
-            resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy_m: pos.coords.accuracy });
+            resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy_m: pos.coords.accuracy, denied: false });
           },
           function (err) {
             try{
               var code = err && err.code ? Number(err.code) : 0;
               if (code === 1) {
+                if (okEmpty) return resolve({ lat: null, lng: null, accuracy_m: null, denied: true });
                 reject(new Error("User denied Geolocation. Activa Ubicación para este sitio en Safari/Chrome y recarga."));
                 return;
               }
               if (code === 2) {
+                if (okEmpty) return resolve({ lat: null, lng: null, accuracy_m: null, denied: true });
                 reject(new Error("Ubicación no disponible. Revisa señal/GPS e inténtalo de nuevo."));
                 return;
               }
               if (code === 3) {
+                if (okEmpty) return resolve({ lat: null, lng: null, accuracy_m: null, denied: true });
                 reject(new Error("Timeout obteniendo ubicación. Intenta de nuevo."));
                 return;
               }
             }catch(e0){}
+            if (okEmpty) return resolve({ lat: null, lng: null, accuracy_m: null, denied: true });
             reject(new Error((err && err.message) ? err.message : "No pude obtener ubicación."));
           },
           { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -547,6 +594,7 @@
           return apiJSON("/rrhh/sgjo/me");
         })
         .then(function (me) {
+          try { window.__ME = me || {}; } catch (e0) {}
           try{ qs("#pDev").textContent = "Device: " + String(getDeviceId() || "—"); }catch(_){}
           qs("#pModo").textContent = "Modo: " + String((me && me.modality_today) ? me.modality_today : "—");
           var pol = String((me && me.marcacion_method) ? me.marcacion_method : "BOTH").toUpperCase();
@@ -579,7 +627,10 @@
           try {
             window.__TIPO = "IN";
             // Si ya tiene IN hoy => sugerir OUT; si no => IN.
-            if (st && st.ok && st.has_in && !st.has_out) window.__TIPO = "OUT";
+            if (st && st.ok && st.has_in && !st.has_out) {
+              window.__TIPO = "OUT";
+              log("Te falta marcar SALIDA (OUT) hoy. Por defecto te dejo SALIDA sugerida.");
+            }
             renderTipo();
           } catch (e) {}
         })
@@ -655,7 +706,7 @@
         return apiJSON("/rrhh/sgjo/device/enroll", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ device_id: device_id, device_name: device_name, rut: rut_hint, telefono: (kind === "PHONE" ? tel_hint : "") })
+          body: JSON.stringify({ device_id: device_id, device_name: device_name, device_kind: kind, rut: rut_hint, telefono: (kind === "PHONE" ? tel_hint : "") })
         })
           .then(function (out) {
             closeEnrollModal();
@@ -697,12 +748,26 @@
       var btn = qs("#btnMark");
       btn.disabled = true;
       var device_id = getDeviceId();
-      getLocation()
+      // Para usuarios BOTH: si el navegador niega geolocalización, permitimos fallback a QR.
+      var sel = qs("#selMethod");
+      var method0 = String((sel && sel.value) ? sel.value : "QR").toUpperCase();
+      if (method0 === "GPS") method0 = "GEO";
+      var pol0 = "";
+      try {
+        pol0 = String(((window.__ME || {}).marcacion_method) ? (window.__ME || {}).marcacion_method : "").toUpperCase();
+        if (pol0 === "MIXTO") pol0 = "BOTH";
+      } catch (e0) { pol0 = ""; }
+      // Si el usuario eligió QR, permitimos lat/lng null.
+      var allowEmpty = (method0 === "QR");
+      // Si eligió GEO pero la política es BOTH, igual intentaremos GEO primero; si lo niega, haremos fallback a QR.
+      getLocation(allowEmpty)
         .then(function (loc) {
-          var sel = qs("#selMethod");
-          var method = String((sel && sel.value) ? sel.value : "QR").toUpperCase();
+          var method = method0;
           var tipo = String(window.__TIPO || "IN").toUpperCase();
-          var payload = { punto_code: punto_code, device_id: device_id, method: method, lat: loc.lat, lng: loc.lng, accuracy_m: loc.accuracy_m };
+          if (loc && loc.denied && method === "QR") {
+            log("Nota: no se pudo obtener ubicación (GPS). Marcando por QR igualmente (fallback).");
+          }
+          var payload = { punto_code: punto_code, device_id: device_id, method: method, lat: (loc ? loc.lat : null), lng: (loc ? loc.lng : null), accuracy_m: (loc ? loc.accuracy_m : null) };
           payload.tipo = (tipo === "OUT") ? "OUT" : "IN";
           return apiJSON("/rrhh/sgjo/marcar", {
             method: "POST",
@@ -718,7 +783,36 @@
               "\nModo: " + ((out && out.modality) ? out.modality : "—"));
         })
         .catch(function (e) {
-          log("Error: " + (e && e.message ? e.message : e));
+          // Si el usuario intentó GEO y negó GPS, guiamos a usar QR (si su política lo permite).
+          var msg = (e && e.message) ? e.message : String(e || "");
+          try{
+            if (msg && msg.toLowerCase().includes("denied") && method0 === "GEO") {
+              if (pol0 === "BOTH" || !pol0) {
+                // Intento automático por QR (1-click): reenviamos la marcación con method=QR y sin lat/lng.
+                try { if (sel) sel.value = "QR"; } catch (_e2) {}
+                var tipo2 = String(window.__TIPO || "IN").toUpperCase();
+                var payload2 = { punto_code: punto_code, device_id: device_id, method: "QR", lat: null, lng: null, accuracy_m: null };
+                payload2.tipo = (tipo2 === "OUT") ? "OUT" : "IN";
+                return apiJSON("/rrhh/sgjo/marcar", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload2)
+                }).then(function(out2){
+                  var dist2 = (out2 && out2.distance_m != null) ? (Number(out2.distance_m).toFixed(1) + "m") : "—";
+                  log("OK · " + ((out2 && out2.tipo) ? out2.tipo : "—") + " · " + ((out2 && out2.sede) ? out2.sede : "—") +
+                      "\nDistancia: " + dist2 +
+                      "\nFallback: " + ((out2 && out2.used_fallback) ? "sí" : "no") +
+                      "\nModo: " + ((out2 && out2.modality) ? out2.modality : "—"));
+                  return;
+                }).catch(function(e2){
+                  msg = (e2 && e2.message) ? e2.message : String(e2 || "");
+                  log("Error: " + msg);
+                  return;
+                });
+              }
+            }
+          }catch(_e1){}
+          log("Error: " + msg);
         })
         .then(function () {
           btn.disabled = false;
