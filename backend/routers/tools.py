@@ -6822,12 +6822,30 @@ def approve_agenda(
         first_link = links[0] if links else _gcal_link(title, to_create[0]["start"], to_create[0]["end"], details=details, location=loc)
         first_eid = event_ids[0] if event_ids else None
 
-        # Solo marcamos como "agendado" (agenda_approved_at / pendiente_agendar=FALSE) si el evento
-        # quedó efectivamente creado/actualizado en Google Calendar (event_id real).
-        # Si falla, NO persistimos un calendar_html_link de template (fallback), porque eso engaña al
-        # sistema y lo saca de "pendientes".
+        # Regla UX (urgente): evitar "tengo que hacerlo dos veces".
+        # Consideramos "aprobado" si logramos crear/actualizar AL MENOS 1 evento real (event_id),
+        # aunque algunos días fallen (rate limit / intermitencia). En ese caso:
+        # - Dejamos `pendiente_agendar=TRUE` para que el lead aparezca como pendiente de completar.
+        # - Pero SÍ guardamos calendar_* y el lead puede pasar a CONFIRMADO (venta).
         ok_ids = [str(eid).strip() for eid in (event_ids or []) if eid is not None and str(eid).strip()]
-        ok_calendar = bool(connected) and bool(event_ids) and (len(ok_ids) == len(event_ids))
+        ok_any = bool(connected) and bool(event_ids) and bool(ok_ids)
+        ok_all = ok_any and (len(ok_ids) == len(event_ids))
+        ok_calendar = ok_any
+
+        # Anchor: si el primer evento falló pero otro sí se creó, no guardemos eid/link vacíos.
+        if ok_any and event_ids and links:
+            try:
+                anchor_idx = None
+                for i, eid in enumerate(event_ids):
+                    if eid is not None and str(eid).strip():
+                        anchor_idx = i
+                        break
+                if anchor_idx is not None:
+                    first_eid = event_ids[anchor_idx]
+                    if anchor_idx < len(links):
+                        first_link = links[anchor_idx] or first_link
+            except Exception:
+                pass
 
         confirmado_id = _estado_id(db, "CONFIRM")
         declinado_id = _estado_id(db, "DECLIN")
@@ -6852,7 +6870,7 @@ def approve_agenda(
                     calendar_html_links_json=:lnks,
                     agenda_approved_by=CASE WHEN :ok THEN :by ELSE agenda_approved_by END,
                     agenda_approved_at=CASE WHEN :ok THEN now() ELSE agenda_approved_at END,
-                    pendiente_agendar=CASE WHEN :ok THEN FALSE ELSE TRUE END,
+                    pendiente_agendar=CASE WHEN :ok_all THEN FALSE ELSE TRUE END,
                     updated_at=now()
                 WHERE id_lead=:id
                 """
@@ -6869,6 +6887,7 @@ def approve_agenda(
                 "by": (x_user or me.get("name") or me.get("nombre") or "admin"),
                 "id": id_lead,
                 "ok": bool(ok_calendar),
+                "ok_all": bool(ok_all),
             },
         )
 

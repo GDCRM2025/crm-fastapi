@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>RRHH · Turnos (Planificador)</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:14px;background:transparent;color:var(--text);}
+    .wrap{max-width:none;width:100%;margin:0 auto;}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+    }
+    :root.light .card{ background: rgba(255,255,255,.86); border-color: rgba(0,0,0,.10); }
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px; opacity:.9;}
+    .big{font-size:20px;font-weight:1200;margin-top:6px;}
+    .row{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; align-items:center;}
+    .row > *{flex:0 0 auto;}
+    input,select,button{
+      font:inherit; color:inherit;
+      background: rgba(15,23,42,.55);
+      border:1px solid rgba(148,163,184,.22);
+      border-radius:12px;
+      padding:10px 12px;
+      outline:none;
+    }
+    :root.light input,:root.light select,:root.light button{ background: rgba(255,255,255,.9); border-color: rgba(0,0,0,.12); }
+    button{ cursor:pointer; font-weight:800; }
+    button.primary{ background: rgba(59,130,246,.22); border-color: rgba(59,130,246,.35); }
+    button.ghost{ background: transparent; }
+    .muted{opacity:.85; font-size:12px;}
+    .err{ color: #fb7185; }
+
+    .tblWrap{
+      margin-top:12px;
+      border-radius:14px;
+      border:1px solid rgba(148,163,184,.18);
+      overflow:auto;
+      max-height: calc(100vh - 240px);
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      background: rgba(2,6,23,.18);
+    }
+    :root.light .tblWrap{ background: rgba(255,255,255,.7); }
+    table{ border-collapse:separate; border-spacing:0; width:max-content; min-width: 100%; }
+    th,td{ padding:10px 10px; border-bottom:1px solid rgba(148,163,184,.14); vertical-align:top; }
+    th{
+      position:sticky; top:0; z-index:2;
+      background: rgba(2,6,23,.92);
+      text-align:left; font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+    }
+    :root.light th{ background: rgba(248,250,252,.92); }
+    th:first-child, td:first-child{
+      position:sticky; left:0; z-index:3;
+      background: rgba(2,6,23,.92);
+    }
+    :root.light th:first-child,:root.light td:first-child{ background: rgba(248,250,252,.92); }
+
+    .name{ font-weight:1100; }
+    .role{ font-size:12px; opacity:.8; margin-top:2px; }
+    .cell{
+      border:1px solid rgba(148,163,184,.16);
+      border-radius:12px;
+      padding:8px 8px;
+      background: rgba(15,23,42,.35);
+      cursor:pointer;
+      min-width: 168px;
+    }
+    :root.light .cell{ background: rgba(255,255,255,.7); }
+    .cOK{ border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.10); }
+    .cWARN{ border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.10); }
+    .cBAD{ border-color: rgba(244,63,94,.45); background: rgba(244,63,94,.10); }
+    .cNA{ border-color: rgba(148,163,184,.22); background: rgba(148,163,184,.06); opacity:.85; }
+    .line{ display:flex; justify-content:space-between; gap:10px; font-size:12px; }
+    .k{ opacity:.85; }
+    .v{ font-weight:900; }
+    .tiny{ font-size:11px; opacity:.85; margin-top:3px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="ttl">RRHH · SGJO</div>
+      <div class="big">Turnos (Planificador)</div>
+      <div class="muted">Mes por colaborador: IN/OUT real + total (descuenta colación si aplica). Totales por semana al lado.</div>
+
+      <div class="row">
+        <label class="muted">Mes:</label>
+        <input id="monthPick" type="month" />
+        <label class="muted">Buscar:</label>
+        <input id="q" placeholder="Nombre / rol / rut / email" style="min-width:240px" />
+        <button class="primary" id="btnLoad">Cargar</button>
+        <button class="ghost" id="btnThisMonth">Este mes</button>
+        <span id="status" class="muted"></span>
+      </div>
+
+      <div class="tblWrap">
+        <table id="tbl">
+          <thead><tr id="hdr"><th>Colaborador</th></tr></thead>
+          <tbody id="body"></tbody>
+        </table>
+      </div>
+
+      <div class="muted" style="margin-top:10px">
+        Colores: OK (verde) · Falta IN/OUT (rojo) · Fuera de rango permitido / fallback (amarillo) · Sin marcaciones (gris).
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = "/crm";
+    function apiURL(p){ return API_BASE + (p.charAt(0)==="/" ? "" : "/") + p; }
+    function getToken(){
+      try{ return localStorage.getItem("gd_token") || localStorage.getItem("token") || ""; }catch(_){ return ""; }
+    }
+    function apiJSON(path){
+      const t = getToken();
+      const headers = {};
+      if (t) headers["Authorization"] = "Bearer " + t;
+      return fetch(apiURL(path), { headers }).then(async (r)=>{
+        const txt = await r.text();
+        let j=null; try{ j = txt ? JSON.parse(txt) : null; }catch(_){}
+        if (!r.ok) throw new Error((j && (j.detail||j.error||j.message)) ? (j.detail||j.error||j.message) : (txt||("HTTP "+r.status)));
+        return j;
+      });
+    }
+    function pad2(n){ n=String(n); return n.length===1 ? "0"+n : n; }
+    function isoDate(d){ return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+    function hoursLabel(min){
+      if (min==null) return "—";
+      const h = Math.floor(min/60), m = min%60;
+      return h + "h " + pad2(m) + "m";
+    }
+    function dayLabel(iso){
+      const d = new Date(iso+"T00:00:00");
+      const w = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"][(d.getDay()+6)%7] || "";
+      return w + " " + iso.slice(8,10) + "/" + iso.slice(5,7);
+    }
+    function cellClass(x){
+      if (!x) return "cNA";
+      if (x.missing_in || x.missing_out || x.missing_both) return "cBAD";
+      if ((x.out_of_range_cnt||0) > 0) return "cWARN";
+      if (x.actual_in && x.actual_out) return "cOK";
+      return "cNA";
+    }
+
+    function monthOf(d){
+      const dd = new Date(d.getFullYear(), d.getMonth(), 1);
+      return dd.getFullYear()+"-"+pad2(dd.getMonth()+1);
+    }
+
+    function weekStartOfIso(iso){
+      const d = new Date(iso+"T00:00:00");
+      const wd = (d.getDay()+6)%7; // Mon=0
+      const m = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      m.setDate(m.getDate()-wd);
+      return isoDate(m);
+    }
+    function isWeekEndIso(iso){
+      const d = new Date(iso+"T00:00:00");
+      // Sun -> week end (in Mon-based weeks)
+      return ((d.getDay()+6)%7) === 6;
+    }
+
+    function buildColumns(days){
+      const cols = [];
+      days.forEach((d, idx)=>{
+        cols.push({type:"day", day:d});
+        const isEnd = isWeekEndIso(d) || (idx === days.length-1);
+        if (isEnd){
+          cols.push({type:"weekSum", week_start: weekStartOfIso(d), week_end: d});
+        }
+      });
+      return cols;
+    }
+
+    function render(data){
+      const days = (data && data.days) ? data.days : [];
+      const items = (data && data.items) ? data.items : [];
+      const cols = buildColumns(days);
+      const hdr = qs("#hdr");
+      hdr.innerHTML = "<th>Colaborador</th>";
+      cols.forEach(c=>{
+        const th=document.createElement("th");
+        if (c.type === "day"){
+          th.textContent = dayLabel(c.day);
+        } else {
+          th.textContent = "Σ Semana";
+        }
+        hdr.appendChild(th);
+      })
+      const body = qs("#body");
+      body.innerHTML = "";
+      items.forEach(st=>{
+        const tr=document.createElement("tr");
+        const td0=document.createElement("td");
+        td0.innerHTML = `<div class="name">${(st.colaborador||"").toString()}</div><div class="role">${(st.rol||"").toString()}</div>`;
+        tr.appendChild(td0);
+        cols.forEach(c=>{
+          const td=document.createElement("td");
+          if (c.type === "day"){
+            const d = c.day;
+            const x = (st.days && st.days[d]) ? st.days[d] : null;
+            const klass = cellClass(x);
+            const exp = x && (x.expected_in||x.expected_out) ? `${x.expected_in||"—"} → ${x.expected_out||"—"}` : "—";
+            // Si falta IN u OUT, mostrar el teórico para orientar rápidamente.
+            const showIn = x ? (x.actual_in || x.expected_in || "—") : "—";
+            const showOut = x ? (x.actual_out || x.expected_out || "—") : "—";
+            const inOut = `${showIn} / ${showOut}`;
+            const wmin = (x && x.worked_min!=null) ? hoursLabel(x.worked_min) : "—";
+            const badge = (x && (x.out_of_range_cnt||0)>0) ? " · fallback" : "";
+            td.innerHTML = `
+              <div class="cell ${klass}" data-day="${d}" data-uid="${st.id_usuario||""}" data-name="${(st.colaborador||"").toString().replace(/\"/g,"'")}">
+                <div class="line"><span class="k">IN/OUT</span><span class="v">${inOut}</span></div>
+                <div class="line"><span class="k">Total</span><span class="v">${wmin}${badge}</span></div>
+                <div class="tiny">Esp.: ${exp}</div>
+              </div>
+            `;
+            td.querySelector(".cell").addEventListener("click", (ev)=>{
+              const el = ev.currentTarget;
+              const uid = el.getAttribute("data-uid");
+              const day = el.getAttribute("data-day");
+              const nm = el.getAttribute("data-name");
+              if (!uid || !day) return;
+              const url = `/crm/web/views/rrhh_marcaciones.html?uid=${encodeURIComponent(uid)}&date=${encodeURIComponent(day)}&v=${Date.now()}`;
+              if (confirm(`${nm}\n${day}\n\n¿Abrir detalle de marcaciones?`)){
+                try{ window.parent && window.parent.postMessage({type:"gd_open", url}, "*"); }catch(_){}
+                try{ window.location.href = url; }catch(_2){}
+              }
+            });
+          } else {
+            const ws = c.week_start;
+            const w = (st.weeks||[]).find(x=>String(x.week_start||"")===String(ws));
+            const expMin = w ? (w.expected_min ?? null) : null;
+            const realMin = w ? (w.worked_min ?? null) : null;
+            const miss = w ? (w.missing_days||0) : 0;
+            const oor = w ? (w.oor_days||0) : 0;
+            const klass = (miss>0) ? "cBAD" : (oor>0 ? "cWARN" : "cOK");
+            td.innerHTML = `
+              <div class="cell ${klass}" style="min-width:170px;cursor:default">
+                <div class="line"><span class="k">Σ Real</span><span class="v">${hoursLabel(realMin)}</span></div>
+                <div class="line"><span class="k">Σ Esp.</span><span class="v">${hoursLabel(expMin)}</span></div>
+                <div class="tiny">${miss>0?("<b>"+miss+"</b> día(s) con falta"):"OK"}${oor>0?(" · <b>"+oor+"</b> fallback"):""}</div>
+              </div>
+            `;
+          }
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+    }
+
+    async function load(){
+      const ym = qs("#monthPick").value || "";
+      const q = qs("#q").value || "";
+      qs("#status").textContent = "Cargando...";
+      try{
+        const data = await apiJSON(`/rrhh/marcaciones/planificador?month=${encodeURIComponent(ym)}&q=${encodeURIComponent(q)}&limit=220`);
+        render(data);
+        const m = data.month ? (" · " + data.month) : "";
+        qs("#status").textContent = `OK${m} · ${data.items.length} colaboradores`;
+      }catch(e){
+        qs("#status").innerHTML = `<span class="err">Error: ${(e && e.message) ? e.message : e}</span>`;
+      }
+    }
+
+    function init(){
+      qs("#monthPick").value = monthOf(new Date());
+      qs("#btnLoad").addEventListener("click", load);
+      qs("#btnThisMonth").addEventListener("click", ()=>{
+        qs("#monthPick").value = monthOf(new Date());
+        load();
+      });
+      qs("#q").addEventListener("keydown", (e)=>{ if (e.key==="Enter") load(); });
+      load();
+    }
+    init();
+  </script>
+</body>
+</html>

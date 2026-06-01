@@ -2644,6 +2644,19 @@ async function handleConfirmado(lead, newEstado){
         </div>
         <div id="ag_setup_body" style="display:grid;gap:10px">
         <div class="agRow" style="gap:14px;align-items:center;flex-wrap:wrap">
+          <label class="agLabel" style="min-width:260px">
+            <div class="muted">Modalidad</div>
+            <select id="ag_modality" class="swSel">
+              <option value="simple">Único (1 día)</option>
+              <option value="multiday">Multi día</option>
+              <option value="multiloc">Multi locación</option>
+              <option value="blocks">Por bloques</option>
+              <option value="multiday_blocks">Multi día + Bloques</option>
+              <option value="multiday_multiloc">Multi día + Multi locación</option>
+              <option value="blocks_multiloc">Bloques + Multi locación</option>
+              <option value="multiday_blocks_multiloc">Multi día + Bloques + Multi locación</option>
+            </select>
+          </label>
           <label style="display:flex;align-items:center;gap:8px">
             <input type="checkbox" id="ag_flag_blocks" />
             <span class="muted" style="font-weight:1000">Evento por bloques</span>
@@ -2900,11 +2913,37 @@ async function handleConfirmado(lead, newEstado){
   let allocPool = [];   // [{producto, cantidad}]
   let allocTotals = {}; // producto -> total qty
 
-  const _flags = ()=>({
-    blocks: !!qs("#ag_flag_blocks")?.checked,
-    multiday: !!qs("#ag_flag_multiday")?.checked,
-    multiloc: !!qs("#ag_flag_multiloc")?.checked,
-  });
+	  const _flags = ()=>({
+	    blocks: !!qs("#ag_flag_blocks")?.checked,
+	    multiday: !!qs("#ag_flag_multiday")?.checked,
+	    multiloc: !!qs("#ag_flag_multiloc")?.checked,
+	  });
+
+	  const _setModality = (mode)=>{
+	    const elB = qs("#ag_flag_blocks");
+	    const elD = qs("#ag_flag_multiday");
+	    const elL = qs("#ag_flag_multiloc");
+	    if (!elB || !elD || !elL) return;
+	    const m = String(mode || "").trim();
+	    const set = (b,d,l)=>{
+	      elB.checked = !!b;
+	      elD.checked = !!d;
+	      elL.checked = !!l;
+	      // defaults razonables cuando se activan
+	      if (!!b && qs("#ag_blocks_n") && !String(qs("#ag_blocks_n").value||"").trim()) qs("#ag_blocks_n").value = "2";
+	      if (!!d && qs("#ag_days_n") && !String(qs("#ag_days_n").value||"").trim()) qs("#ag_days_n").value = "2";
+	      if (!!l && qs("#ag_locs_n") && !String(qs("#ag_locs_n").value||"").trim()) qs("#ag_locs_n").value = "2";
+	    };
+	    if (m === "multiday") return set(false,true,false);
+	    if (m === "multiloc") return set(false,false,true);
+	    if (m === "blocks") return set(true,false,false);
+	    if (m === "multiday_blocks") return set(true,true,false);
+	    if (m === "multiday_multiloc") return set(false,true,true);
+	    if (m === "blocks_multiloc") return set(true,false,true);
+	    if (m === "multiday_blocks_multiloc") return set(true,true,true);
+	    // default
+	    return set(false,false,false);
+	  };
 
   const _setCountsEnabled = ()=>{
     const f = _flags();
@@ -2935,16 +2974,18 @@ async function handleConfirmado(lead, newEstado){
     }catch(_){ return String(d0).slice(0,10); }
   };
 
-  const _groupLabel = (g, idx)=>{
-    if (!g) return `Grupo ${idx+1}`;
-    if (g.kind === "block"){
-      const lab = String(g.label || "").trim() || `BLOQUE ${String.fromCharCode(65 + (idx % 26))}`;
-      const d = String(g.day||"").slice(0,10) || "—";
-      const st = String(g.start_time||"").trim() || "HR TBD";
-      const en = String(g.end_time||"").trim() || "";
-      const hr = (st && en) ? `${st}-${en}` : st;
-      return `${lab} · ${d} · ${hr}`;
-    }
+	  const _groupLabel = (g, idx)=>{
+	    if (!g) return `Grupo ${idx+1}`;
+	    if (g.kind === "block"){
+	      const bi = Number.isFinite(Number(g.block_idx)) ? Number(g.block_idx) : idx;
+	      const lab = String(g.label || "").trim() || `BLOQUE ${String.fromCharCode(65 + (bi % 26))}`;
+	      const d = String(g.day||"").slice(0,10) || "—";
+	      const l = (g.multiloc ? `Loc ${Number(g.loc_idx||0)+1}` : "");
+	      const st = String(g.start_time||"").trim() || "HR TBD";
+	      const en = String(g.end_time||"").trim() || "";
+	      const hr = (st && en) ? `${st}-${en}` : st;
+	      return `${lab}${l ? (" · " + l) : ""} · ${d} · ${hr}`;
+	    }
     // segment
     const d = String(g.day||"").slice(0,10) || "—";
     const l = (g.multiloc ? `Loc ${Number(g.loc_idx||0)+1}` : "Loc");
@@ -3077,23 +3118,33 @@ async function handleConfirmado(lead, newEstado){
     const comuna0 = (qs("#ag_loc")?.value || "").trim();
     const dir0 = (qs("#ag_dir")?.value || "").trim();
 
-    const groups = [];
-    if (f.blocks){
-      for (let i=0;i<blkN;i++){
-        const day = f.multiday ? _datePlusDays(d0, i) : d0;
-        groups.push({
-          kind:"block",
-          key:`blk_${i}`,
-          day,
-          comuna: comuna0,
-          direccion: dir0,
-          start_time: hIni,
-          end_time: hFin,
-          hr_tbd: false,
-          ops: 1,
-          label: "",
-          products_map: {},
-        });
+	    const groups = [];
+	    if (f.blocks){
+      // Bloques: 1 solo evento en Calendar; si es multi-día, el usuario define días y bloques por día.
+      // Si además es multi-locación, cada bloque puede tener su propia dirección.
+	      const days = f.multiday ? Array.from({length:daysN}, (_,i)=>_datePlusDays(d0,i)) : [d0];
+	      for (let di=0; di<days.length; di++){
+	        const day = days[di];
+	        for (let bi=0; bi<blkN; bi++){
+	          const li = f.multiloc ? (bi % locN) : 0;
+	          groups.push({
+	            kind:"block",
+	            key:`blk_${di}_${bi}`,
+	            day,
+	            day_idx: di,
+	            block_idx: bi,
+	            loc_idx: li,
+	            multiloc: !!f.multiloc,
+	            comuna: comuna0,
+	            direccion: dir0,
+	            start_time: hIni,
+	            end_time: hFin,
+	            hr_tbd: false,
+            ops: 1,
+            label: "",
+            products_map: {},
+          });
+        }
       }
     }else{
       const days = f.multiday ? Array.from({length:daysN}, (_,i)=>_datePlusDays(d0,i)) : [d0];
@@ -3551,13 +3602,39 @@ async function handleConfirmado(lead, newEstado){
     });
   };
 
-  const _deriveAgendaMode = ()=>{
-    const f = _flags();
-    if (f.blocks) return "blocks";
-    if (f.multiloc) return "multiloc";
-    if (f.multiday) return "multiday";
-    return "simple";
-  };
+	  const _deriveAgendaMode = ()=>{
+	    const f = _flags();
+	    if (f.blocks) return "blocks";
+	    if (f.multiloc) return "multiloc";
+	    if (f.multiday) return "multiday";
+	    return "simple";
+	  };
+
+	  const _flagsKey = ()=>{
+	    const f = _flags();
+	    const b = f.blocks ? "1" : "0";
+	    const d = f.multiday ? "1" : "0";
+	    const l = f.multiloc ? "1" : "0";
+	    return `${b}${d}${l}`;
+	  };
+
+	  const _syncModalitySelect = ()=>{
+	    const sel = qs("#ag_modality");
+	    if (!sel) return;
+	    const k = _flagsKey(); // b d l
+	    const map = {
+	      "000":"simple",
+	      "010":"multiday",
+	      "001":"multiloc",
+	      "100":"blocks",
+	      "110":"multiday_blocks",
+	      "011":"multiday_multiloc",
+	      "101":"blocks_multiloc",
+	      "111":"multiday_blocks_multiloc",
+	    };
+	    const v = map[k] || "simple";
+	    if (String(sel.value) !== v) sel.value = v;
+	  };
 
   const _applyMultiLocUI = ()=>{
 	    const mode = (agendaMode === "blocks") ? "blocks" : ((agendaMode === "multiloc") ? "segments" : "day");
@@ -3637,9 +3714,10 @@ async function handleConfirmado(lead, newEstado){
     const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
     const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
     const idCot = (quoteSource === "cotizador") ? qSel : null;
-    const hrTbd = !!qs("#ag_hrtbd")?.checked;
-    const hIni = (qs("#ag_hini")?.value || "").trim();
-    const hFin = (qs("#ag_hfin")?.value || "").trim();
+			      const hrTbd = !!qs("#ag_hrtbd")?.checked;
+            const daysN = Math.max(1, Number(qs("#ag_days_n")?.value || 1) || 1);
+			      const hIni = (qs("#ag_hini")?.value || "").trim();
+			      const hFin = (qs("#ag_hfin")?.value || "").trim();
     const tel = (qs("#ag_tel")?.value || "").trim();
     const dir = (qs("#ag_dir")?.value || "").trim();
     const notes = (qs("#ag_notes")?.value || "").trim();
@@ -3900,12 +3978,13 @@ async function handleConfirmado(lead, newEstado){
             }
           };
 
-          const rebuild = async (why="")=>{
-            setupApplied = true;
-            _setCountsEnabled();
-            agendaMode = _deriveAgendaMode();
-            _buildGroupsFromFlags();
-            await loadPool();
+	          const rebuild = async (why="")=>{
+	            setupApplied = true;
+	            _setCountsEnabled();
+	            agendaMode = _deriveAgendaMode();
+	            _syncModalitySelect();
+	            _buildGroupsFromFlags();
+	            await loadPool();
             // Si cambia estructura, limpiamos asignación (salvo modo simple 1 grupo).
             clearAlloc();
             autoAllocateIfSingle();
@@ -3927,13 +4006,24 @@ async function handleConfirmado(lead, newEstado){
             await runPreview();
           };
 
-          // wire flags + counts
-          ["#ag_flag_blocks","#ag_flag_multiday","#ag_flag_multiloc","#ag_blocks_n","#ag_locs_n","#ag_days_n"].forEach((id)=>{
-            const el = qs(id);
-            if (!el) return;
-            el.addEventListener("change", ()=>{ rebuild("cambio set up").catch(_=>{}); });
-            el.addEventListener("input", ()=>{ rebuild("cambio set up").catch(_=>{}); });
-          });
+	          // wire flags + counts
+	          ["#ag_flag_blocks","#ag_flag_multiday","#ag_flag_multiloc","#ag_blocks_n","#ag_locs_n","#ag_days_n"].forEach((id)=>{
+	            const el = qs(id);
+	            if (!el) return;
+	            el.addEventListener("change", ()=>{ rebuild("cambio set up").catch(_=>{}); });
+	            el.addEventListener("input", ()=>{ rebuild("cambio set up").catch(_=>{}); });
+	          });
+
+	          // modalidad: toggles convenientes para probar/cubrir casos (simple/multiday/multiloc/blocks y combinaciones)
+	          try{
+	            const selMod = qs("#ag_modality");
+	            if (selMod){
+	              selMod.addEventListener("change", ()=>{
+	                _setModality(selMod.value);
+	                rebuild("modalidad").catch(_=>{});
+	              });
+	            }
+	          }catch(_){}
 
           // montaje previo (evento separado)
           const chkM = qs("#ag_flag_montaje_event");
@@ -4206,6 +4296,24 @@ async function handleConfirmado(lead, newEstado){
 		      const multiLoc = (agendaMode === "multiloc");
 		      const multiDay = (agendaMode === "multiday");
 		      const forceSingleDay = (agendaMode === "simple") ? 1 : 0;
+          // Anti-tontos: exigir completar cantidades según flags (claridad inmediata).
+          try{
+            const dn = Number(qs("#ag_days_n")?.value || 0) || 0;
+            const ln = Number(qs("#ag_locs_n")?.value || 0) || 0;
+            const bn = Number(qs("#ag_blocks_n")?.value || 0) || 0;
+            if ((multiDay || (blocks && !!qs("#ag_flag_multiday")?.checked)) && dn < 2){
+              Swal.showValidationMessage("Multi día: indica cantidad de días (>=2).");
+              return false;
+            }
+            if (multiLoc && ln < 2){
+              Swal.showValidationMessage("Multi locación: indica cantidad de locaciones (>=2).");
+              return false;
+            }
+            if (blocks && bn < 1){
+              Swal.showValidationMessage("Evento por bloques: indica cantidad de bloques (>=1).");
+              return false;
+            }
+          }catch(_){}
 		      const hrTbd = !!qs("#ag_hrtbd")?.checked;
 		      const hIni = (qs("#ag_hini")?.value || "").trim();
 		      const hFin = (qs("#ag_hfin")?.value || "").trim();
@@ -4438,10 +4546,19 @@ async function handleConfirmado(lead, newEstado){
                     }
                   }
                 : {}),
-			        ...(blksOut ? { blocks: blksOut } : (segsOut ? { segments: segsOut } : { override_by_day: overrideByDay, force_single_day: (multiDay ? 0 : forceSingleDay), multi_day_mode: (multiDay ? 1 : 0) })),
-			      };
-				    }
-		  });
+				        ...(blksOut
+                  ? { blocks: blksOut }
+                  : (segsOut
+                      ? { segments: segsOut }
+                      : {
+                          override_by_day: overrideByDay,
+                          force_single_day: (multiDay ? 0 : forceSingleDay),
+                          multi_day_mode: (multiDay ? 1 : 0),
+                          days_n: (multiDay ? daysN : 1),
+                        })),
+				      };
+					    }
+			  });
 
 	  if (!res.isConfirmed) return false;
 	  const v = res.value || {};

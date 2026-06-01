@@ -146,6 +146,7 @@
         <button class="btn" id="actAdv">Registrar adelanto</button>
         <button class="btn" id="actAbs">Registrar ausencia</button>
         <button class="btn" id="actVac">Registrar vacaciones</button>
+        <button class="btn" id="actDeactivate" title="Marca como inactivo (no aparece en nómina)">Dar de baja</button>
       </div>
     </div>
   </div>
@@ -259,6 +260,8 @@
           qs("#actAbs").dataset.idstaff = idStaff;
           qs("#actVac").dataset.name = name;
           qs("#actVac").dataset.idstaff = idStaff;
+          qs("#actDeactivate").dataset.name = name;
+          qs("#actDeactivate").dataset.idstaff = idStaff;
           qs("#actModal").style.display = "flex";
         });
       });
@@ -327,6 +330,30 @@
       qs("#vacObs").value = "";
       qs("#actModal").style.display = "none";
       qs("#vacModal").style.display = "flex";
+    });
+
+    qs("#actDeactivate").addEventListener("click", async (e) => {
+      const name = e.currentTarget.dataset.name || "";
+      const idStaff = Number(e.currentTarget.dataset.idstaff || 0) || 0;
+      if (!idStaff){
+        alert("No se puede dar de baja: este registro no tiene id_staff (probablemente es un auto-registro por adelantos).");
+        return;
+      }
+      const reason = prompt(`Dar de baja a:\n${name}\n\nMotivo (opcional):`, "") || "";
+      if (!confirm(`¿Confirmas dar de baja a "${name}"?\n\nEsto lo sacará de Nómina y de Staff (RRHH).`)) return;
+      const r = await fetch(apiURL(`/rrhh/staff/${encodeURIComponent(idStaff)}/deactivate`), {
+        method: "POST",
+        headers: { "Content-Type":"application/json", ...headers() },
+        body: JSON.stringify({ reason }),
+      });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok || j?.ok === false){
+        alert("No se pudo dar de baja: " + (j?.detail || (await r.text().catch(()=> "")) || r.status));
+        return;
+      }
+      toast("Colaborador dado de baja");
+      qs("#actModal").style.display = "none";
+      await load();
     });
 
     async function loadAdelantos(name){

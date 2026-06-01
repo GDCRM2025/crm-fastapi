@@ -1729,9 +1729,10 @@ function bootstrapFromToken() {
       }
     }
     buildMenu();
-    // Refuerzo UX: si el usuario debe marcar y aún no tiene IN hoy, dejamos una banda fija hasta que marque.
-    // (No bloquea el uso 100%, pero evita que "nadie marque" y reduce OUT perdidos con prompt al logout).
-    try { enforceSgjoMarkInGate().catch(()=>{}); } catch (_) {}
+    // Refuerzo UX: si el usuario debe marcar y aún no tiene IN hoy, abre marcación automáticamente (CRM).
+    // SGJO gate (obligar marcación al entrar): deshabilitado hasta estabilizar enrolamiento/marcación.
+    // Se puede reactivar luego con un flag/ajuste, pero por ahora NO bloqueamos a ejecutivos.
+    try { _hideSgjoGate(); } catch (_) {}
     startTasksBadgePolling();
     startSoldEventPolling();
     return { ok: true, redirected: false };
@@ -1887,6 +1888,8 @@ function _hideSgjoGate() {
   }
 }
 async function enforceSgjoMarkInGate() {
+  // Deshabilitado temporalmente.
+  return;
   try {
     if (!getToken()) return;
     const r = await fetch(`${API_BASE}/rrhh/sgjo/today`, { headers: authHeaders({ "Accept": "application/json" }) });
@@ -1895,10 +1898,17 @@ async function enforceSgjoMarkInGate() {
     if (!(j && j.ok)) return;
     if (j.puede_marcar !== true) return;
     const punto = String(j.default_punto_code || "").trim();
-    const markURL = punto ? `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto)}&v=${Date.now()}` : `/web/views/rrhh_sgjo_marcacion.html?v=${Date.now()}`;
+    const markURL = punto ? `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto)}&auto=1&v=${Date.now()}` : `/web/views/rrhh_sgjo_marcacion.html?auto=1&v=${Date.now()}`;
     const openMark = () => {
       const frame = qs("#mainFrame");
-      if (frame) frame.src = viewURL(markURL);
+      if (frame) {
+        try {
+          const cur = String(frame.src || "");
+          // Evita loops: si ya estamos en la vista de marcación, no recargues.
+          if (cur.includes("/web/views/rrhh_sgjo_marcacion.html")) return;
+        } catch (_) {}
+        frame.src = viewURL(markURL);
+      }
     };
     if (j.has_in) {
       _hideSgjoGate();
@@ -1908,7 +1918,9 @@ async function enforceSgjoMarkInGate() {
       }
       return;
     }
+    // Bloqueo suave: muestra gate y además abre marcación en el frame.
     _showSgjoGate({ onGo: openMark });
+    try { openMark(); } catch (_) {}
     if (!_sgjoGateTimer) {
       _sgjoGateTimer = setInterval(() => {
         enforceSgjoMarkInGate();
@@ -1919,6 +1931,8 @@ async function enforceSgjoMarkInGate() {
 }
 
 async function maybePromptSgjoMarkOutBeforeLogout() {
+  // Deshabilitado temporalmente.
+  return true;
   try {
     if (!getToken()) return true;
     const r = await fetch(`${API_BASE}/rrhh/sgjo/today`, { headers: authHeaders({ "Accept": "application/json" }) });
@@ -2503,7 +2517,9 @@ const MENU = [
     ico: "\u{1F465}",
     title: "RRHH",
     items: [
-      { id: "rrhh_hub", label: "RRHH", url: "/web/views/rrhh.html?v=20260423-rrhh2" }
+      { id: "rrhh_hub", label: "RRHH", url: "/web/views/rrhh.html?v=20260518-rrhh5" },
+      { id: "rrhh_mark_plan", label: "Turnos (planificador)", url: "/web/views/rrhh_marcaciones_planificador.html?v=20260518-1" },
+      { id: "rrhh_turnos_visor", label: "Mi turno (teórico vs real)", url: "/web/views/rrhh_turnos_visor.html?v=20260518-1" }
     ]
   },
 	  {
@@ -3794,6 +3810,17 @@ function openDefault() {
       const kind = String(ev.data.kind || "info");
       const ms = Number(ev.data.ms || 7e3);
       toast(text, { kind, ms });
+      return;
+    }
+    if ((ev == null ? void 0 : ev.data) && ev.data.type === "sgjo_marked") {
+      try {
+        _hideSgjoGate();
+      } catch (_) {
+      }
+      try {
+        openDefault();
+      } catch (_) {
+      }
       return;
     }
     if (((_d = ev.data) == null ? void 0 : _d.type) === "logout") {

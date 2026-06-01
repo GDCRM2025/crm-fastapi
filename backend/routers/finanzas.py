@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any
 from datetime import date
+from decimal import Decimal
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
@@ -9,6 +10,43 @@ from backend.core.db import get_connection
 from backend.routers.auth import get_current_user
 
 router = APIRouter(prefix="/finanzas", tags=["finanzas"])
+
+def _to_float(v):
+    if v is None:
+        return None
+    if isinstance(v, Decimal):
+        try:
+            return float(v)
+        except Exception:
+            return float(str(v))
+    return v
+
+
+def _row_json(row: dict) -> dict:
+    """
+    Convierte tipos no serializables (Decimal) a JSON-safe.
+    """
+    out = {}
+    for k, v in (row or {}).items():
+        if isinstance(v, Decimal):
+            out[k] = _to_float(v)
+        else:
+            out[k] = v
+    return out
+
+
+def _norm_text(v: Optional[str], *, max_len: int = 200, upper: bool = False) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    if upper:
+        s = s.upper()
+    if len(s) > max_len:
+        s = s[:max_len]
+    return s
+
 
 def _has_column(conn, table: str, column: str) -> bool:
     try:
@@ -120,6 +158,7 @@ def _ensure_tables(conn):
                 pagado BOOLEAN NOT NULL DEFAULT FALSE,
                 fecha_vencimiento DATE,
                 fecha_pago DATE,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT now()
             )
             """
@@ -131,6 +170,15 @@ def _ensure_tables(conn):
     _add_column_if_missing(conn, "fin_gastos", "fecha_vencimiento", "DATE")
     _add_column_if_missing(conn, "fin_gastos", "fecha_pago", "DATE")
     _add_column_if_missing(conn, "fin_gastos", "tipo_doc", "TEXT")
+    _add_column_if_missing(conn, "fin_gastos", "is_active", "BOOLEAN NOT NULL DEFAULT TRUE")
+    # indexes (no-op si ya existen)
+    try:
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fin_gastos_fecha ON fin_gastos(fecha)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fin_gastos_pagado ON fin_gastos(pagado)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fin_gastos_cuenta ON fin_gastos(cuenta_code)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fin_gastos_cc ON fin_gastos(centro_costo)"))
+    except Exception:
+        pass
 
     # Centros de costo (simple, CRUD admin). Semillas: GREENDIAMOND, ROLFI
     conn.execute(
@@ -284,6 +332,80 @@ class GastoIn(BaseModel):
     fecha_pago: Optional[date] = None
 
 
+class GastoUpdate(BaseModel):
+    fecha: Optional[date] = None
+    cuenta_code: Optional[str] = None
+    monto: Optional[float] = None
+    descripcion: Optional[str] = None
+    proveedor: Optional[str] = None
+    marca: Optional[str] = None
+    centro_costo: Optional[str] = None
+    tipo_doc: Optional[str] = None
+    doc_num: Optional[str] = None
+    pagado: Optional[bool] = None
+    fecha_vencimiento: Optional[date] = None
+    fecha_pago: Optional[date] = None
+    is_active: Optional[bool] = None
+
+
+def _validate_centro_costo(conn, centro_costo: Optional[str]) -> Optional[str]:
+    cc = _norm_text(centro_costo, max_len=80, upper=True)
+    if not cc:
+        return None
+    ok = conn.execute(
+        text(
+            """
+            SELECT 1
+            FROM fin_centros_costo
+            WHERE upper(nombre)=:n AND is_active IS TRUE
+            LIMIT 1
+            """
+        ),
+        {"n": cc},
+    ).scalar()
+    if not ok:
+        raise HTTPException(status_code=400, detail="centro_costo inválido/inactivo")
+    return cc
+
+
+def _validate_marca(conn, marca: Optional[str]) -> Optional[str]:
+    m = _norm_text(marca, max_len=80, upper=True)
+    if not m:
+        return None
+    ok = conn.execute(
+        text("SELECT 1 FROM marcas WHERE upper(COALESCE(nombre, marca))=:m LIMIT 1"),
+        {"m": m},
+    ).scalar()
+    if not ok:
+        raise HTTPException(status_code=400, detail="marca inválida")
+    return m
+
+
+def _validate_cuenta_code(conn, cuenta_code: Optional[str]) -> str:
+    cuenta = _norm_text(cuenta_code, max_len=32, upper=False)
+    if not cuenta:
+        raise HTTPException(status_code=400, detail="cuenta_code requerido")
+    cinfo = conn.execute(
+        text("SELECT type, is_active FROM plan_cuentas WHERE code=:c LIMIT 1"),
+        {"c": cuenta},
+    ).mappings().first()
+    if not cinfo:
+        raise HTTPException(status_code=400, detail="cuenta_code no existe")
+    if str(cinfo.get("type") or "").strip().lower() != "expense":
+        raise HTTPException(status_code=400, detail="cuenta_code no es gasto (expense)")
+    if cinfo.get("is_active") is False:
+        raise HTTPException(status_code=400, detail="cuenta_code inactiva")
+    return cuenta
+
+
+def _normalize_pago(*, pagado: bool, fecha_pago: Optional[date]) -> tuple[bool, Optional[date]]:
+    if pagado and not fecha_pago:
+        return True, date.today()
+    if (not pagado) and fecha_pago:
+        return False, None
+    return pagado, fecha_pago
+
+
 class PagoIn(BaseModel):
     monto: float
     metodo: Optional[str] = None
@@ -320,11 +442,16 @@ def list_plan_cuentas(
     q: str = Query("", max_length=120),
     me=Depends(get_current_user),
 ):
-    _ensure_role(me)
+    role = _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
     with get_connection() as conn:
         _ensure_tables(conn)
         _ensure_brand_accounts(conn)
+        # COMPRAS / OPS: solo lectura de cuentas de gasto activas (no exponer todo el plan)
+        restrict_to_expense = role not in ("ADMIN", "SUPERADMIN", "FINANZAS")
         if q:
+            base_where = "WHERE (code ILIKE :q OR name ILIKE :q OR COALESCE(description,'') ILIKE :q)"
+            if restrict_to_expense:
+                base_where += " AND type='expense' AND COALESCE(is_active,TRUE) IS TRUE"
             rows = conn.execute(
                 text(
                     """
@@ -332,13 +459,18 @@ def list_plan_cuentas(
                            example_transactions, who_inputs, how_to_impute,
                            parent_code, is_active
                     FROM plan_cuentas
-                    WHERE code ILIKE :q OR name ILIKE :q OR COALESCE(description,'') ILIKE :q
+                    """
+                    + base_where
+                    + """
                     ORDER BY code::int NULLS LAST, code ASC
                     """
                 ),
                 {"q": f"%{q}%"},
             ).mappings().all()
         else:
+            base_where = ""
+            if restrict_to_expense:
+                base_where = "WHERE type='expense' AND COALESCE(is_active,TRUE) IS TRUE"
             rows = conn.execute(
                 text(
                     """
@@ -346,6 +478,9 @@ def list_plan_cuentas(
                            example_transactions, who_inputs, how_to_impute,
                            parent_code, is_active
                     FROM plan_cuentas
+                    """
+                    + base_where
+                    + """
                     ORDER BY code::int NULLS LAST, code ASC
                     """
                 )
@@ -798,49 +933,194 @@ def create_gasto(body: GastoIn, me=Depends(get_current_user)):
     _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS"})
     with get_connection() as conn:
         _ensure_tables(conn)
-        conn.execute(
+        cuenta = _validate_cuenta_code(conn, body.cuenta_code)
+
+        monto = float(body.monto or 0)
+        if not (monto > 0):
+            raise HTTPException(status_code=400, detail="monto debe ser > 0")
+
+        if body.fecha_vencimiento and body.fecha_vencimiento < body.fecha:
+            raise HTTPException(status_code=400, detail="fecha_vencimiento no puede ser < fecha")
+
+        payload = {
+            "fecha": body.fecha,
+            "cuenta_code": cuenta,
+            "monto": monto,
+            "descripcion": _norm_text(body.descripcion, max_len=300),
+            "proveedor": _norm_text(body.proveedor, max_len=200),
+            "marca": _validate_marca(conn, body.marca),
+            "centro_costo": _validate_centro_costo(conn, body.centro_costo),
+            "tipo_doc": _norm_text(body.tipo_doc, max_len=40, upper=True),
+            "doc_num": _norm_text(body.doc_num, max_len=80),
+            "pagado": bool(body.pagado or False),
+            "fecha_vencimiento": body.fecha_vencimiento,
+            "fecha_pago": body.fecha_pago,
+        }
+        payload["pagado"], payload["fecha_pago"] = _normalize_pago(
+            pagado=payload["pagado"], fecha_pago=payload["fecha_pago"]
+        )
+
+        row = conn.execute(
             text(
                 """
                 INSERT INTO fin_gastos
-                (fecha, cuenta_code, monto, descripcion, proveedor, marca, centro_costo, tipo_doc, doc_num, pagado, fecha_vencimiento, fecha_pago)
+                (fecha, cuenta_code, monto, descripcion, proveedor, marca, centro_costo, tipo_doc, doc_num, pagado, fecha_vencimiento, fecha_pago, is_active)
                 VALUES
-                (:fecha, :cuenta_code, :monto, :descripcion, :proveedor, :marca, :centro_costo, :tipo_doc, :doc_num, COALESCE(:pagado,FALSE), :fecha_vencimiento, :fecha_pago)
+                (:fecha, :cuenta_code, :monto, :descripcion, :proveedor, :marca, :centro_costo, :tipo_doc, :doc_num, COALESCE(:pagado,FALSE), :fecha_vencimiento, :fecha_pago, TRUE)
+                RETURNING id_gasto
                 """
             ),
-            body.dict(),
-        )
+            payload,
+        ).first()
         conn.commit()
-    return {"ok": True}
+    return {"ok": True, "id_gasto": int(row[0]) if row and row[0] is not None else None}
 
 
 @router.get("/gastos")
 def list_gastos(
     month: int = Query(0, ge=0, le=12),
     year: int = Query(0, ge=0, le=2100),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0, le=200000),
+    pagado: int | None = Query(default=None, ge=0, le=1),
+    q: str = Query("", max_length=120),
     me=Depends(get_current_user),
 ):
     _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS"})
     with get_connection() as conn:
         _ensure_tables(conn)
-        where = ""
-        params = {}
+        where_parts = []
+        params: dict[str, Any] = {}
+        where_parts.append("COALESCE(is_active, TRUE) IS TRUE")
         if month and year:
-            where = "WHERE EXTRACT(MONTH FROM fecha)=:m AND EXTRACT(YEAR FROM fecha)=:y"
+            where_parts.append("EXTRACT(MONTH FROM fecha)=:m AND EXTRACT(YEAR FROM fecha)=:y")
             params = {"m": month, "y": year}
+        if pagado is not None:
+            where_parts.append("pagado IS " + ("TRUE" if int(pagado) == 1 else "FALSE"))
+        qq = str(q or "").strip()
+        if qq:
+            params["q"] = f"%{qq}%"
+            where_parts.append("(COALESCE(descripcion,'') ILIKE :q OR COALESCE(proveedor,'') ILIKE :q OR COALESCE(doc_num,'') ILIKE :q)")
+        where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
         rows = conn.execute(
             text(
                 f"""
                 SELECT id_gasto, fecha, cuenta_code, monto, descripcion, proveedor, marca, centro_costo,
-                       tipo_doc, doc_num, pagado, fecha_vencimiento, fecha_pago, created_at
+                       tipo_doc, doc_num, pagado, fecha_vencimiento, fecha_pago, is_active, created_at
                 FROM fin_gastos
                 {where}
                 ORDER BY fecha DESC, id_gasto DESC
-                LIMIT 500
+                LIMIT :lim OFFSET :off
                 """
             ),
-            params,
+            {**params, "lim": int(limit), "off": int(offset)},
         ).mappings().all()
-    return {"ok": True, "items": list(rows)}
+    items = [_row_json(dict(r)) for r in rows]
+    return {"ok": True, "items": items}
+
+
+@router.put("/gastos/{id_gasto}")
+def update_gasto(id_gasto: int, body: GastoUpdate, me=Depends(get_current_user)):
+    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS"})
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        cur = conn.execute(
+            text(
+                """
+                SELECT id_gasto, fecha, cuenta_code, monto, pagado, fecha_pago, is_active
+                FROM fin_gastos
+                WHERE id_gasto=:id
+                LIMIT 1
+                """
+            ),
+            {"id": int(id_gasto)},
+        ).mappings().first()
+        if not cur:
+            raise HTTPException(status_code=404, detail="Gasto no existe")
+
+        sets = []
+        params: dict[str, Any] = {"id": int(id_gasto)}
+
+        if body.fecha is not None:
+            sets.append("fecha=:fecha")
+            params["fecha"] = body.fecha
+
+        if body.cuenta_code is not None:
+            sets.append("cuenta_code=:cuenta_code")
+            params["cuenta_code"] = _validate_cuenta_code(conn, body.cuenta_code)
+
+        if body.monto is not None:
+            m = float(body.monto or 0)
+            if not (m > 0):
+                raise HTTPException(status_code=400, detail="monto debe ser > 0")
+            sets.append("monto=:monto")
+            params["monto"] = m
+
+        if body.descripcion is not None:
+            sets.append("descripcion=:descripcion")
+            params["descripcion"] = _norm_text(body.descripcion, max_len=300)
+        if body.proveedor is not None:
+            sets.append("proveedor=:proveedor")
+            params["proveedor"] = _norm_text(body.proveedor, max_len=200)
+        if body.marca is not None:
+            sets.append("marca=:marca")
+            params["marca"] = _validate_marca(conn, body.marca)
+        if body.centro_costo is not None:
+            sets.append("centro_costo=:centro_costo")
+            params["centro_costo"] = _validate_centro_costo(conn, body.centro_costo)
+        if body.tipo_doc is not None:
+            sets.append("tipo_doc=:tipo_doc")
+            params["tipo_doc"] = _norm_text(body.tipo_doc, max_len=40, upper=True)
+        if body.doc_num is not None:
+            sets.append("doc_num=:doc_num")
+            params["doc_num"] = _norm_text(body.doc_num, max_len=80)
+
+        # vencimiento/pago (mantener coherencia)
+        new_fecha = body.fecha if body.fecha is not None else cur["fecha"]
+        new_venc = body.fecha_vencimiento if body.fecha_vencimiento is not None else None
+        if body.fecha_vencimiento is not None:
+            if new_venc and new_fecha and new_venc < new_fecha:
+                raise HTTPException(status_code=400, detail="fecha_vencimiento no puede ser < fecha")
+            sets.append("fecha_vencimiento=:fecha_vencimiento")
+            params["fecha_vencimiento"] = body.fecha_vencimiento
+
+        pagado_val = cur.get("pagado")
+        fecha_pago_val = cur.get("fecha_pago")
+        if body.pagado is not None:
+            pagado_val = bool(body.pagado)
+        if body.fecha_pago is not None:
+            fecha_pago_val = body.fecha_pago
+        pagado_val, fecha_pago_val = _normalize_pago(pagado=bool(pagado_val), fecha_pago=fecha_pago_val)
+        if body.pagado is not None:
+            sets.append("pagado=:pagado")
+            params["pagado"] = pagado_val
+        if body.fecha_pago is not None or body.pagado is not None:
+            sets.append("fecha_pago=:fecha_pago")
+            params["fecha_pago"] = fecha_pago_val
+
+        if body.is_active is not None:
+            sets.append("is_active=:is_active")
+            params["is_active"] = bool(body.is_active)
+
+        if not sets:
+            return {"ok": True, "updated": False}
+
+        conn.execute(text(f"UPDATE fin_gastos SET {', '.join(sets)} WHERE id_gasto=:id"), params)
+        conn.commit()
+    return {"ok": True, "updated": True}
+
+
+@router.delete("/gastos/{id_gasto}")
+def delete_gasto(id_gasto: int, me=Depends(get_current_user)):
+    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS"})
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        conn.execute(
+            text("UPDATE fin_gastos SET is_active=FALSE WHERE id_gasto=:id"),
+            {"id": int(id_gasto)},
+        )
+        conn.commit()
+    return {"ok": True}
 
 
 @router.get("/centros_costo")

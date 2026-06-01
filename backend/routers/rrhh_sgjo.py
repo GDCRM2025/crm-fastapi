@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 import threading
 from typing import Any
+import json
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, Query
 from fastapi.responses import Response, RedirectResponse
@@ -108,11 +109,112 @@ def _ensure(db: Session) -> None:
             )
         except Exception:
             pass
+        # Debug de marcaciones (telemetría operacional) para investigar intermitencias.
+        try:
+            db.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS public.sgjo_marks_debug (
+                      id_debug BIGSERIAL PRIMARY KEY,
+                      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                      id_usuario BIGINT,
+                      device_id TEXT,
+                      punto_code TEXT,
+                      method TEXT,
+                      tipo TEXT,
+                      ok BOOLEAN,
+                      within_radius BOOLEAN,
+                      used_fallback BOOLEAN,
+                      distance_m DOUBLE PRECISION,
+                      accuracy_m DOUBLE PRECISION,
+                      lat DOUBLE PRECISION,
+                      lng DOUBLE PRECISION,
+                      err TEXT,
+                      ua_hash TEXT,
+                      ip TEXT,
+                      payload_json TEXT
+                    )
+                    """
+                )
+            )
+        except Exception:
+            pass
         try:
             db.commit()
         except Exception:
             db.rollback()
         _SGJO_ENSURED = True
+
+
+def _log_sgjo_mark_debug(
+    *,
+    db: Session,
+    id_usuario: int | None,
+    device_id: str | None,
+    punto_code: str | None,
+    method: str | None,
+    tipo: str | None,
+    ok: bool | None,
+    within: bool | None,
+    used_fallback: bool | None,
+    distance_m: float | None,
+    accuracy_m: float | None,
+    lat: Any,
+    lng: Any,
+    err: str | None,
+    ua: str | None,
+    ip: str | None,
+    payload_json: str | None,
+) -> None:
+    try:
+        uah = ua_hash(ua or "")
+    except Exception:
+        uah = ""
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO public.sgjo_marks_debug(
+                  id_usuario, device_id, punto_code, method, tipo,
+                  ok, within_radius, used_fallback,
+                  distance_m, accuracy_m, lat, lng,
+                  err, ua_hash, ip, payload_json
+                ) VALUES (
+                  :u, :d, :p, :m, :t,
+                  :ok, :w, :fb,
+                  :dist, :acc, :lat, :lng,
+                  :err, :uah, :ip, :pj
+                )
+                """
+            ),
+            {
+                "u": (int(id_usuario) if str(id_usuario or "").isdigit() else None),
+                "d": (str(device_id or "")[:120] if device_id is not None else None),
+                "p": (str(punto_code or "")[:80] if punto_code is not None else None),
+                "m": (str(method or "")[:16] if method is not None else None),
+                "t": (str(tipo or "")[:8] if tipo is not None else None),
+                "ok": ok,
+                "w": within,
+                "fb": used_fallback,
+                "dist": (float(distance_m) if distance_m is not None else None),
+                "acc": (float(accuracy_m) if accuracy_m is not None else None),
+                "lat": (float(lat) if lat is not None and str(lat).strip() != "" else None),
+                "lng": (float(lng) if lng is not None and str(lng).strip() != "" else None),
+                "err": (str(err or "")[:200] if err else None),
+                "uah": (str(uah or "")[:80] if uah else None),
+                "ip": (str(ip or "")[:80] if ip else None),
+                "pj": (str(payload_json or "")[:4000] if payload_json else None),
+            },
+        )
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 def _exec_presencial_dow(uid: int, rut: str) -> int:
@@ -550,6 +652,42 @@ def sgjo_me(db: Session = Depends(get_db), user: dict = Depends(get_current_user
     role = str(user.get("role") or user.get("rol") or "")
     mod = modality_for_user(db, uid=uid_int, rut=rut, role=role, when=_now())
     pol = _rrhh_marking_policy(db, rut or "") if rut else None
+
+    # Dispositivo por defecto: cualquier dispositivo aprobado del usuario (el más reciente).
+    device_id_default = ""
+    devices_count = 0
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT device_id
+                FROM public.sgjo_dispositivos
+                WHERE id_usuario=:u AND revoked_at IS NULL
+                ORDER BY enrolled_at DESC, id_device DESC
+                LIMIT 1
+                """
+            ),
+            {"u": uid_int},
+        ).scalar()
+        device_id_default = str(row or "").strip()
+    except Exception:
+        device_id_default = ""
+    try:
+        devices_count = int(
+            db.execute(
+                text(
+                    """
+                    SELECT COUNT(1)
+                    FROM public.sgjo_dispositivos
+                    WHERE id_usuario=:u AND revoked_at IS NULL
+                    """
+                ),
+                {"u": uid_int},
+            ).scalar()
+            or 0
+        )
+    except Exception:
+        devices_count = 0
     return {
         "ok": True,
         "id_usuario": uid_int,
@@ -560,6 +698,9 @@ def sgjo_me(db: Session = Depends(get_db), user: dict = Depends(get_current_user
         "puede_marcar": (bool(pol.get("puede_marcar")) if pol else None),
         "marcacion_method": (str(pol.get("marcacion_method")) if pol else None),
         "telefono_rrhh": (str(pol.get("telefono")) if (pol and pol.get("telefono")) else None),
+        "has_enrolled_device": bool(device_id_default),
+        "enrolled_devices_count": devices_count,
+        "device_id_default": (device_id_default or None),
     }
 
 
@@ -725,6 +866,59 @@ def enroll_device(
     }
 
 
+@router.post("/device/issue")
+def issue_device_id(
+    prefer_existing: int = Query(default=1, ge=0, le=1),
+    user_agent: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Devuelve un device_id estable por usuario + UA hash.
+    Motivo: en iOS/Safari/iframes puede fallar localStorage/cookies y se pierde el device_id,
+    provocando re-enrolamientos. Con este endpoint el frontend puede recuperar siempre el mismo ID
+    sin depender de storage local.
+    """
+    _ensure(db)
+    uid = user.get("id")
+    if not str(uid or "").isdigit():
+        raise HTTPException(status_code=401, detail="Usuario inválido")
+    uid_int = int(uid)
+
+    # Si el usuario ya tiene dispositivos aprobados, podemos devolver el más reciente.
+    # Útil para "recuperar" un device_id válido cuando iOS/Safari pierde storage.
+    # Para enrolar un NUEVO dispositivo, el frontend debe llamar con prefer_existing=0.
+    if int(prefer_existing or 0) == 1:
+        try:
+            did_db = (
+                db.execute(
+                    text(
+                        """
+                        SELECT device_id
+                        FROM public.sgjo_dispositivos
+                        WHERE id_usuario=:u AND revoked_at IS NULL
+                        ORDER BY enrolled_at DESC, id_device DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"u": uid_int},
+                ).scalar()
+                or ""
+            )
+            did_db = str(did_db).strip()
+            if did_db:
+                return {"ok": True, "device_id": did_db, "source": "db_latest"}
+        except Exception:
+            pass
+
+    h = ua_hash(user_agent or "")
+    if not h:
+        h = "no-ua"
+    raw = f"{uid_int}:{h}".encode("utf-8", errors="ignore")
+    did = "ua-" + hashlib.sha256(raw).hexdigest()[:32]
+    return {"ok": True, "device_id": did, "source": "ua_hash"}
+
+
 @router.get("/admin/device_requests")
 def admin_device_requests(
     status: str = "pending",
@@ -776,6 +970,115 @@ def admin_device_requests(
         params,
     ).mappings().all()
     return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.get("/admin/marks/stats")
+def admin_marks_stats(
+    days: int = Query(default=1, ge=1, le=31),
+    id_usuario: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Telemetría: resumen de intentos de marcación (sgjo_marks_debug) para detectar causas.
+    """
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    n = int(days or 1)
+    if n < 1:
+        n = 1
+    if n > 31:
+        n = 31
+    params: dict[str, Any] = {"n": n}
+    where = ["created_at >= (now() - (:n || ' days')::interval)"]
+    if id_usuario is not None:
+        try:
+            params["u"] = int(id_usuario)
+            where.append("id_usuario = :u")
+        except Exception:
+            pass
+    wsql = " AND ".join(where)
+    rows = db.execute(
+        text(
+            f"""
+            SELECT
+              COALESCE(method,'') AS method,
+              COALESCE(tipo,'') AS tipo,
+              COALESCE(err,'') AS err,
+              COUNT(1) AS cnt,
+              SUM(CASE WHEN ok IS TRUE THEN 1 ELSE 0 END) AS ok_cnt,
+              SUM(CASE WHEN ok IS NOT TRUE THEN 1 ELSE 0 END) AS fail_cnt,
+              SUM(CASE WHEN within_radius IS FALSE THEN 1 ELSE 0 END) AS out_of_range_cnt
+            FROM public.sgjo_marks_debug
+            WHERE {wsql}
+            GROUP BY 1,2,3
+            ORDER BY cnt DESC
+            LIMIT 80
+            """
+        ),
+        params,
+    ).mappings().all()
+    total = db.execute(
+        text(f"SELECT COUNT(1) FROM public.sgjo_marks_debug WHERE {wsql}"),
+        params,
+    ).scalar()
+    return {"ok": True, "days": n, "id_usuario": id_usuario, "total": int(total or 0), "items": [dict(r) for r in rows]}
+
+
+@router.get("/admin/marks/debug")
+def admin_marks_debug(
+    days: int = Query(default=1, ge=1, le=31),
+    id_usuario: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Telemetría: lista de intentos recientes de marcación (para soporte).
+    """
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    n = int(days or 1)
+    if n < 1:
+        n = 1
+    if n > 31:
+        n = 31
+    lim = int(limit or 200)
+    if lim < 1:
+        lim = 1
+    if lim > 1000:
+        lim = 1000
+    params: dict[str, Any] = {"n": n, "lim": lim}
+    where = ["d.created_at >= (now() - (:n || ' days')::interval)"]
+    if id_usuario is not None:
+        try:
+            params["u"] = int(id_usuario)
+            where.append("d.id_usuario = :u")
+        except Exception:
+            pass
+    wsql = " AND ".join(where)
+    rows = db.execute(
+        text(
+            f"""
+            SELECT
+              d.created_at, d.id_usuario,
+              COALESCE(u.username,'') AS username,
+              COALESCE(NULLIF(btrim(u.nombre),''), u.username) AS display,
+              d.device_id, d.punto_code, d.method, d.tipo,
+              d.ok, d.within_radius, d.used_fallback, d.distance_m, d.accuracy_m,
+              d.err, d.ip
+            FROM public.sgjo_marks_debug d
+            LEFT JOIN public.usuarios u ON u.id_usuario=d.id_usuario
+            WHERE {wsql}
+            ORDER BY d.created_at DESC, d.id_debug DESC
+            LIMIT :lim
+            """
+        ),
+        params,
+    ).mappings().all()
+    return {"ok": True, "days": n, "id_usuario": id_usuario, "items": [dict(r) for r in rows]}
 
 
 @router.get("/admin/devices")
@@ -938,6 +1241,91 @@ def admin_devices_prune(
         raise HTTPException(status_code=500, detail=f"No pude podar dispositivos: {e}")
 
 
+@router.post("/admin/devices/restore")
+def admin_devices_restore(
+    id_usuario: int = Query(ge=1),
+    keep_phone: int = Query(default=2, ge=0, le=10),
+    keep_pc: int = Query(default=2, ge=0, le=10),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Restaura (revoked_at=NULL) los últimos N dispositivos por tipo (PHONE/PC) para un usuario.
+    Útil si se podaron de más y el colaborador quedó sin dispositivos activos.
+    """
+    _ensure(db)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+    uid = int(id_usuario)
+    kp = max(0, min(int(keep_phone or 0), 10))
+    kpc = max(0, min(int(keep_pc or 0), 10))
+
+    rows = db.execute(
+        text(
+            """
+            SELECT id_device, COALESCE(device_kind,'PC') AS device_kind
+            FROM public.sgjo_dispositivos
+            WHERE id_usuario=:u
+            ORDER BY enrolled_at DESC, id_device DESC
+            """
+        ),
+        {"u": uid},
+    ).mappings().all()
+
+    phone_ids: list[int] = []
+    pc_ids: list[int] = []
+    for r in rows:
+        try:
+            did = int(r.get("id_device") or 0)
+        except Exception:
+            continue
+        kind = str(r.get("device_kind") or "PC").strip().upper()
+        if kind == "PHONE":
+            if len(phone_ids) < kp:
+                phone_ids.append(did)
+        else:
+            if len(pc_ids) < kpc:
+                pc_ids.append(did)
+
+    to_restore = list({*phone_ids, *pc_ids})
+    restored = 0
+    if to_restore:
+        upd = db.execute(
+            text(
+                """
+                UPDATE public.sgjo_dispositivos
+                SET revoked_at=NULL, revoked_by=NULL, revoked_note=NULL
+                WHERE id_usuario=:u
+                  AND id_device = ANY(:ids)
+                """
+            ),
+            {"u": uid, "ids": to_restore},
+        )
+        restored = int(getattr(upd, "rowcount", 0) or 0)
+    db.commit()
+
+    # Guardrail final: dejar limpio por tipo.
+    try:
+        me_id = user.get("id")
+        me_id_int = int(me_id) if str(me_id or "").isdigit() else None
+        _prune_user_devices_by_kind(
+            db,
+            id_usuario=uid,
+            keep_phone=kp,
+            keep_pc=kpc,
+            revoked_by=me_id_int,
+            note="restore->prune keep latest by kind",
+        )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+    return {"ok": True, "id_usuario": uid, "restored": restored, "kept_phone": kp, "kept_pc": kpc}
+
+
 @router.get("/admin/devices/overlimit")
 def admin_devices_overlimit(
     phone_limit: int = Query(default=2, ge=0, le=10),
@@ -1012,6 +1400,37 @@ def admin_device_request_approve(
         if prev:
             return {"ok": True, "already_decided": True, "status": prev.get("status"), "decided_at": str(prev.get("decided_at") or "")}
         raise HTTPException(status_code=404, detail="Solicitud no existe.")
+
+    # Regla DB: existe constraint UNIQUE (id_usuario, device_id, status).
+    # La tabla tiene UNIQUE(id_usuario, device_id, status). Si ya existe un row "approved"
+    # para este mismo (usuario, device), lo movemos a un estado histórico único por request
+    # (p.ej. "superseded_by_43") antes de aprobar el pending actual.
+    #
+    # Esto hace el approve idempotente y evita 500 por UniqueViolation.
+    db.execute(
+        text(
+            """
+            UPDATE public.sgjo_device_requests
+            SET status=('superseded_by_' || CAST(:id AS text)),
+                decided_at=COALESCE(decided_at, now()),
+                decided_by=COALESCE(decided_by, :by),
+                note=CASE
+                      WHEN COALESCE(note,'')='' THEN ('AUTO_SUPERSEDED_BY=' || CAST(:id AS text))
+                      ELSE (note || E'\n' || 'AUTO_SUPERSEDED_BY=' || CAST(:id AS text))
+                    END
+            WHERE id_usuario=:u
+              AND device_id=:d
+              AND status='approved'
+              AND id_request<>:id
+            """
+        ),
+        {
+            "u": int(req["id_usuario"]),
+            "d": str(req["device_id"]),
+            "id": int(id_request),
+            "by": me_id_int,
+        },
+    )
 
     db.execute(
         text(
@@ -1198,6 +1617,10 @@ def _prune_user_devices_by_kind(
         kpc = max(0, min(10, int(keep_pc)))
     except Exception:
         kpc = 2
+    # Guardrail duro: nunca dejar al usuario con 0 dispositivos activos por accidente.
+    # Si ambos límites llegan como 0, forzamos mantener al menos 1 PC (si existe).
+    if kp == 0 and kpc == 0:
+        kpc = 1
 
     def _revoke_over(kind: str, keep_n: int) -> int:
         if keep_n < 0:
@@ -1220,6 +1643,9 @@ def _prune_user_devices_by_kind(
             .all()
         )
         ids = [int(x) for x in ids if str(x).isdigit()]
+        # Guardrail: si keep_n==0 pero hay dispositivos activos, mantener al menos 1 para no cortar marcación.
+        if keep_n == 0 and len(ids) > 0:
+            keep_n = 1
         if len(ids) <= keep_n:
             return 0
         to_revoke = ids[keep_n:]
@@ -1247,31 +1673,163 @@ def _prune_user_devices_by_kind(
 
 @router.post("/marcar")
 def marcar(
+    request: Request,
     payload: dict = Body(default_factory=dict),
     user_agent: str | None = Header(default=None),
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     _ensure(db)
+    dbg_device_id = str(payload.get("device_id") or "").strip()
+    dbg_punto_code = str(payload.get("punto_code") or "").strip().upper()
+    dbg_method = str(payload.get("method") or payload.get("metodo") or "").strip().upper()
+    dbg_tipo = str(payload.get("tipo") or payload.get("kind") or "").strip().upper()
+    dbg_ip = None
+    try:
+        if request is not None and getattr(request, "client", None):
+            dbg_ip = str(request.client.host or "")[:80]
+    except Exception:
+        dbg_ip = None
+    dbg_payload_json = None
+    try:
+        dbg_payload_json = json.dumps(payload or {}, ensure_ascii=False)[:4000]
+    except Exception:
+        dbg_payload_json = None
+
     uid = user.get("id")
     if not str(uid or "").isdigit():
+        _log_sgjo_mark_debug(
+            db=db,
+            id_usuario=None,
+            device_id=dbg_device_id,
+            punto_code=dbg_punto_code,
+            method=dbg_method,
+            tipo=dbg_tipo,
+            ok=False,
+            within=None,
+            used_fallback=None,
+            distance_m=None,
+            accuracy_m=payload.get("accuracy_m"),
+            lat=payload.get("lat"),
+            lng=payload.get("lng"),
+            err="Usuario inválido",
+            ua=user_agent,
+            ip=dbg_ip,
+            payload_json=dbg_payload_json,
+        )
         raise HTTPException(status_code=401, detail="Usuario inválido")
     uid_int = int(uid)
     rut = get_user_rut(db, uid_int) or None
     if not rut:
+        _log_sgjo_mark_debug(
+            db=db,
+            id_usuario=uid_int,
+            device_id=dbg_device_id,
+            punto_code=dbg_punto_code,
+            method=dbg_method,
+            tipo=dbg_tipo,
+            ok=False,
+            within=None,
+            used_fallback=None,
+            distance_m=None,
+            accuracy_m=payload.get("accuracy_m"),
+            lat=payload.get("lat"),
+            lng=payload.get("lng"),
+            err="Sin RUT RRHH",
+            ua=user_agent,
+            ip=dbg_ip,
+            payload_json=dbg_payload_json,
+        )
         raise HTTPException(status_code=400, detail="Tu usuario no tiene RUT configurado (RRHH).")
     role = str(user.get("role") or user.get("rol") or "")
     mod = modality_for_user(db, uid=uid_int, rut=rut or "", role=role, when=_now())
     modality = str(mod.get("modality") or "PRESENCIAL")
 
     device_id = str(payload.get("device_id") or "").strip()
-    if not device_id:
-        raise HTTPException(status_code=400, detail="device_id requerido")
+    # UX: si el navegador perdió storage/cookies, igual permitimos marcar usando cualquier
+    # dispositivo ya aprobado del usuario (último enrolado activo).
+    if (not device_id) or (device_id.upper() == "AUTO"):
+        device_id = (
+            db.execute(
+                text(
+                    """
+                    SELECT device_id
+                    FROM public.sgjo_dispositivos
+                    WHERE id_usuario=:u
+                      AND revoked_at IS NULL
+                    ORDER BY enrolled_at DESC, id_device DESC
+                    LIMIT 1
+                    """
+                ),
+                {"u": uid_int},
+            ).scalar()
+            or ""
+        )
+        device_id = str(device_id or "").strip()
+        if not device_id:
+            _log_sgjo_mark_debug(
+                db=db,
+                id_usuario=uid_int,
+                device_id="",
+                punto_code=dbg_punto_code,
+                method=dbg_method,
+                tipo=dbg_tipo,
+                ok=False,
+                within=None,
+                used_fallback=None,
+                distance_m=None,
+                accuracy_m=payload.get("accuracy_m"),
+                lat=payload.get("lat"),
+                lng=payload.get("lng"),
+                err="Sin dispositivo enrolado",
+                ua=user_agent,
+                ip=dbg_ip,
+                payload_json=dbg_payload_json,
+            )
+            raise HTTPException(status_code=403, detail="No tienes un dispositivo enrolado. Enrola tu dispositivo 1 vez.")
     if not _device_enrolled(db, uid_int, device_id, user_agent or ""):
+        _log_sgjo_mark_debug(
+            db=db,
+            id_usuario=uid_int,
+            device_id=device_id,
+            punto_code=dbg_punto_code,
+            method=dbg_method,
+            tipo=dbg_tipo,
+            ok=False,
+            within=None,
+            used_fallback=None,
+            distance_m=None,
+            accuracy_m=payload.get("accuracy_m"),
+            lat=payload.get("lat"),
+            lng=payload.get("lng"),
+            err="Dispositivo no enrolado",
+            ua=user_agent,
+            ip=dbg_ip,
+            payload_json=dbg_payload_json,
+        )
         raise HTTPException(status_code=403, detail="Dispositivo no enrolado")
 
     punto_code = str(payload.get("punto_code") or "").strip().upper()
     if not punto_code:
+        _log_sgjo_mark_debug(
+            db=db,
+            id_usuario=uid_int,
+            device_id=device_id,
+            punto_code="",
+            method=dbg_method,
+            tipo=dbg_tipo,
+            ok=False,
+            within=None,
+            used_fallback=None,
+            distance_m=None,
+            accuracy_m=payload.get("accuracy_m"),
+            lat=payload.get("lat"),
+            lng=payload.get("lng"),
+            err="punto_code requerido",
+            ua=user_agent,
+            ip=dbg_ip,
+            payload_json=dbg_payload_json,
+        )
         raise HTTPException(status_code=400, detail="punto_code requerido")
 
     point = db.execute(
@@ -1287,6 +1845,25 @@ def marcar(
         {"c": punto_code},
     ).mappings().first()
     if not point:
+        _log_sgjo_mark_debug(
+            db=db,
+            id_usuario=uid_int,
+            device_id=device_id,
+            punto_code=punto_code,
+            method=dbg_method,
+            tipo=dbg_tipo,
+            ok=False,
+            within=None,
+            used_fallback=None,
+            distance_m=None,
+            accuracy_m=payload.get("accuracy_m"),
+            lat=payload.get("lat"),
+            lng=payload.get("lng"),
+            err="Punto no existe",
+            ua=user_agent,
+            ip=dbg_ip,
+            payload_json=dbg_payload_json,
+        )
         raise HTTPException(status_code=404, detail="Punto no existe")
 
     lat = payload.get("lat")
@@ -1300,17 +1877,18 @@ def marcar(
 
     # Enrolamiento por RRHH: puede_marcar + método permitido por colaborador.
     policy = _rrhh_marking_policy(db, rut or "")
+    staff_method_norm = "BOTH"
     if policy is not None:
         if not bool(policy.get("puede_marcar")):
             raise HTTPException(status_code=403, detail="No habilitado para marcar.")
-        staff_method = str(policy.get("marcacion_method") or "BOTH").strip().upper()
-        if staff_method == "MIXTO":
-            staff_method = "BOTH"
-        if staff_method == "QR" and method != "QR":
+        staff_method_norm = str(policy.get("marcacion_method") or "BOTH").strip().upper()
+        if staff_method_norm == "MIXTO":
+            staff_method_norm = "BOTH"
+        if staff_method_norm == "QR" and method != "QR":
             raise HTTPException(status_code=403, detail="Tu método permitido es solo QR.")
-        if staff_method in ("GPS", "GEO") and method == "QR":
+        if staff_method_norm in ("GPS", "GEO") and method == "QR":
             raise HTTPException(status_code=403, detail="Tu método permitido es solo GPS.")
-        if staff_method in ("GPS", "GEO") and not policy.get("telefono"):
+        if staff_method_norm in ("GPS", "GEO") and not policy.get("telefono"):
             raise HTTPException(status_code=403, detail="Falta teléfono en RRHH para marcar con GPS.")
 
     distance_m = None
@@ -1345,26 +1923,48 @@ def marcar(
             err = "Falta ubicación (lat/lng)"
     else:
         try:
-            lat_f = float(lat)
-            lng_f = float(lng)
-            acc_f = float(acc) if acc is not None else None
-            distance_m = float(haversine_m(lat_f, lng_f, float(point["lat"]), float(point["lng"])))
-            hard = int(point["radius_m"] or 20)
-            soft = int(point["fallback_radius_m"] or 35)
-            acc_thr = int(point["fallback_accuracy_m"] or 25)
-            within_hard = distance_m <= float(hard)
-            within_soft = distance_m <= float(soft)
-            # `accuracy` es "metros de error": mientras más bajo, mejor.
-            acc_good = (acc_f is None) or (acc_f <= float(acc_thr))
+                lat_f = float(lat)
+                lng_f = float(lng)
+                acc_f = float(acc) if acc is not None else None
+                distance_m = float(haversine_m(lat_f, lng_f, float(point["lat"]), float(point["lng"])))
+                hard = int(point["radius_m"] or 20)
+                soft = int(point["fallback_radius_m"] or 35)
+                acc_thr = int(point["fallback_accuracy_m"] or 25)
+                within_hard = distance_m <= float(hard)
+                within_soft = distance_m <= float(soft)
+                # `accuracy` es "metros de error": mientras más bajo, mejor.
+                acc_good = (acc_f is None) or (acc_f <= float(acc_thr))
 
-            if modality == "REMOTO":
-                within = True
-            else:
-                within = bool(within_hard or (within_soft and acc_good))
-                used_fb = bool((not within_hard) and within_soft and acc_good)
-            if not within:
-                ok = False
-                err = "Fuera de rango"
+                if modality == "REMOTO":
+                    within = True
+                else:
+                    within = bool(within_hard or (within_soft and acc_good))
+                    used_fb = bool((not within_hard) and within_soft and acc_good)
+
+                # Regla operacional: si el usuario marca vía QR (QR físico), no bloqueamos por GPS fuera de rango.
+                # En iOS/Android la ubicación puede ser imprecisa y disparar "Fuera de rango" aunque esté en sede.
+                # En QR la evidencia es el código/punto, así que aceptamos y dejamos trazabilidad en distance_m.
+                try:
+                    if method == "QR" and staff_method_norm in ("QR", "BOTH"):
+                        ok = True
+                        err = None
+                        within = True
+                        used_fb = True
+                except Exception:
+                    pass
+
+                if not within:
+                    # Regla práctica: si el colaborador tiene BOTH y está marcando por GEO,
+                    # permitimos registrar igual aunque esté fuera de rango (teletrabajo / excepciones),
+                    # dejando trazabilidad para RRHH (within_radius=false, used_fallback=true).
+                    if (method == "GEO") and (staff_method_norm in ("BOTH", "GEO", "GPS")):
+                        ok = True
+                        err = None
+                        within = False
+                        used_fb = True
+                    else:
+                        ok = False
+                        err = "Fuera de rango"
         except Exception:
             ok = False
             err = "No pude calcular distancia"
@@ -1434,6 +2034,14 @@ def marcar(
         ).scalar()
         tipo = "IN" if str(last or "").upper() != "IN" else "OUT"
 
+    meta_obj: dict[str, Any] = {}
+    try:
+        if method == "GEO" and staff_method_norm in ("BOTH", "GEO", "GPS") and within is False and ok is True:
+            meta_obj["geo_out_of_range_allowed"] = True
+            meta_obj["modality"] = modality
+    except Exception:
+        pass
+
     db.execute(
         text(
             """
@@ -1469,10 +2077,31 @@ def marcar(
             "fb": bool(used_fb),
             "ok": bool(ok),
             "err": err,
-            "meta": "{}",
+            "meta": json.dumps(meta_obj or {}),
         },
     )
     db.commit()
+
+    # Telemetría (append-only): registrar intento con resultado final.
+    _log_sgjo_mark_debug(
+        db=db,
+        id_usuario=uid_int,
+        device_id=device_id,
+        punto_code=punto_code,
+        method=method,
+        tipo=tipo,
+        ok=bool(ok),
+        within=(bool(within) if within is not None else None),
+        used_fallback=bool(used_fb),
+        distance_m=(float(distance_m) if distance_m is not None else None),
+        accuracy_m=(float(acc) if acc is not None else None),
+        lat=lat,
+        lng=lng,
+        err=err,
+        ua=user_agent,
+        ip=dbg_ip,
+        payload_json=dbg_payload_json,
+    )
 
     if not ok:
         raise HTTPException(status_code=400, detail=err or "Marca inválida")

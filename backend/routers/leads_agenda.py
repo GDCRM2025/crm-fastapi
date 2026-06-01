@@ -1810,6 +1810,7 @@ def _build_event_for_blocks_day(
 
     return {
         "day": day.isoformat(),
+        "label": "Bloques · %s" % day.isoformat(),
         "title": title,
         "start_at": dt_start.isoformat(),
         "end_at": dt_end.isoformat(),
@@ -2009,8 +2010,13 @@ def _build_event_for_blocks_single(
     ]
     description = "\n".join(desc_lines).strip()
 
+    label = "Bloques · %s" % start_day.isoformat()
+    if multi_day:
+        label = "Bloques · %s → %s" % (start_day.isoformat(), end_day.isoformat())
+
     return {
         "day": start_day.isoformat(),
+        "label": label,
         "title": title,
         "start_at": dt_start.isoformat(),
         "end_at": dt_end.isoformat(),
@@ -2179,6 +2185,9 @@ def _build_event_for_day(
         ev["description"] = override_description
 
     ev["day"] = day.isoformat()
+    # Importante para UI: tabs por día y preview.
+    # Si no viene explícito, usamos el día ISO (estable).
+    ev["label"] = day_label or day.isoformat()
     return ev
 
 
@@ -2449,19 +2458,45 @@ def move_lead_and_maybe_agenda(
                 best = max(cotizaciones, key=_rank)
                 id_cot = best.get("id_cotizacion")
 
+        # Seguridad: si viene id_cotizacion explícito, debe pertenecer a este lead.
+        if id_cot and quote_source != "manual":
+            try:
+                with engine.connect() as cn:
+                    ok = cn.execute(
+                        text(
+                            "SELECT 1 FROM public.cotizaciones WHERE id_cotizacion=:c AND id_lead=:l LIMIT 1"
+                        ),
+                        {"c": int(id_cot), "l": int(id_lead)},
+                    ).scalar()
+                if not ok:
+                    raise HTTPException(status_code=400, detail="La cotización seleccionada no pertenece a este lead.")
+            except HTTPException:
+                raise
+            except Exception:
+                # Si la validación falla por DB, preferimos seguir (no romper prod),
+                # pero NO forzamos update de monto/num.
+                pass
+
         if not id_cot:
             items_manual = _lead_mice_items_resumen_by_day(id_lead)
             if not items_manual:
                 raise HTTPException(400, detail="No hay cotización seleccionada ni productos manuales para calcular montaje")
 
-        # Regla negocio: al confirmar (con cotización), el lead debe quedar con monto_cotizado = subtotal_productos + traslado (sin IVA).
-        # Además asignamos tipo_cliente = EMPRESA si IVA>0, si no PARTICULAR.
+        # Regla negocio: al confirmar (con cotización), el lead debe quedar con:
+        # - id_cotizacion_vigente = cotización seleccionada
+        # - num_cotizacion = folio de esa cotización
+        # - monto_cotizado = (subtotal_productos/subtotal) + traslado (SIN IVA)
+        # Si no podemos leer esa cotización, preferimos FALLAR (anti-descuadres).
         if id_cot and quote_source != "manual" and not dry_run:
+            # best-effort: asegurar tipo_cliente si existe la columna
             try:
                 with engine.begin() as cn:
                     cn.execute(text("ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS tipo_cliente TEXT"))
             except Exception:
                 pass
+
+            row_c = None
+            row_err = None
             try:
                 with engine.connect() as cn:
                     ok = cn.execute(text("SELECT to_regclass('public.cotizaciones')")).scalar()
@@ -2477,29 +2512,37 @@ def move_lead_and_maybe_agenda(
                             ),
                             {"id": int(id_cot)},
                         ).mappings().first()
-                    else:
-                        row_c = None
-                if row_c:
-                    neto_prod = _to_number(row_c.get("subtotal_productos") or row_c.get("subtotal") or 0)
-                    tr = _to_number(row_c.get("traslado") or 0)
-                    iva = _to_number(row_c.get("iva") or 0)
-                    monto_cot = float(neto_prod) + float(tr)
-                    tipo_cli = "EMPRESA" if float(iva) > 0 else "PARTICULAR"
-                    data_up = {
-                        "id_cotizacion_vigente": int(id_cot),
-                        "monto_cotizado": float(monto_cot),
-                        "tipo_cliente": tipo_cli,
-                    }
-                    if row_c.get("numero") is not None:
-                        data_up["num_cotizacion"] = str(row_c.get("numero"))
-                    _update_row("leads", "id_lead", id_lead, data_up)
-                    lead["id_cotizacion_vigente"] = int(id_cot)
-                    lead["monto_cotizado"] = float(monto_cot)
-                    lead["tipo_cliente"] = tipo_cli
-                    if row_c.get("numero") is not None:
-                        lead["num_cotizacion"] = str(row_c.get("numero"))
-            except Exception:
-                pass
+            except Exception as e:
+                row_c = None
+                row_err = str(e)
+
+            if not row_c:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "No pude leer la cotización seleccionada para calcular el monto (id_cotizacion)."
+                        + (f" Error: {row_err[:180]}" if row_err else "")
+                    ),
+                )
+
+            neto_prod = _to_number(row_c.get("subtotal_productos") or row_c.get("subtotal") or 0)
+            tr = _to_number(row_c.get("traslado") or 0)
+            iva = _to_number(row_c.get("iva") or 0)
+            monto_cot = float(neto_prod) + float(tr)
+            tipo_cli = "EMPRESA" if float(iva) > 0 else "PARTICULAR"
+            data_up = {
+                "id_cotizacion_vigente": int(id_cot),
+                "monto_cotizado": float(monto_cot),
+                "tipo_cliente": tipo_cli,
+            }
+            if row_c.get("numero") is not None:
+                data_up["num_cotizacion"] = str(row_c.get("numero"))
+            _update_row("leads", "id_lead", id_lead, data_up)
+            lead["id_cotizacion_vigente"] = int(id_cot)
+            lead["monto_cotizado"] = float(monto_cot)
+            lead["tipo_cliente"] = tipo_cli
+            if row_c.get("numero") is not None:
+                lead["num_cotizacion"] = str(row_c.get("numero"))
 
         telefono = str(payload.get("telefono") or lead.get("telefono") or "").strip()
         direccion = str(payload.get("direccion") or lead.get("direccion") or "").strip()
@@ -2793,7 +2836,64 @@ def move_lead_and_maybe_agenda(
             except Exception:
                 force_single_day = False
 
-            grouped = [(base_day, items or [])] if force_single_day else _items_grouped_by_day(items, base_day)
+            # Multi-día (sin bloques/segmentos): si los items no traen service_date, `_items_grouped_by_day`
+            # retorna 1 solo día. Para el flujo de agenda necesitamos poder "forzar" N días para preview.
+            multi_day_mode = False
+            try:
+                v = payload.get("multi_day_mode", 0)
+                multi_day_mode = bool(int(v)) if str(v).strip() != "" else False
+            except Exception:
+                multi_day_mode = False
+
+            days_n = 1
+            try:
+                v = payload.get("days_n", payload.get("dias_n", payload.get("num_days", 1)))
+                days_n = int(v) if str(v).strip() != "" else 1
+            except Exception:
+                days_n = 1
+            if days_n < 1:
+                days_n = 1
+            if days_n > 31:
+                days_n = 31
+
+            grouped = None
+            if force_single_day:
+                grouped = [(base_day, items or [])]
+            else:
+                grouped = _items_grouped_by_day(items, base_day)
+
+            if (not force_single_day) and multi_day_mode:
+                # 1) si el usuario ya tocó días (override_by_day), respetar esos días
+                override_days = []
+                try:
+                    for k in (overrides_by_day or {}).keys():
+                        try:
+                            override_days.append(date.fromisoformat(str(k)[:10]))
+                        except Exception:
+                            pass
+                except Exception:
+                    override_days = []
+                override_days = sorted(list(dict.fromkeys(override_days)))
+
+                # 2) fallback: crear rango por days_n desde fecha_evento
+                forced_days = override_days if override_days else [base_day + timedelta(days=i) for i in range(days_n)]
+
+                # Si items tienen service_date, mantenemos el grouping real; si no, repetimos items.
+                has_any_service_date = False
+                try:
+                    for it in items or []:
+                        if _parse_iso_date(it.get("service_date") or it.get("fecha") or it.get("dia") or it.get("day")):
+                            has_any_service_date = True
+                            break
+                except Exception:
+                    has_any_service_date = False
+
+                if has_any_service_date:
+                    # Deja el grouping real (por service_date).
+                    grouped = _items_grouped_by_day(items, base_day)
+                else:
+                    grouped = [(d, items or []) for d in forced_days]
+
             total_days = len(grouped) if grouped else 1
             for idx, (day, items_day) in enumerate(grouped or [(base_day, items)], start=1):
                 obd = overrides_by_day.get(day.isoformat(), {}) if overrides_by_day else {}

@@ -562,6 +562,44 @@ def horarios_plan_month(body: dict, db: Session = Depends(get_db), me: dict = De
             created += 1
 
     db.commit()
+    # Notifica al colaborador (webpush + email) si está linkeado y tiene correo.
+    try:
+        st = db.execute(
+            text("SELECT colaborador, id_usuario, email FROM rrhh_staff WHERE id_staff=:s LIMIT 1"),
+            {"s": int(id_staff)},
+        ).first()
+        uid = int(st[1]) if (st and st[1]) else None
+        email = str(st[2] or "").strip() if st and len(st) >= 3 else ""
+        if uid:
+            try:
+                from backend.core.webpush import send_webpush_to_users
+
+                title = "RRHH · Planificación mensual asignada"
+                body_txt = f"Mes {d0.strftime('%Y-%m')}"
+                send_webpush_to_users(
+                    user_ids=[uid],
+                    title=title,
+                    body=body_txt,
+                    url="/crm/web/views/rrhh_portal.html?v=rrhh-horario-month",
+                    tag=f"rrhh-month-{uid}-{d0.strftime('%Y-%m')}",
+                )
+            except Exception:
+                pass
+        if email:
+            try:
+                from backend.core.email import send_email
+
+                subj = "RRHH · Planificación mensual asignada"
+                txt = (
+                    f"Hola{(' ' + str(st[0])) if (st and st[0]) else ''},\n\n"
+                    f"Se asignó tu planificación del mes {d0.strftime('%Y-%m')}.\n"
+                    "Puedes revisarla en tu Portal RRHH.\n"
+                )
+                send_email(email, subj, txt)
+            except Exception:
+                pass
+    except Exception:
+        pass
     return {"ok": True, "month_start": d0.isoformat(), "weeks": len(by_week), "created": created}
 
 
@@ -2901,10 +2939,11 @@ def horarios_plan_week(body: dict, db: Session = Depends(get_db), me: dict = Dep
     # Notifica al colaborador si está linkeado
     try:
         st = db.execute(
-            text("SELECT colaborador, id_usuario FROM rrhh_staff WHERE id_staff=:s LIMIT 1"),
+            text("SELECT colaborador, id_usuario, email FROM rrhh_staff WHERE id_staff=:s LIMIT 1"),
             {"s": int(id_staff)},
         ).first()
         uid = int(st[1]) if (st and st[1]) else None
+        email = str(st[2] or "").strip() if st and len(st) >= 3 else ""
         if uid:
             try:
                 from backend.core.webpush import send_webpush_to_users
@@ -2918,6 +2957,20 @@ def horarios_plan_week(body: dict, db: Session = Depends(get_db), me: dict = Dep
                     url="/crm/web/views/rrhh_portal.html?v=rrhh-horario-week",
                     tag=f"rrhh-week-{uid}-{d0.isoformat()}",
                 )
+            except Exception:
+                pass
+        if email:
+            try:
+                from backend.core.email import send_email
+
+                subj = "RRHH · Horario semanal asignado"
+                txt = (
+                    f"Hola{(' ' + str(st[0])) if (st and st[0]) else ''},\n\n"
+                    f"Se asignó tu horario semanal:\n"
+                    f"Semana: {d0.isoformat()} → {d6.isoformat()}\n\n"
+                    "Puedes revisarlo en tu Portal RRHH.\n"
+                )
+                send_email(email, subj, txt)
             except Exception:
                 pass
     except Exception:
@@ -3228,6 +3281,869 @@ def marcaciones_list(
         params,
     ).mappings().all()
     return {"ok": True, "items": [dict(r) for r in rows]}
+
+
+@router.get("/marcaciones/planificador")
+def marcaciones_planificador(
+    week_start: str | None = None,  # YYYY-MM-DD (lunes idealmente)
+    month: str | None = None,  # YYYY-MM (si viene, ignora week_start y calcula desde inicio del mes)
+    days: int = 7,  # 7=semana
+    autofill_teorico: int = 0,  # 1 => si falta IN/OUT, completa worked_min con teórico (NO escribe DB)
+    q: str | None = None,  # filtro por nombre/email/rol/rut
+    id_usuario: int | None = None,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Vista tipo planificador (RRHH):
+    - Filas: colaboradores (rrhh_staff activos)
+    - Columnas: días (week_start..week_start+days-1)
+    - Muestra esperado vs real + minutos trabajados estimados.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+
+    # Normaliza fechas (America/Santiago) sin dependencias externas.
+    import datetime as _dt
+
+    # Determina rango:
+    # - si viene month=YYYY-MM => cubre 1..fin del mes (en días naturales) y retorna weeks por dentro.
+    # - si no => week_start o semana actual.
+    if month:
+        ym = str(month or "").strip()[:7]
+        try:
+            y = int(ym.split("-")[0]); m = int(ym.split("-")[1])
+            if m < 1 or m > 12:
+                raise ValueError()
+            month_start = _dt.date(y, m, 1)
+        except Exception:
+            raise HTTPException(status_code=400, detail="month inválido (YYYY-MM).")
+        month_end_excl = (month_start.replace(day=28) + _dt.timedelta(days=4)).replace(day=1)
+        d0 = month_start
+        n_days = (month_end_excl - month_start).days
+        if n_days < 1:
+            n_days = 1
+    else:
+        try:
+            if week_start:
+                d0 = _dt.date.fromisoformat(str(week_start)[:10])
+            else:
+                d0 = _dt.datetime.now(_dt.timezone.utc).astimezone(_dt.timezone(_dt.timedelta(hours=-4))).date()
+                # mover a lunes (0=Mon)
+                d0 = d0 - _dt.timedelta(days=int(d0.weekday()))
+        except Exception:
+            raise HTTPException(status_code=400, detail="week_start inválido (usa YYYY-MM-DD).")
+
+        try:
+            n_days = int(days or 7)
+        except Exception:
+            n_days = 7
+        if n_days < 1:
+            n_days = 1
+        if n_days > 31:
+            n_days = 31
+
+    try:
+        lim = int(limit or 200)
+    except Exception:
+        lim = 200
+    if lim < 1:
+        lim = 1
+    if lim > 500:
+        lim = 500
+
+    # Importante: pasar dates nativos a psycopg para evitar problemas de cast/binds (":d0::date").
+    d1_date = d0 + _dt.timedelta(days=n_days - 1)
+    params: dict[str, Any] = {
+        "d0": d0,
+        "d1": d1_date,
+        "lim": lim,
+    }
+    where_staff = ["s.is_active IS TRUE"]
+    if id_usuario is not None:
+        try:
+            params["uid"] = int(id_usuario)
+            where_staff.append("s.id_usuario = :uid")
+        except Exception:
+            pass
+    if q:
+        qq = str(q).strip()
+        if qq:
+            params["q"] = f"%{qq}%"
+            where_staff.append(
+                "(s.colaborador ILIKE :q OR COALESCE(s.rol,'') ILIKE :q OR COALESCE(s.rut,'') ILIKE :q OR COALESCE(s.email,'') ILIKE :q)"
+            )
+    staff_sql = " AND ".join(where_staff)
+
+    do_autofill = False
+    try:
+        do_autofill = bool(int(autofill_teorico or 0))
+    except Exception:
+        do_autofill = False
+
+    try:
+        rows = db.execute(
+            text(
+                f"""
+                WITH staff AS (
+                  SELECT
+                    s.id_staff,
+                    s.id_usuario,
+                    s.colaborador,
+                    s.rut,
+                    s.rol
+                  FROM public.rrhh_staff s
+                  WHERE {staff_sql}
+                  ORDER BY lower(s.colaborador) ASC, s.id_staff ASC
+                  LIMIT :lim
+                ),
+                days AS (
+                  SELECT d::date AS day
+                  FROM generate_series(:d0, :d1, interval '1 day') AS d
+                ),
+                grid AS (
+                  SELECT st.id_staff, st.id_usuario, st.colaborador, st.rut, st.rol, dy.day
+                  FROM staff st
+                  CROSS JOIN days dy
+                )
+                SELECT
+                  g.id_staff, g.id_usuario, g.colaborador, g.rut, g.rol,
+                  g.day,
+                  -- Turno esperado (más reciente aplicable al día)
+                  h.nombre AS turno_nombre,
+                  h.hora_entrada AS expected_in,
+                  h.hora_salida AS expected_out,
+                  h.colacion_auto AS colacion_auto,
+                  h.colacion_ini AS colacion_ini,
+                  h.colacion_fin AS colacion_fin,
+                  -- Marcaciones reales (primera IN, última OUT)
+                  m.actual_in,
+                  m.actual_out,
+                  m.marks_cnt,
+                  m.out_of_range_cnt,
+                  CASE
+                    WHEN m.actual_in IS NULL AND m.actual_out IS NULL THEN NULL
+                    WHEN m.actual_in IS NULL OR m.actual_out IS NULL THEN NULL
+                    ELSE GREATEST(0, floor(extract(epoch from (m.actual_out - m.actual_in))/60.0))
+                  END AS worked_min_raw
+                FROM grid g
+                LEFT JOIN LATERAL (
+                  SELECT t.nombre, t.hora_entrada, t.hora_salida, t.colacion_auto, t.colacion_ini, t.colacion_fin
+                  FROM rrhh_horarios hh
+                  JOIN rrhh_turnos t ON t.id_turno=hh.id_turno
+                  WHERE hh.id_staff=g.id_staff
+                    AND hh.is_active IS TRUE
+                    AND hh.desde <= g.day
+                    AND (hh.hasta IS NULL OR hh.hasta >= g.day)
+                    AND (
+                      hh.dow_mask IS NULL OR (
+                        ((hh.dow_mask >> (((extract(dow from g.day)::int + 6) % 7))) & 1) = 1
+                      )
+                    )
+                  ORDER BY hh.desde DESC, hh.id_horario DESC
+                  LIMIT 1
+                ) h ON TRUE
+                LEFT JOIN LATERAL (
+                  SELECT
+                    MIN(CASE WHEN upper(COALESCE(m.tipo,''))='IN'  AND COALESCE(m.ok,FALSE) IS TRUE THEN m.created_at END) AS actual_in,
+                    MAX(CASE WHEN upper(COALESCE(m.tipo,''))='OUT' AND COALESCE(m.ok,FALSE) IS TRUE THEN m.created_at END) AS actual_out,
+                    COUNT(1) AS marks_cnt,
+                    SUM(CASE WHEN COALESCE(m.ok,FALSE) IS TRUE AND COALESCE(m.within_radius, TRUE) IS FALSE THEN 1 ELSE 0 END) AS out_of_range_cnt
+                  FROM public.sgjo_marcaciones m
+                  WHERE m.id_usuario=g.id_usuario
+                    AND ((m.created_at AT TIME ZONE 'America/Santiago')::date = g.day)
+                ) m ON TRUE
+                ORDER BY lower(g.colaborador) ASC, g.id_staff ASC, g.day ASC
+                """
+            ),
+            params,
+        ).mappings().all()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        # Fallback portable (si la DB no soporta generate_series/LATERAL/AT TIME ZONE/ANY arrays)
+        staff_rows = db.execute(
+            text(
+                f"""
+                SELECT s.id_staff, s.id_usuario, s.colaborador, s.rut, s.rol
+                FROM public.rrhh_staff s
+                WHERE {staff_sql}
+                ORDER BY lower(s.colaborador) ASC, s.id_staff ASC
+                LIMIT :lim
+                """
+            ),
+            params,
+        ).mappings().all()
+        staff_ids = [int(r["id_staff"]) for r in staff_rows if str(r.get("id_staff") or "").isdigit()]
+        staff_uids = [int(r["id_usuario"]) for r in staff_rows if str(r.get("id_usuario") or "").isdigit()]
+
+        horarios_rows = []
+        if staff_ids:
+            # IN (...) con placeholders para compatibilidad (SQLite/MySQL/etc.)
+            sp = {f"s{i}": int(v) for i, v in enumerate(staff_ids)}
+            in_sql = ", ".join([f":s{i}" for i in range(len(staff_ids))])
+            horarios_rows = db.execute(
+                text(
+                    f"""
+                    SELECT hh.id_staff, hh.desde, hh.hasta, hh.dow_mask,
+                           t.nombre AS turno_nombre, t.hora_entrada AS expected_in, t.hora_salida AS expected_out,
+                           t.colacion_auto, t.colacion_ini, t.colacion_fin
+                    FROM rrhh_horarios hh
+                    JOIN rrhh_turnos t ON t.id_turno=hh.id_turno
+                    WHERE hh.is_active IS TRUE
+                      AND hh.id_staff IN ({in_sql})
+                      AND hh.desde <= :d1
+                      AND COALESCE(hh.hasta, :d1) >= :d0
+                    ORDER BY hh.id_staff ASC, hh.desde DESC
+                    """
+                ),
+                {**sp, "d0": str(d0), "d1": str(d1_date)},
+            ).mappings().all()
+
+        marks_rows = []
+        if staff_uids:
+            # Traemos marcaciones crudas del rango y agrupamos en Python para máxima compatibilidad.
+            up = {f"u{i}": int(v) for i, v in enumerate(staff_uids)}
+            uin_sql = ", ".join([f":u{i}" for i in range(len(staff_uids))])
+            d_end_excl = str(d0 + _dt.timedelta(days=n_days))
+            raw_marks = db.execute(
+                text(
+                    f"""
+                    SELECT m.id_usuario, m.created_at, m.tipo, m.ok, m.within_radius
+                    FROM public.sgjo_marcaciones m
+                    WHERE m.id_usuario IN ({uin_sql})
+                      AND m.created_at >= :d0
+                      AND m.created_at < :d2
+                    ORDER BY m.created_at ASC
+                    """
+                ),
+                {**up, "d0": str(d0), "d2": d_end_excl},
+            ).mappings().all()
+
+            # Agrupa por (uid, day) en zona America/Santiago usando zoneinfo si existe.
+            try:
+                from zoneinfo import ZoneInfo  # py3.9+
+                tz_cl = ZoneInfo("America/Santiago")
+            except Exception:
+                tz_cl = None
+            import datetime as _dt2
+
+            buckets: dict[tuple[int, str], dict[str, Any]] = {}
+            for rm in raw_marks:
+                try:
+                    uid2 = int(rm.get("id_usuario") or 0)
+                except Exception:
+                    continue
+                ts = rm.get("created_at")
+                # parse best-effort
+                dtv = None
+                if ts is None:
+                    continue
+                if isinstance(ts, _dt2.datetime):
+                    dtv = ts
+                else:
+                    try:
+                        s = str(ts)
+                        # normaliza Z
+                        if s.endswith("Z"):
+                            s = s[:-1] + "+00:00"
+                        dtv = _dt2.datetime.fromisoformat(s)
+                    except Exception:
+                        dtv = None
+                if dtv is None:
+                    continue
+                try:
+                    if tz_cl is not None:
+                        if dtv.tzinfo is None:
+                            dtv = dtv.replace(tzinfo=_dt2.timezone.utc)
+                        dloc = dtv.astimezone(tz_cl).date().isoformat()
+                    else:
+                        dloc = dtv.date().isoformat()
+                except Exception:
+                    dloc = dtv.date().isoformat()
+                key = (uid2, dloc)
+                b = buckets.get(key)
+                if not b:
+                    b = {"id_usuario": uid2, "day": dloc, "actual_in": None, "actual_out": None, "marks_cnt": 0, "out_of_range_cnt": 0}
+                    buckets[key] = b
+                b["marks_cnt"] = int(b.get("marks_cnt") or 0) + 1
+                okv = bool(rm.get("ok")) if rm.get("ok") is not None else False
+                if okv and (rm.get("within_radius") is False):
+                    b["out_of_range_cnt"] = int(b.get("out_of_range_cnt") or 0) + 1
+                t = str(rm.get("tipo") or "").upper()
+                if okv and t == "IN":
+                    if b["actual_in"] is None:
+                        b["actual_in"] = dtv
+                if okv and t == "OUT":
+                    b["actual_out"] = dtv
+            marks_rows = list(buckets.values())
+
+        horarios_by_staff: dict[int, list[dict[str, Any]]] = {}
+        for hr in horarios_rows:
+            sid = int(hr.get("id_staff") or 0)
+            if not sid:
+                continue
+            horarios_by_staff.setdefault(sid, []).append(dict(hr))
+
+        marks_by_key: dict[tuple[int, str], dict[str, Any]] = {}
+        for mr in marks_rows:
+            try:
+                uid2 = int(mr.get("id_usuario") or 0)
+            except Exception:
+                continue
+            day2 = str(mr.get("day"))
+            marks_by_key[(uid2, day2)] = dict(mr)
+
+        def _mask_days(mask: int | None) -> set[int]:
+            if mask is None:
+                return set(range(7))
+            s = set()
+            for k in range(7):
+                if int(mask) & (1 << k):
+                    s.add(k)
+            return s
+
+        rows = []
+        for st in staff_rows:
+            sid = int(st.get("id_staff") or 0)
+            uid2 = int(st.get("id_usuario") or 0) if str(st.get("id_usuario") or "").isdigit() else None
+            hrs = horarios_by_staff.get(sid, [])
+            for i in range(n_days):
+                day = d0 + _dt.timedelta(days=i)
+                hpick = None
+                for h0 in hrs:
+                    try:
+                        desde = h0.get("desde")
+                        hasta = h0.get("hasta")
+                        if desde and isinstance(desde, _dt.date) and day < desde:
+                            continue
+                        if hasta and isinstance(hasta, _dt.date) and day > hasta:
+                            continue
+                    except Exception:
+                        pass
+                    dm = h0.get("dow_mask")
+                    if int(day.weekday()) not in _mask_days(int(dm) if dm is not None else None):
+                        continue
+                    hpick = h0
+                    break
+                mk = marks_by_key.get((int(uid2 or 0), day.isoformat()), {}) if uid2 else {}
+                rows.append(
+                    {
+                        "id_staff": sid,
+                        "id_usuario": uid2,
+                        "colaborador": st.get("colaborador"),
+                        "rut": st.get("rut"),
+                        "rol": st.get("rol"),
+                        "day": day,
+                        "turno_nombre": (hpick.get("turno_nombre") if hpick else None),
+                        "expected_in": (hpick.get("expected_in") if hpick else None),
+                        "expected_out": (hpick.get("expected_out") if hpick else None),
+                        "colacion_auto": (hpick.get("colacion_auto") if hpick else None),
+                        "colacion_ini": (hpick.get("colacion_ini") if hpick else None),
+                        "colacion_fin": (hpick.get("colacion_fin") if hpick else None),
+                        "actual_in": mk.get("actual_in"),
+                        "actual_out": mk.get("actual_out"),
+                        "marks_cnt": mk.get("marks_cnt") or 0,
+                        "out_of_range_cnt": mk.get("out_of_range_cnt") or 0,
+                        "worked_min_raw": None,
+                    }
+                )
+
+    # Agrupa por colaborador
+    by_staff: dict[int, dict[str, Any]] = {}
+    days_list: list[str] = []
+    for r in rows:
+        day = str(r.get("day"))
+        if not days_list or days_list[-1] != day:
+            # rows vienen ordenadas por day dentro de cada staff, pero se repiten por staff.
+            pass
+    # construir days_list determinística
+    days_list = [str(d0 + _dt.timedelta(days=i)) for i in range(n_days)]
+    # weeks (lunes-domingo) dentro del rango
+    weeks: list[dict[str, Any]] = []
+    try:
+        # week_start para un día
+        def _ws(day: _dt.date) -> _dt.date:
+            return day - _dt.timedelta(days=int(day.weekday()))
+        seen = set()
+        for d in [d0 + _dt.timedelta(days=i) for i in range(n_days)]:
+            ws = _ws(d)
+            if ws in seen:
+                continue
+            seen.add(ws)
+            we = ws + _dt.timedelta(days=6)
+            weeks.append({"week_start": ws.isoformat(), "week_end": we.isoformat()})
+        weeks.sort(key=lambda x: x["week_start"])
+    except Exception:
+        weeks = []
+
+    def _hhmm_to_min(v: Any) -> int | None:
+        try:
+            s = str(v or "").strip()
+            if not s or ":" not in s:
+                return None
+            hh, mm = s.split(":")[:2]
+            return int(hh) * 60 + int(mm)
+        except Exception:
+            return None
+
+    def _fmt_hhmm_dt(ts: Any) -> str | None:
+        if ts is None:
+            return None
+        try:
+            # ts viene timestamptz: lo pasamos a string HH:MM (server)
+            s = str(ts)
+            # formatos típicos: 2026-05-12 10:58:00-04
+            if " " in s:
+                t = s.split(" ", 1)[1]
+                t = t.split("+", 1)[0].split("-", 1)[0]
+                parts = t.split(":")
+                return f"{parts[0]}:{parts[1]}"
+            return None
+        except Exception:
+            return None
+
+    def _default_turno_for_role(role_name: Any) -> dict[str, Any] | None:
+        """
+        Fallback teórico cuando NO hay turno asignado:
+        - Ejecutivos / Marketing / Diseño: 09:00 → 18:30 con colación auto 60m (13:30–14:30).
+        - Operaciones: no forzamos (debe venir asignado).
+        """
+        r0 = str(role_name or "").strip().upper()
+        if not r0:
+            return None
+        if ("EJECUTIV" in r0) or ("MARKETING" in r0) or ("DISEÑ" in r0) or ("DISEN" in r0) or ("MKT" in r0) or ("DISEÑO" in r0):
+            return {
+                "turno": "BASE 09:00-18:30",
+                "expected_in": "09:00",
+                "expected_out": "18:30",
+                "colacion_auto": True,
+                "colacion_ini": "13:30",
+                "colacion_fin": "14:30",
+            }
+        return None
+
+    for r in rows:
+        sid = int(r.get("id_staff") or 0)
+        if not sid:
+            continue
+        st = by_staff.get(sid)
+        if not st:
+            st = {
+                "id_staff": sid,
+                "id_usuario": int(r.get("id_usuario") or 0) if str(r.get("id_usuario") or "").isdigit() else None,
+                "colaborador": r.get("colaborador"),
+                "rut": r.get("rut"),
+                "rol": r.get("rol"),
+                "days": {},
+            }
+            by_staff[sid] = st
+        day = str(r.get("day"))
+
+        exp_in = r.get("expected_in")
+        exp_out = r.get("expected_out")
+        turno_nombre = r.get("turno_nombre")
+        col_auto = r.get("colacion_auto")
+        col_ini = r.get("colacion_ini")
+        col_fin = r.get("colacion_fin")
+        if (exp_in is None and exp_out is None) and (turno_nombre in (None, "", "—")):
+            fb = _default_turno_for_role(r.get("rol"))
+            if fb:
+                exp_in = fb.get("expected_in")
+                exp_out = fb.get("expected_out")
+                turno_nombre = turno_nombre or fb.get("turno")
+                if col_auto is None:
+                    col_auto = bool(fb.get("colacion_auto"))
+                col_ini = col_ini or fb.get("colacion_ini")
+                col_fin = col_fin or fb.get("colacion_fin")
+        exp_in_min = _hhmm_to_min(exp_in)
+        exp_out_min = _hhmm_to_min(exp_out)
+        exp_work_min = None
+        if exp_in_min is not None and exp_out_min is not None:
+            span = exp_out_min - exp_in_min
+            if span < 0:
+                span += 24 * 60
+            exp_work_min = max(0, int(span))
+            if bool(col_auto):
+                ci = _hhmm_to_min(col_ini)
+                cf = _hhmm_to_min(col_fin)
+                if ci is not None and cf is not None:
+                    lunch = cf - ci
+                    if lunch < 0:
+                        lunch += 24 * 60
+                    if lunch > 0 and exp_work_min >= lunch:
+                        exp_work_min -= int(lunch)
+
+        raw = r.get("worked_min_raw")
+        worked_min = None
+        if raw is not None and str(raw).strip() != "":
+            try:
+                worked_min = int(float(raw))
+            except Exception:
+                worked_min = None
+        # si el turno tiene colación auto, también se descuenta (si hay suficientes minutos)
+        if worked_min is not None and bool(col_auto):
+            ci = _hhmm_to_min(col_ini)
+            cf = _hhmm_to_min(col_fin)
+            if ci is not None and cf is not None:
+                lunch = cf - ci
+                if lunch < 0:
+                    lunch += 24 * 60
+                if lunch > 0 and worked_min >= (lunch + 30):
+                    worked_min = max(0, worked_min - int(lunch))
+
+        actual_in_hhmm = _fmt_hhmm_dt(r.get("actual_in"))
+        actual_out_hhmm = _fmt_hhmm_dt(r.get("actual_out"))
+
+        missing_in = (actual_in_hhmm is None) and (actual_out_hhmm is not None)
+        missing_out = (actual_out_hhmm is None) and (actual_in_hhmm is not None)
+        missing_both = (actual_in_hhmm is None) and (actual_out_hhmm is None)
+
+        # Autofill (solo vista): si no hay marcas reales, tomar teórico como trabajado para cerrar semana.
+        # OJO: no persiste en DB; deja trazabilidad con flags.
+        autofilled = False
+        if do_autofill and exp_work_min is not None and (missing_in or missing_out or missing_both):
+            autofilled = True
+            if worked_min is None:
+                worked_min = exp_work_min
+            if actual_in_hhmm is None:
+                actual_in_hhmm = exp_in
+            if actual_out_hhmm is None:
+                actual_out_hhmm = exp_out
+
+        # Para vista planificador: mostrar siempre un IN/OUT (si hay turno teórico).
+        # No modifica marcaciones reales: se expone en campos "shown_*".
+        shown_in = actual_in_hhmm or exp_in
+        shown_out = actual_out_hhmm or exp_out
+        shown_is_theoretical_in = (actual_in_hhmm is None) and (exp_in is not None)
+        shown_is_theoretical_out = (actual_out_hhmm is None) and (exp_out is not None)
+        shown_worked_min = worked_min if worked_min is not None else exp_work_min
+        needs_desvio = bool(missing_in or missing_out or missing_both) and (not autofilled)
+
+        st["days"][day] = {
+            "turno": turno_nombre,
+            "expected_in": exp_in,
+            "expected_out": exp_out,
+            "expected_worked_min": exp_work_min,
+            "actual_in": actual_in_hhmm,
+            "actual_out": actual_out_hhmm,
+            "worked_min": worked_min,
+            "shown_in": shown_in,
+            "shown_out": shown_out,
+            "shown_worked_min": shown_worked_min,
+            "shown_is_theoretical_in": bool(shown_is_theoretical_in),
+            "shown_is_theoretical_out": bool(shown_is_theoretical_out),
+            "autofilled_teorico": bool(autofilled),
+            "marks_cnt": int(r.get("marks_cnt") or 0),
+            "out_of_range_cnt": int(r.get("out_of_range_cnt") or 0),
+            "missing_in": bool(missing_in),
+            "missing_out": bool(missing_out),
+            "missing_both": bool(missing_both),
+            "needs_desvio": needs_desvio,
+        }
+
+    # Week totals por colaborador
+    try:
+        for st in by_staff.values():
+            wrows = []
+            for w in weeks:
+                ws = str(w.get("week_start") or "")
+                we = str(w.get("week_end") or "")
+                exp_sum = 0
+                real_sum = 0
+                miss = 0
+                oor = 0
+                for day in days_list:
+                    if day < ws or day > we:
+                        continue
+                    x = (st.get("days") or {}).get(day) or {}
+                    ev = x.get("expected_worked_min")
+                    rv = x.get("worked_min")
+                    if ev is not None:
+                        try: exp_sum += int(ev)
+                        except Exception: pass
+                    if rv is not None:
+                        try: real_sum += int(rv)
+                        except Exception: pass
+                    if x.get("missing_in") or x.get("missing_out") or x.get("missing_both"):
+                        miss += 1
+                    try:
+                        if int(x.get("out_of_range_cnt") or 0) > 0:
+                            oor += 1
+                    except Exception:
+                        pass
+                wrows.append(
+                    {
+                        "week_start": ws,
+                        "week_end": we,
+                        "expected_min": exp_sum,
+                        "worked_min": real_sum,
+                        "missing_days": miss,
+                        "oor_days": oor,
+                    }
+                )
+            st["weeks"] = wrows
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "week_start": str(d0),
+        "month": (str(month or "").strip()[:7] if month else None),
+        "days": days_list,
+        "weeks": weeks,
+        "items": list(by_staff.values()),
+    }
+
+
+@router.get("/marcaciones/me/plan")
+def marcaciones_me_plan(
+    month: str | None = None,  # YYYY-MM
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Visor de turnos (colaborador):
+    - Mes (YYYY-MM) por defecto mes actual.
+    - Devuelve por día: turno teórico + IN/OUT real + horas trabajadas estimadas.
+    """
+    _ensure_tables(db)
+    uid = _user_id(me)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Usuario inválido")
+
+    import datetime as _dt
+
+    ym = (str(month or "").strip()[:7]) if month else ""
+    if not ym:
+        now_cl = _dt.datetime.now(_dt.timezone.utc).astimezone(_dt.timezone(_dt.timedelta(hours=-4)))
+        ym = now_cl.strftime("%Y-%m")
+    try:
+        y = int(ym.split("-")[0]); m = int(ym.split("-")[1])
+        if m < 1 or m > 12:
+            raise ValueError()
+        month_start = _dt.date(y, m, 1)
+    except Exception:
+        raise HTTPException(status_code=400, detail="month inválido (YYYY-MM)")
+    month_end = (month_start.replace(day=28) + _dt.timedelta(days=4)).replace(day=1)  # end exclusive
+
+    def _default_turno_for_role(role_name: Any) -> dict[str, Any] | None:
+        r0 = str(role_name or "").strip().upper()
+        if not r0:
+            return None
+        if ("EJECUTIV" in r0) or ("MARKETING" in r0) or ("DISEÑ" in r0) or ("DISEN" in r0) or ("MKT" in r0) or ("DISEÑO" in r0):
+            return {
+                "nombre": "BASE 09:00-18:30",
+                "hora_entrada": "09:00",
+                "hora_salida": "18:30",
+                "colacion_auto": True,
+                "colacion_ini": "13:30",
+                "colacion_fin": "14:30",
+                "dow_mask": None,
+                "desde": month_start,
+                "hasta": None,
+            }
+        return None
+
+    staff = db.execute(
+        text(
+            """
+            SELECT id_staff, colaborador, rut, rol, email
+            FROM rrhh_staff
+            WHERE is_active IS TRUE AND id_usuario=:u
+            ORDER BY id_staff DESC
+            LIMIT 1
+            """
+        ),
+        {"u": int(uid)},
+    ).mappings().first()
+    if not staff:
+        # No está vinculado a rrhh_staff: igual devolvemos marcaciones reales + teórico base por rol si aplica.
+        role_guess = me.get("role") or me.get("rol") or ""
+        staff = {
+            "id_staff": None,
+            "colaborador": me.get("nombre") or me.get("name") or me.get("username") or me.get("email") or None,
+            "rut": None,
+            "rol": role_guess,
+            "email": me.get("email") or None,
+        }
+        horarios = []
+        fb = _default_turno_for_role(role_guess)
+        if fb:
+            horarios = [fb]
+        else:
+            horarios = []
+        # seguimos: marks reales del mes + esperado si fb.
+        id_staff = None
+    else:
+        id_staff = int(staff.get("id_staff"))
+
+    # Cargar horarios que intersectan el mes (si hay rrhh_staff)
+    if id_staff is not None:
+        horarios = db.execute(
+            text(
+                """
+                SELECT hh.id_turno, hh.desde, hh.hasta, hh.dow_mask,
+                       t.nombre, t.hora_entrada, t.hora_salida, COALESCE(t.colacion_auto, TRUE) AS colacion_auto,
+                       t.colacion_ini, t.colacion_fin
+                FROM rrhh_horarios hh
+                JOIN rrhh_turnos t ON t.id_turno=hh.id_turno
+                WHERE hh.is_active IS TRUE
+                  AND hh.id_staff=:s
+                  AND hh.desde <= :me
+                  AND COALESCE(hh.hasta, :me) >= :ms
+                """
+            ),
+            {"s": id_staff, "ms": month_start, "me": month_end - _dt.timedelta(days=1)},
+        ).mappings().all()
+
+    def _mask_days(mask: int | None) -> set[int]:
+        if mask is None:
+            return set(range(7))
+        s = set()
+        for k in range(7):
+            if int(mask) & (1 << k):
+                s.add(k)
+        return s
+
+    def _hhmm_to_min(v):
+        try:
+            s = str(v or "").strip()
+            if not s or ":" not in s:
+                return None
+            hh, mm = s.split(":")[:2]
+            return int(hh) * 60 + int(mm)
+        except Exception:
+            return None
+
+    # Marcaciones ok del mes
+    marks = db.execute(
+        text(
+            """
+            SELECT
+              (m.created_at AT TIME ZONE 'America/Santiago')::date AS day,
+              MIN(CASE WHEN upper(COALESCE(m.tipo,''))='IN'  AND COALESCE(m.ok,FALSE) IS TRUE THEN m.created_at END) AS actual_in,
+              MAX(CASE WHEN upper(COALESCE(m.tipo,''))='OUT' AND COALESCE(m.ok,FALSE) IS TRUE THEN m.created_at END) AS actual_out,
+              COUNT(1) AS marks_cnt,
+              SUM(CASE WHEN COALESCE(m.ok,FALSE) IS TRUE AND COALESCE(m.within_radius, TRUE) IS FALSE THEN 1 ELSE 0 END) AS out_of_range_cnt
+            FROM public.sgjo_marcaciones m
+            WHERE m.id_usuario=:u
+              AND (m.created_at AT TIME ZONE 'America/Santiago')::date >= :ms
+              AND (m.created_at AT TIME ZONE 'America/Santiago')::date < :me
+            GROUP BY (m.created_at AT TIME ZONE 'America/Santiago')::date
+            """
+        ),
+        {"u": int(uid), "ms": month_start, "me": month_end},
+    ).mappings().all()
+    marks_by_day = {str(r["day"]): dict(r) for r in marks}
+
+    def _fmt_hhmm_dt(ts):
+        if ts is None:
+            return None
+        try:
+            s = str(ts)
+            if " " in s:
+                t = s.split(" ", 1)[1]
+                t = t.split("+", 1)[0].split("-", 1)[0]
+                parts = t.split(":")
+                return f"{parts[0]}:{parts[1]}"
+            return None
+        except Exception:
+            return None
+
+    out_days = []
+    d = month_start
+    while d < month_end:
+        dow = int(d.weekday())
+        # turno aplicable: el más reciente por desde/id_horario (simulado por desde)
+        turno = None
+        for h in horarios:
+            try:
+                desde = h.get("desde")
+                hasta = h.get("hasta")
+                if desde and isinstance(desde, _dt.date) and d < desde:
+                    continue
+                if hasta and isinstance(hasta, _dt.date) and d > hasta:
+                    continue
+            except Exception:
+                pass
+            dm = h.get("dow_mask")
+            if dow not in _mask_days(int(dm) if dm is not None else None):
+                continue
+            turno = h  # last wins (orden query no garantiza, pero sirve como best-effort)
+        mk = marks_by_day.get(d.isoformat()) or {}
+        actual_in = _fmt_hhmm_dt(mk.get("actual_in"))
+        actual_out = _fmt_hhmm_dt(mk.get("actual_out"))
+
+        worked_min = None
+        try:
+            ai = mk.get("actual_in"); ao = mk.get("actual_out")
+            if ai and ao:
+                # diferencia en minutos (texto -> datetime lo maneja PG)
+                # mk trae timestamps, pero ya como str; best-effort: no calculamos exacto aquí
+                pass
+        except Exception:
+            pass
+        # preferimos el cálculo desde strings hh:mm para UI simple
+        if actual_in and actual_out:
+            mi = _hhmm_to_min(actual_in); mo = _hhmm_to_min(actual_out)
+            if mi is not None and mo is not None:
+                span = mo - mi
+                if span < 0:
+                    span += 24 * 60
+                worked_min = max(0, int(span))
+        if worked_min is not None and turno and bool(turno.get("colacion_auto")):
+            ci = _hhmm_to_min(turno.get("colacion_ini")); cf = _hhmm_to_min(turno.get("colacion_fin"))
+            if ci is not None and cf is not None:
+                lunch = cf - ci
+                if lunch < 0:
+                    lunch += 24 * 60
+                if lunch > 0 and worked_min >= (lunch + 30):
+                    worked_min = max(0, worked_min - int(lunch))
+
+        exp_work_min = None
+        if turno:
+            mi = _hhmm_to_min(turno.get("hora_entrada")); mo = _hhmm_to_min(turno.get("hora_salida"))
+            if mi is not None and mo is not None:
+                span = mo - mi
+                if span < 0:
+                    span += 24 * 60
+                exp_work_min = max(0, int(span))
+                if bool(turno.get("colacion_auto")):
+                    ci = _hhmm_to_min(turno.get("colacion_ini")); cf = _hhmm_to_min(turno.get("colacion_fin"))
+                    if ci is not None and cf is not None:
+                        lunch = cf - ci
+                        if lunch < 0:
+                            lunch += 24 * 60
+                        if lunch > 0 and exp_work_min >= lunch:
+                            exp_work_min -= int(lunch)
+
+        out_days.append(
+            {
+                "day": d.isoformat(),
+                "turno": (turno.get("nombre") if turno else None),
+                "expected_in": (turno.get("hora_entrada") if turno else None),
+                "expected_out": (turno.get("hora_salida") if turno else None),
+                "expected_worked_min": exp_work_min,
+                "actual_in": actual_in,
+                "actual_out": actual_out,
+                "worked_min": worked_min,
+                "marks_cnt": int(mk.get("marks_cnt") or 0),
+                "out_of_range_cnt": int(mk.get("out_of_range_cnt") or 0),
+            }
+        )
+        d += _dt.timedelta(days=1)
+
+    return {
+        "ok": True,
+        "month": ym,
+        "colaborador": staff.get("colaborador"),
+        "rol": staff.get("rol"),
+        "days": out_days,
+    }
 
 
 @router.get("/nomina/fields")
@@ -3992,6 +4908,59 @@ def staff_update(id_staff: int, body: dict, db: Session = Depends(get_db), me: d
     except Exception as e:
         db.rollback()
         return {"ok": False, "detail": str(e)}
+
+
+@router.post("/staff/{id_staff}/deactivate")
+def staff_deactivate(
+    id_staff: int,
+    body: dict | None = None,
+    db: Session = Depends(get_db),
+    me: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Marca colaborador como inactivo (renuncia / baja) para que no aparezca en Nómina/Staff.
+    Visible para Admin RRHH.
+    """
+    _ensure_tables(db)
+    _require_rrhh_admin(me)
+    reason = ""
+    try:
+        if isinstance(body, dict):
+            reason = str(body.get("reason") or "").strip()
+    except Exception:
+        reason = ""
+    row = db.execute(
+        text("SELECT id_staff, colaborador, COALESCE(is_active, TRUE) AS is_active FROM rrhh_staff WHERE id_staff=:id LIMIT 1"),
+        {"id": int(id_staff)},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Colaborador no existe")
+    if not bool(row.get("is_active", True)):
+        return {"ok": True, "id_staff": int(id_staff), "already_inactive": True}
+    # Guardar motivo en observaciones (append) sin romper datos existentes.
+    try:
+        if reason:
+            db.execute(
+                text(
+                    """
+                    UPDATE rrhh_staff
+                    SET is_active=FALSE,
+                        observaciones = CASE
+                          WHEN observaciones IS NULL OR btrim(observaciones)='' THEN :obs
+                          ELSE (observaciones || E'\\n' || :obs)
+                        END
+                    WHERE id_staff=:id
+                    """
+                ),
+                {"id": int(id_staff), "obs": f"BAJA {datetime.date.today().isoformat()}: {reason}"},
+            )
+        else:
+            db.execute(text("UPDATE rrhh_staff SET is_active=FALSE WHERE id_staff=:id"), {"id": int(id_staff)})
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"No se pudo dar de baja: {type(e).__name__}: {str(e)[:160]}")
+    return {"ok": True, "id_staff": int(id_staff), "colaborador": str(row.get('colaborador') or '')}
 
 
 @router.delete("/staff/{id_staff}")

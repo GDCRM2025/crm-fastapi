@@ -1686,6 +1686,8 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
         raise HTTPException(400, "id_estado requerido")
 
     motivo = (payload.get("motivo") or "").strip()
+    # Compat: el frontend antiguo a veces no manda undo_preagenda al sacar de CONFIRMADO.
+    # Regla negocio: si sale de CONFIRMADO, limpiamos pre-agenda y borramos evento(s) de Calendar (best-effort).
     undo_preagenda = bool(payload.get("undo_preagenda", False))
 
     # Asegurar columna de seguimiento (si el usuario DB permite DDL).
@@ -1710,6 +1712,23 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
         ).mappings().first()
         if not estado_row:
             raise HTTPException(400, "Estado inválido")
+
+        # Auto-undo preagenda al salir de CONFIRMADO (si no viene explicitado).
+        if not undo_preagenda:
+            try:
+                conf_id = conn.execute(
+                    text(
+                        "SELECT id_estado FROM public.estados_lead WHERE upper(nombre) LIKE 'CONFIRM%' ORDER BY id_estado LIMIT 1"
+                    )
+                ).scalar()
+                conf_id = int(conf_id) if conf_id is not None else None
+            except Exception:
+                conf_id = None
+            try:
+                if conf_id and old_estado and int(old_estado) == int(conf_id) and int(id_estado) != int(conf_id):
+                    undo_preagenda = True
+            except Exception:
+                pass
 
         # No permitir "Cotizado" si no hay monto + N° cotización.
         # Si existe una cotización en tabla, intentamos auto-llenar estos campos en el lead para evitar fricción.
@@ -1797,12 +1816,14 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             num = (row.get("num") or "").strip() if row else ""
             if monto <= 0 or not num:
                 raise HTTPException(400, "No se puede CONFIRMAR sin monto y número de cotización.")
-            # Regla negocio: no permitir CONFIRMAR si no está agendado (calendar_event_id + agenda_approved_at).
-            # La confirmación debe hacerse por el flujo de agenda (/leads/{id}/move con agendar=true o /tools/agenda/{id}/approve).
+            # Regla negocio: no permitir CONFIRMAR si no está agendado (calendar_event_id + agenda_approved_at),
+            # PERO si viene por el flujo de agenda (agendar=true) debemos permitir pasar por acá
+            # porque el mismo request se encarga de preparar/crear Calendar.
             try:
                 cal_eid = (row.get("calendar_event_id") or "").strip() if row else ""
                 appr = row.get("agenda_approved_at") if row else None
-                if not cal_eid or appr is None:
+                agendar = bool(payload.get("agendar"))
+                if (not agendar) and (not cal_eid or appr is None):
                     raise HTTPException(
                         409,
                         "No se puede CONFIRMAR sin agendar en Calendar. Usa el botón de Agendar/Confirmar (Agenda).",
@@ -1983,12 +2004,26 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                 try:
                     cid = None
                     try:
-                        cid = conn.execute(
-                            text("SELECT id_cotizacion FROM public.cotizaciones WHERE id_lead=:id ORDER BY id_cotizacion DESC LIMIT 1"),
-                            {"id": int(id_lead)},
-                        ).scalar()
+                        # Preferir cotización vigente del lead (si existe) para no tomar "la última" por error.
+                        if "id_cotizacion_vigente" in _cols_for("leads"):
+                            cid = conn.execute(
+                                text("SELECT id_cotizacion_vigente FROM public.leads WHERE id_lead=:id LIMIT 1"),
+                                {"id": int(id_lead)},
+                            ).scalar()
                     except Exception:
                         cid = None
+
+                    if not cid:
+                        try:
+                            cid = conn.execute(
+                                text(
+                                    "SELECT id_cotizacion FROM public.cotizaciones WHERE id_lead=:id ORDER BY id_cotizacion DESC LIMIT 1"
+                                ),
+                                {"id": int(id_lead)},
+                            ).scalar()
+                        except Exception:
+                            cid = None
+
                     if cid:
                         rows_it = conn.execute(
                             text(

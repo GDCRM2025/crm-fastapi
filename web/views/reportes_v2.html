@@ -181,6 +181,50 @@
     .tbl.tblTotals td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .tbl.tblTotals td:first-child,
     .tbl.tblTotals th:first-child{white-space:nowrap;}
+    .tbl.tblTotals th.right,
+    .tbl.tblTotals td.right{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace;}
+
+    /* Comparativo Total (grid) — alineación perfecta en todos los navegadores */
+    .totalsGrid{
+      display:block;
+      width:100%;
+      border:1px solid color-mix(in srgb, var(--border) 48%, transparent);
+      border-radius:14px;
+      overflow:auto; /* si la pantalla es chica, scroll horizontal antes que cortar números */
+      background: rgba(2,6,23,.10);
+    }
+    .totalsHead, .totalsRow{
+      display:grid;
+      align-items:center;
+      column-gap:0;
+    }
+    .totalsHead{
+      position:sticky;
+      top:0;
+      z-index:3;
+      background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 92%, transparent), color-mix(in srgb, var(--surface-2) 72%, transparent));
+      border-bottom:1px solid color-mix(in srgb, var(--border) 55%, transparent);
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.12em;
+      opacity:.84;
+      font-weight:1050;
+    }
+    .totalsCell{
+      padding:8px 10px;
+      overflow:visible;
+      text-overflow:clip;
+      white-space:nowrap;
+      border-bottom:1px solid color-mix(in srgb, var(--border) 40%, transparent);
+    }
+    .totalsRow:last-child .totalsCell{ border-bottom:0; }
+    .totalsCell.num{
+      text-align:right;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace;
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: \"tnum\" 1, \"lnum\" 1;
+    }
+    .totalsRow:hover{ background: rgba(255,255,255,.03); }
 
     /* Barras minimalistas dentro de tablas */
     .barcell{min-width:220px;}
@@ -481,8 +525,10 @@
     const money = (n) => {
       const v = Number(n||0);
       const vv = isFinite(v) ? Math.round(v) : 0;
-      if (__nfCL) return `$${__nfCL.format(vv)}`;
-      return "$" + String(vv);
+      const sign = (vv < 0) ? "-" : "";
+      const abs = Math.abs(vv);
+      if (__nfCL) return `${sign}$${__nfCL.format(abs)}`;
+      return `${sign}$` + String(abs);
     };
 
     // Colores por marca (para barras por marca en Reportes)
@@ -1881,55 +1927,70 @@
 	          ]
 	        }, true);
       })();
+      // Usa todo el ancho; si no alcanza, scroll horizontal (sin cortar números).
+      const gridCols = [
+        "minmax(180px, 1.4fr)",                 // Marca
+        ...yearCols.map(()=> "minmax(140px, 1fr)"), // años
+        "minmax(90px, .7fr)",                   // YoY
+        "minmax(140px, 1fr)",                   // Meta
+        "minmax(100px, .7fr)",                  // % Meta
+        "minmax(140px, 1fr)",                   // Base
+        "minmax(160px, 1fr)",                   // Δ vs Meta
+        ...(hasTras ? ["minmax(140px, 1fr)","minmax(140px, 1fr)","minmax(140px, 1fr)"] : [])
+      ].join(" ");
+
+      const headCells = [
+        `<div class="totalsCell"><strong>Marca</strong></div>`,
+        ...yearCols.map(y => `<div class="totalsCell num"><strong>${esc(String(y))}</strong></div>`),
+        `<div class="totalsCell num"><strong>YoY</strong></div>`,
+        `<div class="totalsCell num"><strong>Meta</strong></div>`,
+        `<div class="totalsCell num"><strong>% Meta</strong></div>`,
+        `<div class="totalsCell num"><strong>Base</strong></div>`,
+        `<div class="totalsCell num"><strong>Δ vs Meta</strong></div>`,
+        ...(hasTras ? [
+          `<div class="totalsCell num"><strong>Traslado</strong></div>`,
+          `<div class="totalsCell num"><strong>Costo</strong></div>`,
+          `<div class="totalsCell num"><strong>Margen</strong></div>`,
+        ] : [])
+      ].join("");
+
+      const bodyRows = items.map(r => {
+        const a = Number(r.actual||0);
+        const b = Number(r.baseline ?? r.base ?? 0);
+        const m = Number(r.meta ?? r.target ?? 0);
+        const ly = Number(r.actual_ly || 0);
+        const d = a - m;
+        const pct = m ? (a / m * 100) : 0;
+        const yoy = ly ? ((a / ly - 1) * 100) : null;
+        const trC = Number(r.traslado_cobrado||0);
+        const trK = Number(r.traslado_costo||0);
+        const trM = Number(r.traslado_margen||0);
+        const ym = (r && typeof r === "object" && r.years && typeof r.years === "object") ? r.years : {};
+
+        const cells = [
+          `<div class="totalsCell"><strong>${esc(r.marca||"—")}</strong></div>`,
+          ...yearCols.map(y => `<div class="totalsCell num">${esc(money(ym?.[String(y)] ?? ym?.[y] ?? (y===yCur?a:(y===yLy?ly:0))))}</div>`),
+          `<div class="totalsCell num">${esc(yoy===null?"—":(yoy.toFixed(1)+"%"))}</div>`,
+          `<div class="totalsCell num">${esc(money(m))}</div>`,
+          `<div class="totalsCell num">${esc(pct.toFixed(1))}%</div>`,
+          `<div class="totalsCell num">${esc(money(b))}</div>`,
+          `<div class="totalsCell num">${esc(money(d))}</div>`,
+          ...(hasTras ? [
+            `<div class="totalsCell num">${esc(money(trC))}</div>`,
+            `<div class="totalsCell num">${esc(money(trK))}</div>`,
+            `<div class="totalsCell num">${esc(money(trM))}</div>`,
+          ] : [])
+        ].join("");
+
+        return `<div class="totalsRow" style="grid-template-columns:${esc(gridCols)}">${cells}</div>`;
+      }).join("");
+
       box.innerHTML = `
         <div style="max-height:420px;overflow:auto">
-          <table class="tbl tblTotals">
-            <colgroup>
-              <col style="width:180px" />
-              ${yearCols.map(()=>`<col style="width:120px" />`).join("")}
-              <col style="width:90px" />
-              <col style="width:120px" />
-              <col style="width:90px" />
-              <col style="width:120px" />
-              <col style="width:130px" />
-              ${hasTras?'<col style="width:120px" /><col style="width:120px" /><col style="width:120px" />':''}
-            </colgroup>
-            <thead><tr>
-              <th>Marca</th>
-              ${yearCols.map(y => `<th class="right">${esc(String(y))}</th>`).join("")}
-              <th class="right">YoY</th>
-              <th class="right">Meta</th>
-              <th class="right">% Meta</th>
-              <th class="right">Base</th>
-              <th class="right">Δ vs Meta</th>
-              ${hasTras?'<th class="right">Traslado</th><th class="right">Costo</th><th class="right">Margen</th>':''}
-            </tr></thead>
-            <tbody>
-              ${items.map(r => {
-                const a = Number(r.actual||0);
-                const b = Number(r.baseline ?? r.base ?? 0);
-                const m = Number(r.meta ?? r.target ?? 0);
-                const ly = Number(r.actual_ly || 0);
-                const d = a - m;
-                const pct = m ? (a / m * 100) : 0;
-                const yoy = ly ? ((a / ly - 1) * 100) : null;
-                const trC = Number(r.traslado_cobrado||0);
-                const trK = Number(r.traslado_costo||0);
-                const trM = Number(r.traslado_margen||0);
-                const ym = (r && typeof r === "object" && r.years && typeof r.years === "object") ? r.years : {};
-                return `<tr>
-                  <td><strong>${esc(r.marca||"—")}</strong></td>
-                  ${yearCols.map(y => `<td class="right">${esc(money(ym?.[String(y)] ?? ym?.[y] ?? (y===yCur?a:(y===yLy?ly:0))))}</td>`).join("")}
-                  <td class="right">${esc(yoy===null?"—":(yoy.toFixed(1)+"%"))}</td>
-                  <td class="right">${esc(money(m))}</td>
-                  <td class="right">${esc(pct.toFixed(1))}%</td>
-                  <td class="right">${esc(money(b))}</td>
-                  <td class="right">${esc(money(d))}</td>
-                  ${hasTras?`<td class="right">${esc(money(trC))}</td><td class="right">${esc(money(trK))}</td><td class="right">${esc(money(trM))}</td>`:""}
-                </tr>`;
-              }).join("")}
-            </tbody>
-          </table>
+          <div class="totalsGrid">
+            <div class="totalsHead" style="grid-template-columns:${esc(gridCols)}">${headCells}</div>
+            ${bodyRows || `<div class=\"totalsRow\" style=\"grid-template-columns:${esc(gridCols)}\"><div class=\"totalsCell\">Sin datos.</div></div>`}
+          </div>
         </div>
       `;
     }
