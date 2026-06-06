@@ -326,7 +326,7 @@
   qs("#mask").addEventListener("click", (ev)=>{ if(ev.target.id==="mask") closeModal(); });
 
   const params = new URLSearchParams(location.search);
-  const entity = (params.get("entity") || "usuarios").trim();
+  const entity = (params.get("entity") || "usuarios").trim() || "usuarios";
   let meUser = null;
 
   const state = {
@@ -667,6 +667,318 @@
       if (offset >= maxItems) break;
     }
     return all;
+  }
+
+  async function loadNotifyEmail(){
+    qs("#title").textContent = "Settings · Notificaciones (correo)";
+    qs("#subtitle").textContent = "Ruteo por proceso (To/CC/BCC).";
+    try{
+      qs("#btnAdd").style.display = "none";
+      qs("#btnMore").style.display = "none";
+      qs("#btnPwdReq").style.display = "none";
+      qs("#btnPwdAdmin").style.display = "none";
+      qs("#sortDir").style.display = "none";
+      qs("#sortCol").style.display = "none";
+    }catch(_){}
+
+    const [resP, resU, resR] = await Promise.all([
+      api("/admin/notify_routes/email/processes"),
+      api("/admin/notify_routes/email/users"),
+      api("/admin/notify_routes/email/roles"),
+    ]);
+    const procs = resP.items || [];
+    const users = resU.items || [];
+    const roles = resR.items || [];
+
+    const esc = (s)=>String(s||"").replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
+    const roleKey = (r)=>String(r||"").toUpperCase().trim();
+
+    // tabla “vacía” y render custom dentro
+    qs("#th").innerHTML = "<th></th>";
+    qs("#body").innerHTML = `
+      <tr><td style="padding:0; border-bottom:0;">
+        <div style="display:grid; grid-template-columns: 320px 1fr; gap:12px; padding:12px;">
+          <div class="card" style="margin:0; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+              <div style="font-weight:900">Procesos</div>
+              <button class="btn" id="btnProcReload" type="button" style="padding:6px 10px;border-radius:999px;">↻</button>
+            </div>
+            <div class="muted" style="margin-top:6px;">Selecciona qué notificar.</div>
+            <div style="margin-top:10px;">
+              <input id="procQ" placeholder="Buscar proceso..." style="width:100%;" />
+            </div>
+            <div id="procList" style="margin-top:10px; display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow:auto;"></div>
+          </div>
+
+          <div class="card" style="margin:0; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+              <div>
+                <div id="procTitle" style="font-weight:900; font-size:16px;">Selecciona un proceso</div>
+                <div id="procKey" class="muted" style="margin-top:4px;"></div>
+              </div>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <label class="muted" style="display:flex; gap:8px; align-items:center; font-weight:900;">
+                  <input type="checkbox" id="procEnabled" checked />
+                  Habilitado
+                </label>
+                <button class="btn primary" id="btnProcSave" type="button" disabled>Guardar</button>
+              </div>
+            </div>
+
+            <div class="muted" style="margin-top:10px;">Destinatarios por usuario (rol no operador/conductor) + correos extras.</div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-top:12px;">
+              ${["to","cc","bcc"].map(k=>`
+                <div style="border:1px solid var(--border); border-radius:14px; padding:10px; background:var(--surface);">
+                  <div style="font-weight:900; margin-bottom:6px; text-transform:uppercase; letter-spacing:.04em; opacity:.85;">${k}</div>
+                  <div class="muted" style="font-weight:900; margin-top:2px;">Roles</div>
+                  <div class="roleList" data-k="${k}" style="margin-top:8px; max-height:140px; overflow:auto; display:flex; flex-direction:column; gap:6px; padding:6px; border:1px solid var(--border); border-radius:12px;"></div>
+                  <div class="muted" style="font-weight:900; margin-top:10px;">Usuarios</div>
+                  <input class="userQ" data-k="${k}" placeholder="Buscar usuarios..." />
+                  <div class="userList" data-k="${k}" style="margin-top:8px; max-height:220px; overflow:auto; display:flex; flex-direction:column; gap:6px;"></div>
+                  <div class="muted" style="margin-top:8px; font-weight:900;">Correos extra (coma)</div>
+                  <textarea class="extra" data-k="${k}" style="min-height:64px; width:100%;"></textarea>
+                </div>
+              `).join("")}
+            </div>
+
+            <div style="margin-top:12px;">
+              <div class="muted" style="font-weight:900;">Nota</div>
+              <input id="procNote" placeholder="opcional" />
+            </div>
+          </div>
+        </div>
+      </td></tr>
+    `;
+
+    try{ qs("#pager").innerHTML = ""; }catch(_){}
+    try{ qs("#empty").textContent = ""; }catch(_){}
+
+    const stateN = {
+      procs,
+      users,
+      roles,
+      selectedKey: "",
+      byKey: new Map(procs.map(p => [String(p.process_key||""), p])),
+    };
+
+    // Pre-group users by role for display
+    const usersSorted = [...users].sort((a,b)=>{
+      const ra = roleKey(a.rol), rb = roleKey(b.rol);
+      if (ra !== rb) return ra.localeCompare(rb);
+      const na = String(a.nombre||"").toLowerCase();
+      const nb = String(b.nombre||"").toLowerCase();
+      if (na !== nb) return na.localeCompare(nb);
+      return Number(a.id_usuario||0) - Number(b.id_usuario||0);
+    });
+
+    function renderProcList(){
+      const q = String(qs("#procQ").value||"").trim().toLowerCase();
+      const list = (stateN.procs || []).filter(p=>{
+        if (!q) return true;
+        const t = (String(p.label||"") + " " + String(p.process_key||"")).toLowerCase();
+        return t.includes(q);
+      });
+      qs("#procList").innerHTML = list.map(p=>{
+        const k = String(p.process_key||"");
+        const isSel = (k === stateN.selectedKey);
+        const en = (p.enabled === null || p.enabled === undefined) ? true : !!p.enabled;
+        return `
+          <button type="button" class="btn ${isSel ? "primary":""}" data-k="${esc(k)}" style="text-align:left; justify-content:flex-start;">
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <div style="font-weight:900">${esc(p.label||k)}</div>
+              <div class="muted" style="font-size:12px">${esc(k)} · ${en ? "ON":"OFF"}</div>
+            </div>
+          </button>
+        `;
+      }).join("") || `<div class="muted">Sin procesos</div>`;
+    }
+
+    function filterUsers(list, q){
+      const qq = String(q||"").trim().toLowerCase();
+      if (!qq) return list;
+      return list.filter(u=>{
+        const t = (String(u.nombre||"") + " " + String(u.email||"") + " " + String(u.rol||"")).toLowerCase();
+        return t.includes(qq);
+      });
+    }
+
+    function getSelectedIds(kind){
+      const cfg = stateN.byKey.get(stateN.selectedKey) || {};
+      const key = `${kind}_user_ids`;
+      const arr = cfg[key] || [];
+      const out=[];
+      for (const x of (arr||[])){
+        const n = Number(x||0);
+        if (Number.isFinite(n) && n>0) out.push(n);
+      }
+      return new Set(out);
+    }
+
+    function getSelectedRoles(kind){
+      const cfg = stateN.byKey.get(stateN.selectedKey) || {};
+      const key = `${kind}_roles`;
+      const arr = cfg[key] || [];
+      const out = [];
+      for (const x of (arr||[])){
+        const s = String(x||"").trim().toUpperCase();
+        if (s) out.push(s);
+      }
+      return new Set(out);
+    }
+
+    function renderRoles(kind){
+      const cfg = stateN.byKey.get(stateN.selectedKey) || {};
+      const sel = getSelectedRoles(kind);
+      const list = (stateN.roles || []);
+      const el = qs(`.roleList[data-k="${kind}"]`);
+      if (!el) return;
+      el.innerHTML = list.map(r=>{
+        const ru = String(r||"").trim().toUpperCase();
+        const checked = sel.has(ru);
+        return `
+          <label style="display:flex; gap:10px; align-items:center;">
+            <input type="checkbox" class="rChk" data-k="${kind}" data-role="${esc(ru)}" ${checked?"checked":""} />
+            <div style="font-weight:900">${esc(ru)}</div>
+          </label>
+        `;
+      }).join("") || `<div class="muted">Sin roles</div>`;
+    }
+
+    function renderUsers(kind){
+      const cfg = stateN.byKey.get(stateN.selectedKey) || {};
+      const sel = getSelectedIds(kind);
+      const q = qs(`.userQ[data-k="${kind}"]`).value || "";
+      const list = filterUsers(usersSorted, q);
+      const el = qs(`.userList[data-k="${kind}"]`);
+      el.innerHTML = list.map(u=>{
+        const id = Number(u.id_usuario||0);
+        const checked = sel.has(id);
+        const nm = String(u.nombre||"Usuario");
+        const em = String(u.email||"");
+        const rl = String(u.rol||"");
+        return `
+          <label style="display:flex; gap:10px; align-items:flex-start;">
+            <input type="checkbox" class="uChk" data-k="${kind}" data-id="${id}" ${checked?"checked":""} />
+            <div style="display:flex; flex-direction:column; line-height:1.2;">
+              <div style="font-weight:900">${esc(nm)}</div>
+              <div class="muted" style="font-size:12px">${esc(rl)} · ${esc(em)}</div>
+            </div>
+          </label>
+        `;
+      }).join("") || `<div class="muted">Sin usuarios</div>`;
+      // extras
+      const extra = (cfg[`${kind}_list`] || "");
+      qs(`textarea.extra[data-k="${kind}"]`).value = String(extra || "");
+    }
+
+    function selectProc(key){
+      const k = String(key||"");
+      if (!k) return;
+      stateN.selectedKey = k;
+      const cfg = stateN.byKey.get(k) || {};
+      qs("#procTitle").textContent = String(cfg.label || k);
+      qs("#procKey").textContent = k;
+      const en = (cfg.enabled === null || cfg.enabled === undefined) ? true : !!cfg.enabled;
+      qs("#procEnabled").checked = en;
+      qs("#procNote").value = String(cfg.note || "");
+      ["to","cc","bcc"].forEach((x)=>{ renderRoles(x); renderUsers(x); });
+      qs("#btnProcSave").disabled = false;
+      renderProcList();
+    }
+
+    qs("#procQ").addEventListener("input", renderProcList);
+    qs("#procList").addEventListener("click", (ev)=>{
+      const btn = ev.target && ev.target.closest && ev.target.closest("button[data-k]");
+      if (!btn) return;
+      selectProc(btn.getAttribute("data-k"));
+    });
+    qs("#btnProcReload").onclick = async ()=>{
+      const [np, nu] = await Promise.all([
+        api("/admin/notify_routes/email/processes"),
+        api("/admin/notify_routes/email/users"),
+      ]);
+      stateN.procs = np.items || [];
+      stateN.users = nu.items || [];
+      stateN.byKey = new Map(stateN.procs.map(p => [String(p.process_key||""), p]));
+      renderProcList();
+      if (stateN.selectedKey) selectProc(stateN.selectedKey);
+    };
+    document.querySelectorAll("input.userQ").forEach(inp=>{
+      inp.addEventListener("input", (ev)=>{
+        const k = ev.target.getAttribute("data-k");
+        renderUsers(k);
+      });
+    });
+
+    // user checkbox changes mutate local cfg
+    qs("#body").addEventListener("change", (ev)=>{
+      const chk = ev.target && ev.target.closest && ev.target.closest("input.uChk");
+      if (chk){
+        const kind = chk.getAttribute("data-k");
+        const id = Number(chk.getAttribute("data-id")||0);
+        const cfg = stateN.byKey.get(stateN.selectedKey) || {};
+        const key = `${kind}_user_ids`;
+        const cur = Array.isArray(cfg[key]) ? [...cfg[key]] : [];
+        const set = new Set(cur.map(x=>Number(x||0)).filter(n=>n>0));
+        if (chk.checked) set.add(id); else set.delete(id);
+        cfg[key] = Array.from(set);
+        stateN.byKey.set(stateN.selectedKey, cfg);
+        return;
+      }
+      const rchk = ev.target && ev.target.closest && ev.target.closest("input.rChk");
+      if (rchk){
+        const kind = rchk.getAttribute("data-k");
+        const role = String(rchk.getAttribute("data-role")||"").trim().toUpperCase();
+        const cfg = stateN.byKey.get(stateN.selectedKey) || {};
+        const key = `${kind}_roles`;
+        const cur = Array.isArray(cfg[key]) ? [...cfg[key]] : [];
+        const set = new Set(cur.map(x=>String(x||"").trim().toUpperCase()).filter(Boolean));
+        if (rchk.checked) set.add(role); else set.delete(role);
+        cfg[key] = Array.from(set);
+        stateN.byKey.set(stateN.selectedKey, cfg);
+        return;
+      }
+    });
+
+    // Save
+    qs("#btnProcSave").onclick = async ()=>{
+      const k = stateN.selectedKey;
+      if (!k) return;
+      const cfg = stateN.byKey.get(k) || {};
+      const payload = {
+        enabled: !!qs("#procEnabled").checked,
+        note: qs("#procNote").value || "",
+        to_user_ids: cfg.to_user_ids || [],
+        cc_user_ids: cfg.cc_user_ids || [],
+        bcc_user_ids: cfg.bcc_user_ids || [],
+        to_roles: cfg.to_roles || [],
+        cc_roles: cfg.cc_roles || [],
+        bcc_roles: cfg.bcc_roles || [],
+        to_list: qs('textarea.extra[data-k="to"]').value || "",
+        cc_list: qs('textarea.extra[data-k="cc"]').value || "",
+        bcc_list: qs('textarea.extra[data-k="bcc"]').value || "",
+      };
+      const btn = qs("#btnProcSave");
+      btn.disabled = true;
+      try{
+        const r = await api(`/admin/notify_routes/email/${encodeURIComponent(k)}`, { method:"PUT", body: JSON.stringify(payload) });
+        // refresh local
+        const item = r.item || {};
+        // keep label from catalog
+        item.label = cfg.label || item.label;
+        stateN.byKey.set(k, { ...cfg, ...item });
+        btn.textContent = "OK";
+        setTimeout(()=>{ btn.textContent="Guardar"; btn.disabled=false; }, 900);
+        renderProcList();
+      }catch(e){
+        btn.disabled = false;
+        if (window.Swal) Swal.fire("Error", e.message, "error");
+        else alert(e.message);
+      }
+    };
+
+    renderProcList();
+    if (procs.length) selectProc(String(procs[0].process_key||""));
   }
 
   async function load(reset=true){
@@ -1630,6 +1942,13 @@
   }
 
   qs("#btnReload").onclick = ()=>load(true).catch(e=>window.Swal ? Swal.fire("Error", e.message, "error") : alert(e.message));
+
+  function gotoEntity(ent){
+    const sp = new URLSearchParams(location.search || "");
+    sp.set("entity", String(ent || "usuarios"));
+    location.search = sp.toString();
+  }
+
   qs("#btnMore").onclick = ()=>{};
   qs("#btnAdd").onclick = ()=>openCreate().catch(e=>window.Swal ? Swal.fire("Error", e.message, "error") : alert(e.message));
 

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>Admin • Notificaciones (correo)</title>
+  <style>
+    body{padding:18px;}
+    .wrap{max-width:none;margin:0 auto;}
+    table{width:100%; border-collapse:collapse; font-size:13px;}
+    th,td{padding:10px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; vertical-align:top;}
+    input,textarea,select{width:100%; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px;}
+    textarea{min-height:56px; resize:vertical;}
+    .btn{background:#22c55e; color:#062315; border:none; padding:8px 12px; border-radius:10px; font-weight:900; cursor:pointer;}
+    .btn.secondary{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.15);}
+    .pill{display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.14); opacity:.85; font-size:12px;}
+    .muted{opacity:.75;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div>
+          <h2 style="margin:0 0 4px 0">Notificaciones por correo (ruteo)</h2>
+          <div class="muted">Configura destinatarios por proceso. Formato: correos separados por coma.</div>
+        </div>
+        <button class="btn secondary" id="btnReload">Actualizar</button>
+      </div>
+      <div style="margin-top:12px;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:210px">Proceso</th>
+              <th style="width:240px">To</th>
+              <th style="width:220px">CC</th>
+              <th style="width:220px">BCC</th>
+              <th style="width:120px">Estado</th>
+              <th style="width:180px">Nota</th>
+              <th style="width:110px">Acción</th>
+            </tr>
+          </thead>
+          <tbody id="rows"><tr><td class="muted" colspan="7">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const apiURL = (p) => {
+      const s = String(p || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    };
+
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    async function api(url, opts={}){
+      const r = await fetch(apiURL(url), { ...opts, headers: authHeaders({ "Content-Type":"application/json", ...(opts.headers||{}) }) });
+      const data = await r.json().catch(()=>null);
+      if (!r.ok) throw new Error((data && (data.detail||data.message)) || "Error");
+      return data;
+    }
+
+    function esc(s){
+      return String(s||"").replace(/[&<>"]/g, (c)=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
+    }
+
+    async function load(){
+      const res = await api("/admin/notify_routes/email/processes");
+      const items = res.items || [];
+      $("#rows").innerHTML = items.map(p => {
+        const k = p.process_key;
+        const en = (p.enabled === null || p.enabled === undefined) ? true : !!p.enabled;
+        return `
+          <tr data-k="${esc(k)}">
+            <td>
+              <div style="font-weight:900">${esc(p.label || k)}</div>
+              <div class="muted">${esc(k)}</div>
+            </td>
+            <td><textarea class="to">${esc(p.to_list || "")}</textarea></td>
+            <td><textarea class="cc">${esc(p.cc_list || "")}</textarea></td>
+            <td><textarea class="bcc">${esc(p.bcc_list || "")}</textarea></td>
+            <td>
+              <label style="display:flex;gap:8px;align-items:center;">
+                <input class="en" type="checkbox" ${en ? "checked":""} />
+                <span class="pill">${en ? "Habilitado":"Deshabilitado"}</span>
+              </label>
+              ${p.updated_at ? `<div class="muted" style="margin-top:6px;font-size:12px">Upd: ${esc(p.updated_at)}</div>`:""}
+            </td>
+            <td><input class="note" value="${esc(p.note || "")}" placeholder="opcional" /></td>
+            <td><button class="btn save">Guardar</button></td>
+          </tr>
+        `;
+      }).join("") || `<tr><td class="muted" colspan="7">Sin procesos.</td></tr>`;
+    }
+
+    $("#rows").addEventListener("click", async (e) => {
+      const btn = e.target && e.target.closest && e.target.closest("button.save");
+      if (!btn) return;
+      const tr = btn.closest("tr");
+      const k = tr.getAttribute("data-k");
+      const payload = {
+        enabled: !!tr.querySelector("input.en")?.checked,
+        to_list: tr.querySelector("textarea.to")?.value || "",
+        cc_list: tr.querySelector("textarea.cc")?.value || "",
+        bcc_list: tr.querySelector("textarea.bcc")?.value || "",
+        note: tr.querySelector("input.note")?.value || "",
+      };
+      btn.disabled = true;
+      try{
+        await api(`/admin/notify_routes/email/${encodeURIComponent(k)}`, { method:"PUT", body: JSON.stringify(payload) });
+        btn.textContent = "OK";
+        setTimeout(()=>{ btn.textContent="Guardar"; btn.disabled=false; }, 900);
+      }catch(err){
+        alert(String(err.message||err));
+        btn.disabled = false;
+      }
+    });
+
+    $("#btnReload").addEventListener("click", load);
+    load().catch(e => alert(String(e.message||e)));
+  </script>
+</body>
+</html>
+

@@ -3280,10 +3280,12 @@ def _dashboard_reportes_v2(
         except Exception:
             fin_d = None
     if p in ("mtd", "mes", "month"):
+        # MTD real: confirmados desde el 1 del mes HASTA HOY (no futuros).
         ini_d = date(today.year, today.month, 1)
-        # Regla negocio: dashboard/reportes comparan contra meta mensual,
-        # por lo que el "MTD" en este contexto representa el MES COMPLETO
-        # (incluye eventos futuros confirmados dentro del mes).
+        fin_d = today
+    elif p in ("month_full", "mes_full", "full_month"):
+        # Mes completo: incluye eventos futuros confirmados dentro del mes.
+        ini_d = date(today.year, today.month, 1)
         fin_d = (date(today.year, today.month, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     elif p in ("ytd", "anio", "year"):
         ini_d = date(today.year, 1, 1)
@@ -7499,43 +7501,14 @@ def edit_confirmed_event(
     except Exception:
         pass
 
-    # Correo a MICE + Operaciones (best-effort)
+    # Correo configurable por proceso (best-effort)
     try:
         from backend.core.email import send_email_group
+        from backend.core.notify_routes import resolve_email_to, resolve_email_cc, resolve_email_bcc
 
-        def _emails_for_roles(role_names: list[str]) -> list[str]:
-            try:
-                names_u = [str(r).upper().strip() for r in (role_names or []) if str(r).strip()]
-                if not names_u:
-                    return []
-                rows = db.execute(
-                    text(
-                        """
-                        SELECT DISTINCT u.email
-                        FROM public.usuarios u
-                        LEFT JOIN public.roles r ON r.id_rol=u.id_rol
-                        WHERE COALESCE(u.is_active, TRUE) = TRUE
-                          AND u.email IS NOT NULL AND u.email <> ''
-                          AND (
-                            UPPER(COALESCE(r.nombre,'')) = ANY(:role_names)
-                            OR UPPER(COALESCE(u.rol,'')) = ANY(:role_names)
-                          )
-                        """
-                    ),
-                    {"role_names": names_u},
-                ).fetchall()
-                out: list[str] = []
-                for rr in rows:
-                    e = str((rr[0] or "")).strip()
-                    if "@" in e and "." in e:
-                        out.append(e)
-                return sorted(set(out))
-            except Exception:
-                return []
-
-        to = _emails_for_roles(["OPERACIONES", "JEFE DE OPERACIONES", "MICE"])
-        extra = [x.strip() for x in str(os.getenv("EVENT_EDIT_NOTIFY_TO") or "").split(",") if x.strip()]
-        to = sorted(set(to + extra))
+        to = resolve_email_to("EVENTO_MODIFICADO", [])
+        cc = resolve_email_cc("EVENTO_MODIFICADO", [])
+        bcc = resolve_email_bcc("EVENTO_MODIFICADO", [])
         if to:
             who = (x_user or me.get("username") or me.get("email") or me.get("name") or "usuario")
             cal_link = str(gcal.get("calendar_html_link") or "") or str(lead.get("calendar_html_link") or "")
@@ -7555,7 +7528,7 @@ def edit_confirmed_event(
                 ]
             )
             try:
-                send_email_group(to, subj, txt)
+                send_email_group(to, subj, txt, cc_addrs=cc, bcc_addrs=bcc)
             except Exception:
                 pass
     except Exception:

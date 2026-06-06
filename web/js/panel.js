@@ -1670,12 +1670,31 @@ async function fetchMe() {
       if (btnGpt) btnGpt.style.display = "none";
       if (btnChat) btnChat.style.display = "none";
     }
+    await loadUserMenuAccess();
     buildMenu();
     startTasksBadgePolling();
     startSoldEventPolling();
   } catch (_) {
     const userNameEl = qs("#userName");
     if (userNameEl) userNameEl.textContent = "Usuario";
+  }
+}
+
+async function loadUserMenuAccess() {
+  USER_MENU_ACCESS = null;
+  try {
+    const r = await fetch(`${API_BASE}/me/permissions`, { headers: authHeaders() });
+    if (!r.ok) return;
+    const data = await r.json().catch(() => null);
+    const perms = data && data.permissions && typeof data.permissions === "object" ? data.permissions : null;
+    if (!perms) return;
+    const ids = Object.entries(perms)
+      .filter(([, access]) => String(access || "").toLowerCase() === "read" || String(access || "").toLowerCase() === "full")
+      .map(([id]) => String(id));
+    // Si no hay permisos guardados, mantenemos matriz antigua para no bloquear usuarios al activar el módulo.
+    if (ids.length) USER_MENU_ACCESS = new Set(ids);
+  } catch (_) {
+    USER_MENU_ACCESS = null;
   }
 }
 
@@ -2548,6 +2567,8 @@ const MENU = [
       { id: "set_tc", label: "Tipos Cliente", url: "/web/views/settings.html?entity=tipos_cliente&v=20260218-6" },
       { id: "set_el", label: "Estados Lead", url: "/web/views/settings.html?entity=estados_lead&v=20260218-6" },
       { id: "set_roles", label: "Roles", url: "/web/views/settings.html?entity=roles&v=20260218-6" },
+      { id: "set_permissions", label: "Permisos", url: "/web/views/settings_permissions.html?v=20260604-1" },
+      { id: "set_notify_email", label: "Notificaciones (correo)", url: "/web/views/settings_notifs_email.html?v=20260601-3" },
       { id: "set_metas", label: "Metas ventas", url: "/web/views/settings_metas.html?v=20260320-1" },
       { id: "set_bak", label: "Backups", url: "/web/views/backups.html", noSidebar: true }
     ]
@@ -2581,7 +2602,13 @@ function toggleFav(id) {
   setFavIds(next);
 }
 function listVisibleMenuItems() {
-  const allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : /* @__PURE__ */ new Set();
+  // Some installs map ADMIN-like roles to id=12; ensure it inherits SUPERADMIN permissions.
+  const allowed = (() => {
+    if (!CURRENT_ROLE_ID) return /* @__PURE__ */ new Set();
+    if (PERMISSIONS[CURRENT_ROLE_ID]) return PERMISSIONS[CURRENT_ROLE_ID];
+    if (CURRENT_ROLE_ID === 12 && PERMISSIONS[1]) return PERMISSIONS[1];
+    return /* @__PURE__ */ new Set();
+  })();
   const isDriver = CURRENT_ROLE_ID === 6;
   const isAdmin = (CURRENT_ROLE_ID === 1 || CURRENT_ROLE_ID === 12);
   const out = [];
@@ -2589,6 +2616,7 @@ function listVisibleMenuItems() {
     for (const it of g.items) {
       if (it.sep || it.noSidebar || it.disabled || !it.url) continue;
       if (allowed && !allowed.has(it.id)) continue;
+      if (USER_MENU_ACCESS && !USER_MENU_ACCESS.has(String(it.id))) continue;
       if (it.driverOnly && !isDriver && !isAdmin) continue;
       out.push({ ...it, groupId: g.id, groupTitle: g.title, groupIco: g.ico });
     }
@@ -2598,6 +2626,7 @@ function listVisibleMenuItems() {
 let ACTIVE_ITEM_ID = null;
 let CURRENT_ROLE_ID = null;
 let CURRENT_ALLOWED = /* @__PURE__ */ new Set();
+let USER_MENU_ACCESS = null;
 let TASKS_BADGE = { open_total: 0, overdue_total: 0, open_contactar: 0, overdue_contactar: 0 };
 let TASKS_POLL_HANDLE = null;
 let TASKS_SYNC_INFLIGHT = false;
@@ -2730,6 +2759,7 @@ const PERMISSIONS = {
     "set_tc",
     "set_el",
     "set_roles",
+    "set_notify_email",
     "set_metas",
 	    "set_bak",
 		    "chk_hoy"
@@ -2942,7 +2972,12 @@ try {
 function buildMenu() {
   const nav = qs("#sideMenu");
   nav.innerHTML = "";
-  let allowed = CURRENT_ROLE_ID && PERMISSIONS[CURRENT_ROLE_ID] ? PERMISSIONS[CURRENT_ROLE_ID] : /* @__PURE__ */ new Set();
+  let allowed = (() => {
+    if (!CURRENT_ROLE_ID) return /* @__PURE__ */ new Set();
+    if (PERMISSIONS[CURRENT_ROLE_ID]) return PERMISSIONS[CURRENT_ROLE_ID];
+    if (CURRENT_ROLE_ID === 12 && PERMISSIONS[1]) return PERMISSIONS[1];
+    return /* @__PURE__ */ new Set();
+  })();
   // Safety: SUPERADMIN siempre debe tener menú completo aunque CURRENT_ROLE_ID venga raro.
   try {
     const me = (window.GD && window.GD.me) || {};
@@ -3017,7 +3052,9 @@ function buildMenu() {
   } catch (_) {
   }
   for (const g of MENU) {
-    const visibleItems = allowed ? g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && allowed.has(it.id) && (!it.driverOnly || isDriver)) : g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && (!it.driverOnly || isDriver));
+    const visibleItems = allowed
+      ? g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && allowed.has(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id))) && (!it.driverOnly || isDriver))
+      : g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id))) && (!it.driverOnly || isDriver));
     if (!visibleItems.length) continue;
     if (lastGroupId === "operadores" && (g.id === "rrhh" || g.id === "tools" || g.id === "settings")) {
       const divider = document.createElement("div");

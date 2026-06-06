@@ -983,6 +983,9 @@ def list_gastos(
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0, le=200000),
     pagado: int | None = Query(default=None, ge=0, le=1),
+    cuenta_code: str = Query("", max_length=40),
+    marca: str = Query("", max_length=80),
+    centro_costo: str = Query("", max_length=120),
     q: str = Query("", max_length=120),
     me=Depends(get_current_user),
 ):
@@ -997,11 +1000,24 @@ def list_gastos(
             params = {"m": month, "y": year}
         if pagado is not None:
             where_parts.append("pagado IS " + ("TRUE" if int(pagado) == 1 else "FALSE"))
+        cc = str(cuenta_code or "").strip()
+        if cc:
+            params["cuenta_code"] = cc
+            where_parts.append("cuenta_code = :cuenta_code")
+        mm = str(marca or "").strip()
+        if mm:
+            params["marca"] = mm
+            where_parts.append("marca = :marca")
+        cco = str(centro_costo or "").strip()
+        if cco:
+            params["centro_costo"] = cco
+            where_parts.append("centro_costo = :centro_costo")
         qq = str(q or "").strip()
         if qq:
             params["q"] = f"%{qq}%"
             where_parts.append("(COALESCE(descripcion,'') ILIKE :q OR COALESCE(proveedor,'') ILIKE :q OR COALESCE(doc_num,'') ILIKE :q)")
         where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+        total = conn.execute(text(f"SELECT COUNT(1) FROM fin_gastos {where}"), params).scalar()
         rows = conn.execute(
             text(
                 f"""
@@ -1016,7 +1032,15 @@ def list_gastos(
             {**params, "lim": int(limit), "off": int(offset)},
         ).mappings().all()
     items = [_row_json(dict(r)) for r in rows]
-    return {"ok": True, "items": items}
+    return {
+        "ok": True,
+        "month": int(month),
+        "year": int(year),
+        "limit": int(limit),
+        "offset": int(offset),
+        "total": int(total or 0),
+        "items": items,
+    }
 
 
 @router.put("/gastos/{id_gasto}")
@@ -1125,7 +1149,7 @@ def delete_gasto(id_gasto: int, me=Depends(get_current_user)):
 
 @router.get("/centros_costo")
 def list_centros_costo(me=Depends(get_current_user)):
-    _ensure_roles(me, {"ADMIN", "SUPERADMIN"})
+    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
     with get_connection() as conn:
         _ensure_tables(conn)
         rows = conn.execute(

@@ -141,11 +141,22 @@ def _to_number(v: Any) -> float:
     try:
         if v is None:
             return 0.0
+        # DB values often arrive as Decimal; keep exact scale (avoid locale parsing that strips '.')
+        try:
+            from decimal import Decimal
+
+            if isinstance(v, Decimal):
+                return float(v)
+        except Exception:
+            pass
         if isinstance(v, (int, float)):
             return float(v)
         s = str(v).strip()
         if not s:
             return 0.0
+        # Plain numeric strings like "140000.00" should parse as-is ('.' is decimal separator).
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", s):
+            return float(s)
         s = s.replace(".", "").replace(",", ".")
         s = re.sub(r"[^0-9.\-]", "", s)
         if s in ("", "-", "."):
@@ -2504,7 +2515,7 @@ def move_lead_and_maybe_agenda(
                         row_c = cn.execute(
                             text(
                                 """
-                                SELECT numero, subtotal_productos, subtotal, traslado, iva
+                                SELECT numero, subtotal_productos, traslado, iva
                                 FROM public.cotizaciones
                                 WHERE id_cotizacion=:id
                                 LIMIT 1
@@ -3241,20 +3252,20 @@ def move_lead_and_maybe_agenda(
 
             if inserted_roles:
                 try:
-                    # Email SOLO a Operaciones + MICE (no a Operadores).
-                    # El resto se notifica via system_notifs en el CRM.
-                    email_roles = ["OPERACIONES", "MICE", "COMPRAS", "BODEGUERO"]
-                    always_to = [
-                        "inventario@greendiamond.cl",
-                        "bodega@greendiamond.cl",
-                        "abastecimiento@greendiamond.cl",
-                        "rolfisburger325@gmail.com",
-                    ]
-                    to = sorted(set(_emails_for_roles(email_roles) + always_to))
+                    from backend.core.notify_routes import resolve_email_to, resolve_email_cc, resolve_email_bcc
+                    to = resolve_email_to("AGENDA_EVENTOS", [])
+                    cc = resolve_email_cc("AGENDA_EVENTOS", [])
+                    bcc = resolve_email_bcc("AGENDA_EVENTOS", [])
                     if to:
                         from backend.core.email import send_email_group
                         try:
-                            send_email_group(to, title, resumen + "\n\n--\nCRM Green Diamond\n")
+                            send_email_group(
+                                to,
+                                title,
+                                resumen + "\n\n--\nCRM Green Diamond\n",
+                                cc_addrs=cc,
+                                bcc_addrs=bcc,
+                            )
                         except Exception:
                             pass
                 except Exception:

@@ -180,6 +180,9 @@ def send_email_group(
     subject: str,
     text: str,
     html: str | None = None,
+    *,
+    cc_addrs: list[str] | tuple[str, ...] | None = None,
+    bcc_addrs: list[str] | tuple[str, ...] | None = None,
 ) -> None:
     """
     Envía UN solo correo a varios destinatarios:
@@ -187,7 +190,24 @@ def send_email_group(
     - Cc: resto
     Esto reduce conexiones SMTP y es más cómodo para operaciones (todos en el mismo hilo).
     """
-    to_list = [a.strip() for a in (list(to_addrs) if to_addrs else []) if a and a.strip()]
+    def _clean(values) -> list[str]:
+        out = []
+        seen = set()
+        for a in (list(values) if values else []):
+            s = str(a or "").strip()
+            if not s:
+                continue
+            key = s.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(s)
+        return out
+
+    to_list = _clean(to_addrs)
+    cc_list = [a for a in _clean(cc_addrs) if a.lower() not in {x.lower() for x in to_list}]
+    hidden = {x.lower() for x in to_list + cc_list}
+    bcc_list = [a for a in _clean(bcc_addrs) if a.lower() not in hidden]
     if not to_list:
         raise ValueError("to_addrs vacío")
     user = _get_env("SMTP_USER")
@@ -196,8 +216,11 @@ def send_email_group(
     msg = EmailMessage()
     msg["From"] = from_addr
     msg["To"] = to_list[0]
-    if len(to_list) > 1:
-        msg["Cc"] = ", ".join(to_list[1:])
+    merged_cc = to_list[1:] + cc_list
+    if merged_cc:
+        msg["Cc"] = ", ".join(merged_cc)
+    if bcc_list:
+        msg["Bcc"] = ", ".join(bcc_list)
     msg["Subject"] = subject
     msg.set_content(text)
     if html:

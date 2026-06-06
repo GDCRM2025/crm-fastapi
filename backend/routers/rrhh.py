@@ -1264,7 +1264,7 @@ def email_desvios_report(
     subject = f"RRHH · Desvíos {d} · Pendientes {totals.get('pendientes',0)}"
     body_txt = "\n".join(lines).strip() + "\n"
     try:
-        _notify_rrhh_admins(db, subject=subject, body=body_txt)
+        _notify_rrhh_admins(db, process_key="RRHH_DESVIOS_REPORT", subject=subject, body=body_txt)
         return {"ok": True, "sent": True, "date": d, "to": "RRHH_NOTIFY_TO/CC + roles admin"}
     except Exception as e:
         return {"ok": True, "sent": False, "detail": str(e)}
@@ -1447,7 +1447,7 @@ def _apply_desvio_decision(
     try:
         subj = f"RRHH · Desvío {tipo} · {colaborador} · {estado.upper()}"
         txt = f"Fuente: {source}\nColaborador: {colaborador}\nFecha: {fecha}\nTipo: {tipo}\nEstado: {estado}\nObs: {note or ''}\n"
-        _notify_rrhh_admins(db, subject=subj, body=txt)
+        _notify_rrhh_admins(db, process_key="RRHH_SOLICITUDES", subject=subj, body=txt)
     except Exception:
         pass
 
@@ -1767,12 +1767,13 @@ def _require_rrhh_super(user: dict) -> None:
     if not _is_rrhh_super(user):
         raise HTTPException(status_code=403, detail="Solo SuperAdmin/Admin/RRHH/Finanzas.")
 
-def _notify_rrhh_admins(db: Session, *, subject: str, body: str) -> None:
+def _notify_rrhh_admins(db: Session, *, process_key: str = "RRHH_SOLICITUDES", subject: str, body: str) -> None:
     """
     Notifica por correo a RRHH + Admin/SuperAdmin/Finanzas (best-effort).
     """
     try:
         from backend.core.email import send_email_group
+        from backend.core.notify_routes import resolve_email_to, resolve_email_cc, resolve_email_bcc
 
         to_list: list[str] = []
         rrhh_to = (os.getenv("RRHH_NOTIFY_TO") or "").strip()
@@ -1805,7 +1806,11 @@ def _notify_rrhh_admins(db: Session, *, subject: str, body: str) -> None:
         to_list = list(dict.fromkeys([x for x in to_list if x]))
         if not to_list:
             return
-        send_email_group(to_list, subject, body)
+        # Overrides configurables por proceso (si existe en tabla, se usa; si no, se mantiene default)
+        to_eff = resolve_email_to(process_key, to_list)
+        cc_eff = resolve_email_cc(process_key, [])
+        bcc_eff = resolve_email_bcc(process_key, [])
+        send_email_group(to_eff + cc_eff + bcc_eff, subject, body)
     except Exception:
         return
 
@@ -2595,7 +2600,7 @@ def solicitudes_me_create(body: dict, db: Session = Depends(get_db), me: dict = 
                 + f"Usuario CRM ID: {uid}\n"
                 + f"RUT: {data.get('rut') or ''}\n"
             )
-            _notify_rrhh_admins(db, subject=subj, body=txt)
+            _notify_rrhh_admins(db, process_key="RRHH_SOLICITUDES", subject=subj, body=txt)
         except Exception:
             # No frenes la solicitud.
             pass
@@ -2672,6 +2677,7 @@ def turnos_create(body: dict, db: Session = Depends(get_db), me: dict = Depends(
     try:
         _notify_rrhh_admins(
             db,
+            process_key="RRHH_TURNOS",
             subject=f"RRHH · Turno actualizado/creado · {nombre}",
             body=(
                 f"Turno: {nombre}\n"
@@ -2830,6 +2836,7 @@ def horarios_assign(body: dict, db: Session = Depends(get_db), me: dict = Depend
                 pass
         _notify_rrhh_admins(
             db,
+            process_key="RRHH_TURNOS",
             subject="RRHH · Horario asignado",
             body=(
                 f"Colaborador: {(st[0] if st else id_staff)}\n"
@@ -5286,7 +5293,7 @@ def solicitudes_update(id_solicitud: int, body: dict, db: Session = Depends(get_
                     + (f"Motivo/obs: {(body.get('motivo') or (prev or {}).get('motivo') or '')}\n")
                     + f"Solicitud ID: {id_solicitud}\n"
                 )
-                _notify_rrhh_admins(db, subject=subj, body=txt)
+                _notify_rrhh_admins(db, process_key="RRHH_SOLICITUDES", subject=subj, body=txt)
 
                 # Correo al usuario solicitante (si tenemos email en usuarios/rrhh_staff)
                 try:

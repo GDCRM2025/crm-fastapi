@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>Settings · Permisos</title>
+  <style>
+    body{padding:18px;}
+    .wrap{max-width:none;margin:0 auto;}
+    .card{border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.10);border-radius:14px;padding:14px;margin-bottom:12px;}
+    .muted{opacity:.72;}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .grid{display:grid;grid-template-columns:330px 1fr;gap:12px;}
+    input,select{width:100%;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.13);color:inherit;padding:9px 10px;border-radius:10px;}
+    .btn{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:inherit;padding:9px 12px;border-radius:10px;font-weight:900;cursor:pointer;}
+    .btn.primary{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.45);}
+    .list{border:1px solid rgba(255,255,255,.10);border-radius:12px;background:rgba(0,0,0,.08);padding:8px;max-height:72vh;overflow:auto;}
+    .userBtn{width:100%;text-align:left;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:inherit;border-radius:12px;padding:10px;margin-bottom:8px;cursor:pointer;}
+    .userBtn.active{border-color:rgba(34,197,94,.55);background:rgba(34,197,94,.12);}
+    .name{font-weight:1000;}
+    .sub{font-size:12px;opacity:.72;margin-top:2px;}
+    .group{border:1px solid rgba(255,255,255,.10);border-radius:12px;margin-bottom:10px;overflow:hidden;}
+    .groupHead{padding:10px 12px;background:rgba(255,255,255,.05);font-weight:1000;display:flex;justify-content:space-between;gap:10px;}
+    .permRow{display:grid;grid-template-columns:minmax(240px,1fr) 150px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid rgba(255,255,255,.07);}
+    .pill{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 8px;font-size:12px;font-weight:900;opacity:.85;}
+    .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}.permRow{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div class="row">
+        <div>
+          <h2 style="margin:0 0 4px 0;">Permisos por usuario</h2>
+          <div class="muted">Operadores, conductores, choferes y patio quedan fuera de esta matriz.</div>
+        </div>
+        <button class="btn" id="reload" type="button">Actualizar</button>
+      </div>
+    </section>
+
+    <section class="grid">
+      <aside class="card">
+        <div class="row">
+          <div class="name">Usuarios</div>
+          <span class="pill" id="userCount">0</span>
+        </div>
+        <div style="margin:10px 0;"><input id="userQ" placeholder="Buscar usuario..." /></div>
+        <div id="users" class="list"></div>
+      </aside>
+
+      <main class="card">
+        <div class="row" style="align-items:flex-start;">
+          <div>
+            <div class="name" id="title">Selecciona un usuario</div>
+            <div class="sub" id="subtitle">—</div>
+          </div>
+          <div class="toolbar">
+            <select id="copyFrom" style="width:260px;"><option value="">Copiar desde...</option></select>
+            <button class="btn" id="copyBtn" type="button" disabled>Copiar</button>
+            <button class="btn" id="allRead" type="button" disabled>Todo Ver</button>
+            <button class="btn" id="allFull" type="button" disabled>Todo Full</button>
+            <button class="btn" id="clear" type="button" disabled>Limpiar</button>
+            <button class="btn primary" id="save" type="button" disabled>Guardar</button>
+          </div>
+        </div>
+        <div id="matrix" style="margin-top:12px;"></div>
+      </main>
+    </section>
+  </div>
+
+  <script>
+    const qs = (s, el=document)=>el.querySelector(s);
+    const API_BASE = (()=> {
+      const h = String(location.hostname||"").toLowerCase();
+      return (h === "localhost" || h === "127.0.0.1") ? "" : "/crm";
+    })();
+    const apiURL = (p)=> API_BASE ? (String(p).startsWith("/crm/") ? p : API_BASE + p) : String(p).replace(/^\/crm/,"");
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? {...extra, Authorization:"Bearer "+t} : extra;
+    }
+    async function api(path, opts={}){
+      const r = await fetch(apiURL(path), {...opts, headers:authHeaders({"Content-Type":"application/json", ...(opts.headers||{})})});
+      const j = await r.json().catch(()=>null);
+      if (!r.ok) throw new Error((j && (j.detail || j.message)) || "HTTP "+r.status);
+      return j;
+    }
+    const esc = (s)=>String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+    const state = {users:[], catalog:[], selected:null, perms:{}};
+
+    function filteredUsers(){
+      const q = String(qs("#userQ").value||"").trim().toLowerCase();
+      if (!q) return state.users;
+      return state.users.filter(u=>(`${u.nombre||""} ${u.username||""} ${u.email||""} ${u.rol||""}`).toLowerCase().includes(q));
+    }
+    function renderUsers(){
+      const list = filteredUsers();
+      qs("#userCount").textContent = String(list.length);
+      qs("#users").innerHTML = list.map(u=>{
+        const active = state.selected && Number(state.selected.id_usuario) === Number(u.id_usuario);
+        return `<button class="userBtn ${active ? "active":""}" data-id="${Number(u.id_usuario)}" type="button">
+          <div class="name">${esc(u.nombre || u.username || ("Usuario "+u.id_usuario))}</div>
+          <div class="sub">${esc(u.rol || "")}${u.email ? " · "+esc(u.email) : ""}</div>
+        </button>`;
+      }).join("") || `<div class="muted">Sin usuarios</div>`;
+      qs("#copyFrom").innerHTML = `<option value="">Copiar desde...</option>` + state.users
+        .filter(u=>!state.selected || Number(u.id_usuario)!==Number(state.selected.id_usuario))
+        .map(u=>`<option value="${Number(u.id_usuario)}">${esc(u.nombre || u.username || u.email || u.id_usuario)} · ${esc(u.rol||"")}</option>`)
+        .join("");
+    }
+    function groupCatalog(){
+      const groups = new Map();
+      for (const item of state.catalog){
+        const g = String(item.group || "Otros");
+        if (!groups.has(g)) groups.set(g, []);
+        groups.get(g).push(item);
+      }
+      return groups;
+    }
+    function setAll(value){
+      state.perms = {};
+      if (value !== "none") for (const item of state.catalog) state.perms[item.id] = value;
+      renderMatrix();
+    }
+    function renderMatrix(){
+      const enabled = !!state.selected;
+      ["copyBtn","allRead","allFull","clear","save"].forEach(id=>qs("#"+id).disabled = !enabled);
+      if (!enabled){
+        qs("#matrix").innerHTML = `<div class="muted">Selecciona un usuario para editar permisos.</div>`;
+        return;
+      }
+      const groups = groupCatalog();
+      qs("#matrix").innerHTML = [...groups.entries()].map(([group, items])=>`
+        <section class="group">
+          <div class="groupHead"><span>${esc(group)}</span><span class="pill">${items.length}</span></div>
+          ${items.map(item=>{
+            const val = state.perms[item.id] || "none";
+            return `<div class="permRow">
+              <div>
+                <div class="name">${esc(item.label || item.id)}</div>
+                <div class="sub">${esc(item.id)}</div>
+              </div>
+              <select data-menu="${esc(item.id)}">
+                <option value="none" ${val==="none"?"selected":""}>Sin acceso</option>
+                <option value="read" ${val==="read"?"selected":""}>Ver</option>
+                <option value="full" ${val==="full"?"selected":""}>Full</option>
+              </select>
+            </div>`;
+          }).join("")}
+        </section>
+      `).join("");
+    }
+    async function selectUser(id){
+      const r = await api(`/admin/permissions/users/${encodeURIComponent(id)}`);
+      state.selected = r.user;
+      state.perms = r.permissions || {};
+      qs("#title").textContent = state.selected.nombre || state.selected.username || "Usuario";
+      qs("#subtitle").textContent = `${state.selected.rol || ""}${state.selected.email ? " · " + state.selected.email : ""}`;
+      renderUsers();
+      renderMatrix();
+    }
+    async function init(){
+      const [u,c] = await Promise.all([
+        api("/admin/permissions/users"),
+        api("/admin/permissions/catalog"),
+      ]);
+      state.users = u.items || [];
+      state.catalog = c.items || [];
+      renderUsers();
+      renderMatrix();
+    }
+
+    qs("#users").addEventListener("click", ev=>{
+      const btn = ev.target.closest("button[data-id]");
+      if (btn) selectUser(btn.dataset.id).catch(e=>alert(e.message||e));
+    });
+    qs("#userQ").addEventListener("input", renderUsers);
+    qs("#matrix").addEventListener("change", ev=>{
+      const el = ev.target;
+      if (!el || !el.matches("select[data-menu]")) return;
+      const id = el.getAttribute("data-menu");
+      const v = el.value || "none";
+      if (v === "none") delete state.perms[id];
+      else state.perms[id] = v;
+    });
+    qs("#allRead").onclick = ()=>setAll("read");
+    qs("#allFull").onclick = ()=>setAll("full");
+    qs("#clear").onclick = ()=>setAll("none");
+    qs("#copyBtn").onclick = async ()=>{
+      const id = qs("#copyFrom").value;
+      if (!id || !state.selected) return;
+      const r = await api(`/admin/permissions/users/${encodeURIComponent(id)}`);
+      state.perms = {...(r.permissions || {})};
+      renderMatrix();
+    };
+    qs("#save").onclick = async ()=>{
+      if (!state.selected) return;
+      const btn = qs("#save");
+      btn.disabled = true;
+      try{
+        const r = await api(`/admin/permissions/users/${encodeURIComponent(state.selected.id_usuario)}`, {
+          method:"PUT",
+          body:JSON.stringify({permissions:state.perms})
+        });
+        state.perms = r.permissions || {};
+        btn.textContent = "OK";
+        setTimeout(()=>{btn.textContent="Guardar"; btn.disabled=false;}, 900);
+      }catch(e){
+        btn.disabled = false;
+        alert(e.message || e);
+      }
+    };
+    qs("#reload").onclick = ()=>init().catch(e=>alert(e.message||e));
+    init().catch(e=>alert(e.message||e));
+  </script>
+</body>
+</html>
