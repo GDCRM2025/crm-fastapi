@@ -25,6 +25,11 @@
     .groupHead{padding:10px 12px;background:rgba(255,255,255,.05);font-weight:1000;display:flex;justify-content:space-between;gap:10px;}
     .permRow{display:grid;grid-template-columns:minmax(240px,1fr) 150px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid rgba(255,255,255,.07);}
     .pill{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 8px;font-size:12px;font-weight:900;opacity:.85;}
+    .brandChips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+    .brandChip{display:inline-flex;align-items:center;border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.08);border-radius:999px;padding:3px 8px;font-size:12px;font-weight:900;}
+    .brandChip.empty{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.04);opacity:.75;}
+    .roleGroup{margin-bottom:12px;}
+    .roleHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 8px;margin:2px 0 8px;border-radius:10px;background:rgba(255,255,255,.06);font-weight:1000;}
     .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
     @media (max-width:900px){.grid{grid-template-columns:1fr}.permRow{grid-template-columns:1fr}}
   </style>
@@ -48,6 +53,10 @@
           <span class="pill" id="userCount">0</span>
         </div>
         <div style="margin:10px 0;"><input id="userQ" placeholder="Buscar usuario..." /></div>
+        <label class="sub" style="display:flex;align-items:center;gap:8px;margin:0 0 10px;">
+          <input id="includeOps" type="checkbox" style="width:auto;" />
+          Mostrar CHOP / Operadores / Conductores
+        </label>
         <div id="users" class="list"></div>
       </aside>
 
@@ -91,23 +100,43 @@
       return j;
     }
     const esc = (s)=>String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
-    const state = {users:[], catalog:[], selected:null, perms:{}};
+    const state = {users:[], catalog:[], selected:null, perms:{}, includeOps:false};
+
+    function brandsHtml(user){
+      const marcas = Array.isArray(user && user.marcas) ? user.marcas : [];
+      if (!marcas.length) return `<span class="brandChip empty">Todas / sin restricción</span>`;
+      return marcas.slice(0, 8).map(m=>`<span class="brandChip">${esc(m.marca || ("Marca "+m.id_marca))}</span>`).join("") +
+        (marcas.length > 8 ? `<span class="brandChip">+${marcas.length - 8}</span>` : "");
+    }
 
     function filteredUsers(){
       const q = String(qs("#userQ").value||"").trim().toLowerCase();
       if (!q) return state.users;
-      return state.users.filter(u=>(`${u.nombre||""} ${u.username||""} ${u.email||""} ${u.rol||""}`).toLowerCase().includes(q));
+      return state.users.filter(u=>(`${u.nombre||""} ${u.username||""} ${u.email||""} ${u.rol||""} ${u.marcas_label||""}`).toLowerCase().includes(q));
     }
     function renderUsers(){
       const list = filteredUsers();
       qs("#userCount").textContent = String(list.length);
-      qs("#users").innerHTML = list.map(u=>{
-        const active = state.selected && Number(state.selected.id_usuario) === Number(u.id_usuario);
-        return `<button class="userBtn ${active ? "active":""}" data-id="${Number(u.id_usuario)}" type="button">
-          <div class="name">${esc(u.nombre || u.username || ("Usuario "+u.id_usuario))}</div>
-          <div class="sub">${esc(u.rol || "")}${u.email ? " · "+esc(u.email) : ""}</div>
-        </button>`;
-      }).join("") || `<div class="muted">Sin usuarios</div>`;
+      const groups = new Map();
+      for (const u of list){
+        const key = String(u.rol || "SIN ROL").trim().toUpperCase() || "SIN ROL";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(u);
+      }
+      qs("#users").innerHTML = [...groups.entries()].map(([role, users])=>`
+        <section class="roleGroup">
+          <div class="roleHead"><span>${esc(role)}</span><span class="pill">${users.length}</span></div>
+          ${users.map(u=>{
+            const active = state.selected && Number(state.selected.id_usuario) === Number(u.id_usuario);
+            const op = u.is_operational_role ? `<span class="pill">Operativo</span>` : "";
+            return `<button class="userBtn ${active ? "active":""}" data-id="${Number(u.id_usuario)}" type="button">
+              <div class="row" style="align-items:flex-start;"><div class="name">${esc(u.nombre || u.username || ("Usuario "+u.id_usuario))}</div>${op}</div>
+              <div class="sub">${esc(u.rol || "")}${u.email ? " · "+esc(u.email) : ""}</div>
+              <div class="brandChips">${brandsHtml(u)}</div>
+            </button>`;
+          }).join("")}
+        </section>
+      `).join("") || `<div class="muted">Sin usuarios</div>`;
       qs("#copyFrom").innerHTML = `<option value="">Copiar desde...</option>` + state.users
         .filter(u=>!state.selected || Number(u.id_usuario)!==Number(state.selected.id_usuario))
         .map(u=>`<option value="${Number(u.id_usuario)}">${esc(u.nombre || u.username || u.email || u.id_usuario)} · ${esc(u.rol||"")}</option>`)
@@ -160,13 +189,13 @@
       state.selected = r.user;
       state.perms = r.permissions || {};
       qs("#title").textContent = state.selected.nombre || state.selected.username || "Usuario";
-      qs("#subtitle").textContent = `${state.selected.rol || ""}${state.selected.email ? " · " + state.selected.email : ""}`;
+      qs("#subtitle").innerHTML = `${esc(state.selected.rol || "")}${state.selected.email ? " · " + esc(state.selected.email) : ""}<div class="brandChips">${brandsHtml(state.selected)}</div>`;
       renderUsers();
       renderMatrix();
     }
     async function init(){
       const [u,c] = await Promise.all([
-        api("/admin/permissions/users"),
+        api(`/admin/permissions/users?include_ops=${state.includeOps ? "true" : "false"}`),
         api("/admin/permissions/catalog"),
       ]);
       state.users = u.items || [];
@@ -180,6 +209,14 @@
       if (btn) selectUser(btn.dataset.id).catch(e=>alert(e.message||e));
     });
     qs("#userQ").addEventListener("input", renderUsers);
+    qs("#includeOps").addEventListener("change", ()=>{
+      state.includeOps = !!qs("#includeOps").checked;
+      state.selected = null;
+      state.perms = {};
+      qs("#title").textContent = "Selecciona un usuario";
+      qs("#subtitle").textContent = "—";
+      init().catch(e=>alert(e.message||e));
+    });
     qs("#matrix").addEventListener("change", ev=>{
       const el = ev.target;
       if (!el || !el.matches("select[data-menu]")) return;

@@ -2764,11 +2764,12 @@ async function handleConfirmado(lead, newEstado){
 	                  <option value="">— Seleccionar —</option>
 	                  <option value="oc">OC</option>
 	                  <option value="fecha">Fecha de abono</option>
+	                  <option value="credito">Pago a crédito</option>
 	                </select>
 	                <input id="ag_abono_oc" class="swInp" style="flex:1;min-width:160px;display:none" placeholder="OC / referencia" />
 	                <input id="ag_abono_fecha" class="swInp" style="flex:1;min-width:160px;display:none" type="date" />
 	              </div>
-	              <div class="muted agSmall">Regla: si abono = 0, debes indicar OC o fecha de abono.</div>
+	              <div class="muted agSmall">Regla: si abono = 0, indica OC, fecha de abono o pago a crédito.</div>
 	            </div>
 	            <label class="agLabel" style="flex:1;min-width:240px">
 	              <div class="muted">Documento</div>
@@ -3724,8 +3725,10 @@ async function handleConfirmado(lead, newEstado){
     const montGlobal = (qs("#ag_mont_manual")?.value || "").trim();
     _readGroupsFromDOM();
     agendaMode = _deriveAgendaMode();
-    const isBlocks = (agendaMode === "blocks");
-    const isMultiLoc = (agendaMode === "multiloc");
+    const fNow = _flags();
+    const isBlocks = !!fNow.blocks;
+    const isMultiLoc = !!fNow.multiloc;
+    const isMultiDay = !!fNow.multiday;
     _applyMultiLocUI();
 
     // Si hay más de 1 grupo, exige asignación completa antes de previsualizar (evita eventos incorrectos).
@@ -3791,7 +3794,11 @@ async function handleConfirmado(lead, newEstado){
           ...( (isBlocks || isMultiLoc) ? { hr_tbd: false, start_time: hIni, end_time: hFin } : (hrTbd ? { hr_tbd: true } : { start_time: hIni, end_time: hFin, hr_tbd: false }) ),
           ...modelPayload,
           // Si es Multi día, NO forzar evento único aunque el modo diga "simple".
-          ...( (!isBlocks && !isMultiLoc) ? { force_single_day: (agendaMode === "simple" && !_flags().multiday) ? 1 : 0 } : {}),
+          ...( (!isBlocks && !isMultiLoc) ? {
+            force_single_day: (!isMultiDay ? 1 : 0),
+            multi_day_mode: (isMultiDay ? 1 : 0),
+            days_n: (isMultiDay ? daysN : 1),
+          } : {}),
         })
       });
       previewEvents = (Array.isArray(out?.eventos) && out.eventos.length) ? out.eventos : (out?.evento ? [out.evento] : []);
@@ -4292,9 +4299,10 @@ async function handleConfirmado(lead, newEstado){
 		      const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
 		      const idCot = (quoteSource === "cotizador") ? qSel : null;
 			      agendaMode = _deriveAgendaMode();
-		      const blocks = (agendaMode === "blocks");
-		      const multiLoc = (agendaMode === "multiloc");
-		      const multiDay = (agendaMode === "multiday");
+		      const fConfirm = _flags();
+		      const blocks = !!fConfirm.blocks;
+		      const multiLoc = !!fConfirm.multiloc;
+		      const multiDay = !!fConfirm.multiday;
 		      const forceSingleDay = (agendaMode === "simple") ? 1 : 0;
           // Anti-tontos: exigir completar cantidades según flags (claridad inmediata).
           try{
@@ -4474,7 +4482,7 @@ async function handleConfirmado(lead, newEstado){
 				      const abFe = (qs("#ag_abono_fecha")?.value || "").toString().trim();
 				      if (!(Number(abonoVal) > 0)){
 				        if (!abMode){
-				          Swal.showValidationMessage("Abono=0: debes indicar OC o fecha de abono.");
+				          Swal.showValidationMessage("Abono=0: debes indicar OC, fecha de abono o pago a crédito.");
 				          return false;
 				        }
 				        if (abMode === "oc" && !abOC){
@@ -4605,7 +4613,7 @@ async function handleConfirmado(lead, newEstado){
 	      const mode = String(v.abono_mode || "").trim();
 	      const oc = String(v.abono_oc || "").trim();
 	      const fe = String(v.abono_fecha || "").trim();
-	      if (!mode) throw new Error("Debes indicar OC o fecha de abono (abono=0).");
+	      if (!mode) throw new Error("Debes indicar OC, fecha de abono o pago a crédito (abono=0).");
 	      if (mode === "oc" && !oc) throw new Error("Falta OC / referencia (abono=0).");
 	      if (mode === "fecha" && !fe) throw new Error("Falta fecha de abono (abono=0).");
 	    }
@@ -4637,6 +4645,8 @@ async function handleConfirmado(lead, newEstado){
 		    ...(Array.isArray(v.segments) && v.segments.length ? { segments: v.segments } : {}),
 		    ...(Array.isArray(v.blocks) && v.blocks.length ? { blocks: v.blocks } : {}),
 		    ...(v.force_single_day ? { force_single_day: 1 } : {}),
+		    ...(v.multi_day_mode ? { multi_day_mode: 1 } : {}),
+		    ...(v.days_n ? { days_n: v.days_n } : {}),
 		  };
 
   const out = await apiJSON(`/leads/${lead.id_lead}/move`, {

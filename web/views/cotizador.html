@@ -236,7 +236,6 @@
         <div class="span-4">
           <div class="totales">
             <div class="totRow"><span class="muted">Total productos</span><strong id="tProductos">$0</strong></div>
-            <div class="totRow"><span class="muted">Traslado</span><input id="traslado" type="number" step="1" min="0" value="0" style="width:160px; text-align:right;"/></div>
             <div class="totRow">
               <span class="muted">Descuento</span>
               <div class="controls" style="justify-content:end">
@@ -247,8 +246,9 @@
                 <input id="descuento" type="number" step="1" min="0" value="0" style="width:140px; text-align:right;"/>
               </div>
             </div>
-            <div class="totRow"><span class="muted">Total neto</span><strong id="tNeto">$0</strong></div>
-            <div class="totRow"><span class="muted">IVA</span><strong id="tIva">$0</strong></div>
+            <div class="totRow"><span class="muted">Traslado</span><input id="traslado" type="number" step="1" min="0" value="0" style="width:160px; text-align:right;"/></div>
+            <div class="totRow"><span class="muted">Neto</span><strong id="tNeto">$0</strong></div>
+            <div class="totRow"><span class="muted">IVA 19%</span><strong id="tIva">$0</strong></div>
             <div class="totRow" style="margin-top:4px;border-top:1px solid rgba(0,0,0,.10);padding-top:10px;">
               <span style="font-weight:1000;">Total cotización</span><strong id="tTotal">$0</strong>
             </div>
@@ -265,6 +265,6 @@
       </div>
     </div>
   </main>
-  <script src="/web/js/cotizador.js?v=20260421-cotpretty3"></script>
+  <script src="/web/js/cotizador.js?v=20260610-iva-traslado1"></script>
 </body>
 </html>

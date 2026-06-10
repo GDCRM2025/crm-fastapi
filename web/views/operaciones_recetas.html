@@ -23,8 +23,17 @@
     .meta{font-size:12px; opacity:.7;}
     .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
     .row input,.row select{background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.14); color:inherit; padding:8px 10px; border-radius:10px;}
-    table{width:100%; border-collapse:collapse; font-size:13px; margin-top:8px;}
-    th,td{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08);}
+    .recipeTableWrap{
+      max-height:56vh;
+      overflow:auto;
+      margin-top:8px;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      background:rgba(0,0,0,.08);
+    }
+    table{width:100%; min-width:980px; border-collapse:separate; border-spacing:0; font-size:13px;}
+    th,td{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); vertical-align:top;}
+    th{position:sticky; top:0; z-index:2; background:#10243a; box-shadow:0 1px 0 rgba(255,255,255,.10);}
     td input, td select{width:100%; background:transparent; border:1px solid rgba(255,255,255,.12); border-radius:8px; padding:6px 8px; color:inherit;}
     .pill{display:inline-flex; gap:6px; align-items:center; padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.12);}
     .muted{opacity:.7;}
@@ -185,6 +194,7 @@
         </label>
         <div class="meta" id="subRecipeInfo">—</div>
       </div>
+      <div class="recipeTableWrap">
       <table>
         <thead>
           <tr>
@@ -215,6 +225,7 @@
           </tr>
         </tfoot>
       </table>
+      </div>
       <datalist id="dlUnits"></datalist>
     </section>
   </div>
@@ -319,6 +330,12 @@
       }
       out.sort((a,b) => (b.score - a.score) || String(a.it?.nombre||"").localeCompare(String(b.it?.nombre||""), "es"));
       return out.map(x => x.it);
+    }
+    function unitLabelById(id){
+      const cats = invCatalogos || {};
+      const unidades = Array.isArray(cats.unidades) ? cats.unidades : [];
+      const hit = unidades.find(u => String(u?.id_unidad ?? "") === String(id ?? ""));
+      return String(hit?.abreviatura || hit?.nombre || "").trim();
     }
     let currentRecipe = null;
     let currentProduct = null;
@@ -648,6 +665,25 @@
         }
       });
       updateTotalCost();
+    }
+
+    async function reloadCurrentRecipe(){
+      if (!currentRecipe?.id_receta) return;
+      const res = await api(`/ops/recetas/${currentRecipe.id_receta}`);
+      setRecipeForm({ ...(res.receta||{}), last_update: res.last_update || null });
+      renderItems(res.items);
+      renderList();
+    }
+
+    function findCurrentProductFallback(snapshot){
+      const base = snapshot || currentProduct || {};
+      const byId = (base.id_producto != null)
+        ? (productos || []).find(p => Number(p.id_producto) === Number(base.id_producto))
+        : null;
+      if (byId) return byId;
+      const prod = norm(base.producto || base.nombre || "");
+      const marca = norm(base.marca || "");
+      return (productos || []).find(p => norm(p.producto || p.nombre || "") === prod && norm(p.marca || "") === marca) || base;
     }
 
     async function selectProduct(p){
@@ -1353,13 +1389,14 @@
         });
         $("#dlIng").innerHTML = ingredientes.map(i => `<option value="${i.nombre}"></option>`).join("");
         toast("Ingrediente creado");
-        return payload.nombre;
+        const created = findIngredient(payload.nombre);
+        return { nombre: payload.nombre, item: created || null, payload };
       }
 
       // fallback sin Swal
       await api("/ops/inventario/productos", { method:"POST", body: JSON.stringify({ nombre }) });
       toast("Ingrediente creado");
-      return nombre;
+      return { nombre, item: findIngredient(nombre) || null, payload: { nombre } };
     }
 
     const unitInfo = (u) => {
@@ -1521,6 +1558,7 @@
 
     $("#btnCreate").onclick = async () => {
       if (!currentProduct) return;
+      const productSnapshot = { ...(currentProduct || {}) };
       try{
         const res = await api("/ops/recetas", {
           method:"POST",
@@ -1531,7 +1569,14 @@
           })
         });
         await loadAll();
-        if (res.id) await selectProduct(currentProduct);
+        currentProduct = findCurrentProductFallback(productSnapshot);
+        if (res.id){
+          const rr = await api(`/ops/recetas/${res.id}`);
+          setRecipeForm({ ...(rr.receta||{}), last_update: rr.last_update || null });
+          renderItems(rr.items);
+        }else if (currentProduct){
+          await selectProduct(currentProduct);
+        }
         toast("Receta creada");
       }catch(err){
         const msg = (err && err.message) ? err.message : "No se pudo crear la receta";
@@ -1549,6 +1594,7 @@
 
     $("#btnSaveReceta").onclick = async () => {
       if (!currentRecipe) return;
+      const productSnapshot = { ...(currentProduct || {}) };
       try{
         await api(`/ops/recetas/${currentRecipe.id_receta}`, {
           method:"PUT",
@@ -1563,7 +1609,8 @@
           })
         });
         await loadAll();
-        if (currentProduct) await selectProduct(currentProduct);
+        currentProduct = findCurrentProductFallback(productSnapshot);
+        await reloadCurrentRecipe();
         toast("Receta guardada");
       }catch(err){
         const msg = (err && err.message) ? err.message : "No se pudo guardar la receta";
@@ -1589,6 +1636,7 @@
 
     $("#btnAddItem").onclick = async () => {
       if (!currentProduct) return;
+      const productSnapshot = { ...(currentProduct || {}) };
       try{
         if (!currentRecipe){
           const res = await api("/ops/recetas", {
@@ -1600,7 +1648,14 @@
             })
           });
           await loadAll();
-          if (res.id) await selectProduct(currentProduct);
+          currentProduct = findCurrentProductFallback(productSnapshot);
+          if (res.id){
+            const rr = await api(`/ops/recetas/${res.id}`);
+            setRecipeForm({ ...(rr.receta||{}), last_update: rr.last_update || null });
+            renderItems(rr.items);
+          }else if (currentProduct){
+            await selectProduct(currentProduct);
+          }
         }
         if (!currentRecipe){
           toast("No se pudo crear la receta", "err");
@@ -1621,10 +1676,26 @@
         let exact = findIngredientExact(payload.ingrediente, payload.unidad);
         if (!exact){
           // flujo nuevo: permitir crear ingrediente desde Recetas sin salir a Inventario
-          const createdName = await createInventarioIngrediente(payload.ingrediente, { id_unidad: null });
-          if (!createdName) return;
+          const created = await createInventarioIngrediente(payload.ingrediente, { id_unidad: null });
+          if (!created) return;
+          const createdName = typeof created === "string" ? created : created.nombre;
           $("#newIng").value = createdName;
-          exact = findIngredientExact(createdName, payload.unidad);
+          payload.ingrediente = createdName;
+          exact = (created && typeof created === "object" && created.item) ? created.item : (findIngredientExact(createdName, payload.unidad) || findIngredient(createdName, payload.unidad));
+          if (exact && !payload.unidad) {
+            payload.unidad = exact.unidad || "";
+            $("#newUnit").value = payload.unidad;
+          }
+          if (!exact && created && typeof created === "object" && created.payload){
+            if (!payload.unidad && created.payload.id_unidad){
+              payload.unidad = unitLabelById(created.payload.id_unidad) || payload.unidad;
+              $("#newUnit").value = payload.unidad || "";
+            }
+            if (!payload.costo_unitario && created.payload.precio){
+              payload.costo_unitario = parseMoney(created.payload.precio || 0) || null;
+              $("#newCost").value = payload.costo_unitario ? String(Math.round(payload.costo_unitario)) : "";
+            }
+          }
         }
         if (!payload.cantidad || payload.cantidad <= 0){
           toast("Cantidad requerida", "err");
@@ -1637,7 +1708,7 @@
           if (m > 95) m = 95;
           payload.merma_pct = m;
         }
-        if (!payload.costo_unitario){
+        if (!payload.costo_unitario && exact){
           const unitEq = norm(payload.unidad || "") === norm(exact.unidad || "");
           if (unitEq && Number(exact.precio || 0) > 0){
             payload.costo_unitario = Number(exact.precio || 0);
@@ -1666,7 +1737,7 @@
         $("#useSubRecipe").checked = false;
         $("#useSubRecipe").disabled = true;
         $("#subRecipeInfo").textContent = "—";
-        await selectProduct(currentProduct);
+        await reloadCurrentRecipe();
         toast("Ingrediente agregado");
       } catch (err){
         let msg = (err && (err.message || err.detail)) ? (err.message || err.detail) : String(err || "No se pudo guardar el ingrediente");
@@ -1704,7 +1775,7 @@
           }
         }
         await api(`/ops/recetas/${currentRecipe.id_receta}/items/${id}`, { method:"PUT", body: JSON.stringify(payload) });
-        await selectProduct(currentProduct);
+        await reloadCurrentRecipe();
         toast("Ingrediente guardado");
       }
     });

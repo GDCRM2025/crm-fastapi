@@ -280,11 +280,15 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
         abono = 0.0
     saldo = max(0.0, float(bruto) - float(abono))
 
-    # Normaliza regla: si abono=0, guardamos referencia OC o fecha (para finanzas).
+    # Normaliza regla: si abono=0, guardamos trazabilidad: OC, fecha o pago a crédito.
     if not (abono > 0):
         if abono_mode == "fecha":
             abono_ref = None
         elif abono_mode == "oc":
+            abono_due_date = None
+        elif abono_mode in ("credito", "crédito", "credit"):
+            abono_mode = "credito"
+            abono_ref = "PAGO A CREDITO"
             abono_due_date = None
         else:
             abono_mode = ""

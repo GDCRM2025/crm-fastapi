@@ -2567,7 +2567,7 @@ const MENU = [
       { id: "set_tc", label: "Tipos Cliente", url: "/web/views/settings.html?entity=tipos_cliente&v=20260218-6" },
       { id: "set_el", label: "Estados Lead", url: "/web/views/settings.html?entity=estados_lead&v=20260218-6" },
       { id: "set_roles", label: "Roles", url: "/web/views/settings.html?entity=roles&v=20260218-6" },
-      { id: "set_permissions", label: "Permisos", url: "/web/views/settings_permissions.html?v=20260604-1" },
+      { id: "set_permissions", label: "Permisos", url: "/web/views/settings_permissions.html?v=20260610-1" },
       { id: "set_notify_email", label: "Notificaciones (correo)", url: "/web/views/settings_notifs_email.html?v=20260601-3" },
       { id: "set_metas", label: "Metas ventas", url: "/web/views/settings_metas.html?v=20260320-1" },
       { id: "set_bak", label: "Backups", url: "/web/views/backups.html", noSidebar: true }
@@ -2759,6 +2759,7 @@ const PERMISSIONS = {
     "set_tc",
     "set_el",
     "set_roles",
+    "set_permissions",
     "set_notify_email",
     "set_metas",
 	    "set_bak",

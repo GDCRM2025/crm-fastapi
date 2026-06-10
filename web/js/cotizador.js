@@ -358,10 +358,10 @@
 
     // Regla negocio:
     // - Pipeline ejecutivo = TOTAL PRODUCTOS - DESCUENTO (sin traslado, sin IVA)
-    // - Total Neto = (TOTAL PRODUCTOS - DESCUENTO) + TRASLADO
-    // - IVA (si EMPRESA) se calcula sobre Total Neto
+    // - Neto afecto a IVA = (TOTAL PRODUCTOS - DESCUENTO) + TRASLADO
+    // - IVA (si EMPRESA) se calcula sobre productos netos + traslado
     const productosNeto = Math.max(0, subtotal - desc);
-    const neto = productosNeto + mov; // "Total neto" (incluye traslado)
+    const neto = productosNeto + mov; // "Neto afecto a IVA" (incluye traslado)
     tNeto.textContent = "$" + fmt(neto);
 
     const iva = isEmpresa() ? Math.round(neto * 0.19) : 0;
@@ -371,7 +371,7 @@
     tTotal.textContent = "$" + fmt(total);
     if (ivaLegend) {
       ivaLegend.textContent = isEmpresa()
-        ? `IVA calculado sobre Total Neto (incluye traslado): $${fmt(iva)}.`
+        ? `IVA 19% calculado sobre productos netos + traslado ($${fmt(productosNeto)} + $${fmt(mov)} = $${fmt(neto)}): $${fmt(iva)}.`
         : `Sin IVA (Particular).`;
     }
   }

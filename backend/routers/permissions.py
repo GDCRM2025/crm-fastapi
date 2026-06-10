@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import text
 
 from backend.core.db import get_connection
@@ -8,7 +8,7 @@ from backend.routers.auth import get_current_user
 
 router = APIRouter(tags=["permissions"])
 
-EXCLUDED_ROLE_PARTS = ("OPERADOR", "CONDUCTOR", "CHOFER", "PATIO")
+EXCLUDED_ROLE_PARTS = ("OPERADOR", "CONDUCTOR", "CHOFER", "CHOP", "PATIO")
 
 PERMISSION_CATALOG: list[dict] = [
     {"id": "dash_home", "group": "Dashboard", "label": "Inicio / dashboard"},
@@ -152,6 +152,71 @@ def _all_full() -> dict[str, str]:
     return {str(item["id"]): "full" for item in PERMISSION_CATALOG}
 
 
+def _ensure_usuarios_marcas(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS public.usuarios_marcas(
+              id_usuario INTEGER NOT NULL REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+              id_marca INTEGER NOT NULL REFERENCES marcas(id_marca) ON DELETE CASCADE,
+              PRIMARY KEY (id_usuario, id_marca)
+            )
+            """
+        )
+    )
+    try:
+        conn.commit()
+    except Exception:
+        pass
+
+
+def _brands_for_users(conn, user_ids: list[int]) -> dict[int, list[dict]]:
+    ids = []
+    for raw in user_ids or []:
+        try:
+            val = int(raw)
+            if val > 0:
+                ids.append(val)
+        except Exception:
+            continue
+    ids = sorted(set(ids))
+    if not ids:
+        return {}
+    _ensure_usuarios_marcas(conn)
+    rows = conn.execute(
+        text(
+            """
+            SELECT um.id_usuario,
+                   m.id_marca,
+                   COALESCE(NULLIF(btrim(m.marca),''), NULLIF(btrim(m.nombre),''), 'Marca ' || m.id_marca::text) AS marca
+            FROM public.usuarios_marcas um
+            JOIN public.marcas m ON m.id_marca=um.id_marca
+            WHERE um.id_usuario = ANY(:ids)
+            ORDER BY um.id_usuario, lower(COALESCE(NULLIF(btrim(m.marca),''), NULLIF(btrim(m.nombre),''), ''))
+            """
+        ),
+        {"ids": ids},
+    ).mappings().all()
+    out: dict[int, list[dict]] = {}
+    for r in rows or []:
+        uid = int(r["id_usuario"])
+        out.setdefault(uid, []).append({"id_marca": int(r["id_marca"]), "marca": str(r["marca"] or "")})
+    return out
+
+
+def _attach_brands(conn, users: list[dict]) -> list[dict]:
+    by_user = _brands_for_users(conn, [int(u.get("id_usuario") or 0) for u in users or []])
+    out = []
+    for u in users or []:
+        item = dict(u)
+        marcas = by_user.get(int(item.get("id_usuario") or 0), [])
+        item["marcas"] = marcas
+        item["marcas_ids"] = [int(m["id_marca"]) for m in marcas]
+        item["marcas_label"] = ", ".join([str(m["marca"]) for m in marcas]) if marcas else "Todas / sin restriccion"
+        out.append(item)
+    return out
+
+
 @router.get("/admin/permissions/catalog")
 def permissions_catalog(me=Depends(get_current_user)):
     _require_admin(me)
@@ -159,29 +224,42 @@ def permissions_catalog(me=Depends(get_current_user)):
 
 
 @router.get("/admin/permissions/users")
-def permissions_users(me=Depends(get_current_user)):
+def permissions_users(include_ops: bool = Query(False), me=Depends(get_current_user)):
     _require_admin(me)
     with get_connection() as conn:
+        where_ops = "" if include_ops else """
+                  AND upper(COALESCE(rol,'')) NOT LIKE '%OPERADOR%'
+                  AND upper(COALESCE(rol,'')) NOT LIKE '%CONDUCTOR%'
+                  AND upper(COALESCE(rol,'')) NOT LIKE '%CHOFER%'
+                  AND upper(COALESCE(rol,'')) NOT LIKE '%CHOP%'
+                  AND upper(COALESCE(rol,'')) NOT LIKE '%PATIO%'
+        """
         rows = conn.execute(
             text(
-                """
+                f"""
                 SELECT id_usuario,
                        COALESCE(NULLIF(btrim(nombre),''), NULLIF(btrim(username),''), 'Usuario') AS nombre,
                        COALESCE(NULLIF(btrim(username),''), '') AS username,
                        COALESCE(NULLIF(btrim(email),''), '') AS email,
-                       COALESCE(NULLIF(btrim(rol),''), '') AS rol
+                       COALESCE(NULLIF(btrim(rol),''), '') AS rol,
+                       CASE
+                         WHEN upper(COALESCE(rol,'')) LIKE '%OPERADOR%'
+                           OR upper(COALESCE(rol,'')) LIKE '%CONDUCTOR%'
+                           OR upper(COALESCE(rol,'')) LIKE '%CHOFER%'
+                           OR upper(COALESCE(rol,'')) LIKE '%CHOP%'
+                           OR upper(COALESCE(rol,'')) LIKE '%PATIO%'
+                         THEN TRUE ELSE FALSE
+                       END AS is_operational_role
                 FROM public.usuarios
                 WHERE COALESCE(is_active, TRUE) IS TRUE
-                  AND upper(COALESCE(rol,'')) NOT LIKE '%OPERADOR%'
-                  AND upper(COALESCE(rol,'')) NOT LIKE '%CONDUCTOR%'
-                  AND upper(COALESCE(rol,'')) NOT LIKE '%CHOFER%'
-                  AND upper(COALESCE(rol,'')) NOT LIKE '%PATIO%'
+                {where_ops}
                 ORDER BY upper(COALESCE(rol,'')), lower(COALESCE(nombre, username, email, '')), id_usuario
                 LIMIT 2000
                 """
             )
         ).mappings().all()
-    return {"ok": True, "items": [dict(r) for r in rows]}
+        items = _attach_brands(conn, [dict(r) for r in rows])
+    return {"ok": True, "items": items}
 
 
 @router.get("/admin/permissions/users/{id_usuario}")
@@ -202,8 +280,10 @@ def permissions_get_user(id_usuario: int, me=Depends(get_current_user)):
         ).mappings().first()
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado.")
-        if _is_excluded_role(str(user.get("rol") or "")):
+        user_d = dict(user)
+        if _is_excluded_role(str(user_d.get("rol") or "")):
             raise HTTPException(status_code=403, detail="Operadores/conductores no usan esta matriz.")
+        user_d = _attach_brands(conn, [user_d])[0]
         rows = conn.execute(
             text(
                 """
@@ -214,7 +294,7 @@ def permissions_get_user(id_usuario: int, me=Depends(get_current_user)):
             ),
             {"id": int(id_usuario)},
         ).mappings().all()
-    return {"ok": True, "user": dict(user), "permissions": {str(r["menu_id"]): str(r["access"]) for r in rows}}
+    return {"ok": True, "user": user_d, "permissions": {str(r["menu_id"]): str(r["access"]) for r in rows}}
 
 
 @router.put("/admin/permissions/users/{id_usuario}")
@@ -259,13 +339,14 @@ def me_permissions(me=Depends(get_current_user)):
     role = _role(me)
     uid = _uid(me)
     if _is_admin(me):
-        return {"ok": True, "source": "admin", "permissions": _all_full()}
+        return {"ok": True, "source": "admin", "permissions": _all_full(), "marcas": [], "marcas_ids": [], "brand_scope": "all"}
     if _is_excluded_role(role):
-        return {"ok": True, "source": "excluded", "permissions": {}}
+        return {"ok": True, "source": "excluded", "permissions": {}, "marcas": [], "marcas_ids": [], "brand_scope": "excluded"}
     if not uid:
-        return {"ok": True, "source": "none", "permissions": {}}
+        return {"ok": True, "source": "none", "permissions": {}, "marcas": [], "marcas_ids": [], "brand_scope": "none"}
     with get_connection() as conn:
         _ensure_tables(conn)
+        marcas = _brands_for_users(conn, [int(uid)]).get(int(uid), [])
         rows = conn.execute(
             text(
                 """
@@ -276,4 +357,11 @@ def me_permissions(me=Depends(get_current_user)):
             ),
             {"id": int(uid)},
         ).mappings().all()
-    return {"ok": True, "source": "user", "permissions": {str(r["menu_id"]): str(r["access"]) for r in rows}}
+    return {
+        "ok": True,
+        "source": "user",
+        "permissions": {str(r["menu_id"]): str(r["access"]) for r in rows},
+        "marcas": marcas,
+        "marcas_ids": [int(m["id_marca"]) for m in marcas],
+        "brand_scope": "assigned" if marcas else "all_or_unassigned",
+    }

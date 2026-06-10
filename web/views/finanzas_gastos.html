@@ -18,9 +18,23 @@
     .btn.secondary{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.15);}    
     .btn.small{padding:6px 10px; border-radius:10px; font-weight:800; font-size:12px;}
     .btn.danger{background:#ef4444; color:#250606;}
-    table{width:100%; border-collapse:collapse; font-size:13px;}
-    th,td{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left;}
+    .table-wrap{
+      margin-top:10px;
+      max-height:58vh;
+      overflow:auto;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      background:rgba(0,0,0,.08);
+    }
+    table{width:100%; min-width:1180px; border-collapse:separate; border-spacing:0; font-size:13px;}
+    th,td{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; vertical-align:top;}
+    th{position:sticky; top:0; z-index:2; background:#10243a; box-shadow:0 1px 0 rgba(255,255,255,.10);}
+    td{white-space:nowrap;}
+    td.desc{white-space:normal; min-width:260px; max-width:420px;}
     td.actions{white-space:nowrap;}
+    .pager{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;}
+    .pagerBtns{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+    .btn:disabled{opacity:.45; cursor:not-allowed;}
     dialog{border:1px solid rgba(255,255,255,.14); border-radius:14px; background:rgba(10,20,30,.98); color:inherit; padding:14px; max-width:min(960px,96vw);}
     dialog::backdrop{background:rgba(0,0,0,.5);}
   </style>
@@ -101,7 +115,7 @@
 
     <section class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-        <h3 style="margin:0">Gastos registrados (últimos 50)</h3>
+        <h3 style="margin:0">Gastos registrados</h3>
         <button class="btn secondary" id="btnReload">Actualizar</button>
       </div>
       <div class="grid full" style="margin-top:12px; grid-template-columns:repeat(6,minmax(0,1fr));">
@@ -147,7 +161,7 @@
           <button class="btn" id="btnApply">Aplicar</button>
         </div>
       </div>
-      <div class="table-wrap" style="margin-top:10px">
+      <div class="table-wrap">
         <table>
           <thead>
             <tr>
@@ -157,11 +171,13 @@
           <tbody id="rows"><tr><td class="muted" colspan="8">Cargando...</td></tr></tbody>
         </table>
       </div>
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:10px;">
+      <div class="pager">
         <div class="muted" id="pagerInfo">—</div>
-        <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn secondary small" id="btnPrev">◀</button>
-          <button class="btn secondary small" id="btnNext">▶</button>
+        <div class="pagerBtns">
+          <button class="btn secondary small" id="btnFirst">Primera</button>
+          <button class="btn secondary small" id="btnPrev">◀ Anterior</button>
+          <button class="btn secondary small" id="btnNext">Siguiente ▶</button>
+          <button class="btn secondary small" id="btnLast">Última</button>
         </div>
       </div>
     </section>
@@ -419,7 +435,7 @@
           <td>${(i.fecha||"").slice(0,10)}</td>
           <td>${i.cuenta_code||""}</td>
           <td>${fmt.format(Number(i.monto||0))}</td>
-          <td>${i.descripcion||""}</td>
+          <td class="desc">${i.descripcion||""}</td>
           <td>${i.marca||""}</td>
           <td>${i.centro_costo||""}</td>
           <td class="actions">
@@ -429,11 +445,18 @@
         </tr>
       `).join("") || `<tr><td class="muted" colspan="8">Sin registros.</td></tr>`;
 
+      const limit = f.limit;
       const from = curTotal ? Math.min(curTotal, curOffset + 1) : 0;
       const to = curTotal ? Math.min(curTotal, curOffset + items.length) : 0;
-      $("#pagerInfo").textContent = curTotal ? `Mostrando ${from}–${to} de ${curTotal}` : "Sin resultados";
-      $("#btnPrev").disabled = !(curOffset > 0);
-      $("#btnNext").disabled = !((curOffset + items.length) < curTotal);
+      const page = curTotal ? (Math.floor(curOffset / limit) + 1) : 0;
+      const pages = curTotal ? Math.max(1, Math.ceil(curTotal / limit)) : 0;
+      $("#pagerInfo").textContent = curTotal ? `Página ${page}/${pages} · Mostrando ${from}–${to} de ${curTotal}` : "Sin resultados";
+      const hasPrev = curOffset > 0;
+      const hasNext = (curOffset + items.length) < curTotal;
+      $("#btnFirst").disabled = !hasPrev;
+      $("#btnPrev").disabled = !hasPrev;
+      $("#btnNext").disabled = !hasNext;
+      $("#btnLast").disabled = !hasNext;
     }
 
     function syncEditSelects(){
@@ -533,10 +556,10 @@
       };
       await api("/finanzas/gastos", { method:"POST", body: JSON.stringify(payload) });
       alert("Gasto registrado");
-      await loadGastos();
+      await loadGastos({ reset:true });
     });
 
-    $("#btnReload").addEventListener("click", loadGastos);
+    $("#btnReload").addEventListener("click", () => loadGastos({ reset:true }));
     $("#btnApply").addEventListener("click", () => loadGastos({ reset:true }));
     $("#btnClear").addEventListener("click", async () => {
       try{
@@ -558,6 +581,16 @@
     $("#btnNext").addEventListener("click", async () => {
       const limit = getFilters().limit;
       curOffset = Math.max(0, (curOffset + limit));
+      await loadGastos({ reset:false });
+    });
+    $("#btnFirst").addEventListener("click", async () => {
+      curOffset = 0;
+      await loadGastos({ reset:false });
+    });
+    $("#btnLast").addEventListener("click", async () => {
+      const limit = getFilters().limit;
+      const pages = Math.max(1, Math.ceil((curTotal || 0) / limit));
+      curOffset = Math.max(0, (pages - 1) * limit);
       await loadGastos({ reset:false });
     });
     $("#rows").addEventListener("click", (e) => {

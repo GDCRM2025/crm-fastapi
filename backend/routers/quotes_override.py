@@ -1183,12 +1183,13 @@ def pdf_placeholder(
         descuento_abs = 0.0
 
     neto_val = max(0.0, round(subtotal_bruto - descuento_abs, 2))
+    base_iva_val = max(0.0, round(neto_val + traslado_val, 2))
 
     tipo_cli = str(cot.get("tipo_cliente") or "").strip().upper()
     is_empresa = ("EMP" in tipo_cli)
     iva_val = float(cot.get("iva") or 0) if is_empresa else 0.0
 
-    total_val = float(cot.get("total") or (neto_val + traslado_val + (iva_val if is_empresa else 0.0)))
+    total_val = float(cot.get("total") or (base_iva_val + (iva_val if is_empresa else 0.0)))
 
     show_desc = (descuento_valor > 0.0) or (descuento_abs > 0.005)
     desc_label = f"Descuento ({descuento_valor:.0f}%)" if (descuento_tipo == "%" and descuento_valor > 0) else "Descuento"
@@ -1196,11 +1197,9 @@ def pdf_placeholder(
     totals_rows = [f"<tr><td>Subtotal productos</td><td style='text-align:right'>${int(subtotal_bruto):,}</td></tr>"]
     if show_desc:
         totals_rows.append(f"<tr><td>{desc_label}</td><td style='text-align:right'>-$ {int(descuento_abs):,}</td></tr>")
-        totals_rows.append(f"<tr><td>Neto</td><td style='text-align:right'>${int(neto_val):,}</td></tr>")
-    if traslado_val > 0:
-        totals_rows.append(f"<tr><td>Traslado</td><td style='text-align:right'>${int(traslado_val):,}</td></tr>")
-    if is_empresa and iva_val > 0:
-        totals_rows.append(f"<tr><td>IVA</td><td style='text-align:right'>${int(iva_val):,}</td></tr>")
+    totals_rows.append(f"<tr><td>Traslado</td><td style='text-align:right'>${int(traslado_val):,}</td></tr>")
+    totals_rows.append(f"<tr><td>Neto</td><td style='text-align:right'>${int(base_iva_val):,}</td></tr>")
+    totals_rows.append(f"<tr><td>IVA 19%</td><td style='text-align:right'>${int(iva_val):,}</td></tr>")
     totals_rows.append(f"<tr><td><b>Total</b></td><td style='text-align:right'><b>${int(total_val):,}</b></td></tr>")
 
     rows_html = ""
@@ -1260,9 +1259,9 @@ def pdf_placeholder(
         rows.append(f"<tr><td>Subtotal productos</td><td style='text-align:right'>{_money(subtotal_bruto)}</td></tr>")
         if show_desc and descuento_abs > 0:
             rows.append(f"<tr><td>{desc_label}</td><td style='text-align:right'>- {_money(descuento_abs)}</td></tr>")
-        rows.append(f"<tr><td>Neto</td><td style='text-align:right'>{_money(neto_val)}</td></tr>")
-        rows.append(f"<tr><td>IVA</td><td style='text-align:right'>{_money(iva_val if is_empresa else 0)}</td></tr>")
         rows.append(f"<tr><td>Traslado</td><td style='text-align:right'>{_money(traslado_val)}</td></tr>")
+        rows.append(f"<tr><td>Neto</td><td style='text-align:right'>{_money(base_iva_val)}</td></tr>")
+        rows.append(f"<tr><td>IVA 19%</td><td style='text-align:right'>{_money(iva_val)}</td></tr>")
         rows.append(f"<tr><td><b>Total</b></td><td style='text-align:right'><b>{_money(total_val)}</b></td></tr>")
         return rows
 
@@ -1379,9 +1378,6 @@ def pdf_placeholder(
         totals_table_html = f"""
           <table class="totals">
             {''.join(totals_rows)}
-            <tr><td>IVA</td><td style="text-align:right">${int(iva_val):,}</td></tr>
-            <tr><td>Traslado</td><td style="text-align:right">${int(traslado_val):,}</td></tr>
-            <tr><td><b>Total</b></td><td style="text-align:right"><b>${int(total_val):,}</b></td></tr>
           </table>
         """
 
@@ -1699,6 +1695,7 @@ def pdf_placeholder(
             subtotal_print = int(subtotal_bruto)
             descuento_print = int(descuento_abs) if show_desc else 0
             neto_print = int(neto_val)
+            base_iva_print = int(base_iva_val)
             traslado_print = int(traslado_val)
             iva_print = int(iva_val)
             total_print = int(total_val)
@@ -2036,14 +2033,15 @@ def pdf_placeholder(
                 row(y0 + 0 * step, "SUBTOTAL", subtotal_print)
                 if show_desc:
                     row(y0 + 1 * step, desc_line, -abs(descuento_print))
-                    row(y0 + 2 * step, "NETO", neto_print)
-                    row(y0 + 3 * step, "TRASLADO", traslado_print)
-                    row(y0 + 4 * step, "IVA", iva_print)
+                    row(y0 + 2 * step, "TRASLADO", traslado_print)
+                    row(y0 + 3 * step, "NETO", base_iva_print)
+                    row(y0 + 4 * step, "IVA 19%", iva_print)
                     row(y0 + 5 * step, "TOTAL", total_print, bold=True, vfill=primary2)
                 else:
-                    row(y0 + 1 * step, "IVA", iva_print)
-                    row(y0 + 2 * step, "TRASLADO", traslado_print)
-                    row(y0 + 3 * step, "TOTAL", total_print, bold=True, vfill=primary2)
+                    row(y0 + 1 * step, "TRASLADO", traslado_print)
+                    row(y0 + 2 * step, "NETO", base_iva_print)
+                    row(y0 + 3 * step, "IVA 19%", iva_print)
+                    row(y0 + 4 * step, "TOTAL", total_print, bold=True, vfill=primary2)
 
             elif is_sabor:
                 # DEL SABOR: clean paper + olive/green accents; NO unit price
@@ -2105,14 +2103,15 @@ def pdf_placeholder(
                 row(y0 + 0 * step, "SUBTOTAL", subtotal_print)
                 if show_desc:
                     row(y0 + 1 * step, desc_line, -abs(descuento_print))
-                    row(y0 + 2 * step, "NETO", neto_print)
-                    row(y0 + 3 * step, "TRASLADO", traslado_print)
-                    row(y0 + 4 * step, "IVA", iva_print)
+                    row(y0 + 2 * step, "TRASLADO", traslado_print)
+                    row(y0 + 3 * step, "NETO", base_iva_print)
+                    row(y0 + 4 * step, "IVA 19%", iva_print)
                     row(y0 + 5 * step, "TOTAL", total_print, bold=True, vfill=primary2)
                 else:
-                    row(y0 + 1 * step, "IVA", iva_print)
-                    row(y0 + 2 * step, "TRASLADO", traslado_print)
-                    row(y0 + 3 * step, "TOTAL", total_print, bold=True, vfill=primary2)
+                    row(y0 + 1 * step, "TRASLADO", traslado_print)
+                    row(y0 + 2 * step, "NETO", base_iva_print)
+                    row(y0 + 3 * step, "IVA 19%", iva_print)
+                    row(y0 + 4 * step, "TOTAL", total_print, bold=True, vfill=primary2)
 
             elif is_gour:
                 # GOURMET: dark header + gold accents; remove discount/%imp (not shown)
@@ -2176,14 +2175,15 @@ def pdf_placeholder(
                 row(y0 + 0 * step, "SUBTOTAL", subtotal_print)
                 if show_desc:
                     row(y0 + 1 * step, desc_line, -abs(descuento_print))
-                    row(y0 + 2 * step, "NETO", neto_print)
-                    row(y0 + 3 * step, "TRASLADO", traslado_print)
-                    row(y0 + 4 * step, "IVA", iva_print)
+                    row(y0 + 2 * step, "TRASLADO", traslado_print)
+                    row(y0 + 3 * step, "NETO", base_iva_print)
+                    row(y0 + 4 * step, "IVA 19%", iva_print)
                     row(y0 + 5 * step, "TOTAL", total_print, bold=True, vfill=primary)
                 else:
-                    row(y0 + 1 * step, "IVA", iva_print)
-                    row(y0 + 2 * step, "TRASLADO", traslado_print)
-                    row(y0 + 3 * step, "TOTAL", total_print, bold=True, vfill=primary)
+                    row(y0 + 1 * step, "TRASLADO", traslado_print)
+                    row(y0 + 2 * step, "NETO", base_iva_print)
+                    row(y0 + 3 * step, "IVA 19%", iva_print)
+                    row(y0 + 4 * step, "TOTAL", total_print, bold=True, vfill=primary)
 
             else:
                 # EXPRESS: classic grid quote; orange accents; totals in small grid
@@ -2281,8 +2281,7 @@ def pdf_placeholder(
                 labels = [("SUBTOTAL", subtotal_print)]
                 if show_desc:
                     labels.append((desc_grid_label, -descuento_print))
-                    labels.append(("NETO", neto_print))
-                labels.extend([("IVA", iva_print), ("TRASLADO", traslado_print), ("TOTAL", total_print)])
+                labels.extend([("TRASLADO", traslado_print), ("NETO", base_iva_print), ("IVA 19%", iva_print), ("TOTAL", total_print)])
                 ry = gy
                 for lab, val in labels:
                     is_total = (lab == "TOTAL")
