@@ -377,6 +377,7 @@ if _enable_cors:
 # =========================
 # IMPORTANT: esto es lo que te falta hoy; por eso todo está 404.
 include_router_safe(app, "backend.routers.greeni_instagram")
+include_router_safe(app, "backend.routers.whatsapp_webhook")
 include_router_safe(app, "backend.routers.auth")
 include_router_safe(app, "backend.routers.leads")
 include_router_safe(app, "backend.routers.public_links")
