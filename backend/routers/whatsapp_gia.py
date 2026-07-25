@@ -4,7 +4,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,7 +13,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-
+from backend.routers.auth import get_current_user
+from backend.routers.whatsapp_webhook import ensure_tables as ensure_webhook_tables
 
 router = APIRouter(prefix="/gia/whatsapp", tags=["WhatsApp GIA"])
 
@@ -26,6 +27,12 @@ class AssignConversationBody(BaseModel):
     brand_code: str
 
 
+class CreateLeadBody(BaseModel):
+    nombre: str = Field(min_length=2, max_length=180)
+    fecha_evento: date
+    comuna: str | None = Field(default=None, max_length=120)
+
+
 BRANDS: dict[str, tuple[str, str]] = {
     "CAMALEON": ("CAMALEÓN", "Andrés Landerer"),
     "DEL_SABOR": ("DEL SABOR", "Walter Canales"),
@@ -35,6 +42,7 @@ BRANDS: dict[str, tuple[str, str]] = {
 
 
 def _ensure_tables(db: Session) -> None:
+    ensure_webhook_tables(db)
     db.execute(text("""
         CREATE TABLE IF NOT EXISTS whatsapp_contacts (
             id BIGSERIAL PRIMARY KEY,
@@ -73,12 +81,75 @@ def _ensure_tables(db: Session) -> None:
         )
     """))
     db.execute(text("""
+        CREATE TABLE IF NOT EXISTS whatsapp_conversation_leads (
+            id BIGSERIAL PRIMARY KEY,
+            conversation_id BIGINT NOT NULL REFERENCES whatsapp_conversations(id) ON DELETE CASCADE,
+            lead_id BIGINT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE(conversation_id, lead_id)
+        )
+    """))
+    db.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_whatsapp_conversations_last_message
         ON whatsapp_conversations(last_message_at DESC)
     """))
     db.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_conversation
         ON whatsapp_messages(conversation_id, sent_at)
+    """))
+
+    # Mapeo definitivo de ejecutivos. Por ahora el número de prueba se considera CAMALEÓN.
+    for code, (brand_name, executive_name) in BRANDS.items():
+        db.execute(text("""
+            INSERT INTO whatsapp_channels(brand_code, brand_name, executive_name, enabled)
+            VALUES (:code, :brand_name, :executive_name, TRUE)
+            ON CONFLICT (brand_code) DO UPDATE SET
+                brand_name = EXCLUDED.brand_name,
+                executive_name = EXCLUDED.executive_name,
+                enabled = TRUE,
+                updated_at = now()
+        """), {
+            "code": code,
+            "brand_name": brand_name,
+            "executive_name": executive_name,
+        })
+
+    test_phone_number_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+    if test_phone_number_id:
+        db.execute(text("""
+            UPDATE whatsapp_channels
+            SET phone_number_id = NULL, updated_at = now()
+            WHERE phone_number_id = :phone_number_id AND brand_code <> 'CAMALEON'
+        """), {"phone_number_id": test_phone_number_id})
+        db.execute(text("""
+            UPDATE whatsapp_channels
+            SET phone_number_id = :phone_number_id,
+                waba_id = COALESCE(NULLIF(:waba_id, ''), waba_id),
+                display_phone_number = COALESCE(NULLIF(:display_phone_number, ''), display_phone_number),
+                brand_name = 'CAMALEÓN',
+                executive_name = 'Andrés Landerer',
+                enabled = TRUE,
+                updated_at = now()
+            WHERE brand_code = 'CAMALEON'
+        """), {
+            "phone_number_id": test_phone_number_id,
+            "waba_id": os.getenv("WHATSAPP_WABA_ID", "").strip(),
+            "display_phone_number": os.getenv("WHATSAPP_TEST_PHONE_NUMBER", "").strip(),
+        })
+
+    # Repara conversaciones recibidas antes de configurar el canal.
+    db.execute(text("""
+        UPDATE whatsapp_conversations c
+        SET brand_code = ch.brand_code,
+            executive_name = ch.executive_name,
+            updated_at = now()
+        FROM whatsapp_channels ch
+        WHERE ch.enabled = TRUE
+          AND ch.phone_number_id = c.phone_number_id
+          AND (
+              c.brand_code IS DISTINCT FROM ch.brand_code
+              OR c.executive_name IS DISTINCT FROM ch.executive_name
+          )
     """))
     db.commit()
 
@@ -88,6 +159,16 @@ def _ts(value: Any) -> datetime:
         return datetime.fromtimestamp(int(value), tz=timezone.utc)
     except Exception:
         return datetime.now(timezone.utc)
+
+
+def _phone9(value: Any) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return digits[-9:] if len(digits) >= 9 else digits
+
+
+def _phone_e164_cl(value: Any) -> str:
+    digits = _phone9(value)
+    return f"+56{digits}" if len(digits) == 9 else str(value or "").strip()
 
 
 def _brand_for_phone(db: Session, phone_number_id: str) -> tuple[str | None, str | None]:
@@ -174,28 +255,23 @@ def _sync_webhook_events(db: Session) -> None:
                         str(c.get("wa_id") or ""): ((c.get("profile") or {}).get("name"))
                         for c in contacts if isinstance(c, dict)
                     }
-
                     for message in value.get("messages") or []:
                         wa_id = str(message.get("from") or "")
                         if not wa_id or not phone_number_id:
                             continue
                         message_id = str(message.get("id") or "") or None
                         message_type = str(message.get("type") or "unknown")
-                        body = None
                         if message_type == "text":
                             body = ((message.get("text") or {}).get("body"))
                         elif message_type == "button":
                             body = ((message.get("button") or {}).get("text"))
                         elif message_type == "interactive":
-                            interactive = message.get("interactive") or {}
-                            body = json.dumps(interactive, ensure_ascii=False)
+                            body = json.dumps(message.get("interactive") or {}, ensure_ascii=False)
                         else:
                             body = f"[{message_type}]"
                         sent_at = _ts(message.get("timestamp"))
                         contact_id = _upsert_contact(db, wa_id, profile_by_wa.get(wa_id))
-                        conversation_id = _upsert_conversation(
-                            db, contact_id, phone_number_id, sent_at, 1
-                        )
+                        conversation_id = _upsert_conversation(db, contact_id, phone_number_id, sent_at, 1)
                         db.execute(text("""
                             INSERT INTO whatsapp_messages(
                                 conversation_id, whatsapp_message_id, direction,
@@ -214,17 +290,17 @@ def _sync_webhook_events(db: Session) -> None:
                             "sent_at": sent_at,
                             "raw_payload": json.dumps(message, ensure_ascii=False),
                         })
-
                     for status in value.get("statuses") or []:
                         message_id = str(status.get("id") or "")
-                        status_name = str(status.get("status") or "unknown")
                         if message_id:
                             db.execute(text("""
                                 UPDATE whatsapp_messages
                                 SET status = :status
                                 WHERE whatsapp_message_id = :message_id
-                            """), {"status": status_name, "message_id": message_id})
-
+                            """), {
+                                "status": str(status.get("status") or "unknown"),
+                                "message_id": message_id,
+                            })
             db.execute(text("""
                 UPDATE whatsapp_webhook_events
                 SET processing_status = 'processed', processed_at = now(), error_message = NULL
@@ -236,7 +312,6 @@ def _sync_webhook_events(db: Session) -> None:
                 SET processing_status = 'error', error_message = :error
                 WHERE id = :id
             """), {"id": row["id"], "error": str(exc)[:1000]})
-
     db.commit()
 
 
@@ -257,10 +332,7 @@ def _meta_send_text(phone_number_id: str, to: str, body: str) -> dict[str, Any]:
         url,
         data=payload,
         method="POST",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -270,6 +342,37 @@ def _meta_send_text(phone_number_id: str, to: str, body: str) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Meta rechazó el mensaje: {detail}") from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"No se pudo conectar con Meta: {exc}") from exc
+
+
+def _conversation_or_404(db: Session, conversation_id: int):
+    row = db.execute(text("""
+        SELECT c.*, ct.wa_id, ct.profile_name
+        FROM whatsapp_conversations c
+        JOIN whatsapp_contacts ct ON ct.id = c.contact_id
+        WHERE c.id = :id
+    """), {"id": conversation_id}).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+    return row
+
+
+def _existing_leads(db: Session, wa_id: str) -> list[dict[str, Any]]:
+    phone9 = _phone9(wa_id)
+    if not phone9:
+        return []
+    rows = db.execute(text("""
+        SELECT l.id_lead, l.cliente, l.fecha_evento, l.created_at,
+               COALESCE(m.nombre, m.marca, '') AS marca,
+               COALESCE(e.nombre, '') AS estado
+        FROM public.leads l
+        LEFT JOIN public.marcas m ON m.id_marca = l.id_marca
+        LEFT JOIN public.estados_lead e ON e.id_estado = l.id_estado
+        WHERE RIGHT(regexp_replace(COALESCE(l.telefono, ''), '[^0-9]', '', 'g'), 9) = :phone9
+          AND COALESCE(l.is_deleted, FALSE) = FALSE
+        ORDER BY l.created_at DESC, l.id_lead DESC
+        LIMIT 10
+    """), {"phone9": phone9}).mappings().all()
+    return [dict(r) for r in rows]
 
 
 @router.get("/conversations")
@@ -288,19 +391,10 @@ def list_conversations(
         where.append("(ct.profile_name ILIKE :q OR ct.wa_id ILIKE :q OR COALESCE(m.body, '') ILIKE :q)")
         params["q"] = f"%{q}%"
     rows = db.execute(text(f"""
-        SELECT
-            c.id,
-            ct.wa_id,
-            ct.profile_name,
-            c.phone_number_id,
-            c.brand_code,
-            c.executive_name,
-            c.status,
-            c.unread_count,
-            c.last_message_at,
-            m.body AS last_message,
-            m.direction AS last_direction,
-            m.status AS last_message_status
+        SELECT c.id, ct.wa_id, ct.profile_name, c.phone_number_id,
+               c.brand_code, c.executive_name, c.status, c.unread_count,
+               c.last_message_at, m.body AS last_message,
+               m.direction AS last_direction, m.status AS last_message_status
         FROM whatsapp_conversations c
         JOIN whatsapp_contacts ct ON ct.id = c.contact_id
         LEFT JOIN LATERAL (
@@ -320,14 +414,7 @@ def list_conversations(
 @router.get("/conversations/{conversation_id}/messages")
 def conversation_messages(conversation_id: int, db: Session = Depends(get_db)):
     _sync_webhook_events(db)
-    conversation = db.execute(text("""
-        SELECT c.*, ct.wa_id, ct.profile_name
-        FROM whatsapp_conversations c
-        JOIN whatsapp_contacts ct ON ct.id = c.contact_id
-        WHERE c.id = :id
-    """), {"id": conversation_id}).mappings().first()
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+    conversation = _conversation_or_404(db, conversation_id)
     db.execute(text("""
         UPDATE whatsapp_conversations
         SET unread_count = 0, updated_at = now()
@@ -340,38 +427,34 @@ def conversation_messages(conversation_id: int, db: Session = Depends(get_db)):
         ORDER BY sent_at, id
         LIMIT 1000
     """), {"id": conversation_id}).mappings().all()
+    existing = _existing_leads(db, str(conversation["wa_id"]))
+    linked = db.execute(text("""
+        SELECT lead_id, created_at
+        FROM whatsapp_conversation_leads
+        WHERE conversation_id = :id
+        ORDER BY created_at DESC
+    """), {"id": conversation_id}).mappings().all()
     db.commit()
     return {
         "ok": True,
         "conversation": dict(conversation),
         "items": [dict(r) for r in rows],
+        "existing_leads": existing,
+        "linked_leads": [dict(r) for r in linked],
     }
 
 
 @router.post("/conversations/{conversation_id}/send")
-def send_message(
-    conversation_id: int,
-    body: SendMessageBody,
-    db: Session = Depends(get_db),
-):
+def send_message(conversation_id: int, body: SendMessageBody, db: Session = Depends(get_db)):
     _ensure_tables(db)
-    conversation = db.execute(text("""
-        SELECT c.id, c.phone_number_id, ct.wa_id
-        FROM whatsapp_conversations c
-        JOIN whatsapp_contacts ct ON ct.id = c.contact_id
-        WHERE c.id = :id
-    """), {"id": conversation_id}).mappings().first()
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+    conversation = _conversation_or_404(db, conversation_id)
     result = _meta_send_text(
         str(conversation["phone_number_id"]),
         str(conversation["wa_id"]),
         body.text.strip(),
     )
-    message_id = None
     messages = result.get("messages") or []
-    if messages and isinstance(messages[0], dict):
-        message_id = messages[0].get("id")
+    message_id = messages[0].get("id") if messages and isinstance(messages[0], dict) else None
     row = db.execute(text("""
         INSERT INTO whatsapp_messages(
             conversation_id, whatsapp_message_id, direction,
@@ -408,9 +491,7 @@ def assign_conversation(
     brand_name, executive_name = BRANDS[brand_code]
     updated = db.execute(text("""
         UPDATE whatsapp_conversations
-        SET brand_code = :brand_code,
-            executive_name = :executive_name,
-            updated_at = now()
+        SET brand_code = :brand_code, executive_name = :executive_name, updated_at = now()
         WHERE id = :id
         RETURNING id
     """), {
@@ -423,6 +504,99 @@ def assign_conversation(
     db.commit()
     return {
         "ok": True,
+        "brand_code": brand_code,
+        "brand_name": brand_name,
+        "executive_name": executive_name,
+    }
+
+
+@router.post("/conversations/{conversation_id}/create-lead")
+def create_lead_from_whatsapp(
+    conversation_id: int,
+    body: CreateLeadBody,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _ensure_tables(db)
+    conversation = _conversation_or_404(db, conversation_id)
+    brand_code = str(conversation.get("brand_code") or "").strip().upper()
+    if brand_code not in BRANDS:
+        raise HTTPException(status_code=400, detail="La conversación no tiene una marca asignada")
+
+    brand_name, executive_name = BRANDS[brand_code]
+    marca = db.execute(text("""
+        SELECT id_marca
+        FROM public.marcas
+        WHERE UPPER(regexp_replace(COALESCE(nombre, marca, ''), '[^A-Z0-9]', '', 'g')) =
+              UPPER(regexp_replace(:brand_name, '[^A-Z0-9]', '', 'g'))
+           OR UPPER(regexp_replace(COALESCE(marca, ''), '[^A-Z0-9]', '', 'g')) =
+              UPPER(regexp_replace(:brand_name, '[^A-Z0-9]', '', 'g'))
+        ORDER BY id_marca
+        LIMIT 1
+    """), {"brand_name": brand_name}).scalar()
+    if not marca:
+        raise HTTPException(status_code=400, detail=f"No se encontró la marca {brand_name} en el CRM")
+
+    estado = db.execute(text("""
+        SELECT id_estado
+        FROM public.estados_lead
+        WHERE UPPER(nombre) LIKE '%NUEVO%'
+           OR UPPER(nombre) LIKE '%ATENDIDO%'
+        ORDER BY CASE WHEN UPPER(nombre) LIKE '%NUEVO%' THEN 0 ELSE 1 END, id_estado
+        LIMIT 1
+    """)).scalar() or 1
+
+    id_comuna = None
+    comuna = (body.comuna or "").strip()
+    if comuna:
+        id_comuna = db.execute(text("""
+            SELECT id_comuna
+            FROM public.comunas
+            WHERE UPPER(COALESCE(nombre, comuna)) = UPPER(:comuna)
+               OR UPPER(COALESCE(nombre, comuna)) LIKE UPPER(:prefix)
+            ORDER BY id_comuna
+            LIMIT 1
+        """), {"comuna": comuna, "prefix": comuna + "%"}).scalar()
+
+    actor = str(user.get("name") or user.get("username") or user.get("email") or "Usuario CRM")
+    notas = (
+        "[WHATSAPP GIA]\n"
+        f"Conversación: {conversation_id}\n"
+        f"Marca: {brand_name}\n"
+        f"Ejecutivo: {executive_name}\n"
+        f"Creado por: {actor}\n"
+        f"Teléfono: {_phone_e164_cl(conversation['wa_id'])}"
+    )
+    lead_id = db.execute(text("""
+        INSERT INTO public.leads(
+            cliente, telefono, id_marca, id_estado, id_comuna,
+            fecha_evento, monto_cotizado, plataforma, notas,
+            created_at, updated_at
+        ) VALUES (
+            :cliente, :telefono, :id_marca, :id_estado, :id_comuna,
+            :fecha_evento, 0, 'WHATSAPP', :notas,
+            now(), now()
+        )
+        RETURNING id_lead
+    """), {
+        "cliente": body.nombre.strip(),
+        "telefono": _phone_e164_cl(conversation["wa_id"]),
+        "id_marca": int(marca),
+        "id_estado": int(estado),
+        "id_comuna": int(id_comuna) if id_comuna else None,
+        "fecha_evento": body.fecha_evento,
+        "notas": notas,
+    }).scalar_one()
+    db.execute(text("""
+        INSERT INTO whatsapp_conversation_leads(conversation_id, lead_id)
+        VALUES (:conversation_id, :lead_id)
+        ON CONFLICT (conversation_id, lead_id) DO NOTHING
+    """), {"conversation_id": conversation_id, "lead_id": int(lead_id)})
+    db.commit()
+    return {
+        "ok": True,
+        "id_lead": int(lead_id),
+        "cliente_existia": bool(_existing_leads(db, str(conversation["wa_id"]))[:-1]),
         "brand_code": brand_code,
         "brand_name": brand_name,
         "executive_name": executive_name,
