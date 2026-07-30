@@ -338,19 +338,7 @@ def confirmar_agendamiento(
             raise HTTPException(status_code=502, detail=approve_payload)
 
         lead_row = db.execute(
-            text(
-                """
-                SELECT l.*, COALESCE(e.nombre,'') AS estado_nombre,
-                       COALESCE(c.nombre, c.comuna, '') AS comuna_nombre,
-                       COALESCE(m.nombre, m.marca, '') AS marca_nombre
-                FROM public.leads l
-                LEFT JOIN public.estados_lead e ON e.id_estado=l.id_estado
-                LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
-                LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
-                WHERE l.id_lead=:id
-                LIMIT 1
-                """
-            ),
+            text("SELECT * FROM public.leads WHERE id_lead=:id LIMIT 1"),
             {"id": id_lead},
         ).mappings().first()
         lead = dict(lead_row or {})
