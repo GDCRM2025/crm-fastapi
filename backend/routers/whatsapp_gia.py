@@ -121,6 +121,21 @@ class CreateLeadBody(BaseModel):
     comuna: str | None = Field(default=None, max_length=120)
 
 
+class CreateMessageTemplateBody(BaseModel):
+    conversation_id: int | None = None
+    name: str = Field(pattern=r"^[a-z0-9_]{3,128}$")
+    category: str = Field(pattern=r"^(UTILITY|MARKETING)$")
+    language: str = Field(default="es", pattern=r"^[a-z]{2}(?:_[A-Z]{2})?$")
+    header: str | None = Field(default=None, max_length=60)
+    body: str = Field(min_length=1, max_length=1024)
+    footer: str | None = Field(default=None, max_length=60)
+
+
+class SendMessageTemplateBody(BaseModel):
+    name: str = Field(pattern=r"^[a-z0-9_]{3,128}$")
+    language: str = Field(default="es", pattern=r"^[a-z]{2}(?:_[A-Z]{2})?$")
+
+
 BRANDS: dict[str, tuple[str, str]] = {
     "CAMALEON": ("CAMALEÓN", "Andrés Landerer"),
     "DEL_SABOR": ("DEL SABOR", "Walter Canales"),
@@ -869,6 +884,81 @@ def _meta_send_text(phone_number_id: str, to: str, body: str) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"No se pudo conectar con Meta: {exc}") from exc
 
 
+def _template_admin(user: dict[str, Any]) -> None:
+    role = str(user.get("role") or user.get("rol") or "").strip().upper()
+    if "ADMIN" not in role:
+        raise HTTPException(
+            status_code=403,
+            detail="Solo administradores pueden crear o eliminar plantillas de Meta",
+        )
+
+
+def _template_assets(
+    db: Session,
+    conversation_id: int | None = None,
+) -> tuple[str, str]:
+    waba_id = ""
+    phone_number_id = ""
+    if conversation_id:
+        row = db.execute(text("""
+            SELECT c.phone_number_id, ch.waba_id
+            FROM whatsapp_conversations c
+            LEFT JOIN whatsapp_channels ch
+              ON ch.phone_number_id=c.phone_number_id
+             AND ch.enabled=TRUE
+            WHERE c.id=:conversation_id
+            LIMIT 1
+        """), {"conversation_id": conversation_id}).mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+        phone_number_id = str(row.get("phone_number_id") or "").strip()
+        waba_id = str(row.get("waba_id") or "").strip()
+    waba_id = waba_id or _runtime_env("WHATSAPP_WABA_ID")
+    phone_number_id = phone_number_id or _runtime_env("WHATSAPP_PHONE_NUMBER_ID")
+    if not waba_id:
+        raise HTTPException(status_code=503, detail="WHATSAPP_WABA_ID no configurado")
+    return waba_id, phone_number_id
+
+
+def _meta_graph_json(
+    path: str,
+    *,
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+    query: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    token = _runtime_env("WHATSAPP_ACCESS_TOKEN")
+    version = _runtime_env("WHATSAPP_GRAPH_API_VERSION", "v25.0")
+    if not token:
+        raise HTTPException(status_code=503, detail="WHATSAPP_ACCESS_TOKEN no configurado")
+    url = f"https://graph.facebook.com/{version}/{path.lstrip('/')}"
+    if query:
+        url += "?" + urllib.parse.urlencode(query)
+    data = None
+    headers = {"Authorization": f"Bearer {token}"}
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {"success": True}
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            error = json.loads(raw).get("error") or {}
+            message = str(error.get("message") or raw)
+            code = error.get("code")
+            if code == 190 or exc.code == 401:
+                message = "El token de Meta venció o no es válido. Genera uno nuevo en WhatsApp > API Setup."
+        except Exception:
+            message = raw or str(exc)
+        raise HTTPException(status_code=502, detail=f"Meta: {message}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"No se pudo conectar con Meta: {exc}") from exc
+
+
 def _greenie_env(name: str, default: str = "") -> str:
     runtime = globals().get("_runtime_env")
     if callable(runtime):
@@ -1303,6 +1393,158 @@ async def _greenie_event_stream():
                 await asyncio.to_thread(connection.close)
             except Exception:
                 pass
+
+
+@router.get("/templates")
+def message_templates(
+    conversation_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    _ensure_tables(db)
+    waba_id, _ = _template_assets(db, conversation_id)
+    result = _meta_graph_json(
+        f"{waba_id}/message_templates",
+        query={
+            "fields": "id,name,status,category,language,components,quality_score,rejected_reason",
+            "limit": "100",
+        },
+    )
+    rows = result.get("data") or []
+    return {
+        "ok": True,
+        "waba_configured": True,
+        "items": sorted(
+            rows,
+            key=lambda item: (
+                0 if str(item.get("status") or "").upper() == "APPROVED" else 1,
+                str(item.get("name") or ""),
+            ),
+        ),
+    }
+
+
+@router.post("/templates")
+def create_message_template(
+    body: CreateMessageTemplateBody,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _template_admin(user)
+    _ensure_tables(db)
+    if "{{" in body.body or "}}" in body.body:
+        raise HTTPException(
+            status_code=422,
+            detail="Esta versión admite plantillas estáticas. Quita las variables {{n}} para enviarla a revisión.",
+        )
+    waba_id, _ = _template_assets(db, body.conversation_id)
+    components: list[dict[str, str]] = []
+    if body.header and body.header.strip():
+        components.append({
+            "type": "HEADER",
+            "format": "TEXT",
+            "text": body.header.strip(),
+        })
+    components.append({"type": "BODY", "text": body.body.strip()})
+    if body.footer and body.footer.strip():
+        components.append({"type": "FOOTER", "text": body.footer.strip()})
+    result = _meta_graph_json(
+        f"{waba_id}/message_templates",
+        method="POST",
+        payload={
+            "name": body.name,
+            "language": body.language,
+            "category": body.category,
+            "allow_category_change": True,
+            "components": components,
+        },
+    )
+    return {
+        "ok": True,
+        "id": result.get("id"),
+        "status": result.get("status") or "PENDING",
+        "category": result.get("category") or body.category,
+        "name": body.name,
+        "language": body.language,
+    }
+
+
+@router.delete("/templates/{template_name}")
+def delete_message_template(
+    template_name: str,
+    conversation_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _template_admin(user)
+    _ensure_tables(db)
+    clean_name = template_name.strip().lower()
+    if not clean_name or len(clean_name) > 128 or any(
+        char not in "abcdefghijklmnopqrstuvwxyz0123456789_" for char in clean_name
+    ):
+        raise HTTPException(status_code=422, detail="Nombre de plantilla inválido")
+    waba_id, _ = _template_assets(db, conversation_id)
+    result = _meta_graph_json(
+        f"{waba_id}/message_templates",
+        method="DELETE",
+        query={"name": clean_name},
+    )
+    return {"ok": bool(result.get("success", True)), "name": clean_name}
+
+
+@router.post("/conversations/{conversation_id}/send-template")
+def send_message_template(
+    conversation_id: int,
+    body: SendMessageTemplateBody,
+    db: Session = Depends(get_db),
+):
+    _ensure_tables(db)
+    conversation = _conversation_or_404(db, conversation_id)
+    _, fallback_phone_number_id = _template_assets(db, conversation_id)
+    phone_number_id = str(conversation.get("phone_number_id") or fallback_phone_number_id)
+    result = _meta_graph_json(
+        f"{phone_number_id}/messages",
+        method="POST",
+        payload={
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": str(conversation["wa_id"]),
+            "type": "template",
+            "template": {
+                "name": body.name,
+                "language": {"code": body.language},
+            },
+        },
+    )
+    messages_result = result.get("messages") or []
+    message_id = (
+        messages_result[0].get("id")
+        if messages_result and isinstance(messages_result[0], dict)
+        else None
+    )
+    db.execute(text("""
+        INSERT INTO whatsapp_messages(
+            conversation_id, whatsapp_message_id, direction,
+            message_type, body, status, sent_at, raw_payload
+        ) VALUES (
+            :conversation_id, :message_id, 'outbound',
+            'template', :body, 'accepted', now(), CAST(:raw_payload AS JSONB)
+        )
+        ON CONFLICT (whatsapp_message_id) DO NOTHING
+    """), {
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+        "body": f"[Plantilla enviada] {body.name}",
+        "raw_payload": json.dumps(result, ensure_ascii=False),
+    })
+    db.execute(text("""
+        UPDATE whatsapp_conversations
+        SET last_message_at=now(), updated_at=now()
+        WHERE id=:conversation_id
+    """), {
+        "conversation_id": conversation_id,
+    })
+    db.commit()
+    return {"ok": True, "message_id": message_id, "template": body.name}
 
 
 @router.get("/events", include_in_schema=False)
