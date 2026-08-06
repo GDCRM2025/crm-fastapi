@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
 
-  const BUILD='20260806-LEAD-BRAND-ACTIONS';
+  const BUILD='20260806-VIDEO-READY';
   const $=(selector,root=document)=>root.querySelector(selector);
   const $$=(selector,root=document)=>[...root.querySelectorAll(selector)];
   const API_BASE=(()=>{
@@ -57,10 +57,8 @@
     style.id='greenieUi8Style';
     style.textContent=`
       .greenieHeaderActions{display:flex;gap:6px;align-items:center;margin-left:auto}
-      .greenieHeaderIcon,.greenieMiniAction{width:34px;height:34px;border:1px solid #cbd5e1;background:#fff;border-radius:999px;display:inline-grid;place-items:center;padding:0;cursor:pointer;font-size:15px;box-shadow:none}
-      .greenieHeaderIcon:hover,.greenieMiniAction:hover{background:#eff6ff;border-color:#93c5fd}
-      .greenieActionsCompact{display:flex!important;gap:6px!important;flex-wrap:wrap!important;grid-template-columns:none!important}
-      .greenieActionsCompact .greenieMiniAction{font-size:15px!important;font-weight:800!important;color:#0f172a!important}
+      .greenieHeaderIcon{width:34px;height:34px;border:1px solid #cbd5e1;background:#fff;border-radius:999px;display:inline-grid;place-items:center;padding:0;cursor:pointer;font-size:15px;box-shadow:none}
+      .greenieHeaderIcon:hover{background:#eff6ff;border-color:#93c5fd}
       .greenieLeadDetails{margin-top:8px;border:1px solid #dbe5f0;border-radius:11px;overflow:hidden;background:#fff}
       .greenieLeadSummary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;background:#f8fafc;font-size:11px;font-weight:950;color:#334155}
       .greenieLeadSummary::-webkit-details-marker{display:none}
@@ -247,6 +245,10 @@
       const leadId=Number(result.id_lead||0);
       if(notes&&leadId)await api(`/gia/whatsapp/conversations/${conversationId}/leads/${leadId}/followup`,{method:'POST',body:JSON.stringify({text:notes,kind:'NOTE',title:'Nota inicial desde WhatsApp'})}).catch(()=>null);
       closeCreateLead();
+      try{
+        const Swal=await window.ensureGreenieSweetAlert?.();
+        if(Swal)await Swal.fire({icon:'success',title:`Lead #${leadId} creado`,text:`Asignado automáticamente a ${result.brand_name||result.brand_code||'la marca del canal'}.`,timer:1400,showConfirmButton:false});
+      }catch(_){ }
       setTimeout(()=>$('#refresh')?.click(),100);
     }catch(err){
       error.textContent=err.message;
@@ -267,40 +269,6 @@
     button.innerHTML='<span class="greenieClientCreateIcon">＋</span><span>Nuevo lead de esta marca</span>';
     button.onclick=openCreateLead;
     card.appendChild(button);
-  }
-
-  function compactActions(){
-    const actionCard=$$('#side .card').find(card=>String($('.sectionTitle',card)?.textContent||'').toLowerCase().includes('acciones del lead'));
-    if(!actionCard)return;
-    const grid=$('.actionsGrid',actionCard);
-    if(!grid||grid.dataset.compactActions==='1')return;
-    grid.dataset.compactActions='1';
-    grid.classList.add('greenieActionsCompact');
-    $$('button',grid).forEach(button=>{
-      const text=String(button.textContent||'').trim();
-      const lower=text.toLowerCase();
-      let icon='•';
-      if(lower.includes('llam'))icon='📞';
-      else if(lower.includes('ficha')||lower.includes('ver lead')||lower==='ver')icon='👁';
-      else if(lower.includes('crear')&&lower.includes('cot'))icon='🧾';
-      else if(lower.includes('enviar')&&lower.includes('cot'))icon='📤';
-      else if(lower.includes('pdf'))icon='📄';
-      else if(lower.includes('agenda')||lower.includes('evento'))icon='📅';
-      button.title=text;
-      button.setAttribute('aria-label',text);
-      button.textContent=icon;
-      button.classList.add('greenieMiniAction');
-      if(lower.includes('ficha')||lower.includes('ver lead')){
-        const clone=button.cloneNode(true);
-        clone.id='greenieOpenLead8';
-        button.replaceWith(clone);
-        clone.onclick=event=>{
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          openLeadModal();
-        };
-      }
-    });
   }
 
   function dropdownLeads(){
@@ -340,7 +308,6 @@
 
   function enhanceSide(){
     installClientCreate();
-    compactActions();
     dropdownLeads();
   }
 

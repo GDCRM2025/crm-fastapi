@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
 
-  const BUILD='20260727-WORKSPACE2';
+  const BUILD='20260806-VIDEO-READY';
   const API_BASE=(()=>{
     const host=String(location.hostname||'').toLowerCase();
     return host==='localhost'||host==='127.0.0.1'?'':'/crm';
@@ -37,7 +37,7 @@
   }
 
   function activeConversationId(){
-    return Number($('.item.active')?.dataset?.id||0);
+    return Number($('#app')?.dataset?.conversationId||$('.item.active')?.dataset?.id||0);
   }
 
   function selectedLeadCard(){
@@ -66,13 +66,20 @@
     if(window.__greenieSwalPromise)return window.__greenieSwalPromise;
     window.__greenieSwalPromise=new Promise((resolve,reject)=>{
       const script=document.createElement('script');
-      script.src='https://cdn.jsdelivr.net/npm/sweetalert2@11';
+      script.src=`${API_BASE}/web/vendor/sweetalert2-11.22.2.all.min.js`;
       script.onload=()=>resolve(window.Swal);
-      script.onerror=()=>reject(new Error('No se pudo cargar SweetAlert2'));
+      script.onerror=()=>{
+        const fallback=document.createElement('script');
+        fallback.src='https://cdn.jsdelivr.net/npm/sweetalert2@11';
+        fallback.onload=()=>resolve(window.Swal);
+        fallback.onerror=()=>reject(new Error('No se pudo cargar SweetAlert2'));
+        document.head.appendChild(fallback);
+      };
       document.head.appendChild(script);
     });
     return window.__greenieSwalPromise;
   }
+  window.ensureGreenieSweetAlert=ensureSweetAlert;
 
   function ensureWorkspace(){
     if($('#greenieWorkspace'))return;
@@ -83,7 +90,6 @@
       .leadStatusHead{display:flex;align-items:center;justify-content:space-between;padding:7px 9px;background:#f1f5f9;font-size:10px;font-weight:950;text-transform:uppercase;color:#334155;letter-spacing:.04em}
       .leadStatusCount{background:#fff;border:1px solid #cbd5e1;border-radius:999px;padding:1px 7px}
       .leadStatusBody{padding:0 7px 7px}.leadStatusBody .leadCard{margin-top:7px}
-      .greenieQuickRow{display:flex;gap:5px;flex-wrap:wrap;margin:7px 0}
       .greenieQuick{border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:6px 9px;font-weight:850;cursor:pointer;font-size:10px}
       .greenieQuick:hover{background:#eaf3ff;border-color:#93c5fd}
       .greenieWorkspace{position:fixed;inset:0;background:rgba(15,23,42,.58);z-index:1000;display:none;padding:18px}
@@ -180,25 +186,13 @@
     );
     if(!actionCard)return;
 
+    actionCard.dataset.professionalActions='1';
     const call=$('#callBtn',actionCard);
-    if(call){call.textContent='📞 Abrir llamada WhatsApp';call.title='Abre la conversación en WhatsApp para iniciar la llamada';}
+    if(call)call.title='Abre WhatsApp para iniciar una llamada con el cliente';
     const openLead=$('#openLeadBtn',actionCard);
-    if(openLead)openLead.textContent='👁 Ver lead en modal';
+    if(openLead)openLead.title='Edita y completa la ficha del lead sin salir de WhatsApp';
     const createQuote=$('#createQuoteBtn',actionCard);
-    if(createQuote)createQuote.textContent='🧾 Crear cotización';
-
-    if(!$('.greenieQuickRow',actionCard)){
-      const row=document.createElement('div');
-      row.className='greenieQuickRow';
-      row.innerHTML=`
-        <button class="greenieQuick" type="button" data-gf="WSP">🟢 WSP</button>
-        <button class="greenieQuick" type="button" data-gf="CALL">📞 Llamada</button>
-        <button class="greenieQuick" type="button" data-gf="EMAIL">✉️ Email</button>
-        <button class="greenieQuick" type="button" data-gf="NO">⏳ No contesta</button>
-        <button class="greenieQuick" type="button" data-gf="PICK">⚡ Seguimiento</button>`;
-      const followText=$('#followText',actionCard);
-      actionCard.insertBefore(row,followText||null);
-    }
+    if(createQuote)createQuote.title='Crea una cotización sin salir de WhatsApp';
 
     const state=selectedLeadState();
     if(state.includes('CONFIRM')&&!$('#openEventBtn',actionCard)){

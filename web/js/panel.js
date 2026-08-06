@@ -2579,11 +2579,10 @@ const MENU = [
 	    ico: "\u{1F9F0}",
 	    title: "Tools",
 	    items: [
-	      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260727-greenie-live2#correo" },
-	      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260727-greenie-live2#instagram" },
-	      { id: "tool_wapp", label: "WhatsApp Greenie", url: "/web/views/tools.html?v=20260806-stickers-leads-v3#whatsapp" },
-      { id: "tool_chat", label: "Chat (deshabilitado)", url: "/web/views/tools.html?v=20260727-greenie-live2#chat", disabled: true },
-	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260727-greenie-live2#calc" },
+	      { id: "tool_gmail", label: "Correo", url: "/web/views/tools.html?v=20260806-video-ready-v1#correo" },
+	      { id: "tool_ig", label: "Instagram", url: "/web/views/tools.html?v=20260806-video-ready-v1#instagram" },
+	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260806-video-ready-v1#whatsapp" },
+	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260806-video-ready-v1#calc" },
 	      // Clima removido (Tools unificado). Si lo reactivamos, vuelve como item de Tools.
 	    ]
 	  },
@@ -3950,7 +3949,7 @@ function openDefault() {
     }
   });
 
-  // ---- Global poll: Correo (GIA) ----
+  // ---- Global poll: Correo ----
   // Muestra toast aunque el usuario esté en otra sección.
   let __giaInit = false;
   async function pollGiaEmail() {
@@ -3985,7 +3984,7 @@ function openDefault() {
         toast(`Correo: ${openTotal} pendiente(s)`, {
           kind: "ok",
           ms: 8e3,
-	          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260727-greenie-live2#correo" })
+	          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260806-video-ready-v1#correo" })
 	        });
 	      }
       localStorage.setItem("gd_gia_email_max_id", String(Math.max(lastMax, maxId)));
