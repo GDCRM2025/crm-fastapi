@@ -2579,10 +2579,10 @@ const MENU = [
 	    ico: "\u{1F9F0}",
 	    title: "Tools",
 	    items: [
-	      { id: "tool_gmail", label: "Correo", url: "/web/views/tools.html?v=20260806-video-ready-v1#correo" },
-	      { id: "tool_ig", label: "Instagram", url: "/web/views/tools.html?v=20260806-video-ready-v1#instagram" },
-	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260806-video-ready-v1#whatsapp" },
-	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260806-video-ready-v1#calc" },
+	      { id: "tool_gmail", label: "Correo", url: "/web/views/tools.html?v=20260806-video-ready-v2#correo" },
+	      { id: "tool_ig", label: "Instagram", url: "/web/views/tools.html?v=20260806-video-ready-v2#instagram" },
+	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260806-video-ready-v2#whatsapp" },
+	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260806-video-ready-v2#calc" },
 	      // Clima removido (Tools unificado). Si lo reactivamos, vuelve como item de Tools.
 	    ]
 	  },
@@ -3984,7 +3984,7 @@ function openDefault() {
         toast(`Correo: ${openTotal} pendiente(s)`, {
           kind: "ok",
           ms: 8e3,
-	          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260806-video-ready-v1#correo" })
+	          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260806-video-ready-v2#correo" })
 	        });
 	      }
       localStorage.setItem("gd_gia_email_max_id", String(Math.max(lastMax, maxId)));
