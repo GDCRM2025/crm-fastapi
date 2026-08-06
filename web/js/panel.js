@@ -184,7 +184,7 @@ function leaveRrhhOnlyMode() {
   } catch (_) {
   }
 }
-async function _serverLogout(reason = "manual") {
+async function _serverLogout(reason = "manual", extra = {}) {
   try {
     const t = getToken();
     if (!t) return;
@@ -199,7 +199,7 @@ async function _serverLogout(reason = "manual") {
       await fetch(`${API_BASE}/auth/logout`, {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, ...(extra || {}) }),
         signal: ctrl.signal
       });
     } finally {
@@ -209,7 +209,12 @@ async function _serverLogout(reason = "manual") {
   }
 }
 async function idleLogout() {
-  await _serverLogout("idle");
+  const la = lastActivity();
+  const inactivityMs = la ? Math.max(0, _now() - la) : IDLE_TIMEOUT_MS;
+  await _serverLogout("idle", {
+    inactivity_ms: inactivityMs,
+    inactivity_minutes: Math.max(1, Math.round(inactivityMs / 60000))
+  });
   clearAuth();
   location.href = `${API_BASE}/web/login.html?reason=idle`;
 }
@@ -778,6 +783,26 @@ async function fetchNotifications() {
     return { ok: false, total: 0, items: [] };
   }
 }
+let leadLockPollHandle = null;
+async function checkLeadLockOnce() {
+  try {
+    if (!canUseTasksBadge()) return;
+    const r = await fetch(`${API_BASE}/notifications/lead_lock`, { headers: authHeaders() });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data && data.ok) renderLeadLock(data);
+  } catch (_) {
+  }
+}
+function startLeadLockPolling() {
+  try {
+    if (!canUseTasksBadge()) return;
+    if (leadLockPollHandle) return;
+    setTimeout(checkLeadLockOnce, 2500);
+    leadLockPollHandle = setInterval(checkLeadLockOnce, 5 * 60 * 1000);
+  } catch (_) {
+  }
+}
 async function fetchSoldLatest() {
   try {
     if (!getToken()) return { ok: false, item: null };
@@ -1254,7 +1279,7 @@ function renderNotifications(data) {
         toast(`${txt2} — click para abrir`, {
           kind: "ok",
           ms: 9000,
-          onClick: () => openItem({ id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260326-leads2" })
+          onClick: () => openItem({ id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260728-month1" })
         });
       }catch(_){}
     } else if (staleCount > 0 && (lastStaleCount === null || staleCount > lastStaleCount)) {
@@ -1275,7 +1300,7 @@ function openLeadById(id) {
   const lid = Number(id || 0);
   if (!lid) return;
   pendingLeadOpen = { id: lid };
-  frame.src = viewURL(`/web/views/leads.html?v=20260326-leads2`);
+  frame.src = viewURL(`/web/views/leads.html?v=20260728-month1`);
 }
 function openLeadsFromLock(openId, ids) {
   const frame = qs("#mainFrame");
@@ -1285,11 +1310,11 @@ function openLeadsFromLock(openId, ids) {
   params.set("stale", "1");
   if (idList.length) params.set("stale_ids", idList.join(","));
   pendingLeadOpen = null;
-  frame.src = viewURL(`/web/views/leads.html?v=20260326-leads2&${params.toString()}`);
+  frame.src = viewURL(`/web/views/leads.html?v=20260728-month1&${params.toString()}`);
 }
 function renderLeadLock(data) {
   var _a, _b;
-  if (CURRENT_ROLE_ID !== 2) {
+  if (!canUseTasksBadge()) {
     document.body.classList.remove("lead-lock");
     if (leadLockEl) leadLockEl.style.display = "none";
     return;
@@ -1299,22 +1324,21 @@ function renderLeadLock(data) {
   const staleNew = stale.NUEVO || [];
   const staleContact = stale.CONTACTADO || [];
   const staleCot = stale.COTIZADO || [];
-  const dayKey = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const countKey = `gd_lock_unlock_count_${dayKey}`;
-  const unlockUntil = Number(localStorage.getItem("gd_lock_unlock_until") || "0");
-  const unlockCount = Number(localStorage.getItem(countKey) || "0");
-  const now = Date.now();
-  const isUnlocked = unlockUntil > now && unlockCount < 3;
+  const bypass = (data == null ? void 0 : data.bypass) || {};
+  const isUnlocked = !!bypass.active;
+  const remainingToday = Number(bypass.remaining_today || 0);
+  const maxDaily = Number(bypass.max_daily || 3);
+  const minutes = Number(bypass.minutes || 60);
   if (!leadLockEl) {
     leadLockEl = document.createElement("div");
     leadLockEl.id = "leadLock";
     leadLockEl.innerHTML = `
       <div class="lead-lock-card">
         <div class="lead-lock-title">Leads sin movimiento</div>
-        <div class="lead-lock-sub">Debes trabajar estos leads antes de continuar.</div>
+        <div class="lead-lock-sub" id="leadLockSub">Debes trabajar estos leads antes de continuar.</div>
         <div class="lead-lock-list" id="leadLockList"></div>
         <div class="lead-lock-actions">
-          <button class="btn" id="leadLockUnlock">Liberar 1h</button>
+          <button class="btn" id="leadLockUnlock">Aplazar urgencia</button>
           <button class="btn" id="leadLockOpen">Ir a leads</button>
         </div>
       </div>
@@ -1323,6 +1347,10 @@ function renderLeadLock(data) {
   }
   if (lock && !isUnlocked) {
     document.body.classList.add("lead-lock");
+    const sub = leadLockEl.querySelector("#leadLockSub");
+    if (sub) {
+      sub.textContent = `Debes mover o comentar estos leads. Si hay una urgencia real, puedes aplazar ${minutes} min (${remainingToday}/${maxDaily} disponibles hoy).`;
+    }
     const list = leadLockEl.querySelector("#leadLockList");
     if (list) {
       const allIds = [
@@ -1360,14 +1388,30 @@ function renderLeadLock(data) {
     }
     const unlockBtn = leadLockEl.querySelector("#leadLockUnlock");
     if (unlockBtn) {
-      unlockBtn.disabled = unlockCount >= 3;
-      unlockBtn.textContent = unlockCount >= 3 ? "L\xEDmite diario" : "Liberar 1h";
-      unlockBtn.onclick = () => {
-        if (unlockCount >= 3) return;
-        localStorage.setItem("gd_lock_unlock_until", String(Date.now() + 60 * 60 * 1e3));
-        localStorage.setItem(countKey, String(unlockCount + 1));
-        leadLockEl.style.display = "none";
-        document.body.classList.remove("lead-lock");
+      unlockBtn.disabled = remainingToday <= 0;
+      unlockBtn.textContent = remainingToday <= 0 ? "L\xEDmite diario" : `Aplazar ${minutes} min`;
+      unlockBtn.onclick = async () => {
+        if (remainingToday <= 0) return;
+        const reason = window.prompt("Motivo obligatorio de la urgencia. Esto queda en auditoría.");
+        const txt = String(reason || "").trim();
+        if (txt.length < 12) {
+          alert("Debes escribir un motivo claro (mínimo 12 caracteres).");
+          return;
+        }
+        try {
+          const r = await fetch(`${API_BASE}/notifications/lead_lock/bypass`, {
+            method: "POST",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ reason: txt })
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.detail || j.message || `HTTP ${r.status}`);
+          leadLockEl.style.display = "none";
+          document.body.classList.remove("lead-lock");
+          setTimeout(checkLeadLockOnce, 500);
+        } catch (err) {
+          alert("No pude aplazar: " + String((err && err.message) || err));
+        }
       };
     }
     leadLockEl.style.display = "flex";
@@ -1670,8 +1714,10 @@ async function fetchMe() {
       if (btnGpt) btnGpt.style.display = "none";
       if (btnChat) btnChat.style.display = "none";
     }
-    await loadUserMenuAccess();
+    await Promise.all([loadUserMenuAccess(), loadSystemFeatures()]);
     buildMenu();
+    try { enforceSgjoMarkInGate(); } catch (_) {}
+    startLeadLockPolling();
     startTasksBadgePolling();
     startSoldEventPolling();
   } catch (_) {
@@ -1749,9 +1795,8 @@ function bootstrapFromToken() {
     }
     buildMenu();
     // Refuerzo UX: si el usuario debe marcar y aún no tiene IN hoy, abre marcación automáticamente (CRM).
-    // SGJO gate (obligar marcación al entrar): deshabilitado hasta estabilizar enrolamiento/marcación.
-    // Se puede reactivar luego con un flag/ajuste, pero por ahora NO bloqueamos a ejecutivos.
-    try { _hideSgjoGate(); } catch (_) {}
+    try { enforceSgjoMarkInGate(); } catch (_) {}
+    startLeadLockPolling();
     startTasksBadgePolling();
     startSoldEventPolling();
     return { ok: true, redirected: false };
@@ -1907,8 +1952,6 @@ function _hideSgjoGate() {
   }
 }
 async function enforceSgjoMarkInGate() {
-  // Deshabilitado temporalmente.
-  return;
   try {
     if (!getToken()) return;
     const r = await fetch(`${API_BASE}/rrhh/sgjo/today`, { headers: authHeaders({ "Accept": "application/json" }) });
@@ -1950,8 +1993,6 @@ async function enforceSgjoMarkInGate() {
 }
 
 async function maybePromptSgjoMarkOutBeforeLogout() {
-  // Deshabilitado temporalmente.
-  return true;
   try {
     if (!getToken()) return true;
     const r = await fetch(`${API_BASE}/rrhh/sgjo/today`, { headers: authHeaders({ "Accept": "application/json" }) });
@@ -1969,12 +2010,12 @@ async function maybePromptSgjoMarkOutBeforeLogout() {
     if (window.Swal) {
       const res = await Swal.fire({
         icon: "warning",
-        title: "¿Marcar salida antes de cerrar sesión?",
-        html: `<div style="text-align:left;opacity:.9">Detecté que hoy ya marcaste <b>ENTRADA</b>, pero no hay <b>SALIDA</b>.<br/>Si vas a terminar tu jornada, marca <b>SALIDA (OUT)</b> antes de cerrar sesión.</div>`,
+        title: "¿Marcar salida?",
+        html: `<div style="text-align:left;opacity:.9">Hoy ya marcaste <b>ENTRADA</b> y aún no tienes <b>SALIDA</b>.<br/>Si estás terminando jornada, marca salida. Si solo sales del CRM, puedes cerrar sin marcar salida.</div>`,
         showCancelButton: true,
         showDenyButton: true,
         confirmButtonText: "Marcar salida",
-        denyButtonText: "Salir sin marcar",
+        denyButtonText: "Cerrar sin marcar salida",
         cancelButtonText: "Cancelar"
       });
       if (res.isConfirmed) {
@@ -2407,8 +2448,9 @@ const MENU = [
     ico: "\u{1F4CC}",
     title: "Leads",
     items: [
-      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260331-leads3" },
-      { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html?v=20260326-fil1" }
+      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260728-month1" },
+      { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html?v=20260326-fil1" },
+      { id: "crm360", label: "Comercial 360", url: "/web/views/crm360.html?v=20260723-fin-task1" }
     ]
   },
   {
@@ -2416,7 +2458,8 @@ const MENU = [
     ico: "\u2705",
     title: "Checklist",
     items: [
-      { id: "chk_hoy", label: "Eventos (día)", url: "/web/views/checklist_eventos.html" }
+      { id: "chk_hoy", label: "Eventos (día)", url: "/web/views/checklist_eventos.html?v=20260728-ops2" },
+      { id: "encuestas_eventos", label: "Encuestas post-evento", url: "/web/views/encuestas_eventos.html?v=20260728-surveys5" }
     ]
   },
   {
@@ -2433,7 +2476,7 @@ const MENU = [
     title: "Reportes",
     items: [
       // Un solo acceso: la vista Reportes maneja tabs internos.
-      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes_v2.html?v=20260512-rep2" }
+      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes_v2.html?v=20260723-rep-layout2" }
     ]
   },
   {
@@ -2442,15 +2485,6 @@ const MENU = [
     title: "E\u2011Mkt",
     items: [
       { id: "emkt_email", label: "Email marketing", url: "/web/views/emkt.html" }
-    ]
-  },
-  {
-    id: "tareas",
-    ico: "\u{1F9FE}",
-    title: "Tareas",
-    items: [
-      { id: "tasks_my", label: "Mis tareas", url: "/web/views/tasks.html?v=20260421-tasks9" },
-      { id: "events_calendar", label: "Eventos (Calendario)", url: "/web/views/events_calendar.html?v=20260330-1" }
     ]
   },
   {
@@ -2479,7 +2513,7 @@ const MENU = [
       { id: "op_ca_ent", label: "Entrega de Camiones", url: "/web/views/op_camiones_entrega.html?v=20260304-1" },
       { id: "op_ca_dev", label: "Devolucion de Camiones", url: "/web/views/op_camiones_devolucion.html?v=20260304-1" },
       { id: "op_sep_chk", label: "\u2014", url: null, sep: true },
-      { id: "op_chk_ev", label: "Checklist eventos", url: "/web/views/checklist_eventos.html?v=20260323-2" }
+      { id: "op_chk_ev", label: "Checklist eventos", url: "/web/views/checklist_eventos.html?v=20260728-ops2" }
     ]
   },
   {
@@ -2505,7 +2539,6 @@ const MENU = [
     items: [
       { id: "pl", label: "P&L", url: "/web/views/finanzas_pl.html" },
       { id: "gast", label: "Cargar Gastos", url: "/web/views/finanzas_gastos.html" },
-      { id: "evt", label: "Registrar Evento", url: "/web/views/finanzas_evento.html" },
       { id: "plan_cuentas", label: "Plan de Cuentas", url: "/web/views/finanzas_pl.html#plan" }
     ]
   },
@@ -2546,11 +2579,11 @@ const MENU = [
 	    ico: "\u{1F9F0}",
 	    title: "Tools",
 	    items: [
-	      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260327-tools7#correo" },
-	      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260327-tools7#instagram" },
-	      { id: "tool_wapp", label: "WhatsApp", url: "/web/views/tools.html?v=20260327-tools7#whatsapp" },
-      { id: "tool_chat", label: "Chat (deshabilitado)", url: "/web/views/tools.html?v=20260327-tools7#chat", disabled: true },
-	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260327-tools7#calc" },
+	      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260727-greenie-live2#correo" },
+	      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260727-greenie-live2#instagram" },
+	      { id: "tool_wapp", label: "WhatsApp Greenie", url: "/web/views/tools.html?v=20260806-brand-inbox#whatsapp" },
+      { id: "tool_chat", label: "Chat (deshabilitado)", url: "/web/views/tools.html?v=20260727-greenie-live2#chat", disabled: true },
+	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260727-greenie-live2#calc" },
 	      // Clima removido (Tools unificado). Si lo reactivamos, vuelve como item de Tools.
 	    ]
 	  },
@@ -2562,14 +2595,18 @@ const MENU = [
       { id: "set_users", label: "Usuarios", url: "/web/views/settings.html?entity=usuarios&v=20260218-6" },
       { id: "set_marcas", label: "Marcas", url: "/web/views/settings.html?entity=marcas&v=20260218-6" },
       { id: "set_prod", label: "Productos (venta)", url: "/web/views/settings.html?entity=productos&v=20260218-6" },
-      { id: "set_comi", label: "Comisiones", url: "/web/views/settings.html?entity=comisiones&v=20260218-6" },
+      { id: "set_commissions_config", label: "Configuración comisiones", url: "/web/views/settings_comisiones.html?v=20260722-comm3" },
       { id: "set_com", label: "Comunas", url: "/web/views/settings.html?entity=comunas&v=20260218-6" },
       { id: "set_tc", label: "Tipos Cliente", url: "/web/views/settings.html?entity=tipos_cliente&v=20260218-6" },
+      { id: "set_platforms", label: "Plataformas / origen de leads", url: "/web/views/settings.html?entity=plataformas&v=20260729-plat2" },
       { id: "set_el", label: "Estados Lead", url: "/web/views/settings.html?entity=estados_lead&v=20260218-6" },
       { id: "set_roles", label: "Roles", url: "/web/views/settings.html?entity=roles&v=20260218-6" },
       { id: "set_permissions", label: "Permisos", url: "/web/views/settings_permissions.html?v=20260610-1" },
+      { id: "set_features", label: "Funcionamiento de módulos", url: "/web/views/settings_features.html?v=20260728-1" },
+      { id: "set_whatsapp_coexistence", label: "Coexistencia WhatsApp", url: "/web/views/settings_whatsapp_coexistence.html?v=20260728-1" },
+      { id: "set_audit", label: "Auditoría", url: "/web/views/settings_audit.html?v=20260720-audit-lead-modal1" },
       { id: "set_notify_email", label: "Notificaciones (correo)", url: "/web/views/settings_notifs_email.html?v=20260601-3" },
-      { id: "set_metas", label: "Metas ventas", url: "/web/views/settings_metas.html?v=20260320-1" },
+      { id: "set_metas", label: "Metas ventas", url: "/web/views/settings_metas.html?v=20260723-metas1" },
       { id: "set_bak", label: "Backups", url: "/web/views/backups.html", noSidebar: true }
     ]
   }
@@ -2614,7 +2651,7 @@ function listVisibleMenuItems() {
   const out = [];
   for (const g of MENU) {
     for (const it of g.items) {
-      if (it.sep || it.noSidebar || it.disabled || !it.url) continue;
+      if (it.sep || it.noSidebar || it.disabled || !it.url || !isItemFeatureEnabled(it.id)) continue;
       if (allowed && !allowed.has(it.id)) continue;
       if (USER_MENU_ACCESS && !USER_MENU_ACCESS.has(String(it.id))) continue;
       if (it.driverOnly && !isDriver && !isAdmin) continue;
@@ -2627,6 +2664,7 @@ let ACTIVE_ITEM_ID = null;
 let CURRENT_ROLE_ID = null;
 let CURRENT_ALLOWED = /* @__PURE__ */ new Set();
 let USER_MENU_ACCESS = null;
+let SYSTEM_FEATURES = null;
 let TASKS_BADGE = { open_total: 0, overdue_total: 0, open_contactar: 0, overdue_contactar: 0 };
 let TASKS_POLL_HANDLE = null;
 let TASKS_SYNC_INFLIGHT = false;
@@ -2681,6 +2719,28 @@ function normalizeRoleName(roleName) {
   return r;
 }
 
+async function loadSystemFeatures() {
+  SYSTEM_FEATURES = null;
+  try {
+    const response = await fetch(`${API_BASE}/features`, { headers: authHeaders() });
+    if (!response.ok) return;
+    const data = await response.json().catch(() => null);
+    const map = new Map();
+    for (const feature of (data?.items || [])) {
+      for (const itemId of (feature?.menu_ids || [])) {
+        map.set(String(itemId), Boolean(feature.enabled));
+      }
+    }
+    SYSTEM_FEATURES = map;
+  } catch (_) {
+    SYSTEM_FEATURES = null;
+  }
+}
+
+function isItemFeatureEnabled(itemId) {
+  return !SYSTEM_FEATURES || SYSTEM_FEATURES.get(String(itemId)) !== false;
+}
+
 function isOpsAppRole(roleName) {
   const v = normalizeRoleName(roleName);
   // OJO: "OPERADOR PATIO" NO es portal de Operaciones; va a RRHH portal (marcación/horario).
@@ -2703,6 +2763,7 @@ const PERMISSIONS = {
     "op_vruta2",
     "leads_ver",
     "leads_fil",
+    "crm360",
     "historial",
     "rep_funnel",
     "rep_cierre",
@@ -2712,6 +2773,7 @@ const PERMISSIONS = {
     "rep_cxp",
     "emkt_email",
     "rep_com",
+    "rep_surveys",
     "rep_prod",
     "rep_cli",
     "rep_hoy",
@@ -2754,12 +2816,15 @@ const PERMISSIONS = {
     "set_users",
     "set_marcas",
     "set_prod",
-    "set_comi",
+    "set_commissions_config",
     "set_com",
     "set_tc",
     "set_el",
     "set_roles",
     "set_permissions",
+    "set_features",
+    "set_whatsapp_coexistence",
+    "set_audit",
     "set_notify_email",
     "set_metas",
 	    "set_bak",
@@ -2772,6 +2837,7 @@ const PERMISSIONS = {
 	    "rrhh_hub",
 	    "leads_ver",
 	    "leads_fil",
+	    "crm360",
 	    "historial",
 	    "system_notifs",
 	    "tool_wapp",
@@ -2787,12 +2853,14 @@ const PERMISSIONS = {
 	    "rrhh_hub",
 	    "leads_ver",
 	    "leads_fil",
+    "crm360",
     "historial",
     "rep_funnel",
     "rep_cierre",
     "rep_tipo",
     "rep_total",
     "rep_com",
+    "rep_surveys",
     "rep_prod",
     "rep_cli",
     "rep_hoy",
@@ -3054,8 +3122,8 @@ function buildMenu() {
   }
   for (const g of MENU) {
     const visibleItems = allowed
-      ? g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && allowed.has(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id))) && (!it.driverOnly || isDriver))
-      : g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id))) && (!it.driverOnly || isDriver));
+      ? g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && allowed.has(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id))) && (!it.driverOnly || isDriver))
+      : g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id))) && (!it.driverOnly || isDriver));
     if (!visibleItems.length) continue;
     if (lastGroupId === "operadores" && (g.id === "rrhh" || g.id === "tools" || g.id === "settings")) {
       const divider = document.createElement("div");
@@ -3093,7 +3161,7 @@ function buildMenu() {
       b.dataset.item = it.id;
       b.title = it.label;
       const favOn = isFav(it.id);
-      const tasksBadge = it.id === "tasks_my" && TASKS_BADGE && Number(TASKS_BADGE.overdue_total || 0) > 0 ? `<span class="pill tasks-pill" style="margin-left:auto;border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.14);font-size:11px;font-weight:1100;padding:3px 8px;border-radius:999px">${Number(TASKS_BADGE.overdue_total || 0)}</span>` : "";
+      const tasksBadge = it.id === "crm360" && TASKS_BADGE && Number(TASKS_BADGE.overdue_total || 0) > 0 ? `<span class="pill tasks-pill" style="margin-left:auto;border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.14);font-size:11px;font-weight:1100;padding:3px 8px;border-radius:999px">${Number(TASKS_BADGE.overdue_total || 0)}</span>` : "";
       b.innerHTML = `<span class="dot"></span><span class="lbl">${it.label}</span>${tasksBadge}<span class="fav-ico ${favOn ? "on" : ""}" data-fav="${it.id}" title="${favOn ? "Quitar fijado" : "Fijar"}">★</span>`;
       b.addEventListener("click", () => openItem(it));
       b.querySelector("[data-fav]")?.addEventListener("click", (ev) => {
@@ -3134,7 +3202,7 @@ function canUseTasksBadge() {
 function renderTasksBadge() {
   try {
     const overdue = Number((TASKS_BADGE && TASKS_BADGE.overdue_total) || 0);
-    const btn = qs('#sideMenu [data-item="tasks_my"]');
+    const btn = qs('#sideMenu [data-item="crm360"]');
     if (!btn) return;
     const existing = btn.querySelector(".tasks-pill");
     if (overdue > 0) {
@@ -3171,14 +3239,14 @@ function maybeWarnTasks() {
     Swal.fire({
       icon: "warning",
       title: "Tareas vencidas",
-      html: `<div style="text-align:left">Tienes <b>${overdueContact}</b> seguimiento(s) vencido(s).<br/>Revisa <b>Mis tareas</b> para priorizar contactos.</div>`,
-      confirmButtonText: "Ir a Mis tareas",
+      html: `<div style="text-align:left">Tienes <b>${overdueContact}</b> seguimiento(s) vencido(s).<br/>Revisa <b>Comercial 360</b> para priorizar contactos.</div>`,
+      confirmButtonText: "Ir a Comercial 360",
       showCancelButton: true,
       cancelButtonText: "Más tarde",
       customClass: { popup: "gdModal" }
     }).then((r) => {
       if (r.isConfirmed) {
-        const it = findItemById("tasks_my");
+        const it = findItemById("crm360");
         if (it) openItem(it);
       }
     });
@@ -3241,22 +3309,28 @@ async function openItem(it) {
   var _a;
   if (!(it == null ? void 0 : it.url)) return;
   if (CURRENT_ALLOWED && !CURRENT_ALLOWED.has(it.id)) return;
+  if (!isItemFeatureEnabled(it.id)) {
+    try { toast("Este módulo está temporalmente deshabilitado por administración.", "warning"); } catch (_) {}
+    return;
+  }
   ACTIVE_ITEM_ID = it.id;
   try {
     const isNarrow = window.matchMedia && window.matchMedia("(max-width: 860px)").matches;
     if (isNarrow && (it.id === "leads_ver" || it.id === "leads_fil")) {
-      let mobileURL = "/web/views/leads_mobile.html";
+      let mobileURL = "/web/views/leads_mobile.html?v=20260728-month1";
       try {
         const u = new URL(it.url, location.origin);
         const openLead = u.searchParams.get("open_lead") || u.searchParams.get("id_lead") || u.searchParams.get("lead_id");
+        const auditFocus = u.searchParams.get("audit_focus");
         const staleIds = u.searchParams.get("stale_ids");
         const stale = u.searchParams.get("stale");
         const params = new URLSearchParams();
         if (openLead) params.set("open_lead", openLead);
+        if (auditFocus) params.set("audit_focus", auditFocus);
         if (stale) params.set("stale", stale);
         if (staleIds) params.set("stale_ids", staleIds);
         const qs = params.toString();
-        if (qs) mobileURL += `?${qs}`;
+        if (qs) mobileURL += `&${qs}`;
       } catch (_) {
       }
       it = { ...it, url: mobileURL };
@@ -3564,9 +3638,14 @@ function bindSidebarTools() {
 }
 function bindTopbar() {
   var _a, _b, _c, _d;
+  const helpBtn = qs("#btnHelp");
+  helpBtn == null ? void 0 : helpBtn.addEventListener("click", () => {
+    const frame = qs("#mainFrame");
+    if (frame) frame.src = viewURL(`/web/views/ayuda.html?v=${Date.now()}`);
+  });
   (_a = qs("#brandHome")) == null ? void 0 : _a.addEventListener("click", () => {
     if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {
-      openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260421-kpis12" });
+      openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260728-surveys1" });
     } else {
       const first = findFirstAllowedItem();
       if (first) openItem(first);
@@ -3779,7 +3858,7 @@ function findFirstAllowedItem() {
   const allowed = CURRENT_ALLOWED;
   for (const g of MENU) {
     for (const it of g.items) {
-      if (it.sep || it.disabled || !it.url) continue;
+      if (it.sep || it.disabled || !it.url || !isItemFeatureEnabled(it.id)) continue;
       if (allowed && !allowed.has(it.id)) continue;
       return it;
     }
@@ -3793,7 +3872,7 @@ function openDefault() {
     return;
   }
   if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {
-    openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260421-kpis12" });
+    openItem({ id: "dash_home", url: "/web/views/dashboard.html?v=20260728-surveys1" });
     return;
   }
   const first = findFirstAllowedItem();
@@ -3836,8 +3915,9 @@ function openDefault() {
         const staleIds = Array.isArray(ev.data.stale_ids) ? ev.data.stale_ids : [];
         const params = new URLSearchParams();
         if (id) params.set("open_lead", String(id));
+        if (ev.data.audit_focus) params.set("audit_focus", "1");
         if (staleIds.length) params.set("stale_ids", staleIds.map((x) => String(x)).filter(Boolean).join(","));
-        openItem({ id: "leads_ver", label: "Ver Leads", url: `/web/views/leads.html?v=20260326-leads2&${params.toString()}` });
+        openItem({ id: "leads_ver", label: "Ver Leads", url: `/web/views/leads.html?v=20260728-month1&${params.toString()}` });
       } catch (_) {
       }
       return;
@@ -3905,7 +3985,7 @@ function openDefault() {
         toast(`Correo: ${openTotal} pendiente(s)`, {
           kind: "ok",
           ms: 8e3,
-	          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260327-tools7#correo" })
+	          onClick: () => openItem({ id: "tool_gmail", url: "/web/views/tools.html?v=20260727-greenie-live2#correo" })
 	        });
 	      }
       localStorage.setItem("gd_gia_email_max_id", String(Math.max(lastMax, maxId)));

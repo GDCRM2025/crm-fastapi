@@ -169,7 +169,7 @@
           Tools
         </button>
         <div class="crumb">
-          <div class="t" id="activeToolTitle">Correo (GIA)</div>
+          <div class="t" id="activeToolTitle">Correo (Greenie)</div>
           <div class="s">Menú arriba · módulo a pantalla completa</div>
         </div>
       </div>
@@ -177,7 +177,7 @@
     </header>
 
     <section class="main">
-      <iframe id="toolFrame" title="Tools"></iframe>
+      <iframe id="toolFrame" title="Tools" allow="microphone"></iframe>
     </section>
   </div>
 
@@ -272,14 +272,37 @@
       }
 
       const ITEMS = [
-        { id:"correo", label:"Correo (GIA)", ico:"✉️", url:"/web/views/tools_correo.html?v=20260327-gmail-ui2", giaOnly:true },
-        { id:"instagram", label:"Instagram (GIA)", ico:"📷", url:"/web/views/tools_instagram.html?v=20260326-gia2", giaOnly:true },
-        { id:"whatsapp", label:"WhatsApp", ico:"💬", url:"/web/views/tools_whatsapp.html" },
+        { id:"correo", label:"Correo (GIA)", ico:"✉️", url:"/web/views/tools_correo.html?v=20260728-features1", giaOnly:true, feature:"email" },
+        { id:"instagram", label:"Instagram (GIA)", ico:"📷", url:"/web/views/tools_instagram.html?v=20260728-features1", giaOnly:true, feature:"instagram" },
+        { id:"whatsapp", label:"WhatsApp Greenie", ico:"💬", url:"/web/views/tools_whatsapp_greenie.html?v=20260806-brand-inbox", feature:"whatsapp" },
         // Chat debe abrirse dentro del wrapper PWA (staff.html) para mantener menú/notifs/op.
-        { id:"chat", label:"Chat (app)", ico:"💬", url:"/web/views/staff.html?v=20260401-1" },
+        { id:"chat", label:"Chat (app)", ico:"💬", url:"/web/views/staff.html?v=20260401-1", feature:"internal_chat" },
         { id:"calc", label:"Calculadora", ico:"🧮", url:"/web/views/calculadora.html" },
         { id:"ext", label:"Descargar extensión (ventas)", ico:"🧩", url:"/web/downloads/LeadSuiteGD-extension.zip", execOnly:true, external:true },
       ];
+      let FEATURE_FLAGS = null;
+
+      async function loadFeatureFlags(){
+        try{
+          const response=await fetch(`${API_BASE}/features`,{headers:{Authorization:`Bearer ${localStorage.getItem("token")||sessionStorage.getItem("token")||""}`}});
+          if(!response.ok)return;
+          const data=await response.json();
+          FEATURE_FLAGS=Object.fromEntries((data.items||[]).map(item=>[String(item.key),Boolean(item.enabled)]));
+        }catch(_){ FEATURE_FLAGS=null; }
+      }
+
+      function featureOn(item){
+        return !item.feature || !FEATURE_FLAGS || FEATURE_FLAGS[item.feature] !== false;
+      }
+
+      function visibleItems(){
+        return ITEMS.filter(it =>
+          featureOn(it) &&
+          (!it.adminOnly || isAdmin()) &&
+          (!it.giaOnly || canSeeGIA()) &&
+          (!it.execOnly || canSeeExecOnly())
+        );
+      }
 
       function setActive(id){
         qs("#quickNav").querySelectorAll("button[data-id]").forEach(b=> b.classList.toggle("active", b.getAttribute("data-id")===id));
@@ -298,7 +321,8 @@
       }
 
       function openTool(id){
-        const it = ITEMS.find(x=>x.id===id) || ITEMS[0];
+        const available = visibleItems();
+        const it = available.find(x=>x.id===id) || available[0];
         if (!it) return;
         if (it.giaOnly && !canSeeGIA()){
           // fallback a un tool permitido
@@ -325,12 +349,9 @@
         hideDrawer();
       }
 
-      function bind(){
-        const list = ITEMS.filter(it =>
-          (!it.adminOnly || isAdmin()) &&
-          (!it.giaOnly || canSeeGIA()) &&
-          (!it.execOnly || canSeeExecOnly())
-        );
+      async function bind(){
+        await loadFeatureFlags();
+        const list = visibleItems();
         const quick = qs("#quickNav");
         const drawer = qs("#drawerNav");
 

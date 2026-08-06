@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,12 +18,20 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
+from backend.core.greenie_schema import acquire_greenie_schema_lock
+from backend.core.whatsapp_window import require_open_customer_window
 from backend.routers.auth import get_current_user
 
 
-router = APIRouter(prefix="/gia/whatsapp", tags=["WhatsApp Greenie Comercial"])
+router = APIRouter(
+    prefix="/gia/whatsapp",
+    tags=["WhatsApp Greenie Comercial"],
+    dependencies=[Depends(get_current_user)],
+)
 ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = ROOT / ".env"
+_SCHEMA_LOCK = threading.Lock()
+_SCHEMA_READY = False
 
 
 class SelectLeadBody(BaseModel):
@@ -71,46 +80,65 @@ def _table_exists(db: Session, table: str) -> bool:
 
 
 def _ensure_schema(db: Session) -> None:
-    if not _table_exists(db, "whatsapp_channels"):
-        raise HTTPException(status_code=503, detail="whatsapp_channels no existe")
-    if not _table_exists(db, "whatsapp_conversations"):
-        raise HTTPException(status_code=503, detail="whatsapp_conversations no existe")
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
 
-    db.execute(text("""
-        ALTER TABLE whatsapp_channels
-        ADD COLUMN IF NOT EXISTS assignment_mode TEXT NOT NULL DEFAULT 'direct'
-    """))
-    db.execute(text("""
-        ALTER TABLE whatsapp_channels
-        ADD COLUMN IF NOT EXISTS is_dispatch BOOLEAN NOT NULL DEFAULT FALSE
-    """))
-    db.execute(text("""
-        ALTER TABLE whatsapp_channels
-        ADD COLUMN IF NOT EXISTS default_user_id TEXT
-    """))
-    db.execute(text("""
-        ALTER TABLE whatsapp_conversations
-        ADD COLUMN IF NOT EXISTS selected_lead_id BIGINT
-    """))
-    db.execute(text("""
-        ALTER TABLE whatsapp_conversations
-        ADD COLUMN IF NOT EXISTS assigned_user_id TEXT
-    """))
-    db.execute(text("""
-        ALTER TABLE whatsapp_conversations
-        ADD COLUMN IF NOT EXISTS assigned_user_name TEXT
-    """))
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        try:
+            acquire_greenie_schema_lock(db)
+            if not _table_exists(db, "whatsapp_channels"):
+                raise HTTPException(
+                    status_code=503,
+                    detail="whatsapp_channels no existe",
+                )
+            if not _table_exists(db, "whatsapp_conversations"):
+                raise HTTPException(
+                    status_code=503,
+                    detail="whatsapp_conversations no existe",
+                )
 
-    if _table_exists(db, "whatsapp_messages"):
-        for ddl in (
-            "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_id TEXT",
-            "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS mime_type TEXT",
-            "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS filename TEXT",
-            "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS caption TEXT",
-            "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_size BIGINT",
-        ):
-            db.execute(text(ddl))
-    db.commit()
+            db.execute(text("""
+                ALTER TABLE whatsapp_channels
+                ADD COLUMN IF NOT EXISTS assignment_mode TEXT NOT NULL DEFAULT 'direct'
+            """))
+            db.execute(text("""
+                ALTER TABLE whatsapp_channels
+                ADD COLUMN IF NOT EXISTS is_dispatch BOOLEAN NOT NULL DEFAULT FALSE
+            """))
+            db.execute(text("""
+                ALTER TABLE whatsapp_channels
+                ADD COLUMN IF NOT EXISTS default_user_id TEXT
+            """))
+            db.execute(text("""
+                ALTER TABLE whatsapp_conversations
+                ADD COLUMN IF NOT EXISTS selected_lead_id BIGINT
+            """))
+            db.execute(text("""
+                ALTER TABLE whatsapp_conversations
+                ADD COLUMN IF NOT EXISTS assigned_user_id TEXT
+            """))
+            db.execute(text("""
+                ALTER TABLE whatsapp_conversations
+                ADD COLUMN IF NOT EXISTS assigned_user_name TEXT
+            """))
+
+            if _table_exists(db, "whatsapp_messages"):
+                for ddl in (
+                    "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_id TEXT",
+                    "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS mime_type TEXT",
+                    "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS filename TEXT",
+                    "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS caption TEXT",
+                    "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_size BIGINT",
+                ):
+                    db.execute(text(ddl))
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        _SCHEMA_READY = True
 
 
 def _phone9(value: Any) -> str:
@@ -149,20 +177,48 @@ def _conversation(db: Session, conversation_id: int) -> dict[str, Any]:
 def _lead_rows(db: Session, wa_id: str) -> list[dict[str, Any]]:
     if not _table_exists(db, "leads"):
         return []
+
     lead_cols = _cols(db, "leads")
-    marca_cols = _cols(db, "marcas") if _table_exists(db, "marcas") else set()
-    comuna_cols = _cols(db, "comunas") if _table_exists(db, "comunas") else set()
+    marca_exists = _table_exists(db, "marcas")
+    estado_exists = _table_exists(db, "estados_lead")
+    comuna_exists = _table_exists(db, "comunas")
+
+    marca_cols = _cols(db, "marcas") if marca_exists else set()
+    estado_cols = _cols(db, "estados_lead") if estado_exists else set()
+    comuna_cols = _cols(db, "comunas") if comuna_exists else set()
 
     marca_expr = (
         "m.marca" if "marca" in marca_cols
         else "m.nombre" if "nombre" in marca_cols
-        else "NULL"
+        else "m.nombre_marca" if "nombre_marca" in marca_cols
+        else "NULL::text"
     )
+    estado_expr = (
+        "es.nombre" if "nombre" in estado_cols
+        else "es.estado" if "estado" in estado_cols
+        else "es.nombre_estado" if "nombre_estado" in estado_cols
+        else "NULL::text"
+    )
+    estado_color_expr = "es.color" if "color" in estado_cols else "'#64748b'::text"
     comuna_expr = (
         "co.nombre" if "nombre" in comuna_cols
         else "co.comuna" if "comuna" in comuna_cols
-        else "NULL"
+        else "co.nombre_comuna" if "nombre_comuna" in comuna_cols
+        else "NULL::text"
     )
+
+    marca_join = "LEFT JOIN public.marcas m ON m.id_marca=l.id_marca" if marca_exists and "id_marca" in lead_cols and "id_marca" in marca_cols else ""
+    estado_join = "LEFT JOIN public.estados_lead es ON es.id_estado=l.id_estado" if estado_exists and "id_estado" in lead_cols and "id_estado" in estado_cols else ""
+    comuna_join = "LEFT JOIN public.comunas co ON co.id_comuna=l.id_comuna" if comuna_exists and "id_comuna" in lead_cols and "id_comuna" in comuna_cols else ""
+
+    if not marca_join:
+        marca_expr = "NULL::text"
+    if not estado_join:
+        estado_expr = "NULL::text"
+        estado_color_expr = "'#64748b'::text"
+    if not comuna_join:
+        comuna_expr = "NULL::text"
+
     is_deleted = "AND COALESCE(l.is_deleted,FALSE)=FALSE" if "is_deleted" in lead_cols else ""
     created = _sql_col("l", lead_cols, "created_at", "NULL::timestamptz")
     updated = _sql_col("l", lead_cols, "updated_at", created)
@@ -170,11 +226,15 @@ def _lead_rows(db: Session, wa_id: str) -> list[dict[str, Any]]:
     if not phone9:
         return []
 
+    phone_col = next((name for name in ("telefono", "phone", "celular") if name in lead_cols), None)
+    if not phone_col:
+        return []
+
     select = f"""
         l.id_lead,
         {_sql_col('l', lead_cols, 'cliente', "''::text")} AS cliente,
         {_sql_col('l', lead_cols, 'email', "NULL::text")} AS email,
-        {_sql_col('l', lead_cols, 'telefono', "NULL::text")} AS telefono,
+        {_sql_col('l', lead_cols, phone_col, "NULL::text")} AS telefono,
         {_sql_col('l', lead_cols, 'direccion', "NULL::text")} AS direccion,
         {_sql_col('l', lead_cols, 'id_marca', 'NULL::bigint')} AS id_marca,
         {_sql_col('l', lead_cols, 'id_estado', 'NULL::bigint')} AS id_estado,
@@ -192,23 +252,25 @@ def _lead_rows(db: Session, wa_id: str) -> list[dict[str, Any]]:
         {created} AS created_at,
         {updated} AS updated_at,
         COALESCE({marca_expr}, '') AS marca,
-        COALESCE(es.nombre, '') AS estado,
-        COALESCE(es.color, '#64748b') AS estado_color,
+        COALESCE({estado_expr}, '') AS estado,
+        COALESCE({estado_color_expr}, '#64748b') AS estado_color,
         COALESCE({comuna_expr}, '') AS comuna
     """
+
+    order_status = f"UPPER(COALESCE({estado_expr},''))" if estado_join else "''"
     rows = db.execute(text(f"""
         SELECT {select}
         FROM public.leads l
-        LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
-        LEFT JOIN public.estados_lead es ON es.id_estado=l.id_estado
-        LEFT JOIN public.comunas co ON co.id_comuna=l.id_comuna
-        WHERE RIGHT(regexp_replace(COALESCE(l.telefono::text,''), '[^0-9]', '', 'g'), 9)=:phone9
+        {marca_join}
+        {estado_join}
+        {comuna_join}
+        WHERE RIGHT(regexp_replace(COALESCE(l.{phone_col}::text,''), '[^0-9]', '', 'g'), 9)=:phone9
           {is_deleted}
         ORDER BY
-          CASE WHEN UPPER(COALESCE(es.nombre,'')) LIKE '%CONFIRM%' THEN 1
-               WHEN UPPER(COALESCE(es.nombre,'')) LIKE '%DECLIN%' THEN 2
+          CASE WHEN {order_status} LIKE '%CONFIRM%' THEN 1
+               WHEN {order_status} LIKE '%DECLIN%' THEN 2
                ELSE 0 END,
-          l.fecha_evento DESC NULLS LAST,
+          {_sql_col('l', lead_cols, 'fecha_evento', 'NULL::date')} DESC NULLS LAST,
           {created} DESC NULLS LAST,
           l.id_lead DESC
         LIMIT 100
@@ -258,11 +320,20 @@ def _quote_rows(db: Session, lead_ids: list[int]) -> list[dict[str, Any]]:
 def _statuses(db: Session) -> list[dict[str, Any]]:
     if not _table_exists(db, "estados_lead"):
         return []
-    return [dict(row) for row in db.execute(text("""
-        SELECT id_estado, nombre, COALESCE(color,'#64748b') AS color
+    cols = _cols(db, "estados_lead")
+    id_col = next((name for name in ("id_estado", "id") if name in cols), None)
+    name_col = next((name for name in ("nombre", "estado", "nombre_estado") if name in cols), None)
+    if not id_col or not name_col:
+        return []
+    color_expr = "color" if "color" in cols else "'#64748b'::text"
+    rows = db.execute(text(f"""
+        SELECT {id_col} AS id_estado,
+               {name_col} AS nombre,
+               COALESCE({color_expr}, '#64748b') AS color
         FROM public.estados_lead
-        ORDER BY id_estado
-    """)).mappings().all()]
+        ORDER BY {id_col}
+    """)).mappings().all()
+    return [dict(row) for row in rows]
 
 
 def _executives(db: Session) -> list[dict[str, Any]]:
@@ -425,6 +496,24 @@ def _meta_send_document(phone_number_id: str, to: str, media_id: str, filename: 
         raise HTTPException(status_code=502, detail=f"Meta rechazó el documento: {detail}") from exc
 
 
+def _safe_statuses(db: Session) -> list[dict[str, Any]]:
+    try:
+        return _statuses(db)
+    except Exception:
+        db.rollback()
+        return []
+
+
+def _safe_executives(db: Session, conversation: dict[str, Any]) -> list[dict[str, Any]]:
+    if not (conversation.get("is_dispatch") or conversation.get("assignment_mode") == "manual"):
+        return []
+    try:
+        return _executives(db)
+    except Exception:
+        db.rollback()
+        return []
+
+
 @router.get("/conversations/{conversation_id}/commercial-360")
 def commercial_360(
     conversation_id: int,
@@ -433,9 +522,17 @@ def commercial_360(
 ):
     _ensure_schema(db)
     conversation = _conversation(db, conversation_id)
-    leads = _lead_rows(db, str(conversation["wa_id"]))
+    try:
+        leads = _lead_rows(db, str(conversation["wa_id"]))
+    except Exception:
+        db.rollback()
+        raise
     lead_ids = [int(row["id_lead"]) for row in leads]
-    quotes = _quote_rows(db, lead_ids)
+    try:
+        quotes = _quote_rows(db, lead_ids)
+    except Exception:
+        db.rollback()
+        quotes = []
     selected = conversation.get("selected_lead_id")
     if selected not in lead_ids:
         selected = lead_ids[0] if lead_ids else None
@@ -488,8 +585,8 @@ def commercial_360(
         "leads": leads,
         "cotizaciones": quotes,
         "eventos": future_events,
-        "estados": _statuses(db),
-        "executives": _executives(db) if (conversation.get("is_dispatch") or conversation.get("assignment_mode") == "manual") else [],
+        "estados": _safe_statuses(db),
+        "executives": _safe_executives(db, conversation),
         "summary": {
             "lead_count": len(leads),
             "quote_count": len(quotes),
@@ -627,6 +724,7 @@ def send_quote(
 ):
     _ensure_schema(db)
     conversation = _conversation(db, conversation_id)
+    require_open_customer_window(db, conversation_id)
     lead = _lead_belongs_to_phone(db, lead_id, str(conversation["wa_id"]))
     source, filename = _find_quote_source(db, lead)
     pdf = _read_source(source)
