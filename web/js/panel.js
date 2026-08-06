@@ -2581,7 +2581,7 @@ const MENU = [
 	    items: [
 	      { id: "tool_gmail", label: "Correo (GIA)", url: "/web/views/tools.html?v=20260727-greenie-live2#correo" },
 	      { id: "tool_ig", label: "Instagram (GIA)", url: "/web/views/tools.html?v=20260727-greenie-live2#instagram" },
-	      { id: "tool_wapp", label: "WhatsApp Greenie", url: "/web/views/tools.html?v=20260806-brand-inbox#whatsapp" },
+	      { id: "tool_wapp", label: "WhatsApp Greenie", url: "/web/views/tools.html?v=20260806-stickers-leads-v3#whatsapp" },
       { id: "tool_chat", label: "Chat (deshabilitado)", url: "/web/views/tools.html?v=20260727-greenie-live2#chat", disabled: true },
 	      { id: "tool_calc", label: "Calculadora", url: "/web/views/tools.html?v=20260727-greenie-live2#calc" },
 	      // Clima removido (Tools unificado). Si lo reactivamos, vuelve como item de Tools.

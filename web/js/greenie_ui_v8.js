@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
 
-  const BUILD='20260727-UI8';
+  const BUILD='20260806-LEAD-BRAND-ACTIONS';
   const $=(selector,root=document)=>root.querySelector(selector);
   const $$=(selector,root=document)=>[...root.querySelectorAll(selector)];
   const API_BASE=(()=>{
@@ -40,7 +40,7 @@
   }
 
   function activeConversationId(){
-    return Number($('.item.active')?.dataset?.id||0);
+    return Number($('#app')?.dataset?.conversationId||$('.item.active')?.dataset?.id||0);
   }
 
   function selectedLeadCard(){
@@ -71,6 +71,8 @@
       .greenieLeadGroupTitle{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:950;padding:3px 2px}
       .greenieLeadToolbar{display:flex;justify-content:flex-end;margin-top:8px}
       .greenieLeadToolbar button{font-size:11px}
+      .greenieClientCreate{width:100%;margin-top:3px;border-radius:10px!important;display:flex;align-items:center;justify-content:center;gap:7px}
+      .greenieClientCreateIcon{font-size:17px;line-height:1}
       .greenieOverlay{position:fixed;inset:0;z-index:6000;background:rgba(15,23,42,.58);display:none}
       .greenieOverlay.show{display:block}
       .greenieOverlay iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent}
@@ -167,12 +169,9 @@
           <div class="greenieDialogGrid">
             <label>Cliente<input id="gclName" autocomplete="name"></label>
             <label>Teléfono<input id="gclPhone" readonly></label>
-            <label>Marca<select id="gclBrand"></select></label>
-            <label>Tipo de cliente<select id="gclType"><option value="">Seleccionar</option></select></label>
+            <label>Marca del canal<input id="gclBrand" readonly></label>
             <label>Comuna<select id="gclCommune"></select></label>
             <label>Fecha del evento<input id="gclDate" type="date"></label>
-            <label class="span2">Email<input id="gclEmail" type="email"></label>
-            <label class="span2">Dirección<input id="gclAddress"></label>
             <label class="span2">Notas<textarea id="gclNotes" placeholder="Requerimiento inicial del cliente"></textarea></label>
           </div>
         </div>
@@ -197,23 +196,19 @@
       ensureCreateDialog();
       const error=$('#greenieCreateError');
       error.style.display='none';
-      const [catalogs,conversation]=await Promise.all([
-        api('/leads/catalogos'),
+      const [communesPayload,conversation]=await Promise.all([
+        api('/gia/whatsapp/metadata/comunas'),
         conversationIdentity(),
       ]);
-      const brands=catalogs.marcas||catalogs.items?.marcas||[];
-      const communes=catalogs.comunas||catalogs.items?.comunas||[];
-      const types=catalogs.tipos_cliente||catalogs.tipos||[];
-      $('#gclBrand').innerHTML=brands.map(row=>`<option value="${Number(row.id_marca||0)}">${esc(row.nombre||row.marca||row.id_marca)}</option>`).join('');
-      $('#gclCommune').innerHTML='<option value="">Seleccionar</option>'+communes.map(row=>`<option value="${Number(row.id_comuna||0)}">${esc(row.nombre||row.comuna||row.id_comuna)}</option>`).join('');
-      $('#gclType').innerHTML='<option value="">Seleccionar</option>'+types.map(row=>`<option value="${Number(row.id_tipo_cliente||row.id||0)}">${esc(row.nombre||row.tipo||row.id_tipo_cliente||row.id)}</option>`).join('');
+      const communes=communesPayload.items||[];
+      const brandNames={CAMALEON:'Camaleón',DEL_SABOR:'Del Sabor',GOURMET:'Gourmet',EXPRESS:'Express'};
+      $('#gclBrand').value=brandNames[String(conversation.brand_code||'').toUpperCase()]||conversation.brand_code||'Sin configurar';
+      $('#gclCommune').innerHTML='<option value="">Seleccionar</option>'+communes.map(row=>`<option value="${esc(row.nombre||row.comuna||'')}">${esc(row.nombre||row.comuna||'')}</option>`).join('');
       $('#gclName').value=conversation.profile_name||'';
       $('#gclPhone').value=conversation.wa_id||'';
       $('#gclDate').min=new Date().toISOString().slice(0,10);
-      const activeMeta=$('.item.active .meta')?.textContent||'';
-      const normalized=activeMeta.toUpperCase();
-      const match=brands.find(row=>normalized.includes(String(row.nombre||row.marca||'').toUpperCase()));
-      if(match)$('#gclBrand').value=String(match.id_marca);
+      $('#gclDate').value=new Date().toISOString().slice(0,10);
+      $('#gclNotes').value='';
       $('#greenieCreateLeadDialog').classList.add('show');
       $('#gclName').focus();
     }catch(error){
@@ -230,19 +225,13 @@
     const error=$('#greenieCreateError');
     const conversationId=activeConversationId();
     const payload={
-      cliente:String($('#gclName').value||'').trim(),
-      telefono:String($('#gclPhone').value||'').trim()||null,
-      id_marca:Number($('#gclBrand').value||0)||null,
-      id_comuna:Number($('#gclCommune').value||0)||null,
-      id_tipo_cliente:Number($('#gclType').value||0)||null,
+      nombre:String($('#gclName').value||'').trim(),
       fecha_evento:$('#gclDate').value||null,
-      email:String($('#gclEmail').value||'').trim()||null,
-      direccion:String($('#gclAddress').value||'').trim()||null,
-      notas:String($('#gclNotes').value||'').trim()||null,
-      plataforma:'WHATSAPP',
+      comuna:String($('#gclCommune').value||'').trim()||null,
     };
-    if(!payload.cliente||!payload.id_marca){
-      error.textContent='Cliente y marca son obligatorios.';
+    const notes=String($('#gclNotes').value||'').trim();
+    if(!payload.nombre||!payload.fecha_evento){
+      error.textContent='Cliente y fecha del evento son obligatorios.';
       error.style.display='block';
       return;
     }
@@ -254,13 +243,9 @@
     save.disabled=true;
     error.style.display='none';
     try{
-      const result=await api('/leads',{method:'POST',body:JSON.stringify(payload)});
-      const leadId=Number(result.id_lead||result.id||result.lead?.id_lead||0);
-      if(leadId&&conversationId){
-        await api(`/gia/whatsapp/conversations/${conversationId}/select-lead`,{
-          method:'POST',body:JSON.stringify({lead_id:leadId}),
-        }).catch(()=>null);
-      }
+      const result=await api(`/gia/whatsapp/conversations/${conversationId}/create-lead`,{method:'POST',body:JSON.stringify(payload)});
+      const leadId=Number(result.id_lead||0);
+      if(notes&&leadId)await api(`/gia/whatsapp/conversations/${conversationId}/leads/${leadId}/followup`,{method:'POST',body:JSON.stringify({text:notes,kind:'NOTE',title:'Nota inicial desde WhatsApp'})}).catch(()=>null);
       closeCreateLead();
       setTimeout(()=>$('#refresh')?.click(),100);
     }catch(err){
@@ -271,27 +256,25 @@
     }
   }
 
-  function installHeaderCreate(){
-    const head=$('.right .head');
-    if(!head||$('#greenieNewLeadHeader'))return;
-    const actions=document.createElement('div');
-    actions.className='greenieHeaderActions';
+  function installClientCreate(){
+    $('#greenieNewLeadHeader')?.remove();
+    const card=$$('#side .card').find(node=>String(node.textContent||'').toLowerCase().includes('cliente whatsapp'));
+    if(!card||$('.greenieClientCreate',card))return;
     const button=document.createElement('button');
-    button.id='greenieNewLeadHeader';
-    button.className='greenieHeaderIcon';
+    button.className='btn primary greenieClientCreate';
     button.type='button';
-    button.title='Crear un nuevo lead para esta conversación';
-    button.textContent='＋';
+    button.title='Crear lead con la marca del canal de WhatsApp';
+    button.innerHTML='<span class="greenieClientCreateIcon">＋</span><span>Nuevo lead de esta marca</span>';
     button.onclick=openCreateLead;
-    actions.appendChild(button);
-    head.appendChild(actions);
+    card.appendChild(button);
   }
 
   function compactActions(){
     const actionCard=$$('#side .card').find(card=>String($('.sectionTitle',card)?.textContent||'').toLowerCase().includes('acciones del lead'));
     if(!actionCard)return;
     const grid=$('.actionsGrid',actionCard);
-    if(!grid)return;
+    if(!grid||grid.dataset.compactActions==='1')return;
+    grid.dataset.compactActions='1';
     grid.classList.add('greenieActionsCompact');
     $$('button',grid).forEach(button=>{
       const text=String(button.textContent||'').trim();
@@ -348,13 +331,7 @@
     });
     details.append(summary,body);
     if(title)title.insertAdjacentElement('afterend',details);else card.prepend(details);
-    const toolbar=document.createElement('div');
-    toolbar.className='greenieLeadToolbar';
-    toolbar.innerHTML='<button class="btn" type="button">＋ Nuevo lead</button>';
-    toolbar.querySelector('button').onclick=openCreateLead;
-    details.insertAdjacentElement('afterend',toolbar);
     $$('button',card).forEach(button=>{
-      if(button===toolbar.querySelector('button'))return;
       const text=String(button.textContent||'').toLowerCase();
       if(text.includes('crear lead')||text.includes('nuevo lead'))button.style.display='none';
     });
@@ -362,6 +339,7 @@
   }
 
   function enhanceSide(){
+    installClientCreate();
     compactActions();
     dropdownLeads();
   }
@@ -369,7 +347,6 @@
   ensureStyles();
   ensureLeadOverlay();
   ensureCreateDialog();
-  installHeaderCreate();
   const side=$('#side');
   if(side){
     let timer=null;

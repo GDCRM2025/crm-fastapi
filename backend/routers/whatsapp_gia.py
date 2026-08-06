@@ -104,8 +104,15 @@ class SendReactionBody(BaseModel):
     emoji: str = Field(default="", max_length=16)
 
 class SendStickerBody(BaseModel):
-    media_id: str = Field(min_length=1, max_length=255)
+    media_id: str | None = Field(default=None, max_length=255)
     source_message_id: int | None = None
+    library_id: int | None = None
+
+
+class AddBrandStickerBody(BaseModel):
+    filename: str = Field(min_length=1, max_length=180)
+    mime_type: str = Field(default="image/webp", max_length=120)
+    data_base64: str = Field(min_length=4)
 
 
 class CreateLeadBody(BaseModel):
@@ -259,6 +266,26 @@ def _ensure_tables(db: Session) -> None:
         db.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_whatsapp_reactions_target
         ON whatsapp_message_reactions(target_whatsapp_message_id)
+        """))
+        db.execute(text("""
+        CREATE TABLE IF NOT EXISTS whatsapp_brand_stickers (
+            id BIGSERIAL PRIMARY KEY,
+            brand_code TEXT NOT NULL,
+            phone_number_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            media_id TEXT NOT NULL,
+            mime_type TEXT NOT NULL DEFAULT 'image/webp',
+            media_data BYTEA NOT NULL,
+            media_size INTEGER NOT NULL,
+            created_by TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_used_at TIMESTAMPTZ
+        )
+        """))
+        db.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_brand_stickers_brand
+        ON whatsapp_brand_stickers(brand_code, created_at DESC)
         """))
         db.execute(text("""
         CREATE OR REPLACE FUNCTION public.notify_greenie_message_change()
@@ -1586,7 +1613,20 @@ def conversation_stickers(
 ):
     _ensure_tables(db)
     conversation = _conversation_or_404(db, conversation_id)
-    rows = db.execute(text("""
+    brand_code = str(conversation.get("brand_code") or "").strip().upper()
+    library_rows = db.execute(text("""
+        SELECT id AS library_id, name, media_id, mime_type, media_size,
+               created_at, last_used_at
+        FROM whatsapp_brand_stickers
+        WHERE brand_code = :brand_code
+          AND phone_number_id = :phone_number_id
+        ORDER BY last_used_at DESC NULLS LAST, created_at DESC, id DESC
+        LIMIT 80
+    """), {
+        "brand_code": brand_code,
+        "phone_number_id": str(conversation["phone_number_id"]),
+    }).mappings().all()
+    recent_rows = db.execute(text("""
         SELECT *
         FROM (
             SELECT DISTINCT ON (m.media_id)
@@ -1608,7 +1648,125 @@ def conversation_stickers(
     """), {
         "phone_number_id": str(conversation["phone_number_id"]),
     }).mappings().all()
-    return {"ok": True, "items": [dict(row) for row in rows]}
+    items = [
+        {**dict(row), "kind": "library", "source_message_id": None}
+        for row in library_rows
+    ]
+    items.extend(
+        {**dict(row), "kind": "recent", "library_id": None, "name": "Sticker reciente"}
+        for row in recent_rows
+        if not any(str(saved["media_id"]) == str(row["media_id"]) for saved in library_rows)
+    )
+    return {"ok": True, "brand_code": brand_code, "items": items}
+
+
+@router.post("/conversations/{conversation_id}/stickers/library")
+def add_brand_sticker(
+    conversation_id: int,
+    body: AddBrandStickerBody,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _ensure_tables(db)
+    conversation = _conversation_or_404(db, conversation_id)
+    brand_code = str(conversation.get("brand_code") or "").strip().upper()
+    if brand_code not in BRANDS:
+        raise HTTPException(status_code=400, detail="La conversación no tiene una marca configurada")
+    try:
+        content = base64.b64decode(body.data_base64, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Sticker base64 invalido") from exc
+    if not content:
+        raise HTTPException(status_code=400, detail="El sticker esta vacio")
+    if len(content) > 100 * 1024:
+        raise HTTPException(status_code=413, detail="El sticker supera 100 KB")
+    if len(content) < 12 or content[:4] != b"RIFF" or content[8:12] != b"WEBP":
+        raise HTTPException(status_code=400, detail="El archivo debe ser un WebP valido")
+
+    clean_name = Path(body.filename).name.strip() or "sticker.webp"
+    if not clean_name.lower().endswith(".webp"):
+        clean_name += ".webp"
+    media_id = _meta_upload_media(
+        str(conversation["phone_number_id"]),
+        clean_name,
+        "image/webp",
+        content,
+    )
+    actor = str(user.get("name") or user.get("email") or user.get("username") or "Usuario CRM")
+    row = db.execute(text("""
+        INSERT INTO whatsapp_brand_stickers(
+            brand_code, phone_number_id, name, media_id, mime_type,
+            media_data, media_size, created_by
+        ) VALUES (
+            :brand_code, :phone_number_id, :name, :media_id, 'image/webp',
+            :media_data, :media_size, :created_by
+        )
+        RETURNING id AS library_id, name, media_id, mime_type, media_size, created_at
+    """), {
+        "brand_code": brand_code,
+        "phone_number_id": str(conversation["phone_number_id"]),
+        "name": clean_name,
+        "media_id": media_id,
+        "media_data": content,
+        "media_size": len(content),
+        "created_by": actor,
+    }).mappings().one()
+    db.commit()
+    return {"ok": True, "brand_code": brand_code, "item": {**dict(row), "kind": "library"}}
+
+
+@router.get("/conversations/{conversation_id}/stickers/library/{sticker_id}/content")
+def brand_sticker_content(
+    conversation_id: int,
+    sticker_id: int,
+    db: Session = Depends(get_db),
+):
+    _ensure_tables(db)
+    conversation = _conversation_or_404(db, conversation_id)
+    row = db.execute(text("""
+        SELECT name, mime_type, media_data
+        FROM whatsapp_brand_stickers
+        WHERE id = :sticker_id
+          AND brand_code = :brand_code
+          AND phone_number_id = :phone_number_id
+        LIMIT 1
+    """), {
+        "sticker_id": sticker_id,
+        "brand_code": str(conversation.get("brand_code") or "").strip().upper(),
+        "phone_number_id": str(conversation["phone_number_id"]),
+    }).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Sticker no encontrado en la biblioteca de la marca")
+    return Response(
+        content=bytes(row["media_data"]),
+        media_type=str(row["mime_type"] or "image/webp"),
+        headers={"Content-Disposition": _inline_content_disposition(row["name"], "sticker.webp")},
+    )
+
+
+@router.delete("/conversations/{conversation_id}/stickers/library/{sticker_id}")
+def delete_brand_sticker(
+    conversation_id: int,
+    sticker_id: int,
+    db: Session = Depends(get_db),
+):
+    _ensure_tables(db)
+    conversation = _conversation_or_404(db, conversation_id)
+    deleted = db.execute(text("""
+        DELETE FROM whatsapp_brand_stickers
+        WHERE id = :sticker_id
+          AND brand_code = :brand_code
+          AND phone_number_id = :phone_number_id
+        RETURNING id
+    """), {
+        "sticker_id": sticker_id,
+        "brand_code": str(conversation.get("brand_code") or "").strip().upper(),
+        "phone_number_id": str(conversation["phone_number_id"]),
+    }).scalar()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Sticker no encontrado en la biblioteca de la marca")
+    db.commit()
+    return {"ok": True, "deleted_id": int(deleted)}
 
 
 @router.post("/conversations/{conversation_id}/send-sticker")
@@ -1621,7 +1779,25 @@ def send_existing_sticker(
     _ensure_tables(db)
     conversation = _conversation_or_404(db, conversation_id)
     require_open_customer_window(db, conversation_id)
-    media_id = body.media_id.strip()
+    library = None
+    if body.library_id:
+        library = db.execute(text("""
+            SELECT id, name, media_id, media_data
+            FROM whatsapp_brand_stickers
+            WHERE id = :library_id
+              AND brand_code = :brand_code
+              AND phone_number_id = :phone_number_id
+            LIMIT 1
+        """), {
+            "library_id": body.library_id,
+            "brand_code": str(conversation.get("brand_code") or "").strip().upper(),
+            "phone_number_id": str(conversation["phone_number_id"]),
+        }).mappings().first()
+        if not library:
+            raise HTTPException(status_code=404, detail="Sticker no encontrado en la biblioteca de la marca")
+    media_id = str((library or {}).get("media_id") or body.media_id or "").strip()
+    if not media_id:
+        raise HTTPException(status_code=400, detail="Falta seleccionar un sticker")
 
     try:
         result = _meta_send_uploaded_media(
@@ -1634,40 +1810,62 @@ def send_existing_sticker(
         )
     except HTTPException:
         # Los media_id pueden vencer. Se descarga el sticker y se vuelve a subir.
-        if not body.source_message_id:
+        if library:
+            content = bytes(library["media_data"])
+            media_id = _meta_upload_media(
+                str(conversation["phone_number_id"]),
+                str(library["name"] or "sticker.webp"),
+                "image/webp",
+                content,
+            )
+            db.execute(text("""
+                UPDATE whatsapp_brand_stickers
+                SET media_id = :media_id, updated_at = now()
+                WHERE id = :library_id
+            """), {"media_id": media_id, "library_id": int(library["id"])})
+            result = _meta_send_uploaded_media(
+                str(conversation["phone_number_id"]),
+                str(conversation["wa_id"]),
+                "sticker",
+                media_id,
+                str(library["name"] or "sticker.webp"),
+                None,
+            )
+        elif not body.source_message_id:
             raise
-        source = db.execute(text("""
-            SELECT m.media_id
-            FROM whatsapp_messages m
-            JOIN whatsapp_conversations c
-              ON c.id = m.conversation_id
-            WHERE m.id = :message_id
-              AND c.phone_number_id = :phone_number_id
-              AND m.message_type = 'sticker'
-            LIMIT 1
-        """), {
-            "message_id": body.source_message_id,
-            "phone_number_id": str(conversation["phone_number_id"]),
-        }).mappings().first()
-        if not source:
-            raise HTTPException(status_code=404, detail="Sticker no encontrado")
-        content, mime_type = _greenie_download_media_bytes(str(source["media_id"]))
-        if len(content) > 100 * 1024:
-            raise HTTPException(status_code=413, detail="El sticker supera 100 KB")
-        media_id = _meta_upload_media(
-            str(conversation["phone_number_id"]),
-            "sticker.webp",
-            "image/webp",
-            content,
-        )
-        result = _meta_send_uploaded_media(
-            str(conversation["phone_number_id"]),
-            str(conversation["wa_id"]),
-            "sticker",
-            media_id,
-            "sticker.webp",
-            None,
-        )
+        else:
+            source = db.execute(text("""
+                SELECT m.media_id
+                FROM whatsapp_messages m
+                JOIN whatsapp_conversations c
+                  ON c.id = m.conversation_id
+                WHERE m.id = :message_id
+                  AND c.phone_number_id = :phone_number_id
+                  AND m.message_type = 'sticker'
+                LIMIT 1
+            """), {
+                "message_id": body.source_message_id,
+                "phone_number_id": str(conversation["phone_number_id"]),
+            }).mappings().first()
+            if not source:
+                raise HTTPException(status_code=404, detail="Sticker no encontrado")
+            content, mime_type = _greenie_download_media_bytes(str(source["media_id"]))
+            if len(content) > 100 * 1024:
+                raise HTTPException(status_code=413, detail="El sticker supera 100 KB")
+            media_id = _meta_upload_media(
+                str(conversation["phone_number_id"]),
+                "sticker.webp",
+                "image/webp",
+                content,
+            )
+            result = _meta_send_uploaded_media(
+                str(conversation["phone_number_id"]),
+                str(conversation["wa_id"]),
+                "sticker",
+                media_id,
+                "sticker.webp",
+                None,
+            )
 
     messages = result.get("messages") or []
     whatsapp_message_id = (
@@ -1697,6 +1895,12 @@ def send_existing_sticker(
         SET last_message_at = :sent_at, updated_at = now()
         WHERE id = :id
     """), {"id": conversation_id, "sent_at": row["sent_at"]})
+    if library:
+        db.execute(text("""
+            UPDATE whatsapp_brand_stickers
+            SET last_used_at = now(), updated_at = now()
+            WHERE id = :library_id
+        """), {"library_id": int(library["id"])})
     db.commit()
     return {
         "ok": True,
