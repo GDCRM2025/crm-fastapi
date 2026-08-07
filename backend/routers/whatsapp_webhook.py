@@ -5,18 +5,38 @@ import hmac
 import json
 import logging
 import os
+import threading
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, Request
+from dotenv import dotenv_values
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.core.database import get_db
+from backend.core.database import SessionLocal, get_db
+from backend.core.greenie_schema import acquire_greenie_schema_lock
 
 
 router = APIRouter(tags=["WhatsApp"])
 log = logging.getLogger("crm")
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = BASE_DIR / ".env"
+
+
+def _runtime_env(name: str, default: str = "") -> str:
+    """Prefiere el .env del CRM sobre variables antiguas heredadas por Passenger."""
+    try:
+        value = dotenv_values(ENV_FILE).get(name)
+    except Exception:
+        value = None
+    if value is None or str(value).strip() == "":
+        value = os.environ.get(name, default)
+    return str(value or default).strip()
+
 
 
 WHATSAPP_WEBHOOK_VERIFY_TOKEN = os.getenv(
@@ -41,48 +61,53 @@ def verify_signature(
     raw_body: bytes,
     signature_header: str | None,
 ) -> bool:
-    """
-    Valida que el POST provenga realmente de Meta.
-
-    Meta envía:
-    X-Hub-Signature-256: sha256=<firma>
-    """
-
-    if not WHATSAPP_VALIDATE_SIGNATURE:
+    """Valida X-Hub-Signature-256 usando la clave vigente de Greenie."""
+    validate = _runtime_env("WHATSAPP_VALIDATE_SIGNATURE", "true").lower() in (
+        "1", "true", "yes", "on"
+    )
+    if not validate:
         return True
 
-    if not META_APP_SECRET:
-        log.error(
-            "[WHATSAPP] META_APP_SECRET no configurado "
-            "con validación de firma activa"
-        )
+    secrets: list[str] = []
+    current = _runtime_env("META_APP_SECRET")
+    if current:
+        secrets.append(current)
+    for candidate in _runtime_env("META_APP_SECRETS").split(","):
+        candidate = candidate.strip()
+        if candidate and candidate not in secrets:
+            secrets.append(candidate)
+
+    if not secrets:
+        log.error("[WHATSAPP] META_APP_SECRET no configurado")
+        return False
+    if not signature_header or not signature_header.startswith("sha256="):
         return False
 
-    if not signature_header:
-        return False
-
-    if not signature_header.startswith("sha256="):
-        return False
-
-    provided_signature = signature_header.split("=", 1)[1].strip()
-
-    expected_signature = hmac.new(
-        META_APP_SECRET.encode("utf-8"),
-        raw_body,
-        hashlib.sha256,
-    ).hexdigest()
-
-    return hmac.compare_digest(
-        expected_signature,
-        provided_signature,
-    )
+    provided = signature_header.split("=", 1)[1].strip()
+    for secret in secrets:
+        expected = hmac.new(
+            secret.encode("utf-8"), raw_body, hashlib.sha256
+        ).hexdigest()
+        if hmac.compare_digest(expected, provided):
+            return True
+    return False
 
 
-def ensure_tables(db: Session) -> None:
+def _sync_greenie_events_after_webhook() -> None:
+    """Materializa de inmediato el evento recibido en conversaciones y mensajes."""
+    try:
+        # Import local para evitar el ciclo whatsapp_gia -> whatsapp_webhook al arrancar.
+        from backend.routers.whatsapp_gia import _sync_webhook_events
+
+        with SessionLocal() as db:
+            _sync_webhook_events(db)
+    except Exception:
+        log.exception("[WHATSAPP] Error sincronizando evento con Greenie")
+
+def _ensure_tables_impl(db: Session) -> None:
     """
-    Crea las tablas iniciales del webhook.
-
-    No toca leads, clientes ni cotizaciones.
+    Crea las tablas iniciales del webhook y mantiene actualizada
+    la asignación de marcas y ejecutivos.
     """
 
     db.execute(
@@ -112,6 +137,36 @@ def ensure_tables(db: Session) -> None:
             CREATE INDEX IF NOT EXISTS
             idx_whatsapp_webhook_events_received
             ON whatsapp_webhook_events (received_at DESC)
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            CREATE OR REPLACE FUNCTION public.notify_greenie_webhook_event()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+              PERFORM pg_notify(
+                'greenie_events',
+                json_build_object(
+                  'source', 'webhook',
+                  'event_id', NEW.id,
+                  'event_type', NEW.event_type,
+                  'phone_number_id', NEW.phone_number_id
+                )::text
+              );
+              RETURN NEW;
+            END;
+            $$;
+
+            DROP TRIGGER IF EXISTS trg_notify_greenie_webhook_event
+              ON public.whatsapp_webhook_events;
+            CREATE TRIGGER trg_notify_greenie_webhook_event
+              AFTER INSERT ON public.whatsapp_webhook_events
+              FOR EACH ROW EXECUTE FUNCTION public.notify_greenie_webhook_event();
             """
         )
     )
@@ -157,11 +212,31 @@ def ensure_tables(db: Session) -> None:
                 executive_name
             )
             VALUES
-                ('CAMALEON', 'CAMALEON', 'ANDRES'),
-                ('DEL_SABOR', 'DEL SABOR', 'ANDRES'),
-                ('GOURMET', 'GOURMET', 'JORKINHA'),
-                ('EXPRESS', 'EXPRESS', 'JORKINHA')
-            ON CONFLICT (brand_code) DO NOTHING
+                (
+                    'CAMALEON',
+                    'CAMALEÓN',
+                    'Andrés Landerer'
+                ),
+                (
+                    'DEL_SABOR',
+                    'DEL SABOR',
+                    'Walter Canales'
+                ),
+                (
+                    'GOURMET',
+                    'GOURMET',
+                    'Constanza Franco'
+                ),
+                (
+                    'EXPRESS',
+                    'EXPRESS',
+                    'Daniel Toledo'
+                )
+            ON CONFLICT (brand_code)
+            DO UPDATE SET
+                brand_name = EXCLUDED.brand_name,
+                executive_name = EXCLUDED.executive_name,
+                updated_at = now()
             """
         )
     )
@@ -169,7 +244,30 @@ def ensure_tables(db: Session) -> None:
     db.commit()
 
 
-def normalized_payload_hash(payload: dict[str, Any]) -> str:
+_SCHEMA_LOCK = threading.Lock()
+_SCHEMA_READY = False
+
+
+def ensure_tables(db: Session) -> None:
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        try:
+            acquire_greenie_schema_lock(db)
+            _ensure_tables_impl(db)
+        except Exception:
+            db.rollback()
+            raise
+        _SCHEMA_READY = True
+
+
+def normalized_payload_hash(
+    payload: dict[str, Any],
+) -> str:
     normalized = json.dumps(
         payload,
         sort_keys=True,
@@ -228,6 +326,11 @@ def extract_events(
                 or None
             )
 
+            display_phone_number = (
+                str(metadata.get("display_phone_number") or "")
+                or None
+            )
+
             messages = value.get("messages") or []
 
             if isinstance(messages, list):
@@ -252,6 +355,7 @@ def extract_events(
                             "entry_id": entry_id,
                             "field_name": field_name,
                             "phone_number_id": phone_number_id,
+                            "display_phone_number": display_phone_number,
                             "whatsapp_message_id": message_id,
                             "event_type": (
                                 f"message:{message.get('type') or 'unknown'}"
@@ -271,12 +375,12 @@ def extract_events(
                         or None
                     )
 
-                    status_name = (
-                        str(status.get("status") or "unknown")
+                    status_name = str(
+                        status.get("status") or "unknown"
                     )
 
-                    timestamp = (
-                        str(status.get("timestamp") or "")
+                    timestamp = str(
+                        status.get("timestamp") or ""
                     )
 
                     if message_id:
@@ -295,6 +399,7 @@ def extract_events(
                             "entry_id": entry_id,
                             "field_name": field_name,
                             "phone_number_id": phone_number_id,
+                            "display_phone_number": display_phone_number,
                             "whatsapp_message_id": message_id,
                             "event_type": f"status:{status_name}",
                         }
@@ -309,12 +414,54 @@ def extract_events(
                 "entry_id": None,
                 "field_name": None,
                 "phone_number_id": None,
+                "display_phone_number": None,
                 "whatsapp_message_id": None,
                 "event_type": "unknown",
             }
         )
 
     return extracted
+
+
+def update_channel_metadata(
+    db: Session,
+    phone_number_id: str | None,
+    display_phone_number: str | None,
+    waba_id: str | None,
+) -> None:
+    """
+    Completa los datos técnicos de un canal cuando el número ya
+    fue asociado previamente a una marca.
+
+    No asigna automáticamente una marca desconocida.
+    """
+
+    if not phone_number_id:
+        return
+
+    db.execute(
+        text(
+            """
+            UPDATE whatsapp_channels
+            SET
+                display_phone_number = COALESCE(
+                    :display_phone_number,
+                    display_phone_number
+                ),
+                waba_id = COALESCE(
+                    :waba_id,
+                    waba_id
+                ),
+                updated_at = now()
+            WHERE phone_number_id = :phone_number_id
+            """
+        ),
+        {
+            "phone_number_id": phone_number_id,
+            "display_phone_number": display_phone_number,
+            "waba_id": waba_id,
+        },
+    )
 
 
 def resolve_processing_status(
@@ -418,7 +565,9 @@ def insert_event(
     response_class=PlainTextResponse,
     include_in_schema=False,
 )
-async def whatsapp_verify(request: Request):
+async def whatsapp_verify(
+    request: Request,
+):
     """
     Verificación inicial solicitada por Meta.
     """
@@ -431,7 +580,7 @@ async def whatsapp_verify(request: Request):
 
     if (
         mode == "subscribe"
-        and verify_token == WHATSAPP_WEBHOOK_VERIFY_TOKEN
+        and verify_token == _runtime_env("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "CHANGE_ME")
         and challenge
     ):
         log.info(
@@ -460,6 +609,7 @@ async def whatsapp_verify(request: Request):
 )
 async def whatsapp_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     x_hub_signature_256: str | None = Header(
         default=None,
         alias="X-Hub-Signature-256",
@@ -492,7 +642,10 @@ async def whatsapp_webhook(
         payload = json.loads(
             raw_body.decode("utf-8")
         )
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ):
         return JSONResponse(
             status_code=400,
             content={
@@ -532,7 +685,31 @@ async def whatsapp_webhook(
         inserted_count = 0
         duplicate_count = 0
 
+        entries = payload.get("entry") or []
+
+        waba_id = None
+
+        if (
+            isinstance(entries, list)
+            and entries
+            and isinstance(entries[0], dict)
+        ):
+            waba_id = str(
+                entries[0].get("id") or ""
+            ) or None
+
         for event in extracted_events:
+            update_channel_metadata(
+                db=db,
+                phone_number_id=event.get(
+                    "phone_number_id"
+                ),
+                display_phone_number=event.get(
+                    "display_phone_number"
+                ),
+                waba_id=waba_id,
+            )
+
             inserted = insert_event(
                 db,
                 event,
@@ -557,7 +734,13 @@ async def whatsapp_webhook(
 
         db.commit()
 
-        if inserted_count == 0 and duplicate_count > 0:
+        if inserted_count:
+            background_tasks.add_task(_sync_greenie_events_after_webhook)
+
+        if (
+            inserted_count == 0
+            and duplicate_count > 0
+        ):
             return {
                 "ok": True,
                 "status": "duplicate",
