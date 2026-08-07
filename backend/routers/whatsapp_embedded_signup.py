@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import html
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
+import secrets
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -11,12 +16,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
+from backend.routers.auth import get_current_user
 
 
 router = APIRouter(
@@ -41,13 +47,84 @@ def _env(name: str, default: str = "") -> str:
 
 
 def _graph_version() -> str:
-    value = _env("META_GRAPH_API_VERSION", "v23.0").strip("/")
+    value = (
+        _env("META_GRAPH_API_VERSION")
+        or _env("WHATSAPP_GRAPH_API_VERSION", "v23.0")
+    ).strip("/")
     return value or "v23.0"
 
 
 def _graph_url(path: str) -> str:
     path = str(path or "").lstrip("/")
     return f"https://graph.facebook.com/{_graph_version()}/{path}"
+
+
+def _state_secret() -> str:
+    return (
+        _env("META_EMBEDDED_SIGNUP_STATE_SECRET")
+        or _env("JWT_SECRET")
+        or _env("META_APP_SECRET")
+    )
+
+
+def _state_required() -> bool:
+    return _env("META_EMBEDDED_SIGNUP_REQUIRE_STATE", "1").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(value: str) -> bytes:
+    value = str(value or "").strip()
+    return base64.urlsafe_b64decode(value + ("=" * ((4 - len(value) % 4) % 4)))
+
+
+def _issue_state(brand: str, user: dict) -> str:
+    secret = _state_secret()
+    if not secret:
+        raise RuntimeError(
+            "Falta META_EMBEDDED_SIGNUP_STATE_SECRET (o JWT_SECRET) para proteger el retorno de Meta"
+        )
+    payload = {
+        "brand": str(brand or "").strip().upper(),
+        "uid": str(user.get("id") or user.get("username") or user.get("email") or ""),
+        "iat": int(time.time()),
+        "nonce": secrets.token_urlsafe(12),
+    }
+    encoded = _b64url(
+        json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+    )
+    signature = _b64url(
+        hmac.new(secret.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
+    )
+    return f"{encoded}.{signature}"
+
+
+def _verify_state(value: str) -> dict[str, Any] | None:
+    secret = _state_secret()
+    try:
+        encoded, supplied = str(value or "").split(".", 1)
+        expected = _b64url(
+            hmac.new(secret.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
+        )
+        if not secret or not hmac.compare_digest(supplied, expected):
+            return None
+        payload = json.loads(_b64url_decode(encoded).decode("utf-8"))
+        issued_at = int(payload.get("iat") or 0)
+        if issued_at <= 0 or abs(int(time.time()) - issued_at) > 15 * 60:
+            return None
+        brand = str(payload.get("brand") or "").strip().upper()
+        if brand not in BRANDS:
+            return None
+        return payload
+    except Exception:
+        return None
 
 
 def _http_json(
@@ -371,10 +448,41 @@ details{{margin-top:18px}}summary{{cursor:pointer;font-weight:850}}pre{{white-sp
     )
 
 
+@router.post("/state")
+def embedded_signup_state(
+    brand: str = Query(...),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    role = str(user.get("role") or user.get("rol") or "").strip().upper()
+    if "ADMIN" not in role:
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    brand_code = str(brand or "").strip().upper()
+    if brand_code not in BRANDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Marca inválida. Opciones: {', '.join(sorted(BRANDS))}",
+        )
+    state = _issue_state(brand_code, user)
+    return {
+        "ok": True,
+        "state": state,
+        "expires_in": 15 * 60,
+        "brand": brand_code,
+        "app_id": _env("META_APP_ID"),
+        "config_id": _env("META_EMBEDDED_SIGNUP_CONFIG_ID"),
+        "graph_version": _graph_version(),
+        "redirect_uri": _env(
+            "META_EMBEDDED_SIGNUP_REDIRECT_URI",
+            "https://crm.greendiamond.cl/meta/whatsapp/embedded-signup/callback",
+        ),
+    }
+
+
 @router.get("/callback", include_in_schema=False)
 def embedded_signup_callback(
     request: Request,
     code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
     error: str | None = Query(default=None),
     error_reason: str | None = Query(default=None),
     error_description: str | None = Query(default=None),
@@ -384,7 +492,7 @@ def embedded_signup_callback(
 ) -> HTMLResponse:
     redirect_uri = _env(
         "META_EMBEDDED_SIGNUP_REDIRECT_URI",
-        "https://greendiamond.cl/crm/meta/whatsapp/embedded-signup/callback",
+        "https://crm.greendiamond.cl/meta/whatsapp/embedded-signup/callback",
     )
 
     if ping == 1:
@@ -421,6 +529,28 @@ def embedded_signup_callback(
             details={"query_keys": sorted(request.query_params.keys())},
             status_code=400,
         )
+
+    state_payload = _verify_state(state or "")
+    if _state_required() and not state_payload:
+        _audit(
+            {
+                "ok": False,
+                "stage": "state_validation",
+                "state_present": bool(state),
+                "query_keys": sorted(request.query_params.keys()),
+            }
+        )
+        return _page(
+            title="Retorno de Meta rechazado",
+            message=(
+                "El código de seguridad del registro es inválido o venció. "
+                "Inicia nuevamente la conexión desde el CRM."
+            ),
+            ok=False,
+            status_code=400,
+        )
+    if state_payload:
+        brand = str(state_payload.get("brand") or "").strip().upper()
 
     try:
         token_payload = _exchange_code(code, redirect_uri)
