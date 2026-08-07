@@ -136,12 +136,56 @@ class SendMessageTemplateBody(BaseModel):
     language: str = Field(default="es", pattern=r"^[a-z]{2}(?:_[A-Z]{2})?$")
 
 
+class CreateQuickReplyBody(BaseModel):
+    conversation_id: int
+    category: str = Field(pattern=r"^(VENTA|SEGUIMIENTO|SOLICITUDES|SUGERENCIAS|POSTVENTA)$")
+    title: str = Field(min_length=2, max_length=90)
+    body: str = Field(min_length=2, max_length=1200)
+    sort_order: int = Field(default=100, ge=0, le=9999)
+
+
+class UpdateQuickReplyBody(CreateQuickReplyBody):
+    active: bool = True
+
+
 BRANDS: dict[str, tuple[str, str]] = {
     "CAMALEON": ("CAMALEÓN", "Andrés Landerer"),
     "DEL_SABOR": ("DEL SABOR", "Walter Canales"),
     "GOURMET": ("GOURMET", "Constanza Franco"),
     "EXPRESS": ("EXPRESS", "Daniel Toledo"),
 }
+
+QUICK_REPLY_SEEDS: tuple[tuple[str, str, str, str], ...] = (
+    ("venta_saludo", "VENTA", "Saludo inicial", "Hola {{cliente}}, soy {{ejecutivo}} de {{marca}}. Gracias por escribirnos. Cuéntame brevemente qué necesitas y con gusto te orientaré."),
+    ("venta_datos", "VENTA", "Datos para cotizar", "Para recomendarte la mejor alternativa, ¿me compartes la fecha, comuna, cantidad estimada de personas y tipo de servicio que necesitas?"),
+    ("venta_disponibilidad", "VENTA", "Revisando disponibilidad", "Gracias por la información, {{cliente}}. Estoy revisando disponibilidad y alternativas de {{marca}} para entregarte una propuesta adecuada."),
+    ("venta_propuesta", "VENTA", "Propuesta preparada", "Hola {{cliente}}. Ya tenemos una propuesta preparada según lo conversado. Te la compartiré para que puedas revisarla con calma."),
+    ("venta_conversar", "VENTA", "Invitación a conversar", "Si te parece, podemos revisar juntos la propuesta por este medio o coordinar una llamada breve para resolver tus dudas."),
+    ("venta_avanzar", "VENTA", "Avanzar o ajustar", "¿Te gustaría que avancemos con esta alternativa o prefieres que ajustemos algún aspecto de la propuesta?"),
+    ("seguimiento_cotizacion", "SEGUIMIENTO", "Cotización enviada", "Hola {{cliente}}. Te enviamos la cotización solicitada de {{marca}}. Quedo atento a tus comentarios o cualquier ajuste que necesites."),
+    ("seguimiento_amable", "SEGUIMIENTO", "Seguimiento amable", "Hola {{cliente}}, espero que estés muy bien. Quería saber si pudiste revisar la información que te enviamos y si puedo ayudarte con alguna duda."),
+    ("seguimiento_dudas", "SEGUIMIENTO", "Resolver dudas", "Quedo disponible para aclarar precios, alcance, condiciones o alternativas. La idea es que puedas tomar una decisión con toda la información necesaria."),
+    ("seguimiento_disponibilidad", "SEGUIMIENTO", "Disponibilidad pendiente", "La disponibilidad se confirma al formalizar la reserva. Si deseas avanzar, puedo indicarte los siguientes pasos."),
+    ("seguimiento_retomar", "SEGUIMIENTO", "Retomar conversación", "Hola {{cliente}}. Retomo nuestra conversación para saber si tu solicitud sigue vigente o si cambiaron la fecha o los requerimientos."),
+    ("seguimiento_cierre", "SEGUIMIENTO", "Cierre respetuoso", "Hola {{cliente}}. Para no interrumpirte, cerraré este seguimiento por ahora. Si deseas retomarlo, escríbenos y con gusto continuaremos ayudándote."),
+    ("solicitud_fecha", "SOLICITUDES", "Fecha y ubicación", "Para continuar necesito confirmar la fecha del evento y la comuna o dirección donde se realizará."),
+    ("solicitud_personas", "SOLICITUDES", "Cantidad de personas", "¿Cuál es la cantidad estimada de asistentes? Si tienes un rango aproximado también nos sirve para preparar la propuesta."),
+    ("solicitud_presupuesto", "SOLICITUDES", "Presupuesto objetivo", "¿Tienes un presupuesto estimado o rango objetivo? Con esa referencia puedo priorizar las alternativas más convenientes."),
+    ("solicitud_facturacion", "SOLICITUDES", "Facturación", "Para preparar la documentación, envíanos razón social, RUT, giro, dirección y correo de facturación."),
+    ("solicitud_pago", "SOLICITUDES", "Comprobante de pago", "Cuando realices el pago, por favor envíanos el comprobante indicando el nombre o número de la cotización."),
+    ("solicitud_restricciones", "SOLICITUDES", "Restricciones alimentarias", "¿Existen alergias, intolerancias o restricciones alimentarias que debamos considerar en la propuesta?"),
+    ("solicitud_montaje", "SOLICITUDES", "Montaje y acceso", "¿Nos puedes indicar el horario disponible para montaje, condiciones de acceso y un contacto en el lugar?"),
+    ("sugerencia_alternativa", "SUGERENCIAS", "Alternativa recomendada", "Según lo conversado, esta alternativa ofrece un buen equilibrio entre experiencia, cantidad y presupuesto. Podemos ajustarla si cambian tus prioridades."),
+    ("sugerencia_optimizar", "SUGERENCIAS", "Optimizar presupuesto", "Podemos optimizar el presupuesto ajustando cantidades, variedad o formato de servicio sin perder los elementos principales de la experiencia."),
+    ("sugerencia_comparar", "SUGERENCIAS", "Comparar opciones", "Si quieres, puedo prepararte dos alternativas comparables: una esencial y otra más completa, para facilitar la decisión."),
+    ("sugerencia_complementos", "SUGERENCIAS", "Complementos", "También podemos evaluar complementos opcionales. Te indicaré claramente cuáles son recomendados y cuáles puedes omitir."),
+    ("sugerencia_llamada", "SUGERENCIAS", "Llamada de asesoría", "Por la cantidad de variables, una llamada breve puede ayudarnos a recomendarte mejor. ¿Qué horario te acomoda?"),
+    ("postventa_reserva", "POSTVENTA", "Reserva recibida", "Gracias, {{cliente}}. Recibimos la confirmación y continuaremos con la coordinación correspondiente."),
+    ("postventa_pago", "POSTVENTA", "Pago recibido", "Confirmamos la recepción del comprobante. Validaremos el pago y actualizaremos el estado de tu solicitud."),
+    ("postventa_coordinacion", "POSTVENTA", "Coordinación previa", "Estamos revisando los últimos detalles de coordinación. Si hubo algún cambio de horario, dirección o contacto, avísanos por este medio."),
+    ("postventa_gracias", "POSTVENTA", "Agradecimiento", "Muchas gracias por confiar en {{marca}}. Fue un gusto acompañarte y esperamos que hayas disfrutado la experiencia."),
+    ("postventa_opinion", "POSTVENTA", "Solicitar opinión", "Tu opinión es muy importante para nosotros. ¿Cómo evaluarías la atención y el servicio recibido? Cualquier sugerencia nos ayuda a mejorar."),
+)
 
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
@@ -301,6 +345,26 @@ def _ensure_tables(db: Session) -> None:
         db.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_whatsapp_brand_stickers_brand
         ON whatsapp_brand_stickers(brand_code, created_at DESC)
+        """))
+        db.execute(text("""
+        CREATE TABLE IF NOT EXISTS whatsapp_quick_replies (
+            id BIGSERIAL PRIMARY KEY,
+            brand_code TEXT NOT NULL,
+            seed_key TEXT,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            created_by TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE(brand_code, seed_key)
+        )
+        """))
+        db.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_quick_replies_brand
+        ON whatsapp_quick_replies(brand_code, active, category, sort_order, id)
         """))
         db.execute(text("""
         CREATE OR REPLACE FUNCTION public.notify_greenie_message_change()
@@ -1307,6 +1371,31 @@ def _conversation_or_404(db: Session, conversation_id: int):
     return row
 
 
+def _quick_reply_admin(user: dict[str, Any]) -> bool:
+    role = str(user.get("role") or user.get("rol") or "").strip().upper()
+    return "ADMIN" in role
+
+
+def _seed_quick_replies(db: Session, brand_code: str) -> None:
+    for position, (seed_key, category, title, body) in enumerate(QUICK_REPLY_SEEDS, start=1):
+        db.execute(text("""
+            INSERT INTO whatsapp_quick_replies(
+                brand_code, seed_key, category, title, body, sort_order, created_by
+            ) VALUES (
+                :brand_code, :seed_key, :category, :title, :body, :sort_order, 'SISTEMA'
+            )
+            ON CONFLICT (brand_code, seed_key) DO NOTHING
+        """), {
+            "brand_code": brand_code,
+            "seed_key": seed_key,
+            "category": category,
+            "title": title,
+            "body": body,
+            "sort_order": position * 10,
+        })
+    db.commit()
+
+
 def _existing_leads(db: Session, wa_id: str) -> list[dict[str, Any]]:
     phone9 = _phone9(wa_id)
     if not phone9:
@@ -1393,6 +1482,104 @@ async def _greenie_event_stream():
                 await asyncio.to_thread(connection.close)
             except Exception:
                 pass
+
+
+@router.get("/quick-replies")
+def quick_replies(
+    conversation_id: int = Query(...),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _ensure_tables(db)
+    conversation = _conversation_or_404(db, conversation_id)
+    brand_code = str(conversation.get("brand_code") or "").strip().upper()
+    if not brand_code:
+        raise HTTPException(status_code=409, detail="La conversación todavía no tiene una marca asignada")
+    _seed_quick_replies(db, brand_code)
+    can_manage = _quick_reply_admin(user)
+    rows = db.execute(text("""
+        SELECT id, category, title, body, active, sort_order, seed_key
+        FROM whatsapp_quick_replies
+        WHERE brand_code = :brand_code
+          AND (:can_manage OR active = TRUE)
+        ORDER BY category, sort_order, id
+    """), {"brand_code": brand_code, "can_manage": can_manage}).mappings().all()
+    return {
+        "ok": True,
+        "brand_code": brand_code,
+        "can_manage": can_manage,
+        "items": [dict(row) for row in rows],
+    }
+
+
+@router.post("/quick-replies")
+def create_quick_reply(
+    body: CreateQuickReplyBody,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _ensure_tables(db)
+    _template_admin(user)
+    conversation = _conversation_or_404(db, body.conversation_id)
+    brand_code = str(conversation.get("brand_code") or "").strip().upper()
+    if not brand_code:
+        raise HTTPException(status_code=409, detail="La conversación todavía no tiene una marca asignada")
+    created_by = str(user.get("username") or user.get("email") or user.get("nombre") or "ADMIN")[:180]
+    row = db.execute(text("""
+        INSERT INTO whatsapp_quick_replies(
+            brand_code, category, title, body, active, sort_order, created_by
+        ) VALUES (
+            :brand_code, :category, :title, :body, TRUE, :sort_order, :created_by
+        )
+        RETURNING id, category, title, body, active, sort_order, seed_key
+    """), {
+        "brand_code": brand_code,
+        "category": body.category,
+        "title": body.title.strip(),
+        "body": body.body.strip(),
+        "sort_order": body.sort_order,
+        "created_by": created_by,
+    }).mappings().one()
+    db.commit()
+    return {"ok": True, "item": dict(row)}
+
+
+@router.put("/quick-replies/{reply_id}")
+def update_quick_reply(
+    reply_id: int,
+    body: UpdateQuickReplyBody,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _ensure_tables(db)
+    _template_admin(user)
+    conversation = _conversation_or_404(db, body.conversation_id)
+    brand_code = str(conversation.get("brand_code") or "").strip().upper()
+    if not brand_code:
+        raise HTTPException(status_code=409, detail="La conversación todavía no tiene una marca asignada")
+    row = db.execute(text("""
+        UPDATE whatsapp_quick_replies
+        SET category = :category,
+            title = :title,
+            body = :body,
+            active = :active,
+            sort_order = :sort_order,
+            updated_at = now()
+        WHERE id = :reply_id AND brand_code = :brand_code
+        RETURNING id, category, title, body, active, sort_order, seed_key
+    """), {
+        "reply_id": reply_id,
+        "brand_code": brand_code,
+        "category": body.category,
+        "title": body.title.strip(),
+        "body": body.body.strip(),
+        "active": body.active,
+        "sort_order": body.sort_order,
+    }).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Respuesta rápida no encontrada para esta marca")
+    db.commit()
+    return {"ok": True, "item": dict(row)}
 
 
 @router.get("/templates")
