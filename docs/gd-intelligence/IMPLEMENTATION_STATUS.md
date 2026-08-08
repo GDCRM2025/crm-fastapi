@@ -30,6 +30,19 @@ Actualizado: 2026-08-08
 | 23 Alerts | PENDING | PENDING | PENDING | N/A | — |
 | 24 Executive dashboard | PENDING | PENDING | PENDING | N/A | — |
 
+## Gates transversales
+
+| Gate | Estado | Evidencia |
+|---|---|---|
+| Backup Git Mac | PASS | Bundle + snapshot + checksums |
+| Backup código servidor | PASS | Bundle + snapshot + checksums |
+| Reconciliación Mac/Git/servidor | PENDING | Divergencias clasificadas |
+| Repositorio privado | FAIL | GitHub informa PUBLIC; acción manual crítica |
+| Secret scan | FAIL | Secretos reales históricos; rotación pendiente |
+| Restore aislado | PASS | 112 tablas, 213 índices, 34 FKs |
+| Migraciones en restore | PASS | Dos ejecuciones, core intacto |
+| Migración producción | NOT_RUN | Prohibida hasta readiness |
+
 ## Evidencia actual
 
 - 14 pruebas unitarias GD Intelligence: PASS.
@@ -37,5 +50,7 @@ Actualizado: 2026-08-08
 - `git diff --check` sobre archivos GD Intelligence: PASS.
 - Conectividad VM y PostgreSQL: PASS mediante VPN.
 - CRM `/healthz`: HTTP 200; PostgreSQL sin locks ni transacciones largas.
-- Backup 20260808: checksums y `pg_restore --list` PASS; restore aislado pendiente.
-- Migración productiva: no ejecutada; falta restore aislado y rollback validado.
+- Backup 20260808: checksums y `pg_restore --list` PASS.
+- Restore aislado 20260808: PASS.
+- Migraciones GD Intelligence ejecutadas dos veces en restore: PASS; core intacto.
+- Migración productiva: no ejecutada; Git/secret/rollback/readiness pendientes.
