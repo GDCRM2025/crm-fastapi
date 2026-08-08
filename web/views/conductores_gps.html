@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>conductores_gps</title>
+</head>
+<body style="padding:18px">
+  <section class="card" style="max-width: 980px">
+    <h2 style="margin:0 0 8px 0">GPS del Conductor</h2>
+    <p style="opacity:.85; margin:0 0 12px 0">El tracking inicia automáticamente al abrir esta vista.</p>
+    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center">
+      <button id="btnStart" class="btn">Iniciar tracking</button>
+      <button id="btnStop" class="btn">Detener</button>
+      <span id="status" style="opacity:.8">Estado: —</span>
+      <span id="last" style="opacity:.8">Último envío: —</span>
+    </div>
+  </section>
+  <script>
+    window.addEventListener("message", (ev) => {
+      if (ev.data?.type === "theme"){
+        document.documentElement.classList.toggle("light", ev.data.mode === "light");
+      }
+    });
+    const statusEl = document.getElementById("status");
+    const lastEl = document.getElementById("last");
+    const btnStart = document.getElementById("btnStart");
+    const btnStop = document.getElementById("btnStop");
+
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      return GD && GD.authHeaders ? GD.authHeaders(extra) : extra;
+    }
+
+    let watchId = null;
+    let lastSent = 0;
+    let lastPos = null;
+
+    async function sendPing(pos){
+      const now = Date.now();
+      if (now - lastSent < 9500) return; // ~10s
+      lastSent = now;
+      const body = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        speed: pos.coords.speed,
+        heading: pos.coords.heading,
+      };
+      try{
+        const r = await fetch("/gps/ping", {
+          method: "POST",
+          headers: authHeaders({ "Content-Type":"application/json" }),
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        lastEl.textContent = "Último envío: " + new Date().toLocaleTimeString("es-CL");
+        statusEl.textContent = "Estado: enviando cada 10s";
+      }catch(e){
+        statusEl.textContent = "Estado: error al enviar";
+      }
+    }
+
+    function onPos(pos){
+      lastPos = pos;
+      sendPing(pos);
+    }
+    function onErr(err){
+      statusEl.textContent = "Estado: permiso denegado o sin GPS";
+    }
+
+    function start(){
+      if (!navigator.geolocation){
+        statusEl.textContent = "Estado: GPS no soportado";
+        return;
+      }
+      if (watchId !== null) return;
+      statusEl.textContent = "Estado: solicitando permiso…";
+      watchId = navigator.geolocation.watchPosition(onPos, onErr, {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000
+      });
+    }
+    function stop(){
+      if (watchId !== null){
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        statusEl.textContent = "Estado: detenido";
+      }
+    }
+
+    btnStart.onclick = start;
+    btnStop.onclick = stop;
+    start();
+  </script>
+</body>
+</html>

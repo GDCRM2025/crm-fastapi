@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Filtrar Leads</title>
+  <link rel="stylesheet" href="../styles.css?v=20260320-2" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    :root{
+      --app-bg:#07131F; --surface:#0C1B2B; --surface2:#102235; --border:#22384F;
+      --text:#EAF2FF; --muted:#A9BBD2; --accent:#19C37D; --shadow:0 12px 30px rgba(0,0,0,.35);
+    }
+    :root.light{
+      --app-bg:#f6f8ff; --surface:#fff; --surface2:#f2f5ff; --border:#d9e2f2;
+      --text:#0b1220; --muted:#4b5f7a; --shadow:0 10px 24px rgba(0,0,0,.10);
+    }
+    *{ box-sizing:border-box; }
+    body{ margin:0; background:var(--app-bg); color:var(--text); font-family: ui-sans-serif, system-ui; }
+    .wrap{ padding:12px; }
+
+    .card{
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:18px;
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.2fr 1fr 1fr 1fr;
+      gap:10px;
+      align-items:end;
+    }
+    @media(max-width: 980px){ .grid{ grid-template-columns:1fr 1fr; } }
+
+    label{ display:block; font-size:12px; font-weight:900; color:var(--muted); margin-bottom:6px; }
+    input, select{
+      width:100%;
+      background:var(--surface2);
+      border:1px solid var(--border);
+      color:var(--text);
+      border-radius:12px;
+      padding:10px;
+      outline:0;
+      font-size:13px;
+    }
+
+    .actions{
+      margin-top:10px;
+      display:flex;
+      gap:10px;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+    }
+    .btn{
+      border:1px solid rgba(25,195,125,.30);
+      background: rgba(25,195,125,.16);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-weight: 900;
+      cursor:pointer;
+    }
+    .btn.primary{ background:var(--accent); color:#052016; border-color: rgba(0,0,0,.15); }
+    .btn.ghost{ background: rgba(255,255,255,.03); border:1px solid var(--border); }
+
+    .table-wrap{
+      margin-top:12px;
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:18px;
+      max-height:62vh;
+      overflow:auto;
+      box-shadow: var(--shadow);
+    }
+    table{ width:100%; border-collapse:collapse; }
+    thead th{
+      background:var(--surface2);
+      color:var(--muted);
+      font-weight:950;
+      font-size:12px;
+      text-align:left;
+      padding:12px 10px;
+      border-bottom:1px solid var(--border);
+      position:sticky;
+      top:0;
+      z-index:3;
+    }
+    tbody td{
+      padding:10px 10px;
+      border-bottom:1px solid var(--border);
+      font-size:13px;
+      color:var(--text);
+    }
+    tbody tr:hover{ background: rgba(255,255,255,.03); }
+
+    .hint{ margin-top:10px; color:var(--muted); font-weight:800; font-size:12px; }
+
+    .miniBtn{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+      padding:6px 8px;
+      border-radius:10px;
+      font-weight:950;
+      font-size:12px;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .miniBtn:hover{ filter:brightness(1.06); }
+    .miniBtn.wa{ border-color: rgba(25,195,125,.35); background: rgba(25,195,125,.14); }
+    .miniBtn.tel{ border-color: rgba(96,165,250,.35); background: rgba(96,165,250,.14); }
+
+    /* SweetAlert embed */
+    .gdFilterEmbed.swal2-popup{ width: min(1200px, 94vw) !important; padding: 12px !important; }
+    .gdFilterEmbed .swal2-html-container{ max-height: 84vh; overflow:hidden !important; padding:0 !important; margin:0 !important; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="grid">
+        <div>
+          <label>Búsqueda rápida</label>
+          <input id="q" placeholder="Cliente / código / comuna / marca..." />
+        </div>
+        <div>
+          <label>Marca</label>
+          <select id="marca"></select>
+        </div>
+        <div>
+          <label>Estado</label>
+          <select id="estado"></select>
+        </div>
+        <div>
+          <label id="lblF1">Fecha evento (desde)</label>
+          <input id="f1" type="date" />
+        </div>
+        <div>
+          <label id="lblF2">Fecha evento (hasta)</label>
+          <input id="f2" type="date" />
+        </div>
+        <div>
+          <label>Comuna</label>
+          <select id="comuna"></select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div class="actions" style="justify-content:flex-start">
+            <button class="btn primary" id="btnBuscar" type="button">Buscar</button>
+            <button class="btn ghost" id="btnLimpiar" type="button">Limpiar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn" id="btnWa" type="button">Enviar resultados por WhatsApp</button>
+      </div>
+
+      <div class="hint" id="hint">Aplica filtros y presiona “Buscar”.</div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:70px">ID</th>
+            <th>Cliente</th>
+            <th style="width:150px">Teléfono</th>
+            <th style="width:160px">Marca</th>
+            <th style="width:160px">Estado</th>
+            <th style="width:140px">Fecha</th>
+            <th style="width:180px">Comuna</th>
+            <th style="width:130px">Monto</th>
+            <th style="width:170px">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script type="module">
+    const qs=(s,el=document)=>el.querySelector(s);
+    const qsa=(s,el=document)=>[...el.querySelectorAll(s)];
+    const API_BASE = (() => {
+      try {
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = h === "localhost" || h === "127.0.0.1";
+        return isLocal ? "" : "/crm";
+      } catch (_) {
+        return "";
+      }
+    })();
+
+    function getToken(){ return localStorage.getItem("token")||sessionStorage.getItem("token")||""; }
+    function authHeaders(extra={}){ const t=getToken(); return t?{...extra,Authorization:`Bearer ${t}`} : extra; }
+	    function apiURL(u){
+	      const s = String(u || "");
+	      if (!s) return s;
+	      // Evitar regex literal (algunos navegadores/encodings pueden romper flags).
+	      const sl = s.toLowerCase();
+	      if (sl.startsWith("http://") || sl.startsWith("https://")) return s;
+	      if (s.startsWith("/")) return API_BASE + s;
+	      return API_BASE + "/" + s;
+	    }
+    async function apiJSON(url, init={}){
+      const r = await fetch(apiURL(url), { ...init, headers: authHeaders(init.headers || {}) });
+      const text = await r.text();
+      let j = null;
+      try{ j = text ? JSON.parse(text) : null; }catch(_){}
+      if(!r.ok){
+        const msg = (j && (j.detail || j.error)) ? (j.detail || j.error) : (text || (r.status + ""));
+        throw new Error(String(msg));
+      }
+      return j;
+    }
+    const toast = (t, icon="info") => Swal.fire({ toast:true, position:"top-end", timer:2200, showConfirmButton:false, icon, title:t });
+
+    window.addEventListener("message",(ev)=>{
+      if(ev.data?.type==="theme") document.documentElement.classList.toggle("light", ev.data.mode==="light");
+    });
+    // Cerrar el modal embebido cuando el iframe (leads.html?embed=1) cierre el lead.
+    window.addEventListener("message",(ev)=>{
+      if (ev?.data?.type === "embed:close"){
+        try{ Swal.close(); }catch(_){}
+      }
+    });
+
+    function money(n){
+      const v=Number(n||0);
+      try{ return v.toLocaleString("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}); }
+      catch(_){ return "$"+Math.round(v); }
+    }
+
+    function fill(sel, rows, valueKey, labelKey){
+      sel.innerHTML="";
+      sel.appendChild(new Option("—", ""));
+      for(const r of rows){
+        sel.appendChild(new Option(String(r[labelKey]), String(r[valueKey])));
+      }
+    }
+
+    function pickCats(payload){
+      const cat = payload?.catalogos || payload || {};
+      return {
+        marcas: cat.marcas || [],
+        comunas: cat.comunas || [],
+        estados: (cat.estados_lead || cat.estados || []).filter(e=>e.is_active!==false),
+      };
+    }
+
+    async function getCatalogos(){
+      const r=await fetch(apiURL("/leads/catalogos"),{headers:authHeaders()});
+      if(!r.ok) throw new Error("catalogos");
+      return pickCats(await r.json());
+    }
+
+    async function getLeads(){
+      const r=await fetch(apiURL("/leads?limit=5000"),{headers:authHeaders()});
+      if(!r.ok) throw new Error("leads");
+      const j=await r.json();
+      if(Array.isArray(j)) return j;
+      if(Array.isArray(j?.items)) return j.items;
+      if(Array.isArray(j?.leads)) return j.leads;
+      return [];
+    }
+
+    let CATS=null;
+    let LAST=[];
+    let DATE_FIELD = "evento"; // evento | ingreso
+
+    function maps(){
+      const mMarca={}, mComuna={}, mEstado={};
+      for(const x of CATS.marcas) mMarca[x.id_marca]=x.nombre;
+      for(const x of CATS.comunas) mComuna[x.id_comuna]=x.nombre;
+      for(const x of CATS.estados) mEstado[x.id_estado]=x.nombre;
+      return {mMarca,mComuna,mEstado};
+    }
+
+    function estadoNombre(id){
+      const est = (CATS?.estados || []).find(e => Number(e.id_estado) === Number(id));
+      return (est?.nombre || est?.estado || "").toString().toUpperCase();
+    }
+
+    function renderTpl(t, lead){
+      const {mMarca}=maps();
+      const cliente = (lead?.cliente || lead?.nombre_cliente || "").trim();
+      const marca = (lead?.marca_nombre || mMarca[lead?.id_marca] || "").trim();
+      const fecha = String(lead?.fecha_evento || "").slice(0,10);
+      return String(t || "")
+        .replaceAll("{cliente}", cliente || "cliente")
+        .replaceAll("{marca}", marca || "marca")
+        .replaceAll("{fecha_evento}", fecha || "");
+    }
+
+    function followupTemplatesFor(lead){
+      const st = estadoNombre(lead?.id_estado || "") || "SEGUIMIENTO";
+      const fecha = String(lead?.fecha_evento || "").slice(0, 10);
+      const num = String(lead?.num_cotizacion || "").trim();
+      const monto = money(lead?.monto_cotizado || 0);
+
+      const openers = [
+        "Hola {cliente}, soy del equipo {marca}.",
+        "Hola {cliente}, ¿cómo estás? Soy del equipo {marca}.",
+        "Hola {cliente}, te escribo por tu solicitud en {marca}.",
+        "Hola {cliente}, te contacto para avanzar con tu evento.",
+        "Hola {cliente}, gracias por escribirnos.",
+        "Hola {cliente}, quedo atento(a) para coordinar tu servicio.",
+        "Hola {cliente}, te escribo para confirmar algunos detalles.",
+        "Hola {cliente}, ¿tienes un minuto para revisar el estado de tu cotización?",
+        "Hola {cliente}, quería dejarte un mensaje corto para coordinar.",
+        "Hola {cliente}, te escribo para cerrar los últimos detalles.",
+      ];
+      const closers = [
+        "Quedo atento(a).",
+        "Gracias, quedo atento(a) a tu confirmación.",
+        "Quedo pendiente para avanzar cuando me indiques.",
+        "Si te acomoda, lo cerramos hoy para asegurar disponibilidad.",
+        "Cualquier cosa me dices y lo ajustamos.",
+      ];
+
+      let body = "¿Me confirmas fecha, dirección y cantidad de personas para enviarte la propuesta final?";
+      if (st.includes("NUEVO") || st.includes("CONTACT")){
+        body = `Para ayudarte mejor, ¿me confirmas la fecha${fecha ? " (" + fecha + ")" : ""} y la cantidad aproximada de personas?`;
+      }else if (st.includes("COTIZ")){
+        body = `Te envié la cotización${num ? " N° " + num : ""}${monto ? " (" + monto + ")" : ""}. ¿La revisamos y la dejamos lista para aprobación?`;
+      }else if (st.includes("PEND") || st.includes("SEGUIM") || st.includes("ESPER")){
+        body = "Solo para confirmar si avanzamos con la reserva. Si hay algún cambio, lo ajustamos.";
+      }else if (st.includes("CONFIRM")){
+        body = "Para coordinar operación: ¿confirmamos horario de montaje/desmontaje y punto exacto de instalación?";
+      }
+
+      const out = [];
+      for (let i = 0; i < openers.length; i++){
+        for (let j = 0; j < closers.length; j++){
+          out.push(renderTpl(`${openers[i]}\n\n${body}\n\n${closers[j]}`, lead));
+        }
+      }
+      return out;
+    }
+
+    async function doCall(lead){
+      const tel = String(lead?.telefono || "").trim();
+      if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+      try{
+        await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({
+            kind: "CALL",
+            title: "Llamada iniciada",
+            text: `Se inicia llamada a ${tel}.`,
+          }),
+        });
+      }catch(_){}
+      window.open("tel:" + tel, "_self");
+    }
+
+    async function doWhatsApp(lead){
+      const tel = String(lead?.telefono || "").replace(/\D/g,"");
+      if (!tel){ toast("Lead sin teléfono", "warning"); return; }
+      const tpls = followupTemplatesFor(lead);
+      const stName = estadoNombre(lead?.id_estado || "") || "SEGUIMIENTO";
+      const labels = tpls.map((t, i)=>{
+        const txt = String(t || "").trim();
+        const first = (txt.split("\n").map(x=>x.trim()).find(Boolean) || "").replace(/\s{2,}/g," ");
+        const short = first.length > 54 ? (first.slice(0,54) + "…") : first;
+        return `WSP ${String(i+1).padStart(2,"0")} · ${short || stName}`;
+      });
+
+      const escapeHtml = (s)=>String(s??"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]));
+
+      const res = await Swal.fire({
+        title: "WhatsApp",
+        html: `
+          <div style="text-align:left">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <div class="hint" style="margin:0;flex:1 1 auto">Estado: <b style="color:var(--text)">${escapeHtml(stName)}</b> · Plantillas: <b>${tpls.length}</b></div>
+              <input id="sw_wa_q" placeholder="Buscar plantilla…" style="flex:1 1 260px;min-width:220px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:10px;color:var(--text);font-weight:850;font-size:14px" />
+            </div>
+            <div style="display:grid;grid-template-columns: 320px 1fr;gap:12px;margin-top:10px;align-items:start">
+              <div id="sw_wa_list" style="max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:14px;background:var(--surface2);padding:10px"></div>
+              <div style="display:grid;gap:8px">
+                <div class="hint" style="margin:0;font-weight:950">Mensaje (editable)</div>
+                <textarea id="sw_wa_txt" rows="10" style="width:100%;border-radius:14px;border:1px solid var(--border);background:var(--surface2);color:var(--text);padding:12px 12px;font-weight:650;font-size:15px;line-height:1.35;resize:vertical;min-height:180px" placeholder="Mensaje…"></textarea>
+                <div class="hint" style="margin:0">Al abrir o copiar se registra en historial.</div>
+              </div>
+            </div>
+          </div>
+        `,
+        width: 980,
+        showCancelButton: true,
+        confirmButtonText: "Abrir WhatsApp",
+        showDenyButton: true,
+        denyButtonText: "Copiar",
+        cancelButtonText: "Cancelar",
+        focusConfirm: false,
+	        didOpen: ()=>{
+	          const listEl = document.getElementById("sw_wa_list");
+	          const qEl = document.getElementById("sw_wa_q");
+	          const ta = document.getElementById("sw_wa_txt");
+	          if (!listEl || !ta) return;
+	          let selectedIdx = 0;
+	          const setIdx = ()=>{
+	            try{ ta.dataset.idx = String(selectedIdx); }catch(_){}
+	          };
+	          const renderList = ()=>{
+	            const q = String(qEl?.value || "").trim().toLowerCase();
+	            const parts = [];
+            for (let i=0;i<labels.length;i++){
+              const lab = labels[i] || "";
+              const body = String(tpls[i] || "");
+              const hay = !q || lab.toLowerCase().includes(q) || body.toLowerCase().includes(q);
+              if (!hay) continue;
+              const active = i===selectedIdx;
+              parts.push(`
+                <button type="button" data-idx="${i}" style="width:100%;text-align:left;padding:12px 12px;border-radius:14px;margin-bottom:10px;border:1px solid ${active ? "rgba(25,195,125,.55)" : "var(--border)"};background:${active ? "rgba(25,195,125,.14)" : "rgba(255,255,255,.04)"};color:var(--text);font-weight:950;font-size:14px;line-height:1.25;white-space:normal;cursor:pointer">
+                  <div style="font-weight:1000">${escapeHtml(lab)}</div>
+                  <div style="opacity:.75;margin-top:6px;font-weight:750;font-size:13px;white-space:pre-line">${escapeHtml(body.split("\n").slice(1,3).join("\n"))}</div>
+                </button>
+              `);
+            }
+            listEl.innerHTML = parts.join("") || `<div class="hint" style="margin:0">Sin coincidencias.</div>`;
+            qsa("button[data-idx]", listEl).forEach(b=>{
+	              b.addEventListener("click", ()=>{
+	                const i = Number(b.getAttribute("data-idx") || 0);
+	                if (!Number.isFinite(i)) return;
+	                selectedIdx = i;
+	                ta.value = String(tpls[selectedIdx] || "");
+	                setIdx();
+	                renderList();
+	              });
+	            });
+	          };
+	          qEl && qEl.addEventListener("input", renderList);
+	          ta.value = String(tpls[0] || "");
+	          setIdx();
+	          renderList();
+	        },
+	        preConfirm: ()=>{
+	          const msg = (document.getElementById("sw_wa_txt")?.value || "").trim();
+	          if (!msg) return Swal.showValidationMessage("Mensaje vacío");
+	          const idx = Number(document.getElementById("sw_wa_txt")?.dataset?.idx || 0);
+	          return { action:"open", msg, idx };
+	        },
+	        preDeny: ()=>{
+	          const msg = (document.getElementById("sw_wa_txt")?.value || "").trim();
+	          if (!msg) return Swal.showValidationMessage("Mensaje vacío");
+	          const idx = Number(document.getElementById("sw_wa_txt")?.dataset?.idx || 0);
+	          return { action:"copy", msg, idx };
+	        }
+	      });
+      if (!res.isConfirmed && !res.isDenied) return;
+      const action = res.value?.action || (res.isDenied ? "copy" : "open");
+      const msg = String(res.value?.msg || "").trim();
+      if (!msg) return;
+      if (action === "copy"){
+        try{ await navigator.clipboard.writeText(msg); }catch(_){}
+      }
+      try{
+        await apiJSON(`/leads/${lead.id_lead}/append_note`, {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({
+            kind: "WSP",
+            title: `WhatsApp · ${stName} · ${action==="copy" ? "COPIADO" : "ENVIADO"}`,
+            text: msg,
+          }),
+        });
+      }catch(_){}
+      if (action === "open"){
+        window.open("https://wa.me/" + tel + "?text=" + encodeURIComponent(msg), "_blank", "noopener");
+      }
+    }
+
+    function openLeadEmbed(id){
+      const idStr = String(id||"").trim();
+      if(!idStr) return;
+      const url = `/web/views/leads.html?v=20260326-leads2&embed=1&open_lead=${encodeURIComponent(idStr)}`;
+      Swal.fire({
+        title: `Lead #${idStr}`,
+        html: `<iframe src="${url}" style="width:100%;height:82vh;border:1px solid var(--border);border-radius:16px;background:var(--app-bg)"></iframe>`,
+        showConfirmButton: false,
+        showCloseButton: true,
+        allowOutsideClick: true,
+        customClass: { popup: "gdFilterEmbed" },
+      });
+    }
+
+	    function render(rows){
+	      const {mMarca,mComuna,mEstado}=maps();
+	      const tb=qs("#tb");
+	      tb.innerHTML="";
+	      for(const l of rows){
+	        const tr=document.createElement("tr");
+	        tr.style.cursor = "pointer";
+	        tr.addEventListener("click", ()=>{
+	          openLeadEmbed(l.id_lead);
+	        });
+	        const ingreso = l.fecha_ingreso || l.created_at || "";
+	        const dShow = (DATE_FIELD === "ingreso")
+	          ? (ingreso ? String(ingreso).slice(0,10) : "—")
+	          : (l.fecha_evento ? String(l.fecha_evento) : "—");
+	        const telShow = (l.telefono || l.phone || "").toString().trim() || "—";
+	        tr.innerHTML=`
+	          <td>${l.id_lead}</td>
+	          <td>${(l.nombre_cliente||"")}</td>
+	          <td>${telShow}</td>
+	          <td>${(mMarca[l.id_marca]||"")}</td>
+	          <td>${(mEstado[l.id_estado]||l.id_estado||"")}</td>
+	          <td>${dShow}</td>
+	          <td>${(mComuna[l.id_comuna]||"—")}</td>
+	          <td>${money(l.monto_cotizado)}</td>
+	          <td>
+	            <div style="display:flex;gap:8px;flex-wrap:wrap">
+	              <button type="button" class="miniBtn tel" data-act="tel">Llamar</button>
+	              <button type="button" class="miniBtn wa" data-act="wa">WhatsApp</button>
+	            </div>
+	          </td>
+	        `;
+	        tr.querySelectorAll("button[data-act]").forEach(btn=>{
+	          btn.addEventListener("click", async (e)=>{
+	            e.preventDefault(); e.stopPropagation();
+	            // Para acciones rápidas, traemos el lead completo (asegura teléfono/estado/nombre).
+	            let full = l;
+	            try{ full = await apiJSON(`/leads/${l.id_lead}`); }catch(_){}
+	            const act = btn.getAttribute("data-act");
+	            if (act === "tel") return doCall(full);
+	            if (act === "wa") return doWhatsApp(full);
+	          });
+	        });
+	        tb.appendChild(tr);
+	      }
+		      const totalMonto = rows.reduce((a,x)=> a + Number(x?.monto_cotizado || 0), 0);
+		      qs("#hint").textContent = `${rows.length} resultados · Monto total: ${money(totalMonto)}`;
+		    }
+
+    function applyFilters(all){
+      const q=(qs("#q").value||"").trim().toLowerCase();
+      const marca=qs("#marca").value;
+      const estado=qs("#estado").value;
+      const comuna=qs("#comuna").value;
+      const f1=qs("#f1").value;
+      const f2=qs("#f2").value;
+
+      const {mMarca,mComuna,mEstado}=maps();
+
+      return all.filter(l=>{
+        if(marca && String(l.id_marca)!==marca) return false;
+        if(estado && String(l.id_estado)!==estado) return false;
+        if(comuna && String(l.id_comuna)!==comuna) return false;
+
+        const ingreso = l.fecha_ingreso || l.created_at || "";
+        const fe = (DATE_FIELD === "ingreso")
+          ? (ingreso ? String(ingreso).slice(0,10) : "")
+          : (l.fecha_evento ? String(l.fecha_evento) : "");
+        if(f1 && (!fe || fe < f1)) return false;
+        if(f2 && (!fe || fe > f2)) return false;
+
+        if(q){
+          const s=[
+            l.nombre_cliente,l.codigo_cliente,
+            mMarca[l.id_marca],mComuna[l.id_comuna],mEstado[l.id_estado]
+          ].filter(Boolean).join(" ").toLowerCase();
+          if(!s.includes(q)) return false;
+        }
+        return true;
+      });
+    }
+
+    async function init(){
+      try{
+        CATS = await getCatalogos();
+        fill(qs("#marca"), CATS.marcas, "id_marca", "nombre");
+        fill(qs("#estado"), CATS.estados, "id_estado", "nombre");
+        fill(qs("#comuna"), CATS.comunas, "id_comuna", "nombre");
+        render([]); // vacío por defecto
+
+        // prefill from query params
+        const params = new URLSearchParams(location.search);
+        const campo = (params.get("campo") || "").trim().toLowerCase();
+        DATE_FIELD = (campo === "ingreso" || campo === "created" || campo === "created_at") ? "ingreso" : "evento";
+        qs("#lblF1").textContent = DATE_FIELD === "ingreso" ? "Fecha ingreso (desde)" : "Fecha evento (desde)";
+        qs("#lblF2").textContent = DATE_FIELD === "ingreso" ? "Fecha ingreso (hasta)" : "Fecha evento (hasta)";
+        const q = params.get("q") || "";
+        const marca = params.get("marca") || "";
+        const estado = params.get("estado") || "";
+        const comuna = params.get("comuna") || "";
+        const f1 = params.get("desde") || params.get("f1") || "";
+        const f2 = params.get("hasta") || params.get("f2") || "";
+
+        if (q) qs("#q").value = q;
+        if (f1) qs("#f1").value = f1;
+        if (f2) qs("#f2").value = f2;
+
+        // match estado by id or name
+        if (estado){
+          const est = CATS.estados.find(e => String(e.id_estado) === estado || String(e.nombre||"").toUpperCase() === estado.toUpperCase());
+          if (est) qs("#estado").value = String(est.id_estado);
+        }
+        if (marca){
+          const m = CATS.marcas.find(e => String(e.id_marca) === marca || String(e.nombre||"").toUpperCase() === marca.toUpperCase());
+          if (m) qs("#marca").value = String(m.id_marca);
+        }
+        if (comuna){
+          const c = CATS.comunas.find(e => String(e.id_comuna) === comuna || String(e.nombre||"").toUpperCase() === comuna.toUpperCase());
+          if (c) qs("#comuna").value = String(c.id_comuna);
+        }
+
+        const hasFilters = q || marca || estado || comuna || f1 || f2;
+        if (hasFilters){
+          const all = await getLeads();
+          const rows = applyFilters(all);
+          LAST = rows;
+          render(rows);
+        }
+      }catch(e){
+        Swal.fire("Error","No pude cargar catálogos de Leads.","error");
+      }
+    }
+
+    qs("#btnBuscar").onclick = async () => {
+      try{
+        const all = await getLeads();
+        const rows = applyFilters(all);
+        LAST = rows;
+        render(rows);
+      }catch(e){
+        Swal.fire("Error","No pude cargar leads para filtrar.","error");
+      }
+    };
+
+    qs("#btnLimpiar").onclick = () => {
+      qs("#q").value="";
+      qs("#marca").value="";
+      qs("#estado").value="";
+      qs("#comuna").value="";
+      qs("#f1").value="";
+      qs("#f2").value="";
+      LAST=[];
+      render([]);
+      qs("#hint").textContent="Aplica filtros y presiona “Buscar”.";
+    };
+
+    qs("#btnWa").onclick = () => {
+      if(!LAST.length){ Swal.fire("Sin resultados","No hay resultados para enviar.","info"); return; }
+      const msg = "Leads filtrados:\\n" + LAST.slice(0,30).map(l=>`• #${l.id_lead} ${l.nombre_cliente||""} (${l.fecha_evento||"—"})`).join("\\n");
+      window.open("https://wa.me/?text="+encodeURIComponent(msg), "_blank");
+    };
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="icon" href="/web/pwa/gd-128.png" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>Tools · Correo (GIA)</title>
+  <style>
+    /* Tools fijo claro (Gmail-like). No sigue el toggle día/noche del CRM. */
+    :root{
+      color-scheme: light;
+      --bg:#f6f8fc;
+      --card:#ffffff;
+      --bd: rgba(15,23,42,.12);
+      --muted: rgba(15,23,42,.62);
+      --pane-bg: #ffffff;
+      --pane-bg2: #ffffff;
+      --row: rgba(15,23,42,.02);
+      --rowHover: rgba(15,23,42,.045);
+      --chip: rgba(15,23,42,.06);
+      --shadow: 0 12px 34px rgba(15,23,42,.10);
+    }
+    html,body{height:100%;}
+    body{ margin:0; padding:12px; background:var(--bg); color:#0f172a; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji","Segoe UI Emoji"; }
+
+    .app{
+      height:100%;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+
+    .topbar{
+      border:1px solid var(--bd);
+      background: var(--card);
+      border-radius:16px;
+      box-shadow: var(--shadow);
+      padding:9px 12px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-height:48px;
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width: 240px;
+    }
+    .title{
+      font-weight: 1000;
+      letter-spacing: .2px;
+      font-size: 14px;
+      white-space:nowrap;
+    }
+    .sub{
+      color:var(--muted);
+      font-size:12px;
+      font-weight:850;
+      white-space:nowrap;
+    }
+    .search{
+      flex:1;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      border:1px solid rgba(15,23,42,.10);
+      background:#fff;
+      border-radius:14px;
+      padding:9px 12px;
+      min-width: 240px;
+    }
+    .search input{
+      width:100%;
+      border:0;
+      background:transparent;
+      outline:none;
+      color:inherit;
+      font-size:13px;
+      font-weight:900;
+    }
+    .search .hint{
+      color:var(--muted);
+      font-size:12px;
+      font-weight:850;
+      white-space:nowrap;
+      opacity:.85;
+    }
+
+    .btn{
+      border:1px solid rgba(15,23,42,.10);
+      background:#fff;
+      color:inherit;
+      border-radius:12px;
+      padding:8px 11px;
+      font-weight:950;
+      cursor:pointer;
+      font-size:12px;
+      white-space:nowrap;
+    }
+    .btn:disabled{ opacity:.55; cursor:not-allowed; }
+    .btn.primary{
+      background:color-mix(in srgb, var(--accent, #19c37d) 16%, transparent);
+      border-color:color-mix(in srgb, var(--accent, #19c37d) 40%, transparent);
+    }
+    .btn.danger{
+      background:rgba(220,38,38,.10);
+      border-color:rgba(220,38,38,.32);
+    }
+
+    .main{
+      flex:1;
+      min-height:0;
+      display:grid;
+      grid-template-columns: 280px 620px 1fr;
+      gap:12px;
+    }
+    .pane{
+      border:1px solid var(--bd);
+      background: var(--card);
+      border-radius:16px;
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+    }
+    .head{
+      padding:12px 12px 10px;
+      border-bottom:1px solid rgba(148,163,184,.14);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+	    .ttl{ font-weight:1000; font-size:13px; }
+	    .muted{ color:var(--muted); font-size:12px; line-height:1.35; }
+	    .scroll{ overflow:auto; min-height:0; }
+	    .ico{ width:22px; height:22px; border-radius:9px; display:grid; place-items:center; background:rgba(15,23,42,.04); border:1px solid rgba(15,23,42,.10); font-size:13px; flex:0 0 auto; }
+
+    /* bottom actions (tipo Gmail): buscador + acciones rápidas */
+    .sideBottom{
+      padding:10px 10px 12px;
+      border-top:1px solid rgba(148,163,184,.14);
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      background:rgba(15,23,42,.02);
+    }
+    .search2{
+      border:1px solid rgba(15,23,42,.10);
+      background:#fff;
+      border-radius:14px;
+      padding:9px 10px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .search2 input{
+      width:100%;
+      border:0;
+      background:transparent;
+      outline:none;
+      color:inherit;
+      font-size:13px;
+      font-weight:950;
+    }
+    .scopeHint{
+      font-size:11px;
+      color:var(--muted);
+      font-weight:1000;
+      white-space:nowrap;
+      padding-left:8px;
+      border-left:1px solid rgba(148,163,184,.14);
+    }
+    .sideBtns{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:space-between;
+    }
+    .btn.icon{
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+
+    .group{ padding:10px 10px 0; }
+    .gtitle{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0 4px 8px; }
+    .badge{
+      font-size:11px;
+      font-weight:1000;
+      color:rgba(226,232,240,.92);
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(148,163,184,.18);
+      padding:3px 8px;
+      border-radius:999px;
+      white-space:nowrap;
+    }
+
+    .folder{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.02);
+      border-radius:14px;
+      padding:10px 10px;
+      cursor:pointer;
+      margin-bottom:8px;
+    }
+    .folder:hover{ background:var(--rowHover); }
+    .folder.active{
+      border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent);
+      background: color-mix(in srgb, var(--accent,#19c37d) 10%, transparent);
+    }
+    .fname{ font-weight:1000; font-size:12px; }
+    .fmeta{ font-size:11px; color:var(--muted); }
+
+    .rows{ padding:0; display:block; }
+    .row{
+      border-bottom:1px solid rgba(148,163,184,.12);
+      background:transparent;
+      border-radius:0;
+      padding:10px 12px;
+      cursor:pointer;
+    }
+    .row:hover{ background:var(--rowHover); }
+    .row.active{
+      background: color-mix(in srgb, var(--accent,#19c37d) 12%, transparent);
+      outline: 1px solid color-mix(in srgb, var(--accent,#19c37d) 38%, transparent);
+      outline-offset: -1px;
+    }
+    .r1{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+	    .from{ font-weight:1000; font-size:12px; max-width: 340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .date{ font-size:11px; color:var(--muted); white-space:nowrap; }
+    .subj{ margin-top:4px; font-weight:950; font-size:12px; }
+    .prev{ margin-top:6px; font-size:12px; color:rgba(226,232,240,.85); opacity:.9; line-height:1.35; }
+    .chips{ margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; }
+    .chip{
+      font-size:10px;
+      font-weight:1000;
+      background:var(--chip);
+      border:1px solid rgba(148,163,184,.16);
+      color:rgba(226,232,240,.92);
+      padding:3px 8px;
+      border-radius:999px;
+      white-space:nowrap;
+    }
+    .chip.ok{ background: color-mix(in srgb, var(--accent,#19c37d) 14%, transparent); border-color: color-mix(in srgb, var(--accent,#19c37d) 40%, transparent); }
+    .chip.warn{ background: rgba(234,179,8,.12); border-color: rgba(234,179,8,.35); }
+
+    .viewer{ padding:12px; display:flex; flex-direction:column; gap:10px; min-height:0; }
+    .viewerSplit{
+      display:grid;
+      grid-template-columns: 1fr 360px;
+      gap:12px;
+      align-items:start;
+      min-height:0;
+    }
+    .viewerMain{ min-height:0; }
+    .viewerSide{
+      min-height:0;
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.02);
+      border-radius:16px;
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .viewerSide .ttl{ font-size:12px; }
+    .viewerSide textarea{ min-height: 260px; resize:vertical; }
+    .viewer h2{ margin:0; font-size:16px; font-weight:1000; }
+    .meta{ display:flex; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:12px; font-weight:850; }
+    .body{
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.02);
+      border-radius:14px;
+      padding:12px;
+      white-space:pre-wrap;
+      line-height:1.4;
+      overflow:auto;
+      min-height:120px;
+      max-height: 42vh;
+    }
+    details{
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.02);
+      border-radius:14px;
+      padding:10px 12px;
+    }
+    summary{ cursor:pointer; font-weight:950; color:rgba(226,232,240,.92); }
+
+    /* folders por marca (colapsables) */
+    details.brandBox{
+      margin:0 0 8px 0;
+      padding:0;
+      border:0;
+      background:transparent;
+    }
+    details.brandBox > summary{
+      list-style:none;
+    }
+    details.brandBox > summary::-webkit-details-marker{ display:none; }
+    .brandSummary{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.02);
+      border-radius:14px;
+      padding:10px 10px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .brandSummary:hover{ background:var(--rowHover); }
+    .brandSummary.active{
+      border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent);
+      background: color-mix(in srgb, var(--accent,#19c37d) 10%, transparent);
+    }
+    .brandLeft{ display:flex; flex-direction:column; gap:2px; }
+    .brandName{ font-weight:1000; font-size:12px; }
+    .brandMeta{ font-size:11px; color:var(--muted); }
+    .subfolders{
+      padding:8px 4px 2px 4px;
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:8px;
+    }
+    .subfolder{
+      border:1px solid rgba(148,163,184,.14);
+      background:rgba(255,255,255,.02);
+      border-radius:12px;
+      padding:8px 10px;
+      cursor:pointer;
+      font-weight:950;
+      font-size:12px;
+      text-align:center;
+    }
+    .subfolder:hover{ background:var(--rowHover); }
+    .subfolder.active{
+      border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent);
+      background: color-mix(in srgb, var(--accent,#19c37d) 10%, transparent);
+    }
+    @media (max-width: 1240px){
+      .viewerSplit{ grid-template-columns: 1fr; }
+      .viewerSide textarea{ min-height: 180px; }
+    }
+    textarea{
+      width:100%;
+      min-height:140px;
+      resize:vertical;
+      border-radius:16px;
+      border:1px solid rgba(15,23,42,.10);
+      background:#fff;
+      color:#0f172a;
+      padding:10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size:12px;
+      line-height:1.35;
+      outline:none;
+    }
+    .actions{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .leftActions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .rightActions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 10px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.10);
+      background:#fff;
+      font-weight:950;
+      font-size:12px;
+      color:rgba(15,23,42,.86);
+      user-select:none;
+    }
+    .toggle input{ width:16px; height:16px; }
+
+    .toast{
+      position:fixed;
+      right:16px;
+      bottom:16px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(15,23,42,.92);
+      color:rgba(255,255,255,.95);
+      border-radius:14px;
+      padding:10px 12px;
+      font-weight:950;
+      font-size:12px;
+      box-shadow: 0 18px 40px rgba(15,23,42,.22);
+      opacity:0;
+      transform: translateY(8px);
+      pointer-events:none;
+      transition: all .16s ease;
+      z-index:9999;
+    }
+    .toast.show{ opacity:1; transform: translateY(0); }
+
+    @media (max-width: 1240px){
+      .main{ grid-template-columns: 280px 1fr; grid-template-rows: 380px 1fr; }
+      .viewerPane{ grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div>
+          <div class="title">Correo (GIA)</div>
+          <div class="sub" id="syncInfo">Listo</div>
+        </div>
+      </div>
+      <div class="sub" style="margin-left:auto;font-weight:950">Inbox tipo Gmail · lectura + draft</div>
+    </header>
+
+    <main class="main">
+      <aside class="pane">
+        <div class="head">
+          <div>
+            <div class="ttl">Cuenta</div>
+            <div class="muted" id="accHint">Selecciona una casilla</div>
+          </div>
+          <button class="btn icon" id="btnReload" type="button" title="Sincronizar carpeta actual">🔄</button>
+        </div>
+        <div class="scroll" style="padding:10px 10px 6px">
+          <div class="muted" style="font-weight:950;margin:0 0 8px">Casillas</div>
+          <div id="accounts"></div>
+          <div class="muted" style="font-weight:950;margin:12px 0 8px">Carpetas</div>
+          <div id="folders"></div>
+        </div>
+        <div class="sideBottom">
+          <div class="search2" title="Buscar en la carpeta (Enter para buscar)">
+            <input id="q" type="text" placeholder="Buscar (asunto, remitente, contenido)..." autocomplete="off" />
+            <div class="scopeHint" id="scopeHint">—</div>
+          </div>
+          <div class="sideBtns">
+            <button class="btn icon" id="btnCompose" type="button" title="Nuevo correo (composer)">✍️</button>
+            <button class="btn icon" id="btnClear" type="button" title="Limpiar búsqueda">🧹</button>
+          </div>
+          <label class="toggle" title="Oculta correos ruido/no deseados (según clasificación)">
+            <input type="checkbox" id="hideSpam" checked />
+            Ocultar ruido
+          </label>
+          <div class="muted">Tip: al abrir carpeta, hace sync reciente si está vacía.</div>
+        </div>
+      </aside>
+
+      <section class="pane">
+        <div class="head">
+          <div>
+            <div class="ttl">Bandeja</div>
+            <div class="muted" id="listHint">Entrada</div>
+          </div>
+        </div>
+        <div class="scroll">
+          <div class="rows" id="msgRows"></div>
+        </div>
+      </section>
+
+      <section class="pane viewerPane">
+        <div class="head">
+          <div>
+            <div class="ttl">Lectura</div>
+            <div class="muted">Draft + envío + aprendizaje</div>
+          </div>
+          <button class="btn primary" id="btnSend" type="button" disabled>Enviar</button>
+        </div>
+        <div class="viewer scroll" id="viewer">
+          <div class="muted">Selecciona un correo para leerlo y responder.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // Tools fijo claro (no sigue theme del CRM).
+    document.documentElement.classList.add("light");
+
+    const qs = (s, el=document)=> el.querySelector(s);
+    function esc(s){
+      return String(s ?? "").replace(/[&<>"']/g, (c)=>({
+        "&":"&amp;",
+        "<":"&lt;",
+        ">":"&gt;",
+        "\"":"&quot;",
+        "'":"&#39;"
+      }[c]));
+    }
+    function toast(msg){
+      const t = qs("#toast");
+      t.textContent = String(msg||"");
+      t.classList.add("show");
+      clearTimeout(t._tm);
+      t._tm = setTimeout(()=>t.classList.remove("show"), 2200);
+    }
+    function ding(){
+      // Sonido best-effort (solo funciona tras gesto del usuario, ej: click en "Recargar").
+      try{
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = 880;
+        g.gain.value = 0.04;
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start();
+        setTimeout(()=>{ try{o.stop();}catch(_){} try{ctx.close();}catch(_){} }, 120);
+      }catch(_){}
+    }
+
+    const API_BASE = (() => {
+      try{
+        const host = String(location.hostname||"").toLowerCase();
+        const isLocal = host === "127.0.0.1" || host === "localhost";
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(u){
+      const s = String(u||"");
+      if (!s) return s;
+      if (s.startsWith("/crm/")) return s;
+      if (s.startsWith("/")) return API_BASE + s;
+      return API_BASE + "/" + s;
+    }
+    function getToken(){
+      return (
+        localStorage.getItem("token") ||
+        localStorage.getItem("gd_token") ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("jwt") ||
+        sessionStorage.getItem("token") ||
+        sessionStorage.getItem("gd_token") ||
+        sessionStorage.getItem("access_token") ||
+        sessionStorage.getItem("jwt") ||
+        ""
+      );
+    }
+    function authHeaders(extra={}){
+      const t = getToken();
+      return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+    }
+    function _errDetailToStr(detail){
+      try{
+        if (detail == null) return "";
+        if (typeof detail === "string") return detail;
+        return JSON.stringify(detail);
+      }catch(_){
+        return String(detail||"");
+      }
+    }
+    async function apiJSON(u, opts={}){
+      const r = await fetch(apiURL(u), { ...opts, headers: authHeaders(opts.headers || {}) });
+      const txt = await r.text();
+      let data = null;
+      try{ data = txt ? JSON.parse(txt) : null; }catch(_){ data = txt; }
+      if (!r.ok){
+        const d = (data && data.detail !== undefined) ? _errDetailToStr(data.detail) : "";
+        throw new Error(d ? d : (`HTTP ${r.status}`));
+      }
+      // Convención del backend: {ok:false,error:"..."} debe tratarse como error (sin 500).
+      try{
+        if (data && typeof data === "object" && data.ok === false){
+          const e = String(data.error || data.message || data.detail || "Error");
+          throw new Error(e);
+        }
+      }catch(err){
+        // Si err ya es Error, re-throw.
+        throw err;
+      }
+      return data;
+    }
+
+    const KIND_LABEL = {
+      "lead":"Lead",
+      "purchase":"OC",
+      "payment":"Pago",
+      "form":"Formulario",
+      "spam":"Spam",
+      "other":"Otro",
+      "general":"Otro"
+    };
+    function kindChip(kind){
+      const k = String(kind||"other").toLowerCase();
+      const label = KIND_LABEL[k] || "Otro";
+      const cls = (k==="payment" || k==="spam") ? "warn" : ((k==="lead"||k==="purchase"||k==="form") ? "ok" : "");
+      return `<span class="chip ${cls}">${esc(label)}</span>`;
+    }
+    function boolChip(label, ok){
+      return `<span class="chip ${ok ? "ok":"warn"}">${esc(label)}</span>`;
+    }
+
+    let accounts = []; // /gia/email/status items
+    let items = [];
+    let hideSpam = true;
+    let activeMsgId = null;
+    let activeMessage = null;
+    let activeAccount = null; // {account_email, id_marca, marca, inbox_type, ...}
+    let activeFolder = "INBOX";
+    let activeSpecials = null; // mapping inbox/sent/drafts/spam/trash/archive
+
+    function setScopeHint(){
+      const acc = (activeAccount?.account_email || "—");
+      const marca = (activeAccount?.marca || "");
+      const folder = (activeFolder || "INBOX");
+      qs("#scopeHint").textContent = `${marca ? (marca + " · ") : ""}${acc} · ${folder}`;
+      qs("#accHint").textContent = marca ? `${marca} · ${acc}` : acc;
+      qs("#listHint").textContent = prettyFolder(folder);
+    }
+
+    function prettyFolder(folder){
+      const f = String(folder||"INBOX");
+      const u = f.toUpperCase();
+      if (u === "INBOX") return "Entrada";
+      if (u.includes("DRAFT")) return "Borradores";
+      if (u.includes("SENT")) return "Enviados";
+      if (u.includes("SPAM") || u.includes("JUNK")) return "Spam";
+      if (u.includes("TRASH") || u.includes("DELETED")) return "Papelera";
+      if (u.includes("ARCHIV")) return "Archivo";
+      return f;
+    }
+
+    function renderAccounts(){
+      const host = qs("#accounts");
+      if (!accounts.length){
+        host.innerHTML = `<div class="muted">Sin cuentas configuradas.</div>`;
+        return;
+      }
+      host.innerHTML = accounts.map(a=>{
+        const isActive = (activeAccount && String(activeAccount.account_email)===String(a.account_email));
+        const tag = (String(a.inbox_type||"sales").toLowerCase()==="payments") ? "Pagos" : "Ventas";
+        return `
+          <button type="button" class="btn" data-act="acc" data-acc="${esc(a.account_email||"")}" style="width:100%;justify-content:space-between;display:flex;gap:10px;align-items:center;${isActive ? "border-color: color-mix(in srgb, var(--accent,#19c37d) 45%, transparent); background: color-mix(in srgb, var(--accent,#19c37d) 12%, transparent);" : ""}">
+            <span style="display:flex;flex-direction:column;gap:2px;text-align:left">
+              <span style="font-weight:1000">${esc(a.marca||"Marca")}</span>
+              <span class="muted" style="font-weight:900">${esc(a.account_email||"")}</span>
+            </span>
+            <span class="badge">${esc(tag)}</span>
+          </button>
+        `;
+      }).join("");
+
+      host.querySelectorAll("[data-act='acc']").forEach(el=>{
+        el.addEventListener("click", async ()=>{
+          const acc = String(el.getAttribute("data-acc")||"").trim();
+          await selectAccount(acc);
+        });
+      });
+    }
+
+	    function folderIcon(folder){
+	      const f = String(folder||"INBOX").toUpperCase();
+	      if (f === "INBOX") return "📥";
+	      if (f.includes("DRAFT")) return "📝";
+	      if (f.includes("SENT")) return "📤";
+	      if (f.includes("SPAM") || f.includes("JUNK")) return "🛑";
+	      if (f.includes("TRASH") || f.includes("DELETED")) return "🗑️";
+	      if (f.includes("ARCHIV")) return "🗄️";
+	      return "📁";
+	    }
+
+	    function folderBtnHTML(label, folder){
+	      const isActive = String(activeFolder||"")===String(folder||"");
+	      const ico = folderIcon(folder);
+	      return `
+	        <div class="folder ${isActive ? "active":""}" data-act="folder" data-folder="${esc(folder||"INBOX")}">
+	          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+	            <div class="ico" aria-hidden="true">${esc(ico)}</div>
+	            <div style="min-width:0">
+	              <div class="fname">${esc(label)}</div>
+	              <div class="fmeta">${esc(folder||"INBOX")}</div>
+	            </div>
+	          </div>
+	        </div>
+	      `;
+	    }
+
+	    function renderFolders(){
+	      const host = qs("#folders");
+	      const sp = activeSpecials || {};
+	      const base = [];
+	      base.push(folderBtnHTML("Entrada", sp.inbox || "INBOX"));
+	      if (sp.drafts) base.push(folderBtnHTML("Borradores", sp.drafts));
+	      if (sp.sent) base.push(folderBtnHTML("Enviados", sp.sent));
+	      if (sp.spam) base.push(folderBtnHTML("Spam", sp.spam));
+	      if (sp.trash) base.push(folderBtnHTML("Papelera", sp.trash));
+	      if (sp.archive) base.push(folderBtnHTML("Archivo", sp.archive));
+
+	      // Extras (si hay carpetas adicionales)
+	      const extra = (sp && sp._all && Array.isArray(sp._all)) ? sp._all : [];
+	      const extras = extra.filter(f=>{
+		        const x = String(f||"");
+	        return x && !base.some(r=>r.includes(`data-folder=\"${esc(x)}`));
+	      });
+	      const more = extras.slice(0, 12).map(f => folderBtnHTML(prettyFolder(f), f)).join("");
+
+	      host.innerHTML = base.join("") + (more ? `<div class="muted" style="margin:12px 4px 8px;font-weight:1000">Más</div>${more}` : "");
+
+      host.querySelectorAll("[data-act='folder']").forEach(el=>{
+        el.addEventListener("click", async ()=>{
+          const f = String(el.getAttribute("data-folder")||"INBOX").trim() || "INBOX";
+          await selectFolder(f);
+        });
+      });
+    }
+
+    function renderList(){
+      const host = qs("#msgRows");
+      if (!items.length){
+        host.innerHTML = `<div class="muted" style="padding:10px">Sin correos (o falta sincronizar).</div>`;
+        return;
+      }
+      host.innerHTML = items.map(it=>{
+        const isActive = String(it.id_msg)===String(activeMsgId);
+        const dt = it.received_at || it.created_at || "";
+        const from = (it.from_name || it.from_email || "—").trim();
+        const subj = (it.subject || "(Sin asunto)");
+        const kind = it.kind || "other";
+        const replied = !!it.reply_sent;
+        return `
+          <div class="row ${isActive ? "active":""}" data-id="${esc(it.id_msg)}">
+            <div class="r1">
+              <div class="from">${esc(from)}</div>
+              <div class="date">${esc(String(dt).slice(0,16).replace("T"," "))}</div>
+            </div>
+            <div class="subj">${esc(subj)}</div>
+            <div class="prev">${esc(it.preview||"")}</div>
+            <div class="chips">
+              ${kindChip(kind)}
+              ${boolChip(replied ? "Respondido" : "Pendiente", replied)}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      host.querySelectorAll("[data-id]").forEach(el=>{
+        el.addEventListener("click", async ()=>{
+          activeMsgId = Number(el.getAttribute("data-id")||0) || null;
+          renderList();
+          await openMessage(activeMsgId);
+        });
+      });
+    }
+
+    function renderViewerEmpty(){
+      qs("#btnSend").disabled = true;
+      qs("#viewer").innerHTML = `<div class="muted">Selecciona un correo para leerlo y responder.</div>`;
+    }
+
+    function composeHTML(){
+      const acc = activeAccount?.account_email || "—";
+      const marca = activeAccount?.marca || "";
+      const it = String(activeAccount?.inbox_type || "sales");
+      const tag = (it === "payments") ? "Pagos" : "Ventas";
+      return `
+        <div>
+          <h2>Nuevo correo</h2>
+          <div class="meta">
+            <div><b>Desde:</b> ${esc(marca ? (marca + " · ") : "")}${esc(acc)} (${esc(tag)})</div>
+            <div class="muted">Tip: redacta y envía. “Aprender” guarda plantilla por marca + tipo.</div>
+          </div>
+        </div>
+
+        <div class="actions" style="margin-top:6px">
+          <div class="leftActions"></div>
+          <div class="rightActions">
+            <label class="toggle" title="Guardar como plantilla activa para la marca + tipo">
+              <input type="checkbox" id="cmpLearn" checked />
+              Aprender
+            </label>
+            <label class="toggle" title="Tipo para aprendizaje">
+              <span style="opacity:.85">Tipo</span>
+              <select id="cmpKind" style="margin-left:8px;padding:6px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.45);color:inherit;font-weight:950">
+                <option value="lead">Lead</option>
+                <option value="purchase">OC</option>
+                <option value="payment">Pago</option>
+                <option value="other" selected>Otro</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="body" style="max-height:none">
+          <div class="ttl" style="margin-bottom:8px">Para</div>
+          <input id="cmpTo" type="email" placeholder="cliente@empresa.com" style="width:100%;padding:10px 12px;border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.35);color:inherit;font-weight:950;outline:none" />
+          <div class="ttl" style="margin:12px 0 8px">Asunto</div>
+          <input id="cmpSubj" type="text" placeholder="Asunto..." style="width:100%;padding:10px 12px;border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(15,26,43,.35);color:inherit;font-weight:950;outline:none" />
+          <div class="ttl" style="margin:12px 0 8px">Mensaje</div>
+          <textarea id="cmpText" placeholder="Escribe el correo..."></textarea>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+            <button class="btn" id="cmpCancel" type="button">Cancelar</button>
+            <button class="btn primary" id="cmpSend" type="button">Enviar</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function openComposer(){
+      activeMsgId = null;
+      activeMessage = null;
+      qs("#btnSend").disabled = true;
+      qs("#viewer").innerHTML = composeHTML();
+
+      const btnCancel = qs("#cmpCancel");
+      const btnSend = qs("#cmpSend");
+      if (btnCancel){
+        btnCancel.addEventListener("click", ()=>{
+          renderViewerEmpty();
+        });
+      }
+      if (btnSend){
+        btnSend.addEventListener("click", async ()=>{
+          const idMarca = Number(activeAccount?.id_marca || 0) || null;
+          const inboxType = String(activeAccount?.inbox_type || "sales");
+          const toEmail = String(qs("#cmpTo")?.value || "").trim();
+          const subj = String(qs("#cmpSubj")?.value || "").trim();
+          const text = String(qs("#cmpText")?.value || "").trim();
+          const learn = !!qs("#cmpLearn")?.checked;
+          const kind = String(qs("#cmpKind")?.value || "other");
+
+          if (!idMarca){ toast("Cuenta sin marca"); return; }
+          if (!toEmail || !toEmail.includes("@")){ toast("Email destino inválido"); return; }
+          if (!subj){ toast("Falta asunto"); return; }
+          if (!text){ toast("Falta mensaje"); return; }
+
+          btnSend.disabled = true;
+          try{
+            await apiJSON(`/gia/email/compose/send`, {
+              method:"POST",
+              headers:{ "Content-Type":"application/json" },
+              body: JSON.stringify({ id_marca: idMarca, inbox_type: inboxType, to_email: toEmail, subject: subj, text, learn, kind })
+            });
+            toast("Correo enviado");
+            renderViewerEmpty();
+          }catch(e){
+            toast(`Error: ${e.message||e}`);
+          }finally{
+            btnSend.disabled = false;
+          }
+        });
+      }
+    }
+
+    function cleanEmailBody(t){
+      let s = String(t||"");
+      s = s.replace(/\r\n/g, "\n");
+      // corta disclaimers comunes (inglés/español)
+      const cutMarkers = [
+        "\nDisclaimer",
+        "\nDISCLAIMER",
+        "\nThe information contained in this communication",
+        "\nThis email has been scanned",
+        "\nEste mensaje",
+        "\nEste correo",
+        "\nAVISO DE CONFIDENCIALIDAD",
+      ];
+      for (const m of cutMarkers){
+        const idx = s.indexOf(m);
+        if (idx > 0) { s = s.slice(0, idx); break; }
+      }
+      // limpieza de ruido común (tel links)
+      s = s.replace(/<tel:[^>]+>/g, "");
+      s = s.replace(/\n{3,}/g, "\n\n");
+      return s.trim();
+    }
+
+	    function viewerHTML(msg){
+      const subj = msg.subject || "(Sin asunto)";
+      const fromName = msg.from_name || "";
+      const fromEmail = msg.from_email || "";
+      const dt = msg.received_at || msg.created_at || "";
+      const kind = String(msg.kind || "other").toLowerCase();
+      const kindLbl = KIND_LABEL[kind] || "Otro";
+      const body = msg.body_text || "";
+      const bodyClean = cleanEmailBody(body);
+      const draft = msg.draft_text || "";
+      const replied = !!msg.reply_sent;
+      const suggestLead = !!msg.suggest_create_lead;
+      const leadId = msg.lead_id || null;
+
+	      return `
+	        <div class="viewerSplit">
+	          <div class="viewerMain">
+	            <div>
+	              <h2>${esc(subj)}</h2>
+	              <div class="meta">
+	                <div><b>De:</b> ${esc(fromName)} ${fromEmail ? `&lt;${esc(fromEmail)}&gt;` : ""}</div>
+	                <div><b>Fecha:</b> ${esc(String(dt).slice(0,19).replace("T"," "))}</div>
+	                <div><b>Tipo:</b> ${esc(kindLbl)}</div>
+	                <div><b>Cuenta:</b> ${esc(msg.account_email || activeAccount?.account_email || "—")}</div>
+	                <div><b>Carpeta:</b> ${esc(prettyFolder(msg.imap_folder || activeFolder || "INBOX"))}</div>
+	                ${leadId ? `<div><b>Lead:</b> #${esc(leadId)}</div>` : ``}
+	              </div>
+	            </div>
+
+            <div class="body">${esc(bodyClean || body)}</div>
+            <details>
+              <summary>Ver contenido completo (raw)</summary>
+              <div class="body" style="max-height:22vh;margin-top:10px">${esc(body)}</div>
+            </details>
+          </div>
+
+          <div class="viewerSide">
+            <div class="actions" style="margin-top:0">
+              <div class="leftActions">
+                ${suggestLead ? `<button class="btn" id="btnCreateLead">Crear lead</button>` : ``}
+                ${leadId ? `<button class="btn" id="btnOpenLead">Abrir lead</button>` : ``}
+                ${replied ? `<span class="badge">Respondido</span>` : `<span class="badge">Pendiente</span>`}
+              </div>
+            </div>
+
+            <label class="toggle" title="Guardar esta respuesta como plantilla activa para la marca + tipo">
+              <input type="checkbox" id="learn" checked />
+              Aprender
+            </label>
+
+            <div class="ttl" style="margin-bottom:0">Draft (GIA)</div>
+            <textarea id="draft" placeholder="Escribe la respuesta...">${esc(draft)}</textarea>
+            <div class="muted">Tip: ajusta el draft y presiona “Enviar”. Quedará como plantilla si “Aprender” está activo.</div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function loadAccounts(){
+      qs("#syncInfo").textContent = "Cargando cuentas...";
+      try{
+        const st = await apiJSON("/gia/email/status");
+        accounts = (st.items || []).map(x=>({ ...x, inbox_type: String(x.inbox_type || "sales").toLowerCase() }));
+        qs("#syncInfo").textContent = st.configured ? "Listo" : "No configurado (ver servidor)";
+      }catch(e){
+        qs("#syncInfo").textContent = "Error";
+        accounts = [];
+      }
+      renderAccounts();
+      if (!activeAccount && accounts.length){
+        await selectAccount(accounts[0].account_email);
+      }else{
+        setScopeHint();
+      }
+    }
+
+    async function selectAccount(accEmail){
+      const want = String(accEmail||"").trim();
+      activeAccount = accounts.find(a => String(a.account_email||"") === want) || null;
+      activeMsgId = null;
+      activeMessage = null;
+      activeSpecials = null;
+      activeFolder = "INBOX";
+      renderAccounts();
+      qs("#folders").innerHTML = `<div class="muted">Cargando carpetas...</div>`;
+      try{
+        const f = await apiJSON(`/gia/email/folders?account_email=${encodeURIComponent(want)}`);
+        const sp = f.specials || {};
+        activeSpecials = { ...sp, _all: (f.folders || []) };
+        activeFolder = sp.inbox || "INBOX";
+      }catch(e){
+        activeSpecials = { inbox:"INBOX", _all:["INBOX"] };
+      }
+      renderFolders();
+      setScopeHint();
+      await loadInbox({ sync:true, forceRecent:true });
+      startAutoSync();
+    }
+
+    async function selectFolder(folder){
+      activeFolder = String(folder||"INBOX").trim() || "INBOX";
+      activeMsgId = null;
+      activeMessage = null;
+      renderFolders();
+      setScopeHint();
+      await loadInbox({ sync:false });
+      if (!items.length){
+        await loadInbox({ sync:true, forceRecent:true });
+      }
+    }
+
+    async function loadInbox({sync=false, forceRecent=false}={}){
+      if (!activeAccount){
+        qs("#listHint").textContent = "Selecciona una cuenta";
+        items = [];
+        renderList();
+        renderViewerEmpty();
+        return;
+      }
+      setScopeHint();
+      qs("#listHint").textContent = "Cargando...";
+      const acc = `account_email=${encodeURIComponent(activeAccount.account_email||"")}`;
+      const fol = `&folder=${encodeURIComponent(activeFolder||"INBOX")}`;
+      const qv = String(qs("#q").value||"").trim();
+      const qParam = qv ? `&q=${encodeURIComponent(qv)}` : "";
+
+      if (sync){
+        try{
+          qs("#syncInfo").textContent = "Sincronizando...";
+          const fr = forceRecent ? "&force_recent=1" : "";
+          await apiJSON(`/gia/email/sync?${acc}${fol}&limit=60${fr}`, { method:"POST" });
+          qs("#syncInfo").textContent = "Listo";
+        }catch(e){
+          qs("#syncInfo").textContent = "Error sync";
+        }
+      }
+
+      try{
+        const data = await apiJSON(`/gia/email/inbox?${acc}${fol}${qParam}&limit=80&offset=0`);
+        items = data.items || [];
+        const folderU = String(activeFolder||"INBOX").toUpperCase();
+        if (hideSpam && !(folderU.includes("SPAM") || folderU.includes("JUNK"))){
+          items = items.filter(x => String(x.kind||"").toLowerCase() !== "spam");
+        }
+        qs("#listHint").textContent = `Mostrando ${items.length} correo(s)`;
+      }catch(e){
+        qs("#listHint").textContent = "Error al cargar bandeja: " + String(e?.message||e);
+        items = [];
+      }
+      renderList();
+      if (activeMsgId){
+        const exists = items.some(x => String(x.id_msg)===String(activeMsgId));
+        if (!exists){
+          activeMsgId = null;
+          renderViewerEmpty();
+        }
+      }
+    }
+
+    // Sync automático (tipo Gmail): refresca bandeja del folder activo.
+    let autoSyncTimer = null;
+    function startAutoSync(){
+      try{ if (autoSyncTimer) clearInterval(autoSyncTimer); }catch(_){}
+      autoSyncTimer = setInterval(()=>{
+        if (!document.hidden) loadInbox({ sync:true, forceRecent:false });
+      }, 180_000);
+    }
+
+    async function openMessage(id){
+      if (!id){
+        renderViewerEmpty();
+        return;
+      }
+      qs("#btnSend").disabled = true;
+      qs("#viewer").innerHTML = `<div class="muted">Cargando...</div>`;
+      try{
+        const data = await apiJSON(`/gia/email/inbox/${encodeURIComponent(id)}`);
+        activeMessage = data.message || null;
+        if (!activeMessage){
+          renderViewerEmpty();
+          return;
+        }
+        qs("#viewer").innerHTML = viewerHTML(activeMessage);
+        qs("#btnSend").disabled = false;
+
+        const btnCreateLead = qs("#btnCreateLead");
+        if (btnCreateLead){
+          btnCreateLead.addEventListener("click", async ()=>{
+            if (!confirm("¿Crear un lead desde este correo?")) return;
+            btnCreateLead.disabled = true;
+            try{
+              const out = await apiJSON(`/gia/email/inbox/${encodeURIComponent(id)}/create_lead`, { method:"POST" });
+              toast(`Lead creado: #${out.id_lead}`);
+              await loadInbox({sync:false});
+              await openMessage(id);
+            }catch(e){
+              toast(`No pude crear lead: ${e.message||e}`);
+            }finally{
+              btnCreateLead.disabled = false;
+            }
+          });
+        }
+        const btnOpenLead = qs("#btnOpenLead");
+        if (btnOpenLead){
+          btnOpenLead.addEventListener("click", ()=>{
+            const leadId = activeMessage?.lead_id;
+            if (!leadId) return;
+            try{
+              // panel.js intercepta esto en el iframe principal; acá dejamos la URL para que el usuario copie si necesita.
+              window.parent?.postMessage?.({ type:"openLead", id_lead: leadId }, "*");
+              toast("Abriendo lead...");
+            }catch(_){
+              toast("No pude abrir lead desde Tools");
+            }
+          });
+        }
+      }catch(e){
+        qs("#viewer").innerHTML = `<div class="muted">Error: ${esc(e.message||e)}</div>`;
+      }
+    }
+
+    async function sendActive(){
+      if (!activeMsgId) return;
+      const ta = qs("#draft");
+      const learn = qs("#learn");
+      const txt = ta ? String(ta.value||"").trim() : "";
+      if (!txt){
+        toast("Escribe la respuesta");
+        return;
+      }
+      qs("#btnSend").disabled = true;
+      try{
+        await apiJSON(`/gia/email/inbox/${encodeURIComponent(activeMsgId)}/send`, {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ text: txt, learn: !!(learn && learn.checked) })
+        });
+        toast("Correo enviado");
+        await loadInbox({sync:false});
+        await openMessage(activeMsgId);
+      }catch(e){
+        toast(`Error al enviar: ${e.message||e}`);
+      }finally{
+        qs("#btnSend").disabled = false;
+      }
+    }
+
+    // Events
+    qs("#btnCompose").addEventListener("click", openComposer);
+    qs("#btnReload").addEventListener("click", ()=> loadInbox({sync:true, forceRecent:true}));
+    qs("#btnClear").addEventListener("click", ()=>{
+      qs("#q").value = "";
+      loadInbox({sync:false});
+    });
+    qs("#hideSpam").addEventListener("change", ()=>{
+      hideSpam = !!qs("#hideSpam").checked;
+      loadInbox({sync:false});
+    });
+    qs("#btnSend").addEventListener("click", sendActive);
+    qs("#q").addEventListener("keydown", (ev)=>{
+      if (ev.key === "Enter"){
+        ev.preventDefault();
+        loadInbox({sync:false});
+      }
+    });
+
+	    // Init
+	    (async ()=>{
+	      await loadAccounts();
+	      // Deep-link (opcional): ?account_email=...&folder=...&open_msg=...
+	      try{
+	        const p = new URLSearchParams(location.search || "");
+	        const acc = String(p.get("account_email") || "").trim();
+	        const folder = String(p.get("folder") || "").trim();
+	        const openMsg = String(p.get("open_msg") || "").trim();
+
+	        if (acc && (!activeAccount || String(activeAccount.account_email||"") !== acc)){
+	          await selectAccount(acc);
+	        }
+	        if (folder){
+	          await selectFolder(folder);
+	        }
+	        renderViewerEmpty();
+	        if (openMsg){
+	          activeMsgId = openMsg;
+	          renderList();
+	          await openMessage(activeMsgId);
+	        }
+	      }catch(_){
+	        renderViewerEmpty();
+	      }
+
+      // startAutoSync() mantiene una única sincronización conservadora y solo
+      // cuando la pestaña está visible. Evitamos un segundo timer duplicado.
+    })();
+  </script>
+</body>
+</html>

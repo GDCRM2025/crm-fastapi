@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>CRM 2025 • Crear usuario</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:#f6f7f9;color:#111;margin:0}
+      header{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:14px 18px;background:#fff;border-bottom:1px solid #ececec}
+      main{max-width:700px;margin:24px auto;padding:0 18px}
+      .btn{height:36px;padding:0 12px;border-radius:9px;border:1px solid #d0d5dd;background:#fff;cursor:pointer}
+      .btn.primary{background:#111;color:#fff;border-color:#111}
+      .card{background:#fff;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.06);padding:20px;margin-bottom:14px}
+      label{font-size:13px;display:block;margin-top:10px}
+      input{width:100%;height:40px;border:1px solid #d0d5dd;border-radius:10px;padding:0 10px;margin-top:6px}
+      .ok{color:#057a55;margin-top:10px}
+      .err{color:#c00;margin-top:10px}
+    </style>
+  </head>
+  <body>
+    <header>
+      <div><strong>CRM 2025</strong></div>
+      <div>
+        <a class="btn" href="dashboard.html">Dashboard</a>
+        <button class="btn primary" onclick="logout()">Salir</button>
+      </div>
+    </header>
+    <main>
+      <div class="card">
+        <h2>Crear usuario</h2>
+        <form id="f">
+          <label>Email</label>
+          <input id="email" type="email" required />
+          <label>Contraseña</label>
+          <input id="password" type="password" required />
+          <button class="btn primary" style="margin-top:12px">Crear</button>
+        </form>
+        <div id="msg" class="ok" style="display:none"></div>
+        <div id="err" class="err" style="display:none"></div>
+      </div>
+    </main>
+
+    <script>
+      function logout(){ localStorage.removeItem("token"); location.href="login.html" }
+
+      document.getElementById("f").addEventListener("submit", async (e)=>{
+        e.preventDefault();
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        document.getElementById("msg").style.display="none";
+        document.getElementById("err").style.display="none";
+        try{
+          const res = await fetch("/auth/register", {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({ email, password })
+          });
+          if(!res.ok){
+            const data = await res.json().catch(()=>({detail:"Error"}));
+            throw new Error(data.detail || "No se pudo crear");
+          }
+          const u = await res.json();
+          document.getElementById("msg").textContent = `Creado: ${u.email} (id: ${u.id})`;
+          document.getElementById("msg").style.display="block";
+          (e.target).reset();
+        }catch(err){
+          document.getElementById("err").textContent = err.message || "Error";
+          document.getElementById("err").style.display="block";
+        }
+      });
+    </script>
+  </body>
+</html>

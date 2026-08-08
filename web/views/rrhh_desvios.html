@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="gd-build" content="20260423-rrhh2" />
+  <title>RRHH · Desvíos</title>
+  <link rel="stylesheet" href="../styles.css"/>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:14px;background:transparent;color:var(--text);}
+    .wrap{max-width:1200px;margin:0 auto;display:grid;gap:12px;}
+    .card{border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.26);border-radius:18px;padding:14px;backdrop-filter: blur(10px);}
+    :root.light .card{background:rgba(255,255,255,.86);border-color:rgba(0,0,0,.10);}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    .ttl{font-weight:1200;font-size:18px;}
+    .muted{opacity:.8;font-weight:850;font-size:12px;}
+    .btn{height:38px;border-radius:12px;border:1px solid rgba(148,163,184,.22);background:rgba(2,6,23,.18);color:inherit;padding:0 12px;font-weight:1100;cursor:pointer;}
+    .btn.primary{background:color-mix(in srgb, var(--accent) 22%, transparent);border-color:color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn.bad{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35);}
+    .btn.ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35);}
+    .inp{height:38px;border-radius:12px;border:1px solid rgba(148,163,184,.22);background:rgba(2,6,23,.12);color:inherit;padding:0 12px;font-weight:1000;outline:none;}
+    table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border-radius:14px;border:1px solid rgba(148,163,184,.18);}
+    th,td{padding:10px 10px;border-bottom:1px solid rgba(148,163,184,.14);font-size:12px;text-align:left;vertical-align:middle;}
+    th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.8;}
+    tr:hover td{background:rgba(148,163,184,.06);}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.12);font-weight:1100;}
+    .pill.pend{border-color:rgba(234,179,8,.35);background:rgba(234,179,8,.10);}
+    .pill.ok{border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.10);}
+    .pill.bad{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.10);}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;}
+    /* Lista larga: asegurar scroll (incl. iOS) */
+    #tableWrap{max-height:66vh;overflow:auto;-webkit-overflow-scrolling:touch;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <div class="ttl">RRHH · Desvíos</div>
+          <div class="muted">Pendientes de aprobación vs turno teórico (SGJO).</div>
+        </div>
+        <div class="row">
+          <input class="inp" id="fDate" type="date"/>
+          <input class="inp" id="fUid" placeholder="ID usuario (opcional)" style="min-width:170px"/>
+          <select class="inp" id="fEstado">
+            <option value="pendiente">Pendiente</option>
+            <option value="aprobado">Aprobado</option>
+            <option value="rechazado">Rechazado</option>
+            <option value="">Todos</option>
+          </select>
+          <button class="btn primary" id="btnDetect">Detectar hoy</button>
+          <button class="btn" id="btnEmail">Enviar reporte (correo)</button>
+          <button class="btn" id="btnReload">Actualizar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div class="muted" id="meta">—</div>
+        <div class="muted" id="log">—</div>
+      </div>
+      <div class="row" style="justify-content:space-between;margin-top:10px">
+        <div class="row">
+          <select class="inp" id="pageSize" style="min-width:120px">
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+          </select>
+          <button class="btn" id="btnPrev">Prev</button>
+          <button class="btn" id="btnNext">Next</button>
+        </div>
+        <div class="muted" id="pageInfo">—</div>
+      </div>
+      <div id="tableWrap" style="margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Colaborador</th>
+              <th>Rol</th>
+              <th>Tipo</th>
+              <th>Esperado</th>
+              <th>Real</th>
+              <th>Impacto</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="9" class="muted">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = (()=> {
+      try{
+        const h = String(location.hostname||"").toLowerCase();
+        const isLocal = (h==="localhost" || h==="127.0.0.1");
+        if (isLocal) return "";
+        const p = String(location.pathname||"");
+        return (p.startsWith("/crm/") || p === "/crm") ? "/crm" : "";
+      }catch(_){ return ""; }
+    })();
+    const qs = (s, el=document)=> el.querySelector(s);
+    function getToken(){
+      return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    }
+    function authHeaders(h){
+      const tok = getToken();
+      return tok ? ({...h, "Authorization":"Bearer "+tok}) : h;
+    }
+    async function apiJSON(path, opt){
+      const r = await fetch(`${API_BASE}${path}`, { ...(opt||{}), headers: authHeaders({ "Accept":"application/json", ...((opt||{}).headers||{}) })});
+      const t = await r.text();
+      let j=null; try{ j = t ? JSON.parse(t) : null; }catch(_){}
+      if(!r.ok){
+        throw new Error((j && (j.detail||j.error||j.message)) ? (j.detail||j.error||j.message) : (t || ("HTTP "+r.status)));
+      }
+      return j;
+    }
+    function fmtTipo(t){
+      t = String(t||"").toUpperCase();
+      const mp = {
+        "MISSING_IN":"Falta IN",
+        "MISSING_OUT":"Falta OUT",
+        "LATE_IN":"Atraso IN",
+        "EARLY_IN":"Entrada temprana",
+        "EARLY_OUT":"Salida anticipada",
+        "LATE_OUT":"Salida tarde"
+      };
+      return mp[t] || t;
+    }
+    function pillEstado(st){
+      st = String(st||"").toLowerCase();
+      const cls = st==="pendiente" ? "pend" : (st==="aprobado" ? "ok" : (st==="rechazado" ? "bad" : ""));
+      return `<span class="pill ${cls}">${st||"—"}</span>`;
+    }
+    function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m])); }
+    function setLog(s){ qs("#log").textContent = String(s||"—"); }
+
+    let PAGE = 0;
+    function pageSize(){ return Math.max(1, Number(qs("#pageSize")?.value || 100) || 100); }
+    function applyPaging(items){
+      const size = pageSize();
+      const total = items.length;
+      const pages = Math.max(1, Math.ceil(total / size));
+      if (PAGE >= pages) PAGE = pages - 1;
+      if (PAGE < 0) PAGE = 0;
+      const start = PAGE * size;
+      const end = Math.min(start + size, total);
+      qs("#btnPrev").disabled = PAGE <= 0;
+      qs("#btnNext").disabled = PAGE >= (pages - 1);
+      qs("#pageInfo").textContent = total ? `${start + 1}-${end} / ${total}` : "0 / 0";
+      return items.slice(start, end);
+    }
+
+    async function load(){
+      const d = qs("#fDate").value || "";
+      const st = qs("#fEstado").value || "";
+      const uidFilter = String(qs("#fUid")?.value || "").trim();
+      const q = new URLSearchParams();
+      if (d) q.set("date", d);
+      if (st) q.set("estado", st);
+      setLog("Cargando…");
+      const rep = await apiJSON(`/rrhh/desvios/report?${q.toString()}`);
+      const groups = Array.isArray(rep?.groups) ? rep.groups : [];
+      let items = groups.flatMap(g=> Array.isArray(g?.items) ? g.items : []);
+      if (uidFilter){
+        items = items.filter(it => String(it?.id_usuario ?? "").trim() === uidFilter);
+      }
+      const statusPrio = { "pendiente": 0, "": 1, "aprobado": 2, "rechazado": 3 };
+      const tipoPrio = { "MISSING_IN": 0, "MISSING_OUT": 1, "LATE_IN": 2, "EARLY_OUT": 3, "EARLY_IN": 4, "LATE_OUT": 5 };
+      items.sort((a,b)=>{
+        const sa = String(a.status||"").toLowerCase();
+        const sb = String(b.status||"").toLowerCase();
+        const pa = statusPrio[sa] ?? 9;
+        const pb = statusPrio[sb] ?? 9;
+        if (pa !== pb) return pa - pb;
+        const ta = String(a.tipo||"").toUpperCase();
+        const tb = String(b.tipo||"").toUpperCase();
+        const pta = tipoPrio[ta] ?? 9;
+        const ptb = tipoPrio[tb] ?? 9;
+        if (pta !== ptb) return pta - ptb;
+        const da = String(a.fecha||"");
+        const db = String(b.fecha||"");
+        if (da !== db) return db.localeCompare(da);
+        const ia = Number(a.impact_min || 0);
+        const ib = Number(b.impact_min || 0);
+        return ib - ia;
+      });
+      try{
+        const t = rep?.totals || {};
+        const pend = Number(t.pendientes || 0);
+        const impact = Number(t.impact_total_min || 0);
+        qs("#meta").textContent = `${items.length} desvío(s) · ${groups.length} colaborador(es) · pendientes=${pend} · impacto=${impact}m`;
+      }catch(_){
+        qs("#meta").textContent = `${items.length} desvío(s)`;
+      }
+      const tb = qs("#tbody");
+      window.__DESVIOS_ITEMS = items;
+      if(!items.length){
+        tb.innerHTML = `<tr><td colspan="9" class="muted">Sin desvíos.</td></tr>`;
+        setLog("Listo");
+        return;
+      }
+      const pageItems = applyPaging(items);
+      tb.innerHTML = pageItems.map(x=>{
+        const exp = `${x.expected_in||"—"} → ${x.expected_out||"—"}`;
+        const real = `${(x.actual_in||"—").toString().replace("T"," ").slice(0,16)} / ${(x.actual_out||"—").toString().replace("T"," ").slice(0,16)}`;
+        const imp = `${x.impact_kind||"—"}${x.impact_min ? (" · "+x.impact_min+"m") : ""}`;
+        const canAct = String(x.status||"").toLowerCase() === "pendiente";
+        const tipoCode = String(x.tipo||"").toUpperCase();
+        const canAbs = canAct && (tipoCode === "MISSING_IN" || tipoCode === "MISSING_OUT");
+        return `
+          <tr>
+            <td>${esc(String(x.fecha||""))}</td>
+            <td><b>${esc(x.colaborador||"—")}</b><div class="muted">${esc(x.centro_costo||"")}</div></td>
+            <td>${esc(x.rol||"—")}</td>
+            <td>${esc(fmtTipo(x.tipo))}</td>
+            <td>${esc(exp)}</td>
+            <td>${esc(real)}</td>
+            <td>${esc(imp)}</td>
+            <td>${pillEstado(x.status)}</td>
+            <td>
+              <div class="actions">
+                <button class="btn ok" data-act="aprobado" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Aprobar</button>
+                <button class="btn bad" data-act="rechazado" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Rechazar</button>
+                <button class="btn" data-act="ausencia" data-id="${x.id_desvio}" ${canAbs? "":"disabled"}>Ausencia</button>
+                <button class="btn" data-act="solicitar" data-id="${x.id_desvio}" ${canAct? "":"disabled"}>Pedir aprobación (correo)</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+      setLog("Listo");
+    }
+
+    qs("#pageSize").addEventListener("change", function(){ PAGE = 0; load(); });
+    qs("#btnPrev").addEventListener("click", function(){ PAGE = Math.max(0, PAGE - 1); load(); });
+    qs("#btnNext").addEventListener("click", function(){ PAGE = PAGE + 1; load(); });
+
+    async function detect(){
+      setLog("Detectando…");
+      const d = qs("#fDate").value || "";
+      const res = await apiJSON(`/rrhh/desvios/detect`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ date: d || null }) });
+      setLog(`Detectados: ${res.count||0}`);
+      await load();
+    }
+
+    async function sendEmail(){
+      const d = qs("#fDate").value || "";
+      const st = qs("#fEstado").value || "";
+      if(!confirm("Enviar reporte por correo a RRHH/Admin?")) return;
+      setLog("Enviando correo…");
+      const res = await apiJSON(`/rrhh/desvios/report_email`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ date: d || null, estado: st || null }) });
+      if(res?.sent) setLog("Correo enviado ✓");
+      else setLog("Correo: intento realizado (verifica SMTP/sendmail)");
+    }
+
+    document.addEventListener("click", async (e)=>{
+      const b = e.target.closest("button[data-act]");
+      if(!b) return;
+      const id = Number(b.dataset.id||0);
+      const st = String(b.dataset.act||"");
+      if(!id) return;
+      if (st === "ausencia"){
+        if(!confirm("Marcar AUSENCIA hoy para este colaborador?\n\nEsto rechaza el desvío y crea inasistencia/ajuste (idempotente).")) return;
+        setLog("Marcando ausencia…");
+        await apiJSON(`/rrhh/desvios/${id}`, { method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ status:"rechazado", note:"Ausencia (admin)", force:true }) });
+        await load();
+        return;
+      }
+      if (st === "solicitar"){
+        if(!confirm("Enviar correo al colaborador para que apruebe/rechace este desvío?")) return;
+        // Anti-tontos: pedir propuesta de corrección antes de enviar.
+        // Se guarda en BD y se incluye en el correo.
+        const items = window.__DESVIOS_ITEMS || [];
+        const x = (items || []).find(it => Number(it.id_desvio||0) === id) || null;
+        const exp = x ? `${x.expected_in||"—"} → ${x.expected_out||"—"}` : "—";
+        const realIn = x && x.actual_in ? String(x.actual_in).replace("T"," ").slice(0,16) : "—";
+        const realOut = x && x.actual_out ? String(x.actual_out).replace("T"," ").slice(0,16) : "—";
+        const real = `${realIn} → ${realOut}`;
+        const tipoTxt = x ? fmtTipo(x.tipo) : "desvío";
+        const who = x ? (x.colaborador || "colaborador") : "colaborador";
+        const fecha = x ? String(x.fecha||"") : "";
+
+        function normalizeHHMM(input){
+          let v = String(input || "").trim();
+          if (!v) return "";
+          // Normaliza formatos típicos: "10:00 AM", "10.00", "1000", "10", "10am", "10:00 a.m."
+          v = v.replace(/\s+/g, " ").trim();
+          const low = v.toLowerCase();
+          const hasAM = /\b(a\.?m\.?|am)\b/.test(low);
+          const hasPM = /\b(p\.?m\.?|pm)\b/.test(low);
+          v = v.replace(/\b(a\.?m\.?|am|p\.?m\.?|pm)\b/ig, "").trim();
+          v = v.replace(/\./g, ":").replace(/\s+/g, "");
+          // 1000 -> 10:00
+          if (/^\d{3,4}$/.test(v)) {
+            v = v.padStart(4, "0");
+            v = v.slice(0, 2) + ":" + v.slice(2);
+          }
+          // 10 -> 10:00
+          if (/^\d{1,2}$/.test(v)) v = v + ":00";
+          if (!/^\d{1,2}:\d{2}$/.test(v)) return null;
+          let hh = Number(v.split(":")[0] || 0);
+          const mm = Number(v.split(":")[1] || 0);
+          if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+          if (mm < 0 || mm > 59) return null;
+          if (hasAM || hasPM) {
+            // 12h -> 24h
+            if (hh < 1 || hh > 12) return null;
+            if (hasAM) hh = (hh === 12) ? 0 : hh;
+            if (hasPM) hh = (hh === 12) ? 12 : (hh + 12);
+          }
+          if (hh < 0 || hh > 23) return null;
+          return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+        }
+
+        function askHHMM(label, defv){
+          var def = String(defv||"").trim();
+          var msg =
+            "Pedir aprobación por correo\n\n" +
+            "Colaborador: " + who + "\n" +
+            "Fecha: " + fecha + "\n" +
+            "Tipo: " + tipoTxt + "\n\n" +
+            "Esperado (turno): " + exp + "\n" +
+            "Marcación registrada: " + real + "\n\n" +
+            label + "\n" +
+            "Formato 24h HH:MM (deja vacío para omitir)";
+          var v = (prompt(msg, def) || "").trim();
+          if (!v) return "";
+          const out = normalizeHHMM(v);
+          if (out == null) { alert("Formato inválido. Usa HH:MM (24h). Ej: 10:00"); return null; }
+          return out;
+        }
+
+        let proposed_in = "";
+        let proposed_out = "";
+        try{
+          var defIn = x ? (x.proposed_in || x.expected_in || "") : "";
+          var defOut = x ? (x.proposed_out || x.expected_out || "") : "";
+          function hasTimeVal(v){
+            const s = String(v ?? "").trim();
+            if (!s) return false;
+            if (s === "—" || s === "-" || s.toLowerCase() === "null") return false;
+            return true;
+          }
+	          const tipoCode = String((x && x.tipo) ? x.tipo : "").toUpperCase();
+	          const needIn = (tipoCode === "MISSING_IN") ? true : !(x && hasTimeVal(x.actual_in));
+	          const needOut = (tipoCode === "MISSING_OUT") ? true : !(x && hasTimeVal(x.actual_out));
+
+	          // Regla dura (sin ambigüedad):
+	          // - MISSING_IN => pedir SOLO ENTRADA
+	          // - MISSING_OUT => pedir SOLO SALIDA
+	          if (tipoCode === "MISSING_IN") {
+	            var ai = askHHMM("Propuesta RRHH: ENTRADA (IN)", defIn);
+	            if (ai === null) return;
+	            if (!ai) { alert("Debes ingresar hora propuesta para ENTRADA (IN)."); return; }
+	            proposed_in = ai;
+	            proposed_out = "";
+	            // saltar cualquier pregunta de salida
+	          } else if (tipoCode === "MISSING_OUT") {
+	            var ao = askHHMM("Propuesta RRHH: SALIDA (OUT)", defOut);
+	            if (ao === null) return;
+	            if (!ao) { alert("Debes ingresar hora propuesta para SALIDA (OUT)."); return; }
+	            proposed_in = "";
+	            proposed_out = ao;
+	            // saltar cualquier pregunta de entrada/salida adicional
+	          } else {
+
+	          if (needIn) {
+	            var a = askHHMM("Propuesta RRHH: ENTRADA (IN)", defIn);
+	            if (a === null) return;
+	            if (!a) { alert("Debes ingresar hora propuesta para ENTRADA (IN)."); return; }
+	            proposed_in = a;
+          } else {
+            var a0 = askHHMM("Propuesta RRHH: ENTRADA (IN)", defIn);
+            if (a0 === null) return;
+            proposed_in = a0 || "";
+          }
+
+	          // Regla solicitada: si el desvío es "Falta IN", preguntamos solo ENTRADA.
+	          if (tipoCode === "MISSING_IN") {
+	            proposed_out = "";
+	          }
+	          // Si falta OUT, pedimos OUT; si no falta, lo dejamos opcional.
+	          else if (needOut) {
+            var b2 = askHHMM("Propuesta RRHH: SALIDA (OUT)", defOut);
+            if (b2 === null) return;
+            if (!b2) { alert("Debes ingresar hora propuesta para SALIDA (OUT)."); return; }
+            proposed_out = b2;
+          } else if (!needIn) {
+            var b20 = askHHMM("Propuesta RRHH: SALIDA (OUT)", defOut);
+	            if (b20 === null) return;
+	            proposed_out = b20 || "";
+	          }
+	          } // end else (not missing_in/out)
+	        }catch(_){}
+        b.disabled = true;
+        try{
+          await apiJSON(`/rrhh/desvios/${id}/request_approval`, {
+            method:"POST",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify({ proposed_in: proposed_in || null, proposed_out: proposed_out || null })
+          });
+          setLog("Correo enviado ✓");
+        }catch(err){
+          alert(String(err?.message||err));
+          b.disabled = false;
+        }
+        return;
+      }
+      let note = "";
+      try{
+        note = prompt(`Obs (${st}):`, "") || "";
+      }catch(_){}
+      b.disabled = true;
+      try{
+        await apiJSON(`/rrhh/desvios/${id}`, { method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ status: st, note }) });
+        await load();
+      }catch(err){
+        alert(String(err?.message||err));
+        b.disabled = false;
+      }
+    });
+
+    (async ()=>{
+      // default date = hoy Chile
+      try{
+        const u = new URL(location.href);
+        const qd = String(u.searchParams.get("date") || "").slice(0,10);
+        const qu = String(u.searchParams.get("uid") || "").trim();
+        if (qd) qs("#fDate").value = qd;
+        else{
+          const now = new Date();
+          const iso = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+          qs("#fDate").value = iso;
+        }
+        if (qu && qs("#fUid")) qs("#fUid").value = qu;
+      }catch(_){}
+      qs("#btnReload").addEventListener("click", load);
+      qs("#btnDetect").addEventListener("click", detect);
+      qs("#btnEmail").addEventListener("click", sendEmail);
+      qs("#fEstado").addEventListener("change", load);
+      qs("#fDate").addEventListener("change", load);
+      qs("#fUid") && qs("#fUid").addEventListener("change", load);
+      await load();
+    })();
+  </script>
+</body>
+</html>

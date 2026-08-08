@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Abriendo PDF…</title>
+  <style>
+    :root{
+      --bg:#0b1220;
+      --card:#0f1a2b;
+      --text:#eaf2ff;
+      --muted:#a9bbd2;
+      --accent:#19c37d;
+      --border:rgba(255,255,255,.12);
+    }
+    html,body{height:100%;}
+    body{
+      margin:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background: radial-gradient(1200px 700px at 20% 10%, rgba(25,195,125,.20), transparent 55%),
+                  radial-gradient(900px 600px at 80% 70%, rgba(96,165,250,.18), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+    .card{
+      width:min(520px, calc(100vw - 32px));
+      border:1px solid var(--border);
+      background: rgba(15,26,43,.82);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:18px 18px 16px;
+      box-shadow: 0 20px 55px rgba(0,0,0,.45);
+    }
+    h1{margin:0; font-size:18px; letter-spacing:.2px;}
+    .muted{color:var(--muted); font-size:13px; margin-top:6px; line-height:1.35;}
+    .row{display:flex; gap:12px; align-items:center; margin-top:16px;}
+    .spinner{
+      width:34px; height:34px; border-radius:50%;
+      border:3px solid rgba(255,255,255,.18);
+      border-top-color: var(--accent);
+      animation: spin 0.95s linear infinite;
+      flex:0 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .bar{
+      height:10px;
+      background: rgba(255,255,255,.10);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:999px;
+      overflow:hidden;
+      flex:1;
+    }
+    .bar > i{
+      display:block;
+      height:100%;
+      width:40%;
+      background: linear-gradient(90deg, rgba(25,195,125,.55), rgba(96,165,250,.55), rgba(25,195,125,.55));
+      filter:saturate(1.2);
+      animation: slide 1.35s ease-in-out infinite;
+    }
+    @keyframes slide{
+      0%{ transform: translateX(-60%); opacity:.65; }
+      50%{ opacity:1; }
+      100%{ transform: translateX(200%); opacity:.65; }
+    }
+    .actions{
+      display:flex;
+      justify-content:flex-end;
+      gap:10px;
+      margin-top:14px;
+    }
+    .btn{
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.16);
+      background: transparent;
+      color: var(--text);
+      padding:8px 12px;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .btn.primary{
+      border-color: rgba(25,195,125,.45);
+      background: rgba(25,195,125,.14);
+    }
+    .url{
+      margin-top:10px;
+      font-size:12px;
+      color:rgba(255,255,255,.55);
+      overflow:hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .viewer{
+      position:fixed;
+      inset:0;
+      display:grid;
+      grid-template-rows:auto 1fr;
+      background:#111827;
+    }
+    .viewerBar{
+      min-height:56px;
+      display:flex;
+      align-items:center;
+      gap:12px;
+      padding:8px 14px;
+      background:#0f1a2b;
+      color:#eaf2ff;
+      border-bottom:1px solid rgba(255,255,255,.12);
+    }
+    .viewerName{
+      flex:1;
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      font-weight:900;
+    }
+    .viewer iframe{
+      width:100%;
+      height:100%;
+      border:0;
+      background:#374151;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="t">Abriendo PDF…</h1>
+    <div class="muted" id="m">Estamos generando el PDF y abriéndolo. Si demora, normalmente es por imágenes pesadas o carga del servidor.</div>
+    <div class="row">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="bar" aria-hidden="true"><i></i></div>
+    </div>
+    <div class="url" id="u"></div>
+    <div class="actions">
+      <button class="btn" id="btnBack" type="button">Volver</button>
+      <button class="btn primary" id="btnRetry" type="button">Reintentar</button>
+    </div>
+  </div>
+
+  <script>
+    function qp(k){
+      try{ return new URLSearchParams(location.search).get(k) || ""; }catch(_){ return ""; }
+    }
+    const url = qp("u");
+    const title = qp("t");
+    if (title) document.getElementById("t").textContent = title;
+    document.getElementById("u").textContent = url || "";
+
+    function isDownload(u){
+      try{
+        const uu = new URL(u, location.origin);
+        return uu.searchParams.get("download") === "1" || uu.searchParams.get("dl") === "1";
+      }catch(_){
+        return String(u || "").includes("download=1") || String(u || "").includes("dl=1");
+      }
+    }
+
+    function getToken(){
+      const keys=["token","access_token","jwt","gd_token","gd_access_token","crm_token"];
+      for(const store of [localStorage,sessionStorage]){
+        for(const key of keys){
+          try{
+            const value=String(store.getItem(key)||"").trim();
+            if(value)return value;
+          }catch(_){}
+        }
+      }
+      return "";
+    }
+
+    function filenameFromDisposition(value){
+      const source=String(value||"");
+      const utf=source.match(/filename\*=UTF-8''([^;]+)/i);
+      if(utf?.[1]){
+        try{return decodeURIComponent(utf[1].trim().replace(/^"|"$/g,""));}catch(_){}
+      }
+      const plain=source.match(/filename="?([^";]+)"?/i);
+      return plain?.[1]?.trim()||"cotizacion.pdf";
+    }
+
+    function showPdfViewer(blob,filename){
+      const file=new File([blob],filename,{type:"application/pdf"});
+      const localUrl=URL.createObjectURL(file);
+      document.title=filename;
+      const safe=String(filename).replace(/[&<>"']/g,ch=>({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+      }[ch]));
+      document.body.innerHTML=`
+        <main class="viewer">
+          <header class="viewerBar">
+            <button class="btn" id="viewerBack" type="button">← Volver</button>
+            <div class="viewerName" title="${safe}">${safe}</div>
+            <a class="btn primary" id="viewerDownload" href="${localUrl}" download="${safe}">Descargar con nombre</a>
+          </header>
+          <iframe title="${safe}" src="${localUrl}"></iframe>
+        </main>`;
+      document.getElementById("viewerBack").onclick=()=>history.length>1?history.back():window.close();
+    }
+
+    async function go(){
+      if (!url){
+        document.getElementById("m").textContent = "Falta URL del PDF (parámetro ?u=...).";
+        return;
+      }
+      // Para descargas, NO navegamos (la pestaña queda “pegada”).
+      // El PDF está protegido. Tanto la vista previa como la descarga deben
+      // obtenerse con Bearer; una navegación/iframe directo pierde el token.
+      try{
+        const token=getToken();
+        const headers=token?{Authorization:`Bearer ${token}`}:{};
+        const response=await fetch(url,{headers});
+        if(!response.ok){
+          const text=await response.text();
+          throw new Error(text||`HTTP ${response.status}`);
+        }
+        const blob=await response.blob();
+        if(!String(blob.type||"").toLowerCase().includes("pdf")){
+          throw new Error("La respuesta recibida no es un PDF.");
+        }
+        const filename=filenameFromDisposition(response.headers.get("content-disposition"));
+        if(isDownload(url)){
+          const href=URL.createObjectURL(new File([blob],filename,{type:"application/pdf"}));
+          const a=document.createElement("a");
+          a.href=href;
+          a.download=filename;
+          a.rel="noopener";
+          a.style.display="none";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(()=>URL.revokeObjectURL(href),60_000);
+          document.getElementById("t").textContent="PDF descargado";
+          document.getElementById("m").textContent=filename;
+          return;
+        }
+        showPdfViewer(blob,filename);
+      }catch(error){
+        document.getElementById("t").textContent="No se pudo abrir el PDF";
+        document.getElementById("m").textContent=String(error?.message||error);
+      }
+    }
+    const base = (String(location.pathname||"").includes("/crm/")) ? "/crm" : "";
+    document.getElementById("btnBack").onclick = ()=> history.length > 1 ? history.back() : (location.href = `${base}/web/views/leads.html`);
+    document.getElementById("btnRetry").onclick = go;
+    setTimeout(()=>{ go(); },250);
+  </script>
+</body>
+</html>

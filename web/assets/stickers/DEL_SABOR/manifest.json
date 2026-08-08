@@ -1,0 +1,35 @@
+{
+  "brand": "DEL_SABOR",
+  "stickers": [
+    {
+      "label": "CONFIRMADO",
+      "src": "/web/assets/stickers/DEL_SABOR/confirmado.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "OK",
+      "src": "/web/assets/stickers/DEL_SABOR/ok.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "GRACIAS",
+      "src": "/web/assets/stickers/DEL_SABOR/gracias.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "COTIZACION",
+      "src": "/web/assets/stickers/DEL_SABOR/cotizacion.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "SEGUIMIENTO",
+      "src": "/web/assets/stickers/DEL_SABOR/seguimiento.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "EN CAMINO",
+      "src": "/web/assets/stickers/DEL_SABOR/en_camino.svg",
+      "type": "image/svg+xml"
+    }
+  ]
+}

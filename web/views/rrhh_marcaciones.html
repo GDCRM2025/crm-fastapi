@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RRHH · Marcaciones</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="/web/js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:14px;background:transparent;color:var(--text);}
+    .wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+    }
+    :root.light .card{ background: rgba(255,255,255,.86); border-color: rgba(0,0,0,.10); }
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .big{font-size:20px;font-weight:1200;margin-top:6px;}
+    .muted{opacity:.75;font-weight:850;font-size:12px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;}
+    .btn{
+      height:40px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;
+      padding:0 14px;
+      font-weight:1100;
+      cursor:pointer;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .inp, select{
+      height:40px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.10);
+      color:inherit;
+      padding:0 12px;
+      font-weight:950;
+      outline:none;
+    }
+    table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px;}
+    th,td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.18);text-align:left;white-space:nowrap;}
+    th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.7;}
+    .table{overflow:auto;max-height:70vh;border:1px solid rgba(148,163,184,.18);border-radius:14px;}
+    .ok{ color: color-mix(in srgb, #22c55e 85%, white); font-weight:1000; }
+    .bad{ color: color-mix(in srgb, #fb7185 85%, white); font-weight:1000; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="ttl">RRHH · SGJO</div>
+      <div class="big">Marcaciones</div>
+      <div class="muted">Filtros por fecha / usuario / rut. Formato hora servidor.</div>
+
+      <div class="row">
+        <input class="inp" id="fd" type="date" />
+        <input class="inp" id="td" type="date" />
+        <input class="inp" id="uid" placeholder="ID usuario (opcional)" style="min-width:160px" />
+        <input class="inp" id="rut" placeholder="RUT (opcional)" style="min-width:200px" />
+        <select id="tipo" class="inp" style="min-width:150px">
+          <option value="">Tipo</option>
+          <option value="IN">IN</option>
+          <option value="OUT">OUT</option>
+        </select>
+        <select id="ok" class="inp" style="min-width:160px">
+          <option value="">OK?</option>
+          <option value="1">OK</option>
+          <option value="0">Con error</option>
+        </select>
+        <button class="btn primary" id="btnLoad">Buscar</button>
+        <button class="btn" id="btnDesvios">Ver desvíos</button>
+        <button class="btn" id="btnHoras">Horas (uid)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Colaborador</th>
+              <th>ID</th>
+              <th>RUT</th>
+              <th>Tipo</th>
+              <th>Método</th>
+              <th>OK</th>
+              <th>Dist</th>
+              <th>Fallback</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td class="muted">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(path){
+      const p = String(path || "");
+      if (!p) return p;
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE) return p;
+      return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
+    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+    function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+    function esc(s){ return String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+    function fmtDT(v){
+      try{
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) return String(v||"");
+        return d.toLocaleString("es-CL", { hour12:false });
+      }catch(_){ return String(v||""); }
+    }
+
+    function dateOnly(v){
+      try{
+        if(!v) return "";
+        const s = String(v);
+        // ISO
+        if (s.length >= 10 && s[4] === "-" && s[7] === "-") return s.slice(0,10);
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) return "";
+        const y = d.getFullYear();
+        const m = String(d.getMonth()+1).padStart(2,"0");
+        const dd = String(d.getDate()).padStart(2,"0");
+        return `${y}-${m}-${dd}`;
+      }catch(_){ return ""; }
+    }
+
+    function daysBetween(a,b){
+      try{
+        const da = new Date(a+"T00:00:00");
+        const db = new Date(b+"T00:00:00");
+        const diff = Math.floor((db-da)/(24*3600*1000));
+        return diff;
+      }catch(_){ return 0; }
+    }
+
+    function addDays(d, n){
+      try{
+        const dt = new Date(d+"T00:00:00");
+        dt.setDate(dt.getDate() + Number(n||0));
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth()+1).padStart(2,"0");
+        const dd = String(dt.getDate()).padStart(2,"0");
+        return `${y}-${m}-${dd}`;
+      }catch(_){ return d; }
+    }
+
+    async function loadDesviosMap(fd, td){
+      // Mapa: date|id_usuario => true (pendiente)
+      const map = new Map();
+      const a = String(fd||"").slice(0,10);
+      const b = String(td||"").slice(0,10) || a;
+      if (!a) return map;
+      const span = Math.abs(daysBetween(a,b));
+      if (span > 14){
+        // Evita saturar Passenger: pedimos máximo 15 días.
+        return map;
+      }
+      const n = span + 1;
+      for (let i=0;i<n;i++){
+        const day = addDays(a, i);
+        try{
+          const r = await fetch(apiURL(`/rrhh/desvios?date=${encodeURIComponent(day)}&estado=pendiente`), { headers: headers() });
+          const j = await r.json().catch(()=>({}));
+          if (!r.ok || !j.ok) continue;
+          const items = Array.isArray(j.items) ? j.items : [];
+          for (const it of items){
+            const uid = String(it.id_usuario||"").trim();
+            if (!uid) continue;
+            map.set(`${day}|${uid}`, it);
+          }
+        }catch(_){}
+      }
+      return map;
+    }
+
+    async function load(){
+      const q = new URLSearchParams();
+      if (qs("#fd").value) q.set("from_date", qs("#fd").value);
+      if (qs("#td").value) q.set("to_date", qs("#td").value);
+      if (qs("#uid").value) q.set("id_usuario", qs("#uid").value);
+      if (qs("#rut").value) q.set("rut", qs("#rut").value);
+      if (qs("#tipo").value) q.set("tipo", qs("#tipo").value);
+      if (qs("#ok").value) q.set("ok", qs("#ok").value);
+      q.set("limit", "600");
+      const r = await fetch(apiURL("/rrhh/marcaciones?" + q.toString()), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      if (!r.ok || !data.ok){
+        qs("#rows").innerHTML = `<tr><td class="muted">Error: ${esc(data.detail || r.status)}</td></tr>`;
+        return;
+      }
+      const items = data.items || [];
+      const fd = qs("#fd").value || "";
+      const td = qs("#td").value || "";
+      const desvMap = await loadDesviosMap(fd, td);
+      qs("#rows").innerHTML = items.map(m=>{
+        const ok = !!m.ok;
+        const dist = (m.distance_m == null) ? "—" : (Number(m.distance_m||0).toFixed(0) + "m");
+        const day = dateOnly(m.created_at);
+        const uid = String(m.id_usuario||"").trim();
+        const desv = (day && uid) ? desvMap.get(`${day}|${uid}`) : null;
+        const hasDesv = !!desv;
+        return `
+          <tr ${hasDesv ? `style="background:rgba(239,68,68,.08);border-left:3px solid rgba(239,68,68,.55);cursor:pointer" data-desv="1" data-date="${esc(day)}" data-uid="${esc(uid)}"` : ""}>
+            <td>${esc(fmtDT(m.created_at))}</td>
+            <td>
+              <div style="display:flex;gap:8px;align-items:center">
+                <b>${esc(m.colaborador || m.username || m.nombre || "") || "—"}</b>
+                ${hasDesv ? `<span class="bad" style="font-size:11px;border:1px solid rgba(239,68,68,.35);padding:2px 8px;border-radius:999px;background:rgba(239,68,68,.10)">DESVÍO</span>` : ``}
+              </div>
+            </td>
+            <td>${esc(m.id_usuario)}</td>
+            <td>${esc(m.rut || "")}</td>
+            <td><strong>${esc(String(m.tipo||"").toUpperCase())}</strong></td>
+            <td>${esc(m.method || "—")}</td>
+            <td class="${ok ? "ok":"bad"}">${ok ? "OK":"NO"}</td>
+            <td>${esc(dist)}</td>
+            <td>${m.used_fallback ? "Sí" : "No"}</td>
+            <td title="${esc(m.error || "")}">${esc((m.error || "").slice(0,52) || "—")}</td>
+          </tr>
+        `;
+      }).join("") || `<tr><td class="muted">Sin registros.</td></tr>`;
+    }
+
+    qs("#btnLoad").addEventListener("click", load);
+    qs("#btnDesvios").addEventListener("click", ()=>{
+      // Abre RRHH Desvíos con fecha preseleccionada (misma que filtro desde).
+      const d = (qs("#fd").value || "").trim();
+      const url = `/web/views/rrhh_desvios.html${d ? ("?date=" + encodeURIComponent(d)) : ""}`;
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"rrhh_desvios", url }, "*");
+        return;
+      }catch(_){}
+      location.href = apiURL(url);
+    });
+    qs("#btnHoras").addEventListener("click", async ()=>{
+      const uid = String(qs("#uid")?.value||"").trim();
+      if(!uid) return alert("Ingresa ID usuario primero.");
+      const fd = (qs("#fd").value || "").trim();
+      const td = (qs("#td").value || "").trim();
+      try{
+        const u = `/rrhh/sgjo/admin/hours_summary?id_usuario=${encodeURIComponent(uid)}&from_date=${encodeURIComponent(fd)}&to_date=${encodeURIComponent(td)}`;
+        const r = await fetch(apiURL(u), { headers: headers() });
+        const j = await r.json().catch(()=>({}));
+        if (!r.ok || !j?.ok) throw new Error(j?.detail || String(r.status));
+        const m = Number(j.total_minutes||0);
+        const hh = Math.floor(m/60), mm = Math.floor(m%60);
+        alert(`Total: ${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")} (${j.total_hours}h)\nDías: ${(j.items||[]).length}`);
+      }catch(e){
+        alert(String(e?.message||e));
+      }
+    });
+    // default: hoy
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,"0");
+    const dd = String(d.getDate()).padStart(2,"0");
+    qs("#fd").value = `${y}-${m}-${dd}`;
+    qs("#td").value = `${y}-${m}-${dd}`;
+    load();
+
+    // Click en fila con desvío: abre panel de desvíos en la misma fecha.
+    document.addEventListener("click", (ev)=>{
+      const tr = ev.target.closest("tr[data-desv='1']");
+      if (!tr) return;
+      const day = String(tr.getAttribute("data-date")||"").slice(0,10);
+      const uid = String(tr.getAttribute("data-uid")||"").trim();
+      const url = `/web/views/rrhh_desvios.html?date=${encodeURIComponent(day||"")}${uid ? ("&uid=" + encodeURIComponent(uid)) : ""}`;
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"rrhh_desvios", url }, "*");
+        return;
+      }catch(_){}
+      location.href = apiURL(url);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Operaciones · Ficha Camiones</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:12px;overflow-x:hidden;}
+    .app{height:calc(100vh - 24px);display:grid;grid-template-columns:420px 1fr;gap:12px;min-height:0;}
+    @media (max-width:980px){.app{grid-template-columns:1fr;}}
+    .card{border-radius:18px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.32);backdrop-filter:blur(10px);overflow:hidden;box-shadow:0 22px 70px rgba(0,0,0,.35);min-height:0;display:flex;flex-direction:column;}
+    :root.light .card{background:rgba(255,255,255,.78);border-color:rgba(0,0,0,.10);}
+    .head{padding:12px;border-bottom:1px solid rgba(148,163,184,.14);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .ttl{font-weight:1100;letter-spacing:.12em;text-transform:uppercase;font-size:12px;}
+    .sub{opacity:.72;font-weight:850;font-size:12px;margin-top:4px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .inp{height:36px;border-radius:999px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.18);color:var(--text);padding:0 12px;font-weight:900;outline:none;width:min(320px,100%);}
+    :root.light .inp{background:rgba(255,255,255,.65);color:rgba(0,0,0,.85);}
+    .btn{height:36px;border-radius:999px;border:1px solid rgba(148,163,184,.20);background:rgba(2,6,23,.18);color:var(--text);padding:0 14px;font-weight:1000;cursor:pointer;white-space:nowrap;}
+    .btn.primary{background:color-mix(in srgb, var(--accent) 24%, transparent);border-color:color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.08);}
+    .btn:hover{filter:brightness(1.06);}
+    .list{padding:10px;overflow:auto;min-height:0;display:grid;gap:8px;}
+    .item{border:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.18);border-radius:14px;padding:10px;cursor:pointer;}
+    :root.light .item{background:rgba(255,255,255,.62);}
+    .item.active{outline:2px solid color-mix(in srgb, var(--accent) 55%, transparent);outline-offset:-2px;}
+    .itTop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
+    .muted{opacity:.72;font-weight:850;font-size:12px;}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:3px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.12);font-weight:1000;font-size:12px;white-space:nowrap;}
+    :root.light .pill{background:rgba(255,255,255,.65);}
+    .dot{width:10px;height:10px;border-radius:999px;background:rgba(245,158,11,.85);}
+    .content{padding:12px;overflow:auto;min-height:0;overflow-x:hidden;}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    @media (max-width:980px){.grid{grid-template-columns:1fr;}}
+    .panel{border:1px solid rgba(148,163,184,.14);border-radius:16px;background:rgba(2,6,23,.14);padding:12px;}
+    :root.light .panel{background:rgba(255,255,255,.62);}
+    .h2{font-weight:1100;margin:0 0 8px;}
+    .tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;}
+    .tbl th{opacity:.72;font-size:11px;text-transform:uppercase;letter-spacing:.12em;text-align:left;padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.14);}
+    .tbl td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.10);vertical-align:top;}
+    .doc-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+    .doc-file{max-width:220px;}
+    .stack{display:grid;gap:10px;}
+    .stackCard{border:1px solid rgba(148,163,184,.14);border-radius:14px;background:rgba(255,255,255,.03);padding:10px;}
+    :root.light .stackCard{background:rgba(255,255,255,.85);}
+    .stackTop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
+    .stackMeta{margin-top:6px;opacity:.82;font-weight:850;font-size:12px;display:flex;gap:10px;flex-wrap:wrap;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="card">
+      <div class="head">
+        <div>
+          <div class="ttl">Ficha Camiones</div>
+          <div class="sub">Historial del camión: documentos, mantenciones, eventos asignados y checklists.</div>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="btnNew" type="button">+ Nuevo camión</button>
+          <button class="btn" id="btnReload" type="button">Recargar</button>
+        </div>
+      </div>
+      <div class="head" style="border-bottom:none;gap:10px">
+        <input id="q" class="inp" placeholder="Buscar por nombre o patente…" />
+      </div>
+      <div class="list" id="list"></div>
+    </section>
+
+    <section class="card">
+      <div class="head">
+        <div>
+          <div class="ttl" id="ttl2">Detalle</div>
+          <div class="sub" id="sub2">—</div>
+        </div>
+        <div class="row">
+          <button class="btn" id="btnAssign" type="button" disabled>Asignar a evento</button>
+          <button class="btn" id="btnEntrega" type="button" disabled>Entrega</button>
+          <button class="btn" id="btnDevol" type="button" disabled>Devolución</button>
+        </div>
+      </div>
+      <div class="content" id="content">
+        <div class="muted">Selecciona un camión.</div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        return (h === "localhost" || h === "127.0.0.1") ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function getToken(){ return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || ""; }
+    function authHeaders(extra={}){ const t=getToken(); return t ? { ...extra, Authorization: "Bearer " + t } : extra; }
+    function apiURL(u){
+      const s = String(u || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    }
+    async function jget(url){
+      const r = await fetch(apiURL(url), { headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+    async function jpost(url, body){
+      const r = await fetch(apiURL(url), { method:"POST", headers: authHeaders({"Content-Type":"application/json"}), body: JSON.stringify(body || {}) });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+    async function jput(url, body){
+      const r = await fetch(apiURL(url), { method:"PUT", headers: authHeaders({"Content-Type":"application/json"}), body: JSON.stringify(body || {}) });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+    async function jdel(url){
+      const r = await fetch(apiURL(url), { method:"DELETE", headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    const SwalX = (() => {
+      try{ return window.parent?.Swal || window.Swal || null; }catch(_){ return window.Swal || null; }
+    })();
+
+    const DOC_TYPES = [
+      { key:"permiso_circulacion", label:"Permiso de circulación" },
+      { key:"revision_tecnica", label:"Revisión técnica" },
+      { key:"soap", label:"SOAP" },
+      { key:"seguro", label:"Seguro" },
+    ];
+
+    let ASSETS = [];
+    let SELECTED = null;
+    let AUTO_OPEN_ID = null;
+
+    try{
+      const sp = new URLSearchParams(location.search || "");
+      const id = sp.get("id");
+      if (id && /^[0-9]+$/.test(id)) AUTO_OPEN_ID = Number(id);
+    }catch(_){}
+
+    function normalizePlate(v){
+      return String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+    function isValidPlate(v){
+      const p = normalizePlate(v);
+      return /^[A-Z]{4}\d{2}$/.test(p) || /^[A-Z]{2}\d{4}$/.test(p);
+    }
+    function formatPlate(v){
+      const p = normalizePlate(v);
+      if (/^[A-Z]{4}\d{2}$/.test(p)) return `${p.slice(0,2)}-${p.slice(2,4)}-${p.slice(4,6)}`;
+      if (/^[A-Z]{2}\d{4}$/.test(p)) return `${p.slice(0,2)}-${p.slice(2,6)}`;
+      return p;
+    }
+
+    function renderList(){
+      const q = (qs("#q").value || "").trim().toLowerCase();
+      const list = qs("#list");
+      const items = (ASSETS||[]).filter(a =>
+        !q ||
+        String(a.nombre||"").toLowerCase().includes(q) ||
+        String(a.code||"").toLowerCase().includes(q)
+      );
+      list.innerHTML = items.length ? items.map(a => {
+        const on = SELECTED && Number(SELECTED.id_asset) === Number(a.id_asset) ? "active" : "";
+        return `
+          <div class="item ${on}" data-id="${esc(a.id_asset)}">
+            <div class="itTop">
+              <div>
+                <div style="font-weight:1100">${esc(a.nombre)}</div>
+                <div class="muted"><span class="pill"><span class="dot"></span>CAMIÓN</span> · <strong>${esc(a.code || "—")}</strong></div>
+              </div>
+              <span class="pill">${esc(a.status || "OK")}</span>
+            </div>
+          </div>
+        `;
+      }).join("") : `<div class="muted" style="padding:10px">Sin resultados.</div>`;
+
+      list.querySelectorAll("[data-id]").forEach(el => {
+        el.addEventListener("click", async () => openAsset(Number(el.getAttribute("data-id"))));
+      });
+    }
+
+    async function openAsset(id){
+      const a = (ASSETS||[]).find(x => Number(x.id_asset) === Number(id));
+      if (!a) return;
+      SELECTED = a;
+      renderList();
+      const [hist, docs] = await Promise.all([
+        jget(`/assets/${encodeURIComponent(id)}/history`),
+        jget(`/ops/inventario/camiones/${encodeURIComponent(id)}/documentos`)
+      ]);
+      renderDetail(hist, docs.items || []);
+    }
+
+    async function ensureCamionCategory(){
+      const cats = await jget("/assets/categories?tipo=CAMION&all=1");
+      const items = Array.isArray(cats.items) ? cats.items : [];
+      if (items.length) return Number(items[0].id_category || 0) || null;
+
+      await jpost("/assets/categories", {
+        tipo: "CAMION",
+        tipo_maquina: "Camión",
+        cod_tipo: "CAM",
+        grupo: "VEHICULO"
+      });
+
+      const cats2 = await jget("/assets/categories?tipo=CAMION&all=1");
+      const it2 = Array.isArray(cats2.items) ? cats2.items : [];
+      return it2.length ? (Number(it2[0].id_category || 0) || null) : null;
+    }
+
+    async function truckWizard(title, row=null){
+      const res = await SwalX.fire({
+        title,
+        width: 860,
+        showCancelButton: true,
+        confirmButtonText: "Guardar",
+        cancelButtonText: "Cancelar",
+        html: `
+          <div style="display:grid;gap:10px;text-align:left">
+            <label><b>Nombre</b><br><input id="wNombre" class="swal2-input" placeholder="Ej: Camión 1" value="${esc(row?.nombre || "")}" /></label>
+            <label><b>Patente</b><br><input id="wCode" class="swal2-input" placeholder="Ej: AB-CD-12" value="${esc(row?.code || "")}" /></label>
+            <label><b>Estado</b><br>
+              <select id="wStatus" class="swal2-select">
+                ${["OK","TALLER","BAJA"].map(x => `<option value="${x}" ${(String(row?.status||"OK").toUpperCase()===x)?"selected":""}>${x}</option>`).join("")}
+              </select>
+            </label>
+            <label><b>Ubicación</b><br><input id="wUb" class="swal2-input" placeholder="Ej: Patio / Bodega / Taller" value="${esc(row?.ubicacion || "")}" /></label>
+            <label><b>Notas</b><br><textarea id="wNotes" style="width:100%;min-height:90px;border-radius:14px;padding:10px;font-weight:900">${esc(row?.notas || "")}</textarea></label>
+            <div class="muted">Formatos aceptados: <b>AB-CD-12</b> o <b>AB-1234</b>.</div>
+          </div>
+        `,
+        preConfirm: () => {
+          const nombre = (qs("#wNombre", SwalX.getHtmlContainer())?.value || "").trim();
+          const codeRaw = (qs("#wCode", SwalX.getHtmlContainer())?.value || "").trim();
+          const status = (qs("#wStatus", SwalX.getHtmlContainer())?.value || "").trim().toUpperCase();
+          const ubicacion = (qs("#wUb", SwalX.getHtmlContainer())?.value || "").trim();
+          const notas = (qs("#wNotes", SwalX.getHtmlContainer())?.value || "").trim();
+          if (!nombre) return SwalX.showValidationMessage("Nombre requerido");
+          if (!codeRaw) return SwalX.showValidationMessage("Patente requerida");
+          if (!isValidPlate(codeRaw)) return SwalX.showValidationMessage("Patente inválida");
+          return {
+            nombre,
+            code: formatPlate(codeRaw),
+            status: status || "OK",
+            ubicacion: ubicacion || null,
+            notas: notas || null,
+          };
+        }
+      });
+      return res.isConfirmed ? res.value : null;
+    }
+
+    async function newTruck(){
+      const v = await truckWizard("Nuevo camión");
+      if (!v) return;
+      const id_category = await ensureCamionCategory();
+      const created = await jpost("/assets", {
+        id_category,
+        nombre: v.nombre,
+        code: v.code,
+        status: v.status,
+        ubicacion: v.ubicacion,
+        notas: v.notas,
+      });
+      await loadAll();
+      if (created && created.id_asset) await openAsset(Number(created.id_asset));
+    }
+
+    async function addMaintenanceFor(asset){
+      const a = asset || SELECTED || null;
+      if (!a?.id_asset) return;
+      const res = await SwalX.fire({
+        title: "Agregar mantención",
+        html: `
+          <div style="display:grid;gap:10px;text-align:left">
+            <label><b>Status</b><br><input id="st" class="swal2-input" placeholder="Ej: OK / TALLER / BAJA" value="${esc(String(a.status||"OK").toUpperCase())}" /></label>
+            <label><b>Detalle</b><br><textarea id="det" style="width:100%;min-height:90px;border-radius:14px;padding:10px;font-weight:900"></textarea></label>
+            <label><b>Realizado por</b><br><input id="by" class="swal2-input" placeholder="Nombre" /></label>
+          </div>
+        `,
+        showCancelButton:true,
+        confirmButtonText:"Guardar",
+        preConfirm: () => {
+          const status = (qs("#st", SwalX.getHtmlContainer())?.value || "").trim().toUpperCase();
+          const detalle = (qs("#det", SwalX.getHtmlContainer())?.value || "").trim();
+          const realizado_por = (qs("#by", SwalX.getHtmlContainer())?.value || "").trim();
+          if (!status) return SwalX.showValidationMessage("Falta status");
+          return { status, detalle: detalle || null, realizado_por: realizado_por || null };
+        }
+      });
+      if (!res.isConfirmed) return;
+      await jpost(`/assets/${encodeURIComponent(a.id_asset)}/maintenance`, res.value);
+      await openAsset(Number(a.id_asset));
+    }
+
+    async function bajaTruck(asset){
+      const a = asset || SELECTED || null;
+      if (!a?.id_asset) return;
+      const r = await SwalX.fire({
+        title: "Baja camión",
+        html: `<div style="text-align:left;opacity:.86;font-weight:900">
+          Esto marca el camión como <b>BAJA</b> (mantiene historial).<br>
+          Para borrar hard (solo si estás seguro), usa “Borrar (hard)”.
+        </div>`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Dar de baja",
+        cancelButtonText: "Cancelar",
+        showDenyButton: true,
+        denyButtonText: "Borrar (hard)",
+      });
+      if (r.isDenied){
+        await jdel(`/assets/${encodeURIComponent(a.id_asset)}?hard=1`);
+        await loadAll();
+        return;
+      }
+      if (!r.isConfirmed) return;
+      await jdel(`/assets/${encodeURIComponent(a.id_asset)}`);
+      await loadAll();
+    }
+
+    function renderDetail(hist, docs){
+      const a = hist.asset || {};
+      const maint = hist.maintenance || [];
+      const assigns = hist.assignments || [];
+      const docsMap = {};
+      (docs || []).forEach(d => { docsMap[String(d.tipo_doc || "")] = d; });
+
+      qs("#ttl2").textContent = a.nombre ? `Camión · ${a.nombre}` : "Detalle";
+      qs("#sub2").textContent = a.code ? `Patente: ${a.code}` : "—";
+      qs("#btnAssign").disabled = !a.id_asset;
+      qs("#btnEntrega").disabled = !a.id_asset;
+      qs("#btnDevol").disabled = !a.id_asset;
+
+      const docRows = DOC_TYPES.map(d => {
+        const cur = docsMap[d.key] || null;
+        const vence = cur?.fecha_vencimiento ? String(cur.fecha_vencimiento).slice(0,10) : "";
+        const link = cur?.file_url
+          ? `<a class="btn" style="height:30px;padding:0 12px;text-decoration:none" href="${esc(cur.file_url)}" target="_blank" rel="noopener">Ver archivo</a>`
+          : `<span class="muted">—</span>`;
+
+        return `
+          <tr>
+            <td><b>${esc(d.label)}</b></td>
+            <td><input id="doc_date_${esc(d.key)}" type="date" value="${esc(vence)}" /></td>
+            <td>${link}</td>
+            <td>
+              <div class="doc-tools">
+                <input class="doc-file" id="doc_file_${esc(d.key)}" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" />
+                <button class="btn" type="button" data-doc-upload="${esc(d.key)}">Subir documento</button>
+                ${cur ? `<button class="btn danger" type="button" data-doc-del="${esc(d.key)}">Eliminar</button>` : ``}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+      qs("#content").innerHTML = `
+        <div class="grid">
+          <div class="panel">
+            <div class="h2">Ficha</div>
+            <table class="tbl">
+              <tbody>
+                <tr><th style="width:160px">Nombre</th><td>${esc(a.nombre || "—")}</td></tr>
+                <tr><th>Patente</th><td>${esc(a.code || "—")}</td></tr>
+                <tr><th>Estado</th><td>${esc(a.status || "OK")}</td></tr>
+                <tr><th>Ubicación</th><td>${esc(a.ubicacion || "—")}</td></tr>
+                <tr><th>Notas</th><td>${esc(a.notas || "—")}</td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+              <button class="btn" id="btnEditFicha" type="button">Editar ficha</button>
+              <button class="btn primary" id="btnAddMaint" type="button">Agregar mantención</button>
+              <button class="btn danger" id="btnBaja" type="button">Baja</button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="h2">Mantenciones</div>
+            ${maint.length ? `
+              <table class="tbl">
+                <thead><tr><th>Fecha</th><th>Status</th><th>Detalle</th><th>Por</th></tr></thead>
+                <tbody>
+                  ${maint.map(m => `
+                    <tr>
+                      <td>${esc((m.created_at||"").slice(0,16).replace("T"," "))}</td>
+                      <td><strong>${esc(m.status||"")}</strong></td>
+                      <td>${esc(m.detalle||"")}</td>
+                      <td>${esc(m.realizado_por||"")}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            ` : `<div class="muted">Sin mantenciones registradas.</div>`}
+          </div>
+
+          <div class="panel" style="grid-column:1/-1">
+            <div class="h2">Documentos del camión</div>
+            <div class="muted" style="margin-bottom:10px">La fecha se elige manualmente. El archivo se sube y queda ligado al camión.</div>
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>Documento</th>
+                  <th>Vencimiento</th>
+                  <th>Actual</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody>${docRows}</tbody>
+            </table>
+          </div>
+
+          <div class="panel" style="grid-column:1/-1">
+            <div class="h2">Eventos asignados</div>
+            ${assigns.length ? `
+              <table class="tbl">
+                <thead><tr><th>Fecha asign.</th><th>Lead</th><th>Cliente</th><th>Evento</th><th>Conductor</th><th>Operadores</th><th>Marca</th><th>Comuna</th><th>Status</th></tr></thead>
+                <tbody>
+                  ${assigns.map(x => `
+                    <tr>
+                      <td>${esc((x.created_at||"").slice(0,16).replace("T"," "))}</td>
+                      <td>${x.id_lead ? `<button class="btn" style="height:30px;padding:0 12px" data-open-lead="${esc(x.id_lead)}" type="button">#${esc(x.id_lead)}</button>` : "—"}</td>
+                      <td><strong>${esc(x.cliente||"—")}</strong></td>
+                      <td>${esc((x.fecha_evento||"").slice(0,10) || "—")}</td>
+                      <td>${esc(x.conductor||"—")}</td>
+                      <td>${esc(x.operadores||"—")}</td>
+                      <td>${esc(x.marca||"—")}</td>
+                      <td>${esc(x.comuna||"—")}</td>
+                      <td>${esc(x.status||"")}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            ` : `<div class="muted">Aún no está asignado a eventos.</div>`}
+          </div>
+        </div>
+      `;
+
+      qs("#btnEditFicha")?.addEventListener("click", async () => {
+        const v = await truckWizard("Editar ficha", a);
+        if (!v) return;
+        await jput(`/assets/${encodeURIComponent(a.id_asset)}`, {
+          nombre: v.nombre,
+          code: v.code,
+          status: v.status,
+          ubicacion: v.ubicacion,
+          notas: v.notas,
+        });
+        await loadAll();
+        await openAsset(Number(a.id_asset));
+      });
+      qs("#btnAddMaint")?.addEventListener("click", () => addMaintenanceFor(a).catch(e => SwalX.fire("Error", String(e).slice(0,300), "error")));
+      qs("#btnBaja")?.addEventListener("click", () => bajaTruck(a).catch(e => SwalX.fire("Error", String(e).slice(0,300), "error")));
+
+      qs("#content").querySelectorAll("[data-open-lead]").forEach(b => {
+        b.addEventListener("click", () => {
+          const id = b.getAttribute("data-open-lead");
+          const url = "/web/views/leads.html?open_lead=" + encodeURIComponent(id);
+          window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*");
+        });
+      });
+
+      qs("#content").querySelectorAll("[data-doc-upload]").forEach(b => {
+        b.addEventListener("click", async () => {
+          const tipo = b.getAttribute("data-doc-upload");
+          await uploadDoc(Number(a.id_asset), tipo);
+        });
+      });
+
+      qs("#content").querySelectorAll("[data-doc-del]").forEach(b => {
+        b.addEventListener("click", async () => {
+          const tipo = b.getAttribute("data-doc-del");
+          await deleteDoc(Number(a.id_asset), tipo);
+        });
+      });
+    }
+
+    async function uploadDoc(id_asset, tipo_doc){
+      const dateEl = qs(`#doc_date_${tipo_doc}`);
+      const fileEl = qs(`#doc_file_${tipo_doc}`);
+      const fecha = dateEl?.value || "";
+      const file = fileEl?.files?.[0];
+
+      if (!fecha){
+        return SwalX.fire("Error", "Debes elegir la fecha de vencimiento.", "error");
+      }
+      if (!file){
+        return SwalX.fire("Error", "Debes seleccionar un archivo.", "error");
+      }
+
+      const fd = new FormData();
+      fd.append("tipo_doc", tipo_doc);
+      fd.append("fecha_vencimiento", fecha);
+      fd.append("archivo", file);
+
+      const r = await fetch(apiURL(`/ops/inventario/camiones/${encodeURIComponent(id_asset)}/documentos/upload`), {
+        method: "POST",
+        headers: authHeaders(),
+        body: fd,
+      });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+
+      await SwalX.fire("OK", "Documento cargado.", "success");
+      await openAsset(id_asset);
+    }
+
+    async function deleteDoc(id_asset, tipo_doc){
+      const ok = await SwalX.fire({
+        title: "Eliminar documento",
+        text: "Se quitará el archivo asociado a este documento.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Eliminar",
+        cancelButtonText: "Cancelar",
+      });
+      if (!ok.isConfirmed) return;
+
+      await jdel(`/ops/inventario/camiones/${encodeURIComponent(id_asset)}/documentos/${encodeURIComponent(tipo_doc)}`);
+      await SwalX.fire("OK", "Documento eliminado.", "success");
+      await openAsset(id_asset);
+    }
+
+    async function loadAll(){
+      const a = await jget("/assets?tipo=CAMION");
+      ASSETS = a.items || [];
+      SELECTED = null;
+      qs("#btnAssign").disabled = true;
+      qs("#btnEntrega").disabled = true;
+      qs("#btnDevol").disabled = true;
+      qs("#content").innerHTML = `<div class="muted">Selecciona un camión.</div>`;
+      renderList();
+
+      if (AUTO_OPEN_ID){
+        const found = (ASSETS || []).find(x => Number(x.id_asset) === Number(AUTO_OPEN_ID));
+        if (found) await openAsset(Number(AUTO_OPEN_ID));
+      }
+    }
+
+    qs("#btnReload").addEventListener("click", () => loadAll().catch(e => SwalX.fire("Error", String(e).slice(0,300), "error")));
+    qs("#btnNew").addEventListener("click", () => newTruck().catch(e => SwalX.fire("Error", String(e).slice(0,300), "error")));
+    qs("#q").addEventListener("input", renderList);
+
+    qs("#btnAssign").addEventListener("click", async () => {
+      if (!SELECTED) return;
+      const res = await SwalX.fire({
+        title: "Asignar camión a evento (Lead)",
+        html: `
+          <div style="display:grid;gap:10px;text-align:left">
+            <label><b>ID Lead</b><br><input id="lid" class="swal2-input" placeholder="Ej: 9872" /></label>
+            <label><b>Conductor</b><br><input id="cond" class="swal2-input" placeholder="Nombre conductor" /></label>
+            <label><b>Ayudantes / Operadores</b><br><input id="ops" class="swal2-input" placeholder="Ej: Juan, Pedro" /></label>
+            <label><b>Notas</b><br><textarea id="notes" style="width:100%;min-height:90px;border-radius:14px;padding:10px;font-weight:900"></textarea></label>
+          </div>
+        `,
+        showCancelButton:true,
+        confirmButtonText:"Asignar",
+        preConfirm: () => {
+          const id_lead = (qs("#lid", SwalX.getHtmlContainer())?.value || "").trim();
+          const conductor = (qs("#cond", SwalX.getHtmlContainer())?.value || "").trim();
+          const operadores = (qs("#ops", SwalX.getHtmlContainer())?.value || "").trim();
+          const notes = (qs("#notes", SwalX.getHtmlContainer())?.value || "").trim();
+          if (!/^[0-9]+$/.test(id_lead)) return SwalX.showValidationMessage("ID Lead inválido");
+          if (!conductor) return SwalX.showValidationMessage("Falta conductor");
+          return { id_lead: Number(id_lead), conductor, operadores: operadores || null, notes: notes || null };
+        }
+      });
+      if (!res.isConfirmed) return;
+      await jpost(`/assets/${encodeURIComponent(SELECTED.id_asset)}/assign`, res.value);
+      await openAsset(Number(SELECTED.id_asset));
+    });
+
+    qs("#btnEntrega").addEventListener("click", () => {
+      if (!SELECTED) return;
+      location.href = apiURL(`/web/views/op_camiones_entrega.html?id_asset=${encodeURIComponent(SELECTED.id_asset)}`);
+    });
+    qs("#btnDevol").addEventListener("click", () => {
+      if (!SELECTED) return;
+      location.href = apiURL(`/web/views/op_camiones_devolucion.html?id_asset=${encodeURIComponent(SELECTED.id_asset)}`);
+    });
+
+    loadAll().catch(e => SwalX.fire("Error", String(e).slice(0,300), "error"));
+  </script>
+</body>
+</html>

@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>Finanzas • Gastos</title>
+  <style>
+    body{padding:18px;}
+    .wrap{max-width:none; margin:0 auto;}
+    .grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
+    .grid .full{grid-column:1 / -1;}
+    .card{margin-bottom:14px;}
+    .label{font-size:12px; opacity:.7; font-weight:800; text-transform:uppercase; letter-spacing:.04em;}
+    input,select{width:100%; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px;}
+    .btn{background:#22c55e; color:#062315; border:none; padding:8px 12px; border-radius:10px; font-weight:900; cursor:pointer;}
+    .btn.secondary{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.15);}
+    .btn.small{padding:6px 10px; border-radius:10px; font-weight:800; font-size:12px;}
+    .btn.danger{background:#ef4444; color:#250606;}
+    .table-wrap{
+      margin-top:10px;
+      max-height:58vh;
+      overflow:auto;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      background:rgba(0,0,0,.08);
+    }
+    table{width:100%; min-width:1180px; border-collapse:separate; border-spacing:0; font-size:13px;}
+    th,td{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; vertical-align:top;}
+    th{position:sticky; top:0; z-index:2; background:#10243a; box-shadow:0 1px 0 rgba(255,255,255,.10);}
+    td{white-space:nowrap;}
+    td.desc{white-space:normal; min-width:260px; max-width:420px;}
+    td.actions{white-space:nowrap;}
+    .pager{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;}
+    .pagerBtns{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+    .btn:disabled{opacity:.45; cursor:not-allowed;}
+    dialog{border:1px solid rgba(255,255,255,.14); border-radius:14px; background:rgba(10,20,30,.98); color:inherit; padding:14px; max-width:min(960px,96vw);}
+    dialog::backdrop{background:rgba(0,0,0,.5);}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <h2 style="margin:0 0 4px 0">Registrar gasto</h2>
+          <div class="muted">Asigna el gasto a una cuenta y, si aplica, a marca/centro de costo.</div>
+        </div>
+        <button class="btn" id="btnSave">Guardar gasto</button>
+      </div>
+
+      <div class="grid" style="margin-top:12px;">
+        <div>
+          <div class="label">Fecha</div>
+          <input id="fFecha" type="date" />
+        </div>
+        <div class="full">
+          <div class="label">Cuenta (Plan de cuentas)</div>
+          <select id="fCuenta"></select>
+        </div>
+        <div>
+          <div class="label">Monto</div>
+          <input id="fMonto" />
+        </div>
+        <div>
+          <div class="label">Proveedor</div>
+          <input id="fProveedor" list="dlProv" placeholder="Escribe para buscar…" />
+          <datalist id="dlProv"></datalist>
+        </div>
+        <div>
+          <div class="label">Marca</div>
+          <select id="fMarca"></select>
+        </div>
+        <div>
+          <div class="label">Centro de costo</div>
+          <select id="fCentro"></select>
+        </div>
+        <div>
+          <div class="label">Tipo documento</div>
+          <select id="fTipoDoc">
+            <option value="">(sin tipo)</option>
+            <option value="FACTURA">Factura</option>
+            <option value="BOLETA">Boleta</option>
+            <option value="NOTA DE CREDITO">Nota de crédito</option>
+            <option value="NOTA DE DEBITO">Nota de débito</option>
+            <option value="OTRO">Otro</option>
+          </select>
+        </div>
+        <div>
+          <div class="label">N° Documento</div>
+          <input id="fDoc" placeholder="Ej: 12345" />
+        </div>
+        <div>
+          <div class="label">Vence</div>
+          <input id="fVenc" type="date" />
+        </div>
+        <div>
+          <div class="label">Pagado</div>
+          <label style="display:flex;align-items:center;gap:10px;height:40px">
+            <input id="fPag" type="checkbox" style="width:auto" />
+            <span class="muted">Marcar como pagado</span>
+          </label>
+        </div>
+        <div class="full">
+          <div class="label">Fecha pago (si pagado)</div>
+          <input id="fPago" type="date" />
+        </div>
+        <div class="full">
+          <div class="label">Descripción</div>
+          <input id="fDesc" />
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <h3 style="margin:0">Gastos registrados</h3>
+        <button class="btn secondary" id="btnReload">Actualizar</button>
+      </div>
+      <div class="grid full" style="margin-top:12px; grid-template-columns:repeat(6,minmax(0,1fr));">
+        <div>
+          <div class="label">Mes</div>
+          <input id="sMes" type="month" />
+        </div>
+        <div>
+          <div class="label">Estado pago</div>
+          <select id="sPagado">
+            <option value="">(todos)</option>
+            <option value="0">Pendientes</option>
+            <option value="1">Pagados</option>
+          </select>
+        </div>
+        <div class="full" style="grid-column: span 2;">
+          <div class="label">Cuenta</div>
+          <select id="sCuenta"></select>
+        </div>
+        <div>
+          <div class="label">Marca</div>
+          <select id="sMarca"></select>
+        </div>
+        <div>
+          <div class="label">Centro costo</div>
+          <select id="sCentro"></select>
+        </div>
+        <div class="full" style="grid-column: span 4;">
+          <div class="label">Buscar</div>
+          <input id="sQ" placeholder="Proveedor, descripción o doc…" />
+        </div>
+        <div>
+          <div class="label">Tamaño</div>
+          <select id="sLimit">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200" selected>200</option>
+            <option value="500">500</option>
+          </select>
+        </div>
+        <div style="display:flex; align-items:flex-end; gap:10px;">
+          <button class="btn secondary" id="btnClear">Limpiar</button>
+          <button class="btn" id="btnApply">Aplicar</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Fecha</th><th>Cuenta</th><th>Monto</th><th>Descripción</th><th>Marca</th><th>Centro costo</th><th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="rows"><tr><td class="muted" colspan="8">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <div class="muted" id="pagerInfo">—</div>
+        <div class="pagerBtns">
+          <button class="btn secondary small" id="btnFirst">Primera</button>
+          <button class="btn secondary small" id="btnPrev">◀ Anterior</button>
+          <button class="btn secondary small" id="btnNext">Siguiente ▶</button>
+          <button class="btn secondary small" id="btnLast">Última</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="dlgEdit">
+    <form method="dialog" style="margin:0">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+        <div>
+          <div class="label">Editar gasto</div>
+          <div class="muted" id="dlgEditTitle" style="margin-top:2px">—</div>
+        </div>
+        <button class="btn secondary small" value="cancel">Cerrar</button>
+      </div>
+
+      <div class="grid" style="margin-top:12px;">
+        <div>
+          <div class="label">Fecha</div>
+          <input id="eFecha" type="date" />
+        </div>
+        <div class="full">
+          <div class="label">Cuenta (Plan de cuentas)</div>
+          <select id="eCuenta"></select>
+        </div>
+        <div>
+          <div class="label">Monto</div>
+          <input id="eMonto" />
+        </div>
+        <div>
+          <div class="label">Proveedor</div>
+          <input id="eProveedor" list="dlProv" placeholder="Escribe para buscar…" />
+        </div>
+        <div>
+          <div class="label">Marca</div>
+          <select id="eMarca"></select>
+        </div>
+        <div>
+          <div class="label">Centro de costo</div>
+          <select id="eCentro"></select>
+        </div>
+        <div>
+          <div class="label">Tipo documento</div>
+          <select id="eTipoDoc">
+            <option value="">(sin tipo)</option>
+            <option value="FACTURA">Factura</option>
+            <option value="BOLETA">Boleta</option>
+            <option value="NOTA DE CREDITO">Nota de crédito</option>
+            <option value="NOTA DE DEBITO">Nota de débito</option>
+            <option value="OTRO">Otro</option>
+          </select>
+        </div>
+        <div>
+          <div class="label">N° Documento</div>
+          <input id="eDoc" placeholder="Ej: 12345" />
+        </div>
+        <div>
+          <div class="label">Vence</div>
+          <input id="eVenc" type="date" />
+        </div>
+        <div>
+          <div class="label">Pagado</div>
+          <label style="display:flex;align-items:center;gap:10px;height:40px">
+            <input id="ePag" type="checkbox" style="width:auto" />
+            <span class="muted">Marcar como pagado</span>
+          </label>
+        </div>
+        <div class="full">
+          <div class="label">Fecha pago (si pagado)</div>
+          <input id="ePago" type="date" />
+        </div>
+        <div class="full">
+          <div class="label">Descripción</div>
+          <input id="eDesc" />
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:12px;">
+        <button class="btn danger small" id="btnDlgDelete" type="button">Eliminar</button>
+        <button class="btn small" id="btnDlgSave" type="button">Guardar cambios</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    const fmt = new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const apiURL = (p) => {
+      const s = String(p || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    };
+
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    async function api(url, opts={}){
+      const r = await fetch(apiURL(url), { ...opts, headers: authHeaders({ "Content-Type":"application/json", ...(opts.headers||{}) }) });
+      const data = await r.json().catch(()=>null);
+      if (!r.ok) throw new Error((data && (data.detail||data.message)) || "Error");
+      return data;
+    }
+
+    function parseCL(v){
+      const s = String(v||"").replace(/[^\d.,-]/g,"").replace(/\./g,"").replace(/,/g,".").trim();
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    const gastosById = new Map();
+    let editId = null;
+    let curTotal = 0;
+    let curOffset = 0;
+    let centrosCosto = [];
+    let marcasList = [];
+
+    async function loadCatalogos(){
+      // Proveedores desde inventario (ops)
+      try{
+        const prov = await api("/ops/inventario/proveedores?q=");
+        const items = prov.items || [];
+        const dl = document.getElementById("dlProv");
+        if (dl){
+          dl.innerHTML = items.map(p => `<option value="${String(p.nombre||"").replace(/\"/g,"&quot;")}"></option>`).join("");
+        }
+      }catch(_){}
+      // Marcas del CRM
+      try{
+        const cat = await api("/catalogos");
+        marcasList = cat.marcas || [];
+      }catch(_){}
+
+      // Centros de costo (solo admin; para compras puede venir vacío)
+      try{
+        const cc = await api("/finanzas/centros_costo");
+        const items = cc.items || [];
+        centrosCosto = (items || []).filter(x => x.is_active !== false).map(x => String(x.nombre||"")).filter(Boolean);
+        const sel = document.getElementById("fCentro");
+        if (sel){
+          const act = items.filter(x => x.is_active !== false);
+          sel.innerHTML = `<option value="">(sin centro)</option>` + act.map(x => `<option value="${String(x.nombre||"")}">${String(x.nombre||"")}</option>`).join("");
+        }
+        const s = document.getElementById("sCentro");
+        if (s){
+          const act = items.filter(x => x.is_active !== false);
+          s.innerHTML = `<option value="">(todos)</option>` + act.map(x => `<option value="${String(x.nombre||"")}">${String(x.nombre||"")}</option>`).join("");
+        }
+      }catch(_){
+        centrosCosto = [];
+        const sel = document.getElementById("fCentro");
+        if (sel) sel.innerHTML = `<option value="">(sin centro)</option>`;
+        const s = document.getElementById("sCentro");
+        if (s) s.innerHTML = `<option value="">(todos)</option>`;
+      }
+      renderMarcaSelects();
+    }
+
+    function renderMarcaSelects(){
+      const marcaOpts = (marcasList || []).map(m => {
+        const n = (m.marca || m.nombre || "").toString();
+        return { label: n, value: "M:" + n };
+      }).filter(x => x.label);
+      const ccOpts = (centrosCosto || []).map(n => ({ label: String(n||""), value: "CC:" + String(n||"") })).filter(x => x.label);
+      const renderGrouped = (blankLabel) => {
+        const blank = blankLabel ? `<option value="">${blankLabel}</option>` : "";
+        const g1 = marcaOpts.length ? `<optgroup label="Marcas">${marcaOpts.map(o=>`<option value="${o.value}">${o.label}</option>`).join("")}</optgroup>` : "";
+        const g2 = ccOpts.length ? `<optgroup label="Centros de costo">${ccOpts.map(o=>`<option value="${o.value}">${o.label}</option>`).join("")}</optgroup>` : "";
+        return blank + g1 + g2;
+      };
+      const f = document.getElementById("fMarca");
+      if (f) f.innerHTML = renderGrouped("(sin marca/centro)");
+      const e = document.getElementById("eMarca");
+      if (e) e.innerHTML = renderGrouped("(sin marca/centro)");
+      const s = document.getElementById("sMarca");
+      if (s) s.innerHTML = renderGrouped("(todas)");
+    }
+
+    async function loadCuentas(){
+      const res = await api("/finanzas/plan-cuentas");
+      const items = res.items || [];
+      const gastos = items.filter(i => i.type === "expense");
+      $("#fCuenta").innerHTML = gastos.map(i => `<option value="${i.code}">${i.code} · ${i.name}</option>`).join("");
+      const e = $("#eCuenta");
+      if (e) e.innerHTML = $("#fCuenta").innerHTML;
+      const s = $("#sCuenta");
+      if (s){
+        s.innerHTML = `<option value="">(todas)</option>` + gastos.map(i => `<option value="${i.code}">${i.code} · ${i.name}</option>`).join("");
+      }
+    }
+
+    function splitMarcaValue(v){
+      const s = String(v||"").trim();
+      if (!s) return { kind:"", value:"" };
+      if (s.startsWith("CC:")) return { kind:"CC", value: s.slice(3).trim() };
+      if (s.startsWith("M:")) return { kind:"M", value: s.slice(2).trim() };
+      return { kind:"M", value: s };
+    }
+
+    function getFilters(){
+      let month = 0, year = 0;
+      const ym = String($("#sMes")?.value || "").trim();
+      if (ym && /^\d{4}-\d{2}$/.test(ym)){
+        year = Number(ym.slice(0,4)) || 0;
+        month = Number(ym.slice(5,7)) || 0;
+      }
+      const marcaSel = splitMarcaValue($("#sMarca")?.value || "");
+      const pagado = String($("#sPagado")?.value || "").trim();
+      const limit = Math.max(1, Number($("#sLimit")?.value || 200) || 200);
+      return {
+        month, year,
+        pagado: pagado === "" ? null : Number(pagado),
+        cuenta_code: String($("#sCuenta")?.value || "").trim(),
+        marca: (marcaSel.kind === "M" ? marcaSel.value : ""),
+        centro_costo: (marcaSel.kind === "CC" ? marcaSel.value : String($("#sCentro")?.value || "").trim()),
+        q: String($("#sQ")?.value || "").trim(),
+        limit,
+      };
+    }
+
+    async function loadGastos(opts={}){
+      const reset = !!opts.reset;
+      if (reset) curOffset = 0;
+      const f = getFilters();
+      const sp = new URLSearchParams();
+      if (f.month && f.year){ sp.set("month", String(f.month)); sp.set("year", String(f.year)); }
+      if (f.pagado !== null) sp.set("pagado", String(f.pagado));
+      if (f.cuenta_code) sp.set("cuenta_code", f.cuenta_code);
+      if (f.marca) sp.set("marca", f.marca);
+      if (f.centro_costo) sp.set("centro_costo", f.centro_costo);
+      if (f.q) sp.set("q", f.q);
+      sp.set("limit", String(f.limit));
+      sp.set("offset", String(curOffset));
+
+      const res = await api("/finanzas/gastos?" + sp.toString());
+      let items = res.items || [];
+      curTotal = Number(res.total || items.length || 0) || 0;
+      curOffset = Number(res.offset || curOffset || 0) || 0;
+      gastosById.clear();
+      for (const it of items) gastosById.set(String(it.id_gasto), it);
+      $("#rows").innerHTML = items.map(i => `
+        <tr>
+          <td>${i.id_gasto}</td>
+          <td>${(i.fecha||"").slice(0,10)}</td>
+          <td>${i.cuenta_code||""}</td>
+          <td>${fmt.format(Number(i.monto||0))}</td>
+          <td class="desc">${i.descripcion||""}</td>
+          <td>${i.marca||""}</td>
+          <td>${i.centro_costo||""}</td>
+          <td class="actions">
+            <button class="btn secondary small" data-act="edit" data-id="${i.id_gasto}">Editar</button>
+            <button class="btn danger small" data-act="delete" data-id="${i.id_gasto}">Eliminar</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td class="muted" colspan="8">Sin registros.</td></tr>`;
+
+      const limit = f.limit;
+      const from = curTotal ? Math.min(curTotal, curOffset + 1) : 0;
+      const to = curTotal ? Math.min(curTotal, curOffset + items.length) : 0;
+      const page = curTotal ? (Math.floor(curOffset / limit) + 1) : 0;
+      const pages = curTotal ? Math.max(1, Math.ceil(curTotal / limit)) : 0;
+      $("#pagerInfo").textContent = curTotal ? `Página ${page}/${pages} · Mostrando ${from}–${to} de ${curTotal}` : "Sin resultados";
+      const hasPrev = curOffset > 0;
+      const hasNext = (curOffset + items.length) < curTotal;
+      $("#btnFirst").disabled = !hasPrev;
+      $("#btnPrev").disabled = !hasPrev;
+      $("#btnNext").disabled = !hasNext;
+      $("#btnLast").disabled = !hasNext;
+    }
+
+    function syncEditSelects(){
+      const m = $("#fMarca");
+      const c = $("#fCentro");
+      if ($("#eMarca") && m) $("#eMarca").innerHTML = m.innerHTML;
+      if ($("#eCentro") && c) $("#eCentro").innerHTML = c.innerHTML;
+    }
+
+    function openEdit(id){
+      const it = gastosById.get(String(id));
+      if (!it) return alert("No encontré el gasto. Actualiza la lista.");
+      editId = String(id);
+      syncEditSelects();
+      $("#dlgEditTitle").textContent = `ID ${it.id_gasto} · ${String(it.cuenta_code||"")}`;
+      $("#eFecha").value = (it.fecha||"").slice(0,10);
+      $("#eCuenta").value = it.cuenta_code || "";
+      $("#eMonto").value = String(Math.round(Number(it.monto||0)));
+      $("#eProveedor").value = it.proveedor || "";
+      if (it.centro_costo && !it.marca) $("#eMarca").value = "CC:" + it.centro_costo;
+      else if (it.marca) $("#eMarca").value = "M:" + it.marca;
+      else $("#eMarca").value = "";
+      $("#eCentro").value = it.centro_costo || "";
+      $("#eTipoDoc").value = it.tipo_doc || "";
+      $("#eDoc").value = it.doc_num || "";
+      $("#eVenc").value = (it.fecha_vencimiento||"").slice(0,10);
+      $("#ePag").checked = !!it.pagado;
+      $("#ePago").value = (it.fecha_pago||"").slice(0,10);
+      $("#eDesc").value = it.descripcion || "";
+
+      const syncPago = ()=>{
+        const on = !!$("#ePag")?.checked;
+        $("#ePago").disabled = !on;
+        if (on && !$("#ePago").value){
+          $("#ePago").value = new Date().toISOString().slice(0,10);
+        }
+      };
+      $("#ePag")?.addEventListener("change", syncPago, { once: true });
+      syncPago();
+
+      $("#dlgEdit").showModal();
+    }
+
+    async function doEditSave(){
+      if (!editId) return;
+      const mSel = splitMarcaValue($("#eMarca").value);
+      const eCentro = $("#eCentro").value || "";
+      const centroFinal = (mSel.kind === "CC" ? mSel.value : eCentro);
+      const payload = {
+        fecha: $("#eFecha").value,
+        cuenta_code: $("#eCuenta").value,
+        monto: parseCL($("#eMonto").value || 0),
+        descripcion: $("#eDesc").value,
+        proveedor: $("#eProveedor").value,
+        marca: (mSel.kind === "M" ? mSel.value : ""),
+        centro_costo: centroFinal,
+        tipo_doc: $("#eTipoDoc").value || null,
+        doc_num: $("#eDoc").value || null,
+        pagado: !!$("#ePag").checked,
+        fecha_vencimiento: $("#eVenc").value || null,
+        fecha_pago: ($("#ePag").checked ? ($("#ePago").value || null) : null),
+      };
+      await api(`/finanzas/gastos/${editId}`, { method:"PUT", body: JSON.stringify(payload) });
+      $("#dlgEdit").close();
+      editId = null;
+      await loadGastos();
+    }
+
+    async function doDelete(id){
+      const ok = confirm(`¿Eliminar gasto ID ${id}? (Se puede recuperar solo por DB)`);
+      if (!ok) return;
+      await api(`/finanzas/gastos/${id}`, { method:"DELETE", body: JSON.stringify({}) });
+      if (String(editId) === String(id)){
+        $("#dlgEdit").close();
+        editId = null;
+      }
+      await loadGastos();
+    }
+
+    $("#btnSave").addEventListener("click", async () => {
+      const mSel = splitMarcaValue($("#fMarca").value);
+      const fCentro = $("#fCentro").value || "";
+      const centroFinal = (mSel.kind === "CC" ? mSel.value : fCentro);
+      const payload = {
+        fecha: $("#fFecha").value,
+        cuenta_code: $("#fCuenta").value,
+        monto: parseCL($("#fMonto").value || 0),
+        descripcion: $("#fDesc").value,
+        proveedor: $("#fProveedor").value,
+        marca: (mSel.kind === "M" ? mSel.value : ""),
+        centro_costo: centroFinal,
+        tipo_doc: $("#fTipoDoc").value || null,
+        doc_num: $("#fDoc").value || null,
+        pagado: !!$("#fPag").checked,
+        fecha_vencimiento: $("#fVenc").value || null,
+        fecha_pago: ($("#fPag").checked ? ($("#fPago").value || null) : null),
+      };
+      await api("/finanzas/gastos", { method:"POST", body: JSON.stringify(payload) });
+      alert("Gasto registrado");
+      await loadGastos({ reset:true });
+    });
+
+    $("#btnReload").addEventListener("click", () => loadGastos({ reset:true }));
+    $("#btnApply").addEventListener("click", () => loadGastos({ reset:true }));
+    $("#btnClear").addEventListener("click", async () => {
+      try{
+        $("#sPagado").value = "";
+        $("#sCuenta").value = "";
+        $("#sMarca").value = "";
+        $("#sCentro").value = "";
+        $("#sQ").value = "";
+        $("#sLimit").value = "200";
+        try{ $("#sMes").value = new Date().toISOString().slice(0,7); }catch(_){}
+      }catch(_){}
+      await loadGastos({ reset:true });
+    });
+    $("#btnPrev").addEventListener("click", async () => {
+      const limit = getFilters().limit;
+      curOffset = Math.max(0, (curOffset - limit));
+      await loadGastos({ reset:false });
+    });
+    $("#btnNext").addEventListener("click", async () => {
+      const limit = getFilters().limit;
+      curOffset = Math.max(0, (curOffset + limit));
+      await loadGastos({ reset:false });
+    });
+    $("#btnFirst").addEventListener("click", async () => {
+      curOffset = 0;
+      await loadGastos({ reset:false });
+    });
+    $("#btnLast").addEventListener("click", async () => {
+      const limit = getFilters().limit;
+      const pages = Math.max(1, Math.ceil((curTotal || 0) / limit));
+      curOffset = Math.max(0, (pages - 1) * limit);
+      await loadGastos({ reset:false });
+    });
+    $("#rows").addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest && e.target.closest("button[data-act]");
+      if (!btn) return;
+      const act = btn.getAttribute("data-act");
+      const id = btn.getAttribute("data-id");
+      if (!id) return;
+      if (act === "edit") return openEdit(id);
+      if (act === "delete") return doDelete(id).catch(err => alert(String(err.message||err)));
+    });
+    $("#btnDlgSave").addEventListener("click", () => doEditSave().catch(err => alert(String(err.message||err))));
+    $("#btnDlgDelete").addEventListener("click", () => (editId ? doDelete(editId) : null));
+
+    $("#fMarca")?.addEventListener("change", () => {
+      const mSel = splitMarcaValue($("#fMarca").value);
+      if (mSel.kind === "CC" && $("#fCentro")) $("#fCentro").value = mSel.value;
+    });
+    $("#eMarca")?.addEventListener("change", () => {
+      const mSel = splitMarcaValue($("#eMarca").value);
+      if (mSel.kind === "CC" && $("#eCentro")) $("#eCentro").value = mSel.value;
+    });
+
+    loadCatalogos().then(syncEditSelects).catch(()=>{});
+    loadCuentas().then(syncEditSelects).catch(()=>{});
+    try{ $("#sMes").value = new Date().toISOString().slice(0,7); }catch(_){}
+    loadGastos({ reset:true });
+    try{ $("#fFecha").value = new Date().toISOString().slice(0,10); }catch(_){}
+    try{
+      const syncPago = ()=>{
+        const on = !!$("#fPag")?.checked;
+        $("#fPago").disabled = !on;
+        if (on && !$("#fPago").value){
+          $("#fPago").value = new Date().toISOString().slice(0,10);
+        }
+      };
+      $("#fPag")?.addEventListener("change", syncPago);
+      syncPago();
+    }catch(_){}
+  </script>
+</body>
+</html>

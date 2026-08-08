@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>finanzas_pl</title>
+</head>
+<body style="padding:18px; overflow:auto;">
+  <style>
+    html,body{height:auto; overflow:auto;}
+    .wrap{max-width:none; margin:0 auto;}
+    .topbar{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;}
+    .muted{opacity:.7}
+    .tabs{display:flex; gap:8px; margin-bottom:12px;}
+    .tab{border:1px solid rgba(255,255,255,.15); background:transparent; color:inherit; padding:8px 12px; border-radius:10px; font-weight:900; cursor:pointer;}
+    .tab.active{background:rgba(34,197,94,.16); border-color:rgba(34,197,94,.35);}
+    .tree-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+    .filters{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;}
+    .filters input,.filters select{background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px; min-width:200px;}
+    .plan-filters{margin-top:22px;}
+    .btn{background:#22c55e; color:#062315; border:none; padding:8px 12px; border-radius:10px; font-weight:900; cursor:pointer;}
+    .btn.secondary{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.15);}
+    .table-wrap{margin-top:12px; overflow:auto; border-radius:14px; border:1px solid rgba(255,255,255,.12);}
+    table{width:100%; min-width:1100px; border-collapse:collapse; font-size:13px;}
+    th,td{padding:10px 12px; text-align:left; border-bottom:1px solid rgba(255,255,255,.08); vertical-align:top;}
+    .col-name{white-space:normal; max-width:300px;}
+    th{font-size:12px; letter-spacing:.06em; text-transform:uppercase; opacity:.7;}
+    tr:hover{background:rgba(255,255,255,.03);}
+    .pill{padding:2px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.15); font-size:11px; font-weight:900;}
+    .name-cell{display:flex; align-items:flex-start; gap:8px;}
+    .indent{display:inline-block; width:12px;}
+    .tree-toggle{
+      width:18px; height:18px; border-radius:6px; border:1px solid rgba(255,255,255,.18);
+      background:rgba(0,0,0,.25); color:inherit; display:inline-flex; align-items:center; justify-content:center;
+      font-weight:900; font-size:12px; cursor:pointer;
+    }
+    .row-hidden{display:none;}
+    .modal{position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); z-index:50;}
+    .modal.open{display:flex;}
+    .modal-card{width:min(720px, 94vw); max-height:85vh; overflow:auto; border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.16); background:rgba(8,14,20,.98);}
+    .modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;}
+    .form-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
+    .form-grid input,.form-grid select,.form-grid textarea{
+      background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.14); color:inherit; padding:8px 10px; border-radius:10px; width:100%;
+    }
+    .form-grid textarea{min-height:70px; resize:vertical;}
+    .full{grid-column:1 / -1;}
+    .row-actions{display:flex; gap:8px;}
+  </style>
+
+  <div class="wrap">
+    <div class="tabs">
+      <button class="tab" id="tabPnl">P&L</button>
+      <button class="tab" id="tabPlan">Plan de cuentas</button>
+    </div>
+
+    <section class="card" id="pnlSection">
+      <div class="topbar" style="align-items:flex-start;">
+        <div>
+          <h2 style="margin:0 0 4px 0">P&L</h2>
+          <div class="muted">Resumen mensual por ingresos y gastos (colapsable).</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="pnlMonth">
+            <option value="1">Enero</option>
+            <option value="2">Febrero</option>
+            <option value="3">Marzo</option>
+            <option value="4">Abril</option>
+            <option value="5">Mayo</option>
+            <option value="6">Junio</option>
+            <option value="7">Julio</option>
+            <option value="8">Agosto</option>
+            <option value="9">Septiembre</option>
+            <option value="10">Octubre</option>
+            <option value="11">Noviembre</option>
+            <option value="12">Diciembre</option>
+          </select>
+          <input id="pnlYear" style="width:110px" />
+          <button class="btn secondary" id="btnPnlReload">Actualizar</button>
+        </div>
+      </div>
+
+      <div class="filters" style="margin-top:10px">
+        <div class="pill" id="pnlIngresos">Ingresos: —</div>
+        <div class="pill" id="pnlGastos">Gastos: —</div>
+        <div class="pill" id="pnlResultado">Resultado: —</div>
+      </div>
+
+      <div class="table-wrap" style="margin-top:12px">
+        <table>
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Cuenta</th>
+              <th>Tipo</th>
+              <th>Monto</th>
+            </tr>
+          </thead>
+          <tbody id="pnlRows">
+            <tr><td colspan="4" class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" id="saldoSection" style="margin-top:12px;">
+      <div class="topbar" style="align-items:flex-start;">
+        <div>
+          <h2 style="margin:0 0 4px 0">Saldos de Cuentas</h2>
+          <div class="muted">Saldos contables iniciales por cuenta.</div>
+        </div>
+      </div>
+      <div class="filters" style="margin-top:10px">
+        <select id="sMarca">
+          <option value="">Marca</option>
+        </select>
+        <input id="sMonto" placeholder="Monto" />
+        <input id="sFecha" type="date" />
+        <input id="sNota" placeholder="Nota (banco o referencia)" style="flex:1;min-width:220px;" />
+        <button class="btn secondary" id="btnSaldoSave">Agregar</button>
+        <button class="btn secondary" id="btnSaldoReload">Actualizar</button>
+      </div>
+      <div class="table-wrap" style="margin-top:12px">
+        <table>
+          <thead>
+            <tr>
+              <th>Cuenta</th>
+              <th>Monto</th>
+              <th>Fecha</th>
+              <th>Nota</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="saldoRows">
+            <tr><td colspan="5" class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" id="planSection">
+      <div class="topbar">
+        <div>
+          <h2 style="margin:0 0 4px 0">Plan de Cuentas</h2>
+          <div class="muted">Estructura editable por cuentas padre/hijo.</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn secondary" id="btnExpandAll">Expandir todo</button>
+          <button class="btn secondary" id="btnCollapseAll">Colapsar todo</button>
+          <button class="btn secondary" id="btnReload">Actualizar</button>
+          <button class="btn" id="btnNew">Nueva cuenta</button>
+        </div>
+      </div>
+
+      <div class="filters plan-filters">
+        <input id="q" placeholder="Buscar por código o nombre..." />
+        <select id="typeFilter">
+          <option value="">Tipo (todos)</option>
+          <option value="asset">Activo</option>
+          <option value="liability">Pasivo</option>
+          <option value="equity">Patrimonio</option>
+          <option value="revenue">Ingreso</option>
+          <option value="expense">Gasto</option>
+          <option value="other">Otro</option>
+        </select>
+        <select id="activeFilter">
+          <option value="">Estado (todos)</option>
+          <option value="true">Activa</option>
+          <option value="false">Inactiva</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Nombre</th>
+              <th>Tipo</th>
+              <th>Clasificación</th>
+              <th>Padre</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="7" class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div id="modal" class="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <strong id="modalTitle">Nueva cuenta</strong>
+        <button class="btn secondary" id="modalClose">Cerrar</button>
+      </div>
+      <div class="form-grid">
+        <div>
+          <label>Código</label>
+          <input id="fCode" placeholder="1000" />
+        </div>
+        <div>
+          <label>Nombre</label>
+          <input id="fName" placeholder="Caja y Bancos" />
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select id="fType">
+            <option value="asset">Activo</option>
+            <option value="liability">Pasivo</option>
+            <option value="equity">Patrimonio</option>
+            <option value="revenue">Ingreso</option>
+            <option value="expense">Gasto</option>
+            <option value="other">Otro</option>
+          </select>
+        </div>
+        <div>
+          <label>Clasificación</label>
+          <input id="fClass" placeholder="Activo" />
+        </div>
+        <div>
+          <label>Padre</label>
+          <select id="fParent">
+            <option value="">Sin padre</option>
+          </select>
+        </div>
+        <div>
+          <label>Estado</label>
+          <select id="fActive">
+            <option value="true">Activa</option>
+            <option value="false">Inactiva</option>
+          </select>
+        </div>
+        <div class="full">
+          <label>Descripción</label>
+          <textarea id="fDesc"></textarea>
+        </div>
+        <div class="full">
+          <label>Ejemplos</label>
+          <textarea id="fExample"></textarea>
+        </div>
+        <div>
+          <label>Quién ingresa</label>
+          <input id="fWho" />
+        </div>
+        <div>
+          <label>Cómo imputar</label>
+          <input id="fHow" />
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button class="btn secondary" id="btnDelete">Eliminar</button>
+        <button class="btn" id="btnSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    const state = { items: [], editing: null, collapsed: new Set(), initDone: false };
+    const pnlState = { items: [], collapsed: new Set(), initDone: false, totals: { ingresos:0, gastos:0, resultado:0 } };
+    const typeLabel = {
+      asset: "Activo",
+      liability: "Pasivo",
+      equity: "Patrimonio",
+      revenue: "Ingreso",
+      expense: "Gasto",
+      other: "Otro",
+    };
+
+    function authHeaders(extra={}){
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    function fmtMoney(v){
+      try{ return new Intl.NumberFormat("es-CL", {style:"currency", currency:"CLP", maximumFractionDigits:0}).format(Number(v||0)); }
+      catch(_){ return v; }
+    }
+
+    function depthOf(item, byCode){
+      let d = 0;
+      let cur = item;
+      while (cur.parent_code && byCode[cur.parent_code] && d < 10){
+        d++;
+        cur = byCode[cur.parent_code];
+      }
+      return d;
+    }
+
+    function buildTree(items){
+      const byCode = {};
+      const children = {};
+      items.forEach(i => {
+        byCode[i.code] = i;
+        const p = i.parent_code || "";
+        if (!children[p]) children[p] = [];
+        children[p].push(i);
+      });
+      Object.values(children).forEach(arr => arr.sort((a,b) => (a.code||"").localeCompare(b.code||"")));
+      const out = [];
+      const walk = (parent, depth) => {
+        (children[parent] || []).forEach(i => {
+          const hasChildren = (children[i.code] || []).length > 0;
+          out.push({ item: i, depth, hasChildren });
+          walk(i.code, depth + 1);
+        });
+      };
+      walk("", 0);
+      return { flat: out, byCode, children };
+    }
+
+    function renderPnl(){
+      const tree = buildTree(pnlState.items);
+      if (!pnlState.initDone){
+        tree.flat.forEach(({item, hasChildren}) => {
+          if (hasChildren) pnlState.collapsed.add(item.code);
+        });
+        pnlState.initDone = true;
+      }
+      const isHidden = (item) => {
+        let cur = item;
+        while (cur.parent_code){
+          if (pnlState.collapsed.has(cur.parent_code)) return true;
+          cur = tree.byCode[cur.parent_code];
+          if (!cur) break;
+        }
+        return false;
+      };
+      const rows = tree.flat.map(({item:i, depth:d, hasChildren}) => {
+        const indent = Array.from({length:d}).map(() => `<span class="indent"></span>`).join("");
+        const toggle = hasChildren
+          ? `<button class="tree-toggle" data-pnl-toggle="${i.code}">${pnlState.collapsed.has(i.code) ? "+" : "−"}</button>`
+          : `<span style="display:inline-block;width:18px;"></span>`;
+        const hidden = isHidden(i) ? "row-hidden" : "";
+        const monto = fmtMoney(i.balance || 0);
+        return `
+          <tr class="${hidden}">
+            <td><strong>${i.code}</strong></td>
+            <td class="col-name">
+              <div class="name-cell">${indent}${toggle}<span>${i.name}</span></div>
+            </td>
+            <td>${typeLabel[i.type] || i.type || ""}</td>
+            <td>${monto}</td>
+          </tr>
+        `;
+      }).join("");
+      $("#pnlRows").innerHTML = rows || `<tr><td colspan="4" class="muted">Sin datos.</td></tr>`;
+      $("#pnlRows").querySelectorAll("[data-pnl-toggle]").forEach(b => {
+        b.addEventListener("click", () => {
+          const code = b.dataset.pnlToggle;
+          if (!code) return;
+          if (pnlState.collapsed.has(code)) pnlState.collapsed.delete(code);
+          else pnlState.collapsed.add(code);
+          renderPnl();
+        });
+      });
+      $("#pnlIngresos").textContent = `Ingresos: ${fmtMoney(pnlState.totals.ingresos)}`;
+      $("#pnlGastos").textContent = `Gastos: ${fmtMoney(pnlState.totals.gastos)}`;
+      $("#pnlResultado").textContent = `Resultado: ${fmtMoney(pnlState.totals.resultado)}`;
+    }
+
+    async function loadPnl(){
+      const m = Number($("#pnlMonth").value || 0);
+      const y = Number($("#pnlYear").value || 0);
+      const res = await fetch(`/finanzas/pnl?month=${m}&year=${y}`, { headers: authHeaders() });
+      if (!res.ok){
+        $("#pnlRows").innerHTML = `<tr><td colspan="4" class="muted">No autorizado o error de carga.</td></tr>`;
+        return;
+      }
+      const data = await res.json();
+      pnlState.items = data.items || [];
+      pnlState.totals = data.totals || { ingresos:0, gastos:0, resultado:0 };
+      renderPnl();
+    }
+
+    async function loadSaldos(){
+      const res = await fetch(`/finanzas/saldos`, { headers: authHeaders() });
+      if (!res.ok){
+        $("#saldoRows").innerHTML = `<tr><td colspan="5" class="muted">No autorizado o error de carga.</td></tr>`;
+        return;
+      }
+      const data = await res.json();
+      const items = data.items || [];
+      $("#saldoRows").innerHTML = items.map(i => `
+        <tr>
+          <td><input class="inp" data-sc="${i.id_saldo}" value="${i.cuenta_code || ''}" /></td>
+          <td><input class="inp" data-sm="${i.id_saldo}" value="${i.monto ?? ''}" /></td>
+          <td><input class="inp" data-sf="${i.id_saldo}" type="date" value="${String(i.fecha || '').slice(0,10)}" /></td>
+          <td><input class="inp" data-sn="${i.id_saldo}" value="${i.nota ?? ''}" /></td>
+          <td class="row-actions">
+            <button class="btn secondary" data-ssave="${i.id_saldo}">Guardar</button>
+            <button class="btn secondary" data-sdel="${i.id_saldo}">Eliminar</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td colspan="5" class="muted">Sin datos.</td></tr>`;
+
+      $("#saldoRows").querySelectorAll("[data-ssave]").forEach(b => {
+        const id = Number(b.dataset.ssave || 0);
+        b.addEventListener("click", async () => {
+          const payload = {
+            cuenta_code: $(`[data-sc="${id}"]`).value || "",
+            monto: Number($(`[data-sm="${id}"]`).value || 0) || 0,
+            fecha: $(`[data-sf="${id}"]`).value || null,
+            nota: $(`[data-sn="${id}"]`).value || "",
+          };
+          const res = await fetch(`/finanzas/saldos/${id}`, { method:"PUT", headers: authHeaders({ "Content-Type":"application/json" }), body: JSON.stringify(payload) });
+          if (!res.ok) return alert("No se pudo guardar");
+          await loadSaldos();
+        });
+      });
+      $("#saldoRows").querySelectorAll("[data-sdel]").forEach(b => {
+        const id = Number(b.dataset.sdel || 0);
+        b.addEventListener("click", async () => {
+          if (!confirm("¿Eliminar saldo?")) return;
+          const res = await fetch(`/finanzas/saldos/${id}`, { method:"DELETE", headers: authHeaders() });
+          if (!res.ok) return alert("No se pudo eliminar");
+          await loadSaldos();
+        });
+      });
+    }
+
+    async function loadMarcas(){
+      try{
+        const r = await fetch("/catalogos", { headers: authHeaders() });
+        if (!r.ok) return;
+        const data = await r.json();
+        const marcas = data.marcas || [];
+        $("#sMarca").innerHTML = `<option value="">Marca</option>` + marcas.map(m => {
+          const id = m.id_marca ?? m.id ?? "";
+          const name = m.nombre || m.marca || "";
+          return `<option value="${id}">${name}</option>`;
+        }).join("");
+      }catch(_){}
+    }
+
+    function render(){
+      const q = ($("#q").value || "").toLowerCase();
+      const type = $("#typeFilter").value || "";
+      const active = $("#activeFilter").value;
+      const filtered = state.items.filter(i => {
+        if (q && !(i.code.toLowerCase().includes(q) || (i.name||"").toLowerCase().includes(q))) return false;
+        if (type && (i.type||"") !== type) return false;
+        if (active === "true" && !i.is_active) return false;
+        if (active === "false" && i.is_active) return false;
+        return true;
+      });
+
+      const tree = buildTree(filtered);
+      if (!state.initDone){
+        tree.flat.forEach(({item, hasChildren}) => {
+          if (hasChildren) state.collapsed.add(item.code);
+        });
+        state.initDone = true;
+      }
+
+      const isHidden = (item) => {
+        let cur = item;
+        while (cur.parent_code){
+          if (state.collapsed.has(cur.parent_code)) return true;
+          cur = tree.byCode[cur.parent_code];
+          if (!cur) break;
+        }
+        return false;
+      };
+
+      const rows = tree.flat.map(({item:i, depth:d, hasChildren}) => {
+        const indent = Array.from({length:d}).map(() => `<span class="indent"></span>`).join("");
+        const toggle = hasChildren
+          ? `<button class="tree-toggle" data-toggle="${i.code}">${state.collapsed.has(i.code) ? "+" : "−"}</button>`
+          : `<span style="display:inline-block;width:18px;"></span>`;
+        const hidden = isHidden(i) ? "row-hidden" : "";
+        return `
+          <tr class="${hidden}" data-code="${i.code}" data-parent="${i.parent_code || ""}">
+            <td><strong>${i.code}</strong></td>
+            <td class="col-name">
+              <div class="name-cell">${indent}${toggle}<span>${i.name}</span></div>
+            </td>
+            <td>${typeLabel[i.type] || i.type || ""}</td>
+            <td>${i.classification || ""}</td>
+            <td>${i.parent_code || "—"}</td>
+            <td><span class="pill">${i.is_active ? "Activa" : "Inactiva"}</span></td>
+            <td class="row-actions">
+              <button class="btn secondary" data-edit="${i.code}">Editar</button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+      $("#rows").innerHTML = rows || `<tr><td colspan="7" class="muted">Sin resultados.</td></tr>`;
+      $("#rows").querySelectorAll("[data-edit]").forEach(b => {
+        b.addEventListener("click", () => openModal(state.items.find(x => x.code === b.dataset.edit)));
+      });
+      $("#rows").querySelectorAll("[data-toggle]").forEach(b => {
+        b.addEventListener("click", (ev) => {
+          const code = b.dataset.toggle;
+          if (!code) return;
+          if (state.collapsed.has(code)) state.collapsed.delete(code);
+          else state.collapsed.add(code);
+          render();
+        });
+      });
+    }
+
+    async function load(){
+      const res = await fetch("/finanzas/plan-cuentas", { headers: authHeaders() });
+      if (!res.ok){
+        $("#rows").innerHTML = `<tr><td colspan="7" class="muted">No autorizado o error de carga.</td></tr>`;
+        return;
+      }
+      const data = await res.json();
+      state.items = data.items || [];
+      fillParentSelect();
+      render();
+    }
+
+    function setTab(tab){
+      $("#tabPnl").classList.toggle("active", tab === "pnl");
+      $("#tabPlan").classList.toggle("active", tab === "plan");
+      $("#pnlSection").style.display = (tab === "pnl") ? "" : "none";
+      $("#planSection").style.display = (tab === "plan") ? "" : "none";
+      if (tab === "pnl") loadPnl();
+      if (tab === "plan") load();
+    }
+
+    function fillParentSelect(){
+      const sel = $("#fParent");
+      sel.innerHTML = `<option value="">Sin padre</option>` + state.items.map(i => `<option value="${i.code}">${i.code} · ${i.name}</option>`).join("");
+    }
+
+    function openModal(item){
+      state.editing = item || null;
+      $("#modalTitle").textContent = item ? `Editar cuenta ${item.code}` : "Nueva cuenta";
+      $("#fCode").value = item?.code || "";
+      $("#fCode").disabled = !!item;
+      $("#fName").value = item?.name || "";
+      $("#fType").value = item?.type || "asset";
+      $("#fClass").value = item?.classification || "";
+      $("#fDesc").value = item?.description || "";
+      $("#fExample").value = item?.example_transactions || "";
+      $("#fWho").value = item?.who_inputs || "";
+      $("#fHow").value = item?.how_to_impute || "";
+      $("#fParent").value = item?.parent_code || "";
+      $("#fActive").value = (item?.is_active === false) ? "false" : "true";
+      $("#btnDelete").style.display = item ? "inline-flex" : "none";
+      $("#modal").classList.add("open");
+    }
+
+    async function save(){
+      const payload = {
+        code: $("#fCode").value.trim(),
+        name: $("#fName").value.trim(),
+        type: $("#fType").value,
+        classification: $("#fClass").value.trim() || null,
+        description: $("#fDesc").value.trim() || null,
+        example_transactions: $("#fExample").value.trim() || null,
+        who_inputs: $("#fWho").value.trim() || null,
+        how_to_impute: $("#fHow").value.trim() || null,
+        parent_code: $("#fParent").value || null,
+        is_active: $("#fActive").value === "true"
+      };
+      const method = state.editing ? "PUT" : "POST";
+      const url = state.editing ? `/finanzas/plan-cuentas/${state.editing.code}` : "/finanzas/plan-cuentas";
+      const res = await fetch(url, {
+        method,
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok){ alert("No se pudo guardar"); return; }
+      $("#modal").classList.remove("open");
+      state.editing = null;
+      await load();
+    }
+
+    async function removeAccount(){
+      if (!state.editing) return;
+      if (!confirm(`Eliminar cuenta ${state.editing.code}?`)) return;
+      const res = await fetch(`/finanzas/plan-cuentas/${state.editing.code}`, {
+        method: "DELETE",
+        headers: authHeaders()
+      });
+      if (!res.ok){ alert("No se pudo eliminar"); return; }
+      $("#modal").classList.remove("open");
+      state.editing = null;
+      await load();
+    }
+
+    $("#btnNew").addEventListener("click", () => openModal(null));
+    $("#modalClose").addEventListener("click", () => $("#modal").classList.remove("open"));
+    $("#btnSave").addEventListener("click", save);
+    $("#btnDelete").addEventListener("click", removeAccount);
+    $("#btnReload").addEventListener("click", load);
+    $("#q").addEventListener("input", render);
+    $("#typeFilter").addEventListener("change", render);
+    $("#activeFilter").addEventListener("change", render);
+    $("#btnExpandAll").addEventListener("click", () => {
+      state.collapsed.clear();
+      render();
+    });
+    $("#btnCollapseAll").addEventListener("click", () => {
+      state.collapsed = new Set(state.items.map(i => i.code));
+      render();
+    });
+    $("#btnPnlReload").addEventListener("click", loadPnl);
+    $("#tabPnl").addEventListener("click", () => setTab("pnl"));
+    $("#tabPlan").addEventListener("click", () => setTab("plan"));
+
+    window.addEventListener("message", (ev) => {
+      if (ev.data?.type === "theme"){
+        document.documentElement.classList.toggle("light", ev.data.mode === "light");
+      }
+    });
+
+    const now = new Date();
+    $("#pnlMonth").value = String(now.getMonth() + 1);
+    $("#pnlYear").value = String(now.getFullYear());
+    const initial = (location.hash || "").includes("plan") ? "plan" : "pnl";
+    setTab(initial);
+    loadMarcas();
+    loadSaldos();
+
+    $("#btnSaldoReload").addEventListener("click", () => loadSaldos());
+    $("#btnSaldoSave").addEventListener("click", async () => {
+      const marcaId = Number($("#sMarca").value || 0) || 0;
+      if (!marcaId) return alert("Marca requerida");
+      const cuentaCode = String(1100 + marcaId);
+      const payload = {
+        cuenta_code: cuentaCode,
+        monto: Number($("#sMonto").value || 0) || 0,
+        fecha: $("#sFecha").value || null,
+        nota: $("#sNota").value || "",
+      };
+      const res = await fetch(`/finanzas/saldos`, { method:"POST", headers: authHeaders({ "Content-Type":"application/json" }), body: JSON.stringify(payload) });
+      if (!res.ok) return alert("No se pudo guardar");
+      $("#sMarca").value = ""; $("#sMonto").value = ""; $("#sFecha").value = ""; $("#sNota").value = "";
+      await loadSaldos();
+    });
+    window.addEventListener("hashchange", () => {
+      const tab = (location.hash || "").includes("plan") ? "plan" : "pnl";
+      setTab(tab);
+    });
+  </script>
+</body>
+</html>

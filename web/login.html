@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>CRM 2025 — Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{gd:{bg:"#0b0e10",panel:"#0f1417",mint:"#27e48b"}},boxShadow:{neumo:"10px 10px 30px rgba(0,0,0,.55), -8px -8px 28px rgba(255,255,255,.03), inset 0 0 0 1px rgba(255,255,255,.04)"}}}}</script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    html, body { height: 100%; background:#0b0e10; color:#e9ffee }
+    .neumo{ background:#0f1417; border-radius:20px; box-shadow:var(--tw-shadow),10px 10px 30px rgba(0,0,0,.55),-8px -8px 28px rgba(255,255,255,.03),inset 0 0 0 1px rgba(255,255,255,.04) }
+    .input{ background:#0e1316; border:1px solid rgba(255,255,255,.06); border-radius:12px; color:#e9ffee; padding:.75rem .9rem; width:100%; outline:0 }
+    .input:focus{ border-color:rgba(39,228,139,.55); box-shadow:0 0 0 3px rgba(39,228,139,.15) }
+    #field{ width:100%; height:100%; display:block; background: radial-gradient(1200px 800px at 30% 40%, rgba(39,228,139,.08), transparent 50%) }
+  </style>
+</head>
+<body>
+  <main class="h-full grid grid-cols-1 lg:grid-cols-2">
+    <section class="relative overflow-hidden">
+      <div class="absolute top-6 left-6 text-xs tracking-widest text-white/80 font-semibold">GREEN DIAMOND</div>
+      <video autoplay muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.35">
+        <source src="/videos/LOGIN.mp4" type="video/mp4" />
+      </video>
+      <canvas id="field"></canvas>
+    </section>
+    <section class="flex items-center justify-center p-6 lg:p-10">
+      <div class="neumo w-full max-w-md p-6 lg:p-7">
+        <div class="flex items-center justify-between mb-4">
+          <h1 class="text-white/90 text-xl font-semibold">CRM 2025 — <span class="text-white/70 font-normal">Login</span></h1>
+          <div class="text-xs text-white/60">Holding / Operadores</div>
+        </div>
+        <form id="frm" class="space-y-4">
+          <div><label class="text-sm text-white/70">Usuario o Email</label><input id="user" class="input mt-1" autocomplete="username" /></div>
+          <div>
+            <label class="text-sm text-white/70">Contraseña</label>
+            <div class="relative mt-1">
+              <input id="pass" type="password" class="input pr-16" autocomplete="current-password" />
+              <button type="button" id="toggle-pass" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-white/60 hover:text-white/90 px-2 py-1 rounded">Ver</button>
+            </div>
+            <div class="text-right mt-1"><a class="text-xs text-emerald-400 hover:text-emerald-300" href="#" id="forgot">¿Olvidaste tu contraseña?</a></div>
+          </div>
+          <label class="flex items-center gap-2 text-sm text-white/70"><input id="remember" type="checkbox" class="accent-emerald-500" /> Recuérdame</label>
+          <button class="w-full bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-semibold rounded-lg py-2.5">Entrar</button>
+          <div class="text-center text-xs mt-3 text-white/60">
+            ¿Eres operador o CHOP?
+            <a href="./registrar.html" class="text-emerald-400 hover:text-emerald-300">Regístrate aquí</a>
+            <span class="text-white/40">·</span>
+            <span class="text-white/40">Operadores/CHOP: Usuario = Email</span>
+          </div>
+          <p class="text-[11px] mt-2 text-white/50">Acceso interno. Si no tienes credenciales, solicita acceso a tu jefatura.</p>
+        </form>
+        <p class="text-center text-[10px] mt-6 text-white/40">© CRM 2025</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+  (function(){
+    const $=(q,c=document)=>c.querySelector(q);
+    const fire = async (a,b,c)=>{
+      try{
+        if (window.Swal && typeof window.Swal.fire === "function"){
+          return await window.Swal.fire(a,b,c);
+        }
+      }catch(_){}
+      // Fallback (si el CDN de SweetAlert falla, evitamos que “no haga nada”)
+      try{
+        if (typeof a === "object" && a){
+          const title = String(a.title || "Info");
+          const msg = String(a.text || "").trim() || String(a.html || "").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+          if (a.showCancelButton){
+            const ok = confirm(`${title}${msg ? "\n\n" + msg : ""}`);
+            return { isConfirmed: ok };
+          }
+          alert(`${title}${msg ? "\n\n" + msg : ""}`);
+          return { isConfirmed: true };
+        }
+        alert(String(a || b || "Info"));
+      }catch(_){}
+      return { isConfirmed: false };
+    };
+    const API_BASE = (location.pathname.startsWith('/crm/') || location.pathname.startsWith('/web/')) ? '/crm' : '';
+    const WEB_BASE = API_BASE + '/web';
+    const cv=$('#field'),ctx=cv.getContext('2d'); function fit(){cv.width=cv.clientWidth;cv.height=cv.clientHeight} addEventListener('resize',fit);fit();
+    const pts=Array.from({length:90},()=>({x:Math.random()*cv.width,y:Math.random()*cv.height,vx:(Math.random()*2-1)*.4,vy:(Math.random()*2-1)*.4,r:Math.random()*1.7+.6}));
+    (function tick(){ctx.clearRect(0,0,cv.width,cv.height);for(const p of pts){p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>cv.width)p.vx*=-1;if(p.y<0||p.y>cv.height)p.vy*=-1}
+      for(let i=0;i<pts.length;i++){for(let j=i+1;j<pts.length;j++){const a=pts[i],b=pts[j];const d=Math.hypot(a.x-b.x,a.y-b.y);if(d<120){ctx.strokeStyle=`rgba(39,228,139,${(1-d/120)*.25})`;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}}}
+      for(const p of pts){ctx.fillStyle="rgba(39,228,139,.85)";ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill()} requestAnimationFrame(tick)})();
+    const pass=$('#pass'),toggle=$('#toggle-pass'); toggle.addEventListener('click',()=>{pass.type=pass.type==='password'?'text':'password';toggle.textContent=pass.type==='password'?'Ver':'Ocultar'});
+    $('#forgot').addEventListener('click',async e=>{
+      e.preventDefault();
+      const res = await Swal.fire({
+        title:'Solicitar cambio de contraseña',
+        html: `
+          <div style="text-align:left;display:grid;gap:10px">
+            <label>Email
+              <input id="rq_email" class="input" style="margin-top:6px" placeholder="correo@dominio.cl" />
+            </label>
+            <label>Usuario (opcional)
+              <input id="rq_user" class="input" style="margin-top:6px" placeholder="usuario" />
+            </label>
+          </div>
+        `,
+        showCancelButton:true,
+        confirmButtonText:'Enviar solicitud',
+        cancelButtonText:'Cancelar',
+        preConfirm:()=>{
+          const email = document.querySelector('#rq_email').value.trim();
+          const username = document.querySelector('#rq_user').value.trim();
+          if (!email && !username) {
+            Swal.showValidationMessage('Debes indicar email o usuario.');
+            return false;
+          }
+          return { email, username };
+        }
+      });
+      if (!res.isConfirmed) return;
+      try{
+        const r = await fetch(`${API_BASE}/auth/password-request`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(res.value)
+        });
+        if(!r.ok) throw new Error(await r.text());
+        const data = await r.json();
+        if (data.email_sent){
+          fire('OK','Te enviamos un link para cambiar tu clave. Revisa tu correo.','success');
+        } else if (data.reset_url){
+          fire({
+            icon:'info',
+            title:'Link generado',
+            html:`No se pudo enviar correo automáticamente.<br><br><b>Usa este link:</b><br><a href="${data.reset_url}" target="_blank">${data.reset_url}</a>`
+          });
+        } else {
+          fire('OK','Si el usuario existe, recibirá un link de cambio.','info');
+        }
+      }catch(err){
+        fire('Error', err.message||'No se pudo enviar la solicitud', 'error');
+      }
+    });
+    // Shared hosting: NO llamamos /me aquí (puede colgarse y dejar el login “muerto”).
+    // En su lugar, validamos exp del JWT (best-effort) y redirigimos por rol.
+    (function(){
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (!token) return;
+      try{
+        const parts = String(token||"").split(".");
+        if (parts.length === 3){
+          const payloadJson = b64urlToUtf8(parts[1]);
+          const payload = payloadJson ? JSON.parse(payloadJson) : null;
+          const exp = Number(payload?.exp || 0) || 0;
+          if (exp && (Date.now()/1000) > (exp - 30)){
+            throw new Error("expired");
+          }
+          const roleGuess = String(payload?.role || payload?.rol || "").toUpperCase();
+          const isOps = ["OPERADOR","CONDUCTOR","CHOFER","CHOP","CONDUCTOR (CHOP)"].includes(roleGuess);
+          const nextURL = normalizeNext();
+          if (!nextURL && isOps){
+            location.replace(`${WEB_BASE}/views/portal_ops.html?v=${Date.now()}`);
+            return;
+          }
+          location.replace(nextURL || `${WEB_BASE}/index.html`);
+          return;
+        }
+      }catch(_){}
+      // Token malo: lo limpiamos y dejamos que el usuario vea el login normalmente.
+      try{
+        localStorage.removeItem("token");
+        localStorage.removeItem("gd_token");
+        sessionStorage.removeItem("token");
+        sessionStorage.removeItem("gd_token");
+        document.cookie = "gd_token=; path=/; max-age=0; samesite=lax";
+        document.cookie = "gd_token=; path=/; max-age=0; samesite=lax; domain=.greendiamond.cl";
+      }catch(_){}
+    })();
+
+    function setTokenCookie(tok, remember){
+      try{
+        const host = String(location.hostname||"").toLowerCase();
+        const isGD = host.endsWith("greendiamond.cl");
+        const maxAge = remember ? (60*60*24*7) : (60*60*6); // 7d o 6h
+        const base = `gd_token=${encodeURIComponent(tok)}; path=/; max-age=${maxAge}; samesite=lax; secure`;
+        document.cookie = base + (isGD ? "; domain=.greendiamond.cl" : "");
+      }catch(_){}
+    }
+    function normalizeNext() {
+      try {
+        const n0 = new URLSearchParams(location.search || "").get("next") || "";
+        const n = String(n0 || "").trim();
+        if (!n || !n.startsWith("/")) return "";
+        // Allow only same-site internal paths.
+        if (n.startsWith("/crm/")) return n;
+        if (n.startsWith("/web/")) return API_BASE + n;
+        return "";
+      } catch (_) {
+        return "";
+      }
+    }
+
+    function b64urlToUtf8(b64url){
+      try{
+        const s = String(b64url||"").replace(/-/g, "+").replace(/_/g, "/");
+        const pad = "=".repeat((4 - (s.length % 4)) % 4);
+        const bin = atob(s + pad);
+        // decode binary string to utf-8
+        const bytes = new Uint8Array(bin.length);
+        for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+        return new TextDecoder("utf-8").decode(bytes);
+      }catch(_){
+        return "";
+      }
+    }
+
+    function guessRoleFromJwt(tok){
+      try{
+        const parts = String(tok||"").split(".");
+        if (parts.length !== 3) return "";
+        const payloadJson = b64urlToUtf8(parts[1]);
+        const payload = payloadJson ? JSON.parse(payloadJson) : null;
+        const role = String(payload?.role || payload?.rol || "").toUpperCase();
+        return role;
+      }catch(_){
+        return "";
+      }
+    }
+
+    $('#frm').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const username=$('#user').value.trim(), password=$('#pass').value.trim();
+      const remember=$('#remember').checked;
+      if(!username||!password){ await fire('Error','Ingresa usuario y contraseña','error'); return; }
+      try{
+        const r = await fetch(`${API_BASE}/login`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*'},
+          body:JSON.stringify({username,password})
+        });
+        if(!r.ok){
+          const txt = await r.text().catch(()=> "");
+          const snip = String(txt||"").replace(/\s+/g," ").trim().slice(0,240);
+          if (r.status === 401) throw new Error('Credenciales inválidas');
+          throw new Error(`Login falló (HTTP ${r.status}). ${snip || "Revisa servidor/logs."}`);
+        }
+        let data = null;
+        try{ data = await r.json(); }
+        catch(_){
+          const txt = await r.text().catch(()=> "");
+          const snip = String(txt||"").replace(/\s+/g," ").trim().slice(0,240);
+          throw new Error(`Login respondió no-JSON. ${snip || "Revisa servidor/logs."}`);
+        }
+        const tok = data.token || data.access_token || '';
+        if (!tok) throw new Error('Login OK pero sin token (respuesta inválida)');
+        // Siempre en localStorage para que iframes (settings) tengan acceso
+        localStorage.setItem('token', tok);
+        localStorage.setItem('gd_token', tok);
+        // Cookie para que funcione entre greendiamond.cl y www.greendiamond.cl
+        setTokenCookie(tok, remember);
+        if (!remember){
+          sessionStorage.setItem('token', tok);
+          sessionStorage.setItem('gd_token', tok);
+        } else {
+          sessionStorage.removeItem('token');
+          sessionStorage.removeItem('gd_token');
+        }
+        (remember?localStorage:sessionStorage).setItem('nombre', data.nombre||username);
+        await fire({icon:'success',title:`¡Bienvenido, ${data.nombre||username}!`,timer:900,showConfirmButton:false});
+        const nextURL = normalizeNext();
+
+        // Importante: NO bloqueamos la redirección esperando /me (puede ponerse lento en shared).
+        // Para decidir el destino, inferimos el rol desde el JWT (solo para routing; permisos reales se validan en backend).
+        try{
+          const roleGuess = guessRoleFromJwt(tok);
+          const isOps = ["OPERADOR","CONDUCTOR","CHOFER","CHOP","CONDUCTOR (CHOP)"].includes(roleGuess);
+          const isPatio = roleGuess.includes("OPERADOR PATIO") || roleGuess.includes("PATIO");
+          if (!nextURL && isOps){
+            location.href = `${WEB_BASE}/views/portal_ops.html?v=${Date.now()}`;
+            return;
+          }
+          if (!nextURL && isPatio){
+            location.href = `${WEB_BASE}/views/rrhh_portal.html?v=${Date.now()}`;
+            return;
+          }
+        }catch(_){}
+        location.href = nextURL || `${WEB_BASE}/index.html`;
+      }catch(err){ fire('Error', err.message||'No se pudo iniciar sesión', 'error'); }
+    });
+  })();
+  </script>
+</body>
+</html>

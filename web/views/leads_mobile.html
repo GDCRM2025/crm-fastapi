@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Leads (Móvil)</title>
+  <link rel="stylesheet" href="/web/styles.css?v=20260303-1" />
+  <style>
+    :root{
+      --bg:#07131F;
+      --border: rgba(148,163,184,.18);
+      --muted: rgba(226,232,240,.72);
+      --surface: rgba(2,6,23,.38);
+      --surface2: rgba(255,255,255,.05);
+      --accent:#19C37D;
+      --danger:#ef4444;
+      --radius: 16px;
+    }
+    html,body{height:100%;}
+    body{
+      margin:0;
+      background:
+        radial-gradient(1200px 700px at 20% 0%, rgba(25,195,125,.10), transparent 55%),
+        radial-gradient(900px 650px at 90% 20%, rgba(59,130,246,.10), transparent 60%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--font, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif);
+    }
+    .page{ padding: 10px; }
+    .shell{
+      min-height: calc(100vh - 20px);
+      border:1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      box-shadow: 0 22px 70px rgba(0,0,0,.35);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+    }
+    .top{
+      padding:10px 12px;
+      border-bottom:1px solid var(--border);
+      background: rgba(2,6,23,.30);
+      backdrop-filter: blur(12px);
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .title{
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .title h1{
+      margin:0;
+      font-size: 16px;
+      font-weight: 1100;
+      letter-spacing:.2px;
+    }
+    .muted{ color: var(--muted); font-weight: 850; font-size: 12px; }
+
+    .filters{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:8px;
+    }
+    .filters .span2{ grid-column: 1 / -1; }
+    .input, select{
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.22);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 10px;
+      font-weight: 900;
+      outline:none;
+      width:100%;
+      box-sizing:border-box;
+    }
+    .input:focus, select:focus{
+      border-color: rgba(25,195,125,.55);
+      box-shadow: 0 0 0 3px rgba(25,195,125,.12);
+    }
+    .row{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .pill{
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.22);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-weight: 950;
+      font-size: 12px;
+      white-space:nowrap;
+    }
+    .btn{
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.22);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 11px;
+      font-weight: 1100;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn:hover{ filter: brightness(1.06); }
+    .btn.primary{ background: var(--accent); border-color: transparent; color:#062016; }
+    .btn.danger{ border-color: rgba(239,68,68,.45); color: rgba(255,180,180,.95); }
+    .btn.mini{ padding: 8px 10px; border-radius: 11px; font-size: 12px; font-weight: 1100; }
+
+    .main{ flex:1; min-height:0; }
+    .list{
+      padding: 10px 10px 16px 10px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .card{
+      border:1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(2,6,23,.26);
+      padding: 10px 10px;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      box-shadow: 0 14px 50px rgba(0,0,0,.22);
+    }
+    .cardTop{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .who{
+      font-weight: 1100;
+      letter-spacing:.2px;
+      line-height:1.1;
+    }
+    .meta{
+      color: var(--muted);
+      font-weight: 850;
+      font-size: 12px;
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .state{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      border:1px solid rgba(148,163,184,.22);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 1100;
+      white-space:nowrap;
+    }
+    .dot{
+      width: 10px; height: 10px; border-radius: 99px;
+      background: #64748b;
+      box-shadow: 0 0 0 3px rgba(255,255,255,.06);
+    }
+    .money{
+      font-weight: 1100;
+      letter-spacing:.2px;
+    }
+    .actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    /* Modal */
+    .modalBg{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.60);
+      display:none;
+      z-index: 10000;
+    }
+    .modalBg.open{ display:block; }
+    .modal{
+      position: fixed;
+      inset: 10px;
+      max-width: 980px;
+      margin: 0 auto;
+      background: rgba(2,6,23,.88);
+      border:1px solid rgba(148,163,184,.18);
+      border-radius: 18px;
+      box-shadow: 0 30px 120px rgba(0,0,0,.55);
+      display:none;
+      z-index: 10001;
+      overflow:hidden;
+    }
+    .modal.open{ display:flex; flex-direction:column; }
+    .modal .hd{
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(148,163,184,.18);
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .modal .bd{
+      padding: 12px;
+      min-height:0;
+      overflow:auto;
+    }
+    .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .grid2 .span2{ grid-column: 1 / -1; }
+    .label{ font-size: 12px; font-weight: 950; opacity:.85; margin: 0 0 6px 0; }
+    textarea{
+      min-height: 90px;
+      resize: vertical;
+    }
+    .toastHost{
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      z-index: 12000;
+      display:grid;
+      gap: 10px;
+      pointer-events:none;
+    }
+    .toast{
+      pointer-events:auto;
+      max-width: min(420px, calc(100vw - 24px));
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.66);
+      backdrop-filter: blur(12px);
+      border-radius: 14px;
+      padding: 10px 12px;
+      box-shadow: 0 16px 50px rgba(0,0,0,.35);
+      color: var(--text);
+      font-weight: 950;
+    }
+    .toast.ok{ border-color: rgba(34,197,94,.40); }
+    .toast.err{ border-color: rgba(239,68,68,.55); }
+
+    @media (max-width: 420px){
+      .filters{ grid-template-columns: 1fr; }
+      .grid2{ grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="shell">
+      <div class="top">
+        <div class="title">
+          <div>
+            <h1>Leads (Móvil)</h1>
+            <div class="muted">Lista rápida para seguimiento. Para confirmar/agendar usa “Vista completa”.</div>
+          </div>
+          <div class="row">
+            <span class="pill" id="pill">Cargando…</span>
+            <button class="btn mini" id="btnReload" type="button">Recargar</button>
+          </div>
+        </div>
+
+        <div class="filters">
+          <input id="q" class="input span2" placeholder="Buscar: cliente, teléfono, comuna, marca, N° cotización…" />
+          <input id="fMonth" class="input" type="month" title="Mes de los eventos que quieres revisar" />
+          <button class="btn" id="btnAllMonths" type="button">Todos los meses</button>
+          <select id="fEstado"></select>
+          <select id="fMarca"></select>
+        </div>
+      </div>
+
+      <div class="main">
+        <div class="list" id="list"></div>
+        <div style="padding: 0 10px 14px 10px">
+          <button class="btn" id="btnMore" type="button" style="width:100%">Cargar más</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal lead -->
+  <div class="modalBg" id="modalBg"></div>
+  <div class="modal" id="modal">
+    <div class="hd">
+      <div style="min-width:0">
+        <div style="font-weight:1100;letter-spacing:.2px" id="mTitle">Lead</div>
+        <div class="muted" id="mSub">—</div>
+      </div>
+      <div class="row">
+        <button class="btn mini" id="btnFull" type="button">Vista completa</button>
+        <button class="btn mini" id="btnClose" type="button">Cerrar</button>
+      </div>
+    </div>
+    <div class="bd">
+      <div class="grid2">
+        <div>
+          <div class="label">Cliente</div>
+          <input id="mCliente" class="input" />
+        </div>
+        <div>
+          <div class="label">Estado</div>
+          <select id="mEstado"></select>
+        </div>
+        <div>
+          <div class="label">Fecha evento</div>
+          <input id="mFecha" class="input" type="date" />
+        </div>
+        <div>
+          <div class="label">Comuna</div>
+          <select id="mComuna"></select>
+        </div>
+        <div>
+          <div class="label">Teléfono</div>
+          <input id="mTel" class="input" />
+        </div>
+        <div>
+          <div class="label">N° cotización</div>
+          <input id="mNum" class="input" />
+        </div>
+        <div class="span2">
+          <div class="label">Dirección</div>
+          <input id="mDir" class="input" />
+        </div>
+
+        <div class="span2">
+          <div class="label">Notas / Historial (solo lectura)</div>
+          <textarea id="mNotas" class="input" readonly></textarea>
+        </div>
+        <div class="span2">
+          <div class="label">Agregar comentario</div>
+          <textarea id="mAdd" class="input" placeholder="Escribe una línea…"></textarea>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;justify-content:space-between">
+        <div class="row">
+          <a class="btn mini" id="mCall" href="#" rel="noopener">Llamar</a>
+          <a class="btn mini" id="mWa" href="#" target="_blank" rel="noopener">WhatsApp</a>
+        </div>
+        <button class="btn primary" id="btnSave" type="button">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toastHost" id="toastHost"></div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+
+    const API_BASE = location.pathname.startsWith("/crm/") ? "/crm" : "";
+    function token(){
+      return (
+        localStorage.getItem("token") ||
+        localStorage.getItem("gd_token") ||
+        sessionStorage.getItem("token") ||
+        sessionStorage.getItem("gd_token") ||
+        ""
+      );
+    }
+    function authHeaders(extra={}){
+      const t = token();
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+    async function jget(url){
+      const r = await fetch(url, { headers: authHeaders({ "Accept":"application/json" }) });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(`${r.status} ${txt.slice(0,200)}`);
+      try{ return JSON.parse(txt); }catch(_){ return {}; }
+    }
+    async function jput(url, data){
+      const r = await fetch(url, { method:"PUT", headers: authHeaders({ "Content-Type":"application/json" }), body: JSON.stringify(data||{}) });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(`${r.status} ${txt.slice(0,200)}`);
+      try{ return JSON.parse(txt); }catch(_){ return {}; }
+    }
+
+    function toast(msg, kind="info"){
+      const host = qs("#toastHost");
+      const el = document.createElement("div");
+      el.className = "toast" + (kind==="ok" ? " ok" : kind==="err" ? " err" : "");
+      el.textContent = msg;
+      host.appendChild(el);
+      setTimeout(()=>{ try{ el.remove(); }catch(_){} }, 6500);
+    }
+
+    function applyThemeBootstrap(){
+      const mode = (localStorage.getItem("gd_theme") || "dark");
+      document.documentElement.classList.toggle("light", mode === "light");
+      window.addEventListener("message", (ev) => {
+        if (ev.data?.type === "theme"){
+          document.documentElement.classList.toggle("light", ev.data.mode === "light");
+        }
+      });
+    }
+
+    const ST = {
+      cats: null,
+      leads: [],
+      limit: 200,
+      offset: 0,
+      open: null,
+      allMonths: localStorage.getItem("gd_leads_month_filter") === "0",
+    };
+
+    function money(n){
+      const x = Number(n||0);
+      if (!Number.isFinite(x) || x<=0) return "";
+      return "$" + new Intl.NumberFormat("es-CL", { maximumFractionDigits:0 }).format(x);
+    }
+    function norm(s){ return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""); }
+    function digits(s){ return String(s||"").replace(/\D+/g,""); }
+
+    function setPill(t){ qs("#pill").textContent = t; }
+
+    function estadoMeta(id){
+      const estados = (ST.cats?.estados || ST.cats?.catalogos?.estados || []);
+      const hit = estados.find(e => Number(e.id_estado) === Number(id));
+      return {
+        nombre: hit ? String(hit.nombre || "").trim() : "",
+        color: hit ? String(hit.color || "#64748b") : "#64748b",
+      };
+    }
+    function marcaName(id){
+      const marcas = (ST.cats?.marcas || ST.cats?.catalogos?.marcas || []);
+      const hit = marcas.find(m => Number(m.id_marca) === Number(id));
+      return hit ? String(hit.nombre || hit.marca || "").trim() : "";
+    }
+
+    function renderFilters(){
+      const estados = (ST.cats?.estados || ST.cats?.catalogos?.estados || []);
+      const marcas = (ST.cats?.marcas || ST.cats?.catalogos?.marcas || []);
+
+      const fEstado = qs("#fEstado");
+      fEstado.innerHTML = `<option value="">Todos los estados</option>` + estados.map(e=>{
+        return `<option value="${Number(e.id_estado)}">${String(e.nombre||"")}</option>`;
+      }).join("");
+
+      const fMarca = qs("#fMarca");
+      fMarca.innerHTML = `<option value="">Todas las marcas</option>` + marcas.map(m=>{
+        const lbl = String(m.nombre || m.marca || "").trim() || String(m.id_marca);
+        return `<option value="${Number(m.id_marca)}">${lbl}</option>`;
+      }).join("");
+    }
+
+    function filtered(){
+      const q = norm(qs("#q").value || "");
+      const idEstado = qs("#fEstado").value ? Number(qs("#fEstado").value) : null;
+      const idMarca = qs("#fMarca").value ? Number(qs("#fMarca").value) : null;
+      let focusId = "";
+      try{
+        const params = new URLSearchParams(location.search);
+        focusId = params.get("audit_focus") === "1"
+          ? String(params.get("open_lead") || params.get("id_lead") || params.get("lead_id") || "")
+          : "";
+      }catch(_){}
+      return ST.leads.filter(l=>{
+        if (focusId && String(l.id_lead) !== focusId) return false;
+        if (idEstado && Number(l.id_estado) !== idEstado) return false;
+        if (idMarca && Number(l.id_marca) !== idMarca) return false;
+        if (!q) return true;
+        const bag = [
+          l.id_lead, l.codigo_cliente,
+          l.cliente, l.nombre_cliente,
+          l.telefono, l.email,
+          l.comuna, l.comuna_nombre,
+          l.marca, l.marca_nombre,
+          l.num_cotizacion, l.estado, l.estado_nombre,
+        ].map(norm).join(" | ");
+        return bag.includes(q);
+      });
+    }
+
+    function renderList(){
+      const list = qs("#list");
+      const arr = filtered();
+      setPill(`Leads: ${arr.length} · cargados: ${ST.leads.length}`);
+      if (!arr.length){
+        list.innerHTML = `<div class="muted" style="padding:14px 10px">Sin resultados.</div>`;
+        return;
+      }
+      list.innerHTML = arr.map(l=>{
+        const st = estadoMeta(l.id_estado);
+        const fe = String(l.fecha_evento || "").slice(0,10);
+        const brand = String(l.marca || marcaName(l.id_marca) || "").trim();
+        const comuna = String(l.comuna || l.comuna_nombre || "").trim();
+        const num = String(l.num_cotizacion || "").trim();
+        const monto = money(l.monto_cotizado);
+        return `
+          <div class="card" data-id="${Number(l.id_lead)}">
+            <div class="cardTop">
+              <div style="min-width:0">
+                <div class="who">${esc(l.cliente || l.nombre_cliente || ("Lead #" + l.id_lead))}</div>
+                <div class="meta">
+                  <span>${esc(brand || "—")}</span>
+                  <span>·</span>
+                  <span>${esc(comuna || "—")}</span>
+                  ${fe ? `<span>·</span><span>${esc(fe)}</span>` : ``}
+                </div>
+              </div>
+              <div class="state" title="${esc(st.nombre)}">
+                <span class="dot" style="background:${esc(st.color)}"></span>
+                <span>${esc(st.nombre || "—")}</span>
+              </div>
+            </div>
+            <div class="meta">
+              ${num ? `<span class="pill">N° ${esc(num)}</span>` : ``}
+              ${monto ? `<span class="pill money">${esc(monto)}</span>` : ``}
+            </div>
+            <div class="actions">
+              <a class="btn mini" href="${waLink(l.telefono)}" target="_blank" rel="noopener">WhatsApp</a>
+              <a class="btn mini" href="${callLink(l.telefono)}">Llamar</a>
+              <button class="btn mini primary" data-open="${Number(l.id_lead)}" type="button">Abrir</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      list.querySelectorAll("[data-open]").forEach(b=>{
+        b.addEventListener("click", ()=>{
+          const id = Number(b.getAttribute("data-open") || "0") || 0;
+          const l = ST.leads.find(x => Number(x.id_lead) === id);
+          if (l) openLead(l);
+        });
+      });
+    }
+
+    function esc(s){
+      return String(s||"").replace(/[&<>\"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+    }
+    function waLink(tel){
+      const d = digits(tel);
+      const n = d.startsWith("56") ? d : (d.length === 9 ? ("56"+d) : d);
+      return n ? `https://wa.me/${n}` : "https://wa.me/";
+    }
+    function callLink(tel){
+      const t = String(tel||"").trim();
+      return t ? `tel:${t}` : "#";
+    }
+
+    function openModal(on){
+      qs("#modalBg").classList.toggle("open", !!on);
+      qs("#modal").classList.toggle("open", !!on);
+      if (!on) ST.open = null;
+    }
+
+    function fillSelect(el, items, getVal, getLbl, selected){
+      el.innerHTML = items.map(it=>{
+        const v = String(getVal(it));
+        const lbl = String(getLbl(it));
+        return `<option value="${esc(v)}"${String(selected)===v ? " selected":""}>${esc(lbl)}</option>`;
+      }).join("");
+    }
+
+    function openLead(l){
+      ST.open = l;
+      const st = estadoMeta(l.id_estado);
+      qs("#mTitle").textContent = `#${Number(l.id_lead)} · ${l.cliente || l.nombre_cliente || "Lead"}`;
+      qs("#mSub").textContent = `${String(l.marca || marcaName(l.id_marca) || "").trim() || "—"} · ${String(l.comuna || l.comuna_nombre || "").trim() || "—"}`;
+
+      qs("#mCliente").value = String(l.cliente || l.nombre_cliente || "").trim();
+      qs("#mFecha").value = String(l.fecha_evento || "").slice(0,10);
+      qs("#mTel").value = String(l.telefono || "").trim();
+      qs("#mDir").value = String(l.direccion || "").trim();
+      qs("#mNum").value = String(l.num_cotizacion || "").trim();
+      qs("#mNotas").value = String(l.notas || "").trim();
+      qs("#mAdd").value = "";
+
+      const estados = (ST.cats?.estados || ST.cats?.catalogos?.estados || []);
+      fillSelect(qs("#mEstado"), estados, x=>Number(x.id_estado), x=>String(x.nombre||""), Number(l.id_estado));
+      const comunas = (ST.cats?.comunas || ST.cats?.catalogos?.comunas || []);
+      fillSelect(qs("#mComuna"), comunas, x=>Number(x.id_comuna), x=>String(x.nombre||x.comuna||""), Number(l.id_comuna));
+
+      const tel = String(l.telefono||"").trim();
+      qs("#mCall").setAttribute("href", callLink(tel));
+      qs("#mWa").setAttribute("href", waLink(tel));
+
+      openModal(true);
+    }
+
+    async function saveOpen(){
+      const l = ST.open;
+      if (!l) return;
+      const id = Number(l.id_lead);
+      const newNotesLine = String(qs("#mAdd").value||"").trim();
+      let notas = String(qs("#mNotas").value || l.notas || "").trim();
+
+      const statusChanged = Number(qs("#mEstado").value||0) !== Number(l.id_estado || 0);
+      if (statusChanged && newNotesLine.length < 8){
+        toast("Comentario obligatorio solo para cambio de estado.", "err");
+        qs("#mAdd").focus();
+        return;
+      }
+
+      const payload = {
+        cliente: String(qs("#mCliente").value||"").trim() || null,
+        id_estado: Number(qs("#mEstado").value||0) || null,
+        fecha_evento: (qs("#mFecha").value||"").trim() || null,
+        id_comuna: Number(qs("#mComuna").value||0) || null,
+        telefono: String(qs("#mTel").value||"").trim() || null,
+        direccion: String(qs("#mDir").value||"").trim() || null,
+        num_cotizacion: String(qs("#mNum").value||"").trim() || null,
+        notas: notas || null,
+        movement_comment: newNotesLine || null,
+      };
+
+      try{
+        qs("#btnSave").disabled = true;
+        await jput(`${API_BASE}/leads/${id}`, payload);
+        // update local
+        Object.assign(l, payload);
+        if (newNotesLine){
+          l.notas = notas ? (notas + "\n\n" + newNotesLine) : newNotesLine;
+        }
+        toast("Lead actualizado", "ok");
+        openModal(false);
+        renderList();
+      }catch(err){
+        toast("Error guardando: " + String(err?.message||err), "err");
+      }finally{
+        qs("#btnSave").disabled = false;
+      }
+    }
+
+    function openFull(){
+      const l = ST.open;
+      if (!l) return;
+      // Abrimos la vista completa del Kanban, con auto-open del lead.
+      location.href = `/web/views/leads.html?open_lead=${encodeURIComponent(String(l.id_lead))}`;
+    }
+
+    async function loadCatalogos(){
+      ST.cats = await jget(`${API_BASE}/leads/catalogos`);
+      renderFilters();
+    }
+    async function loadMore(reset=false){
+      if (reset){
+        ST.leads = [];
+        ST.offset = 0;
+      }
+      setPill("Cargando…");
+      const ym = String(qs("#fMonth").value || "");
+      const match = /^(\d{4})-(\d{2})$/.exec(ym);
+      const period = (!ST.allMonths && match)
+        ? `&month=${encodeURIComponent(Number(match[2]))}&year=${encodeURIComponent(Number(match[1]))}&include_no_date=0`
+        : "&all=1";
+      const data = await jget(`${API_BASE}/leads?limit=${encodeURIComponent(ST.limit)}&offset=${encodeURIComponent(ST.offset)}${period}`);
+      let items = data?.items || [];
+      if (reset && ST.openLeadId && !items.some(x=>String(x.id_lead)===String(ST.openLeadId))){
+        try{
+          const direct = await jget(`${API_BASE}/leads/by_ids?ids=${encodeURIComponent(String(ST.openLeadId))}`);
+          items = items.concat((direct?.items || []).filter(x=>!items.some(y=>String(y.id_lead)===String(x.id_lead))));
+        }catch(_){}
+      }
+      ST.leads = ST.leads.concat(items);
+      ST.offset += items.length;
+      renderList();
+      tryOpenFromQuery();
+    }
+
+    // Events
+    qs("#btnReload").onclick = async ()=>{ try{ await loadCatalogos(); await loadMore(true); }catch(e){ toast(String(e?.message||e),"err"); } };
+    qs("#btnMore").onclick = async ()=>{ try{ await loadMore(false); }catch(e){ toast(String(e?.message||e),"err"); } };
+    qs("#fMonth").onchange = async ()=>{
+      ST.allMonths = false;
+      localStorage.setItem("gd_leads_month_filter","1");
+      localStorage.setItem("gd_leads_selected_month",qs("#fMonth").value);
+      qs("#btnAllMonths").textContent = "Todos los meses";
+      try{ await loadMore(true); }catch(e){ toast(String(e?.message||e),"err"); }
+    };
+    qs("#btnAllMonths").onclick = async ()=>{
+      ST.allMonths = !ST.allMonths;
+      localStorage.setItem("gd_leads_month_filter",ST.allMonths?"0":"1");
+      qs("#btnAllMonths").textContent = ST.allMonths ? "Usar mes elegido" : "Todos los meses";
+      try{ await loadMore(true); }catch(e){ toast(String(e?.message||e),"err"); }
+    };
+    ["q","fEstado","fMarca"].forEach(id=>{
+      qs("#"+id).addEventListener("input", ()=>renderList());
+      qs("#"+id).addEventListener("change", ()=>renderList());
+    });
+
+    qs("#btnClose").onclick = ()=>openModal(false);
+    qs("#modalBg").onclick = ()=>openModal(false);
+    qs("#btnSave").onclick = ()=>saveOpen();
+    qs("#btnFull").onclick = ()=>openFull();
+
+    // Init
+    (async ()=>{
+      applyThemeBootstrap();
+      const now = new Date();
+      const savedMonth = localStorage.getItem("gd_leads_selected_month") || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+      qs("#fMonth").value = savedMonth;
+      qs("#btnAllMonths").textContent = ST.allMonths ? "Usar mes elegido" : "Todos los meses";
+      if (!token()){
+        setPill("Sin sesión. Abre desde el panel e inicia sesión.");
+        qs("#btnMore").disabled = true;
+        return;
+      }
+      // Si vienen query params para abrir un lead específico (desde Filtrar Leads), lo intentamos.
+      try {
+        const p = new URLSearchParams(location.search);
+        const id = p.get("open_lead") || p.get("id_lead") || p.get("lead_id");
+        if (id) ST.openLeadId = String(id);
+      } catch (_) {}
+      try{
+        await loadCatalogos();
+        await loadMore(true);
+      }catch(e){
+        toast(String(e?.message||e), "err");
+        setPill("Error cargando");
+      }
+    })();
+
+    function tryOpenFromQuery(){
+      const id = String(ST.openLeadId || "").trim();
+      if (!id) return;
+      const found = ST.leads.find(x => String(x.id_lead) === id);
+      if (!found) return;
+      ST.openLeadId = null;
+      try { openLead(found); } catch (_) {}
+    }
+  </script>
+</body>
+</html>

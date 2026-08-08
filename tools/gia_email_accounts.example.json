@@ -1,0 +1,30 @@
+[
+  {
+    "marca": "GOURMET",
+    "inbox_type": "sales",
+    "from_email": "ventas@carritosgourmet.cl",
+    "username": "ventas@carritosgourmet.cl",
+    "password": "CHANGE_ME",
+    "imap_host": "mail.carritosgourmet.cl",
+    "imap_port": 993,
+    "imap_ssl": true,
+    "imap_folder": "INBOX",
+    "smtp_host": "mail.carritosgourmet.cl",
+    "smtp_port": 465,
+    "smtp_ssl": true
+  },
+  {
+    "marca": "GOURMET",
+    "inbox_type": "payments",
+    "from_email": "pagos@carritosgourmet.cl",
+    "username": "pagos@carritosgourmet.cl",
+    "password": "CHANGE_ME",
+    "imap_host": "mail.carritosgourmet.cl",
+    "imap_port": 993,
+    "imap_ssl": true,
+    "imap_folder": "INBOX",
+    "smtp_host": "mail.carritosgourmet.cl",
+    "smtp_port": 465,
+    "smtp_ssl": true
+  }
+]

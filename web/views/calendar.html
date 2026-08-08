@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Calendario</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../styles.css?v=20260312-1" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    :root{
+      --bg:#07131F;
+      --border: rgba(148,163,184,.18);
+      --glass: rgba(2,6,23,.35);
+      --muted2: rgba(226,232,240,.68);
+    }
+    html,body{height:100%;}
+    body{
+      margin:0;
+      padding:10px;
+      background:
+        radial-gradient(1200px 700px at 20% 0%, rgba(25,195,125,.10), transparent 55%),
+        radial-gradient(900px 650px at 90% 20%, rgba(59,130,246,.10), transparent 60%),
+        var(--bg);
+      color: var(--text);
+      box-sizing:border-box;
+      font-family: var(--font, ui-sans-serif, system-ui);
+    }
+    .shell{
+      height:calc(100vh - 20px);
+      border:1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      box-shadow: 0 22px 70px rgba(0,0,0,.35);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+    }
+    .top{
+      padding:10px 12px;
+      border-bottom:1px solid var(--border);
+      background: rgba(2,6,23,.30);
+      backdrop-filter: blur(12px);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .title{
+      font-weight:1100;
+      letter-spacing:.2px;
+      white-space:nowrap;
+    }
+    .muted{ color: var(--muted2); font-weight:850; font-size:12px; }
+    .btn{
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.22);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 8px 10px;
+      font-weight: 1100;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn:hover{ filter:brightness(1.06); }
+    .main{
+      flex:1;
+      min-height:0;
+      background: rgba(2,6,23,.18);
+    }
+    iframe{
+      width:100%;
+      height:100%;
+      border:0;
+      display:block;
+      background:#fff;
+    }
+    @media (max-width: 720px){
+      body{ padding:8px; }
+      .top{ flex-direction:column; align-items:stretch; }
+      .top .right{ display:flex; gap:8px; justify-content:space-between; }
+    }
+    @media (max-width: 920px) and (orientation: landscape){
+      body{ padding:0; }
+      .shell{ height:100vh; border-radius:0; border:0; }
+      .top{ display:none; }
+    }
+    body[data-embed="1"]{ padding:0; background: transparent; }
+    body[data-embed="1"] .shell{
+      height:100vh;
+      border:0;
+      border-radius:0;
+      box-shadow:none;
+      background: transparent;
+    }
+    body[data-embed="1"] .top{ display:none; }
+    body[data-embed="1"] .main{ background: transparent; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="top">
+      <div>
+        <div class="title">Calendario (Google)</div>
+        <div class="muted">Vista embebida del calendario operativo.</div>
+      </div>
+      <div class="right" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="btnOpen" type="button">Abrir en Google</button>
+        <button class="btn" id="btnReload" type="button">Recargar</button>
+      </div>
+    </div>
+    <div class="main">
+      <iframe
+        id="gcal"
+        referrerpolicy="no-referrer-when-downgrade"
+        src="https://calendar.google.com/calendar/embed?height=850&wkst=2&ctz=America%2FSantiago&showPrint=0&showTz=0&showCalendars=0&src=b3NjYXJAZ3JlZW5kaWFtb25kLmNs&src=c2ltb25tZzMwNDJAZ21haWwuY29t&src=c2ltb251cnJ1dGlhLm1AZ21haWwuY29t&color=%23b90e28&color=%23795548&color=%2333b679"
+        scrolling="no"
+        title="Google Calendar"
+      ></iframe>
+    </div>
+  </div>
+
+  <script>
+    const gcal = document.getElementById("gcal");
+    const openBtn = document.getElementById("btnOpen");
+    const reloadBtn = document.getElementById("btnReload");
+
+    const PUBLIC_URL = "https://calendar.google.com/calendar/embed?src=simonurrutia.m%40gmail.com&ctz=America%2FSantiago";
+
+    try{
+      const sp = new URLSearchParams(location.search || "");
+      if (sp.get("embed") === "1") document.body.dataset.embed = "1";
+    }catch(_){}
+
+    openBtn?.addEventListener("click", ()=>{
+      const u = (gcal && gcal.src) ? gcal.src : PUBLIC_URL;
+      window.open(u, "_blank", "noopener");
+    });
+
+    reloadBtn?.addEventListener("click", ()=>{
+      if (!gcal) return;
+      const u = gcal.src.split("#")[0];
+      gcal.src = u + (u.includes("?") ? "&" : "?") + "v=" + Date.now();
+    });
+  </script>
+</body>
+</html>

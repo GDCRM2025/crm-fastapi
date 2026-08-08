@@ -1,0 +1,106 @@
+<section id="leads-app" class="text-white/90">
+  <div class="glass p-3 md:p-4 mb-4 rounded-xl flex flex-col md:flex-row items-start md:items-center gap-3 md:gap-4">
+    <div class="flex items-center gap-3">
+      <h1 class="text-xl md:text-2xl font-semibold">Leads</h1>
+      <span id="leadCount" class="text-sm md:text-base px-2 py-1 rounded-md bg-white/10">0</span>
+    </div>
+
+    <div class="flex-1 flex items-center gap-3 md:gap-4">
+      <div class="glass px-2 py-1 rounded-lg flex items-center gap-1">
+        <button data-action="view-kanban" class="px-3 py-1 rounded-md bg-white/20">Kanban</button>
+        <button data-action="view-table"  class="px-3 py-1 rounded-md">Tabla</button>
+      </div>
+      <div class="relative flex-1 max-w-xl">
+        <input data-role="search" type="text" placeholder="Buscar por nombre, email, código o teléfono"
+               class="w-full glass focus:outline-none px-4 py-2 rounded-xl placeholder-white/60"/>
+        <span class="absolute right-3 top-1/2 -translate-y-1/2 text-white/60 text-sm">⌘K</span>
+      </div>
+    </div>
+
+    <div class="ml-auto">
+      <button data-action="open-create" class="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold px-4 py-2 rounded-lg">
+        Crear Lead
+      </button>
+    </div>
+  </div>
+
+  <!-- Kanban -->
+  <section data-view="kanban" class="grid gap-4"
+           style="grid-template-columns: repeat(6, minmax(0,1fr));">
+    <!-- Columnas -->
+    <!-- Generadas por JS -->
+  </section>
+
+  <!-- Tabla -->
+  <section data-view="table" class="glass p-3 md:p-4 rounded-xl hidden overflow-auto">
+    <table class="w-full text-sm">
+      <thead class="text-white/70">
+        <tr>
+          <th class="text-left py-2">Código</th>
+          <th class="text-left py-2">Nombre</th>
+          <th class="text-left py-2">Marca</th>
+          <th class="text-left py-2">Estado</th>
+          <th class="text-left py-2">Fecha Evento</th>
+          <th class="text-right py-2">Monto</th>
+          <th class="text-center py-2">Acciones</th>
+        </tr>
+      </thead>
+      <tbody data-role="tbody" class="divide-y divide-white/10"></tbody>
+    </table>
+  </section>
+
+  <!-- Modal -->
+  <div data-role="mask" class="fixed inset-0 bg-black/60 hidden"></div>
+  <div data-role="modal" class="fixed inset-0 flex items-center justify-center p-4 hidden">
+    <div class="glass w-full max-w-xl p-5 rounded-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold"><span data-role="title">Crear Lead</span></h3>
+        <button data-action="close" class="text-white/60 hover:text-white">✕</button>
+      </div>
+
+      <form data-role="form" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label class="text-sm text-white/70">Nombre cliente</label>
+          <input name="nombre_cliente" required class="w-full glass px-3 py-2 rounded-lg"/>
+        </div>
+        <div>
+          <label class="text-sm text-white/70">Email</label>
+          <input name="email" type="email" class="w-full glass px-3 py-2 rounded-lg"/>
+        </div>
+        <div>
+          <label class="text-sm text-white/70">Teléfono</label>
+          <input name="telefono" class="w-full glass px-3 py-2 rounded-lg"/>
+        </div>
+        <div>
+          <label class="text-sm text-white/70">Marca</label>
+          <select name="id_marca" required class="w-full glass px-3 py-2 rounded-lg" data-role="marca-select">
+            <!-- opciones por JS -->
+          </select>
+        </div>
+        <div>
+          <label class="text-sm text-white/70">Fecha evento</label>
+          <input name="fecha_evento" type="date" class="w-full glass px-3 py-2 rounded-lg"/>
+        </div>
+        <div>
+          <label class="text-sm text-white/70">Monto cotizado</label>
+          <input name="monto_cotizado" type="number" step="0.01" class="w-full glass px-3 py-2 rounded-lg"/>
+        </div>
+        <div class="md:col-span-2">
+          <label class="text-sm text-white/70">Estado</label>
+          <select name="estado" class="w-full glass px-3 py-2 rounded-lg" data-role="estado-select">
+            <!-- opciones por JS -->
+          </select>
+        </div>
+        <div class="md:col-span-2 mt-2 flex justify-end gap-2">
+          <button type="button" data-action="cancel" class="px-4 py-2 rounded-lg bg-white/10">Cancelar</button>
+          <button class="px-4 py-2 rounded-lg bg-emerald-500 text-black font-semibold" data-role="submit">Guardar</button>
+        </div>
+        <p class="md:col-span-2 text-xs text-white/60">
+          El <strong>código de cliente</strong> se genera en el servidor (MAR-INI-XX).
+        </p>
+      </form>
+    </div>
+  </div>
+
+  <div data-role="toast" class="fixed top-4 right-4 glass px-4 py-2 rounded-lg hidden"></div>
+</section>

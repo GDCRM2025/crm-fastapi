@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>CRM 2025 • Kanban Leads</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #0b1020; color:#e6e8ef;}
+    header { padding:16px 24px; background: linear-gradient(90deg,#0e1733,#122051); box-shadow: 0 4px 20px rgba(0,0,0,.35); position: sticky; top:0; z-index:10;}
+    h1 { margin:0; font-size: 20px; letter-spacing:.5px;}
+    .board { display:grid; grid-template-columns: repeat(6, minmax(260px,1fr)); gap:14px; padding:20px; }
+    .col { background:#0f162e; border:1px solid #243056; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; min-height: 60vh; }
+    .col header { background:linear-gradient(180deg,#121e47,#0f183a); padding:10px 12px; border-bottom:1px solid #1e2b51; }
+    .col header .title { font-weight:600; font-size:14px; }
+    .col header .count { opacity:.7; font-size:12px; margin-left:8px; }
+    .list { padding:10px; display:flex; flex-direction:column; gap:10px; flex:1; }
+    .card { background:linear-gradient(180deg,#18254e,#131e3f); border:1px solid #283463; border-radius:12px; padding:10px; cursor:grab; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+    .card:active { cursor:grabbing; }
+    .name { font-weight:600; margin-bottom:4px; }
+    .sub { font-size:12px; opacity:.8; display:flex; gap:10px; flex-wrap:wrap; }
+    .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; background:#213067; border:1px solid #2a3b7a; }
+    .dropping { outline: 2px dashed #6b92ff; outline-offset: -10px; }
+    .toolbar { padding: 10px 20px; display:flex; gap:10px; align-items:center; }
+    button { border:1px solid #2b3a70; background:#162253; color:#e8ecff; border-radius:10px; padding:8px 10px; font-weight:600; cursor:pointer; }
+    button:hover { filter:brightness(1.1); }
+    .msg { opacity:.8; font-size:12px; }
+    @media (max-width:1200px){ .board { grid-template-columns: repeat(3,1fr);} }
+    @media (max-width:800px){ .board { grid-template-columns: repeat(2,1fr);} }
+    @media (max-width:560px){ .board { grid-template-columns: 1fr;} }
+  </style>
+</head>
+<body>
+  <header><h1>Kanban de Leads</h1></header>
+
+  <div class="toolbar">
+    <button id="reloadBtn">Recargar</button>
+    <span class="msg" id="msg"></span>
+  </div>
+
+  <div id="board" class="board"></div>
+
+<script>
+const API = location.origin;
+
+function getToken(){
+  return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+}
+function requireAuth(){
+  const t = getToken();
+  if(!t){
+    location.href = "/web/login.html";
+    return false;
+  }
+  return true;
+}
+function authHeaders(extra={}){
+  const t = getToken();
+  return t ? {...extra, Authorization:`Bearer ${t}`} : extra;
+}
+
+const EstadoOrden = ["PENDIENTE","CONTACTADO","COTIZADO","EN NEGOCIACION","CONFIRMADO","DECLINADO","SIN ESTADO"];
+
+function el(tag, props={}, children=[]){
+  const n = document.createElement(tag);
+  Object.assign(n, props);
+  if(!Array.isArray(children)) children=[children];
+  children.filter(Boolean).forEach(c => n.append(c.nodeType ? c : document.createTextNode(c)));
+  return n;
+}
+
+async function getKanban(){
+  const r = await fetch(API + "/leads/kanban", { headers: authHeaders() });
+  if(!r.ok) throw new Error("No se pudo cargar kanban ("+r.status+")");
+  return r.json();
+}
+
+async function moveLead(id_lead, id_estado){
+  const r = await fetch(API + `/leads/${id_lead}/estado?id_estado=${encodeURIComponent(id_estado)}`, {
+    method:"PATCH",
+    headers: authHeaders()
+  });
+  if(!r.ok) throw new Error("No se pudo cambiar estado ("+r.status+")");
+  return r.json();
+}
+
+function buildBoard(cols){
+  cols.sort((a,b)=>EstadoOrden.indexOf(a.estado) - EstadoOrden.indexOf(b.estado));
+
+  const root = document.getElementById("board");
+  root.innerHTML = "";
+
+  for(const col of cols){
+    const list = el("div",{className:"list", dataset:{estadoId: col.id_estado ?? ""}});
+
+    list.addEventListener("dragover", ev => { ev.preventDefault(); list.classList.add("dropping"); });
+    list.addEventListener("dragleave", ()=> list.classList.remove("dropping"));
+
+    list.addEventListener("drop", async ev => {
+      ev.preventDefault();
+      list.classList.remove("dropping");
+      const idLead = ev.dataTransfer.getData("text/plain");
+      if(!idLead) return;
+
+      if(col.estado === "DECLINADO"){
+        if(!confirm("¿Seguro que deseas enviar este lead a 'DECLINADO'?")) return;
+      }
+      if(col.id_estado == null){
+        alert("A 'SIN ESTADO' no movemos por ahora (no hay id_estado).");
+        return;
+      }
+
+      try{
+        await moveLead(idLead, col.id_estado);
+        const card = document.querySelector(`.card[data-id="${idLead}"]`);
+        if(card){ list.append(card); refreshCounts(); }
+      }catch(e){
+        alert("Error: " + e.message);
+      }
+    });
+
+    for(const item of col.items){
+      const card = el("div",{className:"card", draggable:true, dataset:{id: item.id_lead}},[
+        el("div",{className:"name"}, item.nombre_cliente || "(Sin nombre)"),
+        el("div",{className:"sub"},[
+          item.codigo_cliente ? el("span",{className:"pill"}, "Cod: "+item.codigo_cliente): null,
+          item.email ? el("span",{className:"pill"}, item.email) : null,
+          item.telefono ? el("span",{className:"pill"}, item.telefono) : null,
+          item.monto_cotizado ? el("span",{className:"pill"}, "$"+item.monto_cotizado) : null,
+        ])
+      ]);
+      card.addEventListener("dragstart", ev => {
+        ev.dataTransfer.setData("text/plain", String(item.id_lead));
+      });
+      list.append(card);
+    }
+
+    const colEl = el("div",{className:"col"},[
+      el("header",{},[
+        el("span",{className:"title"}, col.estado || "SIN ESTADO"),
+        el("span",{className:"count"},`(${col.items.length})`)
+      ]),
+      list
+    ]);
+    root.append(colEl);
+  }
+}
+
+function refreshCounts(){
+  document.querySelectorAll(".col").forEach(col=>{
+    const count = col.querySelector(".count");
+    const list = col.querySelector(".list");
+    count.textContent = `(${list.children.length})`;
+  });
+}
+
+async function load(){
+  const msg = document.getElementById("msg");
+  try{
+    if(msg) msg.textContent = "Cargando…";
+    const cols = await getKanban();
+    buildBoard(cols);
+    if(msg) msg.textContent = "OK";
+  }catch(e){
+    if(msg) msg.textContent = "Error: " + e.message;
+  }
+}
+
+document.getElementById("reloadBtn").onclick = load;
+
+if(requireAuth()) load();
+</script>
+  <script src="/web/js/api.js"></script>
+</body>
+</html>

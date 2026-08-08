@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Usuarios</title>
+
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="./settings.css">
+
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script type="module" src="./_base.js"></script>
+</head>
+<body>
+
+<div class="toolbar">
+  <button id="btnNew" class="btn">Crear</button>
+  <input id="q" class="input" placeholder="Buscar usuario...">
+  <div class="spacer"></div>
+  <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:900;font-size:12px;letter-spacing:.04em">
+    Ver
+    <select id="per" class="input">
+      <option>20</option><option>50</option><option>100</option>
+    </select>
+  </label>
+</div>
+
+<h2 id="title" class="title">Usuarios</h2>
+
+<div style="margin: 0 12px 12px 12px">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th><th>Nombre</th><th>Email</th><th>Username</th><th>Teléfono</th><th>Cargo</th><th>Rol</th><th>Activo</th><th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <div class="pager">
+    <button id="prev" class="btn ghost">Anterior</button>
+    <span id="info"></span>
+    <button id="next" class="btn ghost">Siguiente</button>
+  </div>
+</div>
+
+<script type="module">
+  import { initCrud } from "./_base.js";
+
+  initCrud({
+    title: "Usuarios",
+    base: "/users",
+    id: "id_usuario",
+    columns: [
+      { key:'nombre', label:'Nombre', required:true },
+      { key:'email', label:'Email', required:true },
+      { key:'username', label:'Usuario', required:true },
+      { key:'telefono', label:'Teléfono' },
+      { key:'cargo', label:'Cargo' },
+      { key:'rol', label:'Rol', required:true },
+      { key:'is_active', label:'Activo' }
+    ],
+    searchKeys: ['nombre','email','username'],
+  });
+</script>
+
+</body>
+</html>

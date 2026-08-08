@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Eventos (Calendario)</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:14px;overflow:auto;}
+    .wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .head{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.25);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    :root.light .head{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .sub{opacity:.72;font-weight:850;font-size:12px;margin-top:4px;max-width:760px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .inp,.sel{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 12px;
+      font-weight:900;
+      outline:none;
+    }
+    :root.light .inp,:root.light .sel{background: rgba(255,255,255,.88); border-color: rgba(0,0,0,.10);}
+    .btn{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-weight:1000;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    :root.light .btn{background: rgba(255,255,255,.88); border-color: rgba(0,0,0,.10);}
+    .btn.primary{background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn:hover{filter:brightness(1.06);}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+      min-height:0;
+    }
+    :root.light .card{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
+    .muted{opacity:.72; font-weight:850; font-size:12px;}
+    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:sticky; top:0; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
+    :root.light .tbl th{background: rgba(255,255,255,.92);}
+    .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:4px 10px; border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      font-weight:1000; font-size:12px;
+      white-space:nowrap;
+    }
+    :root.light .pill{background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.08);}
+    .rowlink{cursor:pointer;}
+    .rowlink:hover{background:rgba(255,255,255,.03);}
+
+    /* SweetAlert modal compacto */
+    .gdmodal{
+      width: min(860px, 96vw) !important;
+      border-radius: 18px !important;
+      padding: 0 !important;
+    }
+    .gdmodal .swal2-title{
+      padding: 14px 18px 0 18px !important;
+      text-align:left !important;
+      font-size: 16px !important;
+      font-weight: 1100 !important;
+      letter-spacing: .02em !important;
+    }
+    .gdmodal .swal2-html-container{
+      margin: 10px 0 0 0 !important;
+      padding: 0 18px 14px 18px !important;
+      text-align:left !important;
+    }
+    .gdform{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      max-height: 64vh;
+      overflow:auto;
+      padding-right: 4px;
+    }
+    .gdgrid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:10px;
+    }
+    @media (min-width: 760px){
+      .gdgrid{ grid-template-columns: 1fr 1fr; }
+      .span2{ grid-column: span 2; }
+    }
+    .fld{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+    :root.light .fld{ background: rgba(255,255,255,.88); border-color: rgba(0,0,0,.10); }
+    .lbl{
+      font-size:11px;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      opacity:.72;
+      font-weight:1100;
+    }
+    .val{
+      margin-top:6px;
+      font-weight:950;
+      word-break:break-word;
+      white-space:pre-wrap;
+    }
+    .ed{
+      margin-top:8px;
+      display:none;
+      gap:8px;
+      flex-direction:column;
+    }
+    .ed.show{ display:flex; }
+    .ipt, .tx{
+      width:100%;
+      box-sizing:border-box;
+      border-radius:12px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.14);
+      color: var(--text);
+      padding: 10px 12px;
+      font-weight: 900;
+      outline:none;
+    }
+    :root.light .ipt, :root.light .tx{ background: rgba(255,255,255,.92); border-color: rgba(0,0,0,.10); }
+    .tx{ min-height: 96px; resize: vertical; }
+    .minirow{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .minirow .ipt{ flex:1; min-width: 160px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="head">
+      <div>
+        <div class="ttl">Eventos (Calendario)</div>
+        <div class="sub">Lista de eventos agendados en Calendar para tus marcas. Puedes editar y se notifica a Operaciones/MICE/Admin.</div>
+      </div>
+      <div class="row">
+        <input id="q" class="inp" placeholder="Buscar (título/cliente, comuna, marca, #lead)" style="min-width:260px" />
+        <select id="brand" class="sel" title="Marca">
+          <option value="">Mis marcas</option>
+        </select>
+        <button id="btnPrev" class="btn" type="button" title="Semana anterior" disabled>‹</button>
+        <button id="btnNow" class="btn" type="button" title="Semana actual">⟲</button>
+        <button id="btnNext" class="btn" type="button" title="Semana siguiente">›</button>
+        <button id="btnReload" class="btn primary" type="button">Buscar</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="h2" style="margin:0">Listado</div>
+        <div class="muted" id="meta">—</div>
+      </div>
+      <div class="row" style="justify-content:space-between;align-items:center;margin:-2px 0 10px 0">
+        <div class="pill" id="weekPill">Semana: —</div>
+        <div class="muted" id="hint">Solo eventos futuros (no se muestran ni editan pasados). Prioriza faltantes (dirección/teléfono/horario).</div>
+      </div>
+      <div style="max-height:76vh; overflow:auto">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Horario</th>
+              <th>Cliente</th>
+              <th>Comuna</th>
+              <th>Marca</th>
+              <th>Lead</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tb"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Inputs ocultos para rango actual (semana). El backend igual clampa a hoy para evitar pasados. -->
+    <input id="from" type="date" style="display:none" />
+    <input id="to" type="date" style="display:none" />
+  </div>
+
+  <script>
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = h === "localhost" || h === "127.0.0.1";
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+
+    function getToken(){
+      return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    }
+    function authHeaders(extra={}){
+      const t = getToken();
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+    function apiURL(path){
+      const p = String(path || "");
+      if (p.startsWith("http")) return p;
+      return `${API_BASE}${p.startsWith("/") ? "" : "/"}${p}`;
+    }
+    async function apiJSON(path, opt={}){
+      const r = await fetch(apiURL(path), { ...opt, headers: authHeaders(opt.headers || {}) });
+      const txt = await r.text();
+      let j = null; try{ j = txt ? JSON.parse(txt) : null; }catch(_){}
+      if (!r.ok) throw new Error((j && (j.detail || j.error)) ? (j.detail || j.error) : (txt || String(r.status)));
+      return j;
+    }
+
+    function ddmmyyyy(s){
+      try{
+        if (s instanceof Date && !isNaN(s.getTime())){
+          const pad = (n)=> String(n).padStart(2,"0");
+          return `${pad(s.getDate())}/${pad(s.getMonth()+1)}/${s.getFullYear()}`;
+        }
+      }catch(_){}
+      const d = String(s || "").slice(0,10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "—";
+      return `${d.slice(8,10)}/${d.slice(5,7)}/${d.slice(0,4)}`;
+    }
+    function hhmm(iso){
+      const s = String(iso || "");
+      return s.length >= 16 ? s.slice(11,16) : "";
+    }
+
+    function _tzOffsetHHMM(dt){
+      try{
+        const offMin = -dt.getTimezoneOffset();
+        const sign = offMin >= 0 ? "+" : "-";
+        const abs = Math.abs(offMin);
+        const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+        const mm = String(abs % 60).padStart(2, "0");
+        return `${sign}${hh}:${mm}`;
+      }catch(_){
+        return "";
+      }
+    }
+    function _localISO(dateStr, timeStr){
+      const ds = String(dateStr||"").trim();
+      const ts = String(timeStr||"").trim();
+      if (!ds || !ts) return null;
+      const [y,m,d] = ds.split("-").map(x=>Number(x||0));
+      const [hh,mm] = ts.split(":").map(x=>Number(x||0));
+      if (!y || !m || !d) return null;
+      const dt = new Date(y, (m-1), d, hh||0, mm||0, 0);
+      const off = _tzOffsetHHMM(dt);
+      const pad = (n)=> String(n).padStart(2,"0");
+      return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:00${off}`;
+    }
+
+    function timeOptions(selected){
+      const sel = String(selected || "").trim();
+      let out = `<option value="">—</option>`;
+      for (let h = 0; h <= 23; h++){
+        for (let m = 0; m <= 45; m += 15){
+          const v = String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0");
+          out += `<option value="${v}" ${v === sel ? "selected" : ""}>${v}</option>`;
+        }
+      }
+      return out;
+    }
+
+    function openLead(id){
+      const url = "/web/views/leads.html?open_lead=" + encodeURIComponent(String(id));
+      try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+    }
+
+    async function editEvent(row){
+      const fecha = String(row?.fecha_evento || "").slice(0,10);
+      if (!fecha){
+        Swal.fire({ icon:"error", title:"Falta fecha_evento", text:"No se puede editar sin fecha_evento." });
+        return;
+      }
+      const defaultTitle = (() => {
+        const marca = String(row?.marca || "").trim();
+        const cli = String(row?.cliente || "").trim();
+        return [cli, marca].filter(Boolean).join(" - ") || `Lead #${row?.id_lead}`;
+      })();
+
+      const curTitle = String(row?.pre_title || defaultTitle || "").trim();
+      const curTel = String(row?.telefono || "").trim();
+      const curDir = String(row?.direccion || row?.pre_location || "").trim();
+      const curDesc = String(row?.pre_description || "").trim();
+      const curHi = String(hhmm(row.pre_start) || hhmm(row.start_at) || "").trim();
+      const curHf = String(hhmm(row.pre_end) || hhmm(row.end_at) || "").trim();
+      const missTel = !curTel;
+      const missDir = !curDir;
+      const missHr = !(curHi && curHf);
+
+      const res = await Swal.fire({
+        title: `Editar evento · Lead #${row.id_lead}`,
+        customClass: { popup: "gdmodal" },
+        html: `
+          <div class="gdform">
+            <div class="muted">Edita solo lo necesario. Si el campo ya está completo, usa “Editar”. Esto actualiza el lead, sincroniza Calendar (sin crear eventos nuevos) y notifica a Operaciones/MICE/Admin.</div>
+
+            <div class="gdgrid">
+              <div class="fld span2">
+                <div class="lbl">Título</div>
+                <div class="val" id="v_title">${esc(curTitle || "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_title">Editar</button>
+                <div class="ed ${missDir ? "" : ""}" id="ed_title">
+                  <input id="ev_title" class="ipt" value="${esc(curTitle)}" />
+                </div>
+              </div>
+
+              <div class="fld">
+                <div class="lbl">Teléfono</div>
+                <div class="val" id="v_tel">${esc(curTel || "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_tel">${missTel ? "Ingresar" : "Editar"}</button>
+                <div class="ed ${missTel ? "show" : ""}" id="ed_tel">
+                  <input id="ev_tel" class="ipt" value="${esc(curTel)}" placeholder="9 dígitos (ej: 912345678)" />
+                </div>
+              </div>
+
+              <div class="fld">
+                <div class="lbl">Dirección</div>
+                <div class="val" id="v_dir">${esc(curDir || "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_dir">${missDir ? "Ingresar" : "Editar"}</button>
+                <div class="ed ${missDir ? "show" : ""}" id="ed_dir">
+                  <input id="ev_dir" class="ipt" value="${esc(curDir)}" placeholder="Dirección completa" />
+                </div>
+              </div>
+
+              <div class="fld span2">
+                <div class="lbl">Horario</div>
+                <div class="val" id="v_hr">${esc((curHi && curHf) ? (curHi + " – " + curHf) : "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_hr">${missHr ? "Ingresar" : "Editar"}</button>
+                <div class="ed ${missHr ? "show" : ""}" id="ed_hr">
+                  <div class="minirow">
+                    <select id="ev_hi" class="ipt">${timeOptions(curHi)}</select>
+                    <select id="ev_hf" class="ipt">${timeOptions(curHf)}</select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="fld span2">
+                <div class="lbl">Descripción (Calendar)</div>
+                <div class="val" id="v_desc">${esc(curDesc || "—")}</div>
+                <button type="button" class="btn" data-toggle="ed_desc">Editar</button>
+                <div class="ed" id="ed_desc">
+                  <textarea id="ev_desc" class="tx" placeholder="Notas para operaciones / cliente (opcional)">${esc(curDesc)}</textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        `,
+        didOpen: ()=>{
+          document.querySelectorAll("button[data-toggle]").forEach((b)=>{
+            b.addEventListener("click", ()=>{
+              const id = b.getAttribute("data-toggle");
+              const el = document.getElementById(id);
+              if (!el) return;
+              el.classList.toggle("show");
+            });
+          });
+        },
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: "Guardar",
+        cancelButtonText: "Cancelar",
+        preConfirm: ()=>{
+          const title = (document.getElementById("ev_title")?.value || curTitle || "").trim();
+          const telefono = (document.getElementById("ev_tel")?.value || curTel || "").trim() || null;
+          const direccion = (document.getElementById("ev_dir")?.value || curDir || "").trim() || null;
+          const desc = (document.getElementById("ev_desc")?.value || curDesc || "").trim() || null;
+
+          if (!title){ Swal.showValidationMessage("Falta título."); return false; }
+          if (missDir && !direccion){ Swal.showValidationMessage("Falta dirección."); return false; }
+          if (missTel && !telefono){ Swal.showValidationMessage("Falta teléfono."); return false; }
+          const hrBox = document.getElementById("ed_hr");
+          const hrEditing = !!hrBox?.classList?.contains("show");
+          const hi = hrEditing ? String(document.getElementById("ev_hi")?.value || "").trim() : "";
+          const hf = hrEditing ? String(document.getElementById("ev_hf")?.value || "").trim() : "";
+          if (missHr && (!hi || !hf)){
+            Swal.showValidationMessage("Falta horario (inicio/fin)."); return false;
+          }
+          if (hrEditing){
+            if (!hi || !hf){
+              Swal.showValidationMessage("Falta horario (inicio/fin)."); return false;
+            }
+            if ((hi && !/^[0-2]\\d:[0-5]\\d$/.test(hi)) || (hf && !/^[0-2]\\d:[0-5]\\d$/.test(hf))){
+              Swal.showValidationMessage("Horario inválido."); return false;
+            }
+            const preStart = _localISO(fecha, hi);
+            const preEnd = _localISO(fecha, hf);
+            if (!preStart || !preEnd){
+              Swal.showValidationMessage("No pude construir el horario."); return false;
+            }
+            try{
+              if (new Date(preEnd).getTime() <= new Date(preStart).getTime()){
+                Swal.showValidationMessage("El fin debe ser posterior al inicio."); return false;
+              }
+            }catch(_){}
+          }
+          const payload = {
+            pre_title: title,
+            telefono,
+            direccion,
+            pre_location: direccion,
+            pre_description: desc,
+          };
+          if (missHr || hrEditing){
+            const ps = _localISO(fecha, hi || curHi);
+            const pe = _localISO(fecha, hf || curHf);
+            if (ps) payload.pre_start = ps;
+            if (pe) payload.pre_end = pe;
+          }
+          return payload;
+        }
+      });
+      if (!res.isConfirmed || !res.value) return;
+
+      try{
+        const out = await apiJSON(`/tools/agenda/${row.id_lead}/edit_confirmed`, {
+          method: "PUT",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify(res.value),
+        });
+        const g = out?.gcal || {};
+        const gerr = String(g?.gcal_error || "").trim();
+        if (gerr){
+          Swal.fire({ icon:"warning", title:"Guardado (sin sync)", text:gerr.slice(0, 280) });
+        }else{
+          Swal.fire({ icon:"success", title:"Listo", text:"Evento actualizado y sincronizado en Calendar." });
+        }
+        await load();
+      }catch(err){
+        Swal.fire({ icon:"error", title:"Error", text:"No pude actualizar: " + String(err?.message||err) });
+      }
+    }
+
+    async function loadBrandsForSelect(){
+      const sel = qs("#brand");
+      if (!sel) return;
+      try{
+        const raw = await apiJSON("/marcas?limit=200");
+        const items = Array.isArray(raw) ? raw : (raw.items || []);
+        const clean = (items||[]).map((m)=>({
+          id: Number(m.id_marca || m.id || 0) || 0,
+          nombre: String(m.nombre || m.marca || "").trim()
+        })).filter(x=>x.id>0 && x.nombre);
+        const me = await apiJSON("/me");
+        const role = String(me?.role || me?.rol || "").toUpperCase();
+        const isAdmin = role.includes("ADMIN") || String(me?.id||"") === "1";
+        const myIds = (me?.marcas || []).map(x=>Number(x)).filter(Boolean);
+        const allowed = isAdmin ? clean : clean.filter(x=>myIds.includes(x.id));
+
+        sel.innerHTML = `<option value="">${isAdmin ? "Todas" : "Mis marcas"}</option>` + allowed.map(x=>`<option value="${x.id}">${esc(x.nombre)}</option>`).join("");
+      }catch(_){}
+    }
+
+    async function load(){
+      const meta = qs("#meta");
+      const tb = qs("#tb");
+      if (tb) tb.innerHTML = `<tr><td colspan="7" class="muted">Cargando…</td></tr>`;
+      try{
+        const q = (qs("#q")?.value || "").trim();
+        const from = (qs("#from")?.value || "").trim();
+        const to = (qs("#to")?.value || "").trim();
+        const id_marca = (qs("#brand")?.value || "").trim();
+        const params = new URLSearchParams();
+        if (q) params.set("q", q);
+        if (from) params.set("from_date", from);
+        if (to) params.set("to_date", to);
+        if (id_marca) params.set("id_marca", id_marca);
+        params.set("limit", "500");
+        const j = await apiJSON(`/tools/calendar/events_list?${params.toString()}`);
+        const items = Array.isArray(j.items) ? j.items : [];
+        if (meta) meta.textContent = `${items.length} evento(s)`;
+        if (!items.length){
+          if (tb) tb.innerHTML = `<tr><td colspan="7" class="muted">Sin resultados.</td></tr>`;
+          return;
+        }
+        if (tb){
+          tb.innerHTML = items.map((r)=>{
+            const f = ddmmyyyy(r.fecha_evento || r.start_at || "");
+            const hr = (hhmm(r.pre_start) && hhmm(r.pre_end)) ? `${hhmm(r.pre_start)}–${hhmm(r.pre_end)}` : (hhmm(r.start_at) && hhmm(r.end_at) ? `${hhmm(r.start_at)}–${hhmm(r.end_at)}` : "—");
+            const showTitle = String(r.pre_title || r.cliente || "").trim();
+            return `
+              <tr class="rowlink" data-id="${esc(r.id_lead)}">
+                <td><span class="pill">${esc(f)}</span></td>
+                <td class="muted">${esc(hr)}</td>
+                <td><strong>${esc(showTitle || "—")}</strong></td>
+                <td class="muted">${esc(r.comuna||"—")}</td>
+                <td class="muted">${esc(r.marca||"—")}</td>
+                <td class="muted">#${esc(r.id_lead||"")}</td>
+                <td>
+                  <button class="btn" data-act="open" type="button">Abrir</button>
+                  <button class="btn primary" data-act="edit" type="button">Editar</button>
+                </td>
+              </tr>
+            `;
+          }).join("");
+
+          const byId = new Map(items.map(x=>[String(x.id_lead), x]));
+          tb.querySelectorAll("tr[data-id]").forEach((tr)=>{
+            const id = tr.getAttribute("data-id");
+            tr.addEventListener("click", (ev)=>{
+              const btn = ev.target?.closest?.("button");
+              if (btn) return;
+              openLead(id);
+            });
+            tr.querySelectorAll("button[data-act]").forEach((b)=>{
+              b.addEventListener("click", (ev)=>{
+                ev.stopPropagation();
+                const act = b.getAttribute("data-act");
+                const row = byId.get(String(id));
+                if (!row) return;
+                if (act === "open") openLead(id);
+                if (act === "edit") editEvent(row);
+              });
+            });
+          });
+        }
+      }catch(err){
+        if (meta) meta.textContent = "—";
+        if (tb) tb.innerHTML = `<tr><td colspan="7" class="muted">Error: ${esc(String(err?.message||err))}</td></tr>`;
+      }
+    }
+
+    const state = { weekOffset: 0 };
+    function startOfWeekMon(d){
+      const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const day = x.getDay(); // 0=Sun
+      const diff = (day === 0 ? -6 : 1 - day); // to Monday
+      x.setDate(x.getDate() + diff);
+      return x;
+    }
+    function isoDate(d){
+      const pad = (n)=> String(n).padStart(2,"0");
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    }
+    function setWeek(offset){
+      state.weekOffset = Math.max(0, Number(offset||0));
+      const today = new Date();
+      const ws = startOfWeekMon(today);
+      ws.setDate(ws.getDate() + state.weekOffset * 7);
+      const we = new Date(ws.getTime());
+      we.setDate(we.getDate() + 6);
+      // no pasados (clamp visual)
+      const fromD = new Date(Math.max(ws.getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()));
+      const toD = we;
+      const from = qs("#from"); const to = qs("#to");
+      if (from) from.value = isoDate(fromD);
+      if (to) to.value = isoDate(toD);
+      const pill = qs("#weekPill");
+      if (pill){
+        pill.textContent = `Semana: ${ddmmyyyy(ws)} → ${ddmmyyyy(we)}`;
+      }
+      const btnPrev = qs("#btnPrev");
+      if (btnPrev) btnPrev.disabled = state.weekOffset <= 0;
+    }
+
+    (async function(){
+      if (!getToken()){
+        location.href = `${API_BASE}/web/login.html?next=${encodeURIComponent("/web/views/events_calendar.html")}`;
+        return;
+      }
+      setWeek(0);
+      await loadBrandsForSelect();
+      qs("#btnReload")?.addEventListener("click", load);
+      qs("#q")?.addEventListener("keydown", (e)=>{ if (e.key === "Enter") load(); });
+      qs("#brand")?.addEventListener("change", load);
+      qs("#btnPrev")?.addEventListener("click", ()=>{ setWeek(state.weekOffset - 1); load(); });
+      qs("#btnNow")?.addEventListener("click", ()=>{ setWeek(0); load(); });
+      qs("#btnNext")?.addEventListener("click", ()=>{ setWeek(state.weekOffset + 1); load(); });
+      load();
+    })();
+  </script>
+</body>
+</html>

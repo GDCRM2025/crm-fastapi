@@ -1,0 +1,30 @@
+{
+  // Reemplazar los correos antes de guardar en Access controls.
+  "groups": {
+    "group:crm-admins": [
+      "ADMIN_EMAIL@DOMINIO.CL"
+    ],
+    "group:crm-executives": [
+      "EJECUTIVO_1@DOMINIO.CL"
+    ]
+  },
+
+  "tagOwners": {
+    "tag:crm-server": ["group:crm-admins"]
+  },
+
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["group:crm-admins", "group:crm-executives"],
+      "dst": ["tag:crm-server:80", "tag:crm-server:443"]
+    },
+    {
+      "action": "accept",
+      "src": ["group:crm-admins"],
+      "dst": ["tag:crm-server:22"]
+    }
+  ],
+
+  "ssh": []
+}

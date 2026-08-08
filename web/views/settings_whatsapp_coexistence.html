@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Coexistencia WhatsApp</title>
+  <style>
+    :root{color-scheme:dark;--bg:#07110d;--card:#102019;--line:#284236;--text:#eef8f2;--muted:#a3b8ac;--green:#25d366;--warn:#fbbf24;--red:#fb7185}
+    *{box-sizing:border-box}body{margin:0;padding:22px;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+    .wrap{max-width:900px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:14px}
+    h1{font-size:24px;margin:0 0 7px}h2{font-size:17px;margin:0 0 10px}.muted{color:var(--muted);line-height:1.5}
+    .steps{display:grid;gap:9px;margin-top:16px}.step{display:flex;gap:11px;align-items:flex-start}.n{width:27px;height:27px;border-radius:50%;background:#1e5637;display:grid;place-items:center;font-weight:900;flex:0 0 auto}
+    label{display:block;font-size:12px;font-weight:850;margin-bottom:7px}.row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.field{flex:1;min-width:230px}
+    select,.btn{width:100%;border:1px solid var(--line);background:#152b21;color:var(--text);border-radius:12px;padding:11px 13px;font:inherit}
+    .btn{width:auto;font-weight:900;cursor:pointer;background:#137c45;border-color:#26a760}.btn:disabled{opacity:.5;cursor:not-allowed}
+    .status{padding:12px 14px;border-radius:12px;background:#13281f;border:1px solid var(--line);margin-top:14px;line-height:1.45}
+    .status.warn{border-color:#755c19;color:#fde68a}.status.error{border-color:#74303f;color:#fecdd3}.status.ok{border-color:#197642;color:#bbf7d0}
+    code{font-size:12px;word-break:break-all}.check{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07)}.check:last-child{border:0}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <section class="card">
+    <h1>Coexistencia de WhatsApp</h1>
+    <div class="muted">Conecta un número que seguirá utilizándose en WhatsApp Business y, al mismo tiempo, quedará disponible en Greenie.</div>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><div>Selecciona la marca correcta.</div></div>
+      <div class="step"><span class="n">2</span><div>Inicia sesión en Meta con un administrador del negocio.</div></div>
+      <div class="step"><span class="n">3</span><div>Selecciona la cuenta y el número autorizado para coexistencia.</div></div>
+      <div class="step"><span class="n">4</span><div>Meta devuelve el control al CRM; Greenie valida el retorno y registra el canal.</div></div>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Conectar número</h2>
+    <div class="row">
+      <div class="field">
+        <label for="brand">Marca / canal</label>
+        <select id="brand">
+          <option value="CAMALEON">Camaleón</option>
+          <option value="DEL_SABOR">Del Sabor</option>
+          <option value="GOURMET">Gourmet</option>
+          <option value="EXPRESS">Express</option>
+        </select>
+      </div>
+      <button class="btn" id="connect" type="button">Conectar con Meta</button>
+    </div>
+    <div class="status" id="status">Comprobando configuración…</div>
+  </section>
+  <section class="card">
+    <h2>Comprobaciones</h2>
+    <div id="checks" class="muted">Aún no ejecutadas.</div>
+  </section>
+</main>
+<script>
+  const API_BASE=(location.hostname==="localhost"||location.hostname==="127.0.0.1")?"":"/crm";
+  const authToken=()=>localStorage.getItem("token")||sessionStorage.getItem("token")||"";
+  const statusEl=document.querySelector("#status");
+  const connectButton=document.querySelector("#connect");
+  let launchConfig=null;
+  let sdkPromise=null;
+  async function api(path,init={}){
+    const response=await fetch(API_BASE+path,{...init,headers:{Authorization:`Bearer ${authToken()}`,...(init.headers||{})}});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok)throw new Error(data?.detail||data?.error||`HTTP ${response.status}`);
+    return data;
+  }
+  function setStatus(text,kind=""){
+    statusEl.textContent=text;
+    statusEl.className=`status ${kind}`.trim();
+  }
+  function loadSdk(appId,version){
+    if(sdkPromise)return sdkPromise;
+    sdkPromise=new Promise((resolve,reject)=>{
+      window.fbAsyncInit=()=>{
+        try{FB.init({appId,cookie:true,xfbml:false,version});resolve();}catch(error){reject(error);}
+      };
+      const script=document.createElement("script");
+      script.src="https://connect.facebook.net/es_LA/sdk.js";
+      script.async=true;script.defer=true;script.crossOrigin="anonymous";
+      script.onerror=()=>reject(new Error("No se pudo cargar el SDK de Meta"));
+      document.head.appendChild(script);
+    });
+    return sdkPromise;
+  }
+  async function prepare(){
+    connectButton.disabled=true;
+    const brand=document.querySelector("#brand").value;
+    try{
+      launchConfig=await api(`/meta/whatsapp/embedded-signup/state?brand=${encodeURIComponent(brand)}`,{method:"POST"});
+      const checks=[
+        ["App ID",Boolean(launchConfig.app_id)],
+        ["Configuration ID",Boolean(launchConfig.config_id)],
+        ["Retorno HTTPS",String(launchConfig.redirect_uri||"").startsWith("https://")],
+        ["Estado de seguridad",Boolean(launchConfig.state)],
+      ];
+      document.querySelector("#checks").innerHTML=checks.map(([label,ok])=>`<div class="check"><span>${label}</span><strong style="color:${ok?"#86efac":"#fda4af"}">${ok?"OK":"FALTA"}</strong></div>`).join("");
+      if(!launchConfig.app_id||!launchConfig.config_id)throw new Error("Falta configurar META_APP_ID o META_EMBEDDED_SIGNUP_CONFIG_ID en el servidor.");
+      await loadSdk(launchConfig.app_id,launchConfig.graph_version||"v25.0");
+      connectButton.disabled=false;
+      setStatus("Configuración lista. Puedes iniciar la conexión con Meta.","ok");
+    }catch(error){
+      setStatus(error.message||String(error),"error");
+    }
+  }
+  async function connect(){
+    connectButton.disabled=true;
+    setStatus("Abriendo autorización de Meta…");
+    try{
+      await prepare();
+      if(!launchConfig||connectButton.disabled) return;
+      FB.login(response=>{
+        const code=response?.authResponse?.code;
+        if(!code){
+          connectButton.disabled=false;
+          setStatus("Meta no entregó el código. El proceso fue cancelado o rechazado.","warn");
+          return;
+        }
+        const callback=new URL(launchConfig.redirect_uri);
+        callback.searchParams.set("code",code);
+        callback.searchParams.set("state",launchConfig.state);
+        window.location.assign(callback.toString());
+      },{
+        config_id:launchConfig.config_id,
+        response_type:"code",
+        override_default_response_type:true,
+        extras:{setup:{},featureType:"whatsapp_business_app_onboarding",sessionInfoVersion:"3"}
+      });
+    }catch(error){
+      connectButton.disabled=false;
+      setStatus(error.message||String(error),"error");
+    }
+  }
+  document.querySelector("#brand").addEventListener("change",prepare);
+  connectButton.addEventListener("click",connect);
+  prepare();
+</script>
+</body>
+</html>

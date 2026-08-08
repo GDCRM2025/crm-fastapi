@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <title>Ruta conductores</title>
+  <style>
+    #map{height:520px; border-radius:16px; overflow:hidden;}
+    .panel{display:grid; grid-template-columns: 2fr 1fr; gap:14px;}
+    @media (max-width:900px){ .panel{grid-template-columns:1fr;} }
+    .list{max-height:520px; overflow:auto; padding:8px; border-radius:16px; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.18);}
+    .item{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08);}
+    .item:last-child{border-bottom:0;}
+    .muted{opacity:.7; font-size:12px;}
+  </style>
+</head>
+<body style="padding:18px">
+  <section class="card" style="margin-bottom:12px">
+    <h2 style="margin:0 0 6px 0">Ruta — Conductores</h2>
+    <div class="muted">Actualización automática cada 10s</div>
+  </section>
+
+  <section class="panel">
+    <div id="map" class="card"></div>
+    <div class="list card" id="driversList"></div>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    window.addEventListener("message", (ev) => {
+      if (ev.data?.type === "theme"){
+        document.documentElement.classList.toggle("light", ev.data.mode === "light");
+      }
+    });
+
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      return GD && GD.authHeaders ? GD.authHeaders(extra) : extra;
+    }
+
+    const map = L.map('map').setView([-33.45, -70.66], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    const markers = new Map();
+
+    async function refresh(){
+      const r = await fetch("/gps/live", { headers: authHeaders() });
+      if (!r.ok) return;
+      const j = await r.json();
+      const list = document.getElementById("driversList");
+      list.innerHTML = "";
+      (j.items || []).forEach(d => {
+        const key = String(d.id_usuario || d.username || Math.random());
+        const lat = Number(d.lat), lng = Number(d.lng);
+        if (!isFinite(lat) || !isFinite(lng)) return;
+        let m = markers.get(key);
+        if (!m){
+          m = L.marker([lat, lng]).addTo(map);
+          markers.set(key, m);
+        } else {
+          m.setLatLng([lat, lng]);
+        }
+        const name = d.nombre || d.username || "Conductor";
+        m.bindPopup(`${name}<br>${new Date(d.created_at).toLocaleString("es-CL")}`);
+        const div = document.createElement("div");
+        div.className = "item";
+        div.innerHTML = `<strong>${name}</strong><div class="muted">${new Date(d.created_at).toLocaleString("es-CL")}</div>`;
+        list.appendChild(div);
+      });
+    }
+
+    refresh();
+    setInterval(refresh, 10000);
+  </script>
+</body>
+</html>

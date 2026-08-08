@@ -1,0 +1,1200 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Chat interno</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#07131F" />
+	  <link rel="icon" href="../pwa/gd-128.png" />
+  <link rel="manifest" href="../chat.manifest.json" />
+  <link rel="apple-touch-icon" href="../pwa/gd-192.png" />
+  <link rel="stylesheet" href="../styles.css?v=20260226-3" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script>
+    // PWA: habilita instalación en Chrome/Edge (Android/Desktop).
+    // Nota: iOS instala vía "Agregar a pantalla de inicio" (Safari).
+    (function () {
+      try {
+        if (!("serviceWorker" in navigator)) return;
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("../chat-sw.js").catch(() => {});
+        });
+      } catch (_) {}
+    })();
+  </script>
+  <script>
+    // PWA install prompt (gratis): muestra botón cuando el navegador lo permite.
+    (function(){
+      let deferred = null;
+      function isIOS(){
+        try{
+          const ua = navigator.userAgent || "";
+          return /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+        }catch(_){ return false; }
+      }
+      window.addEventListener("beforeinstallprompt", (e) => {
+        try{
+          e.preventDefault();
+          deferred = e;
+          const btn = document.getElementById("btnInstall");
+          if (btn) btn.style.display = "inline-flex";
+        }catch(_){}
+      });
+      window.addEventListener("appinstalled", () => {
+        deferred = null;
+        const btn = document.getElementById("btnInstall");
+        if (btn) btn.style.display = "none";
+      });
+      window.GDChatInstall = async function(){
+        const btn = document.getElementById("btnInstall");
+        try{
+          if (deferred){
+            await deferred.prompt();
+            await deferred.userChoice;
+            deferred = null;
+            if (btn) btn.style.display = "none";
+            return;
+          }
+          if (isIOS()){
+            Swal.fire("Instalar en iPhone/iPad", "En Safari: Compartir → “Agregar a pantalla de inicio”.", "info");
+            return;
+          }
+          Swal.fire("Instalación", "Tu navegador no mostró el botón de instalar. Prueba en Chrome/Edge.", "info");
+        }catch(_){}
+      };
+    })();
+  </script>
+  <style>
+    :root{
+      --bg:#07131F;
+      --glass: rgba(2,6,23,.42);
+      --border: rgba(148,163,184,.18);
+      --muted2: rgba(226,232,240,.68);
+    }
+    html,body{height:100%;}
+    body{margin:0;background:transparent;color:var(--text);}
+    .app{
+      height:100vh;
+      padding:12px;
+      box-sizing:border-box;
+      display:grid;
+      grid-template-columns: 380px 1fr;
+      gap:12px;
+    }
+    /* Embed mode (ventanita tipo Gmail) */
+    .app.embed{
+      grid-template-columns: 1fr;
+      padding:10px;
+    }
+    .app.embed .leftCard{ display:none; }
+    .card{
+      border:1px solid var(--border);
+      background: var(--glass);
+      border-radius: 18px;
+      overflow:hidden;
+      box-shadow: 0 22px 70px rgba(0,0,0,.35);
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+    }
+    .head{
+      padding:12px 12px 10px;
+      border-bottom:1px solid var(--border);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background: rgba(2,6,23,.30);
+      backdrop-filter: blur(12px);
+    }
+    .title{font-weight:1100; letter-spacing:.2px;}
+    .sub{font-size:12px;color:var(--muted2);font-weight:850;}
+    .tabs{display:flex; gap:6px; align-items:center;}
+    .tab{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: rgba(226,232,240,.86);
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-weight: 1100;
+      cursor:pointer;
+      font-size:12px;
+    }
+    .tab.active{
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+      color: #fff;
+    }
+    .btn{
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.22);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 9px 11px;
+      font-weight: 1100;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn.primary{
+      background: color-mix(in srgb, var(--accent) 26%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    }
+    .btn:hover{filter:brightness(1.06);}
+    .btn.install{
+      display:none;
+      gap:8px;
+      align-items:center;
+    }
+    .search{
+      margin:10px 12px 0;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:0 12px;
+      height:38px;
+      border-radius: 999px;
+      border:1px solid rgba(148,163,184,.16);
+      background: rgba(2,6,23,.18);
+    }
+    .search input{
+      width:100%;
+      border:none;
+      outline:none;
+      background:transparent;
+      color:inherit;
+      font-weight:900;
+      font-size:13px;
+    }
+    .list{
+      padding:10px 8px 12px;
+      overflow:auto;
+      min-height:0;
+      display:grid;
+      gap:6px;
+    }
+    .row{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 10px;
+      border-radius: 14px;
+      border:1px solid transparent;
+      cursor:pointer;
+    }
+    .row:hover{ background: rgba(255,255,255,.03); border-color: rgba(148,163,184,.12); }
+    .row.active{ background: rgba(25,195,125,.10); border-color: rgba(25,195,125,.22); }
+    .av{
+      width:36px; height:36px; border-radius:999px;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:1100;
+      background: rgba(148,163,184,.18);
+      color: rgba(255,255,255,.92);
+      flex: 0 0 auto;
+      background-size:cover;
+      background-position:center;
+      position:relative;
+    }
+    .dot{
+      width:9px;height:9px;border-radius:999px;
+      position:absolute; right:1px; bottom:1px;
+      background: rgba(148,163,184,.55);
+      box-shadow: 0 0 0 3px rgba(2,6,23,.55);
+    }
+    .dot.on{ background: rgba(25,195,125,.95); }
+    .who{min-width:0; flex:1;}
+    .name{font-weight:1100; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .last{font-size:12px; color:var(--muted2); font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .time{font-size:11px;color:rgba(226,232,240,.55); font-weight:950;}
+    .empty{padding:14px;color:var(--muted2);font-weight:950;font-size:13px;}
+
+    .msgs{
+      padding:12px;
+      overflow:auto;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      background: rgba(2,6,23,.10);
+    }
+    .m{
+      max-width:min(820px, 92%);
+      border:1px solid rgba(148,163,184,.14);
+      background: rgba(2,6,23,.22);
+      border-radius: 14px;
+      padding:10px 12px;
+    }
+    .m.me{
+      align-self:flex-end;
+      background: rgba(25,195,125,.12);
+      border-color: rgba(25,195,125,.22);
+    }
+    .meta{font-size:11px;color:rgba(226,232,240,.60);font-weight:900;margin-bottom:4px;}
+    .txt{white-space:pre-wrap;word-break:break-word;}
+    .composer{
+      border-top:1px solid var(--border);
+      padding:10px;
+      display:flex;
+      gap:10px;
+      align-items:center;
+      background: rgba(2,6,23,.22);
+    }
+    .inp{
+      flex:1;
+      height:42px;
+      border-radius: 999px;
+      border:1px solid rgba(148,163,184,.16);
+      background: rgba(2,6,23,.18);
+      color: inherit;
+      padding:0 14px;
+      font-weight:900;
+      outline:none;
+    }
+    .composer .miniBtn{
+      width:42px;
+      height:42px;
+      border-radius:999px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:0;
+    }
+    .filepill{
+      display:none;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      font-weight:900;
+      font-size:12px;
+      max-width: 380px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .filepill.on{ display:flex; }
+    .filepill .x{ cursor:pointer; opacity:.8; font-weight:1100; }
+    .att{
+      margin-top:8px;
+      border:1px solid rgba(148,163,184,.16);
+      background: rgba(255,255,255,.02);
+      border-radius: 12px;
+      padding:8px;
+    }
+    .att a{ color: inherit; text-decoration:none; font-weight:1000; }
+    .att a:hover{ text-decoration:underline; }
+    .att img{ max-width: 320px; border-radius: 10px; display:block; }
+    .emojiBar{
+      display:none;
+      position:absolute;
+      right: 16px;
+      bottom: 70px;
+      width:min(320px, 92vw);
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.92);
+      border-radius: 16px;
+      padding:10px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.45);
+      z-index: 999999;
+    }
+    .emojiBar.on{ display:block; }
+    .emojiGrid{ display:grid; grid-template-columns: repeat(8, 1fr); gap:8px; }
+    .emo{
+      height:34px;
+      border-radius:12px;
+      border:1px solid rgba(148,163,184,.14);
+      background: rgba(255,255,255,.04);
+      cursor:pointer;
+      font-size:18px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .emo:hover{ background: rgba(255,255,255,.08); }
+    .badge{
+      font-size:11px;
+      font-weight:1100;
+      color:rgba(226,232,240,.75);
+      border:1px solid rgba(148,163,184,.18);
+      border-radius:999px;
+      padding:3px 8px;
+      background: rgba(2,6,23,.18);
+      white-space:nowrap;
+    }
+    @media (max-width: 980px){
+      .app{grid-template-columns: 1fr; padding:10px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="card leftCard">
+      <div class="head">
+        <div>
+          <div class="title">Chat interno</div>
+          <div class="sub" id="subLeft">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn install" id="btnInstall" type="button" title="Instalar como app">Instalar</button>
+          <button class="btn" id="btnNotifs" type="button" title="Notificaciones del chat">Notifs</button>
+          <button class="btn" id="btnNew" type="button">Nuevo</button>
+          <button class="btn" id="btnRefresh" type="button">Recargar</button>
+        </div>
+      </div>
+      <div class="head" style="border-bottom:none;gap:10px">
+        <div class="tabs">
+          <button class="tab active" id="tabChats" type="button">Chats</button>
+          <button class="tab" id="tabUsers" type="button">Usuarios</button>
+        </div>
+        <span class="badge" id="onlineBadge">0 online</span>
+      </div>
+      <div class="search">
+        <span style="opacity:.85">🔎</span>
+        <input id="q" placeholder="Buscar…" />
+      </div>
+      <div class="list" id="leftList"></div>
+    </section>
+
+    <section class="card">
+      <div class="head">
+        <div>
+          <div class="title" id="threadTitle">Selecciona un chat</div>
+          <div class="sub" id="threadSub">—</div>
+        </div>
+        <span class="badge" id="srcBadge">—</span>
+      </div>
+      <div class="msgs" id="msgs">
+        <div class="empty">Selecciona un chat (o crea uno nuevo).</div>
+      </div>
+      <div class="composer">
+        <button id="btnEmoji" class="btn miniBtn" title="Emojis" disabled>😊</button>
+        <button id="btnAttach" class="btn miniBtn" title="Adjuntar" disabled>📎</button>
+        <input id="file" type="file" style="display:none" accept="image/*,.pdf,.docx,.xlsx,.txt,text/plain" />
+        <input id="msg" class="inp" placeholder="Escribe un mensaje…" disabled />
+        <div class="filepill" id="filePill" title="">
+          <span id="fileName">Archivo</span>
+          <span class="x" id="fileClear" title="Quitar">✕</span>
+        </div>
+        <button id="send" class="btn primary" disabled>Enviar</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="emojiBar" id="emojiBar" aria-hidden="true">
+    <div class="muted" style="margin-bottom:8px">Emojis</div>
+    <div class="emojiGrid" id="emojiGrid"></div>
+  </div>
+
+  <script>
+    const qs = (s, el = document) => el.querySelector(s);
+
+    function token() {
+      // Evitamos regex en runtime (en algunos builds se rompió con "Invalid regular expression flags").
+      const ck = (name) => {
+        try{
+          const want = String(name || "").trim() + "=";
+          const parts = String(document.cookie || "").split(";");
+          for (const p of parts){
+            const s = String(p || "").trim();
+            if (s.startsWith(want)) return decodeURIComponent(s.slice(want.length));
+          }
+          return "";
+        }catch(_){ return ""; }
+      };
+      return (
+        localStorage.getItem("token") ||
+        localStorage.getItem("gd_token") ||
+        sessionStorage.getItem("token") ||
+        sessionStorage.getItem("gd_token") ||
+        ck("gd_token") ||
+        ck("token") ||
+        ""
+      );
+    }
+
+    function headers(extra = {}) {
+      try {
+        const GD = window.parent && window.parent.GD;
+        if (GD && typeof GD.authHeaders === "function") return GD.authHeaders(extra);
+      } catch (_) {}
+      const t = token();
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    // API base (prod: /crm). Some views are served under /web/... without /crm in pathname.
+    const API_BASE = (() => {
+      try {
+        const host = String(location.hostname || "").toLowerCase();
+        const isLocal = host === "127.0.0.1" || host === "localhost";
+        return isLocal ? "" : "/crm";
+      } catch (_) {
+        return "";
+      }
+    })();
+
+    // Si el chat se abre directo (no iframe), redirigir al wrapper (staff.html)
+    // para mantener menú / salir / alertas / operación en una sola "app".
+    (function(){
+      try{
+        const p = new URLSearchParams(location.search || "");
+        const isEmbed = p.get("embed") === "1";
+        const isMobile = (() => {
+          try{
+            const ua = navigator.userAgent || "";
+            if (/iPhone|iPad|iPod|Android/i.test(ua)) return true;
+            return (window.innerWidth || 9999) <= 820;
+          }catch(_){ return false; }
+        })();
+        // En móvil, SIEMPRE usamos el wrapper (staff.html) aunque venga embed=1,
+        // porque sin wrapper se pierden menú/salir/alertas.
+        if ((isMobile || !isEmbed) && window.top === window){
+          const v = p.get("v") || "";
+          const u = `${API_BASE}/web/views/staff.html${v ? ("?v=" + encodeURIComponent(v)) : ""}`;
+          location.replace(u);
+        }
+      }catch(_){}
+    })();
+    function apiURL(u) {
+      const s = String(u || "");
+      if (!s) return s;
+      if (s.startsWith("/crm/")) return s;
+      if (s.startsWith("/")) return API_BASE + s;
+      return API_BASE + "/" + s;
+    }
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (m) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[m]));
+    }
+
+    function initials(name) {
+      const t = String(name || "").trim();
+      if (!t) return "GD";
+      const parts = t.split(/\s+/).filter(Boolean);
+      return (parts[0]?.[0] || "U") + (parts[1]?.[0] || "");
+    }
+
+    function timeShort(dt) {
+      const t = String(dt || "");
+      return t ? t.slice(11, 16) : "";
+    }
+
+    function goLogin() {
+      try { window.parent?.postMessage?.({ type: "logout" }, "*"); } catch (_) {}
+      try { location.href = `${API_BASE}/web/login.html`; } catch (_) {}
+    }
+
+    async function api(url, opt = {}) {
+      const r = await fetch(apiURL(url), { ...opt, headers: headers(opt.headers || {}) });
+      if (r.status === 401) throw new Error("NO_AUTH");
+      if (r.status === 403) throw new Error("Sin permiso para chat.");
+      const txt = await r.text();
+      let j = null;
+      try { j = txt ? JSON.parse(txt) : null; } catch (_) { j = { raw: txt }; }
+      if (!r.ok) throw new Error(j?.detail || j?.error || j?.raw || ("HTTP " + r.status));
+      return j;
+    }
+
+    // Sonido (best-effort). Requiere "user gesture" en la mayoría de navegadores.
+    let CAN_SOUND = false;
+    const enableSound = () => { CAN_SOUND = true; };
+    window.addEventListener("pointerdown", enableSound, { once:true, capture:true, passive:true });
+    window.addEventListener("keydown", enableSound, { once:true, capture:true, passive:true });
+    function beep(kind="send"){
+      if (!CAN_SOUND) return;
+      try{
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        gain.gain.value = 0.05;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        if (kind === "send"){
+          osc.frequency.value = 990;
+          osc.start();
+          setTimeout(()=>{ osc.frequency.value = 740; }, 70);
+          setTimeout(()=>{ osc.stop(); ctx.close(); }, 140);
+        } else {
+          osc.frequency.value = 740;
+          osc.start();
+          setTimeout(()=>{ osc.stop(); ctx.close(); }, 120);
+        }
+      }catch(_){}
+    }
+
+    let MODE = "chats";
+    let PRESENCE = [];
+    let THREADS = [];
+    let USERS = [];
+    let selectedThread = null;
+    let meName = "";
+    let meId = null;
+    let pendingFile = null;
+    const THREAD_WANT = (() => {
+      try{
+        const v = new URLSearchParams(location.search || "").get("thread") || "";
+        return String(v).trim();
+      }catch(_){
+        return "";
+      }
+    })();
+    const EMBED = (() => {
+      try{
+        return (new URLSearchParams(location.search || "").get("embed") || "") === "1";
+      }catch(_){
+        return false;
+      }
+    })();
+    try{
+      if (EMBED) qs(".app")?.classList.add("embed");
+    }catch(_){}
+
+    let PRESENCE_IDS = new Set();
+    let PRESENCE_EMAILS = new Set();
+
+    function isOnline(userOrEmailOrId) {
+      const obj = userOrEmailOrId && typeof userOrEmailOrId === "object" ? userOrEmailOrId : null;
+      const id = obj ? (obj.user_id ?? obj.id ?? obj.other_user_id) : userOrEmailOrId;
+      if (id != null && String(id).trim() && PRESENCE_IDS.has(String(id))) return true;
+      const email = obj ? (obj.email ?? obj.other_email) : userOrEmailOrId;
+      const e = String(email || "").toLowerCase();
+      if (!e) return false;
+      return PRESENCE_EMAILS.has(e);
+    }
+
+    function setMode(m) {
+      MODE = m;
+      qs("#tabChats").classList.toggle("active", MODE === "chats");
+      qs("#tabUsers").classList.toggle("active", MODE === "users");
+      qs("#q").placeholder = MODE === "users" ? "Buscar usuario…" : "Buscar chat…";
+      renderLeft();
+    }
+
+    function renderOnlineBadge() {
+      const n = (PRESENCE || []).length;
+      const ob = qs("#onlineBadge");
+      if (ob) ob.textContent = `${n} online`;
+    }
+
+    function renderLeft() {
+      const q = (qs("#q").value || "").trim().toLowerCase();
+      const list = qs("#leftList");
+
+      if (MODE === "chats") {
+        const items = (THREADS || []).filter((t) =>
+          !q ||
+          String(t.title || "").toLowerCase().includes(q) ||
+          String(t.last_msg || "").toLowerCase().includes(q)
+        );
+
+        list.innerHTML = items.length
+          ? items.map((t) => {
+              const active = selectedThread && String(selectedThread) === String(t.id_thread) ? "active" : "";
+              const avUrl = t.other_avatar_url || "";
+              const dot = isOnline({ other_user_id: t.other_user_id, other_email: t.other_email }) ? "on" : "";
+              return `
+                <div class="row ${active}" data-thread="${esc(t.id_thread)}">
+                  <div class="av" style="${avUrl ? `background-image:url('${avUrl}')` : ""}">
+                    ${avUrl ? "" : esc(initials(t.title))}
+                    <span class="dot ${dot}"></span>
+                  </div>
+                  <div class="who">
+                    <div class="name">${esc(t.title || "Chat")}</div>
+                    <div class="last">${esc(t.last_msg || "")}</div>
+                  </div>
+                  <div class="time">${esc(timeShort(t.last_at || t.updated_at))}</div>
+                </div>
+              `;
+            }).join("")
+          : `<div class="empty">Aún no tienes chats. Presiona <b>Nuevo</b>.</div>`;
+
+        list.querySelectorAll("[data-thread]").forEach((el) => {
+          el.addEventListener("click", async () => {
+            const id = Number(el.getAttribute("data-thread"));
+            await openThread(id);
+          });
+        });
+        return;
+      }
+
+      const items = (USERS || []).filter((u) =>
+        !q ||
+        String(u.name || "").toLowerCase().includes(q) ||
+        String(u.email || "").toLowerCase().includes(q)
+      );
+
+      list.innerHTML = items.length
+        ? items.map((u) => {
+            const avUrl = u.avatar_url || "";
+            const dot = isOnline(u) ? "on" : "";
+            return `
+              <div class="row" data-user="${esc(u.id)}">
+                <div class="av" style="${avUrl ? `background-image:url('${avUrl}')` : ""}">
+                  ${avUrl ? "" : esc(initials(u.name))}
+                  <span class="dot ${dot}"></span>
+                </div>
+                <div class="who">
+                  <div class="name">${esc(u.name || u.email || ("Usuario " + u.id))}</div>
+                  <div class="last">${esc(u.role || u.email || "")}</div>
+                </div>
+                <span class="badge">Chat</span>
+              </div>
+            `;
+          }).join("")
+        : `<div class="empty">Sin usuarios.</div>`;
+
+      list.querySelectorAll("[data-user]").forEach((el) => {
+        el.addEventListener("click", async () => {
+          const id = Number(el.getAttribute("data-user"));
+          await openDirect(id);
+        });
+      });
+    }
+
+    async function heartbeat() {
+      try { await api("/chat/heartbeat", { method: "POST" }); } catch (_) {}
+    }
+
+    async function loadPresence() {
+      let j = null;
+      try{
+        j = await api("/chat/presence");
+      }catch(_){
+        j = { items: [] };
+      }
+      PRESENCE = j?.items || [];
+      try{
+        PRESENCE_IDS = new Set((PRESENCE || []).map((p) => String(p.user_id ?? "")).filter(Boolean));
+        PRESENCE_EMAILS = new Set((PRESENCE || []).map((p) => String(p.email || "").toLowerCase()).filter(Boolean));
+      }catch(_){
+        PRESENCE_IDS = new Set();
+        PRESENCE_EMAILS = new Set();
+      }
+      renderOnlineBadge();
+    }
+
+    async function loadThreads() {
+      let j = null;
+      try{ j = await api("/chat/threads"); }catch(_){ j = { items: [] }; }
+      THREADS = j?.items || [];
+      const sb = qs("#srcBadge");
+      if (sb) sb.textContent = `Threads: ${THREADS.length}`;
+    }
+
+    async function loadUsers() {
+      let j = null;
+      try{ j = await api("/chat/users?limit=200&include_staff=1"); }catch(_){ j = { items: [] }; }
+      USERS = j?.items || [];
+    }
+
+    async function loadMessages() {
+      if (!selectedThread) return;
+      const j = await api(`/chat/threads/${selectedThread}/messages?limit=200`);
+      const items = j.items || [];
+      const box = qs("#msgs");
+
+      box.innerHTML = items.length
+        ? items.map((m) => {
+            const mine = (meId != null) ? (Number(m.sender_id) === Number(meId)) : (meName && String(m.sender_name || "") === String(meName));
+            const cls = mine ? "m me" : "m";
+            const at = m.created_at ? String(m.created_at).slice(0, 16).replace("T", " ") : "";
+            const hasAtt = !!(m.attachment_url);
+            const attUrl = hasAtt ? apiURL(String(m.attachment_url || "")) : "";
+            const attName = String(m.attachment_name || "Archivo");
+            const attType = String(m.attachment_type || "");
+            const attSize = (m.attachment_size != null && String(m.attachment_size).match(/^\d+$/)) ? Number(m.attachment_size) : null;
+            const isImg = !!attType && attType.startsWith("image/");
+            const sizeHtml = attSize != null ? ` <span class="muted">(${esc(fmtBytes(attSize))})</span>` : "";
+            return `
+              <div class="${cls}">
+                <div class="meta">${esc(m.sender_name || "")}${at ? " · " + esc(at) : ""}</div>
+                <div class="txt">${esc(m.message || "")}</div>
+                ${
+                  hasAtt
+                    ? `
+                      <div class="att">
+                        ${
+                          isImg
+                            ? `<a href="${esc(attUrl)}" target="_blank" rel="noopener"><img src="${esc(attUrl)}" alt="${esc(attName)}" loading="lazy" /></a>`
+                            : `<a href="${esc(attUrl)}" target="_blank" rel="noopener">${esc(attName)}${sizeHtml}</a>`
+                        }
+                      </div>
+                    `
+                    : ""
+                }
+              </div>
+            `;
+          }).join("")
+        : `<div class="empty">Sin mensajes.</div>`;
+
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function openThread(id) {
+      selectedThread = id;
+      clearPendingFile({ skipSync:true });
+      hideEmoji();
+      const t = (THREADS || []).find((x) => Number(x.id_thread) === Number(id));
+      const tt = qs("#threadTitle");
+      const ts = qs("#threadSub");
+      if (tt) tt.textContent = t?.title || "Chat";
+      if (ts) ts.textContent = t?.kind === "group" ? `${t.members || 0} miembros` : (t?.other_email || "");
+      qs("#msg").disabled = false;
+      qs("#btnEmoji").disabled = false;
+      qs("#btnAttach").disabled = false;
+      syncSendEnabled();
+      renderLeft();
+      await loadMessages();
+    }
+
+    async function openDirect(otherId) {
+      const j = await api("/chat/threads/direct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // backend espera { user_id }
+        body: JSON.stringify({ user_id: otherId }),
+      });
+      await loadThreads();
+      setMode("chats");
+      await openThread(Number(j.id_thread));
+    }
+
+    async function createGroup() {
+      await loadUsers();
+      const choices = USERS.map((u) => ({ id: u.id, name: u.name || u.email || ("Usuario " + u.id) }));
+      if (!choices.length) {
+        Swal.fire("Info", "No hay usuarios para crear grupo.", "info");
+        return;
+      }
+
+      const html = `
+        <div style="text-align:left;display:grid;gap:8px">
+          <div style="font-weight:900;opacity:.9">Nombre del grupo</div>
+          <input id="gtitle" class="swal2-input" placeholder="Ej: Operaciones" />
+          <div style="font-weight:900;opacity:.9">Miembros</div>
+          <div style="max-height:260px;overflow:auto;border:1px solid rgba(148,163,184,.18);border-radius:12px;padding:10px;background:rgba(2,6,23,.14)">
+            ${choices.map((c) => `
+              <label style="display:flex;gap:10px;align-items:center;padding:6px 4px">
+                <input type="checkbox" data-u="${esc(c.id)}" />
+                <span>${esc(c.name)}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+      `;
+
+      const res = await Swal.fire({
+        title: "Crear grupo",
+        html,
+        showCancelButton: true,
+        confirmButtonText: "Crear",
+        cancelButtonText: "Cancelar",
+        preConfirm: () => {
+          const title = (document.getElementById("gtitle")?.value || "").trim();
+          const ids = Array.from(document.querySelectorAll('input[type="checkbox"][data-u]:checked')).map((el) => Number(el.getAttribute("data-u")));
+          if (!title) return Swal.showValidationMessage("Falta nombre del grupo");
+          if (ids.length < 2) return Swal.showValidationMessage("Selecciona al menos 2 miembros");
+          // backend espera { user_ids }
+          return { title, user_ids: ids };
+        },
+      });
+      if (!res.isConfirmed) return;
+
+      const out = await api("/chat/threads/group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(res.value),
+      });
+
+      await loadThreads();
+      setMode("chats");
+      await openThread(Number(out.id_thread));
+    }
+
+    function fmtBytes(n){
+      const x = Number(n || 0);
+      if (!isFinite(x) || x <= 0) return "0B";
+      const u = ["B", "KB", "MB", "GB"];
+      let i = 0;
+      let v = x;
+      while (v >= 1024 && i < u.length - 1){ v /= 1024; i++; }
+      return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)}${u[i]}`;
+    }
+
+    function clearPendingFile(opts={}){
+      const skipSync = !!opts.skipSync;
+      pendingFile = null;
+      try{ qs("#file").value = ""; }catch(_){}
+      try{
+        qs("#filePill")?.classList.remove("on");
+        qs("#fileName").textContent = "Archivo";
+        qs("#filePill").title = "";
+      }catch(_){}
+      if (!skipSync) syncSendEnabled();
+    }
+
+    function setPendingFile(file){
+      pendingFile = file || null;
+      if (!pendingFile){
+        clearPendingFile();
+        return;
+      }
+      const max = 12 * 1024 * 1024;
+      if (pendingFile.size > max){
+        clearPendingFile();
+        Swal.fire("Archivo muy grande", `Máx 12MB. Este archivo pesa ${fmtBytes(pendingFile.size)}.`, "error");
+        return;
+      }
+      const label = `${pendingFile.name} · ${fmtBytes(pendingFile.size)}`;
+      qs("#fileName").textContent = label;
+      qs("#filePill").title = label;
+      qs("#filePill")?.classList.add("on");
+      syncSendEnabled();
+    }
+
+    function syncSendEnabled(){
+      const hasThread = !!selectedThread;
+      const text = (qs("#msg").value || "").trim();
+      const ok = hasThread && (!!text || !!pendingFile);
+      qs("#send").disabled = !ok;
+      qs("#msg").disabled = !hasThread;
+      qs("#btnEmoji").disabled = !hasThread;
+      qs("#btnAttach").disabled = !hasThread;
+      if (!hasThread){
+        clearPendingFile({ skipSync:true });
+        hideEmoji();
+      }
+    }
+
+    async function send() {
+      const text = (qs("#msg").value || "").trim();
+      if (!selectedThread) return;
+      if (!text && !pendingFile) return;
+      qs("#send").disabled = true;
+      qs("#btnAttach").disabled = true;
+      qs("#btnEmoji").disabled = true;
+      try {
+        beep("send");
+        let att = null;
+        if (pendingFile){
+          const fd = new FormData();
+          fd.append("archivo", pendingFile, pendingFile.name);
+          const up = await api(`/chat/threads/${selectedThread}/upload`, { method:"POST", body: fd });
+          att = {
+            attachment_url: up?.url,
+            attachment_name: up?.name || pendingFile.name,
+            attachment_type: up?.content_type || pendingFile.type || "",
+            attachment_size: up?.size || pendingFile.size,
+          };
+        }
+
+        await api(`/chat/threads/${selectedThread}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text || "", ...(att || {}) }),
+        });
+
+        qs("#msg").value = "";
+        clearPendingFile();
+        await loadThreads();
+        await loadMessages();
+        renderLeft();
+      } catch (e){
+        Swal.fire("Error", String(e?.message || e), "error");
+      } finally {
+        syncSendEnabled();
+      }
+    }
+
+    function insertAtCursor(input, value){
+      try{
+        const el = input;
+        if (!el) return;
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? el.value.length;
+        const before = el.value.slice(0, start);
+        const after = el.value.slice(end);
+        el.value = before + value + after;
+        const pos = start + value.length;
+        el.setSelectionRange(pos, pos);
+        el.focus();
+      }catch(_){}
+      syncSendEnabled();
+    }
+
+    const EMOJIS = [
+      "😀","😁","😂","🤣","😊","😍","😘","😎",
+      "😅","😇","🙂","😉","😌","😮","😢","😭",
+      "😡","🤯","🤔","🙃","😴","🤝","🙏","💪",
+      "✅","⚠️","❌","📌","📎","📄","🗓️","📍",
+      "🎉","🔥","⭐","💡","🧾","💳","💰","📈",
+      "📦","🚚","🧰","🛠️","🧹","🧽","🍔","🌭",
+      "🍕","☕","🥤","🍦","🍩","🍪","🍫","🥗",
+      "🏁","⏰","📞","✉️","🧑‍💻","👥","🟢","🔴",
+    ];
+    let EMO_BUILT = false;
+
+    function buildEmoji(){
+      if (EMO_BUILT) return;
+      const grid = qs("#emojiGrid");
+      if (!grid) return;
+      grid.innerHTML = EMOJIS.map(e => `<button class="emo" type="button" data-emo="${esc(e)}">${esc(e)}</button>`).join("");
+      grid.querySelectorAll("[data-emo]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const emo = btn.getAttribute("data-emo") || "";
+          insertAtCursor(qs("#msg"), emo);
+          hideEmoji();
+        });
+      });
+      EMO_BUILT = true;
+    }
+
+    function showEmoji(){
+      buildEmoji();
+      const bar = qs("#emojiBar");
+      if (!bar) return;
+      bar.classList.add("on");
+      bar.setAttribute("aria-hidden", "false");
+    }
+    function hideEmoji(){
+      const bar = qs("#emojiBar");
+      if (!bar) return;
+      bar.classList.remove("on");
+      bar.setAttribute("aria-hidden", "true");
+    }
+    function toggleEmoji(){
+      const bar = qs("#emojiBar");
+      if (!bar) return;
+      const on = bar.classList.contains("on");
+      if (on) hideEmoji(); else showEmoji();
+    }
+
+    async function boot() {
+      try {
+        const r = await fetch(apiURL("/me"), { headers: headers() });
+        if (r.ok) {
+          const me = await r.json();
+          meId = me.id ?? me.user_id ?? me.id_usuario ?? null;
+          meName = me.name || me.nombre || me.username || "";
+          const sl = qs("#subLeft");
+          if (sl) sl.textContent = meName ? `Conectado como ${meName}` : "Conectado";
+        }
+      } catch (_) {}
+
+      await heartbeat();
+      await loadPresence();
+      await loadThreads();
+      if (!EMBED) await loadUsers();
+      // Si no hay threads aún, por defecto mostramos Usuarios para iniciar chat (solo modo normal).
+      if (!THREADS.length && !EMBED) setMode("users");
+      if (!EMBED) renderLeft();
+
+      if (THREADS.length){
+        let pick = null;
+        if (THREAD_WANT && String(THREAD_WANT).match(/^\d+$/)){
+          const wantId = Number(THREAD_WANT);
+          if (THREADS.some(t => Number(t.id_thread) === wantId)) pick = wantId;
+        }
+        if (!pick) pick = Number(THREADS[0].id_thread);
+        setMode("chats");
+        await openThread(Number(pick));
+      }
+    }
+
+    if (!EMBED){
+      // PWA install prompt (Chrome/Edge). iOS: se instala manualmente desde Safari.
+      let deferredPrompt = null;
+      window.addEventListener("beforeinstallprompt", (e) => {
+        try{ e.preventDefault(); }catch(_){}
+        deferredPrompt = e;
+        try{ qs("#btnInstall").style.display = ""; }catch(_){}
+      });
+      qs("#btnInstall")?.addEventListener("click", async ()=>{
+        try{
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+        }catch(_){}
+        deferredPrompt = null;
+        try{ qs("#btnInstall").style.display = "none"; }catch(_){}
+      });
+
+      // Notificaciones (solo cuando el navegador lo permite). Se activan tras click.
+      const NOTIFS_KEY = "gd_chat_notifs";
+      function notifEnabled(){ return localStorage.getItem(NOTIFS_KEY)==="1"; }
+      function setNotifEnabled(v){ localStorage.setItem(NOTIFS_KEY, v ? "1" : "0"); }
+      function isIOS(){
+        try{
+          const ua = String(navigator.userAgent || "");
+          const iDevice = /iPad|iPhone|iPod/i.test(ua);
+          const iPadOS13 = (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+          return iDevice || iPadOS13;
+        }catch(_){
+          return false;
+        }
+      }
+      function isStandalone(){
+        try{
+          // iOS: navigator.standalone. Otros: display-mode.
+          // @ts-ignore
+          if (typeof navigator.standalone === "boolean") return !!navigator.standalone;
+        }catch(_){}
+        try{
+          return !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+        }catch(_){
+          return false;
+        }
+      }
+      async function ensureNotif(){
+        if (!("Notification" in window)) return false;
+        if (Notification.permission === "granted") return true;
+        if (Notification.permission === "denied") return false;
+        try{
+          const p = await Notification.requestPermission();
+          return p === "granted";
+        }catch(_){ return false; }
+      }
+      function renderNotifBtn(){
+        const b = qs("#btnNotifs");
+        if (!b) return;
+        const on = notifEnabled();
+        b.classList.toggle("primary", on);
+        b.textContent = on ? "Notifs: ON" : "Notifs";
+      }
+      qs("#btnNotifs")?.addEventListener("click", async ()=>{
+        // iPhone/iPad: en Safari (no instalada) suele bloquear notificaciones. Evitamos frustración.
+        if (isIOS() && !isStandalone()){
+          Swal.fire(
+            "Info",
+            "En iPhone/iPad, las notificaciones funcionan en la app instalada (Safari → Compartir → “Agregar a pantalla de inicio”).",
+            "info"
+          );
+          setNotifEnabled(false);
+          renderNotifBtn();
+          return;
+        }
+        const ok = await ensureNotif();
+        if (!ok){
+          Swal.fire("Info", "El navegador bloqueó notificaciones. Revisa permisos del sitio.", "info");
+          setNotifEnabled(false);
+          renderNotifBtn();
+          return;
+        }
+        setNotifEnabled(!notifEnabled());
+        renderNotifBtn();
+      });
+      renderNotifBtn();
+
+      qs("#tabChats").addEventListener("click", () => setMode("chats"));
+      qs("#tabUsers").addEventListener("click", () => setMode("users"));
+      qs("#btnRefresh").addEventListener("click", () => boot().catch((e) => Swal.fire("Error", String(e?.message || e), "error")));
+      qs("#btnNew").addEventListener("click", async () => {
+        const res = await Swal.fire({
+          title: "Nuevo",
+          text: "¿Qué quieres crear?",
+          showCancelButton: true,
+        confirmButtonText: "Chat directo",
+        cancelButtonText: "Cancelar",
+        showDenyButton: true,
+        denyButtonText: "Grupo",
+      });
+        if (res.isConfirmed) {
+          setMode("users");
+          qs("#q").focus();
+        } else if (res.isDenied) {
+          await createGroup();
+        }
+      });
+    } else {
+      // Embed: hide left controls even if some browsers keep layout.
+      try{ qs("#onlineBadge")?.remove(); }catch(_){}
+    }
+    qs("#send").addEventListener("click", send);
+    qs("#msg").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+    qs("#msg").addEventListener("input", () => syncSendEnabled());
+    qs("#btnAttach").addEventListener("click", () => {
+      if (!selectedThread) return;
+      try{ qs("#file").click(); }catch(_){}
+    });
+    qs("#file").addEventListener("change", () => {
+      const f = qs("#file")?.files?.[0] || null;
+      if (f) setPendingFile(f);
+    });
+    qs("#fileClear").addEventListener("click", clearPendingFile);
+    qs("#btnEmoji").addEventListener("click", () => { if (selectedThread) toggleEmoji(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideEmoji(); });
+    document.addEventListener("pointerdown", (e) => {
+      const bar = qs("#emojiBar");
+      if (!bar || !bar.classList.contains("on")) return;
+      const t = e.target;
+      if (bar.contains(t)) return;
+      if (qs("#btnEmoji")?.contains(t)) return;
+      hideEmoji();
+    }, { capture:true, passive:true });
+    if (!EMBED) qs("#q").addEventListener("input", () => renderLeft());
+
+    boot().catch((e) => {
+      const msg = String(e?.message || e);
+      if (msg === "NO_AUTH") {
+        qs("#leftList").innerHTML = `<div class="empty">No hay sesión (token).</div>`;
+        qs("#msgs").innerHTML = `
+          <div class="empty">
+            <div style="font-weight:1100;margin-bottom:8px">No hay sesión (token).</div>
+            <div style="opacity:.85;margin-bottom:10px">Vuelve a iniciar sesión para usar el chat.</div>
+            <button class="btn primary" id="btnGoLogin" type="button">Ir a Login</button>
+          </div>
+        `;
+        qs("#btnGoLogin")?.addEventListener("click", goLogin);
+      } else {
+        qs("#leftList").innerHTML = `<div class="empty">Error: ${esc(msg)}</div>`;
+        qs("#msgs").innerHTML = `<div class="empty">${esc(msg)}</div>`;
+      }
+    });
+
+    // Alertas: notificación cuando llega un mensaje nuevo (siempre que el usuario haya activado Notifs).
+    const lastMsgByThread = new Map();
+    async function loadMessagesWithAlert(){
+      if (!selectedThread) return;
+      const j = await api(`/chat/threads/${selectedThread}/messages?limit=200`);
+      const items = j.items || [];
+      try{
+        const last = items.length ? items[items.length-1] : null;
+        const lastId = last ? Number(last.id_message || 0) : 0;
+        const prev = Number(lastMsgByThread.get(String(selectedThread)) || 0);
+        if (lastId && lastId > prev){
+          lastMsgByThread.set(String(selectedThread), lastId);
+          const mine = (meId != null) ? (Number(last?.sender_id) === Number(meId)) : (meName && String(last?.sender_name || "") === String(meName));
+          const want = (!mine) && (!document.hidden) ? false : true;
+          if (want && !EMBED){
+            try{
+              if (localStorage.getItem("gd_chat_notifs")==="1" && ("Notification" in window) && Notification.permission==="granted"){
+                new Notification(String(last?.sender_name || "Chat"), { body: String(last?.message || "").slice(0, 140) });
+              }
+            }catch(_){}
+          }
+        } else if (!lastId && prev){
+          // no-op
+        } else if (lastId && !prev){
+          lastMsgByThread.set(String(selectedThread), lastId);
+        }
+      }catch(_){}
+
+      // Re-render UI usando la función existente
+      // (Evita duplicar plantilla; reutiliza loadMessages() que ya pinta el DOM)
+      await loadMessages().catch(()=>{});
+    }
+
+    setInterval(() => { if (!document.hidden) loadMessagesWithAlert().catch(() => {}); }, 30000);
+    setInterval(() => { if (!document.hidden) heartbeat().catch(() => {}); }, 30000);
+    setInterval(() => { if (!document.hidden) loadPresence().then(() => { if (!EMBED) renderLeft(); }).catch(() => {}); }, 30000);
+    setInterval(() => { if (!document.hidden) loadThreads().then(() => { if (!EMBED) renderLeft(); }).catch(() => {}); }, 30000);
+  </script>
+</body>
+</html>

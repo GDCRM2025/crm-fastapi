@@ -1,0 +1,3 @@
+RewriteEngine On
+RewriteRule ^ - [R=503,L]
+ErrorDocument 503 "CRM Green Diamond en mantenimiento programado. Intenta nuevamente en unos minutos."

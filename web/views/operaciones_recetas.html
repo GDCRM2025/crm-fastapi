@@ -1,0 +1,1797 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Operaciones • Recetas</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{padding:18px; overflow:auto;}
+    .layout{display:grid; grid-template-columns: 340px 1fr; gap:14px;}
+    @media (max-width: 980px){ .layout{grid-template-columns:1fr;} }
+    .list{display:flex; flex-direction:column; gap:8px; max-height:70vh; overflow:auto;}
+    .list button{width:100%; text-align:left;}
+    .list .active{border-color:#19C37D; box-shadow:0 0 0 2px rgba(25,195,125,.18);}
+    .toolbar{display:flex; flex-direction:column; gap:8px; margin-bottom:10px;}
+    .toolbar input,.toolbar select{width:100%;}
+    .tag{display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.16); font-size:11px; font-weight:1100; letter-spacing:.08em; text-transform:uppercase;}
+    .tag.ok{border-color:rgba(34,197,94,.65); color:#052012; background:rgba(34,197,94,.25); box-shadow:0 0 0 3px rgba(34,197,94,.10);}
+    .tag.bad{border-color:rgba(239,68,68,.70); color:#2b0b0b; background:rgba(239,68,68,.25); box-shadow:0 0 0 3px rgba(239,68,68,.10);}
+    :root.light .tag.ok{ color:#0a2a16; background:rgba(34,197,94,.20); }
+    :root.light .tag.bad{ color:#3a0a0a; background:rgba(239,68,68,.18); }
+    .meta{font-size:12px; opacity:.7;}
+    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+    .row input,.row select{background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.14); color:inherit; padding:8px 10px; border-radius:10px;}
+    .recipeTableWrap{
+      max-height:56vh;
+      overflow:auto;
+      margin-top:8px;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      background:rgba(0,0,0,.08);
+    }
+    table{width:100%; min-width:980px; border-collapse:separate; border-spacing:0; font-size:13px;}
+    th,td{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); vertical-align:top;}
+    th{position:sticky; top:0; z-index:2; background:#10243a; box-shadow:0 1px 0 rgba(255,255,255,.10);}
+    td input, td select{width:100%; background:transparent; border:1px solid rgba(255,255,255,.12); border-radius:8px; padding:6px 8px; color:inherit;}
+    .pill{display:inline-flex; gap:6px; align-items:center; padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.12);}
+    .muted{opacity:.7;}
+    .right{display:flex; gap:8px; align-items:center;}
+    .toast{
+      position: fixed; right: 18px; bottom: 18px; z-index: 9999;
+      background: rgba(8,16,24,.95);
+      border: 1px solid rgba(148,163,184,.25);
+      color: #e2e8f0; padding: 10px 14px; border-radius: 12px;
+      font-weight: 900; font-size: 12px; opacity:0; transform: translateY(10px);
+      transition: .18s ease;
+    }
+    .toast.show{ opacity:1; transform: translateY(0); }
+    .toast.ok{ border-color: rgba(34,197,94,.45); }
+    .toast.err{ border-color: rgba(239,68,68,.45); }
+
+    /* Merma por ingrediente: SOLO para sub-recetas (ingredientes derivados). */
+    body:not([data-sub="1"]) [data-col="merma"]{ display:none !important; }
+
+    /* SweetAlert2: que se vea como el CRM (oscuro + acento verde) */
+    .gd-swal.swal2-popup{
+      background: rgba(8,16,24,.98) !important;
+      color: #e2e8f0 !important;
+      border: 1px solid rgba(148,163,184,.22) !important;
+      border-radius: 16px !important;
+      box-shadow: 0 20px 60px rgba(0,0,0,.55) !important;
+    }
+    .gd-swal .swal2-title{ color:#e2e8f0 !important; letter-spacing:.2px; }
+    .gd-swal .swal2-html-container{ color:#cbd5e1 !important; }
+    .gd-swal .swal2-input, .gd-swal .swal2-textarea, .gd-swal .swal2-select{
+      background: rgba(0,0,0,.28) !important;
+      color: #e2e8f0 !important;
+      border: 1px solid rgba(255,255,255,.16) !important;
+      border-radius: 12px !important;
+      box-shadow: none !important;
+    }
+    .gd-swal .swal2-input:focus, .gd-swal .swal2-select:focus{
+      border-color: rgba(25,195,125,.55) !important;
+      box-shadow: 0 0 0 4px rgba(25,195,125,.14) !important;
+    }
+    .gd-swal .swal2-actions{ gap:10px; }
+    .gd-swal .swal2-confirm{
+      background: #19c37d !important;
+      color:#07130f !important;
+      font-weight: 1000 !important;
+      border-radius: 12px !important;
+    }
+    .gd-swal .swal2-cancel{
+      background: rgba(255,255,255,.06) !important;
+      color:#e2e8f0 !important;
+      border: 1px solid rgba(255,255,255,.14) !important;
+      border-radius: 12px !important;
+    }
+    .gd-swal .swal2-validation-message{
+      background: rgba(239,68,68,.10) !important;
+      color:#fecaca !important;
+      border: 1px solid rgba(239,68,68,.30) !important;
+      border-radius: 12px !important;
+    }
+    /* Sub-recetas: modal ancho tipo “spreadsheet” (anti-tontos) */
+    .gd-swal.gd-swal--form.swal2-popup{
+      width: min(1120px, 96vw) !important;
+      max-width: 1120px !important;
+    }
+    .gd-swal.gd-swal--form .swal2-html-container{
+      margin: 12px 0 0 0 !important;
+      padding: 0 !important;
+    }
+
+    .gd-form-grid{ text-align:left; display:grid; gap:10px; }
+    .gd-label{ font-weight:1000; font-size:12px; opacity:.85; letter-spacing:.25px; }
+    .gd-row{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    @media (max-width:520px){ .gd-row{ grid-template-columns:1fr; } }
+    .gd-mini{ font-size:12px; opacity:.7; }
+    .gd-chip{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:6px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      font-weight: 900; font-size: 12px;
+    }
+    .gd-chip.danger{ border-color: rgba(239,68,68,.35); }
+    .gd-sr-items{ margin-top:8px; padding-top:10px; border-top:1px solid rgba(255,255,255,.10); }
+    .gd-items-list{ display:grid; gap:8px; margin-top:8px; max-height: 260px; overflow:auto; }
+    .gd-item-row{
+      display:grid; grid-template-columns: 1.3fr .6fr .7fr .7fr auto;
+      gap:8px; align-items:center;
+      padding:8px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+    }
+    @media (max-width:720px){
+      .gd-item-row{ grid-template-columns: 1fr 1fr; }
+      .gd-item-row .gd-del{ justify-self:end; grid-column: 2; }
+    }
+    .gd-del{
+      background: rgba(239,68,68,.12);
+      border: 1px solid rgba(239,68,68,.25);
+      color: #fecaca;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-weight: 1000;
+      cursor:pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <section class="card">
+      <div class="toolbar">
+        <input id="q" placeholder="Buscar producto..." />
+        <select id="listMode">
+          <option value="PRODUCTOS">Productos (venta)</option>
+          <option value="SUBRECETAS">Sub-recetas</option>
+        </select>
+        <select id="brandFilter"></select>
+        <label class="tag" style="cursor:pointer; justify-content:center;">
+          <input type="checkbox" id="onlyMissing" style="margin-right:6px" />
+          Solo sin receta
+        </label>
+        <div class="meta" id="listMeta">—</div>
+      </div>
+      <div class="list" id="productosList"></div>
+    </section>
+
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <h2 style="margin:0" id="recetaTitle">Receta</h2>
+          <div class="meta" id="recetaMeta">Selecciona un producto</div>
+        </div>
+        <div class="right">
+          <div class="pill" id="totalCost">Costo total: $ 0</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <input id="recetaProducto" placeholder="Producto" disabled />
+        <input id="recetaMarca" placeholder="Marca" disabled />
+        <input id="recetaRend" placeholder="Rendimiento" />
+        <input id="recetaMerma" data-col="merma" placeholder="Merma (%)" />
+        <input id="recetaExtra" placeholder="Costos extra ($)" />
+        <label class="tag" style="cursor:pointer;">
+          <input type="checkbox" id="recetaSub" style="margin-right:6px" />
+          Sub‑receta
+        </label>
+        <button class="btn" id="btnNewSub">Nueva sub‑receta</button>
+        <button class="btn" id="btnCreate" style="display:none;">Crear receta</button>
+        <button class="btn" id="btnSaveReceta" style="display:none;">Guardar receta</button>
+        <button class="btn" id="btnDelReceta" style="display:none;">Eliminar receta</button>
+      </div>
+
+      <h3 style="margin:18px 0 8px 0">Ingredientes</h3>
+      <div class="row" style="margin:6px 0 8px 0;">
+        <label class="tag" style="cursor:pointer;">
+          <input type="checkbox" id="useSubRecipe" style="margin-right:6px" />
+          Usar sub-receta si existe
+        </label>
+        <div class="meta" id="subRecipeInfo">—</div>
+      </div>
+      <div class="recipeTableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ingrediente</th>
+            <th>Cantidad</th>
+            <th>Unidad</th>
+            <th>Costo unitario</th>
+            <th data-col="merma">Merma (%)</th>
+            <th>Costo total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="itemsBody"></tbody>
+        <tfoot>
+          <tr>
+            <td>
+              <input id="newIng" list="dlIng" placeholder="Ingrediente" />
+              <datalist id="dlIng"></datalist>
+            </td>
+            <td><input id="newQty" placeholder="Cantidad" /></td>
+            <td>
+              <input id="newUnit" list="dlUnits" placeholder="Unidad" />
+            </td>
+            <td><input id="newCost" placeholder="Costo unitario" /></td>
+            <td data-col="merma"><input id="newMerma" placeholder="0" /></td>
+            <td><input id="newTotal" placeholder="Costo total" disabled /></td>
+            <td><button class="btn" id="btnAddItem">Agregar</button></td>
+          </tr>
+        </tfoot>
+      </table>
+      </div>
+      <datalist id="dlUnits"></datalist>
+    </section>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    const fmt = new Intl.NumberFormat("es-CL");
+    const fmtMoney = new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
+    const toNumber = (v) => {
+      if (v === null || v === undefined) return 0;
+      const s = String(v).trim();
+      if (!s) return 0;
+      const clean = s.replace(/,/g,".").replace(/[^\d.-]/g,"");
+      const n = Number(clean);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const parseMoney = (v) => {
+      if (v === null || v === undefined) return 0;
+      let s = String(v).trim();
+      if (!s) return 0;
+      // remove currency symbols/spaces
+      s = s.replace(/[^\d.,-]/g,"");
+
+      // CL common: 3.000 / 1.200.000 (dot thousands, no decimals)
+      if (/^\d{1,3}(\.\d{3})+$/.test(s)){
+        s = s.replace(/\./g,"");
+      } else if (s.includes(",") && s.includes(".")){
+        // 1.234,56 -> 1234.56 (dot thousands, comma decimals)
+        s = s.replace(/\./g,"").replace(",",".");
+      } else if (s.includes(",") && !s.includes(".")){
+        // 123,45 -> 123.45 (comma decimals)
+        s = s.replace(",",".");
+      } else {
+        // 120.00 -> 120.00 (dot decimals) o 3000 -> 3000
+        s = s;
+      }
+
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const formatCostInput = (v) => {
+      // Importante: en CL se escribe "3.000" (miles). Number("3.000") => 3.
+      // Por eso siempre normalizamos con parseMoney antes de formatear.
+      const n = parseMoney(v);
+      if (!Number.isFinite(n) || n === 0) return "";
+      const abs = Math.abs(n);
+      // Para pesos (CLP) grandes, mostramos con separador de miles para evitar confusión visual.
+      if (abs >= 1000 && Number.isInteger(n)) return fmt.format(n);
+      // Para costos chicos (p.ej. por gr/ml), permitimos decimales.
+      const dec = abs < 100 ? 3 : 0;
+      return n.toFixed(dec).replace(/\.?0+$/, "");
+    };
+
+    let productos = [];
+    let recetas = [];
+    let subRecetas = [];
+    let ingredientes = [];
+    let ingIndex = {};
+    let invCatalogos = null;
+    function _pickIng(list, preferredUnit=""){
+      if (!Array.isArray(list) || !list.length) return null;
+      const pu = norm(preferredUnit);
+      if (pu){
+        const hit = list.find(i => norm(i?.unidad || "") === pu);
+        if (hit) return hit;
+      }
+      return list[0] || null;
+    }
+    function findIngredientExact(name, preferredUnit=""){
+      const n = norm(name);
+      if (!n) return null;
+      const list = ingIndex[n];
+      return _pickIng(list, preferredUnit);
+    }
+    function findIngredient(name, preferredUnit=""){
+      const exact = findIngredientExact(name, preferredUnit);
+      if (exact) return exact;
+      const n = norm(name);
+      if (!n) return null;
+      const starts = (ingredientes || []).filter(i => norm(i?.nombre || "").startsWith(n));
+      if (starts.length) return _pickIng(starts, preferredUnit);
+      const weak = (ingredientes || []).filter(i => {
+        const nn = norm(i?.nombre || "");
+        return (nn.includes(n) || n.includes(nn));
+      });
+      return _pickIng(weak, preferredUnit);
+    }
+    function findIngredientCandidates(q){
+      const n = norm(q);
+      if (!n) return [];
+      const out = [];
+      for (const it of (ingredientes || [])){
+        const nn = norm(it?.nombre || "");
+        if (!nn) continue;
+        let score = 0;
+        if (nn === n) score = 100;
+        else if (nn.startsWith(n)) score = 70;
+        else if (nn.includes(n)) score = 40;
+        else continue;
+        out.push({ it, score });
+      }
+      out.sort((a,b) => (b.score - a.score) || String(a.it?.nombre||"").localeCompare(String(b.it?.nombre||""), "es"));
+      return out.map(x => x.it);
+    }
+    function unitLabelById(id){
+      const cats = invCatalogos || {};
+      const unidades = Array.isArray(cats.unidades) ? cats.unidades : [];
+      const hit = unidades.find(u => String(u?.id_unidad ?? "") === String(id ?? ""));
+      return String(hit?.abreviatura || hit?.nombre || "").trim();
+    }
+    let currentRecipe = null;
+    let currentProduct = null;
+    let currentItems = [];
+    let subRecipe = null;
+    const recipeCache = new Map();
+    let toastTimer = null;
+    let unitOptions = [];
+    const unitOptionsHtml = (selected) => {
+      const sel = norm(selected);
+      const opts = (unitOptions || []).slice();
+      if (selected && !opts.some(u => norm(u) === sel)) opts.push(selected);
+      return opts.map(u => `<option value="${u}" ${norm(u) === sel ? "selected" : ""}>${u}</option>`).join("");
+    };
+
+    function toast(msg, kind="ok"){
+      const el = $("#toast");
+      if (!el) return;
+      el.textContent = String(msg || "");
+      el.className = `toast show ${kind}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        el.className = "toast";
+      }, 2200);
+    }
+
+    function getSwal(){
+      const p = (window.parent && window.parent.Swal) ? window.parent.Swal : null;
+      return window.Swal || p || null;
+    }
+
+    function swalFire(opts){
+      const Swal = getSwal();
+      if (!Swal || !Swal.fire) return null;
+      const popupExtra = (opts && opts.popupClass) ? ` ${opts.popupClass}` : "";
+      return Swal.fire({
+        ...(opts || {}),
+        customClass: { popup: `gd-swal${popupExtra}` , ...(opts?.customClass||{}) },
+        buttonsStyling: true,
+      });
+    }
+
+    async function confirmBox(title, text){
+      const Swal = getSwal();
+      if (Swal && Swal.fire){
+        const res = await swalFire({
+          icon: "warning",
+          title: title || "Confirmar",
+          text: text || "",
+          showCancelButton: true,
+          confirmButtonText: "Sí, eliminar",
+          cancelButtonText: "Cancelar",
+          confirmButtonColor: "#ef4444",
+        });
+        return !!res.isConfirmed;
+      }
+      return confirm(text || "¿Confirmas?");
+    }
+
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    async function api(url, opts={}){
+      // Prod: /crm (Passenger). No dependemos de pathname porque a veces las vistas se abren como /web/...
+      const base = (() => {
+        try{
+          const h = String(location.hostname || "").toLowerCase();
+          const isLocal = (h === "localhost" || h === "127.0.0.1");
+          return isLocal ? "" : "/crm";
+        }catch(_){
+          return "";
+        }
+      })();
+      const finalUrl = (typeof url === "string" && url.startsWith("/") && !url.startsWith("/crm/")) ? (base + url) : url;
+      const r = await fetch(finalUrl, { ...opts, headers: authHeaders({ "Content-Type":"application/json", ...(opts.headers||{}) }) });
+      const data = await r.json().catch(()=>null);
+      if (!r.ok) {
+        const raw = data && (data.detail || data.message);
+        const msg = (raw && typeof raw === "object") ? JSON.stringify(raw) : (raw || "Error");
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    const norm = (s) => (s || "").toString().trim().toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    const keyProd = (prod, marca="") => `${norm(prod)}|${norm(marca)}`;
+
+    function buildRecipeIndex(){
+      const map = new Map();
+      recetas.forEach(r => {
+        const k = keyProd(r.producto, r.marca || "");
+        map.set(k, r);
+        if (!r.marca) map.set(keyProd(r.producto, ""), r);
+      });
+      return map;
+    }
+
+    function applyFilters(list){
+      const q = norm($("#q").value);
+      const mode = $("#listMode")?.value || "PRODUCTOS";
+      const b = $("#brandFilter").value;
+      const onlyMissing = $("#onlyMissing").checked;
+      return list.filter(p => {
+        const name = p.producto || p.nombre || "";
+        if (q && !norm(name).includes(q)) return false;
+        if (mode === "PRODUCTOS"){
+          if (b && norm(p.marca) !== norm(b)) return false;
+          if (onlyMissing && p.tiene_receta) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderList(){
+      const list = $("#productosList");
+      const mode = $("#listMode")?.value || "PRODUCTOS";
+      const source = (mode === "SUBRECETAS") ? subRecetas : productos;
+      const filtered = applyFilters(source);
+      list.innerHTML = "";
+      filtered.forEach(p => {
+        const btn = document.createElement("button");
+        if (mode === "SUBRECETAS"){
+          btn.className = "btn " + ((currentRecipe?.id_receta && Number(currentRecipe.id_receta) === Number(p.id_receta)) ? "active" : "");
+          btn.innerHTML = `
+            <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+              <div>
+                <div style="font-weight:900">${p.producto}</div>
+                <div class="meta">Sub-receta</div>
+              </div>
+              <span class="tag ok">SUB</span>
+            </div>
+          `;
+          btn.onclick = () => selectSubReceta(p);
+        }else{
+          btn.className = "btn " + (currentProduct?.id_producto === p.id_producto ? "active" : "");
+          const status = p.tiene_receta
+            ? `<span class="tag ok">✅ ${p.es_sub_receta ? "SUB" : "RECETA"}</span>`
+            : `<span class="tag bad">⚠️ SIN RECETA</span>`;
+          btn.innerHTML = `
+            <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+              <div>
+                <div style="font-weight:900">${p.producto}</div>
+                <div class="meta">${p.marca || "—"}</div>
+              </div>
+              ${status}
+            </div>
+          `;
+          btn.onclick = () => selectProduct(p);
+        }
+        list.appendChild(btn);
+      });
+      $("#listMeta").textContent = `${filtered.length} productos`;
+      if (!filtered.length) list.innerHTML = `<div class="muted">Sin resultados.</div>`;
+    }
+
+    async function selectSubReceta(r){
+      currentProduct = { id_producto: null, producto: r.producto, marca: "" };
+      const res = await api(`/ops/recetas/${r.id_receta}`);
+      setRecipeForm({ ...(res.receta||{}), last_update: res.last_update || null });
+      renderItems(res.items);
+      renderList();
+    }
+
+    function setRecipeForm(receta){
+      currentRecipe = receta || null;
+      try{
+        document.body.dataset.sub = (receta && receta.es_sub_receta) ? "1" : "0";
+      }catch(_){}
+      $("#recetaProducto").value = currentProduct?.producto || "";
+      $("#recetaMarca").value = currentProduct?.marca || "";
+      $("#recetaRend").value = receta?.rendimiento || "";
+      $("#recetaMerma").value = (receta?.merma_pct ?? "") === 0 ? "" : (receta?.merma_pct ?? "");
+      $("#recetaExtra").value = (receta?.costos_extra ?? "") === 0 ? "" : (receta?.costos_extra ?? "");
+      $("#recetaSub").checked = !!receta?.es_sub_receta;
+      const last = receta?.last_update || null;
+      const who = last?.username || "";
+      const when = (last?.created_at || receta?.updated_at || "");
+      let meta = receta ? `ID #${receta.id_receta}` : "Sin receta";
+      if (receta && (who || when)){
+        meta += ` · Última: ${String(when).replace("T"," ").slice(0,19)}${who ? ` · ${who}` : ""}`;
+      }
+      const metaEl = $("#recetaMeta");
+      metaEl.textContent = meta;
+      metaEl.style.cursor = receta ? "pointer" : "default";
+      metaEl.title = receta ? "Click para ver historial" : "";
+      metaEl.onclick = receta ? (async () => {
+        try{
+          const res = await api(`/ops/recetas/${receta.id_receta}/audit?limit=10`);
+          const items = Array.isArray(res?.items) ? res.items : [];
+          const rows = items.map(a => {
+            const d = String(a.created_at||"").replace("T"," ").slice(0,19);
+            const u = a.username ? ` · ${esc(a.username)}` : "";
+            const ac = esc(a.action||"");
+            return `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.10)"><b>${ac}</b><div class="meta">${esc(d)}${u}</div></div>`;
+          }).join("") || `<div class="meta">Sin historial.</div>`;
+          await Swal.fire({
+            title: "Historial de receta",
+            html: `<div style="text-align:left;max-height:420px;overflow:auto">${rows}</div>`,
+            confirmButtonText: "Cerrar",
+            customClass: { popup: "gd-swal" },
+          });
+        }catch(e){
+          toast("No pude cargar historial", true);
+        }
+      }) : null;
+      $("#btnCreate").style.display = receta ? "none" : (currentProduct ? "inline-flex" : "none");
+      $("#btnSaveReceta").style.display = receta ? "inline-flex" : "none";
+      $("#btnDelReceta").style.display = receta ? "inline-flex" : "none";
+      $("#recetaTitle").textContent = currentProduct ? currentProduct.producto : "Receta";
+    }
+
+    function updateTotalCost(){
+      const rows = Array.from($("#itemsBody").querySelectorAll("tr"));
+      const itemsTotal = rows.reduce((sum, tr) => {
+        const line = tr.querySelector("td.muted")?.textContent || "0";
+        return sum + parseMoney(line);
+      }, 0);
+      const extra = parseMoney($("#recetaExtra")?.value || 0) || 0;
+      const rendimiento = toNumber($("#recetaRend")?.value || 0) || 0;
+      const mermaPct = toNumber($("#recetaMerma")?.value || 0) || 0;
+
+      // Costo "neto" por unidad de receta: (ingredientes + extra) / (rendimiento * (1 - merma))
+      const denom = (rendimiento > 0 ? rendimiento : 1) * Math.max(0.0001, (1 - (mermaPct / 100)));
+      const neto = (itemsTotal + extra) / denom;
+
+      // Una sola línea, pero con claridad para evitar el típico "¿por qué no aplica merma?"
+      $("#totalCost").textContent =
+        `Ingredientes: ${fmtMoney.format(itemsTotal || 0)} • Receta (con merma/rend): ${fmtMoney.format(neto || 0)}`;
+    }
+
+    function markAutoCost(input, flag){
+      if (!input) return;
+      input.dataset.auto = flag ? "1" : "0";
+    }
+    function isAutoCost(input){
+      return input?.dataset?.auto === "1";
+    }
+
+    function renderItems(items){
+      const body = $("#itemsBody");
+      body.innerHTML = "";
+      currentItems = items || [];
+      (items||[]).forEach(it => {
+        const ing = findIngredientExact(it.ingrediente, it.unidad) || findIngredient(it.ingrediente, it.unidad);
+        let unitVal = it.unidad || (ing ? ing.unidad : "");
+        if (ing && (!unitVal || !unitOptions.map(u => norm(u)).includes(norm(unitVal)))) {
+          unitVal = ing.unidad || unitVal;
+        }
+        if (ing && ing.unidad && unitVal && norm(unitVal) !== norm(ing.unidad) && (!it.costo_unitario || Number(it.costo_unitario) === 0)){
+          unitVal = ing.unidad;
+        }
+        let costVal = parseMoney(it.costo_unitario || 0);
+        if ((!costVal || costVal === 0) && ing){
+          const calc = computeCost(ing, 1, unitVal || ing.unidad || "");
+          costVal = calc.unitCost || 0;
+        }
+        const tr = document.createElement("tr");
+        const qty = Number(it.cantidad || 0);
+        const cost = Number(costVal || 0);
+        let merma = toNumber(it.merma_pct || 0) || 0;
+        if (merma < 0) merma = 0;
+        if (merma > 95) merma = 95;
+        const factor = (merma > 0) ? (1.0 / (1.0 - (merma / 100.0))) : 1.0;
+        const lineTotal = qty * cost * factor;
+        tr.innerHTML = `
+          <td><input value="${it.ingrediente || ""}" data-field="ingrediente"/></td>
+          <td><input value="${it.cantidad ?? ""}" data-field="cantidad"/></td>
+          <td>
+            <input list="dlUnits" value="${unitVal ?? ""}" data-field="unidad" data-auto-unit="1"/>
+          </td>
+          <td><input value="${formatCostInput(cost)}" data-field="costo_unitario" data-auto="1"/></td>
+          <td data-col="merma"><input value="${(it.merma_pct ?? "") === 0 ? "" : (it.merma_pct ?? "")}" data-field="merma_pct" placeholder="0"/></td>
+          <td class="muted">${fmtMoney.format(lineTotal || 0)}</td>
+          <td>
+            <button class="btn" data-act="save">Guardar</button>
+            <button class="btn" data-act="del">Eliminar</button>
+          </td>
+        `;
+        tr.dataset.id = it.id_item;
+        tr.dataset.sub = it.sub_receta_id || "";
+        body.appendChild(tr);
+        const inputs = tr.querySelectorAll("input, select");
+        const costInput = tr.querySelector('[data-field="costo_unitario"]');
+        const ingInput = tr.querySelector('[data-field="ingrediente"]');
+        const unitInput = tr.querySelector('[data-field="unidad"]');
+        if (costInput && !costVal){ markAutoCost(costInput, true); }
+        const recalc = () => {
+          const q = toNumber(tr.querySelector('[data-field="cantidad"]').value || 0) || 0;
+          const ingName = (ingInput?.value || "").trim();
+          let u = unitInput?.value || "";
+          const ingNow = findIngredientExact(ingName, u) || findIngredient(ingName, u) || ing;
+          if (ingNow && unitInput && (!u || unitInput.dataset.autoUnit === "1")){
+            unitInput.value = ingNow.unidad || u;
+            unitInput.dataset.autoUnit = "1";
+            u = unitInput.value || "";
+          }
+          let c = parseMoney(costInput?.value || 0) || 0;
+          if ((!c || c === 0 || isAutoCost(costInput)) && ingNow){
+            const calc = computeCost(ingNow, 1, u || ingNow.unidad || "");
+            c = calc.unitCost || 0;
+            if (costInput){
+              costInput.value = formatCostInput(c);
+              markAutoCost(costInput, true);
+            }
+          }
+          let m = toNumber(tr.querySelector('[data-field="merma_pct"]').value || 0) || 0;
+          if (m < 0) m = 0;
+          if (m > 95) m = 95;
+          const f = (m > 0) ? (1.0 / (1.0 - (m / 100.0))) : 1.0;
+          tr.querySelector("td.muted").textContent = fmtMoney.format(q * c * f);
+          updateTotalCost();
+        };
+        inputs.forEach(inp => {
+          inp.addEventListener("input", recalc);
+          inp.addEventListener("change", recalc);
+        });
+        if (costInput){
+          costInput.addEventListener("input", () => markAutoCost(costInput, false));
+        }
+        if (unitInput){
+          unitInput.addEventListener("input", () => { unitInput.dataset.autoUnit = "0"; });
+        }
+      });
+      updateTotalCost();
+    }
+
+    async function reloadCurrentRecipe(){
+      if (!currentRecipe?.id_receta) return;
+      const res = await api(`/ops/recetas/${currentRecipe.id_receta}`);
+      setRecipeForm({ ...(res.receta||{}), last_update: res.last_update || null });
+      renderItems(res.items);
+      renderList();
+    }
+
+    function findCurrentProductFallback(snapshot){
+      const base = snapshot || currentProduct || {};
+      const byId = (base.id_producto != null)
+        ? (productos || []).find(p => Number(p.id_producto) === Number(base.id_producto))
+        : null;
+      if (byId) return byId;
+      const prod = norm(base.producto || base.nombre || "");
+      const marca = norm(base.marca || "");
+      return (productos || []).find(p => norm(p.producto || p.nombre || "") === prod && norm(p.marca || "") === marca) || base;
+    }
+
+    async function selectProduct(p){
+      currentProduct = p;
+      const index = buildRecipeIndex();
+      const direct = index.get(keyProd(p.producto, p.marca));
+      const generic = index.get(keyProd(p.producto, ""));
+      const receta = direct || generic || null;
+      if (receta){
+        const res = await api(`/ops/recetas/${receta.id_receta}`);
+        setRecipeForm({ ...(res.receta||{}), last_update: res.last_update || null });
+        renderItems(res.items);
+      } else {
+        setRecipeForm(null);
+        renderItems([]);
+      }
+      renderList();
+    }
+
+    async function createSubRecetaFlow(){
+      const Swal = getSwal();
+      if (!Swal || !Swal.fire){
+        toast("SweetAlert no disponible", "err");
+        return;
+      }
+      // Flujo real (pedido):
+      // - Crear sub-receta y, en el MISMO modal, ir agregando ingredientes (líneas).
+      // - Cada línea pide merma (%) y calcula costo efectivo.
+      // - Al final pide rendimiento + unidad base => costo por porción/unidad.
+      const cats = invCatalogos || {};
+      const unidades = Array.isArray(cats.unidades) ? cats.unidades : [];
+      const categorias = Array.isArray(cats.categorias) ? cats.categorias : [];
+      const proveedores = Array.isArray(cats.proveedores) ? cats.proveedores : [];
+
+      const unitSelOpts = unidades.map(u => {
+        const nm = String(u?.nombre || "").trim();
+        const ab = String(u?.abreviatura || "").trim();
+        const label = (nm && ab) ? `${nm} (${ab})` : (ab || nm || "");
+        return `<option value="${String(u?.id_unidad ?? "")}">${label}</option>`;
+      }).join("");
+      const catSelOpts = [`<option value="">(sin categoría)</option>`].concat(
+        categorias.map(c => `<option value="${String(c?.id_categoria ?? "")}">${String(c?.nombre || "")}</option>`)
+      ).join("");
+      const provSelOpts = [`<option value="">(sin proveedor)</option>`].concat(
+        proveedores.map(p => `<option value="${String(p?.id_proveedor ?? "")}">${String(p?.nombre || "")}</option>`)
+      ).join("");
+
+      const unitDL = (unitOptions || [])
+        .filter(Boolean)
+        .map(u => `<option value="${String(u)}"></option>`)
+        .join("");
+
+      const state = { lines: [] };
+      const calcLine = (ln) => {
+        let m = toNumber(ln.merma_pct || 0) || 0;
+        if (m < 0) m = 0;
+        if (m > 95) m = 95;
+        const f = (m > 0) ? (1.0 / (1.0 - (m / 100.0))) : 1.0;
+        const q = Number(ln.cantidad || 0) || 0;
+        const cu = Number(ln.costo_unitario || 0) || 0;
+        return q * cu * f;
+      };
+
+      const res = await swalFire({
+        popupClass: "gd-swal--form gd-swal--wide gd-swal--noicon",
+        width: "min(1600px, 96vw)",
+        title: "Nueva sub-receta",
+        html: `
+	          <style>
+              /* Layout 2 columnas (anti-tontos): datos a la izquierda, ingredientes a la derecha */
+              /* Importante: nunca forzar un mínimo grande en la derecha, si no aparece scroll lateral. */
+              .srLayout{display:grid; grid-template-columns: minmax(320px, 420px) minmax(0, 1fr); gap:12px; align-items:start;}
+              .srLeft,.srRight{min-width:0;}
+              .srRight{overflow:hidden;}
+              @media (max-width: 980px){ .srLayout{grid-template-columns:1fr;} }
+	            .srBox{border:1px solid rgba(148,163,184,.18); border-radius: 14px; padding: 10px; background: rgba(2,6,23,.16);}
+	            :root.light .srBox{background: rgba(255,255,255,.65); border-color: rgba(0,0,0,.10);}
+              /* Input row: flex-wrap para que NUNCA exista scroll lateral. */
+              .srAddHdr{display:none !important;}
+              .srAdd{
+                display:flex;
+                flex-wrap:wrap;
+                gap:10px;
+                align-items:flex-end;
+              }
+              .srCell{min-width:0; display:flex; flex-direction:column; gap:6px;}
+              .srCell::before{
+                content: attr(data-lbl);
+                font-size:10px;
+                letter-spacing:.14em;
+                text-transform:uppercase;
+                opacity:.75;
+                font-weight:1100;
+                padding:0 2px;
+              }
+              .srIngCell{flex: 1 1 420px;}
+              .srQtyCell{flex: 0 0 120px;}
+              .srUnitCell{flex: 0 0 150px;}
+              .srPriceCell{flex: 0 0 160px;}
+              .srMermaCell{flex: 0 0 120px;}
+              .srAct{flex: 0 0 160px; display:flex; align-items:flex-end;}
+	            .srCell input{min-width:0;}
+            .srAct .btn{white-space:nowrap; min-width:110px;}
+              .srRO{opacity:.92;}
+              .srHint{opacity:.78; font-weight:900; font-size:12px; margin-top:8px;}
+              .srHint b{font-weight:1100;}
+	            .srSug{
+	              margin-top:6px;
+	              border:1px solid rgba(148,163,184,.18);
+	              border-radius:12px;
+	              background: rgba(2,6,23,.55);
+	              overflow:auto;
+	              max-height: 180px;
+	              padding:6px;
+	            }
+	            :root.light .srSug{ background: rgba(255,255,255,.92); }
+	            .srSug button{
+	              width:100%;
+	              display:flex;
+	              flex-direction:column;
+	              align-items:flex-start;
+	              justify-content:flex-start;
+	              gap:6px;
+	              text-align:left;
+	              border:1px solid rgba(148,163,184,.14);
+	              background: rgba(255,255,255,.03);
+	              color: var(--text);
+	              border-radius: 10px;
+	              padding:10px 10px;
+	              cursor:pointer;
+	              margin:4px 0;
+	              font-weight: 950;
+	            }
+	            .srSug button:hover{ filter:brightness(1.08); }
+	            .srSug .meta{ opacity:.84; font-weight:900; font-size:12px; white-space:normal; }
+	            .srChk{display:flex; align-items:center; gap:6px; font-size:11px; opacity:.82; font-weight:900; margin-top:6px;}
+	            .srChk input{width:auto; margin:0;}
+	            .srTblWrap{ max-height: 320px; overflow:auto; margin-top:10px; -webkit-overflow-scrolling:touch; }
+	            .srTbl{width:100%; table-layout:fixed; border-collapse:separate; border-spacing:0; margin-top:10px; font-size:12px; overflow:hidden; border-radius: 12px; border: 1px solid rgba(148,163,184,.14);}
+	            .srTbl th{position:sticky; top:0; background: rgba(2,6,23,.55); color:var(--text); text-align:left; padding:8px 10px; font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:10px; border-bottom:1px solid rgba(148,163,184,.12);}
+	            :root.light .srTbl th{background: rgba(255,255,255,.92); color:#0b1220;}
+	            .srTbl th{white-space:nowrap;}
+	            .srTbl td{white-space:normal; word-break:break-word;}
+	            .srTbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:middle;}
+            .srMini{opacity:.78; font-weight:850; font-size:12px; margin-top:6px;}
+            .srTot{display:grid; gap:8px; grid-template-columns: 1fr 1fr; margin-top:10px;}
+            .srTot .k{opacity:.72; font-weight:900; font-size:11px; letter-spacing:.12em; text-transform:uppercase;}
+            .srTot .v{font-weight:1100;}
+            .srAct{display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;}
+            @media (max-width: 720px){
+              .gd-swal-grid{grid-template-columns:1fr !important;}
+              .srIngCell{flex-basis: 100%;}
+              .srAct{flex-basis: 100%;}
+              .srAct .btn{width:100%;}
+            }
+	          </style>
+          <div class="gd-swal-form">
+            <div class="gd-swal-lede">
+              Crea una sub-receta y agrega ingredientes aqu&iacute; mismo. Cada ingrediente lleva <b>merma</b>. Al guardar, el sistema crea/actualiza el <b>ingrediente en Inventario</b> (mismo nombre) con el <b>costo por unidad salida</b>.
+            </div>
+
+            <div class="srLayout">
+              <div class="srLeft">
+                <div class="gd-swal-grid">
+                  <div class="gd-swal-field gd-span-2">
+                    <div class="gd-swal-label">Nombre (sub-receta)</div>
+                    <input id="srNombre" class="swal2-input" placeholder="Ej: Tomate picado" />
+                  </div>
+                  <div class="gd-swal-field">
+                    <div class="gd-swal-label">Rendimiento (salida)</div>
+                    <input id="srRend" class="swal2-input" placeholder="Ej: 5" inputmode="decimal" />
+                  </div>
+                  <div class="gd-swal-field">
+                    <div class="gd-swal-label">Unidad salida</div>
+                    <select id="srUnidadId" class="swal2-select">${unitSelOpts}</select>
+                  </div>
+                  <div class="gd-swal-field">
+                    <div class="gd-swal-label">Proveedor (opcional)</div>
+                    <select id="srProvId" class="swal2-select">${provSelOpts}</select>
+                  </div>
+                  <div class="gd-swal-field">
+                    <div class="gd-swal-label">Categoría (opcional)</div>
+                    <select id="srCatId" class="swal2-select">${catSelOpts}</select>
+                  </div>
+                  <div class="gd-swal-field gd-span-2">
+                    <div class="gd-swal-label">Costos extra ($)</div>
+                    <input id="srExtra" class="swal2-input" placeholder="0" inputmode="numeric" />
+                  </div>
+                </div>
+                <div class="srHint">
+                  Flujo: elige ingrediente base (inventario) → define <b>cantidad</b> → el sistema toma <b>unidad y precio</b> desde inventario → ingresa <b>merma</b> → costo real.
+                </div>
+              </div>
+
+              <div class="srRight">
+                <div class="srBox">
+              <div style="font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;">Ingredientes</div>
+              <div class="srMini">Busca un ingrediente del inventario, define cantidad, unidad (auto) y merma (%), y agr&eacute;galo como l&iacute;nea.</div>
+
+              <div class="srAdd">
+                <div class="srCell srIngCell" data-lbl="Ingrediente">
+                  <input id="srIng" class="swal2-input" placeholder="Ingrediente (inventario) — escribe para buscar y elige" style="width:100%" autocomplete="off" />
+                  <div id="srSug" class="srSug" style="display:none"></div>
+                </div>
+                <div class="srCell srQtyCell" data-lbl="Cantidad"><input id="srQty" class="swal2-input" placeholder="Ej: 1" inputmode="decimal" style="width:100%" /></div>
+                <div class="srCell srUnitCell" data-lbl="Unidad"><input id="srUnit" class="swal2-input srRO" placeholder="Auto" style="width:100%" readonly /></div>
+                <div class="srCell srPriceCell" data-lbl="Precio unit ($)"><input id="srPrice" class="swal2-input srRO" placeholder="Auto" style="width:100%" readonly /></div>
+                <div class="srCell srMermaCell" data-lbl="Merma %"><input id="srMerma" class="swal2-input" placeholder="0" inputmode="numeric" style="width:100%" /></div>
+                <div class="srAct"><button id="srAddBtn" class="btn" type="button" style="width:100%">Agregar</button></div>
+              </div>
+              <datalist id="srDlUnits" style="display:none">${unitDL}</datalist>
+              <div id="srInfo" class="srMini"></div>
+
+	              <div class="srTblWrap">
+	                <table class="srTbl">
+	                  <thead>
+                    <tr>
+                      <th>Ingrediente</th>
+                      <th>Cant.</th>
+                      <th>Unidad</th>
+                      <th>Unit ($)</th>
+                      <th>Merma</th>
+                      <th>Total</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="srBody"></tbody>
+                </table>
+              </div>
+
+              <div class="srTot">
+                <div>
+                  <div class="k">Costo bruto</div>
+                  <div class="v" id="srBruto">$0</div>
+                </div>
+                <div>
+                  <div class="k">Costo por unidad salida</div>
+                  <div class="v" id="srUnitCost">$0</div>
+                </div>
+              </div>
+            </div>
+              </div>
+            </div>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: "Crear sub-receta",
+        cancelButtonText: "Cancelar",
+        didOpen: () => {
+          const popup = (Swal.getPopup && Swal.getPopup()) || document;
+          const elIng = popup.querySelector("#srIng");
+          const elQty = popup.querySelector("#srQty");
+          const elUnit = popup.querySelector("#srUnit");
+          const elPrice = popup.querySelector("#srPrice");
+          const elMerma = popup.querySelector("#srMerma");
+          const elSug = popup.querySelector("#srSug");
+          const elInfo = popup.querySelector("#srInfo");
+          const elBody = popup.querySelector("#srBody");
+          const elBruto = popup.querySelector("#srBruto");
+          const elUnitCost = popup.querySelector("#srUnitCost");
+
+          const unitMeta = {};
+          (unidades || []).forEach(u => {
+            const nm = String(u?.nombre || "").trim();
+            const ab = String(u?.abreviatura || "").trim();
+            if (!nm && !ab) return;
+            if (nm) unitMeta[norm(nm)] = { nm, ab };
+            if (ab) unitMeta[norm(ab)] = { nm, ab };
+          });
+          const prettyUnit = (raw) => {
+            const s = String(raw || "").trim();
+            if (!s) return "";
+            const m = unitMeta[norm(s)];
+            if (!m) return s;
+            if (m.nm && m.ab) return `${m.nm} (${m.ab})`;
+            return (m.nm || m.ab || s).trim();
+          };
+          const shortUnit = (raw) => {
+            const s = String(raw || "").trim();
+            if (!s) return "";
+            const m = unitMeta[norm(s)];
+            if (!m) return s;
+            return (m.ab || m.nm || s).trim();
+          };
+
+          const setInfo = (msg, isErr=false) => {
+            if (!elInfo) return;
+            elInfo.textContent = msg || "";
+            elInfo.style.color = isErr ? "#ef4444" : "";
+          };
+
+          const renderSug = (cands) => {
+            if (!elSug) return;
+            const items = Array.isArray(cands) ? cands.slice(0, 8) : [];
+            if (!items.length){
+              elSug.style.display = "none";
+              elSug.innerHTML = "";
+              return;
+            }
+            elSug.style.display = "block";
+            elSug.innerHTML = items.map((it) => {
+              const nm = String(it?.nombre || "");
+              const u = prettyUnit(it?.unidad || "");
+              const p = parseMoney(it?.precio || 0) || 0;
+              const sku = String(it?.sku || "");
+              const cat = String(it?.categoria || "");
+              const meta = [u && `Unidad ${u}`, p ? `Base ${fmtMoney.format(p)}` : "", sku ? `SKU ${sku}` : "", cat ? `Cat ${cat}` : ""].filter(Boolean).join(" · ");
+              return `<button type="button" data-pick="${String(it?.id_producto ?? "")}"><span>${nm}</span><span class="meta">${meta}</span></button>`;
+            }).join("");
+            elSug.querySelectorAll("[data-pick]").forEach(b => {
+              b.addEventListener("click", () => {
+                const id = Number(b.dataset.pick || 0);
+                const found = (ingredientes || []).find(x => Number(x?.id_producto || 0) === id);
+                if (found) pickCandidate(found);
+              });
+            });
+          };
+
+          const pickCandidate = (found) => {
+            if (!found) return;
+            if (elIng){
+              elIng.value = String(found.nombre || "");
+              elIng.dataset.id = String(found.id_producto || "");
+            }
+            const u = prettyUnit(found.unidad || "");
+            const p = parseMoney(found.precio || 0) || 0;
+            if (elUnit){
+              // Siempre sincroniza unidad desde inventario al seleccionar,
+              // para evitar que quede "pegada" una unidad anterior (bug real en móvil).
+              elUnit.value = shortUnit(found.unidad || "");
+              elUnit.dataset.autoUnit = "1";
+            }
+            if (elPrice){
+              elPrice.value = p ? fmtMoney.format(p) : "";
+            }
+            if (elQty && !elQty.value) elQty.value = "1";
+            if (elMerma && !elMerma.value) elMerma.value = "0";
+            renderSug([]);
+            setInfo(`Seleccionado: ${String(found.nombre || "")} · Unidad: ${u || "—"} · Precio base: ${fmtMoney.format(p)}`);
+          };
+
+          const render = () => {
+            const lines = state.lines || [];
+            if (elBody){
+              elBody.innerHTML = lines.length ? lines.map((ln, idx) => {
+                const tot = calcLine(ln);
+                return `
+                  <tr>
+                    <td><b>${String(ln.ingrediente || "").replace(/</g,"&lt;")}</b></td>
+                    <td>${String(ln.cantidad ?? "")}</td>
+                    <td>${String(ln.unidad || "")}</td>
+                    <td>${fmt.format(Math.round(Number(ln.costo_unitario || 0) || 0))}</td>
+                    <td>${String(ln.merma_pct ?? 0)}%</td>
+                    <td><b>${fmtMoney.format(tot)}</b></td>
+                    <td style="text-align:right"><button class="btn" data-rm="${idx}" type="button">Quitar</button></td>
+                  </tr>
+                `;
+              }).join("") : `<tr><td colspan="7" class="muted">A&uacute;n no hay ingredientes.</td></tr>`;
+
+              elBody.querySelectorAll("[data-rm]").forEach(b => {
+                b.addEventListener("click", () => {
+                  const i = Number(b.dataset.rm);
+                  state.lines.splice(i, 1);
+                  render();
+                });
+              });
+            }
+
+            const bruto = (state.lines || []).reduce((s, ln) => s + calcLine(ln), 0);
+            const extra = parseMoney(popup.querySelector("#srExtra")?.value || 0) || 0;
+            const rend = toNumber(popup.querySelector("#srRend")?.value || 0) || 0;
+            const denom = (rend > 0) ? rend : 1;
+            if (elBruto) elBruto.textContent = fmtMoney.format(bruto + extra);
+            if (elUnitCost) elUnitCost.textContent = fmtMoney.format((bruto + extra) / denom);
+          };
+
+          const syncFromIngredient = () => {
+            const name = (elIng?.value || "").trim();
+            if (!name){
+              if (elIng) elIng.dataset.id = "";
+              if (elPrice) elPrice.value = "";
+              setInfo("");
+              renderSug([]);
+              return;
+            }
+            const exactList = ingIndex[norm(name)];
+            if (Array.isArray(exactList) && exactList.length === 1 && norm(String(exactList[0]?.nombre || "")) === norm(name)){
+              pickCandidate(exactList[0]);
+              return;
+            }
+            const cands = Array.isArray(exactList) && exactList.length ? exactList : findIngredientCandidates(name);
+            if (!cands.length){
+              setInfo("Ingrediente no existe en inventario. Créalo primero.", true);
+              renderSug([]);
+              return;
+            }
+            // Si hay varios (duplicados), obligamos a seleccionar el correcto (unidad/precio).
+            if (cands.length > 1){
+              setInfo("Hay más de 1 ingrediente con ese nombre. Elige el correcto (unidad/precio).", true);
+              renderSug(cands);
+              return;
+            }
+            pickCandidate(cands[0]);
+          };
+
+          const addLine = () => {
+            const ingName = (elIng?.value || "").trim();
+            const pickedId = Number(elIng?.dataset?.id || 0) || 0;
+            const found = pickedId ? (ingredientes || []).find(x => Number(x?.id_producto || 0) === pickedId) : null;
+            if (!found){
+              setInfo("El ingrediente debe existir (y debes seleccionarlo de la lista sugerida).", true);
+              return;
+            }
+            const cantidad = toNumber(elQty?.value || 0) || 0;
+            if (cantidad <= 0){
+              setInfo("Cantidad inválida.", true);
+              return;
+            }
+            const unidad = (elUnit?.value || found.unidad || "").trim() || (found.unidad || "").trim();
+            let merma = toNumber(elMerma?.value || 0) || 0;
+            if (merma < 0) merma = 0;
+            if (merma > 95) merma = 95;
+
+            // costo_unitario en la UNIDAD elegida
+            const unitEq = norm(unidad || "") === norm(found.unidad || "");
+            let costo_unitario = parseMoney(found.precio || 0) || 0;
+            if (!unitEq){
+              const calc = computeCost(found, 1, unidad || found.unidad || "");
+              costo_unitario = Number(calc.unitCost || 0) || 0;
+            }
+
+            // Upsert por ID (evita colisiones por nombres duplicados)
+            const idx = (state.lines || []).findIndex(x => Number(x.id_producto || 0) === Number(found.id_producto || 0));
+            const line = { id_producto: found.id_producto, ingrediente: String(found.nombre || ingName), cantidad, unidad: prettyUnit(unidad), costo_unitario, merma_pct: merma };
+            if (idx >= 0) state.lines[idx] = line;
+            else state.lines.push(line);
+
+            // limpiar campos rápidos
+            if (elIng) elIng.value = "";
+            if (elIng) elIng.dataset.id = "";
+            renderSug([]);
+            if (elQty) elQty.value = "";
+            if (elUnit) elUnit.value = "";
+            if (elPrice) elPrice.value = "";
+            if (elMerma) elMerma.value = "";
+            setInfo("");
+            render();
+          };
+
+          popup.querySelector("#srAddBtn")?.addEventListener("click", addLine);
+          elIng?.addEventListener("input", syncFromIngredient);
+          popup.querySelector("#srExtra")?.addEventListener("input", render);
+          popup.querySelector("#srRend")?.addEventListener("input", render);
+
+          syncFromIngredient();
+          render();
+        },
+        preConfirm: () => {
+          const popup = (Swal.getPopup && Swal.getPopup()) || document;
+          const nombre = (popup.querySelector("#srNombre")?.value || "").trim();
+          if (!nombre) return Swal.showValidationMessage("Nombre requerido");
+          const rendimiento = toNumber(popup.querySelector("#srRend")?.value || 0) || 0;
+          if (rendimiento <= 0) return Swal.showValidationMessage("Rendimiento inválido");
+          const unidadId = Number(popup.querySelector("#srUnidadId")?.value || 0) || 0;
+          if (!unidadId) return Swal.showValidationMessage("Unidad salida requerida");
+          const unitObj = (unidades || []).find(u => Number(u?.id_unidad || 0) === unidadId) || null;
+          const unidad_base = (String(unitObj?.abreviatura || unitObj?.nombre || "").trim() || "PORCION");
+          const costos_extra = parseMoney(popup.querySelector("#srExtra")?.value || 0) || 0;
+          const id_proveedor = Number(popup.querySelector("#srProvId")?.value || 0) || null;
+          const id_categoria = Number(popup.querySelector("#srCatId")?.value || 0) || null;
+          if (!state.lines || !state.lines.length) return Swal.showValidationMessage("Agrega al menos 1 ingrediente");
+          const bruto = (state.lines || []).reduce((s, ln) => s + calcLine(ln), 0);
+          const unit_cost_out = (bruto + costos_extra) / (rendimiento > 0 ? rendimiento : 1);
+          return { nombre, rendimiento, unidad_base, unidad_id: unidadId, id_proveedor, id_categoria, costos_extra, unit_cost_out, lines: state.lines };
+        }
+      });
+      if (!res?.isConfirmed) return;
+      const v = res.value || {};
+
+      // 1) crea receta como sub-receta (marca null)
+      const created = await api("/ops/recetas", {
+        method: "POST",
+        body: JSON.stringify({
+          producto: v.nombre,
+          marca: null,
+          rendimiento: v.rendimiento || 1,
+          merma_pct: 0,
+          costos_extra: v.costos_extra || 0,
+          unidad_base: v.unidad_base || "PORCION",
+          es_sub_receta: true,
+          is_active: true
+        })
+      });
+
+      // 2) agrega líneas (ingredientes + merma por ingrediente)
+      for (const ln of (v.lines || [])){
+        await api(`/ops/recetas/${created.id}/items`, {
+          method: "POST",
+          body: JSON.stringify({
+            ingrediente: ln.ingrediente,
+            cantidad: ln.cantidad,
+            unidad: ln.unidad,
+            costo_unitario: ln.costo_unitario,
+            merma_pct: ln.merma_pct,
+            sub_receta_id: null
+          })
+        });
+      }
+
+      // 3) crea/actualiza el ingrediente en Inventario con el costo unitario de salida
+      try{
+        const unitCostOut = Number(v.unit_cost_out || 0) || 0;
+        if (unitCostOut > 0){
+          const existing = (ingredientes || []).find(i => norm(i?.nombre || "") === norm(v.nombre)) || null;
+          const invBody = {
+            sku: existing?.sku || null,
+            nombre: v.nombre,
+            id_categoria: v.id_categoria || null,
+            id_unidad: v.unidad_id || null,
+            id_proveedor: v.id_proveedor || null,
+            precio: unitCostOut,
+            pack_cantidad: null,
+            is_active: true,
+          };
+          if (existing && Number(existing.id_producto || 0) > 0){
+            await api(`/ops/inventario/productos/${existing.id_producto}`, { method:"PUT", body: JSON.stringify(invBody) });
+          }else{
+            await api("/ops/inventario/productos", { method:"POST", body: JSON.stringify(invBody) });
+          }
+        }
+      }catch(err){
+        toast("Sub-receta creada, pero no pude actualizar Inventario (revisa permisos).", "err");
+      }
+
+      await loadAll();
+      $("#listMode").value = "SUBRECETAS";
+      $("#onlyMissing").checked = false;
+      $("#onlyMissing").disabled = true;
+      renderList();
+      await selectSubReceta({ id_receta: created.id, producto: v.nombre, marca: "", es_sub_receta: true });
+      toast("Sub-receta creada.");
+    }
+
+    async function loadAll(){
+      let prods = null;
+      let recs = null;
+      let cats = null;
+      try{
+        [prods, recs, cats] = await Promise.all([
+          api("/productos?limit=2000").catch(()=>({ items: [] })),
+          api("/ops/recetas"),
+          api("/ops/inventario/catalogos"),
+        ]);
+      }catch(err){
+        toast((err && err.message) ? err.message : "No se pudo cargar datos", "err");
+        $("#listMeta").textContent = "Error cargando datos";
+        return;
+      }
+
+      // Fallback: si /productos viene vacío (o está filtrado), usamos /cotizador/catalogos que suele estar completo.
+      if (!Array.isArray(prods?.items) || prods.items.length === 0){
+        try{
+          const cat = await api("/cotizador/catalogos");
+          prods = { items: (cat && cat.productos) ? cat.productos : [] };
+        }catch(_){
+          // mantenemos vacío
+        }
+      }
+
+      recetas = recs.items || [];
+      subRecetas = (recetas || []).filter(r => !!r.es_sub_receta);
+      invCatalogos = cats || null;
+      ingredientes = cats.productos || [];
+      ingIndex = {};
+      // Importante: NO colapsamos por nombre. Si hay duplicados (mismo nombre distinto proveedor/unidad),
+      // necesitamos mantenerlos para que el usuario elija correctamente (evita "Azúcar -> bidón" por error).
+      (ingredientes || []).forEach(i => {
+        const key = norm(i.nombre);
+        if (!key) return;
+        if (!ingIndex[key]) ingIndex[key] = [];
+        ingIndex[key].push(i);
+      });
+      const baseUnits = (cats.unidades || []).map(u => u.abreviatura || u.nombre).filter(Boolean);
+      const extraUnits = ["UN", "UND", "GRS", "GR", "G", "KG", "LT", "L", "ML", "CC", "PORCION", "PORCIONES"];
+      const invUnits = (ingredientes || []).map(i => i.unidad).filter(Boolean);
+      unitOptions = Array.from(new Set([...baseUnits, ...extraUnits, ...invUnits]));
+      $("#dlUnits").innerHTML = unitOptions.map(u => `<option value="${u}"></option>`).join("");
+      const marcas = Array.from(new Set((prods.items || []).map(p => p.marca).filter(Boolean)));
+      $("#brandFilter").innerHTML = `<option value="">Todas las marcas</option>` + marcas.map(m => `<option value="${m}">${m}</option>`).join("");
+
+      const recetaIndex = buildRecipeIndex();
+      productos = (prods.items || []).map(p => {
+        const has = recetaIndex.get(keyProd(p.producto, p.marca)) || recetaIndex.get(keyProd(p.producto, ""));
+        return { ...p, tiene_receta: !!has, es_sub_receta: !!has?.es_sub_receta };
+      });
+
+      $("#dlIng").innerHTML = ingredientes.map(i => `<option value="${i.nombre}"></option>`).join("");
+      renderList();
+
+      // Deep-link desde notificaciones (producto nuevo): abre el producto automáticamente.
+      try{
+        const sp = new URLSearchParams(location.search || "");
+        const pid = sp.get("open_producto_id");
+        if (pid && /^[0-9]+$/.test(pid)){
+          const idp = Number(pid);
+          const found = (productos || []).find(x => Number(x.id_producto || 0) === idp);
+          if (found){
+            $("#listMode").value = "PRODUCTOS";
+            $("#brandFilter").style.display = "";
+            $("#onlyMissing").disabled = false;
+            await selectProduct(found);
+          }
+        }
+      }catch(_){}
+    }
+
+    async function createInventarioIngrediente(nombre, opts={}){
+      const cats = invCatalogos || {};
+      const unidades = cats.unidades || [];
+      const categorias = cats.categorias || [];
+      const proveedores = cats.proveedores || [];
+
+      const Swal = getSwal();
+      const catOpts = [`<option value="">(sin categoría)</option>`].concat(categorias.map(c => `<option value="${c.id_categoria}">${c.nombre}</option>`)).join("");
+      const provOpts = [`<option value="">(sin proveedor)</option>`].concat(proveedores.map(p => `<option value="${p.id_proveedor}">${p.nombre}</option>`)).join("");
+
+      const defaultPrecio = (opts && opts.precio != null) ? String(opts.precio) : "";
+      const defaultPack = (opts && opts.pack_cantidad != null) ? String(opts.pack_cantidad) : "";
+      const defaultUnidad = (opts && opts.id_unidad != null) ? String(opts.id_unidad) : "";
+      const unitOpts = unidades.map(u => {
+        const sel = (defaultUnidad && String(u.id_unidad) === String(defaultUnidad)) ? "selected" : "";
+        return `<option value="${u.id_unidad}" ${sel}>${u.nombre}${u.abreviatura ? " ("+u.abreviatura+")" : ""}</option>`;
+      }).join("");
+
+      if (Swal && Swal.fire){
+        const res = await swalFire({
+          popupClass: "gd-swal--form gd-swal--noicon",
+          title: "Crear ingrediente",
+          html: `
+            <div class="gd-swal-form">
+              <div class="gd-swal-lede">Se guardará en Inventario y quedará disponible altiro en recetas.</div>
+
+              <div class="gd-swal-grid">
+                <div class="gd-swal-field gd-span-2">
+                  <div class="gd-swal-label">Nombre</div>
+                  <input id="ingNombre" class="swal2-input" value="${String(nombre||"").replace(/\"/g,"&quot;")}" />
+                </div>
+
+                <div class="gd-swal-field">
+                  <div class="gd-swal-label">Unidad</div>
+                  <select id="ingUnidad" class="swal2-select">${unitOpts}</select>
+                </div>
+                <div class="gd-swal-field">
+                  <div class="gd-swal-label">Pack (cantidad)</div>
+                  <input id="ingPack" class="swal2-input" placeholder="1" value="${defaultPack}" />
+                </div>
+
+                <div class="gd-swal-field">
+                  <div class="gd-swal-label">Precio unitario</div>
+                  <input id="ingPrecio" class="swal2-input" placeholder="0" value="${defaultPrecio}" />
+                </div>
+                <div class="gd-swal-field">
+                  <div class="gd-swal-label">Proveedor</div>
+                  <select id="ingProv" class="swal2-select">${provOpts}</select>
+                </div>
+
+                <div class="gd-swal-field gd-span-2">
+                  <div class="gd-swal-label">Categoría</div>
+                  <select id="ingCat" class="swal2-select">${catOpts}</select>
+                </div>
+              </div>
+            </div>
+          `,
+          focusConfirm: false,
+          showCancelButton: true,
+          confirmButtonText: "Crear",
+          cancelButtonText: "Cancelar",
+          preConfirm: () => {
+            const popup = (Swal.getPopup && Swal.getPopup()) || document;
+            const n = (popup.querySelector("#ingNombre")?.value || "").trim();
+            if (!n) return Swal.showValidationMessage("Nombre requerido");
+            const id_unidad = Number(popup.querySelector("#ingUnidad")?.value || "") || null;
+            const precio = parseMoney(popup.querySelector("#ingPrecio")?.value || 0) || 0;
+            const pack = toNumber(popup.querySelector("#ingPack")?.value || 0) || null;
+            const id_categoria = Number(popup.querySelector("#ingCat")?.value || "") || null;
+            const id_proveedor = Number(popup.querySelector("#ingProv")?.value || "") || null;
+            return { nombre: n, id_unidad, precio, pack_cantidad: pack, id_categoria, id_proveedor };
+          }
+        });
+        if (!res.isConfirmed) return null;
+        const payload = res.value;
+        await api("/ops/inventario/productos", { method:"POST", body: JSON.stringify(payload) });
+        // recarga catalogos para que aparezca inmediatamente
+        const cats2 = await api("/ops/inventario/catalogos");
+        invCatalogos = cats2;
+        ingredientes = cats2.productos || [];
+        ingIndex = {};
+        (ingredientes || []).forEach(i => {
+          const key = norm(i.nombre);
+          if (!key) return;
+          if (!ingIndex[key]) ingIndex[key] = [];
+          ingIndex[key].push(i);
+        });
+        $("#dlIng").innerHTML = ingredientes.map(i => `<option value="${i.nombre}"></option>`).join("");
+        toast("Ingrediente creado");
+        const created = findIngredient(payload.nombre);
+        return { nombre: payload.nombre, item: created || null, payload };
+      }
+
+      // fallback sin Swal
+      await api("/ops/inventario/productos", { method:"POST", body: JSON.stringify({ nombre }) });
+      toast("Ingrediente creado");
+      return { nombre, item: findIngredient(nombre) || null, payload: { nombre } };
+    }
+
+    const unitInfo = (u) => {
+      const t = norm(u);
+      const mass = {
+        "kg":1000, "kgs":1000, "k":1000, "kilo":1000, "kilos":1000, "kilogramo":1000, "kilogramos":1000,
+        "g":1, "gr":1, "grs":1, "gr.":1, "gramo":1, "gramos":1
+      };
+      const vol = {
+        "l":1000, "lt":1000, "lts":1000, "litro":1000, "litros":1000,
+        "ml":1, "mls":1, "cc":1
+      };
+      const unit = {
+        "un":1, "und":1, "unid":1, "unidad":1, "unidades":1, "u":1, "ud":1,
+        "porcion":1, "porciones":1
+      };
+      if (mass[t]) return { kind:"mass", size: mass[t] };
+      if (vol[t]) return { kind:"vol", size: vol[t] };
+      if (unit[t]) return { kind:"unit", size: unit[t] };
+      return { kind:"unit", size: 1 };
+    };
+    function computeCost(ing, qty, unit){
+      if (!ing) return { unitCost: 0, total: 0 };
+      const rawPrice = parseMoney(ing.precio || 0);
+      if (!rawPrice) return { unitCost: 0, total: 0 };
+      const basePrice = rawPrice;
+      const baseU = unitInfo(ing.unidad || "");
+      const useU = unitInfo(unit || ing.unidad || "");
+      let factor = 1;
+      if (baseU.kind === useU.kind){
+        factor = (useU.size || 1) / (baseU.size || 1);
+      }
+      const unitCost = basePrice * factor;
+      const total = (Number(qty || 0) || 0) * unitCost;
+      return { unitCost, total };
+    }
+
+    async function getRecipeCost(id){
+      if (recipeCache.has(id)) return recipeCache.get(id);
+      const res = await api(`/ops/recetas/${id}`);
+      const items = res.items || [];
+      const total = items.reduce((s, it) => s + (Number(it.cantidad||0) * Number(it.costo_unitario||0)), 0);
+      const rendimiento = Number(res.receta?.rendimiento || 1) || 1;
+      const unitCost = total / rendimiento;
+      const data = { total, rendimiento, unitCost };
+      recipeCache.set(id, data);
+      return data;
+    }
+
+    function detectSubRecipe(){
+      const name = norm($("#newIng").value);
+      subRecipe = (recetas || []).find(r => norm(r.producto) === name) || null;
+      const info = $("#subRecipeInfo");
+      if (subRecipe){
+        info.textContent = `Sub-receta detectada: ${subRecipe.producto}${subRecipe.marca ? " · " + subRecipe.marca : ""}`;
+        $("#useSubRecipe").disabled = false;
+      } else {
+        info.textContent = "No hay sub-receta para este ingrediente.";
+        $("#useSubRecipe").checked = false;
+        $("#useSubRecipe").disabled = true;
+      }
+    }
+
+    async function applySubRecipeCost(){
+      if (!subRecipe) return;
+      const cost = await getRecipeCost(subRecipe.id_receta);
+      $("#newUnit").value = "PORCION";
+      $("#newCost").value = formatCostInput(cost.unitCost || 0);
+      updateNewTotal();
+    }
+
+    function updateNewTotal(){
+      const qty = toNumber($("#newQty").value || 0) || 0;
+      const cost = parseMoney($("#newCost").value || 0) || 0;
+      let merma = toNumber($("#newMerma").value || 0) || 0;
+      if (merma < 0) merma = 0;
+      if (merma > 95) merma = 95;
+      const factor = (merma > 0) ? (1.0 / (1.0 - (merma / 100.0))) : 1.0;
+      $("#newTotal").value = fmtMoney.format(qty * cost * factor);
+    }
+
+    $("#newIng").addEventListener("input", () => {
+      const rawName = $("#newIng").value || "";
+      const exactList = ingIndex[norm(rawName)];
+      if (Array.isArray(exactList) && exactList.length > 1){
+        // Evita auto-asignar una unidad equivocada cuando hay duplicados con el mismo nombre.
+        $("#newUnit").value = "";
+        $("#newCost").value = "";
+        $("#newUnit").dataset.autoUnit = "0";
+        $("#newCost").dataset.auto = "0";
+        detectSubRecipe();
+        updateNewTotal();
+        return;
+      }
+      const found = findIngredientExact(rawName);
+      if (found){
+        $("#newUnit").value = found.unidad || "";
+        $("#newUnit").dataset.autoUnit = "1";
+        const raw = parseMoney(found.precio || 0);
+        let costDirect = Number.isFinite(raw) ? raw : 0;
+        const unitEq = norm($("#newUnit").value || "") === norm(found.unidad || "");
+        if (unitEq && costDirect > 0){
+          $("#newCost").value = String(Math.round(costDirect));
+          $("#newCost").dataset.auto = "1";
+        } else {
+          const calc = computeCost(found, 1, $("#newUnit").value || found.unidad || "");
+          if (calc.unitCost != null){
+            $("#newCost").value = String(Math.round(calc.unitCost || 0));
+            $("#newCost").dataset.auto = "1";
+          }
+        }
+      } else {
+        $("#newUnit").value = "";
+        $("#newCost").value = "";
+      }
+      detectSubRecipe();
+      updateNewTotal();
+    });
+    $("#newQty").addEventListener("input", updateNewTotal);
+    $("#newMerma").addEventListener("input", updateNewTotal);
+    $("#newUnit").addEventListener("input", () => {
+      $("#newUnit").dataset.autoUnit = "0";
+      const rawName = $("#newIng").value || "";
+      const exactList = ingIndex[norm(rawName)];
+      if (Array.isArray(exactList) && exactList.length > 1){
+        updateNewTotal();
+        return;
+      }
+      const found = findIngredientExact(rawName);
+      if (found){
+        if (!$("#newCost").value || $("#newCost").dataset.auto === "1"){
+          const unitEq = norm($("#newUnit").value || "") === norm(found.unidad || "");
+          if (unitEq && parseMoney(found.precio || 0) > 0){
+            $("#newCost").value = String(Math.round(parseMoney(found.precio || 0)));
+            $("#newCost").dataset.auto = "1";
+          } else {
+            const calc = computeCost(found, 1, $("#newUnit").value || found.unidad || "");
+            if (calc.unitCost != null){
+              $("#newCost").value = String(Math.round(calc.unitCost || 0));
+              $("#newCost").dataset.auto = "1";
+            }
+          }
+        }
+      }
+      updateNewTotal();
+    });
+    $("#newCost").addEventListener("input", () => {
+      $("#newCost").dataset.auto = "0";
+      updateNewTotal();
+    });
+    $("#useSubRecipe").addEventListener("change", async () => {
+      if ($("#useSubRecipe").checked){
+        await applySubRecipeCost();
+      } else {
+        $("#newCost").value = "";
+        updateNewTotal();
+      }
+    });
+
+    $("#btnCreate").onclick = async () => {
+      if (!currentProduct) return;
+      const productSnapshot = { ...(currentProduct || {}) };
+      try{
+        const res = await api("/ops/recetas", {
+          method:"POST",
+          body: JSON.stringify({
+            producto: currentProduct.producto,
+            marca: currentProduct.marca || null,
+            es_sub_receta: $("#recetaSub").checked || false
+          })
+        });
+        await loadAll();
+        currentProduct = findCurrentProductFallback(productSnapshot);
+        if (res.id){
+          const rr = await api(`/ops/recetas/${res.id}`);
+          setRecipeForm({ ...(rr.receta||{}), last_update: rr.last_update || null });
+          renderItems(rr.items);
+        }else if (currentProduct){
+          await selectProduct(currentProduct);
+        }
+        toast("Receta creada");
+      }catch(err){
+        const msg = (err && err.message) ? err.message : "No se pudo crear la receta";
+        toast(msg, "err");
+      }
+    };
+
+    $("#btnNewSub").onclick = async () => {
+      try{
+        await createSubRecetaFlow();
+      }catch(err){
+        toast((err && err.message) ? err.message : "No se pudo crear sub-receta", "err");
+      }
+    };
+
+    $("#btnSaveReceta").onclick = async () => {
+      if (!currentRecipe) return;
+      const productSnapshot = { ...(currentProduct || {}) };
+      try{
+        await api(`/ops/recetas/${currentRecipe.id_receta}`, {
+          method:"PUT",
+          body: JSON.stringify({
+            producto: currentProduct?.producto,
+            marca: currentProduct?.marca || null,
+            rendimiento: Number($("#recetaRend").value || 0) || null,
+            merma_pct: toNumber($("#recetaMerma").value || 0) || null,
+            costos_extra: parseMoney($("#recetaExtra").value || 0) || null,
+            es_sub_receta: $("#recetaSub").checked || false,
+            is_active: true
+          })
+        });
+        await loadAll();
+        currentProduct = findCurrentProductFallback(productSnapshot);
+        await reloadCurrentRecipe();
+        toast("Receta guardada");
+      }catch(err){
+        const msg = (err && err.message) ? err.message : "No se pudo guardar la receta";
+        toast(msg, "err");
+      }
+    };
+
+    $("#btnDelReceta").onclick = async () => {
+      if (!currentRecipe) return;
+      try{
+        const ok = await confirmBox("Eliminar receta", "¿Eliminar receta? Esta acción no se puede deshacer.");
+        if (!ok) return;
+        await api(`/ops/recetas/${currentRecipe.id_receta}`, { method:"DELETE" });
+        currentRecipe = null;
+        await loadAll();
+        if (currentProduct) await selectProduct(currentProduct);
+        toast("Receta eliminada");
+      }catch(err){
+        const msg = (err && err.message) ? err.message : "No se pudo eliminar la receta";
+        toast(msg, "err");
+      }
+    };
+
+    $("#btnAddItem").onclick = async () => {
+      if (!currentProduct) return;
+      const productSnapshot = { ...(currentProduct || {}) };
+      try{
+        if (!currentRecipe){
+          const res = await api("/ops/recetas", {
+            method:"POST",
+            body: JSON.stringify({
+              producto: currentProduct.producto,
+              marca: currentProduct.marca || null,
+              es_sub_receta: $("#recetaSub").checked || false
+            })
+          });
+          await loadAll();
+          currentProduct = findCurrentProductFallback(productSnapshot);
+          if (res.id){
+            const rr = await api(`/ops/recetas/${res.id}`);
+            setRecipeForm({ ...(rr.receta||{}), last_update: rr.last_update || null });
+            renderItems(rr.items);
+          }else if (currentProduct){
+            await selectProduct(currentProduct);
+          }
+        }
+        if (!currentRecipe){
+          toast("No se pudo crear la receta", "err");
+          return;
+        }
+        const payload = {
+          ingrediente: $("#newIng").value,
+          cantidad: toNumber($("#newQty").value || 0) || null,
+          unidad: $("#newUnit").value,
+          costo_unitario: parseMoney($("#newCost").value || 0) || null,
+          merma_pct: toNumber($("#newMerma").value || 0) || null,
+          sub_receta_id: $("#useSubRecipe").checked && subRecipe ? subRecipe.id_receta : null
+        };
+        if (!payload.ingrediente){
+          toast("Ingrediente requerido", "err");
+          return;
+        }
+        let exact = findIngredientExact(payload.ingrediente, payload.unidad);
+        if (!exact){
+          // flujo nuevo: permitir crear ingrediente desde Recetas sin salir a Inventario
+          const created = await createInventarioIngrediente(payload.ingrediente, { id_unidad: null });
+          if (!created) return;
+          const createdName = typeof created === "string" ? created : created.nombre;
+          $("#newIng").value = createdName;
+          payload.ingrediente = createdName;
+          exact = (created && typeof created === "object" && created.item) ? created.item : (findIngredientExact(createdName, payload.unidad) || findIngredient(createdName, payload.unidad));
+          if (exact && !payload.unidad) {
+            payload.unidad = exact.unidad || "";
+            $("#newUnit").value = payload.unidad;
+          }
+          if (!exact && created && typeof created === "object" && created.payload){
+            if (!payload.unidad && created.payload.id_unidad){
+              payload.unidad = unitLabelById(created.payload.id_unidad) || payload.unidad;
+              $("#newUnit").value = payload.unidad || "";
+            }
+            if (!payload.costo_unitario && created.payload.precio){
+              payload.costo_unitario = parseMoney(created.payload.precio || 0) || null;
+              $("#newCost").value = payload.costo_unitario ? String(Math.round(payload.costo_unitario)) : "";
+            }
+          }
+        }
+        if (!payload.cantidad || payload.cantidad <= 0){
+          toast("Cantidad requerida", "err");
+          return;
+        }
+        if (payload.merma_pct != null){
+          let m = Number(payload.merma_pct || 0);
+          if (!Number.isFinite(m)) m = 0;
+          if (m < 0) m = 0;
+          if (m > 95) m = 95;
+          payload.merma_pct = m;
+        }
+        if (!payload.costo_unitario && exact){
+          const unitEq = norm(payload.unidad || "") === norm(exact.unidad || "");
+          if (unitEq && Number(exact.precio || 0) > 0){
+            payload.costo_unitario = Number(exact.precio || 0);
+          } else {
+            const calc = computeCost(exact, 1, payload.unidad || exact.unidad || "");
+            payload.costo_unitario = calc.unitCost || null;
+          }
+        }
+        const exists = (currentItems || []).find(it => norm(it.ingrediente) === norm(payload.ingrediente));
+        if (exists){
+          const newQty = toNumber(exists.cantidad || 0) + toNumber(payload.cantidad || 0);
+          await api(`/ops/recetas/${currentRecipe.id_receta}/items/${exists.id_item}`, {
+            method:"PUT",
+            body: JSON.stringify({ cantidad: newQty, unidad: payload.unidad, costo_unitario: payload.costo_unitario, merma_pct: payload.merma_pct, sub_receta_id: payload.sub_receta_id })
+          });
+          toast("Ingrediente ya existe, se sumó la cantidad");
+        } else {
+          await api(`/ops/recetas/${currentRecipe.id_receta}/items`, { method:"POST", body: JSON.stringify(payload) });
+        }
+        $("#newIng").value = "";
+        $("#newQty").value = "";
+        $("#newUnit").value = "";
+        $("#newCost").value = "";
+        $("#newMerma").value = "";
+        $("#newTotal").value = "";
+        $("#useSubRecipe").checked = false;
+        $("#useSubRecipe").disabled = true;
+        $("#subRecipeInfo").textContent = "—";
+        await reloadCurrentRecipe();
+        toast("Ingrediente agregado");
+      } catch (err){
+        let msg = (err && (err.message || err.detail)) ? (err.message || err.detail) : String(err || "No se pudo guardar el ingrediente");
+        if (msg === "[object Object]") msg = "No se pudo guardar el ingrediente";
+        toast(msg, "err");
+      }
+    };
+
+    $("#itemsBody").addEventListener("click", async (ev) => {
+      const btn = ev.target.closest("button");
+      if (!btn) return;
+      const tr = ev.target.closest("tr");
+      const id = tr?.dataset?.id;
+      if (!id || !currentRecipe) return;
+      if (btn.dataset.act === "del"){
+        await api(`/ops/recetas/${currentRecipe.id_receta}/items/${id}`, { method:"DELETE" });
+        await selectProduct(currentProduct);
+        toast("Ingrediente eliminado");
+        return;
+      }
+      if (btn.dataset.act === "save"){
+        const payload = {};
+        tr.querySelectorAll("[data-field]").forEach(el => {
+          payload[el.dataset.field] = el.value;
+        });
+        if (payload.cantidad !== undefined) payload.cantidad = toNumber(payload.cantidad || 0) || null;
+        if (payload.costo_unitario !== undefined) payload.costo_unitario = parseMoney(payload.costo_unitario || 0) || null;
+        if (payload.merma_pct !== undefined) payload.merma_pct = toNumber(payload.merma_pct || 0) || null;
+        payload.sub_receta_id = tr.dataset.sub ? Number(tr.dataset.sub) : null;
+        if (!payload.costo_unitario){
+          const ing = findIngredientExact(payload.ingrediente, payload.unidad) || findIngredient(payload.ingrediente, payload.unidad);
+          if (ing){
+            const calc = computeCost(ing, 1, payload.unidad || ing.unidad || "");
+            payload.costo_unitario = calc.unitCost || null;
+          }
+        }
+        await api(`/ops/recetas/${currentRecipe.id_receta}/items/${id}`, { method:"PUT", body: JSON.stringify(payload) });
+        await reloadCurrentRecipe();
+        toast("Ingrediente guardado");
+      }
+    });
+
+    $("#q").addEventListener("input", renderList);
+    $("#brandFilter").addEventListener("change", renderList);
+    $("#onlyMissing").addEventListener("change", renderList);
+    $("#listMode").addEventListener("change", () => {
+      const mode = $("#listMode").value || "PRODUCTOS";
+      $("#brandFilter").style.display = (mode === "PRODUCTOS") ? "" : "none";
+      $("#onlyMissing").disabled = (mode !== "PRODUCTOS");
+      if (mode !== "PRODUCTOS") $("#onlyMissing").checked = false;
+      renderList();
+    });
+
+    loadAll();
+  </script>
+</body>
+</html>

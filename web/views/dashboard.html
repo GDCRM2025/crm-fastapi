@@ -1,0 +1,1197 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="gd-build" content="20260421-kpis12" />
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="../styles.css?v=20260320-6" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    :root{
+      --dash-bg: rgba(7,12,16,.44);
+      --dash-border: rgba(255,255,255,.12);
+      --dash-ink: rgba(255,255,255,.92);
+      --dash-muted: rgba(255,255,255,.70);
+    }
+
+    html,body{height:100%; margin:0;}
+    body{
+      padding:18px;
+      background:transparent;
+      color:var(--dash-ink);
+      overflow:auto;
+    }
+
+    .topbar{
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:14px;
+      padding:14px 16px;
+      border-radius:18px;
+      border:1px solid rgba(39,228,139,.18);
+      background:linear-gradient(120deg, rgba(18,44,32,.72), rgba(10,16,22,.40));
+      box-shadow:0 20px 60px rgba(0,0,0,.35);
+    }
+    .topbar h1{margin:0; font-size:22px; font-weight:1100; letter-spacing:.2px;}
+    .topbar .sub{margin-top:4px; font-weight:850; opacity:.75; font-size:12px;}
+
+    .filters{
+      display:flex; align-items:center; justify-content:flex-end;
+      gap:8px; flex-wrap:wrap;
+    }
+    .ctrl{
+      display:flex; align-items:center; gap:8px;
+      padding:9px 10px;
+      border-radius:14px;
+      border:1px solid var(--dash-border);
+      background:rgba(0,0,0,.18);
+      backdrop-filter: blur(10px);
+    }
+    .ctrl label{
+      font-size:11px; opacity:.7; font-weight:1000;
+      letter-spacing:.12em; text-transform:uppercase;
+    }
+    .ctrl select{
+      appearance:none;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(0,0,0,.18);
+      color:inherit;
+      border-radius:10px;
+      padding:6px 8px;
+      font-weight:900;
+      outline:none;
+    }
+    .iconbtn{
+      cursor:pointer;
+      border:1px solid rgba(255,255,255,.16);
+      background:rgba(0,0,0,.18);
+      color:inherit;
+      border-radius:12px;
+      padding:6px 10px;
+      font-weight:1200;
+      min-width:36px;
+    }
+
+    .btn{
+      cursor:pointer;
+      border:1px solid rgba(39,228,139,.30);
+      background:linear-gradient(90deg, rgba(39,228,139,.22), rgba(56,189,248,.15));
+      color:inherit;
+      border-radius:12px;
+      padding:9px 12px;
+      font-weight:1000;
+      letter-spacing:.02em;
+    }
+    .btn:active{transform:translateY(1px);}
+
+    .layout{
+      display:grid;
+      grid-template-columns:repeat(12, minmax(0, 1fr));
+      gap:14px;
+      margin-top:14px;
+    }
+    @media (max-width:1200px){ .layout{grid-template-columns:repeat(6, minmax(0, 1fr));} }
+    @media (max-width:820px){ .layout{grid-template-columns:1fr;} }
+
+    .card{
+      border-radius:18px;
+      padding:14px;
+      border:1px solid var(--dash-border);
+      background:var(--dash-bg);
+      backdrop-filter: blur(10px);
+      box-shadow:0 12px 30px rgba(0,0,0,.25);
+    }
+    :root.light .card{
+      background:rgba(255,255,255,.78);
+      border-color:rgba(0,0,0,.10);
+      color:rgba(0,0,0,.86);
+    }
+    .card h3{
+      margin:0 0 10px 0;
+      font-size:13px;
+      font-weight:1100;
+      text-transform:uppercase;
+      letter-spacing:.14em;
+      opacity:.9;
+    }
+    .muted{opacity:.72}
+
+    .kpis{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0,1fr));
+      gap:12px;
+    }
+    @media (max-width:820px){ .kpis{grid-template-columns:1fr;} }
+    .kpi{
+      padding:14px;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.18);
+      cursor:pointer;
+    }
+    .kpi:hover{border-color:rgba(255,255,255,.18)}
+    .kpi:active{transform:translateY(1px)}
+    .kpi .label{font-weight:1000; opacity:.7; font-size:11px; letter-spacing:.12em; text-transform:uppercase;}
+    .kpi .value{font-weight:1200; font-size:22px; margin-top:6px;}
+    .kpi .hint{font-size:11px; opacity:.65; margin-top:6px;}
+    .kpi .break{font-size:11px; opacity:.72; margin-top:6px; font-weight:1000;}
+    .kpi .counts{font-size:11px; opacity:.70; margin-top:6px; font-weight:1000;}
+    @media (max-width:820px){ .survey-kpis{grid-template-columns:1fr!important;} }
+
+	    .states{
+	      display:grid;
+	      gap:12px;
+	    }
+	    .estadoLayout{display:grid; grid-template-columns: 1fr 340px; gap:12px; align-items:start;}
+	    .estadoLeft{display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:12px;}
+	    /* En la grilla de estados queremos 3 columnas reales; el estilo base .state (span 3) haría cada card full width. */
+	    .estadoLeft .state{grid-column: span 1;}
+	    .estadoRight{display:flex; align-items:center; justify-content:center; min-height:100%;}
+	    @media (max-width:1200px){ .estadoLayout{grid-template-columns:1fr;} .estadoRight{justify-content:flex-start;} }
+	    @media (max-width:820px){ .estadoLeft{grid-template-columns:1fr;} }
+    .state{
+      grid-column: span 3;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.16);
+      padding:12px;
+      cursor:default;
+    }
+    .state:hover{ border-color: rgba(255,255,255,.18); }
+    .state:active{ transform: translateY(1px); }
+    .state .head{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+    .state .name{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:11px; opacity:.92;}
+    .state .nums{display:flex; gap:12px; align-items:baseline; margin-top:8px;}
+    .state .count{font-weight:1200; font-size:18px;}
+    .state .amt{font-weight:1100; font-size:13px; opacity:.82;}
+    .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
+	    .chip{
+	      border:1px solid rgba(255,255,255,.10);
+	      background:rgba(0,0,0,.14);
+	      border-radius:999px;
+	      padding:4px 8px;
+	      font-weight:1000;
+	      font-size:11px;
+	      opacity:.85;
+	      white-space:nowrap;
+	    }
+	    .linkish{cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px;}
+	    .daylink{border-bottom:1px solid rgba(255,255,255,.20); padding-bottom:1px;}
+	    .cell-sale.clickable{cursor:pointer; text-decoration: underline; text-decoration-thickness:2px; text-underline-offset:3px;}
+
+    .table-mini{width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed;}
+    .table-mini th,.table-mini td{padding:7px 8px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left;}
+    .table-mini th{opacity:.75; font-weight:1100; letter-spacing:.08em; text-transform:uppercase; font-size:11px;}
+    .right{text-align:right;}
+    .scroll-x{overflow:auto; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+    .table-mini{min-width:760px;}
+    .table-mini th:first-child, .table-mini td:first-child{
+      position:sticky; left:0; z-index:2;
+      background:rgba(0,0,0,.22);
+      backdrop-filter: blur(6px);
+    }
+    .scroll-hint{font-weight:1000; font-size:11px; opacity:.55; margin:6px 0 0 0;}
+    .state .barwrap{margin-top:8px; height:8px; border-radius:999px; background:rgba(255,255,255,.08); overflow:hidden;}
+    .state .bar{height:100%; border-radius:999px; background:linear-gradient(90deg, rgba(126,231,176,.95), rgba(96,165,250,.95)); width:0%;}
+
+    /* eventos strip (tomado del dashboard previo) */
+    .events-strip{display:flex; gap:10px; overflow:auto; padding-bottom:6px;}
+    .event-day{min-width:240px; border-radius:16px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.16); padding:10px;}
+    .event-day-head{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;}
+    .event-day-title{font-weight:1100; font-size:11px; letter-spacing:.12em; text-transform:uppercase; opacity:.85;}
+    .event-pill{position:relative; display:flex; align-items:center; gap:8px; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.12); padding:8px; margin-bottom:8px; cursor:pointer;}
+    .event-pill:hover{border-color:rgba(255,255,255,.16)}
+    .event-pill .dot{width:10px; height:10px; border-radius:999px; background:#7ee7b0; flex:0 0 auto;}
+    .event-pill .t1{font-weight:1100; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .event-pill .t2{font-weight:900; font-size:11px; opacity:.70; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .event-more{cursor:pointer; width:100%; border:1px dashed rgba(255,255,255,.16); background:transparent; color:inherit; border-radius:12px; padding:7px 8px; font-weight:1000; opacity:.85;}
+
+    .modal{
+      position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.55); z-index:50;
+    }
+    .modal.open{display:flex;}
+    .modal-card{
+      width:min(560px, 92vw);
+      max-height:80vh;
+      overflow:auto;
+      border-radius:18px;
+      padding:14px;
+      border:1px solid rgba(255,255,255,.16);
+      background:rgba(10,16,22,.96);
+      box-shadow:0 20px 60px rgba(0,0,0,.45);
+    }
+    .modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;}
+    .modal-title{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px; opacity:.9;}
+    .modal-close{cursor:pointer; border:1px solid rgba(255,255,255,.18); background:transparent; color:inherit; border-radius:10px; padding:6px 10px; font-weight:1000;}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Dashboard</h1>
+      <div class="sub" id="dashSub">Cargando…</div>
+    </div>
+    <div class="filters">
+      <div class="ctrl">
+        <label>Marca</label>
+        <select id="brandSel"><option value="">Todas</option></select>
+      </div>
+      <div class="ctrl">
+        <label>Mes</label>
+        <select id="monthSel"></select>
+      </div>
+      <div class="ctrl">
+        <label>Semana</label>
+        <button class="iconbtn" id="btnWeekPrev" title="Semana anterior">‹</button>
+        <button class="iconbtn" id="btnWeekNow" title="Semana actual">⟲</button>
+        <button class="iconbtn" id="btnWeekNext" title="Siguiente semana">›</button>
+      </div>
+      <button class="btn" id="btnApply">Aplicar</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="card" style="grid-column: span 12;">
+	      <h3>Venta (confirmados)</h3>
+	      <div class="muted" id="kpiMetaLine" style="margin:-2px 0 10px 0">—</div>
+      <div class="kpis">
+        <div class="kpi" id="kpi1">
+          <div class="label">Venta día</div>
+          <div class="value" id="kpiVentaDia">$ 0</div>
+          <div class="break" id="kpiVentaDiaBreak">Neto $0 + Traslado $0</div>
+          <div class="counts" id="kpiVentaDiaCounts">Leads: 0 · Emp: 0 · Part: 0</div>
+          <div class="hint">Click: vendidos hoy (agenda)</div>
+        </div>
+        <div class="kpi" id="kpi2">
+          <div class="label">Venta semana</div>
+          <div class="value" id="kpiVentaSemana">$ 0</div>
+          <div class="break" id="kpiVentaSemanaBreak">Neto $0 + Traslado $0</div>
+          <div class="counts" id="kpiVentaSemanaCounts">Leads: 0 · Emp: 0 · Part: 0</div>
+          <div class="hint">Click: vendidos semana (agenda)</div>
+        </div>
+        <div class="kpi" id="kpi3">
+        <div class="label">Venta mes</div>
+          <div class="value" id="kpiVentaMes">$ 0</div>
+          <div class="break" id="kpiVentaMesBreak">Neto $0 + Traslado $0</div>
+          <div class="counts" id="kpiVentaMesCounts">Leads: 0 · Emp: 0 · Part: 0</div>
+          <div class="hint">Click: confirmados del mes (fecha evento)</div>
+        </div>
+      </div>
+    </section>
+
+	    <section class="card" style="grid-column: span 12;">
+	      <h3>Estados</h3>
+	      <div class="muted" id="estadoSub" style="margin-top:-2px">Leads por estado · Mes: —</div>
+	      <div id="estadoCards" class="states" style="margin-top:12px"></div>
+	    </section>
+
+    <section class="card" style="grid-column: span 12;">
+      <h3>Venta diaria por marca (semana)</h3>
+      <div class="muted" style="margin-top:-2px">Doble click en un monto: abre leads confirmados del día.</div>
+      <div id="salesDaily" style="margin-top:10px" class="muted">Cargando…</div>
+    </section>
+
+    <section class="card" id="eventsCard" style="grid-column: span 12; display:none;">
+      <h3>Eventos confirmados (semana)</h3>
+      <div class="muted" style="margin-top:-2px">Semana Lun-Dom (Google Calendar). Click: detalle.</div>
+      <div id="eventsWeek" style="margin-top:12px" class="muted">Cargando…</div>
+    </section>
+
+    <section class="card" id="tasksCard" style="grid-column: span 12; display:none;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0">Comercial 360</h3>
+          <div class="muted" style="margin-top:6px">Seguimiento de leads (NUEVO / CONTACTADO / COTIZADO). Al registrar seguimiento, desaparece de tareas.</div>
+        </div>
+        <button class="btn" id="btnGoTasks" type="button">Abrir Comercial 360</button>
+      </div>
+      <div class="kpis" style="margin-top:12px;">
+        <div class="kpi" id="kpiTaskNew">
+          <div class="label">Nuevos</div>
+          <div class="value" id="tasksNew">0</div>
+          <div class="hint">NUEVO sin seguimiento</div>
+        </div>
+        <div class="kpi" id="kpiTaskContact">
+          <div class="label">Contactados</div>
+          <div class="value" id="tasksContact">0</div>
+          <div class="hint">CONTACTADO sin seguimiento</div>
+        </div>
+        <div class="kpi" id="kpiTaskQuote">
+          <div class="label">Cotizados</div>
+          <div class="value" id="tasksQuote">0</div>
+          <div class="hint">COTIZADO sin seguimiento</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="reportesCard" style="grid-column: span 12;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0">Reportes</h3>
+          <div class="muted" style="margin-top:6px">Analítica avanzada (Funnel, comunas, productos, clientes, finanzas).</div>
+        </div>
+        <button class="btn" id="btnGoReportes" type="button">Abrir Reportes</button>
+      </div>
+      <div class="muted" style="margin-top:12px">Tip: también está en el menú lateral (“Ir a Reportes”).</div>
+    </section>
+
+    <section class="card" id="surveyCard" style="grid-column: span 12;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0">Encuestas de satisfacción</h3>
+          <div class="muted" style="margin-top:6px">Envío manual por WhatsApp para eventos confirmados que ya finalizaron.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <input id="surveyDay" type="date" class="iconbtn" style="min-width:150px;" />
+          <button class="btn" id="btnSurveyRefresh" type="button">Actualizar</button>
+          <button class="btn" id="btnGoSurveys" type="button">Abrir gestión completa</button>
+        </div>
+      </div>
+      <div class="kpis survey-kpis" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-top:12px;">
+        <div class="kpi"><div class="label">Pendientes del día</div><div class="value" id="surveyPending">0</div></div>
+        <div class="kpi"><div class="label">Generadas 60 días</div><div class="value" id="surveyTotal">0</div></div>
+        <div class="kpi"><div class="label">Respondidas</div><div class="value" id="surveyResponded">0</div></div>
+        <div class="kpi"><div class="label">Experiencia promedio</div><div class="value" id="surveyAverage">—</div></div>
+      </div>
+      <div id="surveyList" style="display:grid;gap:8px;margin-top:12px;">
+        <div class="muted">Cargando encuestas…</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal" id="dayModal" role="dialog" aria-modal="true" aria-label="Eventos del día">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title" id="dayModalTitle">Día</div>
+        <button class="modal-close" id="dayModalClose" type="button">Cerrar</button>
+      </div>
+      <div id="dayModalList" class="muted">—</div>
+    </div>
+  </div>
+
+  <div class="modal" id="eventModal" role="dialog" aria-modal="true" aria-label="Evento">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title" id="eventModalTitle">Evento</div>
+        <button class="modal-close" id="eventModalClose" type="button">Cerrar</button>
+      </div>
+      <div id="eventModalBody" class="muted">—</div>
+      <div style="display:flex; gap:10px; justify-content:center; margin-top:12px;">
+        <button class="iconbtn" id="eventModalOpenLead" type="button" title="Abrir lead">🔎</button>
+        <button class="iconbtn" id="eventModalOpenCal" type="button" title="Abrir en Calendar">📅</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = (() => {
+      try {
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = h === "localhost" || h === "127.0.0.1";
+        return isLocal ? "" : "/crm";
+      } catch (_) {
+        return "";
+      }
+    })();
+
+    const $ = (q, c=document) => c.querySelector(q);
+    const $$ = (q, c=document) => [...c.querySelectorAll(q)];
+
+    function getToken(){
+      try{
+        return (
+          localStorage.getItem("token") ||
+          localStorage.getItem("gd_token") ||
+          sessionStorage.getItem("token") ||
+          sessionStorage.getItem("gd_token") ||
+          ""
+        );
+      }catch(_){ return ""; }
+    }
+
+    function authHeaders(extra={}) {
+      const GD = window.parent && window.parent.GD;
+      if (GD && typeof GD.authHeaders === "function"){
+        try{ return GD.authHeaders(extra || {}); }catch(_){}
+      }
+      const t = getToken();
+      return t ? Object.assign({ "Authorization": "Bearer " + t }, extra || {}) : Object.assign({}, extra || {});
+    }
+
+    function fmtMoney(n){
+      const x = Number(n || 0);
+      try { return "$ " + Math.round(x).toLocaleString("es-CL"); } catch(_) { return "$ " + String(Math.round(x)); }
+    }
+    function esc(s){
+      return String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+    }
+
+    function openLead(id){
+      const lid = String(id || "").trim();
+      if (!lid) return;
+      window.parent?.postMessage({ type:"openItem", id:"leads_ver", url:`/web/views/leads.html?open_lead=${encodeURIComponent(lid)}` }, "*");
+    }
+
+    function openFilter(params){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.openLeadsFilter){
+        try{ GD.openLeadsFilter(params); return; }catch(_){}
+      }
+      const qs = new URLSearchParams();
+      Object.entries(params || {}).forEach(([k,v])=>{
+        if (v == null || v === "") return;
+        qs.set(String(k), String(v));
+      });
+      const url = "/web/views/leads.html" + (qs.toString() ? ("?" + qs.toString()) : "");
+      window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*");
+    }
+
+    function openFiltroLeadsIngreso({ dateISO, channel, idMarca }){
+      const qs = new URLSearchParams();
+      qs.set("campo", "ingreso");
+      if (dateISO) { qs.set("desde", String(dateISO)); qs.set("hasta", String(dateISO)); }
+      if (channel) qs.set("q", String(channel));
+      if (idMarca) qs.set("marca", String(idMarca));
+      const url = "/web/views/filtro_leads.html" + (qs.toString() ? ("?" + qs.toString()) : "");
+      window.parent?.postMessage({ type:"openItem", id:"filtro_leads", url }, "*");
+    }
+
+    async function openConfirmedSales(desde, hasta, idMarcaOverride="", basis="agenda"){
+      try{
+        const qs = new URLSearchParams();
+        qs.set("from_date", String(desde||""));
+        qs.set("to_date", String(hasta||""));
+        qs.set("basis", (basis === "evento") ? "evento" : "agenda");
+        const mid = idMarcaOverride || state.idMarca || "";
+        if (mid) qs.set("id_marca", mid);
+
+        let r = await fetch(`${API_BASE}/tools/dashboard_v2/sales_ids?${qs.toString()}`, { headers: authHeaders() });
+        if (!r.ok) {
+          const qs2 = new URLSearchParams();
+          qs2.set("from_date", String(desde||""));
+          qs2.set("to_date", String(hasta||""));
+          if (mid) qs2.set("id_marca", mid);
+          r = await fetch(`${API_BASE}/tools/dashboard/sales_ids?${qs2.toString()}`, { headers: authHeaders() });
+          if (!r.ok) return;
+        }
+        const j = await r.json();
+        const ids = Array.isArray(j?.ids) ? j.ids : [];
+        if (!ids.length) return;
+        const url = "/web/views/leads.html?stale_ids=" + encodeURIComponent(ids.join(","));
+        window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*");
+      } catch (e) {
+        console.warn("openConfirmedSales failed", e);
+      }
+    }
+
+    const state = {
+      me: null,
+      idMarca: "",
+      weekOffset: 0,
+      monthOffset: 0,
+      marcasMap: {},
+      dv2: null,
+    };
+
+    async function apiJson(path, init){
+      const r = await fetch(`${API_BASE}${path}`, { ...(init||{}), headers: authHeaders((init||{}).headers || {}) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    }
+
+    async function loadMe(){
+      try{
+        const r = await fetch(`${API_BASE}/me`, { headers: authHeaders() });
+        if (!r.ok) return null;
+        return await r.json();
+      }catch(_){ return null; }
+    }
+
+    async function loadMarcas(){
+      try{
+        const mR = await fetch(`${API_BASE}/marcas?solo_activas=1`, { headers: authHeaders() });
+        if (!mR.ok) return;
+        const arr = await mR.json();
+        const map = {};
+        (arr || []).forEach(m=>{
+          const id = String(m.id_marca ?? "");
+          const name = (m.marca || m.nombre || "").toString().trim();
+          if (id) map[id] = name;
+        });
+        state.marcasMap = map;
+      }catch(_){ state.marcasMap = {}; }
+    }
+
+    function brandLabel(){
+      if (!state.idMarca) return "Todas";
+      return state.marcasMap[state.idMarca] || ("#" + state.idMarca);
+    }
+
+    function populateBrands(){
+      const sel = $("#brandSel");
+      if (!sel) return;
+      const allowed = new Set(((state.me?.marcas || [])).map(String));
+      const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
+      const isSuper = roleUp === "SUPERADMIN";
+      sel.innerHTML = `<option value="">Todas</option>`;
+      const ids = Object.keys(state.marcasMap).sort((a,b) => (state.marcasMap[a]||"").localeCompare(state.marcasMap[b]||""));
+      ids.forEach(id=>{
+        if (!isSuper && allowed.size && !allowed.has(String(id))) return;
+        const o = document.createElement("option");
+        o.value = id;
+        o.textContent = state.marcasMap[id] || ("#" + id);
+        sel.appendChild(o);
+      });
+      if (state.idMarca) sel.value = state.idMarca;
+    }
+
+    function applyRoleLayout(){
+      const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
+      const isAdmin = roleUp.includes("ADMIN") || roleUp.includes("SUPERADMIN");
+      const isSales = roleUp.includes("EJECUTIV") || roleUp.includes("VENTAS") || roleUp.includes("VENDEDOR") || roleUp === "SALES";
+      const isOps = roleUp === "OPERADOR" || roleUp === "CONDUCTOR" || roleUp === "CHOFER";
+      $("#tasksCard").style.display = (isAdmin || isSales) ? "" : "none";
+      $("#surveyCard").style.display = (isAdmin || isSales) ? "" : "none";
+      $("#eventsCard").style.display = isOps ? "none" : "";
+    }
+
+	    function renderEstadoCards(items, leadsToday){
+	      const box = $("#estadoCards");
+	      if (!box) return;
+	      const arr = Array.isArray(items) ? items : [];
+
+      const totalCount = arr.reduce((a,x)=> a + Number(x?.cantidad||0), 0);
+      const totalAmt = arr.reduce((a,x)=> a + Number(x?.monto||0), 0);
+      const maxCount = Math.max(1, ...arr.map(x => Number(x?.cantidad||0)));
+      const totalByChannel = new Map();
+      arr.forEach(st=>{
+        (st?.channels || []).forEach(ch=>{
+          const k = String(ch?.canal || "").trim() || "—";
+          const prev = totalByChannel.get(k) || {cantidad:0, monto:0};
+          totalByChannel.set(k, {cantidad: prev.cantidad + Number(ch?.cantidad||0), monto: prev.monto + Number(ch?.monto||0)});
+        });
+      });
+      const totalChips = [...totalByChannel.entries()]
+        .sort((a,b)=> (b[1].cantidad||0) - (a[1].cantidad||0))
+        .slice(0, 6)
+        .map(([k,v])=> `<span class="chip">${(k||"—").toUpperCase()}: ${Number(v.cantidad||0)}</span>`)
+        .join("");
+
+      const mk = (o, isTotal=false) => {
+        const name = isTotal ? "TOTAL" : String(o?.estado || "—");
+        const count = Number(o?.cantidad || 0);
+        const amt = Number(o?.monto || 0);
+        const chips = isTotal
+          ? totalChips
+          : (Array.isArray(o?.channels) ? o.channels.slice(0,6) : []).map(ch=>{
+              const k = String(ch?.canal || "").trim() || "—";
+              return `<span class="chip">${(k||"—").toUpperCase()}: ${Number(ch?.cantidad||0)}</span>`;
+            }).join("");
+        return `
+          <div class="state" data-estado="${isTotal ? "" : String(o?.id_estado||"")}">
+            <div class="head">
+              <div class="name">${name}</div>
+            </div>
+            <div class="nums">
+              <div class="count">${isTotal ? totalCount : count}</div>
+              <div class="amt">${fmtMoney(isTotal ? totalAmt : amt)}</div>
+            </div>
+            <div class="barwrap" title="Proporción por cantidad"><div class="bar" style="width:${isTotal ? 100 : Math.round((count/maxCount)*100)}%"></div></div>
+            <div class="chips">${chips || `<span class="chip">—</span>`}</div>
+          </div>
+      `;
+      };
+
+      // Card extra: Leads que llegaron hoy (ingreso/created_at), con canales y monto.
+      const lt = leadsToday || {};
+      const ltDate = String(lt?.date || "").slice(0,10);
+      const ltCnt = Number(lt?.total_cnt || 0);
+      const ltMonto = Number(lt?.total_monto || 0);
+      const ltBy = Array.isArray(lt?.by_channel) ? lt.by_channel : [];
+      const ltChips = ltBy.slice(0, 8).map(x=>{
+        const canalRaw = String(x?.canal || "").trim();
+        const canalEnc = encodeURIComponent(canalRaw);
+        const label = (String(x?.canal || "—").trim() || "—").toUpperCase();
+        const cnt = Number(x?.cnt || x?.cantidad || 0);
+        const amt = Number(x?.monto || 0);
+        return `<span class="chip linkish" data-lt-channel="${esc(canalEnc)}">${label}: ${cnt}${amt ? " · " + fmtMoney(amt) : ""}</span>`;
+      }).join("");
+      const ltCard = `
+        <div class="state" style="cursor:pointer; width:100%;" data-lt="1" title="Click: ver leads ingresados hoy">
+          <div class="head">
+            <div class="name">HOY LLEGARON</div>
+            ${ltDate ? `<div class="muted" style="margin-top:6px">${ltDate}</div>` : ""}
+          </div>
+          <div class="nums">
+            <div class="count">${ltCnt}</div>
+            <div class="amt">${fmtMoney(ltMonto)}</div>
+          </div>
+          <div class="chips" style="margin-top:10px">${ltChips || `<span class="chip">—</span>`}</div>
+        </div>
+      `;
+
+      // Orden: TOTAL/NUEVO/CONTACTADO | COTIZADO/CONFIRMADO/DECLINADO, y a la derecha HOY LLEGARON (clickeable).
+      const key = (s) => String(s||"").trim().toUpperCase();
+      const order = ["NUEVO","CONTACTADO","COTIZADO","CONFIRMADO","DECLINADO","TOTAL"];
+      const byName = new Map(arr.map(x => [key(x?.estado), x]));
+      const ordered = [];
+      // Estados en el orden pedido (3 arriba + 3 abajo). TOTAL va al final.
+      order.forEach(n => {
+        if (n === "TOTAL") ordered.push({__total:true});
+        else if (byName.has(n)) ordered.push(byName.get(n));
+      });
+      // any extras at end
+      arr.forEach(x => { const n=key(x?.estado); if (!order.includes(n)) ordered.push(x); });
+      const leftHtml = ordered.map(x => (x && x.__total) ? mk({}, true) : mk(x,false)).join("");
+      box.innerHTML = `<div class="estadoLayout"><div class="estadoLeft">${leftHtml}</div><div class="estadoRight">${ltCard}</div></div>`;
+
+      // Click: abre filtro leads por ingreso de hoy (opcional canal)
+      const ltEl = box.querySelector?.("[data-lt='1']");
+      if (ltEl){
+        ltEl.addEventListener("click", (ev)=>{
+          const t = ev?.target;
+          const chip = t?.closest?.("[data-lt-channel]");
+          const enc = chip ? String(chip.getAttribute("data-lt-channel") || "") : "";
+          const canal = enc ? decodeURIComponent(enc) : "";
+          if (!ltDate) return;
+          openFiltroLeadsIngreso({ dateISO: ltDate, channel: canal, idMarca: (state.idMarca || "") });
+        });
+      }
+
+      // Nota UX: estas cards ya no abren leads al click porque el conteo depende del mes/entrada
+      // y puede no coincidir con el filtro estándar del módulo Leads.
+    }
+
+	    function renderSalesDaily(dv2){
+	      const box = $("#salesDaily");
+	      if (!box) return;
+	      const week = dv2?.week || {};
+	      const sales = dv2?.sales || {};
+	      const packed = (dv2?.sales_week_daily_by_brand && Array.isArray(dv2.sales_week_daily_by_brand.days) && Array.isArray(dv2.sales_week_daily_by_brand.rows))
+	        ? dv2.sales_week_daily_by_brand
+	        : null;
+	      let daily = Array.isArray(sales?.semana_daily_by_brand) ? sales.semana_daily_by_brand : [];
+
+	      const ws = String(week?.start || "");
+	      const days = [];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(ws)){
+        const dt0 = new Date(ws + "T00:00:00");
+        for (let i=0;i<7;i++){
+          const d = new Date(dt0.getTime() + i*86400000);
+          days.push(d.toISOString().slice(0,10));
+        }
+      } else {
+        days.push(...[...new Set(daily.map(x=>String(x?.dia||"").slice(0,10)).filter(Boolean))].sort());
+      }
+
+	      let rows = [];
+	      if (packed){
+	        rows = (packed.rows || []).map(r => ({
+	          marca: String(r?.marca || "").toUpperCase(),
+	          id_marca: r?.id_marca ?? null,
+	          total: Number(r?.total || 0),
+	          days: r?.days || {},
+	        })).filter(r => r.marca);
+	      } else {
+	        // fallback: reconstruir rows desde lista plana (no tiene id_marca)
+	        const brands = [...new Set([
+	          ...daily.map(x=>String(x?.marca||"").toUpperCase()).filter(Boolean),
+	          ...(Array.isArray(sales?.semana_by_brand) ? sales.semana_by_brand.map(x=>String(x?.marca||"").toUpperCase()).filter(Boolean) : []),
+	        ])].sort();
+	        rows = brands.map(b => ({
+	          marca: b,
+	          id_marca: null,
+	          total: daily.filter(x=>String(x?.marca||"").toUpperCase()===b).reduce((a,x)=>a+Number(x?.monto||0),0),
+	          days: Object.fromEntries(days.map(d => [d, daily.find(x => String(x?.marca||"").toUpperCase()===b && String(x?.dia||"").slice(0,10)===d)?.monto || 0])),
+	        }));
+	      }
+
+	      const colTotal = (d) => {
+	        if (rows.length){
+	          return rows.reduce((a,r)=> a + Number(r?.days?.[d] || 0), 0);
+	        }
+	        return daily.filter(x=>String(x?.dia||"").slice(0,10)===d).reduce((a,x)=>a+Number(x?.monto||0),0);
+	      };
+	      const total = Number(sales?.venta_semana_total ?? sales?.venta_semana ?? 0);
+
+	      if (!rows.length){
+	        box.innerHTML = `<div class="muted">Sin ventas confirmadas en la semana.</div>`;
+	        return;
+	      }
+
+	      let table = `<div class="scroll-x"><table class="table-mini"><thead><tr><th>Marca</th>`;
+	      days.forEach(d => table += `<th class="right day-head" data-day="${d}"><span class="daylink">${d.slice(8,10)}/${d.slice(5,7)}</span></th>`);
+	      table += `<th class="right">Total</th></tr></thead><tbody>`;
+	      rows.forEach(r=>{
+	        table += `<tr><td><strong>${esc(r.marca)}</strong></td>`;
+	        days.forEach(d=>{
+	          const val = Number(r?.days?.[d] || 0);
+	          const txt = val ? fmtMoney(val) : "—";
+	          const mid = (r.id_marca != null) ? String(r.id_marca) : "";
+	          table += `<td class="right cell-sale ${val ? "clickable" : ""}" data-day="${d}" data-brand-id="${esc(mid)}" data-val="${String(val||0)}">${txt}</td>`;
+	        });
+	        table += `<td class="right"><strong>${fmtMoney(Number(r.total||0))}</strong></td></tr>`;
+	      });
+	      table += `<tr><td class="muted"><strong>Total</strong></td>`;
+	      days.forEach(d=> table += `<td class="right muted"><strong>${fmtMoney(colTotal(d))}</strong></td>`);
+	      table += `<td class="right"><strong>${fmtMoney(total)}</strong></td></tr>`;
+	      table += `</tbody></table></div><div class="scroll-hint">Desliza horizontal para ver Lun→Dom</div>`;
+	      box.innerHTML = table;
+
+	      $$(".cell-sale.clickable", box).forEach(td=>{
+	        td.addEventListener("click", ()=>{
+	          const d = String(td.getAttribute("data-day") || "").slice(0,10);
+	          if (!d) return;
+	          const bid = String(td.getAttribute("data-brand-id") || "").trim();
+	          openConfirmedSales(d, d, bid || (state.idMarca || ""), "agenda");
+	        });
+	      });
+	      $$(".day-head", box).forEach(th=>{
+	        th.addEventListener("click", ()=>{
+	          const d = String(th.getAttribute("data-day") || "").slice(0,10);
+	          if (!d) return;
+	          openConfirmedSales(d, d, state.idMarca || "", "agenda");
+	        });
+	      });
+	    }
+
+    function closeModals(){
+      $("#dayModal").classList.remove("open");
+      $("#eventModal").classList.remove("open");
+    }
+
+    function openDayModal(day){
+      $("#dayModalTitle").textContent = `${day.label || "Día"}`;
+      const items = Array.isArray(day?.items) ? day.items : [];
+      $("#dayModalList").innerHTML = items.length
+        ? `<ul>${items.map(ev=>`<li><strong>${(ev?.cliente||"—")}</strong> · ${(ev?.marca||"—")} · ${(ev?.comuna||"—")}</li>`).join("")}</ul>`
+        : `<div class="muted">—</div>`;
+      $("#dayModal").classList.add("open");
+    }
+
+    function extractProductsText(ev){
+      const candidates = [
+        ev?.pre_products_text,
+        ev?.productos_text,
+        ev?.productos,
+        ev?.items,
+        ev?.detalle,
+        ev?.descripcion,
+        ev?.observaciones,
+        ev?.lead?.pre_products_text,
+        ev?.lead?.productos_text,
+        ev?.lead?.productos,
+      ];
+      for (const c of candidates){
+        if (Array.isArray(c)){
+          const s = c.map(x=>String(x||"").trim()).filter(Boolean).join("\n").trim();
+          if (s) return s;
+        }
+        if (typeof c === "string"){
+          const s = c.replace(/\r/g,"").trim();
+          if (s) return s;
+        }
+      }
+      return "";
+    }
+
+    let lastEventForModal = null;
+    function openEventModal(ev){
+      lastEventForModal = ev || null;
+      const cliente = (ev?.cliente || "").toString().trim() || "—";
+      $("#eventModalTitle").textContent = cliente;
+      const products = extractProductsText(ev).split("\n").map(s=>s.trim()).filter(Boolean);
+      $("#eventModalBody").innerHTML = `
+        <div><strong>Marca:</strong> ${(ev?.marca || "—")}</div>
+        <div><strong>Fecha:</strong> ${(ev?.fecha_evento || "—")}</div>
+        <div><strong>Comuna:</strong> ${(ev?.comuna || "—")}</div>
+        <div style="margin-top:10px"><strong>Productos:</strong></div>
+        <pre style="white-space:pre-wrap; margin:6px 0 0 0; opacity:.9; font-weight:900; font-family:inherit;">${(products.slice(0,8).join("\n") || "—")}</pre>
+      `;
+      $("#eventModal").classList.add("open");
+    }
+
+    async function loadEvents(offset=0){
+      const qs = new URLSearchParams({ week_offset: String(offset) });
+      if (state.idMarca) qs.set("id_marca", state.idMarca);
+      const r = await fetch(`${API_BASE}/tools/dashboard/events?${qs.toString()}`, { headers: authHeaders() });
+      if (!r.ok){
+        $("#eventsWeek").innerHTML = `<div class="muted">No se pudo cargar eventos.</div>`;
+        return;
+      }
+      const j = await r.json();
+      const events = Array.isArray(j.events) ? j.events : [];
+      if (!events.length){
+        $("#eventsWeek").innerHTML = `<div class="muted">Sin eventos confirmados en la semana.</div>`;
+        return;
+      }
+
+      const byDay = new Map();
+      events.forEach(ev=>{
+        const d = String(ev.fecha_evento || "").slice(0,10) || "SIN_FECHA";
+        if (!byDay.has(d)) byDay.set(d, []);
+        byDay.get(d).push(ev);
+      });
+      const weekStart = String(j?.week?.start || "");
+      const days = [];
+      if (weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart)){
+        const dt0 = new Date(weekStart + "T00:00:00");
+        for (let i=0;i<7;i++){
+          const d = new Date(dt0.getTime() + i*86400000);
+          days.push(d.toISOString().slice(0,10));
+        }
+      } else {
+        days.push(...[...byDay.keys()].sort());
+      }
+
+      $("#eventsWeek").innerHTML = `
+        <div class="events-strip">
+          ${days.map(d=>{
+            const arr = byDay.get(d) || [];
+            const label = d !== "SIN_FECHA" ? `${d.slice(8,10)}/${d.slice(5,7)}` : "—";
+            const top = arr.slice(0, 3);
+            return `
+              <div class="event-day">
+                <div class="event-day-head">
+                  <div class="event-day-title">${label} (${arr.length})</div>
+                </div>
+                ${top.map(ev=>{
+                  const payload = encodeURIComponent(JSON.stringify(ev));
+                  const raw = extractProductsText(ev);
+                  const lines = raw.split("\n").map(s=>s.trim()).filter(Boolean);
+                  const preview = (lines.slice(0,3).join(" · ") || "—");
+                  const tip = lines.slice(0,12).join("\n");
+                  return `
+                    <div class="event-pill" data-evt="${payload}" title="${tip.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;")}">
+                      <span class="dot"></span>
+                      <div style="min-width:0; flex:1;">
+                        <div class="t1">${(ev?.cliente||"—")}</div>
+                        <div class="t2">${preview}</div>
+                      </div>
+                    </div>
+                  `;
+                }).join("")}
+                ${(!top.length) ? `<div class="muted" style="padding:6px 2px; font-weight:900; opacity:.55;">—</div>` : ``}
+                ${arr.length > 3 ? `<button class="event-more" type="button" data-more="${d}">Ver más</button>` : ``}
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+
+      $$(".event-pill[data-evt]", $("#eventsWeek")).forEach(el=>{
+        el.addEventListener("click", ()=>{
+          const raw = el.getAttribute("data-evt");
+          if (!raw) return;
+          try{ openEventModal(JSON.parse(decodeURIComponent(raw))); }catch(_){}
+        });
+      });
+      $$("[data-more]", $("#eventsWeek")).forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const d = btn.getAttribute("data-more") || "";
+          const items = byDay.get(d) || [];
+          const label = d !== "SIN_FECHA" ? `${d.slice(8,10)}/${d.slice(5,7)}/${d.slice(0,4)}` : "Sin fecha";
+          openDayModal({ date:d, label, items });
+        });
+      });
+    }
+
+    async function loadTasks(){
+      const card = $("#tasksCard");
+      if (!card || card.style.display === "none") return;
+
+      const roleUp = String(state.me?.role || state.me?.rol || "").toUpperCase();
+      const isAdmin = roleUp.includes("ADMIN") || roleUp.includes("SUPERADMIN");
+
+      try{
+        if (isAdmin){
+          const sum = await apiJson("/tasks/summary?scope=all");
+          $("#tasksNew").textContent = String(sum?.open_nuevos ?? 0);
+          $("#tasksContact").textContent = String(sum?.open_contactados ?? 0);
+          $("#tasksQuote").textContent = String(sum?.open_cotizados ?? 0);
+          return;
+        }
+        const s = await apiJson("/tasks/sync", { method:"POST" });
+        if (s?.disabled){
+          $("#tasksNew").textContent = "0";
+          $("#tasksContact").textContent = "0";
+          $("#tasksQuote").textContent = "0";
+          return;
+        }
+        $("#tasksNew").textContent = String(s?.counts?.open_nuevos ?? 0);
+        $("#tasksContact").textContent = String(s?.counts?.open_contactados ?? 0);
+        $("#tasksQuote").textContent = String(s?.counts?.open_cotizados ?? 0);
+      }catch(_){
+        try{
+          const sum = await apiJson("/tasks/summary");
+          $("#tasksNew").textContent = String(sum?.open_nuevos ?? 0);
+          $("#tasksContact").textContent = String(sum?.open_contactados ?? 0);
+          $("#tasksQuote").textContent = String(sum?.open_cotizados ?? 0);
+        }catch(__){
+          $("#tasksNew").textContent = "0";
+          $("#tasksContact").textContent = "0";
+          $("#tasksQuote").textContent = "0";
+        }
+      }
+    }
+
+    function yesterdayISO(){
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+      return local.toISOString().slice(0,10);
+    }
+
+    async function markSurveySent(token){
+      if (!token) return false;
+      await apiJson(`/surveys/${encodeURIComponent(token)}/mark_sent`, {
+        method:"POST",
+        keepalive:true,
+      });
+      return true;
+    }
+
+    async function loadSurveyDashboard(){
+      const card = $("#surveyCard");
+      if (!card || card.style.display === "none") return;
+      const day = String($("#surveyDay")?.value || yesterdayISO());
+      try{
+        const [pendingResult, summaryResult] = await Promise.all([
+          apiJson(`/surveys/pending?day=${encodeURIComponent(day)}`),
+          apiJson("/surveys/summary?days=60"),
+        ]);
+        const items = Array.isArray(pendingResult?.items) ? pendingResult.items : [];
+        const summary = summaryResult?.summary || {};
+        $("#surveyPending").textContent = String(items.filter(x=>!x.responded_at).length);
+        $("#surveyTotal").textContent = String(summary.total || 0);
+        $("#surveyResponded").textContent = String(summary.responded || 0);
+        $("#surveyAverage").textContent = summary.avg_overall ? Number(summary.avg_overall).toFixed(1) : "—";
+        $("#surveyList").innerHTML = items.slice(0,6).map(x=>`
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px;border:1px solid var(--dash-border);border-radius:14px;background:rgba(0,0,0,.12);">
+            <div style="min-width:210px;flex:1;">
+              <strong>${esc(x.cliente || "Cliente")}</strong>
+              <div class="muted" style="font-size:12px;margin-top:3px;">${esc(x.marca || "Sin marca")} · Lead #${esc(x.id_lead || "")} · ${esc(x.telefono || "Sin teléfono")}</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <span class="chip">${x.responded_at ? "Respondida" : x.sent_at ? "Enviada" : "Pendiente"}</span>
+              ${x.whatsapp_url ? `<a class="btn" href="${esc(x.whatsapp_url)}" target="_blank" rel="noopener">Abrir WhatsApp</a>` : ""}
+              ${!x.sent_at ? `<button class="btn" type="button" data-survey-token="${esc(x.token || "")}">Marcar enviada</button>` : ""}
+              <a class="btn" href="${esc(x.survey_url || "#")}" target="_blank" rel="noopener">Vista previa</a>
+            </div>
+          </div>
+        `).join("") || `<div class="muted">No hay eventos confirmados para encuestar el ${esc(day)}.</div>`;
+        $$("[data-survey-token]", $("#surveyList")).forEach(button=>{
+          button.addEventListener("click", async ()=>{
+            button.disabled = true;
+            try{
+              await markSurveySent(button.getAttribute("data-survey-token") || "");
+              await loadSurveyDashboard();
+            }catch(error){
+              button.disabled = false;
+              alert(error?.message || error);
+            }
+          });
+        });
+      }catch(error){
+        $("#surveyList").innerHTML = `<div class="muted">No se pudieron cargar las encuestas: ${esc(error?.message || error)}</div>`;
+      }
+    }
+
+    function computeMonthRangeISO(){
+      const now = new Date();
+      const base = new Date(now.getFullYear(), now.getMonth() + Number(state.monthOffset || 0), 1);
+      const y = base.getFullYear();
+      const m = base.getMonth();
+      const from = new Date(y, m, 1);
+      const to = new Date(y, m + 1, 0);
+      const iso = (d) => d.toISOString().slice(0,10);
+      return { from: iso(from), to: iso(to) };
+    }
+
+    async function loadDashboardV2(){
+      const qs = new URLSearchParams();
+      if (state.idMarca) qs.set("id_marca", state.idMarca);
+      qs.set("week_offset", String(state.weekOffset || 0));
+      qs.set("month_offset", String(state.monthOffset || 0));
+      const r = await fetch(`${API_BASE}/tools/dashboard_v2?${qs.toString()}`, { headers: authHeaders() });
+      if (!r.ok){
+        try{
+          const txt = await r.text();
+          $("#dashSub").textContent = `Error Dashboard v2: HTTP ${r.status} · ${String(txt||"").slice(0,160)}`;
+        }catch(_){
+          $("#dashSub").textContent = `Error Dashboard v2: HTTP ${r.status}`;
+        }
+        return null;
+      }
+      const j = await r.json();
+      state.dv2 = j;
+
+      const mr = (j.month && j.month.start && j.month.end)
+        ? { from: String(j.month.start), to: String(j.month.end) }
+        : computeMonthRangeISO();
+      $("#dashSub").textContent = `${brandLabel()} · Semana (${j.week?.start || ""} → ${j.week?.end || ""}) · Mes (${mr.from} → ${mr.to})`;
+
+      const sale = j.sales || {};
+      const diaN = Number(sale.venta_dia_neta ?? sale.venta_dia ?? 0);
+      const diaT = Number(sale.venta_dia_traslado ?? 0);
+      const diaTotal = Number(sale.venta_dia_total ?? (diaN + diaT));
+      const semN = Number(sale.venta_semana_neta ?? sale.venta_semana ?? 0);
+      const semT = Number(sale.venta_semana_traslado ?? 0);
+      const semTotal = Number(sale.venta_semana_total ?? (semN + semT));
+      const mesN = Number(sale.venta_mes_neta ?? sale.venta_mes_mtd ?? 0);
+      const mesT = Number(sale.venta_mes_traslado ?? 0);
+      const mesTotal = Number(sale.venta_mes_total ?? (mesN + mesT));
+
+      $("#kpiVentaDia").textContent = fmtMoney(diaTotal);
+      $("#kpiVentaSemana").textContent = fmtMoney(semTotal);
+      $("#kpiVentaMes").textContent = fmtMoney(mesTotal);
+      $("#kpiVentaDiaBreak").textContent = `Neto ${fmtMoney(diaN)} + Traslado ${fmtMoney(diaT)}`;
+      $("#kpiVentaSemanaBreak").textContent = `Neto ${fmtMoney(semN)} + Traslado ${fmtMoney(semT)}`;
+	      $("#kpiVentaMesBreak").textContent = `Neto ${fmtMoney(mesN)} + Traslado ${fmtMoney(mesT)}`;
+      const dCnt = sale?.venta_dia_cnt_total ?? 0;
+      const dEmp = sale?.venta_dia_cnt_empresa ?? 0;
+      const dPar = sale?.venta_dia_cnt_particular ?? 0;
+      const wCnt = sale?.venta_semana_cnt_total ?? 0;
+      const wEmp = sale?.venta_semana_cnt_empresa ?? 0;
+      const wPar = sale?.venta_semana_cnt_particular ?? 0;
+      const mCnt = sale?.venta_mes_cnt_total ?? 0;
+      const mEmp = sale?.venta_mes_cnt_empresa ?? 0;
+      const mPar = sale?.venta_mes_cnt_particular ?? 0;
+      $("#kpiVentaDiaCounts").textContent = `Leads: ${dCnt} · Emp: ${dEmp} · Part: ${dPar}`;
+      $("#kpiVentaSemanaCounts").textContent = `Leads: ${wCnt} · Emp: ${wEmp} · Part: ${wPar}`;
+	      $("#kpiVentaMesCounts").textContent = `Leads: ${mCnt} · Emp: ${mEmp} · Part: ${mPar}`;
+
+	      // Meta / Año pasado / Runway (mes) — nunca dejarlo en "—" si ya tenemos mesTotal
+	      (() => {
+	        const el = $("#kpiMetaLine");
+	        if (!el) return;
+	        const safe = (fn, fallback) => { try{ return fn(); }catch(e){ console.warn("kpiMetaLine failed", e); return fallback; } };
+	        const meta = safe(()=> Number(sale?.meta_mes_total || 0), 0);
+	        const base = safe(()=> Number(sale?.base_mes_total || 0), 0);
+	        const vsMeta = safe(()=> sale?.vs_meta_pct, null);
+	        const vsBase = safe(()=> sale?.vs_base_pct, null);
+	        const gap = safe(()=> Number(sale?.meta_gap || 0), 0);
+	        const pace = safe(()=> sale?.pace || {}, {});
+	        const reqDay = safe(()=> pace?.required_per_day, null);
+	        const curDay = safe(()=> pace?.current_per_day, null);
+	        const daysLeft = safe(()=> Number(pace?.days_left || 0), 0);
+
+	        const parts = [];
+	        parts.push(`Mes actual: <strong>${fmtMoney(mesTotal)}</strong>`);
+	        parts.push(`Meta mes: <strong>${meta > 0 ? fmtMoney(meta) : "—"}</strong>`);
+	        if (base > 0) parts.push(`Año pasado: <strong>${fmtMoney(base)}</strong>`);
+	        if (typeof vsMeta === "number") parts.push(`Avance meta: <strong>${vsMeta}%</strong>`);
+	        if (typeof vsBase === "number") parts.push(`Vs LY: <strong>${vsBase}%</strong>`);
+	        if (meta > 0) parts.push(`Faltan: <strong>${fmtMoney(gap)}</strong>`);
+	        if (typeof reqDay === "number" && daysLeft > 0) parts.push(`Requiere/día: <strong>${fmtMoney(reqDay)}</strong> (${daysLeft} día(s))`);
+	        else if (typeof curDay === "number") parts.push(`Ritmo actual/día: <strong>${fmtMoney(curDay)}</strong>`);
+
+	        el.innerHTML = parts.join(" · ");
+	      })();
+
+	      renderEstadoCards(j.estado_cards_total || j.estado_cards || [], j.leads_today || {});
+	      renderSalesDaily(j);
+	      return j;
+	    }
+
+    function bind(){
+      $("#brandSel").addEventListener("change", (e)=>{ state.idMarca = e.target.value || ""; });
+      $("#monthSel").addEventListener("change", (e)=>{ state.monthOffset = Number(e.target.value || 0) || 0; refreshAll(); });
+      $("#btnWeekPrev").addEventListener("click", ()=>{ state.weekOffset = (state.weekOffset||0) - 1; refreshAll(); });
+      $("#btnWeekNext").addEventListener("click", ()=>{ state.weekOffset = (state.weekOffset||0) + 1; refreshAll(); });
+      $("#btnWeekNow").addEventListener("click", ()=>{ state.weekOffset = 0; refreshAll(); });
+      $("#btnApply").addEventListener("click", ()=> refreshAll());
+
+      $("#btnGoTasks").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"crm360", url:"/web/views/crm360.html?v=20260723-fin-task1" }, "*"));
+      $("#btnGoReportes")?.addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"rep_total", url:"/web/views/reportes_v2.html?v=20260723-rep-layout1" }, "*"));
+      $("#btnGoSurveys")?.addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"encuestas_eventos", url:"/web/views/encuestas_eventos.html?v=20260728-surveys5" }, "*"));
+      $("#btnSurveyRefresh")?.addEventListener("click", ()=>loadSurveyDashboard());
+      $("#surveyDay")?.addEventListener("change", ()=>loadSurveyDashboard());
+      $("#kpiTaskNew").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"crm360", url:"/web/views/crm360.html?v=20260723-fin-task1" }, "*"));
+      $("#kpiTaskContact").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"crm360", url:"/web/views/crm360.html?v=20260723-fin-task1" }, "*"));
+      $("#kpiTaskQuote").addEventListener("click", ()=> window.parent?.postMessage({ type:"openItem", id:"crm360", url:"/web/views/crm360.html?v=20260723-fin-task1" }, "*"));
+
+      $("#kpi1").addEventListener("click", ()=>{
+        const today = new Date().toISOString().slice(0,10);
+        openConfirmedSales(today, today, state.idMarca || "", "agenda");
+      });
+      $("#kpi2").addEventListener("click", ()=>{
+        const ws = String(state.dv2?.week?.start || "");
+        const we = String(state.dv2?.week?.end || "");
+        if (!ws || !we) return;
+        openConfirmedSales(ws, we, state.idMarca || "", "agenda");
+      });
+      $("#kpi3").addEventListener("click", ()=>{
+        const mr = computeMonthRangeISO();
+        openConfirmedSales(mr.from, mr.to, state.idMarca || "", "evento");
+      });
+
+      $("#dayModalClose").addEventListener("click", closeModals);
+      $("#eventModalClose").addEventListener("click", closeModals);
+      $("#dayModal").addEventListener("click", (e)=>{ if (e.target?.id === "dayModal") closeModals(); });
+      $("#eventModal").addEventListener("click", (e)=>{ if (e.target?.id === "eventModal") closeModals(); });
+
+      $("#eventModalOpenLead").addEventListener("click", ()=> {
+        if (!lastEventForModal) return;
+        openLead(lastEventForModal?.id_lead);
+      });
+      $("#eventModalOpenCal").addEventListener("click", ()=> {
+        const link = (lastEventForModal?.calendar_html_link || lastEventForModal?.calendar_link || "").toString().trim();
+        if (link) window.open(link, "_blank", "noopener");
+      });
+    }
+
+	    async function refreshAll(){
+	      await loadDashboardV2();
+	      try{
+	        const ms = String(state.dv2?.month?.start || "").slice(0,10);
+	        const yyyy = ms.slice(0,4);
+	        const mm = ms.slice(5,7);
+	        const MONTHS = {
+	          "01":"ENERO","02":"FEBRERO","03":"MARZO","04":"ABRIL","05":"MAYO","06":"JUNIO",
+	          "07":"JULIO","08":"AGOSTO","09":"SEPTIEMBRE","10":"OCTUBRE","11":"NOVIEMBRE","12":"DICIEMBRE",
+	        };
+	        const label = (MONTHS[mm] ? `${MONTHS[mm]} ${yyyy}` : (ms || "—"));
+	        const el = $("#estadoSub");
+	        if (el) el.innerHTML = `Leads por estado · Mes: <strong>${label}</strong>`;
+	      }catch(_){}
+	      if ($("#eventsCard").style.display !== "none") await loadEvents(state.weekOffset || 0);
+	      await loadTasks();
+	      await loadSurveyDashboard();
+	    }
+
+    async function init(){
+      const params = new URLSearchParams(location.search || "");
+      const qMarca = params.get("id_marca") || params.get("marca") || "";
+      if (qMarca) state.idMarca = qMarca;
+
+      state.me = await loadMe();
+      await loadMarcas();
+      populateBrands();
+      $("#surveyDay").value = yesterdayISO();
+      applyRoleLayout();
+      // month selector: últimos 12 meses (incluye actual)
+      const ms = $("#monthSel");
+      const now = new Date();
+      ms.innerHTML = "";
+      for (let k=0; k<12; k++){
+        const off = -k;
+        const d = new Date(now.getFullYear(), now.getMonth() + off, 1);
+        const lab = d.toLocaleString("es-CL", { month:"long", year:"numeric" });
+        const opt = document.createElement("option");
+        opt.value = String(off);
+        opt.textContent = lab.charAt(0).toUpperCase() + lab.slice(1);
+        ms.appendChild(opt);
+      }
+      ms.value = "0";
+      bind();
+      await refreshAll();
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>

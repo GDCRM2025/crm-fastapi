@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Instalar GD (Android)</title>
+    <style>
+      :root{
+        --bg:#0B1220;
+        --surface:rgba(255,255,255,.06);
+        --border:rgba(255,255,255,.14);
+        --text:#E6EDF7;
+        --muted:rgba(230,237,247,.72);
+        --brand:#19c37d;
+      }
+      *{box-sizing:border-box}
+      body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg); color:var(--text)}
+      .wrap{max-width:860px; margin:0 auto; padding:20px 16px 40px}
+      .card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px}
+      h1{margin:0 0 6px 0}
+      p{margin:0 0 12px 0; color:var(--muted); line-height:1.4}
+      ol{margin:0; padding-left:18px; color:var(--text)}
+      li{margin:8px 0}
+      .btnRow{display:flex; gap:10px; flex-wrap:wrap; margin-top:14px}
+      a.btn{
+        display:inline-flex; align-items:center; justify-content:center;
+        padding:10px 12px; border-radius:12px;
+        border:1px solid var(--border);
+        text-decoration:none; color:var(--text); font-weight:800;
+        background:rgba(255,255,255,.04);
+      }
+      a.btn.primary{background:rgba(25,195,125,.16); border-color:rgba(25,195,125,.35); color:#BFF4DB}
+      code{background:rgba(0,0,0,.25); padding:2px 6px; border-radius:8px}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>Instalar “Chat + Operación” (Android)</h1>
+        <p>Esto no es una descarga desde Play Store: es una <b>PWA</b> (web instalable) que se ve como app y puede recibir alertas.</p>
+
+        <ol>
+          <li>Abre <code>/crm/web/views/staff.html</code> en <b>Chrome</b> (Android).</li>
+          <li>Menú <b>⋮</b> → <b>Instalar app</b>.</li>
+          <li>Entra a la app instalada y completa lo obligatorio: <b>teléfono</b> + <b>activar notificaciones</b>.</li>
+          <li>Para previsualizar “como se verá en Android” desde tu Mac: en Chrome abre DevTools → <b>Toggle device toolbar</b> y elige un modelo (Pixel/Samsung).</li>
+        </ol>
+
+        <div class="btnRow">
+          <a class="btn primary" href="staff.html">Abrir Chat + Operación</a>
+          <a class="btn" href="operadores.html">Volver a Operadores</a>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,1620 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RRHH · Colaboradores</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="/web/js/iframe-theme.js"></script>
+  <style>
+    body{ margin:0; padding:18px; color:inherit; }
+    .card{ border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.12); background:rgba(7,12,16,.45); }
+    :root.light .card{ background:rgba(255,255,255,.75); border-color:rgba(0,0,0,.1); color:#0f172a; }
+    .title{ font-weight:1000; font-size:18px; }
+    .muted{ opacity:.7; font-size:12px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .inp{ height:36px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:transparent; color:inherit; padding:0 10px; font-weight:800; min-width:220px; }
+    .inp::placeholder{ color: rgba(255,255,255,.55); }
+    :root.light .inp::placeholder{ color: rgba(15,23,42,.55); }
+    .btn{ height:36px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:transparent; color:inherit; padding:0 12px; cursor:pointer; font-weight:900; }
+    .field{ display:flex; flex-direction:column; gap:4px; min-width:220px; }
+    .field-label{ font-size:11px; font-weight:900; letter-spacing:.05em; text-transform:uppercase; color: rgba(255,255,255,.85); }
+    :root.light .field-label{ color: rgba(15,23,42,.85); }
+    .btn:hover{ background: rgba(255,255,255,.06); }
+    table{ width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+    th,td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; white-space:nowrap; }
+    th{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; opacity:.7; }
+    .table-wrap{ overflow:auto; max-height:70vh; border:1px solid rgba(255,255,255,.12); border-radius:12px; margin-top:10px; }
+    .modal{ display:none; align-items:center; justify-content:center; position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.6); }
+    .modal .card{ width:min(840px,92vw); }
+    .modal h4{ margin:0 0 8px 0; font-size:13px; letter-spacing:.08em; text-transform:uppercase; opacity:.8; }
+    .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    @media (max-width: 860px){ .grid2{ grid-template-columns: 1fr; } }
+
+    .uMarcasGrid{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap:8px;
+      padding:10px;
+      border-radius:12px;
+      border:1px solid color-mix(in srgb, var(--border) 55%, transparent);
+      background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+      max-height: 180px;
+      overflow:auto;
+    }
+    @media (max-width: 860px){
+      .uMarcasGrid{ grid-template-columns: 1fr; }
+    }
+    .uMarcaOpt{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:8px 10px;
+      border-radius:12px;
+      border:1px solid color-mix(in srgb, var(--border) 50%, transparent);
+      background: color-mix(in srgb, var(--surface) 68%, transparent);
+      font-weight:900;
+      user-select:none;
+    }
+    .uMarcaOpt input{ width:16px; height:16px; }
+
+    .stepTabs{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .stepTab{
+      height:30px;
+      padding:0 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.04);
+      color: inherit;
+      font-weight:1000;
+      cursor:pointer;
+      font-size:12px;
+    }
+    :root.light .stepTab{ border-color: rgba(0,0,0,.12); background: rgba(0,0,0,.04); }
+    .stepTab.active{ border-color: rgba(25,195,125,.55); background: rgba(25,195,125,.18); }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div>
+        <div class="title">Recursos Humanos</div>
+        <div class="muted">Colaboradores · ficha de ingreso.</div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;">
+      <div class="row" style="justify-content:space-between;">
+        <div class="row">
+          <input class="inp" id="qStaff" placeholder="Buscar colaborador..." />
+          <button class="btn" id="btnReloadStaff">Actualizar</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="btnOpenNomina">Ver nómina</button>
+          <button class="btn" id="btnNewStaff">Nuevo colaborador</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Colaborador</th>
+              <th>Rol</th>
+              <th>Centro Costo</th>
+              <th>AFP</th>
+              <th>Salud</th>
+              <th>Activo</th>
+              <th>Marcación</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="rowsStaff">
+            <tr><td class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Paso 1: Cargo -->
+  <div class="modal" id="m1">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <strong>1. Antecedentes cargo</strong>
+        <button class="btn" data-close>Cancelar</button>
+      </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab active" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stArea" placeholder="Área" />
+        <input class="inp" id="stCargo" placeholder="Cargo (obligatorio)" />
+        <input class="inp" id="stRenta" placeholder="Renta líquida ofrecida (obligatoria)" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stEntrevistador" placeholder="Entrevistador" />
+          <input class="inp" id="stFechaEnt" type="date" data-label="Fecha de entrevista" />
+      </div>
+      <div class="row" style="margin-top:12px; justify-content:flex-end;">
+        <button class="btn" id="next1">Siguiente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paso 2: Personales -->
+  <div class="modal" id="m2">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <strong>2. Antecedentes personales</strong>
+        <button class="btn" data-close>Cancelar</button>
+      </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab active" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stApellidoP" placeholder="Apellido paterno (obligatorio)" />
+        <input class="inp" id="stApellidoM" placeholder="Apellido materno (obligatorio)" />
+        <input class="inp" id="stNombres" placeholder="Nombres (obligatorio)" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stRut" placeholder="RUT (obligatorio)" />
+          <input class="inp" id="stNacimiento" type="date" data-label="Fecha de nacimiento" />
+        <input class="inp" id="stNacionalidad" placeholder="Nacionalidad" />
+        <select class="inp" id="stGenero">
+          <option value="">Género</option>
+          <option value="F">F</option>
+          <option value="M">M</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stCel" placeholder="Teléfono celular (obligatorio)" />
+        <input class="inp" id="stFijo" placeholder="Teléfono fijo" />
+        <select class="inp" id="stEstadoCivil">
+          <option value="">Estado civil</option>
+          <option>Soltero</option>
+          <option>Casado</option>
+          <option>Viudo</option>
+          <option>Divorciado</option>
+        </select>
+        <input class="inp" id="stEmail" placeholder="Correo (obligatorio)" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stCalle" placeholder="Calle" />
+        <input class="inp" id="stNumero" placeholder="Nº" />
+        <input class="inp" id="stDepto" placeholder="Depto." />
+        <input class="inp" id="stDireccionExtra" placeholder="Condominio/Villa/Block/Población" style="flex:1;min-width:240px;" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <select class="inp" id="stComuna">
+          <option value="">Comuna</option>
+        </select>
+        <input class="inp" id="stCiudad" placeholder="Ciudad" />
+        <input class="inp" id="stPais" placeholder="País" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stEmergencia" placeholder="Contacto emergencia" />
+        <input class="inp" id="stEmergenciaTel" placeholder="Teléfono emergencia" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stAlergico" placeholder="Alérgico a" />
+        <input class="inp" id="stEnfermedad" placeholder="Enfermedad" />
+      </div>
+      <div class="row" style="margin-top:12px; justify-content:flex-end;">
+        <button class="btn" id="back2">Atrás</button>
+        <button class="btn" id="next2">Siguiente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paso 3: Familiares -->
+  <div class="modal" id="m3">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <strong>3. Antecedentes familiares</strong>
+        <button class="btn" data-close>Cancelar</button>
+      </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab active" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
+      </div>
+      <div class="muted" style="margin-top:6px;">Puedes agregar 1 o más familiares, o omitir.</div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stFamPar" placeholder="Parentesco" />
+        <input class="inp" id="stFamNombre" placeholder="Nombre" />
+        <input class="inp" id="stFamRut" placeholder="RUT" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stFamNac" type="date" />
+        <input class="inp" id="stFamCarga" placeholder="Carga" />
+        <input class="inp" id="stFamAct" placeholder="Actividad/Profesión" />
+      </div>
+      <div class="row" style="margin-top:10px; justify-content:flex-end;">
+        <button class="btn" id="famAdd">Agregar familiar</button>
+        <button class="btn" id="famClear">Limpiar</button>
+      </div>
+      <div class="table-wrap" style="max-height:22vh;margin-top:10px;">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Parentesco</th>
+              <th>Nombre</th>
+              <th>RUT</th>
+              <th>Nac.</th>
+              <th>Carga</th>
+              <th>Actividad</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="famRows">
+            <tr><td class="muted" colspan="8">Sin familiares.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="row" style="margin-top:12px; justify-content:flex-end;">
+        <button class="btn" id="back3">Atrás</button>
+        <button class="btn" id="next3">Siguiente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paso 4: Tallas -->
+  <div class="modal" id="m4">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <strong>4. Tallas</strong>
+        <button class="btn" data-close>Cancelar</button>
+      </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab active" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input class="inp" id="stPantalon" placeholder="Pantalón" />
+        <input class="inp" id="stChaqueta" placeholder="Chaqueta" />
+        <input class="inp" id="stPolera" placeholder="Polera" />
+        <input class="inp" id="stCalzado" placeholder="Calzado" />
+        <input class="inp" id="stGuantes" placeholder="Guantes" />
+      </div>
+      <div class="row" style="margin-top:12px; justify-content:flex-end;">
+        <button class="btn" id="back4">Atrás</button>
+        <button class="btn" id="next4">Siguiente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paso 5: Afiliaciones -->
+	  <div class="modal" id="m5">
+	    <div class="card">
+	      <div class="row" style="justify-content:space-between;">
+	        <strong>5. Afiliaciones</strong>
+	        <button class="btn" data-close>Cancelar</button>
+	      </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab active" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
+      </div>
+	      <div class="row" style="margin-top:10px;">
+	        <select class="inp" id="stRol">
+	          <option value="">Rol (obligatorio)</option>
+	        </select>
+        <select class="inp" id="stCentro">
+          <option value="">Centro de costo</option>
+          <option>Greendiamond</option>
+          <option>Rolfi</option>
+        </select>
+          <input class="inp" id="stIngreso" type="date" data-label="Fecha de incorporación" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <select class="inp" id="stAfp">
+          <option value="">AFP (obligatorio)</option>
+        </select>
+        <input class="inp" id="stAfpPct" placeholder="% AFP" />
+        <select class="inp" id="stSalud">
+          <option value="">Salud (obligatorio)</option>
+        </select>
+        <input class="inp" id="stSaludPct" placeholder="% Salud" />
+      </div>
+      <div class="row" style="margin-top:12px; justify-content:flex-end;">
+        <button class="btn" id="back5">Atrás</button>
+        <button class="btn" id="next5">Siguiente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paso 6: Bancarios -->
+	  <div class="modal" id="m6">
+	    <div class="card">
+	      <div class="row" style="justify-content:space-between;">
+	        <strong>6. Datos bancarios</strong>
+	        <button class="btn" data-close>Cancelar</button>
+	      </div>
+	      <div class="stepTabs" data-stepbar>
+	        <button class="stepTab" type="button" data-step="1">Cargo</button>
+	        <button class="stepTab" type="button" data-step="2">Personales</button>
+	        <button class="stepTab" type="button" data-step="3">Familia</button>
+	        <button class="stepTab" type="button" data-step="4">Tallas</button>
+	        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+	        <button class="stepTab active" type="button" data-step="6">Bancos</button>
+	        <button class="stepTab" type="button" data-step="7">Enrolamiento</button>
+	      </div>
+	      <div class="row" style="margin-top:10px;">
+	        <input class="inp" id="stCuentaNum" placeholder="Nº de cuenta (obligatorio)" />
+	        <select class="inp" id="stTipoCuenta">
+	          <option value="">Tipo de cuenta</option>
+          <option>Cuenta Corriente</option>
+          <option>Cuenta Vista</option>
+          <option>Cuenta RUT</option>
+          <option>Cuenta Ahorro</option>
+        </select>
+        <select class="inp" id="stBanco">
+          <option value="">Banco (obligatorio)</option>
+          <option>Banco de Chile</option>
+          <option>Banco Santander</option>
+          <option>BancoEstado</option>
+          <option>Banco BCI</option>
+          <option>Banco Itaú</option>
+          <option>Banco Falabella</option>
+          <option>Banco Scotiabank</option>
+          <option>Banco Security</option>
+          <option>Banco Consorcio</option>
+          <option>Banco Ripley</option>
+          <option>Banco Internacional</option>
+          <option>Banco BTG Pactual</option>
+        </select>
+        <select class="inp" id="stActivo">
+          <option value="true">Activo</option>
+          <option value="false">Inactivo</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:12px; justify-content:flex-end;">
+        <button class="btn" id="back6">Atrás</button>
+        <button class="btn" id="next6">Siguiente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paso 7: Enrolamiento -->
+  <div class="modal" id="m7">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <strong>7. Enrolamiento y marcación</strong>
+        <button class="btn" data-close>Cancelar</button>
+      </div>
+      <div class="stepTabs" data-stepbar>
+        <button class="stepTab" type="button" data-step="1">Cargo</button>
+        <button class="stepTab" type="button" data-step="2">Personales</button>
+        <button class="stepTab" type="button" data-step="3">Familia</button>
+        <button class="stepTab" type="button" data-step="4">Tallas</button>
+        <button class="stepTab" type="button" data-step="5">AFP/Salud</button>
+        <button class="stepTab" type="button" data-step="6">Bancos</button>
+        <button class="stepTab active" type="button" data-step="7">Enrolamiento</button>
+      </div>
+
+      <div class="muted" style="margin-top:6px;">
+        El colaborador debe tener “Usuario CRM” vinculado para enrolar el dispositivo (GPS/QR).
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <select class="inp" id="stPuedeMarcar" title="Habilitación de marcación">
+          <option value="true">Puede marcar</option>
+          <option value="false">Bloqueado</option>
+        </select>
+        <select class="inp" id="stMarcacionMethod" title="Método de marcación permitido">
+          <option value="BOTH">Mixto (QR + GPS)</option>
+          <option value="QR">Solo QR</option>
+          <option value="GEO">Solo GPS</option>
+        </select>
+      </div>
+
+	      <div style="margin-top:12px; padding:12px; border-radius:14px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.10);">
+	        <h4>Solicitudes de enrolamiento (pendientes)</h4>
+        <div class="table-wrap" style="margin-top:8px; max-height:34vh;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Fecha</th>
+                <th>Dispositivo</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="enrolReqRows">
+              <tr><td class="muted">—</td></tr>
+            </tbody>
+          </table>
+	      </div>
+
+	      <div style="margin-top:12px; padding:12px; border-radius:14px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.10);">
+	        <h4>Dispositivos enrolados (aprobados)</h4>
+	        <div class="muted small">Si el colaborador marca desde otro navegador/celular, debe enrolar ese dispositivo también.</div>
+	        <div class="table-wrap" style="margin-top:8px; max-height:26vh;">
+	          <table>
+	            <thead>
+	              <tr>
+	                <th>Estado</th>
+	                <th>Nombre</th>
+	                <th>Device ID</th>
+	                <th>Enrolado</th>
+	                <th>Acciones</th>
+	              </tr>
+	            </thead>
+	            <tbody id="enrolDevRows">
+	              <tr><td class="muted">—</td></tr>
+	            </tbody>
+	          </table>
+	        </div>
+	      </div>
+      </div>
+
+      <div class="row" style="margin-top:12px; justify-content:flex-end;">
+        <button class="btn" id="back7">Atrás</button>
+        <button class="btn" id="saveStaff2">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Usuario CRM (crear acceso desde RRHH) -->
+  <div class="modal" id="mUser">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <strong>Usuario CRM</strong>
+        <button class="btn" data-close-user>Cerrar</button>
+      </div>
+      <div class="muted" id="userHint" style="margin-top:6px;">Crea el acceso al CRM desde RRHH.</div>
+
+      <div style="margin-top:12px; padding:12px; border-radius:14px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.10);">
+        <div class="field-label">Vincular usuario existente</div>
+        <div class="row" style="margin-top:8px;">
+          <input class="inp" id="uSearch" placeholder="Buscar usuario (nombre/email/username)..." style="flex:1;min-width:260px;" />
+          <button class="btn" id="btnUSearch">Buscar</button>
+          <button class="btn" id="btnUUnlink" style="display:none;">Desvincular</button>
+        </div>
+        <div class="table-wrap" style="margin-top:10px; max-height:34vh;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Usuario</th>
+                <th>Rol</th>
+                <th>Email</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="uRows">
+              <tr><td class="muted">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="muted" style="margin-top:6px;">Si el usuario ya existe, <strong>vincúlalo</strong> (no crees duplicados).</div>
+      </div>
+
+      <div class="muted" style="margin-top:12px;">O crear usuario nuevo:</div>
+      <div class="grid2" style="margin-top:12px;">
+        <div class="field">
+          <div class="field-label">Nombre</div>
+          <input class="inp" id="uNombre" placeholder="Nombre" />
+        </div>
+        <div class="field">
+          <div class="field-label">Rol</div>
+          <select class="inp" id="uRol">
+            <option value="OPERADOR">OPERADOR</option>
+            <option value="CONDUCTOR">CONDUCTOR</option>
+            <option value="CHOFER">CHOFER</option>
+            <option value="CHOP">CHOP</option>
+            <option value="EJECUTIVO">EJECUTIVO</option>
+            <option value="VENTAS">VENTAS</option>
+            <option value="OPERACIONES">OPERACIONES</option>
+            <option value="JEFE DE OPERACIONES">JEFE DE OPERACIONES</option>
+            <option value="ADMIN">ADMIN</option>
+            <option value="SUPERADMIN">SUPERADMIN</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <div class="field">
+          <div class="field-label">Email</div>
+          <input class="inp" id="uEmail" placeholder="email@empresa.cl" />
+        </div>
+        <div class="field">
+          <div class="field-label">Username</div>
+          <input class="inp" id="uUsername" placeholder="usuario" />
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <div class="field">
+          <div class="field-label">Password</div>
+          <input class="inp" id="uPass" placeholder="Password" />
+        </div>
+        <div class="row" style="align-items:end; justify-content:flex-end;">
+          <button class="btn" id="btnGenPass">Generar</button>
+          <button class="btn" id="btnCreateUser">Crear usuario</button>
+        </div>
+      </div>
+
+      <div id="uMarcasWrap" style="display:none; margin-top:10px;">
+        <div class="field">
+          <div class="field-label">Marcas (solo SuperAdmin)</div>
+          <div id="uMarcas" class="uMarcasGrid"></div>
+          <div class="muted" style="margin-top:6px;">Selecciona las marcas que podrá ver el usuario.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){
+        return "";
+      }
+    })();
+    function apiURL(path){
+      const p = String(path || "");
+      if (!p) return p;
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE) return p;
+      return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
+    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+    function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+
+    async function fetchJSON(url, opt){
+      const timeoutMs = Number(opt?.timeoutMs || 12000) || 12000;
+      const controller = ("AbortController" in window) ? new AbortController() : null;
+      const id = setTimeout(()=>{ try{ controller?.abort(); }catch(_){ } }, timeoutMs);
+      try{
+        const r = await fetch(url, { ...(opt||{}), signal: controller?.signal, headers: opt?.headers || headers() });
+        const j = await r.json().catch(()=>({}));
+        if (!r.ok || j?.ok === false) throw new Error(j?.detail || String(r.status));
+        return j;
+      }catch(e){
+        if (String(e?.name||"") === "AbortError") throw new Error("Timeout cargando datos (Passenger/BD lento). Reintenta.");
+        throw e;
+      }finally{
+        try{ clearTimeout(id); }catch(_){ }
+      }
+    }
+
+    function escapeHtml(s){
+      return String(s ?? "").replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[c]));
+    }
+
+    function fmt(n){
+      if (n == null || n === "") return "—";
+      const v = Number(n);
+      if (Number.isFinite(v)) return v.toLocaleString("es-CL");
+      return n;
+    }
+
+    let ROLES = [
+      "SUPERADMIN",
+      "ADMIN",
+      "EJECUTIVO DE VENTAS",
+      "JEFE DE OPERACIONES",
+      "OPERACIONES",
+      "FINANZAS",
+      "RRHH",
+      "BODEGUERO",
+      "COMPRAS",
+      "CONDUCTOR",
+      "CONDUCTOR (CHOP)",
+      "CHOFER",
+      "CHOP",
+      "OPERADOR",
+      "OPERADOR DE PATIO",
+      "MICE",
+    ];
+    let AFP_LIST = [];
+    let SALUD_LIST = [];
+    let staffEditing = null;
+    let FAMILIARES = [];
+    let ME = null;
+    let MARCAS = [];
+    let USER_LINK_STAFF_ID = null;
+    let USER_LINK_CURRENT_USER_ID = null;
+
+    async function loadMe(){
+      try{
+        const r = await fetch(apiURL("/me"), { headers: headers() });
+        if (!r.ok) return;
+        ME = await r.json();
+      }catch(_){}
+    }
+    async function loadMarcas(){
+      async function tryGetFirstJSON(paths){
+        for (const p of (paths || [])){
+          try{
+            const r = await fetch(apiURL(p), { headers: headers() });
+            if (!r.ok) continue;
+            const j = await r.json().catch(()=>null);
+            if (j) return j;
+          }catch(_){}
+        }
+        return null;
+      }
+      try{
+        // Nota: el backend expone marcas dentro de /catalogos (no existe /catalogos/marcas).
+        const data = await tryGetFirstJSON(["/catalogos", "/leads/catalogos", "/cotizador/catalogos"]);
+        const marcas = data?.marcas || data?.items || data || [];
+        MARCAS = (Array.isArray(marcas) ? marcas : []).map(x => ({
+          id_marca: x.id_marca,
+          nombre: x.nombre || x.marca || "",
+        })).filter(x => x.id_marca && x.nombre);
+      }catch(_){ MARCAS = []; }
+    }
+
+    async function loadRoles(){
+      try{
+        const r = await fetch(apiURL("/settings/roles?limit=200"), { headers: headers() });
+        if (r.ok){
+          const data = await r.json();
+          const items = data.items || data || [];
+          const fromDb = items.map(x => (x.nombre || x.rol || x.role || x.name || "")).filter(Boolean);
+          if (fromDb.length){
+            // Normaliza y dedup (mantén orden original)
+            const seen = new Set();
+            ROLES = fromDb.map(s => String(s).trim()).filter(Boolean).filter(s => {
+              const k = s.toUpperCase();
+              if (seen.has(k)) return false;
+              seen.add(k);
+              return true;
+            });
+          }
+        }
+      }catch(_){ }
+      const fill = (selId, placeholder) => {
+        const sel = qs(selId);
+        if (!sel) return;
+        const current = sel.value;
+        sel.innerHTML = `<option value="">${placeholder}</option>` + ROLES.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
+        if (current){
+          // re-selecciona si existe (match exact o por upper)
+          const want = String(current || "").trim();
+          const opt = Array.from(sel.options || []).find(o => o.value === want) || Array.from(sel.options || []).find(o => (o.value || "").toUpperCase() === want.toUpperCase());
+          if (opt) sel.value = opt.value;
+        }
+      };
+      fill("#stRol", "Rol (obligatorio)");
+      fill("#uRol", "Rol");
+    }
+    async function loadAfp(){
+      try{
+        const r = await fetch(apiURL("/rrhh/afp"), { headers: headers() });
+        if (!r.ok) return;
+        const data = await r.json();
+        AFP_LIST = data.items || [];
+        const sel = qs("#stAfp");
+        if (sel){
+          const current = sel.value;
+          sel.innerHTML = `<option value="">AFP (obligatorio)</option>` + AFP_LIST.map(a => `<option value="${a.nombre}">${a.nombre} (${a.pct_comision ?? ""}%)</option>`).join("");
+          if (current) sel.value = current;
+        }
+      }catch(_){ }
+    }
+    async function loadSalud(){
+      try{
+        const r = await fetch(apiURL("/rrhh/salud"), { headers: headers() });
+        if (!r.ok) return;
+        const data = await r.json();
+        SALUD_LIST = data.items || [];
+        const sel = qs("#stSalud");
+        if (sel){
+          const current = sel.value;
+          sel.innerHTML = `<option value="">Salud (obligatorio)</option>` + SALUD_LIST.map(s => `<option value="${s.nombre}">${s.nombre} (${s.pct_base ?? ""}%)</option>`).join("");
+          if (current) sel.value = current;
+        }
+      }catch(_){ }
+    }
+
+    async function loadComunas(){
+      try{
+        const r = await fetch(apiURL("/catalogos"), { headers: headers() });
+        if (!r.ok) return;
+        const data = await r.json();
+        const comunas = data.comunas || [];
+        const sel = qs("#stComuna");
+        if (sel){
+          const current = sel.value;
+          sel.innerHTML = `<option value=\"\">Comuna</option>` + comunas.map(c => `<option value=\"${c.nombre}\">${c.nombre}</option>`).join("");
+          if (current) sel.value = current;
+        }
+      }catch(_){ }
+    }
+
+    function normalizeRut(r){ return String(r||"").replace(/[^0-9kK]/g,"").toUpperCase(); }
+    function isValidRut(r){
+      const clean = normalizeRut(r);
+      if (clean.length < 2) return false;
+      const body = clean.slice(0, -1);
+      let dv = clean.slice(-1);
+      let sum = 0, mul = 2;
+      for (let i = body.length - 1; i >= 0; i--){
+        sum += Number(body[i]) * mul;
+        mul = mul === 7 ? 2 : mul + 1;
+      }
+      const res = 11 - (sum % 11);
+      const dvCalc = res === 11 ? "0" : res === 10 ? "K" : String(res);
+      return dvCalc === dv;
+    }
+    function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||"").trim()); }
+    function isValidPhoneCL(v){ const raw = String(v||"").replace(/\D/g,""); return raw.length >= 8; }
+
+    function setStepActive(step){
+      const s = Number(step || 0);
+      if (!Number.isFinite(s) || s < 1) return;
+      document.querySelectorAll(".stepTabs .stepTab").forEach(btn=>{
+        const n = Number(btn.getAttribute("data-step") || 0);
+        btn.classList.toggle("active", n === s);
+      });
+    }
+    function openModal(id){
+      closeAll();
+      qs(id).style.display = "flex";
+      try{
+        const m = String(id || "");
+        const mm = m.startsWith("#m") ? m.slice(2) : "";
+        const s = Number(mm || 0);
+        if (Number.isFinite(s) && s >= 1 && s <= 7){
+          setStepActive(s);
+          if (s === 3) renderFamiliares();
+          if (s === 7) loadEnrolRequestsForEditing();
+        }
+      }catch(_){}
+    }
+    function closeAll(){ document.querySelectorAll('.modal').forEach(m => m.style.display='none'); }
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeAll));
+
+    function openStep(step){
+      const s = Number(step || 0);
+      if (!Number.isFinite(s) || s < 1 || s > 7) return;
+      openModal(`#m${s}`);
+    }
+    document.querySelectorAll(".stepTabs .stepTab").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const s = Number(btn.getAttribute("data-step") || 0);
+        if (!s) return;
+        openStep(s);
+      });
+    });
+
+    function openStaffModal(item){
+      staffEditing = item || null;
+      const ficha = item?.ficha || {};
+
+      // Familiares: modelo nuevo (array) + compat con legacy fam_*.
+      try{
+        FAMILIARES = Array.isArray(ficha.familiares) ? ficha.familiares : [];
+        if (!FAMILIARES.length){
+          const legacy = {
+            parentesco: ficha.fam_parentesco || "",
+            nombre: ficha.fam_nombre || "",
+            rut: ficha.fam_rut || "",
+            nacimiento: ficha.fam_nacimiento || "",
+            carga: ficha.fam_carga || "",
+            actividad: ficha.fam_actividad || "",
+          };
+          if (Object.values(legacy).some(v => String(v||"").trim())){
+            FAMILIARES = [legacy];
+          }
+        }
+      }catch(_){
+        FAMILIARES = [];
+      }
+
+      qs("#stArea").value = ficha.area || "";
+      qs("#stCargo").value = ficha.cargo || "";
+      qs("#stRenta").value = ficha.renta_liquida || "";
+      qs("#stEntrevistador").value = ficha.entrevistador || "";
+      qs("#stFechaEnt").value = ficha.fecha_entrevista || "";
+      qs("#stApellidoP").value = ficha.apellido_paterno || "";
+      qs("#stApellidoM").value = ficha.apellido_materno || "";
+      qs("#stNombres").value = ficha.nombres || "";
+      qs("#stRut").value = item?.rut || "";
+      qs("#stNacimiento").value = ficha.fecha_nacimiento || "";
+      qs("#stNacionalidad").value = ficha.nacionalidad || "";
+      qs("#stGenero").value = ficha.genero || "";
+      qs("#stCel").value = item?.telefono || "";
+      qs("#stFijo").value = ficha.telefono_fijo || "";
+      qs("#stEstadoCivil").value = ficha.estado_civil || "";
+      qs("#stEmail").value = item?.email || "";
+      qs("#stCalle").value = ficha.calle || "";
+      qs("#stNumero").value = ficha.numero || "";
+      qs("#stDepto").value = ficha.depto || "";
+      qs("#stDireccionExtra").value = ficha.direccion_extra || "";
+      qs("#stComuna").value = ficha.comuna || "";
+      qs("#stCiudad").value = ficha.ciudad || "";
+      qs("#stPais").value = ficha.pais || "";
+      qs("#stEmergencia").value = ficha.emergencia_contacto || "";
+      qs("#stEmergenciaTel").value = ficha.emergencia_telefono || "";
+      qs("#stAlergico").value = ficha.alergico || "";
+      qs("#stEnfermedad").value = ficha.enfermedad || "";
+      // inputs de familiares quedan limpios; se agregan con "Agregar familiar"
+      qs("#stFamPar").value = "";
+      qs("#stFamNombre").value = "";
+      qs("#stFamRut").value = "";
+      qs("#stFamNac").value = "";
+      qs("#stFamCarga").value = "";
+      qs("#stFamAct").value = "";
+      qs("#stPantalon").value = ficha.talla_pantalon || "";
+      qs("#stChaqueta").value = ficha.talla_chaqueta || "";
+      qs("#stPolera").value = ficha.talla_polera || "";
+      qs("#stCalzado").value = ficha.talla_calzado || "";
+      qs("#stGuantes").value = ficha.talla_guantes || "";
+      qs("#stRol").value = item?.rol || "";
+      qs("#stCentro").value = item?.centro_costo || "";
+      qs("#stIngreso").value = item?.fecha_ingreso || "";
+      qs("#stAfp").value = item?.afp || "";
+      qs("#stAfpPct").value = item?.afp_pct || "";
+      qs("#stSalud").value = item?.salud_tipo || "";
+      qs("#stSaludPct").value = item?.salud_pct || "";
+      qs("#stCuentaNum").value = ficha.cuenta_numero || "";
+      qs("#stTipoCuenta").value = ficha.tipo_cuenta || "";
+      qs("#stBanco").value = ficha.banco || "";
+      qs("#stPuedeMarcar").value = String(item?.puede_marcar ?? true);
+      // backend guarda 'BOTH' (mixto), 'QR' o 'GEO'
+      qs("#stMarcacionMethod").value = String(item?.marcacion_method || "BOTH").toUpperCase();
+      qs("#stActivo").value = String(item?.is_active ?? true);
+      openStep(1);
+    }
+
+	    async function loadEnrolRequestsForEditing(){
+	      const box = qs("#enrolReqRows");
+	      if (!box) return;
+	      box.innerHTML = `<tr><td class="muted">Cargando...</td></tr>`;
+
+	      const box2 = qs("#enrolDevRows");
+	      if (box2) box2.innerHTML = `<tr><td class="muted" colspan="5">Cargando...</td></tr>`;
+
+        // Anti “se queda pegado”: si en 15s no respondió, mostramos mensaje (sin depender de console).
+        let watchdog = null;
+        try{
+          watchdog = setTimeout(()=>{
+            try{
+              if (box && String(box.textContent||"").toLowerCase().includes("cargando")){
+                box.innerHTML = `<tr><td class="muted">Timeout cargando solicitudes. Aprieta Recargar o reabre la ficha.</td></tr>`;
+              }
+              if (box2 && String(box2.textContent||"").toLowerCase().includes("cargando")){
+                box2.innerHTML = `<tr><td class="muted" colspan="5">Timeout cargando dispositivos. Aprieta Recargar o reabre la ficha.</td></tr>`;
+              }
+            }catch(_){}
+          }, 15000);
+        }catch(_){}
+
+	      const idu = Number(staffEditing?.id_usuario || 0) || 0;
+	      if (!idu){
+	        box.innerHTML = `<tr><td class="muted">Este colaborador no tiene usuario CRM vinculado. Vincúlalo en “Usuario CRM” para poder enrolar y aprobar dispositivos.</td></tr>`;
+	        if (box2) box2.innerHTML = `<tr><td class="muted" colspan="5">Sin usuario CRM vinculado.</td></tr>`;
+	        return;
+	      }
+
+		      try{
+        const url = `/rrhh/sgjo/admin/device_requests?status=pending&id_usuario=${encodeURIComponent(String(idu))}`;
+        const r = await fetch(apiURL(url), { headers: headers() });
+        const j = await r.json().catch(()=>({}));
+        if (!r.ok || !j?.ok){
+          const msg = j?.detail || (await r.text().catch(()=> "")) || String(r.status);
+          throw new Error(msg);
+        }
+	        const items = Array.isArray(j.items) ? j.items : [];
+        if (!items.length){
+          box.innerHTML = `<tr><td class="muted">Sin solicitudes pendientes.</td></tr>`;
+        }else{
+	        box.innerHTML = items.map(it => `
+	          <tr>
+	            <td><strong>#${escapeHtml(it.id_request)}</strong></td>
+	            <td>${escapeHtml(it.created_at || "—")}</td>
+	            <td>${escapeHtml((String(it.device_name||"").trim() ? (it.device_name + " · " + it.device_id) : (it.device_id || "—")))}</td>
+	            <td>
+	              <button class="btn" data-enrol-approve="${escapeHtml(it.id_request)}">Aprobar</button>
+	              <button class="btn" data-enrol-reject="${escapeHtml(it.id_request)}">Rechazar</button>
+	            </td>
+	          </tr>
+	        `).join("");
+	        box.querySelectorAll("[data-enrol-approve]").forEach(btn=>{
+          btn.addEventListener("click", async ()=>{
+            const idr = Number(btn.getAttribute("data-enrol-approve") || 0) || 0;
+            if (!idr) return;
+            if (!confirm("¿Aprobar este dispositivo?")) return;
+            const rr = await fetch(apiURL(`/rrhh/sgjo/admin/device_requests/${idr}/approve`), { method:"POST", headers: headers() });
+            if (!rr.ok){
+              const t = await rr.text().catch(()=> "");
+              toast("No se pudo aprobar: " + (t || rr.status));
+              return;
+            }
+	            toast("Dispositivo aprobado");
+	            await loadEnrolRequestsForEditing();
+	          });
+	        });
+        box.querySelectorAll("[data-enrol-reject]").forEach(btn=>{
+          btn.addEventListener("click", async ()=>{
+            const idr = Number(btn.getAttribute("data-enrol-reject") || 0) || 0;
+            if (!idr) return;
+            const note = prompt("Motivo (opcional)") || "";
+            const rr = await fetch(apiURL(`/rrhh/sgjo/admin/device_requests/${idr}/reject`), {
+              method:"POST",
+              headers: { "Content-Type":"application/json", ...headers() },
+              body: JSON.stringify({ note }),
+            });
+            if (!rr.ok){
+              const t = await rr.text().catch(()=> "");
+              toast("No se pudo rechazar: " + (t || rr.status));
+              return;
+            }
+            toast("Solicitud rechazada");
+            await loadEnrolRequestsForEditing();
+          });
+        });
+        }
+	      }catch(err){
+	        box.innerHTML = `<tr><td class="muted">No se pudo cargar solicitudes: ${escapeHtml(String(err?.message||err))}</td></tr>`;
+	        if (box2) box2.innerHTML = `<tr><td class="muted" colspan="5">—</td></tr>`;
+	      }
+
+		      // Cargar dispositivos aprobados
+		      try{
+		        const box2 = qs("#enrolDevRows");
+		        if (!box2) return;
+		        let j2 = null;
+		        try{
+		          j2 = await fetchJSON(apiURL(`/rrhh/sgjo/admin/devices?id_usuario=${encodeURIComponent(String(idu))}`), { timeoutMs: 12000 });
+		        }catch(e2){
+		          // Backward compatible fallback: si el backend no tiene /admin/devices, usar device_requests aprobadas.
+		          const msg = String(e2?.message||e2);
+		          if ((msg||"").toLowerCase().includes("not found") || (msg||"").includes("404")){
+		            const jx = await fetchJSON(apiURL(`/rrhh/sgjo/admin/device_requests?status=approved&id_usuario=${encodeURIComponent(String(idu))}`), { timeoutMs: 12000 });
+		            const items = Array.isArray(jx.items) ? jx.items : [];
+		            j2 = { ok:true, items: items.map(function(r){
+		              return {
+		                id_device: null,
+		                id_usuario: r.id_usuario,
+		                device_id: r.device_id,
+		                device_name: r.device_name || "",
+		                enrolled_at: r.decided_at || r.created_at,
+		                revoked_at: null,
+		                username: r.username || "",
+		                display: r.display || ""
+		              };
+		            }) };
+		          }else{
+		            throw e2;
+		          }
+		        }
+		        const devs = Array.isArray(j2.items) ? j2.items : [];
+		        if (!devs.length){
+		          box2.innerHTML = `<tr><td class="muted" colspan="5">Sin dispositivos enrolados.</td></tr>`;
+		          return;
+		        }
+		        box2.innerHTML = devs.map(d=>`
+		          <tr>
+		            <td>${d.revoked_at ? `<span class="pill">Revocado</span>` : `<span class="pill ok">Activo</span>`}</td>
+		            <td>${escapeHtml((d.device_name||"") || "—")}</td>
+		            <td class="small code">${escapeHtml(d.device_id||"")}</td>
+		            <td class="small muted">${escapeHtml(String(d.enrolled_at||"").replace("T"," ").slice(0,16) || "—")}</td>
+		            <td>
+		              ${d.revoked_at ? `<span class="muted">—</span>` : (d.id_device ? `<button class="btn" data-dev-revoke="${escapeHtml(String(d.id_device||""))}">Eliminar</button>` : `<span class="muted">—</span>`)}
+		            </td>
+		          </tr>
+		        `).join("");
+	        box2.querySelectorAll("[data-dev-revoke]").forEach(btn=>{
+	          btn.addEventListener("click", async ()=>{
+	            const idDev = Number(btn.getAttribute("data-dev-revoke") || 0) || 0;
+	            if (!idDev) return;
+	            if (!confirm("¿Revocar este dispositivo? El colaborador deberá enrolar de nuevo.")) return;
+	            const rr = await fetch(apiURL(`/rrhh/sgjo/admin/devices/${idDev}/revoke`), {
+	              method:"POST",
+	              headers: { "Content-Type":"application/json", ...headers() },
+	              body: JSON.stringify({ note: "revocado por admin" }),
+	            });
+	            const jj = await rr.json().catch(()=>({}));
+	            if (!rr.ok || !jj?.ok){
+	              toast("No se pudo revocar: " + (jj?.detail || rr.status));
+	              return;
+	            }
+	            toast("Dispositivo revocado");
+	            await loadEnrolRequestsForEditing();
+	          });
+	        });
+		      }catch(_e){
+	        const box2 = qs("#enrolDevRows");
+	        if (box2) box2.innerHTML = `<tr><td class="muted" colspan="5">No se pudo cargar dispositivos: ${escapeHtml(String(_e?.message||_e))}</td></tr>`;
+		      }
+          try{ if (watchdog) clearTimeout(watchdog); }catch(_){}
+		    }
+
+    function renderFamiliares(){
+      const tb = qs("#famRows");
+      if (!tb) return;
+      const items = Array.isArray(FAMILIARES) ? FAMILIARES : [];
+      if (!items.length){
+        tb.innerHTML = `<tr><td class="muted" colspan="8">Sin familiares.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = items.map((f, idx)=>`
+        <tr>
+          <td>${idx+1}</td>
+          <td>${f.parentesco || "—"}</td>
+          <td>${f.nombre || "—"}</td>
+          <td>${f.rut || "—"}</td>
+          <td>${f.nacimiento || "—"}</td>
+          <td>${f.carga || "—"}</td>
+          <td>${f.actividad || "—"}</td>
+          <td><button class="btn" data-fam-del="${idx}">Quitar</button></td>
+        </tr>
+      `).join("");
+      tb.querySelectorAll("[data-fam-del]").forEach(b=>{
+        b.addEventListener("click", ()=>{
+          const i = Number(b.getAttribute("data-fam-del") || -1);
+          if (!Number.isFinite(i) || i < 0) return;
+          FAMILIARES.splice(i, 1);
+          renderFamiliares();
+        });
+      });
+    }
+    function famPayloadFromInputs(){
+      return {
+        parentesco: (qs("#stFamPar").value || "").trim(),
+        nombre: (qs("#stFamNombre").value || "").trim(),
+        rut: (qs("#stFamRut").value || "").trim(),
+        nacimiento: (qs("#stFamNac").value || "").trim(),
+        carga: (qs("#stFamCarga").value || "").trim(),
+        actividad: (qs("#stFamAct").value || "").trim(),
+      };
+    }
+    function famClearInputs(){
+      qs("#stFamPar").value = "";
+      qs("#stFamNombre").value = "";
+      qs("#stFamRut").value = "";
+      qs("#stFamNac").value = "";
+      qs("#stFamCarga").value = "";
+      qs("#stFamAct").value = "";
+    }
+    qs("#famAdd")?.addEventListener("click", ()=>{
+      const f = famPayloadFromInputs();
+      if (!Object.values(f).some(v => String(v||"").trim())){
+        toast("Completa al menos un campo para agregar.");
+        return;
+      }
+      if (!Array.isArray(FAMILIARES)) FAMILIARES = [];
+      FAMILIARES.push(f);
+      famClearInputs();
+      renderFamiliares();
+    });
+    qs("#famClear")?.addEventListener("click", ()=>{
+      famClearInputs();
+    });
+
+    function requiredOk(){
+      const required = [
+        { id:"#stCargo", msg:"Cargo requerido" },
+        { id:"#stRenta", msg:"Renta requerida" },
+        { id:"#stApellidoP", msg:"Apellido paterno requerido" },
+        { id:"#stApellidoM", msg:"Apellido materno requerido" },
+        { id:"#stNombres", msg:"Nombres requeridos" },
+        { id:"#stRut", msg:"RUT requerido" },
+        { id:"#stEmail", msg:"Correo requerido" },
+        { id:"#stCel", msg:"Teléfono requerido" },
+        { id:"#stAfp", msg:"AFP requerida" },
+        { id:"#stSalud", msg:"Salud requerida" },
+        { id:"#stCuentaNum", msg:"Nº de cuenta requerido" },
+        { id:"#stBanco", msg:"Banco requerido" },
+        { id:"#stRol", msg:"Rol requerido" },
+      ];
+      for (const r of required){
+        const val = (qs(r.id).value || "").trim();
+        if (!val){ alert(r.msg); return false; }
+      }
+      if (!isValidRut(qs('#stRut').value)){ alert('RUT inválido'); return false; }
+      if (!isValidEmail(qs('#stEmail').value)){ alert('Correo inválido'); return false; }
+      if (!isValidPhoneCL(qs('#stCel').value)){ alert('Teléfono inválido'); return false; }
+      return true;
+    }
+
+    qs("#next1").onclick = () => openModal('#m2');
+    qs("#back2").onclick = () => openModal('#m1');
+    qs("#next2").onclick = () => openModal('#m3');
+    qs("#back3").onclick = () => openModal('#m2');
+    qs("#next3").onclick = () => openModal('#m4');
+    qs("#back4").onclick = () => openModal('#m3');
+    qs("#next4").onclick = () => openModal('#m5');
+    qs("#back5").onclick = () => openModal('#m4');
+    qs("#next5").onclick = () => openModal('#m6');
+    qs("#back6").onclick = () => openModal('#m5');
+    qs("#next6").onclick = () => openModal('#m7');
+    qs("#back7").onclick = () => openModal('#m6');
+
+    qs("#stAfp").addEventListener("change", () => {
+      const sel = qs("#stAfp").value;
+      const item = AFP_LIST.find(a => a.nombre === sel);
+      if (item) qs("#stAfpPct").value = item.pct_comision ?? "";
+    });
+    qs("#stSalud").addEventListener("change", () => {
+      const sel = qs("#stSalud").value;
+      const item = SALUD_LIST.find(a => a.nombre === sel);
+      if (item) qs("#stSaludPct").value = item.pct_base ?? "";
+    });
+
+    function toast(msg){
+      const t = document.createElement("div");
+      t.className = "toast";
+      t.textContent = msg;
+      Object.assign(t.style, { position:"fixed", right:"16px", bottom:"16px", background:"rgba(15,23,42,.9)", color:"#fff", padding:"10px 12px", borderRadius:"10px", zIndex:99, fontWeight:"800" });
+      document.body.appendChild(t);
+      setTimeout(()=>t.remove(), 2200);
+    }
+
+    async function saveStaffNow(){
+      if (!requiredOk()) return;
+      const ficha = {
+        area: qs("#stArea").value,
+        cargo: qs("#stCargo").value,
+        renta_liquida: qs("#stRenta").value,
+        entrevistador: qs("#stEntrevistador").value,
+        fecha_entrevista: qs("#stFechaEnt").value,
+        apellido_paterno: qs("#stApellidoP").value,
+        apellido_materno: qs("#stApellidoM").value,
+        nombres: qs("#stNombres").value,
+        fecha_nacimiento: qs("#stNacimiento").value,
+        nacionalidad: qs("#stNacionalidad").value,
+        genero: qs("#stGenero").value,
+        telefono_celular: qs("#stCel").value,
+        telefono_fijo: qs("#stFijo").value,
+        estado_civil: qs("#stEstadoCivil").value,
+        calle: qs("#stCalle").value,
+        numero: qs("#stNumero").value,
+        depto: qs("#stDepto").value,
+        direccion_extra: qs("#stDireccionExtra").value,
+        comuna: qs("#stComuna").value,
+        ciudad: qs("#stCiudad").value,
+        pais: qs("#stPais").value,
+        emergencia_contacto: qs("#stEmergencia").value,
+        emergencia_telefono: qs("#stEmergenciaTel").value,
+        alergico: qs("#stAlergico").value,
+        enfermedad: qs("#stEnfermedad").value,
+        familiares: Array.isArray(FAMILIARES) ? FAMILIARES : [],
+        talla_pantalon: qs("#stPantalon").value,
+        talla_chaqueta: qs("#stChaqueta").value,
+        talla_polera: qs("#stPolera").value,
+        talla_calzado: qs("#stCalzado").value,
+        talla_guantes: qs("#stGuantes").value,
+        cuenta_numero: qs("#stCuentaNum").value,
+        tipo_cuenta: qs("#stTipoCuenta").value,
+        banco: qs("#stBanco").value,
+      };
+      const payload = {
+        colaborador: `${qs("#stApellidoP").value} ${qs("#stApellidoM").value} ${qs("#stNombres").value}`.trim(),
+        rut: normalizeRut(qs("#stRut").value),
+        email: qs("#stEmail").value,
+        telefono: qs("#stCel").value,
+        rol: qs("#stRol").value,
+        centro_costo: qs("#stCentro").value,
+        fecha_ingreso: qs("#stIngreso").value || null,
+        afp: qs("#stAfp").value,
+        afp_pct: Number(qs("#stAfpPct").value || 0) || null,
+        salud_tipo: qs("#stSalud").value,
+        salud_pct: Number(qs("#stSaludPct").value || 0) || null,
+        puede_marcar: (qs("#stPuedeMarcar").value === "true"),
+        marcacion_method: String(qs("#stMarcacionMethod").value || "BOTH").toUpperCase(),
+        is_active: qs("#stActivo").value === "true",
+        observaciones: "",
+        ficha,
+      };
+      const url = staffEditing ? `/rrhh/staff/${staffEditing.id_staff}` : "/rrhh/staff";
+      const method = staffEditing ? "PUT" : "POST";
+      const r = await fetch(apiURL(url), { method, headers: { "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("No se pudo guardar: " + (t || r.status));
+        return;
+      }
+      toast("Colaborador guardado");
+      closeAll();
+      await loadStaff();
+    }
+
+    const btnSaveA = qs("#saveStaff");
+    if (btnSaveA) btnSaveA.onclick = saveStaffNow;
+    const btnSaveB = qs("#saveStaff2");
+    if (btnSaveB) btnSaveB.onclick = saveStaffNow;
+
+    async function loadStaff(){
+      const tb = qs("#rowsStaff");
+      if (tb) tb.innerHTML = `<tr><td class="muted">Cargando...</td></tr>`;
+      try{
+        const data = await fetchJSON(apiURL("/rrhh/staff"), { timeoutMs: 12000 });
+        let items = data.items || [];
+        const q = (qs("#qStaff").value || "").trim().toLowerCase();
+        if (q){ items = items.filter(i => String(i.colaborador || "").toLowerCase().includes(q)); }
+        // Orden por defecto: alfabético, luego rol, luego centro.
+        const norm = (v) => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        items.sort((a,b) => {
+          const c1 = norm(a.colaborador).localeCompare(norm(b.colaborador), "es");
+          if (c1) return c1;
+          const c2 = norm(a.rol).localeCompare(norm(b.rol), "es");
+          if (c2) return c2;
+          return norm(a.centro_costo).localeCompare(norm(b.centro_costo), "es");
+        });
+        tb.innerHTML = items.map(i => `
+          <tr>
+            <td><strong>${i.colaborador || "—"}</strong></td>
+            <td>${i.rol || "—"}</td>
+            <td>${i.centro_costo || "—"}</td>
+            <td>${i.afp ? `${i.afp} (${fmt(i.afp_pct)}%)` : "—"}</td>
+            <td>${i.salud_tipo ? `${i.salud_tipo} (${fmt(i.salud_pct)}%)` : "—"}</td>
+            <td>${String(i.is_active ?? true) === "true" ? "Sí" : "No"}</td>
+            <td>
+              <span class="muted">${String(i.puede_marcar ?? true) === "true" ? "Habilitado" : "Bloqueado"}</span>
+              <div class="muted" style="opacity:.85;margin-top:2px">${(String(i.marcacion_method||"BOTH").toUpperCase()==="QR") ? "Solo QR" : (String(i.marcacion_method||"BOTH").toUpperCase()==="GEO") ? "Solo GPS" : "Mixto"}</div>
+            </td>
+            <td>
+              <button class="btn" data-edit="${i.id_staff}">Editar</button>
+              <button class="btn" data-ficha="${i.id_staff}">Ficha PDF</button>
+              <button class="btn" data-user="${i.id_staff}" title="${i.id_usuario ? `Vinculado (usuario #${i.id_usuario})` : "Crear o vincular usuario"}">${i.id_usuario ? "Usuario CRM ✓" : "Usuario CRM"}</button>
+              <button class="btn" data-del="${i.id_staff}">Eliminar</button>
+            </td>
+          </tr>
+        `).join("") || `<tr><td class="muted">Sin datos.</td></tr>`;
+
+        tb.querySelectorAll("[data-edit]").forEach(b => {
+          const id = Number(b.dataset.edit || 0);
+          const item = items.find(x => Number(x.id_staff) === id);
+          b.addEventListener("click", () => openStaffModal(item));
+        });
+        tb.querySelectorAll("[data-del]").forEach(b => {
+          const id = Number(b.dataset.del || 0);
+          b.addEventListener("click", async () => {
+            if (!confirm("¿Eliminar colaborador?")) return;
+            const r = await fetch(apiURL(`/rrhh/staff/${id}`), { method:"DELETE", headers: headers() });
+            if (!r.ok){ toast("No se pudo eliminar"); return; }
+            toast("Colaborador eliminado");
+            await loadStaff();
+          });
+        });
+        tb.querySelectorAll("[data-ficha]").forEach(b => {
+          const id = Number(b.dataset.ficha || 0);
+          b.addEventListener("click", () => {
+            const url = `/web/views/rrhh_ficha.html?id_staff=${encodeURIComponent(String(id))}`;
+            try{
+              window.parent?.postMessage({ type:"openItem", id:"rrhh_ficha", url }, "*");
+            }catch(_){
+              window.open(apiURL(url), "_blank");
+            }
+          });
+        });
+        tb.querySelectorAll("[data-user]").forEach(b => {
+          const id = Number(b.dataset.user || 0);
+          const item = items.find(x => Number(x.id_staff) === id);
+          const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
+          if (item?.id_usuario && !isSuper){
+            b.disabled = true;
+            b.title = `Ya vinculado (usuario #${item.id_usuario}). Solo SuperAdmin puede cambiarlo.`;
+            return;
+          }
+          b.addEventListener("click", () => openUserModal(item));
+        });
+      }catch(e){
+        if (tb) tb.innerHTML = `<tr><td class="muted">No se pudo cargar: ${escapeHtml(String(e?.message||e))}</td></tr>`;
+      }
+    }
+
+    qs("#btnReloadStaff").addEventListener("click", () => loadStaff());
+    qs("#qStaff").addEventListener("input", () => loadStaff());
+    qs("#btnNewStaff").addEventListener("click", () => openStaffModal(null));
+    qs("#btnOpenNomina").addEventListener("click", () => {
+      // Navegación embebida dentro de RRHH (iframe padre).
+      try{
+        window.parent?.postMessage({ type:"rrhh:navigate", tab:"nomina" }, "*");
+      }catch(_){
+        window.location.href = apiURL("/web/views/rrhh_nomina.html?v=20260402-2");
+      }
+    });
+
+    function showUserModal(on){
+      qs("#mUser").style.display = on ? "flex" : "none";
+    }
+    qs("[data-close-user]")?.addEventListener("click", ()=> showUserModal(false));
+    qs("#mUser").addEventListener("click", (e)=>{ if (e.target === qs("#mUser")) showUserModal(false); });
+
+    function genPass(){
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%";
+      let out = "";
+      for (let i=0;i<14;i++){ out += chars[Math.floor(Math.random()*chars.length)]; }
+      return out;
+    }
+    function guessUsername(email){
+      const e = String(email||"").trim().toLowerCase();
+      if (!e) return "";
+      const at = e.indexOf("@");
+      return (at > 0 ? e.slice(0, at) : e).replace(/[^a-z0-9._-]/g,"").slice(0, 40);
+    }
+
+    function normAscii(s){
+      return String(s||"")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+    }
+    function slugNameCore(nombre){
+      const parts = normAscii(nombre).toLowerCase().trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return "";
+      const first = parts[0] || "";
+      const last = (parts.length > 1 ? parts[parts.length - 1] : "");
+      const last4 = last.slice(0, 4);
+      const core = (first + last4).replace(/[^a-z0-9]/g, "");
+      return core.slice(0, 24);
+    }
+    function rolePrefix(role){
+      const r = String(role||"").toUpperCase();
+      if (r.includes("EJECUTIVO") || r.includes("VENTAS")) return "ejv_";
+      if (r.includes("COMPRAS")) return "compras_";
+      if (r.includes("BODEG")) return "bodega_";
+      if (r.includes("OPERADOR")) return "op_";
+      if (r.includes("CONDUCTOR") || r.includes("CHOFER") || r.includes("CHOP")) return "chop_";
+      if (r.includes("OPERACIONES")) return "ops_";
+      if (r.includes("MICE")) return "mice_";
+      if (r.includes("FINAN")) return "fin_";
+      if (r.includes("RRHH")) return "rrhh_";
+      if (r.includes("SUPERADMIN")) return "sa_";
+      if (r.includes("ADMIN")) return "admin_";
+      return "";
+    }
+    function suggestUsername(role, nombre, email){
+      const pref = rolePrefix(role);
+      const core = slugNameCore(nombre);
+      const fromName = (pref + core).replace(/_+$/,"");
+      const fromEmail = guessUsername(email);
+      // Preferimos patrón por rol+nombre; fallback email.
+      const out = (fromName && fromName.length >= 4) ? fromName : fromEmail;
+      return String(out || "").slice(0, 40);
+    }
+
+    let USERNAME_AUTO = true;
+    function refreshUsernameSuggestion(){
+      if (!USERNAME_AUTO) return;
+      const nombre = (qs("#uNombre")?.value || "").trim();
+      const email = (qs("#uEmail")?.value || "").trim();
+      const rol = (qs("#uRol")?.value || "").trim();
+      const u = qs("#uUsername");
+      if (!u) return;
+      u.value = suggestUsername(rol, nombre, email) || "";
+    }
+    async function openUserModal(staffItem){
+      if (!staffItem || !staffItem.id_staff){
+        toast("Selecciona un colaborador");
+        return;
+      }
+      const nombre = String(staffItem.colaborador || "").trim();
+      const email = String(staffItem.email || "").trim().toLowerCase();
+      USER_LINK_STAFF_ID = Number(staffItem.id_staff || 0) || null;
+      USER_LINK_CURRENT_USER_ID = Number(staffItem.id_usuario || 0) || null;
+      qs("#uNombre").value = nombre || "";
+      qs("#uEmail").value = email || "";
+      USERNAME_AUTO = true;
+      // Rol: intenta match con opciones cargadas
+      const desiredRole = String(staffItem.rol || "OPERADOR").trim();
+      const roleSel = qs("#uRol");
+      if (roleSel){
+        const opt = Array.from(roleSel.options || []).find(o => o.value === desiredRole)
+          || Array.from(roleSel.options || []).find(o => (o.value || "").toUpperCase() === desiredRole.toUpperCase());
+        if (opt) roleSel.value = opt.value;
+        else roleSel.value = desiredRole.toUpperCase();
+      }
+      refreshUsernameSuggestion();
+      qs("#uPass").value = "";
+      qs("#userHint").textContent = `Colaborador: ${nombre || ("#"+staffItem.id_staff)} · Puedes vincular un usuario existente o crear uno nuevo.`;
+      // selector marcas solo para SUPERADMIN
+      const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
+      const wrap = qs("#uMarcasWrap");
+      if (wrap){
+        wrap.style.display = isSuper ? "block" : "none";
+        const box = qs("#uMarcas");
+        if (box){
+          box.innerHTML = (MARCAS || []).map(m => `
+            <label class="uMarcaOpt">
+              <input type="checkbox" name="uMarca" value="${Number(m.id_marca)}" />
+              <span>${escapeHtml(m.nombre)}</span>
+            </label>
+          `).join("");
+        }
+      }
+      showUserModal(true);
+
+      // Bootstrap búsqueda usuarios existentes
+      if (qs("#uSearch")){
+        qs("#uSearch").value = email || nombre || "";
+      }
+      if (qs("#btnUUnlink")){
+        qs("#btnUUnlink").style.display = USER_LINK_CURRENT_USER_ID ? "" : "none";
+      }
+      await loadUserCandidates();
+    }
+    qs("#btnGenPass").addEventListener("click", ()=>{ qs("#uPass").value = genPass(); });
+    // Auto-username: si el usuario edita manualmente, no seguimos autogenerando
+    (function wireUsernameAuto(){
+      const u = qs("#uUsername");
+      if (u){
+        u.addEventListener("input", ()=>{ USERNAME_AUTO = false; });
+      }
+      const touch = () => refreshUsernameSuggestion();
+      qs("#uNombre")?.addEventListener("input", touch);
+      qs("#uEmail")?.addEventListener("input", touch);
+      qs("#uRol")?.addEventListener("change", touch);
+    })();
+    qs("#btnCreateUser").addEventListener("click", async ()=>{
+      const isSuper = String(ME?.role || ME?.rol || "").toUpperCase() === "SUPERADMIN";
+      const selectedMarcas = (() => {
+        if (!isSuper) return [];
+        const box = qs("#uMarcas");
+        if (!box) return [];
+        return Array.from(box.querySelectorAll('input[name="uMarca"]:checked')).map(i => Number(i.value)).filter(n => Number.isFinite(n) && n > 0);
+      })();
+      const payload = {
+        nombre: (qs("#uNombre").value || "").trim(),
+        email: (qs("#uEmail").value || "").trim(),
+        username: (qs("#uUsername").value || "").trim(),
+        rol: (qs("#uRol").value || "").trim(),
+        password: (qs("#uPass").value || "").trim(),
+        marcas: selectedMarcas,
+      };
+      if (!payload.nombre || !payload.email || !payload.password){
+        toast("Falta nombre/email/password");
+        return;
+      }
+      if (!payload.username) payload.username = guessUsername(payload.email);
+      const r = await fetch(apiURL("/users/create"), {
+        method: "POST",
+        headers: { "Content-Type":"application/json", ...headers() },
+        body: JSON.stringify(payload),
+      });
+      const txt = await r.text().catch(()=> "");
+      if (!r.ok){
+        toast("No se pudo crear: " + (txt || r.status));
+        return;
+      }
+      try{
+        const j = JSON.parse(txt || "{}");
+        if (j?.email_notice){
+          toast("Usuario creado. " + String(j.email_notice));
+        }else{
+          toast("Usuario creado (correo enviado si SMTP está ok)");
+        }
+      }catch(_){
+        toast("Usuario creado");
+      }
+      showUserModal(false);
+    });
+
+    async function loadUserCandidates(){
+      const q = (qs("#uSearch")?.value || "").trim();
+      const url = `/rrhh/users?q=${encodeURIComponent(q)}&limit=60&offset=0`;
+      let data = null;
+      try{
+        const r = await fetch(apiURL(url), { headers: headers() });
+        if (!r.ok){
+          const t = await r.text().catch(()=> "");
+          throw new Error(t || String(r.status));
+        }
+        data = await r.json();
+      }catch(err){
+        qs("#uRows").innerHTML = `<tr><td class="muted">No se pudo cargar usuarios: ${escapeHtml(String(err?.message||err))}</td></tr>`;
+        return;
+      }
+      const items = data?.items || [];
+      qs("#uRows").innerHTML = (items.map(u => {
+        const idu = Number(u.id_usuario || 0) || 0;
+        const linked = USER_LINK_CURRENT_USER_ID && idu === USER_LINK_CURRENT_USER_ID;
+        const btn = linked
+          ? `<button class="btn" disabled>Vinculado</button>`
+          : `<button class="btn" data-link-user="${idu}">Vincular</button>`;
+        return `
+          <tr>
+            <td>${idu || "—"}</td>
+            <td><strong>${escapeHtml(u.display || u.username || u.email || String(idu))}</strong></td>
+            <td>${escapeHtml(u.rol || "—")}</td>
+            <td>${escapeHtml(u.email || "—")}</td>
+            <td>${btn}</td>
+          </tr>
+        `;
+      }).join("")) || `<tr><td class="muted">Sin usuarios.</td></tr>`;
+      qs("#uRows").querySelectorAll("[data-link-user]").forEach(b => {
+        b.addEventListener("click", async ()=>{
+          const idu = Number(b.getAttribute("data-link-user") || 0) || 0;
+          if (!USER_LINK_STAFF_ID || !idu) return;
+          const r = await fetch(apiURL(`/rrhh/staff/${USER_LINK_STAFF_ID}/link_user`), {
+            method: "POST",
+            headers: { "Content-Type":"application/json", ...headers() },
+            body: JSON.stringify({ id_usuario: idu }),
+          });
+          const t = await r.text().catch(()=> "");
+          if (!r.ok){
+            toast("No se pudo vincular: " + (t || r.status), "error");
+            return;
+          }
+          toast("Usuario vinculado");
+          showUserModal(false);
+          await loadStaff();
+        });
+      });
+    }
+    qs("#btnUSearch")?.addEventListener("click", ()=> loadUserCandidates());
+    qs("#uSearch")?.addEventListener("keydown", (e)=>{ if (e.key === "Enter") { e.preventDefault(); loadUserCandidates(); } });
+    qs("#btnUUnlink")?.addEventListener("click", async ()=>{
+      if (!USER_LINK_STAFF_ID) return;
+      if (!confirm("¿Desvincular usuario de este colaborador?")) return;
+      const r = await fetch(apiURL(`/rrhh/staff/${USER_LINK_STAFF_ID}/link_user`), { method:"DELETE", headers: headers() });
+      const t = await r.text().catch(()=> "");
+      if (!r.ok){
+        toast("No se pudo desvincular: " + (t || r.status), "error");
+        return;
+      }
+      toast("Usuario desvinculado");
+      showUserModal(false);
+      await loadStaff();
+    });
+
+    function applyLabels(){
+      document.querySelectorAll('.modal .row').forEach(row => {
+        const inputs = Array.from(row.querySelectorAll('.inp'));
+        inputs.forEach(inp => {
+          if (inp.parentElement?.classList.contains('field')) return;
+          const labelText = inp.dataset.label || inp.getAttribute('placeholder') || inp.options?.[0]?.textContent || 'Campo';
+          const wrap = document.createElement('div');
+          wrap.className = 'field';
+          const lab = document.createElement('div');
+          lab.className = 'field-label';
+          lab.textContent = labelText;
+          inp.parentElement.replaceChild(wrap, inp);
+          wrap.appendChild(lab);
+          wrap.appendChild(inp);
+        });
+      });
+    }
+
+    async function init(){
+      await loadMe();
+      await loadMarcas();
+      await loadRoles();
+      await loadAfp();
+      await loadSalud();
+      await loadComunas();
+      await loadStaff();
+      applyLabels();
+    }
+    init();
+  </script>
+</body>
+</html>

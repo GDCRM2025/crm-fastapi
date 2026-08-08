@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Inventario · Clasificación</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:14px;background:transparent;color:var(--text);}
+    .wrap{max-width:1200px;margin:0 auto;}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+    }
+    :root.light .card{ background: rgba(255,255,255,.86); border-color: rgba(0,0,0,.10); }
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .big{font-size:22px;font-weight:1200;margin-top:6px;}
+    .muted{opacity:.75;font-weight:850;font-size:12px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;}
+    .inp,.sel{
+      height:40px;border-radius:12px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;padding:0 12px;font-weight:1000;
+      outline:none;
+    }
+    .btn{
+      height:40px;border-radius:12px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;padding:0 14px;font-weight:1100;cursor:pointer;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .table-wrap{margin-top:12px; overflow:auto; border-radius:14px; border:1px solid rgba(148,163,184,.16); max-height:70vh;}
+    table{width:100%;border-collapse:collapse; min-width:900px;}
+    th,td{padding:10px 10px;border-bottom:1px solid rgba(148,163,184,.16);vertical-align:middle;}
+    th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85;text-align:left;}
+    .pill{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.18);opacity:.9;font-weight:1000;font-size:12px;}
+    .pill.ok{border-color:color-mix(in srgb, var(--accent) 55%, transparent); background:color-mix(in srgb, var(--accent) 18%, transparent);}
+    .pill.warn{border-color:rgba(239,68,68,.45); background:rgba(239,68,68,.10);}
+    .w-name{min-width:320px;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="ttl">Inventario</div>
+      <div class="big">Clasificación (MICE / Operaciones)</div>
+      <div class="muted">Esto clasifica productos del inventario. Luego MICE & Plus usa esta misma clasificación.</div>
+
+      <div class="row">
+        <input id="q" class="inp" placeholder="Buscar por SKU o nombre…" style="min-width:320px;flex:1" />
+        <select id="fClas" class="sel" style="min-width:220px">
+          <option value="">Todas</option>
+          <option value="MICE">MICE</option>
+          <option value="OPERACIONES">OPERACIONES</option>
+          <option value="__NONE__">Sin clasificar</option>
+        </select>
+        <select id="pageSize" class="sel" style="min-width:140px">
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+        </select>
+        <button id="btnLoad" class="btn primary">Cargar</button>
+      </div>
+
+      <div class="row" style="justify-content:space-between">
+        <div id="msg" class="muted" style="margin-top:10px">—</div>
+        <div class="row" style="margin-top:10px">
+          <button id="btnPrev" class="btn">◀</button>
+          <span class="muted" id="pageInfo">—</span>
+          <button id="btnNext" class="btn">▶</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th class="w-name">Producto</th>
+              <th>Categoría</th>
+              <th>Clasificación</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td class="muted" colspan="5">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(e){ return ""; }
+    })();
+    function getToken(){
+      try{
+        return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+      }catch(e){ return ""; }
+    }
+    function authHeaders(extra){
+      const h = Object.assign({}, extra || {});
+      const t = (getToken() || "").trim();
+      if (t) h.Authorization = "Bearer " + t;
+      return h;
+    }
+    function apiURL(p){ return API_BASE + (String(p||"").startsWith("/") ? "" : "/") + p; }
+    async function apiJSON(path, opt){
+      opt = opt || {};
+      opt.headers = authHeaders(Object.assign({"Accept":"application/json"}, opt.headers||{}));
+      const r = await fetch(apiURL(path), opt);
+      const txt = await r.text();
+      let j = null;
+      try{ j = txt ? JSON.parse(txt) : null; }catch(e){ j = null; }
+      if (r.status === 401 || r.status === 403) throw new Error("Sin permiso o sesión expirada.");
+      if (!r.ok) throw new Error((j && (j.detail||j.error||j.message)) ? (j.detail||j.error||j.message) : (txt || ("HTTP " + r.status)));
+      return j;
+    }
+
+    function pill(html, cls){
+      return `<span class="pill ${cls||""}">${html}</span>`;
+    }
+
+    function renderRow(it){
+      const id = it.id_producto;
+      const sku = it.sku || "";
+      const nombre = it.nombre || "";
+      const cat = it.categoria || "—";
+      const clas = (it.clasificacion || "").toUpperCase();
+      const isActive = (it.is_active !== false);
+      const clsPill = clas ? pill(clas, "ok") : pill("SIN", "warn");
+      const stPill = isActive ? pill("ACTIVO", "ok") : pill("INACTIVO", "warn");
+      return `
+        <tr data-id="${id}">
+          <td>${sku}</td>
+          <td class="w-name">${nombre}</td>
+          <td>${cat}</td>
+          <td>
+            <select class="sel selClas" style="min-width:220px">
+              <option value="" ${!clas ? "selected":""}>Sin clasificar</option>
+              <option value="MICE" ${clas==="MICE"?"selected":""}>MICE</option>
+              <option value="OPERACIONES" ${clas==="OPERACIONES"?"selected":""}>OPERACIONES</option>
+            </select>
+            <span class="muted miniStatus" style="margin-left:10px">${clsPill}</span>
+          </td>
+          <td>${stPill}</td>
+        </tr>
+      `;
+    }
+
+    let CACHE = [];
+    let META = { total: 0, limit: 50, offset: 0 };
+
+    function applyClientFilter(items){
+      const f = String(qs("#fClas").value || "");
+      let out = items || [];
+      if (f === "MICE" || f === "OPERACIONES"){
+        out = out.filter(x => String(x.clasificacion||"").toUpperCase() === f);
+      } else if (f === "__NONE__"){
+        out = out.filter(x => !String(x.clasificacion||"").trim());
+      }
+      return out;
+    }
+
+    function renderPage(){
+      const tb = qs("#rows");
+      const items = applyClientFilter(CACHE);
+      if (!items.length){
+        tb.innerHTML = `<tr><td class="muted" colspan="5">Sin resultados.</td></tr>`;
+      } else {
+        tb.innerHTML = items.map(renderRow).join("");
+        bindRowHandlers();
+      }
+      const total = Number(META.total || 0) || 0;
+      const limit = Number(META.limit || 50) || 50;
+      const offset = Number(META.offset || 0) || 0;
+      const page = Math.floor(offset / limit) + 1;
+      const pages = Math.max(1, Math.ceil(total / limit));
+      qs("#pageInfo").textContent = `Página ${page} / ${pages}`;
+      qs("#btnPrev").disabled = offset <= 0;
+      qs("#btnNext").disabled = (offset + limit) >= total;
+    }
+
+    function setMsg(s){ qs("#msg").textContent = s; }
+
+    async function load(){
+      const q = String(qs("#q").value || "").trim();
+      const ps = Number(qs("#pageSize").value || 50) || 50;
+      setMsg("Cargando productos…");
+      const j = await apiJSON(`/ops/inventario/productos?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(ps)}&offset=${encodeURIComponent(META.offset || 0)}`);
+      CACHE = (j && j.items) ? j.items : [];
+      META.total = (j && j.total != null) ? Number(j.total) : CACHE.length;
+      META.limit = (j && j.limit != null) ? Number(j.limit) : ps;
+      META.offset = (j && j.offset != null) ? Number(j.offset) : 0;
+      setMsg(`${META.total} producto(s) total.`);
+      renderPage();
+    }
+
+    let saveTimers = new Map();
+    function bindRowHandlers(){
+      const sels = document.querySelectorAll(".selClas");
+      sels.forEach(sel => {
+        sel.addEventListener("change", (ev) => {
+          const tr = ev.target.closest("tr");
+          const id = tr ? tr.getAttribute("data-id") : "";
+          if (!id) return;
+          const val = String(ev.target.value || "");
+          // optimistic UI
+          const st = tr.querySelector(".miniStatus");
+          if (st) st.innerHTML = pill(val ? val : "SIN", val ? "ok":"warn");
+          // debounce save
+          if (saveTimers.get(id)) clearTimeout(saveTimers.get(id));
+          saveTimers.set(id, setTimeout(() => saveClasificacion(id, val, tr), 250));
+        });
+      });
+    }
+
+    async function saveClasificacion(id, val, tr){
+      try{
+        // No pisar campos: tomamos el payload completo desde el listado (incluye ids).
+        const p = CACHE.find(x => String(x.id_producto) === String(id)) || {};
+        const body = {
+          sku: p.sku || tr.children[0].textContent.trim(),
+          nombre: p.nombre || tr.children[1].textContent.trim(),
+          id_categoria: (p.id_categoria ?? null),
+          id_unidad: (p.id_unidad ?? null),
+          id_proveedor: (p.id_proveedor ?? null),
+          precio: (p.precio ?? null),
+          pack_cantidad: (p.pack_cantidad ?? null),
+          is_active: (p.is_active !== false),
+          clasificacion: val || null
+        };
+        await apiJSON(`/ops/inventario/productos/${encodeURIComponent(id)}`, {
+          method:"PUT",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify(body)
+        });
+        // reflect cache
+        if (p) p.clasificacion = val || null;
+      }catch(e){
+        setMsg("Error guardando: " + (e && e.message ? e.message : e));
+      }
+    }
+
+    qs("#btnLoad").addEventListener("click", () => load().catch(e => setMsg("Error: " + e.message)));
+    qs("#fClas").addEventListener("change", () => renderPage());
+    qs("#pageSize").addEventListener("change", () => { META.offset = 0; load().catch(e => setMsg("Error: " + e.message)); });
+    qs("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") qs("#btnLoad").click(); });
+    qs("#btnPrev").addEventListener("click", () => { META.offset = Math.max(0, (META.offset||0) - (META.limit||50)); load().catch(e => setMsg("Error: " + e.message)); });
+    qs("#btnNext").addEventListener("click", () => { META.offset = (META.offset||0) + (META.limit||50); load().catch(e => setMsg("Error: " + e.message)); });
+
+    load().catch(e => setMsg("Error: " + e.message));
+  </script>
+</body>
+</html>

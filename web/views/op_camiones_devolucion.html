@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Operaciones · Devolución de Camiones</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    :root{--border:rgba(255,255,255,.12);--card:rgba(7,12,16,.44);}
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:12px;color:rgba(255,255,255,.92);}
+    :root.light body{color:rgba(0,0,0,.86);}
+    .card{height:calc(100vh - 24px);border-radius:18px;border:1px solid var(--border);background:var(--card);backdrop-filter:blur(10px);box-shadow:0 12px 30px rgba(0,0,0,.25);overflow:hidden;display:flex;flex-direction:column;}
+    :root.light .card{background:rgba(255,255,255,.78);border-color:rgba(0,0,0,.10);}
+    .hd{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.10);display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;}
+    :root.light .hd{border-bottom-color:rgba(0,0,0,.08);}
+    .t{font-weight:1100;letter-spacing:.12em;text-transform:uppercase;font-size:12px;}
+    .m{opacity:.7;font-weight:850;font-size:12px;}
+    .bd{padding:12px;display:grid;grid-template-columns:420px 1fr;gap:12px;min-height:0;flex:1;}
+    @media (max-width:980px){.bd{grid-template-columns:1fr;}}
+    .panel{border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.16);border-radius:16px;padding:12px;min-height:0;overflow:auto;}
+    :root.light .panel{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.02);}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    input,textarea,select{border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.16);color:inherit;border-radius:12px;padding:9px 10px;font-weight:900;outline:none;}
+    :root.light input,:root.light textarea,:root.light select{border-color:rgba(0,0,0,.12);background:rgba(255,255,255,.78);}
+    textarea{width:100%;min-height:90px;resize:vertical;}
+    .btn{cursor:pointer;border:1px solid rgba(39,228,139,.30);background:rgba(39,228,139,.14);color:inherit;border-radius:12px;padding:9px 12px;font-weight:1000;white-space:nowrap;}
+    .btn.primary{background:#19c37d;color:#052016;border-color:rgba(0,0,0,.12);}
+    .list{display:flex;flex-direction:column;gap:10px;}
+    .item{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.12);border-radius:14px;padding:10px 12px;}
+    :root.light .item{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.02);}
+    .meta{opacity:.7;font-size:12px;font-weight:850;}
+    .checkgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+    @media (max-width:720px){.checkgrid{grid-template-columns:1fr;}}
+    .chk{display:flex;gap:10px;align-items:flex-start;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.12);border-radius:14px;padding:10px;}
+    :root.light .chk{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.02);}
+    .chk input{margin-top:3px;}
+    .w100{width:100%;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="hd">
+      <div>
+        <div class="t">Devolución de Camiones</div>
+        <div class="m">Checklist por camión, fecha y conductor. El conductor sale de las fichas de entrega.</div>
+      </div>
+    </div>
+
+    <div class="bd">
+      <section class="panel">
+        <div style="font-weight:1100;margin-bottom:10px;">Crear checklist</div>
+
+        <div class="row">
+          <select id="id_asset" class="w100"></select>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <input id="fecha" type="date" />
+          <select id="conductor" style="min-width:240px;"></select>
+          <button class="btn" id="btnLoad" type="button">Cargar historial</button>
+        </div>
+
+        <div class="checkgrid" style="margin-top:12px;">
+          <label class="chk"><input type="checkbox" id="c_limpio" /> <span><strong>Limpieza</strong><div class="meta">Devuelto limpio</div></span></label>
+          <label class="chk"><input type="checkbox" id="c_danos" /> <span><strong>Daños</strong><div class="meta">Rayas / golpes revisados</div></span></label>
+          <label class="chk"><input type="checkbox" id="c_faltantes" /> <span><strong>Faltantes</strong><div class="meta">Herramientas / equipos ok</div></span></label>
+          <label class="chk"><input type="checkbox" id="c_comb" /> <span><strong>Combustible</strong><div class="meta">Nivel al volver</div></span></label>
+          <label class="chk"><input type="checkbox" id="c_km" /> <span><strong>Kilometraje</strong><div class="meta">Registrado</div></span></label>
+          <label class="chk"><input type="checkbox" id="c_docs" /> <span><strong>Documentos</strong><div class="meta">Devueltos</div></span></label>
+        </div>
+
+        <div style="margin-top:12px;">
+          <div class="meta" style="margin-bottom:6px;">Observaciones</div>
+          <textarea id="notes" placeholder="Daños, faltantes, cobros, incidentes, etc."></textarea>
+        </div>
+
+        <div class="row" style="margin-top:10px;justify-content:flex-end;">
+          <button class="btn primary" id="btnSave" type="button">Guardar checklist</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div style="font-weight:1100;margin-bottom:10px;">Historial (DEVOLUCIÓN)</div>
+        <div id="hist" class="list"><div class="meta">Selecciona camión para ver historial.</div></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        return (h === "localhost" || h === "127.0.0.1") ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function getToken(){ return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || ""; }
+    function authHeaders(extra={}){ const t=getToken(); return t ? { ...extra, Authorization: "Bearer " + t } : extra; }
+    function apiURL(u){
+      const s = String(u || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    }
+    async function jget(url){
+      const r = await fetch(apiURL(url), { headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+    async function jpost(url, body){
+      const r = await fetch(apiURL(url), { method:"POST", headers: authHeaders({"Content-Type":"application/json"}), body: JSON.stringify(body || {}) });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    let CAMIONES = [];
+
+    function gather(){
+      return {
+        limpio: !!qs("#c_limpio").checked,
+        danos: !!qs("#c_danos").checked,
+        faltantes: !!qs("#c_faltantes").checked,
+        combustible: !!qs("#c_comb").checked,
+        kilometraje: !!qs("#c_km").checked,
+        docs: !!qs("#c_docs").checked,
+        notes: (qs("#notes").value || "").trim(),
+      };
+    }
+
+    function renderHist(items){
+      const box = qs("#hist");
+      if (!items || !items.length){
+        box.innerHTML = `<div class="meta">Sin checklists aún.</div>`;
+        return;
+      }
+      box.innerHTML = items.map(it => {
+        const p = it.payload || {};
+        const okCount = ["limpio","danos","faltantes","combustible","kilometraje","docs"].filter(k => !!p[k]).length;
+        return `
+          <div class="item">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <div><strong>${esc(it.conductor || "—")}</strong> · <span class="meta">${esc(String(it.fecha || "").slice(0,10))}</span></div>
+              <div class="meta">OK: ${okCount}/6</div>
+            </div>
+            <div class="meta" style="margin-top:6px;">${esc((p.notes || "").slice(0,220) || "—")}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function loadCamiones(){
+      const j = await jget("/assets?tipo=CAMION");
+      CAMIONES = Array.isArray(j.items) ? j.items : [];
+      const sel = qs("#id_asset");
+      sel.innerHTML = `<option value="">Selecciona camión</option>` + CAMIONES.map(x =>
+        `<option value="${esc(x.id_asset)}">${esc(x.code || "—")} · ${esc(x.nombre || "")}</option>`
+      ).join("");
+
+      try{
+        const sp = new URLSearchParams(location.search || "");
+        const id = sp.get("id_asset");
+        if (id && [...sel.options].some(o => o.value === id)) sel.value = id;
+      }catch(_){}
+    }
+
+    async function loadConductoresEntrega(){
+      const id_asset = String(qs("#id_asset").value || "");
+      const fecha = qs("#fecha").value || "";
+      const sel = qs("#conductor");
+
+      if (!/^[0-9]+$/.test(id_asset)){
+        sel.innerHTML = `<option value="">Selecciona conductor</option>`;
+        return;
+      }
+
+      let url = `/ops/inventario/camiones/${encodeURIComponent(id_asset)}/conductores-entrega`;
+      if (fecha) url += `?fecha=${encodeURIComponent(fecha)}`;
+
+      let j = await jget(url);
+      let items = Array.isArray(j.items) ? j.items : [];
+
+      if (!items.length){
+        j = await jget(`/ops/inventario/camiones/${encodeURIComponent(id_asset)}/conductores-entrega`);
+        items = Array.isArray(j.items) ? j.items : [];
+      }
+
+      sel.innerHTML = `<option value="">Selecciona conductor</option>` + items.map(x =>
+        `<option value="${esc(x)}">${esc(x)}</option>`
+      ).join("");
+    }
+
+    async function loadHistory(){
+      const id_asset = String(qs("#id_asset").value || "");
+      if (!/^[0-9]+$/.test(id_asset)){
+        renderHist([]);
+        return;
+      }
+      const fecha = qs("#fecha").value || "";
+      const j = await jget(`/ops/inventario/camiones/checklists?id_asset=${encodeURIComponent(id_asset)}&tipo=DEVOLUCION${fecha ? `&fecha=${encodeURIComponent(fecha)}` : ""}`);
+      renderHist(j.items || []);
+    }
+
+    async function save(){
+      const id_asset = String(qs("#id_asset").value || "");
+      const fecha = qs("#fecha").value || "";
+      const conductor = String(qs("#conductor").value || "").trim();
+
+      if (!/^[0-9]+$/.test(id_asset)) return Swal.fire("Error", "Debes seleccionar un camión.", "error");
+      if (!fecha) return Swal.fire("Error", "Debes elegir una fecha.", "error");
+      if (!conductor) return Swal.fire("Error", "Debes seleccionar un conductor.", "error");
+
+      await jpost("/ops/inventario/camiones/checklists", {
+        id_asset: Number(id_asset),
+        tipo: "DEVOLUCION",
+        fecha,
+        conductor,
+        payload: gather(),
+      });
+
+      Swal.fire("OK", "Checklist guardado.", "success");
+      await loadHistory();
+      await loadConductoresEntrega();
+    }
+
+    qs("#btnLoad").addEventListener("click", () => loadHistory().catch(e => Swal.fire("Error", String(e).slice(0,280), "error")));
+    qs("#btnSave").addEventListener("click", () => save().catch(e => Swal.fire("Error", String(e).slice(0,280), "error")));
+    qs("#id_asset").addEventListener("change", async () => {
+      try{
+        await loadConductoresEntrega();
+        await loadHistory();
+      }catch(_){}
+    });
+    qs("#fecha").addEventListener("change", async () => {
+      try{
+        await loadConductoresEntrega();
+        await loadHistory();
+      }catch(_){}
+    });
+
+    (async () => {
+      try{
+        qs("#fecha").value = new Date().toISOString().slice(0,10);
+      }catch(_){}
+      await loadCamiones();
+      await loadConductoresEntrega();
+      await loadHistory();
+    })().catch(e => Swal.fire("Error", String(e).slice(0,280), "error"));
+  </script>
+</body>
+</html>

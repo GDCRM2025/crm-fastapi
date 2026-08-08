@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Operaciones · Ficha Maquinaria</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:12px;}
+    .app{
+      height:calc(100vh - 24px);
+      display:grid;
+      grid-template-columns: 420px 1fr;
+      gap:12px;
+      min-height:0;
+    }
+    @media (max-width: 980px){
+      .app{grid-template-columns: 1fr;}
+    }
+    .card{
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      overflow:hidden;
+      box-shadow: 0 22px 70px rgba(0,0,0,.35);
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+    }
+    :root.light .card{background: rgba(255,255,255,.78); border-color: rgba(0,0,0,.10);}
+    .head{
+      padding:12px;
+      border-bottom:1px solid rgba(148,163,184,.14);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .sub{opacity:.72; font-weight:850; font-size:12px; margin-top:4px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .inp{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 12px;
+      font-weight:900;
+      outline:none;
+      width:min(320px, 100%);
+    }
+    :root.light .inp{background: rgba(255,255,255,.65); color: rgba(0,0,0,.85);}
+    .btn{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-weight:1000;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn:hover{filter:brightness(1.06);}
+    .list{padding:10px;overflow:auto;min-height:0;display:grid;gap:8px;}
+    .item{
+      border:1px solid rgba(148,163,184,.14);
+      background: rgba(2,6,23,.18);
+      border-radius: 14px;
+      padding:10px;
+      cursor:pointer;
+    }
+    :root.light .item{background: rgba(255,255,255,.62);}
+    .item.active{outline:2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset:-2px;}
+    .itTop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
+    .code{font-weight:1100;}
+    .muted{opacity:.72;font-weight:850;font-size:12px;}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:3px 10px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.12);
+      font-weight:1000;
+      font-size:12px;
+      white-space:nowrap;
+    }
+    :root.light .pill{background: rgba(255,255,255,.65);}
+    .dot{width:10px;height:10px;border-radius:999px;background:rgba(148,163,184,.55);}
+    .content{padding:12px;overflow:auto;min-height:0;}
+    .grid{display:grid;grid-template-columns: 1fr 1fr; gap:12px;}
+    @media (max-width: 980px){ .grid{grid-template-columns:1fr;} }
+    .panel{
+      border:1px solid rgba(148,163,184,.14);
+      border-radius: 16px;
+      background: rgba(2,6,23,.14);
+      padding:12px;
+    }
+    :root.light .panel{background: rgba(255,255,255,.62);}
+    .h2{font-weight:1100;margin:0 0 8px;}
+    .kv{display:grid;grid-template-columns: 140px 1fr; gap:8px; font-size:13px;}
+    .k{opacity:.72;font-weight:900;}
+    .v{font-weight:900;}
+    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14);}
+    .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
+    .right{text-align:right;}
+    textarea{
+      width:100%;
+      min-height:90px;
+      border-radius: 14px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.12);
+      color: inherit;
+      padding:10px;
+      font-weight:900;
+      outline:none;
+      resize: vertical;
+    }
+    :root.light textarea{background: rgba(255,255,255,.65);}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="card">
+      <div class="head">
+        <div>
+          <div class="ttl">Ficha Maquinaria</div>
+          <div class="sub">Selecciona una unidad para ver su historial (mantenciones + eventos asignados).</div>
+        </div>
+        <button class="btn" id="btnReload" type="button">Recargar</button>
+      </div>
+      <div class="head" style="border-bottom:none;gap:10px">
+        <input id="q" class="inp" placeholder="Buscar por nombre o c&oacute;digo…" />
+        <select id="cat" class="inp" style="width:220px;max-width:100%">
+          <option value="">Todas las categorias</option>
+        </select>
+      </div>
+      <div class="list" id="list"></div>
+    </section>
+
+    <section class="card">
+      <div class="head">
+        <div>
+          <div class="ttl" id="ttl2">Detalle</div>
+          <div class="sub" id="sub2">—</div>
+        </div>
+        <div class="row">
+          <button class="btn" id="btnAssign" type="button" disabled>Asignar a evento</button>
+          <button class="btn primary" id="btnMaint" type="button" disabled>Agregar mantenci&oacute;n</button>
+        </div>
+      </div>
+      <div class="content" id="content">
+        <div class="muted">Selecciona una unidad.</div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){
+        return "";
+      }
+    })();
+    function getToken(){ return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || ""; }
+    function authHeaders(extra={}){ const t=getToken(); return t ? { ...extra, Authorization: "Bearer " + t } : extra; }
+    function apiURL(u){
+      const s = String(u || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    }
+    async function jget(url){
+      const r = await fetch(apiURL(url), { headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt);
+      return txt ? JSON.parse(txt) : {};
+    }
+    async function jpost(url, body){
+      const r = await fetch(apiURL(url), { method:"POST", headers: authHeaders({"Content-Type":"application/json"}), body: JSON.stringify(body||{}) });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt);
+      return txt ? JSON.parse(txt) : {};
+    }
+    function esc(s){
+      return String(s ?? "").replace(/[&<>"']/g, (m) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;",
+      }[m] || m));
+    }
+
+    let CATS = [];
+    let ASSETS = [];
+    let SELECTED = null;
+    let AUTO_OPEN_ID = null;
+
+    try{
+      const sp = new URLSearchParams(location.search || "");
+      const id = sp.get("id");
+      if (id && /^[0-9]+$/.test(id)) AUTO_OPEN_ID = Number(id);
+    }catch(_){}
+
+    function renderCats(){
+      const sel = qs("#cat");
+      const val = sel.value;
+      sel.innerHTML = `<option value="">Todas las categorias</option>` + CATS.map(c => `<option value="${esc(c.id_category)}">${esc(c.nombre)}</option>`).join("");
+      if (val) sel.value = val;
+    }
+
+    function renderList(){
+      const q = (qs("#q").value || "").trim().toLowerCase();
+      const cat = (qs("#cat").value || "").trim();
+      const list = qs("#list");
+      const items = (ASSETS||[]).filter(a => {
+        if (cat && String(a.id_category||"") !== cat) return false;
+        if (!q) return true;
+        return String(a.nombre||"").toLowerCase().includes(q) || String(a.code||"").toLowerCase().includes(q);
+      });
+      list.innerHTML = items.length ? items.map(a => {
+        const on = SELECTED && Number(SELECTED.id_asset) === Number(a.id_asset) ? "active" : "";
+        return `
+          <div class="item ${on}" data-id="${esc(a.id_asset)}">
+            <div class="itTop">
+              <div>
+                <div style="font-weight:1100">${esc(a.nombre)}</div>
+                <div class="muted">${esc(a.categoria||"")} · <span class="code">${esc(a.code||"—")}</span></div>
+              </div>
+              <span class="pill"><span class="dot"></span>${esc(a.status||"OK")}</span>
+            </div>
+          </div>
+        `;
+      }).join("") : `<div class="muted" style="padding:10px">Sin resultados.</div>`;
+
+      list.querySelectorAll("[data-id]").forEach(el => {
+        el.addEventListener("click", async () => {
+          const id = Number(el.getAttribute("data-id"));
+          await openAsset(id);
+        });
+      });
+    }
+
+    function renderDetail(hist){
+      const a = hist.asset || {};
+      const maint = hist.maintenance || [];
+      const assigns = hist.assignments || [];
+      qs("#ttl2").textContent = a.nombre ? `Ficha · ${a.nombre}` : "Detalle";
+      qs("#sub2").textContent = (a.code ? `C&oacute;digo: ${a.code}` : "—") + (a.categoria ? ` · ${a.categoria}` : "");
+      qs("#btnAssign").disabled = !a.id_asset;
+      qs("#btnMaint").disabled = !a.id_asset;
+
+      qs("#content").innerHTML = `
+        <div class="grid">
+          <div class="panel">
+            <div class="h2">Unidad</div>
+            <div class="kv">
+              <div class="k">C&oacute;digo</div><div class="v">${esc(a.code||"—")}</div>
+              <div class="k">Estado</div><div class="v">${esc(a.status||"OK")}</div>
+              <div class="k">Reparaci&oacute;n</div><div class="v">${esc(a.estado_reparacion||"—")}</div>
+              <div class="k">Ubicaci&oacute;n</div><div class="v">${esc(a.ubicacion||"—")}</div>
+            </div>
+            <div style="margin-top:10px" class="muted">Notas</div>
+            <div style="font-weight:900;white-space:pre-wrap">${esc(a.notas||"—")}</div>
+          </div>
+
+          <div class="panel">
+            <div class="h2">Mantenciones</div>
+            ${maint.length ? `
+              <table class="tbl">
+                <thead><tr><th>Fecha</th><th>Status</th><th>Detalle</th><th>Por</th></tr></thead>
+                <tbody>
+                  ${maint.map(m => `
+                    <tr>
+                      <td>${esc((m.created_at||"").slice(0,16).replace("T"," "))}</td>
+                      <td><strong>${esc(m.status||"")}</strong></td>
+                      <td>${esc(m.detalle||"")}</td>
+                      <td>${esc(m.realizado_por||"")}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            ` : `<div class="muted">Sin mantenciones registradas.</div>`}
+          </div>
+
+          <div class="panel" style="grid-column:1/-1">
+            <div class="h2">Eventos Asignados</div>
+            ${assigns.length ? `
+              <table class="tbl">
+                <thead><tr><th>Fecha asign.</th><th>Lead</th><th>Cliente</th><th>Evento</th><th>Conductor</th><th>Operadores</th><th>Marca</th><th>Comuna</th><th>Status</th></tr></thead>
+                <tbody>
+                  ${assigns.map(x => `
+                    <tr>
+                      <td>${esc((x.created_at||"").slice(0,16).replace("T"," "))}</td>
+                      <td>${x.id_lead ? `<button class="btn mini" data-open-lead="${esc(x.id_lead)}" type="button">#${esc(x.id_lead)}</button>` : "—"}</td>
+                      <td><strong>${esc(x.cliente||"—")}</strong></td>
+                      <td>${esc((x.fecha_evento||"").slice(0,10) || "—")}</td>
+                      <td>${esc(x.conductor||"—")}</td>
+                      <td>${esc(x.operadores||"—")}</td>
+                      <td>${esc(x.marca||"—")}</td>
+                      <td>${esc(x.comuna||"—")}</td>
+                      <td>${esc(x.status||"")}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            ` : `<div class="muted">A&uacute;n no est&aacute; asignada a eventos.</div>`}
+          </div>
+        </div>
+      `;
+
+      qs("#content").querySelectorAll("[data-open-lead]").forEach(b => {
+        b.addEventListener("click", () => {
+          const id = b.getAttribute("data-open-lead");
+          const url = "/web/views/leads.html?open_lead=" + encodeURIComponent(id);
+          window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*");
+        });
+      });
+    }
+
+    async function openAsset(id){
+      const a = (ASSETS||[]).find(x => Number(x.id_asset) === Number(id));
+      if (!a) return;
+      SELECTED = a;
+      renderList();
+      const hist = await jget(`/assets/${encodeURIComponent(id)}/history`);
+      renderDetail(hist);
+    }
+
+    async function loadAll(){
+      const cats = await jget("/assets/categories?tipo=MAQUINARIA");
+      CATS = cats.items || [];
+      renderCats();
+      const a = await jget("/assets?tipo=MAQUINARIA");
+      ASSETS = a.items || [];
+      SELECTED = null;
+      qs("#btnAssign").disabled = true;
+      qs("#btnMaint").disabled = true;
+      qs("#content").innerHTML = `<div class="muted">Selecciona una unidad.</div>`;
+      renderList();
+
+      // Si llegamos desde Inventario con ?id=..., abre la ficha al cargar.
+      if (AUTO_OPEN_ID){
+        const found = (ASSETS || []).find(x => Number(x.id_asset) === Number(AUTO_OPEN_ID));
+        if (found){
+          await openAsset(Number(AUTO_OPEN_ID));
+        }
+      }
+    }
+
+    async function addMaintenance(){
+      if (!SELECTED) return;
+      const res = await Swal.fire({
+        title: "Agregar mantenci&oacute;n",
+        html: `
+          <div style="display:grid;gap:10px;text-align:left">
+            <label><b>Status</b><br><input id="st" class="swal2-input" placeholder="Ej: OK / REPARACION / BAJA" value="OK" /></label>
+            <label><b>Detalle</b><br><textarea id="det" style="width:100%;min-height:90px;border-radius:14px;padding:10px;font-weight:900"></textarea></label>
+            <label><b>Realizado por</b><br><input id="by" class="swal2-input" placeholder="Nombre" /></label>
+          </div>
+        `,
+        showCancelButton:true,
+        confirmButtonText:"Guardar",
+        preConfirm: () => {
+          const status = (qs("#st", Swal.getHtmlContainer())?.value || "").trim().toUpperCase();
+          const detalle = (qs("#det", Swal.getHtmlContainer())?.value || "").trim();
+          const realizado_por = (qs("#by", Swal.getHtmlContainer())?.value || "").trim();
+          if (!status) return Swal.showValidationMessage("Falta status");
+          return { status, detalle: detalle || null, realizado_por: realizado_por || null };
+        }
+      });
+      if (!res.isConfirmed) return;
+      await jpost(`/assets/${encodeURIComponent(SELECTED.id_asset)}/maintenance`, res.value);
+      await openAsset(Number(SELECTED.id_asset));
+    }
+
+    async function assignToLead(){
+      if (!SELECTED) return;
+      const res = await Swal.fire({
+        title: "Asignar a evento (Lead)",
+        html: `
+          <div style="display:grid;gap:10px;text-align:left">
+            <label><b>ID Lead</b><br><input id="lid" class="swal2-input" placeholder="Ej: 9872" /></label>
+            <label><b>Conductor</b> <span style="opacity:.7">(opcional)</span><br><input id="cond" class="swal2-input" placeholder="Nombre conductor" /></label>
+            <label><b>Operadores</b> <span style="opacity:.7">(opcional)</span><br><input id="ops" class="swal2-input" placeholder="Ej: Juan, Pedro" /></label>
+            <label><b>Notas</b><br><textarea id="notes" style="width:100%;min-height:90px;border-radius:14px;padding:10px;font-weight:900"></textarea></label>
+          </div>
+        `,
+        showCancelButton:true,
+        confirmButtonText:"Asignar",
+        preConfirm: () => {
+          const id_lead = (qs("#lid", Swal.getHtmlContainer())?.value || "").trim();
+          const conductor = (qs("#cond", Swal.getHtmlContainer())?.value || "").trim();
+          const operadores = (qs("#ops", Swal.getHtmlContainer())?.value || "").trim();
+          const notes = (qs("#notes", Swal.getHtmlContainer())?.value || "").trim();
+          if (!/^[0-9]+$/.test(id_lead)) return Swal.showValidationMessage("ID Lead inv&aacute;lido");
+          return { id_lead: Number(id_lead), conductor: conductor || null, operadores: operadores || null, notes: notes || null };
+        }
+      });
+      if (!res.isConfirmed) return;
+      await jpost(`/assets/${encodeURIComponent(SELECTED.id_asset)}/assign`, res.value);
+      await openAsset(Number(SELECTED.id_asset));
+    }
+
+    qs("#btnReload").addEventListener("click", () => loadAll().catch(e => Swal.fire("Error", String(e).slice(0,300), "error")));
+    qs("#q").addEventListener("input", renderList);
+    qs("#cat").addEventListener("change", renderList);
+    qs("#btnMaint").addEventListener("click", () => addMaintenance().catch(e => Swal.fire("Error", String(e).slice(0,300), "error")));
+    qs("#btnAssign").addEventListener("click", () => assignToLead().catch(e => Swal.fire("Error", String(e).slice(0,300), "error")));
+    loadAll().catch(e => Swal.fire("Error", String(e).slice(0,300), "error"));
+  </script>
+</body>
+</html>

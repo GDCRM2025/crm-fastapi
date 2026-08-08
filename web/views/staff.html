@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>GD · Chat + Operación</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#19c37d" />
+    <link rel="manifest" href="../staff.manifest.json" />
+    <link rel="icon" href="../pwa/gd-128.png" />
+    <style>
+      :root{
+        --bg:#F6F8FB;
+        --surface:#fff;
+        --border:rgba(15,23,42,.10);
+        --text:#0F172A;
+        --muted:rgba(15,23,42,.65);
+        --brand:#19c37d;
+        --brandDark:#0f8a57;
+      }
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+        background:var(--bg);
+        color:var(--text);
+      }
+      .app{height:100%; display:flex; flex-direction:column}
+      .top{
+        display:flex; align-items:center; justify-content:space-between;
+        padding:12px 14px; background:var(--surface); border-bottom:1px solid var(--border);
+      }
+      .brandRow{display:flex; align-items:center; gap:10px; min-width:0}
+      .logo{
+        width:34px;height:34px;border-radius:10px;
+        border:1px solid var(--border);
+        background: rgba(25,195,125,.12);
+        display:flex;align-items:center;justify-content:center;
+        font-weight:1000;color:var(--brandDark)
+      }
+      .title{font-weight:950; line-height:1}
+      .me{font-size:12px; color:var(--muted)}
+      .btn{
+        border:1px solid var(--border);
+        background:var(--surface);
+        border-radius:12px;
+        padding:8px 10px;
+        font-weight:800;
+        color:var(--text);
+      }
+      .btn.primary{
+        background: rgba(25,195,125,.12);
+        border-color: rgba(25,195,125,.25);
+        color: var(--brandDark);
+      }
+      .frameWrap{flex:1; min-height:0}
+      iframe{width:100%; height:100%; border:0; background:var(--bg)}
+      .nav{
+        display:flex;
+        gap:8px;
+        padding:10px 10px calc(10px + env(safe-area-inset-bottom));
+        background:var(--surface);
+        border-top:1px solid var(--border);
+      }
+      .nav button{
+        flex:1;
+        border:1px solid var(--border);
+        background:var(--surface);
+        border-radius:14px;
+        padding:10px 12px;
+        font-weight:900;
+        color:var(--muted);
+      }
+      .nav button.active{
+        color:var(--brandDark);
+        background: rgba(25,195,125,.12);
+        border-color: rgba(25,195,125,.25);
+      }
+      .hint{
+        padding:10px 14px;
+        font-size:12px;
+        color:var(--muted);
+      }
+      .hide{display:none!important}
+      .modalMask{
+        position:fixed; inset:0; background:rgba(2,6,23,.55);
+        display:flex; align-items:center; justify-content:center;
+        padding:16px;
+        z-index:50;
+      }
+      .modal{
+        width:min(520px, 100%);
+        background:var(--surface);
+        border:1px solid var(--border);
+        border-radius:16px;
+        padding:14px;
+        box-shadow: 0 20px 50px rgba(2,6,23,.25);
+      }
+      .modal h3{margin:0 0 6px 0}
+      .modal p{margin:0 0 10px 0; color:var(--muted); font-size:13px; line-height:1.35}
+      .row{display:flex; gap:10px; align-items:center}
+      .row input{
+        flex:1;
+        border:1px solid var(--border);
+        border-radius:12px;
+        padding:10px 12px;
+        font-weight:700;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="top">
+        <div class="brandRow">
+          <div class="logo">GD</div>
+          <div style="min-width:0">
+            <div class="title">Chat + Operación</div>
+            <div class="me" id="meLine">Cargando…</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn" id="pushBtn" style="display:none">Activar alertas</button>
+          <button class="btn primary" id="installBtn" style="display:none">Instalar</button>
+          <button class="btn" id="logoutBtn">Salir</button>
+        </div>
+      </div>
+
+      <div class="hint" id="installHint">
+        Android: Chrome → menú ⋮ → “Instalar app”.
+      </div>
+
+      <div class="frameWrap">
+        <iframe id="mainFrame" title="GD App"></iframe>
+      </div>
+
+      <div class="nav">
+        <button id="tabChat" class="active">Chat</button>
+        <button id="tabNotifs">Alertas</button>
+        <button id="tabOp" class="hide">Operación</button>
+      </div>
+    </div>
+
+    <div class="modalMask hide" id="onboardMask" aria-hidden="true">
+      <div class="modal">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <h3 style="margin:0">Activar alertas</h3>
+          <button class="btn" id="onboardCloseBtn" type="button">Más tarde</button>
+        </div>
+        <p id="onboardText">Para recibir alertas aunque no estés dentro del CRM, necesitamos tu teléfono y que aceptes notificaciones push.</p>
+        <div class="row" style="margin:10px 0 12px 0">
+          <input id="phoneInput" inputmode="tel" placeholder="Teléfono (obligatorio)" />
+          <button class="btn primary" id="savePhoneBtn">Guardar</button>
+        </div>
+        <div class="row" style="justify-content:space-between">
+          <button class="btn" id="enablePushBtn">Activar notificaciones</button>
+          <div class="me" id="onboardStatus"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = (() => {
+        try {
+          const h = String(location.hostname || "").toLowerCase();
+          const isLocal = h === "localhost" || h === "127.0.0.1";
+          return isLocal ? "" : "/crm";
+        } catch (_) {
+          return "";
+        }
+      })();
+      const FRAME_V = "20260406-2";
+
+      function getToken(){
+        return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+      }
+      function authHeaders(extra={}){
+        const t = getToken();
+        return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+      }
+      function requireAuth(){
+        if(!getToken()){
+          location.href = `${API_BASE}/web/login.html?next=${encodeURIComponent("/web/views/staff.html")}`;
+          return false;
+        }
+        return true;
+      }
+      function hasOperacionAccess(role){
+        const r = String(role || "").toUpperCase();
+        const isOpsAppRole = (x) => {
+          const v = String(x || "").trim().toUpperCase();
+          return v === "OPERADOR" || v === "CONDUCTOR" || v === "CHOFER" || v === "CHOP" || v === "CONDUCTOR (CHOP)";
+        };
+        return r.includes("SUPERADMIN") || r === "ADMIN"
+          || r.includes("OPERACIONES") || r.includes("OPERACION")
+          || isOpsAppRole(r);
+      }
+      async function apiJSON(path){
+        const r = await fetch(`${API_BASE}${path}`, { headers: authHeaders({ "Accept":"application/json" }) });
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }
+
+      const frame = document.getElementById("mainFrame");
+      const meLine = document.getElementById("meLine");
+      const tabChat = document.getElementById("tabChat");
+      const tabNotifs = document.getElementById("tabNotifs");
+      const tabOp = document.getElementById("tabOp");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const installHint = document.getElementById("installHint");
+      const pushBtn = document.getElementById("pushBtn");
+      const onboardMask = document.getElementById("onboardMask");
+      const phoneInput = document.getElementById("phoneInput");
+      const savePhoneBtn = document.getElementById("savePhoneBtn");
+      const enablePushBtn = document.getElementById("enablePushBtn");
+      const onboardCloseBtn = document.getElementById("onboardCloseBtn");
+      const onboardStatus = document.getElementById("onboardStatus");
+      const onboardText = document.getElementById("onboardText");
+      let meCache = null;
+
+      function setTab(active){
+        [tabChat, tabNotifs, tabOp].forEach((b) => b && b.classList.remove("active"));
+        if(active === "chat") tabChat.classList.add("active");
+        if(active === "notifs") tabNotifs.classList.add("active");
+        if(active === "op") tabOp.classList.add("active");
+      }
+
+      function setFrame(src){
+        frame.src = src;
+      }
+
+      function boot(){
+        if(!requireAuth()) return;
+        try{
+          const standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+          if(standalone && installHint) installHint.classList.add("hide");
+        }catch(_){}
+        const u = new URL(location.href);
+        const deepTab = String(u.searchParams.get("tab") || "").trim().toLowerCase();
+        const deepLead = String(u.searchParams.get("lead") || "").trim();
+
+        // Chat debe abrirse en modo completo (sin embed) para ver lista de chats/usuarios.
+        const urlChat = `${API_BASE}/web/views/chat.html?v=${encodeURIComponent(FRAME_V)}`;
+        const urlNotifs = `${API_BASE}/web/views/system_notifs.html?v=${encodeURIComponent(FRAME_V)}`;
+        const urlOp = `${API_BASE}/web/views/staff_ops.html?v=${encodeURIComponent(FRAME_V)}${deepLead ? `&lead=${encodeURIComponent(deepLead)}` : ""}`;
+
+        const openTab = (t)=>{
+          if (t === "op"){
+            setTab("op"); setFrame(urlOp);
+          } else if (t === "notifs"){
+            setTab("notifs"); setFrame(urlNotifs);
+          } else {
+            setTab("chat"); setFrame(urlChat);
+          }
+        };
+
+        openTab(deepTab);
+        tabChat.onclick = () => openTab("chat");
+        tabNotifs.onclick = () => openTab("notifs");
+        tabOp.onclick = () => openTab("op");
+
+        logoutBtn.onclick = async () => {
+          try{
+            await fetch(`${API_BASE}/auth/logout`, { method:"POST", headers: authHeaders({ "Content-Type":"application/json" }), body: JSON.stringify({ reason:"staff_pwa" }) });
+          }catch(_){}
+          try{
+            localStorage.removeItem("token"); localStorage.removeItem("gd_token");
+            sessionStorage.removeItem("token"); sessionStorage.removeItem("gd_token");
+          }catch(_){}
+          location.href = `${API_BASE}/web/login.html`;
+        };
+
+        apiJSON("/me").then((me) => {
+          meCache = me || null;
+          const name = me?.name || me?.username || "Usuario";
+          const role = me?.role || me?.rol || "";
+          meLine.textContent = `${name} · ${role}`;
+          if(hasOperacionAccess(role)){
+            tabOp.classList.remove("hide");
+          }
+          try{
+            const needsPhone = !!me?.needs_phone;
+            const needsPush = !!me?.needs_push_ok;
+            if(needsPhone || needsPush){
+              showOnboarding({ needsPhone, needsPush });
+            }
+          }catch(_){}
+          updatePushUI().catch(()=>{});
+        }).catch(() => {
+          meLine.textContent = "Sesión inválida. Re-ingresa.";
+        });
+      }
+
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("../staff-sw.js").catch(() => {});
+      }
+
+      // Web Push (Android/Chrome + Desktop Chrome/Edge). Requiere VAPID en el server.
+      function isIOS(){
+        try{
+          const ua = navigator.userAgent || "";
+          return /iPad|iPhone|iPod/.test(ua);
+        }catch(_){ return false; }
+      }
+
+      function isStandalone(){
+        try{
+          return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || (navigator.standalone === true);
+        }catch(_){ return false; }
+      }
+
+      function urlBase64ToUint8Array(base64String){
+        const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+        const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+        const rawData = atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+        return outputArray;
+      }
+
+      async function getSWRegistration(){
+        try{
+          if(!("serviceWorker" in navigator)) return null;
+          return await navigator.serviceWorker.ready;
+        }catch(_){ return null; }
+      }
+
+      async function getPushSubscription(){
+        try{
+          if(!("PushManager" in window)) return null;
+          const reg = await getSWRegistration();
+          if(!reg) return null;
+          return await reg.pushManager.getSubscription();
+        }catch(_){ return null; }
+      }
+
+      async function updatePushUI(){
+        try{
+          if (!pushBtn) return;
+          const supported = ("Notification" in window) && ("serviceWorker" in navigator) && ("PushManager" in window);
+          if(!supported){
+            pushBtn.style.display = "none";
+            return;
+          }
+          pushBtn.style.display = "inline-flex";
+          const sub = await getPushSubscription();
+          const needsPush = !!(meCache && meCache.needs_push_ok);
+          const pushOk = !!(meCache && meCache.push_ok === true && !needsPush);
+          if(sub && pushOk){
+            pushBtn.textContent = "Alertas activadas";
+            pushBtn.disabled = true;
+            pushBtn.classList.add("primary");
+            return;
+          }
+          if(sub && !pushOk){
+            pushBtn.textContent = "Reparar alertas";
+            pushBtn.disabled = false;
+            pushBtn.classList.remove("primary");
+            return;
+          }
+          pushBtn.textContent = "Activar alertas";
+          pushBtn.disabled = false;
+          pushBtn.classList.remove("primary");
+        }catch(_){}
+      }
+
+      async function enablePush(opts={}){
+        const forceResync = !!opts.forceResync;
+        if(!requireAuth()) return;
+        if (isIOS() && !isStandalone()){
+          alert("En iPhone, las alertas push funcionan solo si instalas la app: Safari → Compartir → “Agregar a pantalla de inicio”, y la abres desde el ícono.");
+          return;
+        }
+        if(!("serviceWorker" in navigator) || !("PushManager" in window)) {
+          if (isIOS()){
+            alert("En iPhone, las notificaciones push web no funcionan en Chrome. Ábrelo en Safari y agrégalo a la pantalla de inicio (PWA) para recibir alertas.");
+          } else {
+            alert("Tu navegador no soporta notificaciones push.");
+          }
+          return;
+        }
+        try{
+          if (typeof Notification !== "undefined" && Notification.permission === "denied"){
+            alert("Notificaciones bloqueadas. En iPhone: Ajustes → Notificaciones → GreenDiamond App (o el nombre de la app) → Permitir notificaciones.");
+            return;
+          }
+        }catch(_){}
+        const perm = await Notification.requestPermission();
+        if(perm !== "granted"){
+          alert("Debes permitir notificaciones para recibir alertas.");
+          return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if(existing && !forceResync){
+          // No retornamos: re-sincronizamos contra el backend para marcar push_ok=TRUE.
+        }
+        let vapidKey = null;
+        let vapidErr = "";
+        try{
+          // VAPID public key is public. We fetch it without auth to avoid false errors if the token expired.
+          const r = await fetch(`${API_BASE}/push/vapid_public_key?v=${encodeURIComponent(String(FRAME_V||""))}`, { headers: { "Accept":"application/json" } });
+          if(r.ok){
+            const j = await r.json().catch(() => null);
+            vapidKey = j && j.publicKey;
+          }else{
+            try{
+              const j = await r.json().catch(() => null);
+              vapidErr = (j && j.detail) ? String(j.detail) : `HTTP ${r.status}`;
+            }catch(_){
+              vapidErr = `HTTP ${r.status}`;
+            }
+          }
+        }catch(e){
+          vapidErr = (e && e.message) ? String(e.message) : "network";
+        }
+        if(!vapidKey){
+          const e = String(vapidErr || "");
+          const el = e.toLowerCase();
+          if (el.includes("token") || el.includes("unauthorized") || el.includes("forbidden") || el.includes("401") || el.includes("403")){
+            alert("Tu sesión no está válida para activar push. Cierra sesión y vuelve a ingresar, y luego intenta de nuevo.");
+            return;
+          }
+          if(el.includes("network") || el.includes("fetch")){
+            alert("No se pudo conectar al servidor. Revisa tu internet e intenta nuevamente.");
+            return;
+          }
+          if(el.includes("not found") || el.includes("404")){
+            alert("Tu app está desactualizada o el enlace no es el correcto. Haz recarga completa y vuelve a intentar.");
+            return;
+          }
+          // 503 u otros: realmente es VAPID faltante
+          alert("Push aún no está configurado en el servidor (VAPID).");
+          return;
+        }
+        const sub = existing || await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(String(vapidKey)),
+        });
+        const payload = sub.toJSON ? sub.toJSON() : sub;
+        payload.userAgent = navigator.userAgent || "";
+        await fetch(`${API_BASE}/push/subscribe`, {
+          method:"POST",
+          headers: authHeaders({ "Content-Type":"application/json" }),
+          body: JSON.stringify(payload),
+        });
+        await updatePushUI();
+        try{ if(onboardStatus) onboardStatus.textContent = "Push activado."; }catch(_){}
+        alert("Listo: alertas activadas.");
+      }
+
+      // Install prompt (Android/Chrome)
+      (function(){
+        let deferred = null;
+        const btn = document.getElementById("installBtn");
+        window.addEventListener("beforeinstallprompt", (e) => {
+          try{
+            e.preventDefault();
+            deferred = e;
+            if (btn) btn.style.display = "inline-flex";
+          }catch(_){}
+        });
+        window.addEventListener("appinstalled", () => {
+          deferred = null;
+          if (btn) btn.style.display = "none";
+        });
+        if (btn){
+          btn.onclick = async () => {
+            try{
+              if (deferred){
+                await deferred.prompt();
+                await deferred.userChoice;
+                deferred = null;
+                btn.style.display = "none";
+                return;
+              }
+              alert('Tu navegador no mostró el botón de instalar. Prueba en Chrome/Edge.');
+            }catch(_){}
+          };
+        }
+      })();
+
+      // Mostrar botón push si aplica
+      (function(){
+        try{
+          if (!pushBtn) return;
+          const supported = ("Notification" in window) && ("serviceWorker" in navigator) && ("PushManager" in window);
+          if(!supported) return;
+          pushBtn.style.display = "inline-flex";
+          pushBtn.onclick = () => enablePush({ forceResync: true }).catch(() => alert("No se pudo activar push. Intenta nuevamente."));
+        }catch(_){}
+      })();
+
+      function showOnboarding({needsPhone, needsPush}){
+        if(!onboardMask) return;
+        try{
+          // No bloqueamos la app si el usuario no puede activar push en el momento.
+          try{
+            const until = Number(localStorage.getItem("gd_onboard_hide_until") || "0") || 0;
+            if (until && Date.now() < until) return;
+          }catch(_){}
+          onboardMask.classList.remove("hide");
+          onboardMask.setAttribute("aria-hidden","false");
+          if(onboardStatus) onboardStatus.textContent = "";
+          if(phoneInput){
+            phoneInput.value = "";
+            phoneInput.placeholder = needsPhone ? "Teléfono: 9 dígitos (sin +56)" : "Teléfono: 9 dígitos (sin +56)";
+          }
+          // Si el teléfono ya existe, no mostrar el campo (solo activar push).
+          try{
+            const phoneRow = phoneInput ? phoneInput.closest(".row") : null;
+            if(phoneRow) phoneRow.style.display = needsPhone ? "flex" : "none";
+            if(onboardText){
+              onboardText.textContent = needsPhone
+                ? "Para recibir alertas aunque no estés dentro del CRM, necesitamos tu teléfono y que aceptes notificaciones push."
+                : "Para recibir alertas aunque no estés dentro del CRM, activa las notificaciones push.";
+            }
+          }catch(_){}
+        }catch(_){}
+
+        async function refreshState(){
+          try{
+            const me = await apiJSON("/me");
+            const stillNeedsPhone = !!me?.needs_phone;
+            const stillNeedsPush = !!me?.needs_push_ok;
+            if(!stillNeedsPhone && !stillNeedsPush){
+              onboardMask.classList.add("hide");
+              onboardMask.setAttribute("aria-hidden","true");
+            }else{
+              if(onboardStatus){
+                onboardStatus.textContent = [
+                  stillNeedsPhone ? "Falta teléfono." : null,
+                  stillNeedsPush ? "Falta activar push." : null
+                ].filter(Boolean).join(" ");
+              }
+            }
+          }catch(_){}
+        }
+
+        if(savePhoneBtn){
+          savePhoneBtn.onclick = async () => {
+            try{
+              const telDigits = String(phoneInput?.value || "").replace(/\D/g, "").slice(0, 9);
+              if(!needsPhone){
+                // Si ya tenemos teléfono, no lo sobrescribas. Solo push.
+                return;
+              }
+              if(needsPhone && !telDigits){
+                alert("Debes ingresar tu teléfono.");
+                return;
+              }
+              await fetch(`${API_BASE}/me`, {
+                method:"PATCH",
+                headers: authHeaders({ "Content-Type":"application/json" }),
+                body: JSON.stringify({ telefono: telDigits }),
+              });
+              await refreshState();
+            }catch(_){
+              alert("No se pudo guardar el teléfono.");
+            }
+          };
+        }
+
+        // Formato visual: usuario escribe 9 dígitos; mostramos "9 1234 5678"
+        try{
+          if(phoneInput){
+            phoneInput.oninput = () => {
+              const d = String(phoneInput.value || "").replace(/\D/g, "").slice(0, 9);
+              let v = d;
+              if(d.length > 1 && d.length <= 5) v = d.slice(0,1) + " " + d.slice(1);
+              if(d.length > 5) v = d.slice(0,1) + " " + d.slice(1,5) + " " + d.slice(5);
+              phoneInput.value = v;
+            };
+          }
+        }catch(_){}
+        if(enablePushBtn){
+          enablePushBtn.onclick = async () => {
+            try{
+              await enablePush({ forceResync: true });
+              await refreshState();
+            }catch(_){
+              alert("No se pudo activar push.");
+            }
+          };
+        }
+        if(onboardCloseBtn){
+          onboardCloseBtn.onclick = () => {
+            try{
+              localStorage.setItem("gd_onboard_hide_until", String(Date.now() + 60*60*1000));
+            }catch(_){}
+            onboardMask.classList.add("hide");
+            onboardMask.setAttribute("aria-hidden","true");
+          };
+        }
+
+        refreshState();
+      }
+
+      // Si ya hay suscripción push en este navegador, la dejamos "ON" automáticamente (sin pedir permisos de nuevo):
+      // - Guarda/actualiza la suscripción en el backend
+      // - Marca push_ok=TRUE
+      async function ensurePushOkIfSubscribed(){
+        try{
+          if(!requireAuth()) return;
+          const sub = await getPushSubscription();
+          if(!sub) return;
+          const payload = sub.toJSON ? sub.toJSON() : sub;
+          payload.userAgent = navigator.userAgent || "";
+          await fetch(`${API_BASE}/push/subscribe`, {
+            method:"POST",
+            headers: authHeaders({ "Content-Type":"application/json" }),
+            body: JSON.stringify(payload),
+          });
+        }catch(_){}
+      }
+
+      boot();
+      updatePushUI();
+      ensurePushOkIfSubscribed().then(() => updatePushUI()).catch(() => {});
+    </script>
+  </body>
+</html>

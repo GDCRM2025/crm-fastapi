@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Reglas de Tareas (Ventas)</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:16px;overflow:auto;}
+    .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:14px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+    }
+    :root.light .card{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    h1{margin:0;font-size:14px;letter-spacing:.12em;text-transform:uppercase;font-weight:1100;}
+    h2{margin:14px 0 6px 0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:1100;opacity:.9;}
+    p,li{font-size:13px;line-height:1.45;font-weight:850;opacity:.92;}
+    .muted{opacity:.72;font-weight:850;font-size:12px;}
+    code{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+    .k{display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.18);font-weight:1000;font-size:12px;}
+    .dot{width:10px;height:10px;border-radius:999px;border:1px solid rgba(148,163,184,.28);background:rgba(148,163,184,.55);display:inline-block}
+    .dot.red{background:rgba(239,68,68,.95);border-color:rgba(239,68,68,.45)}
+    .dot.yellow{background:rgba(245,158,11,.95);border-color:rgba(245,158,11,.45)}
+    .dot.green{background:rgba(34,197,94,.95);border-color:rgba(34,197,94,.45)}
+    .flag{display:inline-block;width:16px;height:12px;background:var(--c,#64748b);border-radius:3px 2px 2px 3px;position:relative;margin-right:2px}
+    .flag::after{content:"";position:absolute;right:-7px;top:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-left:7px solid var(--c,#64748b)}
+    .flag.red{--c:#ef4444}.flag.blue{--c:#60a5fa}.flag.yellow{--c:#f59e0b}.flag.green{--c:#22c55e}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>Tareas — Reglas y significado</h1>
+      <div class="muted">Aplican a Ejecutivos de Ventas y SuperAdmin. <strong>Admin</strong> ve solo sus marcas asignadas. Las tareas son solo para <strong>leads vivos</strong>.</div>
+
+      <h2>Estados que generan tareas</h2>
+      <ul>
+        <li><strong>NUEVO</strong>, <strong>CONTACTADO</strong>, <strong>COTIZADO</strong>.</li>
+        <li><strong>CONFIRMADO</strong> y <strong>DECLINADO</strong> <em>no</em> generan tareas y no deben aparecer en Tareas.</li>
+      </ul>
+
+      <h2>Regla “mes actual”</h2>
+      <ul>
+        <li>Si el lead tiene <code>fecha_evento</code>: se considera “del mes” si la fecha cae dentro del mes actual.</li>
+        <li>Si la <code>fecha_evento</code> ya pasó: el lead se auto-declina y queda fuera de Tareas.</li>
+        <li>Si el lead no tiene <code>fecha_evento</code>: queda en seguimiento por antigüedad (NUEVO sin fecha a los 5 días; CONTACTADO/COTIZADO a los 3 días desde el último seguimiento).</li>
+      </ul>
+
+      <h2>Qué significa “Evento” vs “Seguimiento vence”</h2>
+      <ul>
+        <li><span class="k">📅 Evento</span> = fecha del evento (<code>fecha_evento</code>).</li>
+        <li><span class="k">Seguimiento vence</span> = fecha límite para hacer seguimiento (regla de 3/5 días). Si aparece “Vencida hace X”, significa que el seguimiento está atrasado.</li>
+      </ul>
+
+      <h2>Reglas por estado</h2>
+      <ul>
+        <li><strong>NUEVO</strong>:
+          <ul>
+            <li>Con fecha: si no hay seguimiento dentro de <strong>3 días</strong> desde creación.</li>
+            <li>Sin fecha: si no hay seguimiento dentro de <strong>5 días</strong> desde creación.</li>
+          </ul>
+        </li>
+        <li><strong>CONTACTADO</strong>:
+          <ul>
+            <li>Si el último seguimiento tiene más de <strong>3 días</strong>.</li>
+            <li>Con fecha cercana (≤ 7 días): se prioriza (hay que empujar cierre).</li>
+            <li>Sin fecha: seguimiento inmediato.</li>
+          </ul>
+        </li>
+        <li><strong>COTIZADO</strong>:
+          <ul>
+            <li>Si el último seguimiento tiene más de <strong>3 días</strong>.</li>
+            <li>Si el evento vence en ≤ <strong>2 días</strong>: prioridad alta (cierre urgente).</li>
+            <li>Si la fecha ya pasó: auto-declina (lead perdido).</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h2>Acciones en Tareas</h2>
+      <ul>
+        <li><strong>Seguimiento</strong>: registra evidencia (WhatsApp/Llamada/Email/Nota) y se guarda en historial del lead.</li>
+        <li><strong>Cerrar</strong>: pide confirmar si se cierra sin seguimiento (queda como omitido).</li>
+        <li><strong>Omitir</strong>: requiere motivo.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h1>Íconos en Leads (Kanban/Tabla)</h1>
+      <div class="muted">En <strong>CONFIRMADO/DECLINADO</strong> no se destacan iconos; solo aplican a leads “vivos”.</div>
+
+      <h2>Bandera — Seguimiento</h2>
+      <ul>
+        <li><span class="flag green"></span> Verde: seguimiento actualizado.</li>
+        <li><span class="flag yellow"></span> Amarillo: último seguimiento hace ~1 día.</li>
+        <li><span class="flag blue"></span> Azul: último seguimiento hace ~2 días.</li>
+        <li><span class="flag red"></span> Rojo: más de 3 días sin seguimiento.</li>
+      </ul>
+
+      <h2>Punto — Monto (cotizado)</h2>
+      <ul>
+        <li><span class="dot red"></span> $100.000–$399.000</li>
+        <li><span class="dot yellow"></span> $400.000–$699.000</li>
+        <li><span class="dot green"></span> ≥ $700.000</li>
+      </ul>
+
+      <h2>Calendario — Urgencia por fecha</h2>
+      <ul>
+        <li>El calendario cambia de color según cuán cerca esté la fecha del evento (urgencia).</li>
+        <li>Si el lead no tiene fecha, el calendario aparece en modo “sin fecha”.</li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>

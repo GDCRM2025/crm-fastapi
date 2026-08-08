@@ -1,0 +1,479 @@
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from backend.db import get_db
+from backend.core.activity_log import log_activity
+from backend.core.event_checklist import list_event_checklists, upsert_event_checklist
+from backend.core.system_notifs import push_system_notif
+
+try:
+    from backend.routers.auth import get_current_user  # type: ignore
+except Exception:  # pragma: no cover
+    def get_current_user():  # type: ignore
+        return {"id": "dev", "role": "ADMIN", "username": "dev", "name": "Dev"}
+
+
+router = APIRouter(prefix="/checklist", tags=["checklist"])
+
+
+def _uid(user: dict) -> Optional[int]:
+    raw = user.get("id")
+    if str(raw or "").isdigit():
+        return int(raw)
+    return None
+
+
+def _resolve_uid(db: Session, user: dict) -> Optional[int]:
+    """
+    Algunos tokens usan sub/username string (ej: 'greengd'). Para no romper checklist,
+    intentamos resolver id_usuario desde public.usuarios (email o username).
+    """
+    uid0 = _uid(user)
+    if uid0 is not None:
+        return uid0
+    if not _table_exists(db, "usuarios"):
+        return None
+    cand = [
+        str(user.get("username") or "").strip(),
+        str(user.get("id") or "").strip(),
+        str(user.get("name") or "").strip(),
+    ]
+    cand = [c for c in cand if c]
+    if not cand:
+        return None
+    try:
+        for c in cand:
+            v = db.execute(
+                text(
+                    """
+                    SELECT id_usuario
+                    FROM public.usuarios
+                    WHERE email=:u OR username=:u
+                    ORDER BY id_usuario
+                    LIMIT 1
+                    """
+                ),
+                {"u": c},
+            ).scalar()
+            if v is not None and str(v).isdigit():
+                return int(v)
+    except Exception:
+        return None
+    return None
+
+
+def _uname(user: dict) -> str:
+    return str(user.get("username") or user.get("email") or user.get("name") or user.get("id") or "").strip()[:200]
+
+
+def _role(user: dict) -> str:
+    return str(user.get("role") or user.get("rol") or "").upper()
+
+
+def _is_admin(role: str) -> bool:
+    return role in ("ADMIN", "SUPERADMIN")
+
+
+def _user_keys(user: dict) -> list[str]:
+    vals = [
+        user.get("id"),
+        user.get("username"),
+        user.get("email"),
+        user.get("name"),
+        user.get("nombre"),
+    ]
+    out: list[str] = []
+    for v in vals:
+        s = str(v or "").strip().lower()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
+def _col_exists(db: Session, table: str, col: str) -> bool:
+    try:
+        return bool(
+            db.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name=:t AND column_name=:c
+                    LIMIT 1
+                    """
+                ),
+                {"t": table, "c": col},
+            ).scalar()
+        )
+    except Exception:
+        return False
+
+
+def _table_exists(db: Session, table: str) -> bool:
+    try:
+        return bool(db.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{table}"}).scalar())
+    except Exception:
+        return False
+
+
+def _lead_name_expr(db: Session) -> str:
+    # Compatibilidad: algunos deploys usan nombre_cliente, otros cliente.
+    if _col_exists(db, "leads", "nombre_cliente"):
+        return "COALESCE(NULLIF(btrim(l.nombre_cliente),''), '')"
+    if _col_exists(db, "leads", "cliente"):
+        return "COALESCE(NULLIF(btrim(l.cliente),''), '')"
+    return "''"
+
+
+def _estado_id(db: Session, like: str) -> Optional[int]:
+    try:
+        v = db.execute(
+            text(
+                "SELECT id_estado FROM public.estados_lead WHERE UPPER(nombre) LIKE :n ORDER BY id_estado LIMIT 1"
+            ),
+            {"n": f"%{(like or '').upper()}%"},
+        ).scalar()
+        return int(v) if v is not None else None
+    except Exception:
+        return None
+
+
+@router.get("/events")
+def events_for_day(
+    day: str = Query(default_factory=lambda: date.today().isoformat()),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Checklist de eventos del día (para ejecutivos y ops).
+    - Fuente: leads CONFIRMADOS con fecha_evento = day (o calendar_start si no hay fecha_evento).
+    - Retorna campos + flags de completitud + checklist guardado del usuario.
+    """
+    try:
+        d = date.fromisoformat(str(day))
+    except Exception:
+        raise HTTPException(400, "day inválido (YYYY-MM-DD)")
+
+    # Never 500: este endpoint no puede dejar el frontend pegado en "Cargando".
+    try:
+        if not _table_exists(db, "leads"):
+            return {"ok": True, "day": d.isoformat(), "items": [], "error": "Tabla leads no existe"}
+
+        confirmado_id = _estado_id(db, "CONFIRM")
+        if not confirmado_id:
+            return {"ok": True, "day": d.isoformat(), "items": []}
+
+        role = _role(user)
+        uid = _resolve_uid(db, user)
+
+        # Scope: Admin ve todo; no-admin solo ve eventos de sus marcas o asignados a su usuario.
+        marcas = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
+        only_own = not _is_admin(role)
+
+        # columnas opcionales
+        has_fecha = _col_exists(db, "leads", "fecha_evento")
+        has_pre = _col_exists(db, "leads", "pre_start") and _col_exists(db, "leads", "pre_end")
+        has_cal = _col_exists(db, "leads", "calendar_start") and _col_exists(db, "leads", "calendar_end")
+        has_ops = _col_exists(db, "leads", "pre_ops")
+        has_pre_mont = _col_exists(db, "leads", "pre_montaje_text")
+        has_pre_prod = _col_exists(db, "leads", "pre_products_text")
+        has_tel = _col_exists(db, "leads", "telefono")
+        has_dir = _col_exists(db, "leads", "direccion")
+        has_email = _col_exists(db, "leads", "email")
+        has_user = _col_exists(db, "leads", "id_usuario")
+        has_pre_events = _col_exists(db, "leads", "pre_events_json")
+
+        if has_fecha:
+            date_expr = "DATE(l.fecha_evento)"
+        elif has_cal:
+            date_expr = "DATE(l.calendar_start)"
+        else:
+            return {"ok": True, "day": d.isoformat(), "items": []}
+
+        start_expr = "l.calendar_start" if has_cal else ("l.pre_start" if has_pre else "NULL")
+        end_expr = "l.calendar_end" if has_cal else ("l.pre_end" if has_pre else "NULL")
+        ops_expr = "COALESCE(l.pre_ops,0)" if has_ops else "0"
+        montaje_expr = "COALESCE(l.pre_montaje_text,'')" if has_pre_mont else "''"
+        prod_expr = "COALESCE(l.pre_products_text,'')" if has_pre_prod else "''"
+        tel_expr = "COALESCE(l.telefono,'')" if has_tel else "''"
+        dir_expr = "COALESCE(l.direccion,'')" if has_dir else "''"
+        email_expr = "COALESCE(l.email,'')" if has_email else "''"
+        pre_events_expr = "COALESCE(l.pre_events_json,'')" if has_pre_events else "''"
+
+        has_id_marca = _col_exists(db, "leads", "id_marca")
+        has_id_comuna = _col_exists(db, "leads", "id_comuna")
+        join_marcas = has_id_marca and _table_exists(db, "marcas")
+        join_comunas = has_id_comuna and _table_exists(db, "comunas")
+
+        marca_sel = "COALESCE(m.nombre, m.marca,'')" if join_marcas else "''"
+        comuna_sel = "COALESCE(c.nombre,'')" if join_comunas else "''"
+        join_sql = ""
+        if join_marcas:
+            join_sql += " LEFT JOIN public.marcas m ON m.id_marca=l.id_marca "
+        if join_comunas:
+            join_sql += " LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna "
+
+        where = [f"l.id_estado = :conf", f"{date_expr} = :d"]
+        params: Dict[str, Any] = {"conf": int(confirmado_id), "d": str(d)}
+        if only_own:
+            scope_parts: list[str] = []
+            if marcas and has_id_marca:
+                scope_parts.append("l.id_marca = ANY(:marcas)")
+                params["marcas"] = marcas
+            keys = _user_keys(user)
+            if has_user and keys:
+                scope_parts.append("lower(NULLIF(btrim(COALESCE(l.id_usuario::text,'')) ,'')) = ANY(:user_keys)")
+                params["user_keys"] = keys
+            where.append("(" + " OR ".join(scope_parts) + ")" if scope_parts else "FALSE")
+
+        where_sql = " AND ".join(where)
+        name_expr = _lead_name_expr(db)
+
+        sql = f"""
+          SELECT
+            l.id_lead::bigint AS id_lead,
+            {name_expr} AS cliente,
+            {marca_sel} AS marca,
+            {comuna_sel} AS comuna,
+            {start_expr} AS start_at,
+            {end_expr} AS end_at,
+            {ops_expr}::int AS ops,
+            {montaje_expr} AS montaje_text,
+            {prod_expr} AS productos_text,
+            {tel_expr} AS telefono,
+            {dir_expr} AS direccion,
+            {email_expr} AS email,
+            {pre_events_expr} AS pre_events_json
+          FROM public.leads l
+          {join_sql}
+          WHERE {where_sql}
+          ORDER BY COALESCE({start_expr}, now()) ASC, l.id_lead ASC
+        """
+
+        rows = db.execute(text(sql), params).mappings().all()
+        saved = list_event_checklists(db, event_day=d, user_id=uid)
+
+        items: List[Dict[str, Any]] = []
+        for r in rows or []:
+            try:
+                lid = int(r.get("id_lead") or 0)
+            except Exception:
+                continue
+            start_at = r.get("start_at")
+            end_at = r.get("end_at")
+            items.append(
+                {
+                    "id_lead": lid,
+                    "cliente": r.get("cliente") or "",
+                    "marca": r.get("marca") or "",
+                    "comuna": r.get("comuna") or "",
+                    "start_at": str(start_at) if start_at else "",
+                    "end_at": str(end_at) if end_at else "",
+                    "ops": int(r.get("ops") or 0),
+                    "montaje_text": r.get("montaje_text") or "",
+                    "productos_text": r.get("productos_text") or "",
+                    "telefono": r.get("telefono") or "",
+                    "direccion": r.get("direccion") or "",
+                    "email": r.get("email") or "",
+                    "pre_events_json": r.get("pre_events_json") or "",
+                    "equipos": " · ".join([x for x in [r.get("montaje_text") or "", r.get("productos_text") or ""] if str(x).strip()]),
+                    "despacha": "",
+                    "retira": "",
+                    "operadores": "",
+                    "missing": {
+                        "cliente": not bool((r.get("cliente") or "").strip()),
+                        "contacto": not bool((r.get("telefono") or "").strip())
+                        and not bool((r.get("email") or "").strip()),
+                        "direccion": not bool((r.get("direccion") or "").strip()),
+                        "comuna": not bool((r.get("comuna") or "").strip()),
+                        "marca": not bool((r.get("marca") or "").strip()),
+                        # Estos dos son controles manuales: no deben aparecer
+                        # aprobados automáticamente cuando aún nadie los revisó.
+                        "salida": True,
+                        "equipos": not bool((r.get("montaje_text") or "").strip())
+                        and not bool((r.get("productos_text") or "").strip()),
+                        "inicio": not bool(start_at),
+                        "fin": not bool(end_at),
+                        "ops": int(r.get("ops") or 0) <= 0,
+                        "operadores": True,
+                    },
+                    "checklist": (saved.get(lid) if isinstance(saved, dict) else None)
+                    or {"items": {}, "notes": "", "updated_at": ""},
+                }
+            )
+
+        return {
+            "ok": True,
+            "day": d.isoformat(),
+            "items": items,
+            "summary": {
+                "total": len(items),
+                "with_saved_checklist": sum(
+                    1 for item in items if bool((item.get("checklist") or {}).get("updated_at"))
+                ),
+                "data_incomplete": sum(
+                    1 for item in items if any(bool(v) for v in (item.get("missing") or {}).values())
+                ),
+            },
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": True, "day": d.isoformat(), "items": [], "error": f"{type(e).__name__}: {str(e)[:240]}"}
+
+
+@router.post("/events/{id_lead}/confirm")
+def confirm_event(
+    id_lead: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    try:
+        d = date.fromisoformat(str(payload.get("day") or date.today().isoformat()))
+    except Exception:
+        raise HTTPException(400, "day inválido (YYYY-MM-DD)")
+
+    items = payload.get("items") or {}
+    if not isinstance(items, dict):
+        raise HTTPException(400, "items inválido")
+    notes = str(payload.get("notes") or "").strip()
+
+    uid = _resolve_uid(db, user)
+    who = _uname(user)
+
+    try:
+        out = upsert_event_checklist(
+            db,
+            id_lead=int(id_lead),
+            event_day=d,
+            user_id=uid,
+            username=who,
+            items=items,
+            notes=notes,
+        )
+        try:
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        # No romper checklist si no hay permisos DDL: responder ok=false pero 200.
+        return {"ok": False, "error": str(e)[:240], "disabled": True}
+
+    # Registrar en notas del lead (best-effort, no bloqueante).
+    try:
+        checked = sum(1 for k, v in (items or {}).items() if bool(v))
+        total = len(items.keys()) if items else 0
+        pct = int(round((checked / total) * 100)) if total else 0
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        msg = f"[CHECKLIST {ts}] {who}: {pct}% ({checked}/{total}) · Día {d.isoformat()}"
+        if notes:
+            msg += f" · {notes[:160]}"
+        try:
+            db.execute(
+                text(
+                    """
+                    UPDATE public.leads
+                    SET notas = CASE
+                      WHEN notas IS NULL OR notas='' THEN :n
+                      ELSE notas || E'\n' || :n
+                    END,
+                    updated_at=now()
+                    WHERE id_lead=:id
+                    """
+                ),
+                {"id": int(id_lead), "n": msg},
+            )
+        except Exception:
+            pass
+        try:
+            log_activity(
+                db.connection(),
+                username=who,
+                user_id=uid,
+                role=_role(user),
+                action="EVENT_CHECKLIST_CONFIRMED",
+                entity_type="lead",
+                entity_id=int(id_lead),
+                meta={"day": d.isoformat(), "pct": pct, "checked": checked, "total": total},
+            )
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Notificación interna a Operaciones (solo cuando queda completo).
+    # Se muestra en Campana > "Eventos agendados / Operaciones" para roles target.
+    try:
+        keys = [
+            "cliente",
+            "contacto",
+            "direccion",
+            "comuna",
+            "marca",
+            "equipos",
+            "salida",
+            "inicio",
+            "fin",
+            "ops",
+            "operadores",
+        ]
+        all_ok = True
+        for k in keys:
+            if not bool((items or {}).get(k)):
+                all_ok = False
+                break
+        if all_ok:
+            # Contexto mínimo (nombre cliente si existe)
+            try:
+                name_expr = _lead_name_expr(db)
+                row = db.execute(
+                    text(f"SELECT {name_expr} AS cliente FROM public.leads l WHERE l.id_lead=:id LIMIT 1"),
+                    {"id": int(id_lead)},
+                ).mappings().first()
+                cliente = str((row or {}).get("cliente") or "").strip()
+            except Exception:
+                cliente = ""
+
+            kind = f"CHECKLIST_OK_{d.isoformat()}"
+            title = f"Checklist OK · {cliente or ('Lead #' + str(id_lead))}"
+            body = f"Checklist del día {d.isoformat()} confirmado por {who}."
+            payload = {"id_lead": int(id_lead), "day": d.isoformat(), "by": who}
+
+            # Duplicado por rol_target para cubrir todo el equipo.
+            for rt in ("OPERACIONES", "COMPRAS", "BODEGUERO", "MICE", "ADMIN", "5", "4", "8", "1", "7", "9", "3"):
+                push_system_notif(
+                    db.connection(),
+                    kind=kind,
+                    role_target=rt,
+                    id_lead=int(id_lead),
+                    title=title,
+                    body=body,
+                    payload=payload,
+                )
+    except Exception:
+        pass
+
+    try:
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    return out

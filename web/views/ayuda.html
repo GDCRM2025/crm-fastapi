@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ayuda — CRM Green Diamond</title>
+  <style>
+    :root{--bg:#071827;--card:#0d263b;--line:#214765;--text:#e9f2fa;--muted:#9eb4c7;--accent:#27c67a;--warn:#ffbf47;--danger:#ff6b6b}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#06131f,#0a2133);color:var(--text);font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
+    .wrap{max-width:1180px;margin:auto;padding:24px}.hero{padding:26px;border:1px solid var(--line);border-radius:20px;background:rgba(13,38,59,.94)}
+    h1{margin:0 0 8px;font-size:clamp(27px,4vw,42px)}h2{margin:0 0 12px;font-size:24px}h3{margin:20px 0 8px;color:#bfead6}p{margin:7px 0}.muted{color:var(--muted)}
+    .search{position:sticky;top:10px;z-index:3;margin:18px 0;padding:12px;background:rgba(6,19,31,.94);border-radius:16px;border:1px solid var(--line)}
+    input{width:100%;padding:14px 16px;border-radius:12px;border:1px solid #356483;background:#071827;color:white;font-size:16px;outline:none}input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(39,198,122,.15)}
+    .toc{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.toc a,.open{color:#dff8ec;text-decoration:none;border:1px solid #2c6b54;background:#123c32;border-radius:999px;padding:6px 11px;cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}.card{margin-top:16px;padding:20px;border:1px solid var(--line);border-radius:18px;background:rgba(13,38,59,.92)}.wide{grid-column:1/-1}
+    .steps{counter-reset:s}.step{position:relative;padding:10px 10px 10px 44px;margin:8px 0;border-left:2px solid #2b5b76}.step:before{counter-increment:s;content:counter(s);position:absolute;left:10px;top:9px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#062014;font-weight:800}
+    .note,.warning,.error{padding:12px 14px;border-radius:12px;margin:12px 0}.note{background:#123c32;border-left:4px solid var(--accent)}.warning{background:#3a2b0d;border-left:4px solid var(--warn)}.error{background:#3a171b;border-left:4px solid var(--danger)}
+    .tag{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#83d7ad;font-weight:800}.hidden{display:none!important}details{border-top:1px solid var(--line);padding:10px 0}summary{cursor:pointer;font-weight:750}ul{padding-left:22px}.empty{display:none;text-align:center;padding:30px;color:var(--muted)}
+    @media(max-width:650px){.wrap{padding:12px}.grid{grid-template-columns:1fr}.hero,.card{padding:16px}.search{top:4px}}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <section class="hero help-section" data-keywords="inicio ayuda manual crm">
+    <div class="tag">Centro de ayuda</div><h1>Manual operativo del CRM</h1>
+    <p>Busca una tarea o un error. Cada procedimiento explica qué hacer, qué resultado esperar y cuándo pedir ayuda.</p>
+    <div class="toc"><a href="#leads">Leads</a><a href="#cotizaciones">Cotizaciones</a><a href="#filtros">Filtros</a><a href="#reportes">Reportes</a><a href="#encuestas">Encuestas</a><a href="#whatsapp">WhatsApp</a><a href="#crm360">Comercial 360</a><a href="#marcacion">Marcación</a><a href="#errores">Errores</a></div>
+  </section>
+  <div class="search"><input id="q" type="search" placeholder="Buscar: crear lead, token inválido, PDF, encuesta, marcación…" autocomplete="off"><div id="count" class="muted"></div></div>
+  <div id="empty" class="empty">No encontramos esa consulta. Prueba con una palabra más corta o revisa “Errores frecuentes”.</div>
+  <div class="grid">
+    <section id="leads" class="card help-section" data-keywords="lead crear editar eliminar estado seguimiento nuevo contactado cotizado confirmado declinado">
+      <div class="tag">CRUD comercial</div><h2>Leads</h2><h3>Crear un lead</h3>
+      <div class="steps"><div class="step">Abre <b>Leads → Ver Leads</b> y pulsa el botón para nuevo lead.</div><div class="step">Completa nombre, teléfono, correo, comuna, marca y plataforma de origen. Confirma que el número tenga código de país.</div><div class="step">Guarda. El lead debe aparecer en <b>NUEVO</b> y quedar asignado según tus permisos.</div></div>
+      <button class="open" data-open="leads_ver" data-url="/web/views/leads.html">Abrir Ver Leads</button>
+      <h3>Editar, contactar y eliminar</h3><ul><li>Abre la tarjeta y usa el lápiz para modificar datos.</li><li><b>Llamada, WhatsApp o Seguimiento</b> registran la acción y aplican la regla de estado.</li><li><b>No contesta</b> registra el intento en historial; no debe fingir una conversación exitosa.</li><li>Eliminar es lógico: sale de la operación normal y conserva trazabilidad administrativa.</li></ul>
+      <div class="warning">No cambies a CONFIRMADO hasta tener fecha, marca, cotización/productos y datos mínimos del evento.</div>
+    </section>
+    <section id="filtros" class="card help-section" data-keywords="filtrar leads mes fecha marca ejecutivo estado comuna plataforma origen buscar kanban tabla">
+      <div class="tag">Consulta</div><h2>Filtros de leads</h2><div class="steps"><div class="step">Elige vista Kanban o Tabla.</div><div class="step">Selecciona el mes; por defecto se muestra el mes actual.</div><div class="step">Agrega estado, marca, ejecutivo, comuna o plataforma solamente cuando lo necesites.</div><div class="step">Limpia filtros antes de concluir que un lead desapareció.</div></div>
+      <button class="open" data-open="leads_fil" data-url="/web/views/filtro_leads.html">Abrir filtros</button><div class="note">Un ejecutivo solo ve las marcas y registros autorizados. Si Oscar ve resultados y el ejecutivo no, revisar permisos y asignación antes de alterar datos.</div>
+    </section>
+    <section id="cotizaciones" class="card help-section" data-keywords="cotización cotizador crear editar versión productos pdf descargar previsualizar historial token inválido traslado iva descuento">
+      <div class="tag">Venta</div><h2>Cotizaciones</h2><div class="steps"><div class="step">Abre el lead y pulsa Cotizar. Verifica cliente, marca y fecha.</div><div class="step">Agrega productos, cantidades, traslado, descuento e IVA cuando corresponda.</div><div class="step">Guarda antes de generar el PDF. Una modificación posterior crea una revisión trazable.</div><div class="step">Previsualiza y luego descarga. Revisa nombre del cliente, totales y páginas.</div></div>
+      <button class="open" data-open="historial" data-url="/web/views/historial_cotizaciones.html">Abrir historial</button><div class="error"><b>Token requerido/inválido:</b> no abras una URL copiada desde otro navegador. Vuelve al CRM, recarga la sesión y usa el ojo del Historial. Si persiste, guarda captura, número de cotización y hora.</div><div class="warning"><b>“Descarga no segura”:</b> ocurre si el CRM o PDF se abre por HTTP. Dentro de la VPN conserva el archivo solo si la URL es la oficial entregada por Oscar.</div>
+    </section>
+    <section id="crm360" class="card help-section" data-keywords="comercial 360 tareas pendientes seguimiento cola prioridad vencida contacto día comercial">
+      <div class="tag">Productividad</div><h2>Comercial 360</h2><p>Es la cola diaria de trabajo comercial. Reúne pendientes, tareas vencidas y accesos rápidos al lead y cotizador.</p><ul><li>Trabaja primero vencidos y contactos comprometidos.</li><li>Cierra una tarea solo después de ejecutar y registrar la acción.</li><li>Si reprogramas, escribe fecha y motivo concreto.</li><li>Tarea y etapa comercial son controles distintos.</li></ul><button class="open" data-open="crm360" data-url="/web/views/crm360.html">Abrir Comercial 360</button>
+    </section>
+    <section id="reportes" class="card help-section" data-keywords="reportes gráficas kpi embudo cierre leads ventas productos encuestas rango fecha interpretar">
+      <div class="tag">Gestión</div><h2>Reportes</h2><p>Los reportes resumen lo registrado; no corrigen datos incompletos.</p><ul><li><b>Embudo:</b> distribución por etapa y pérdida entre estados.</li><li><b>Cierre:</b> confirmados respecto de oportunidades trabajadas.</li><li><b>Origen:</b> plataformas que generan leads.</li><li><b>Marca y ejecutivo:</b> desempeño dentro del rango seleccionado.</li><li><b>Productos:</b> oferta cotizada o confirmada.</li><li><b>Encuestas:</b> satisfacción, recomendación y reseñas.</li></ul><button class="open" data-open="rep_total" data-url="/web/views/reportes_v2.html">Abrir Reportes</button><div class="note">Antes de comparar cifras confirma rango, marca y ejecutivo. Un mes parcial no se compara directamente con un mes cerrado.</div>
+    </section>
+    <section id="encuestas" class="card help-section" data-keywords="encuesta satisfacción evento preguntas reseña google reviews enviar whatsapp resultados nps">
+      <div class="tag">Postevento</div><h2>Encuestas de satisfacción</h2><div class="steps"><div class="step">Abre <b>Checklist → Encuestas post-evento</b>.</div><div class="step">Busca un evento confirmado y ya realizado.</div><div class="step">Abre la encuesta y comprueba marca, cliente y preguntas.</div><div class="step">Envía manualmente por WhatsApp y marca como enviada.</div><div class="step">Revisa respuesta y clic en reseña dentro de Reportes.</div></div><button class="open" data-open="encuestas_eventos" data-url="/web/views/encuestas_eventos.html">Abrir Encuestas</button><div class="warning">Nunca reutilices el enlace de un cliente para otro. Cada token identifica un evento.</div>
+    </section>
+    <section id="whatsapp" class="card help-section" data-keywords="whatsapp greenie mensaje aceptado no enviado ventana 24 horas plantilla coexistencia meta teléfono">
+      <div class="tag">Mensajería</div><h2>WhatsApp y Greenie</h2><ul><li>Confirma número, marca y texto antes de enviar.</li><li>“Aceptado” significa que Meta recibió la solicitud; no garantiza entrega.</li><li>Revisa enviado, entregado o fallido y el historial del lead.</li><li>Fuera de la ventana de 24 horas se requiere plantilla aprobada.</li><li>Coexistencia depende de la habilitación de Meta.</li></ul><button class="open" data-open="tool_wapp" data-url="/web/views/tools.html#whatsapp">Abrir WhatsApp Greenie</button><div class="error">Si no llega, no reintentes muchas veces. Registra teléfono, hora, estado e ID del lead; luego revisar webhook, ventana y Meta.</div>
+    </section>
+    <section id="marcacion" class="card help-section" data-keywords="marcación rrhh asistencia entrada salida firma turno reloj habilitar deshabilitar módulo">
+      <div class="tag">RRHH</div><h2>Marcación</h2><p>Registra entrada/salida y compara turno teórico con asistencia real. La jefatura puede deshabilitar el módulo desde <b>Settings → Funcionamiento de módulos</b> cuando se use un reloj autorizado.</p><ul><li>Marca una vez y espera confirmación.</li><li>No compartas usuario ni marques por otra persona.</li><li>Si ubicación o cámara están bloqueadas, habilita el permiso del sitio.</li><li>Una corrección administrativa debe conservar motivo y auditoría.</li></ul><div class="note">Si el módulo está deshabilitado, no es un error del ejecutivo: se usa el mecanismo informado por RRHH.</div>
+    </section>
+    <section id="auditoria" class="card help-section" data-keywords="auditoría trazabilidad historial cambios quién fecha seguridad">
+      <div class="tag">Control</div><h2>Auditoría</h2><p>Registra acciones relevantes: usuario, fecha, módulo y cambio. Sirve para investigar problemas y confirmar procesos; no modifica datos operativos.</p><ul><li>Usa filtros antes de concluir que falta una acción.</li><li>No publiques capturas con teléfonos, correos, tokens o claves.</li><li>Solo administradores autorizados acceden a la vista completa.</li></ul>
+    </section>
+    <section id="errores" class="card wide help-section" data-keywords="error solución no carga parpadeo sesión expirada 401 403 404 500 token pdf vpn internet soporte">
+      <div class="tag">Primera respuesta</div><h2>Errores frecuentes</h2>
+      <details><summary>La pantalla parpadea o abre dos vistas</summary><p>Cierra modales, pulsa Actualizar sistema una vez y repite desde el menú. Registra pantalla, acción, navegador y hora si continúa.</p></details>
+      <details><summary>Sesión expirada / 401 / token requerido</summary><p>Cierra sesión y vuelve a entrar. No edites la URL ni reutilices enlaces privados.</p></details>
+      <details><summary>Prohibido / 403</summary><p>El usuario no tiene permiso para esa marca o función. No uses credenciales ajenas; solicita revisión de rol y marcas.</p></details>
+      <details><summary>No aparecen leads</summary><p>Limpia filtros, vuelve al mes actual, revisa marca/ejecutivo y compara en Tabla. Si otro rol sí ve el registro, revisar permisos.</p></details>
+      <details><summary>VPN no conecta</summary><p>Confirma Internet, activa WireGuard y revisa que el túnel correcto esté encendido. Prueba con datos móviles. No modifiques el archivo.</p></details>
+      <details><summary>Error 500 o pantalla en blanco</summary><p>No repitas una operación que podría duplicar información. Anota hora, módulo, registro y último botón pulsado.</p></details>
+      <h3>Datos mínimos para soporte</h3><ul><li>Usuario y marca.</li><li>Fecha y hora.</li><li>Pantalla y acción.</li><li>ID del lead o número de cotización.</li><li>Captura sin claves ni tokens.</li><li>Resultado esperado y mensaje recibido.</li></ul>
+    </section>
+  </div>
+</main>
+<script>
+  const sections=[...document.querySelectorAll('.help-section')],q=document.querySelector('#q'),count=document.querySelector('#count'),empty=document.querySelector('#empty');
+  const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  function filter(){const term=norm(q.value.trim());let visible=0;sections.forEach(s=>{const hay=norm(s.textContent+' '+(s.dataset.keywords||''));const show=!term||hay.includes(term);s.classList.toggle('hidden',!show);if(show)visible++;});count.textContent=term?`${visible} sección(es) encontrada(s)`:'';empty.style.display=visible?'none':'block'}
+  q.addEventListener('input',filter);
+  document.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',()=>window.parent?.postMessage({type:'openItem',id:b.dataset.open,url:b.dataset.url},'*')));
+</script>
+</body>
+</html>

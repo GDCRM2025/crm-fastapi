@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mis tareas</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:14px;overflow:auto;}
+    .wrap{max-width:1600px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .head{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.25);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    :root.light .head{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .sub{opacity:.72;font-weight:850;font-size:12px;margin-top:4px;max-width:760px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .inp,.sel{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 12px;
+      font-weight:900;
+      outline:none;
+    }
+    .btn{
+      height:36px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-weight:1000;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn.danger{background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.35);}
+    .btn:hover{filter:brightness(1.06);}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      border-radius:18px;
+      padding:12px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+      min-height:0;
+    }
+    :root.light .card{background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10);}
+    .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
+    .muted{opacity:.72; font-weight:850; font-size:12px;}
+    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+    /* Con múltiples tablas (grupos), sticky se traslapa. */
+    .tbl th{opacity:.72; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.14); position:static; background: linear-gradient(180deg, rgba(2,6,23,.70), rgba(2,6,23,.40)); backdrop-filter: blur(10px); z-index:2;}
+    :root.light .tbl th{background: rgba(255,255,255,.92);}
+    .tbl td{padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:top;}
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:4px 10px; border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      font-weight:1000; font-size:12px;
+    }
+    .pill.bad{border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.14);}
+    .pill.warn{border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.14);}
+    .pill.good{border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.14);}
+    .dayGrid{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(150px,1fr));
+      gap:10px;
+    }
+    .dayCard{
+      border:1px solid rgba(148,163,184,.16);
+      background:rgba(2,6,23,.20);
+      border-radius:16px;
+      padding:12px;
+      min-height:76px;
+    }
+    :root.light .dayCard{background:rgba(255,255,255,.72);border-color:rgba(0,0,0,.10);}
+    .dayCard .k{font-size:11px;text-transform:uppercase;letter-spacing:.10em;opacity:.72;font-weight:1000;}
+    .dayCard .v{font-size:24px;line-height:1;margin-top:8px;font-weight:1100;}
+    .dayCard .h{font-size:12px;margin-top:6px;opacity:.74;font-weight:850;}
+    .dayCard.hot{border-color:rgba(239,68,68,.38);box-shadow:inset 0 0 0 1px rgba(239,68,68,.10);}
+    .dayCard.next{border-color:rgba(245,158,11,.38);box-shadow:inset 0 0 0 1px rgba(245,158,11,.10);}
+    .dayCard.ok{border-color:rgba(34,197,94,.36);box-shadow:inset 0 0 0 1px rgba(34,197,94,.10);}
+
+    .tabs{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .tab{
+      height:36px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.20);
+      background: rgba(2,6,23,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-weight:1100;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      white-space:nowrap;
+    }
+    :root.light .tab{ background: rgba(255,255,255,.88); border-color: rgba(0,0,0,.10); }
+    .tab.active{
+      border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+    }
+    .tab .b{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:22px;
+      height:22px;
+      padding:0 8px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:1100;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+    }
+    :root.light .tab .b{ background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.08); }
+
+    .section{ display:none; }
+    .section.show{ display:block; }
+    .secHead{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:10px;
+    }
+    .secTitle{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-weight:1100;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      font-size:12px;
+      opacity:.92;
+    }
+    .mark{
+      width:10px;
+      height:10px;
+      border-radius:999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+    .mark.cal{ background:#f59e0b; box-shadow: 0 0 0 4px rgba(245,158,11,.18); }
+    .mark.mail{ background:#3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,.18); }
+
+    .err{
+      border-color: rgba(239,68,68,.28);
+      background: rgba(239,68,68,.08);
+    }
+    :root.light .err{ background: rgba(239,68,68,.06); border-color: rgba(239,68,68,.22); }
+    .err pre{
+      margin:10px 0 0 0;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.22);
+      overflow:auto;
+      max-height:240px;
+      font-size:12px;
+      line-height:1.35;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+
+    details.grp{
+      border:1px solid rgba(148,163,184,.14);
+      border-radius: 16px;
+      background: rgba(2,6,23,.18);
+      padding: 8px 10px;
+    }
+    details.grp[open]{ box-shadow: 0 18px 60px rgba(0,0,0,.18); }
+    details.grp summary{
+      list-style:none;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      font-weight:1100;
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      font-size:12px;
+      padding: 6px 2px;
+      user-select:none;
+    }
+    details.grp summary::-webkit-details-marker{ display:none; }
+    .sumL{ display:flex; align-items:center; gap:10px; }
+    .sumR{ display:flex; align-items:center; gap:10px; }
+    @media(max-width:900px){.dayGrid{grid-template-columns:1fr 1fr;}}
+    @media(max-width:560px){.dayGrid{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="head">
+      <div>
+        <div class="ttl">Tu día comercial</div>
+        <div class="sub">Aquí se trabaja la cola diaria: primero vencidas y eventos cercanos, luego nuevos/contactados/cotizados del mes. Cada cierre útil queda con evidencia en el historial del lead.</div>
+      </div>
+      <div class="row">
+        <select id="status" class="sel" title="Estado">
+          <option value="open" selected>Abiertas</option>
+          <option value="all">Todas</option>
+          <option value="done">Completadas</option>
+          <option value="skipped">Omitidas</option>
+        </select>
+        <select id="selUser" class="sel" title="Usuario" style="display:none; min-width:260px"></select>
+        <span class="pill" id="viewAs" style="display:none;">Viendo: —</span>
+        <button id="btnSync" class="btn primary" type="button">Sincronizar</button>
+        <button id="btnReload" class="btn" type="button">Actualizar</button>
+        <button id="btnRules" class="btn" type="button">Reglas</button>
+      </div>
+    </section>
+
+    <section class="card err" id="errBox" style="display:none;">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <div class="secTitle"><span class="mark" style="background:#ef4444;box-shadow:0 0 0 4px rgba(239,68,68,.18)"></span>Error</div>
+          <div class="muted" id="errMsg">—</div>
+        </div>
+        <div class="row">
+          <button class="btn" id="btnErrDetail" type="button">Ver detalle</button>
+          <button class="btn danger" id="btnErrClose" type="button">Cerrar</button>
+        </div>
+      </div>
+      <pre id="errDetail" style="display:none;"></pre>
+    </section>
+
+    <div class="row">
+      <div class="pill" id="pOpen">Abiertas: —</div>
+      <div class="pill bad" id="pOver">Vencidas: —</div>
+      <div class="pill warn" id="pNew">Nuevos: —</div>
+      <div class="pill warn" id="pContacted">Contactados: —</div>
+      <div class="pill warn" id="pQuoted">Cotizados: —</div>
+      <div class="pill" id="pCobros" style="display:none;">Cobros: —</div>
+    </div>
+
+    <section class="dayGrid" aria-label="Resumen de trabajo diario">
+      <div class="dayCard hot"><div class="k">Atacar ahora</div><div class="v" id="dNow">—</div><div class="h" id="dNowHint">Vencidas + eventos urgentes</div></div>
+      <div class="dayCard next"><div class="k">Leads nuevos</div><div class="v" id="dNew">—</div><div class="h">No pueden dormir en Nuevo</div></div>
+      <div class="dayCard next"><div class="k">Cotizados</div><div class="v" id="dQuoted">—</div><div class="h">Seguimiento hasta cierre o descarte</div></div>
+      <div class="dayCard ok" style="display:none;"><div class="k">Cobros</div><div class="v" id="dCobros">—</div><div class="h">Confirmados con saldo pendiente</div></div>
+    </section>
+
+    <div class="tabs" style="margin-top:2px">
+      <button class="tab active" id="tabLeads" type="button">Leads <span class="b" id="bLeads">—</span></button>
+      <button class="tab" id="tabCobros" type="button" style="display:none;">Cobros <span class="b" id="bCobros">—</span></button>
+    </div>
+
+    <section class="card section show" id="secLeads">
+      <div class="secHead">
+        <div>
+          <div class="secTitle"><span class="mark"></span>Seguimiento (Leads)</div>
+          <div class="muted">Acción recomendada: “Seguimiento” abre el lead. Para cerrar, registra evidencia o confirma cerrar sin seguimiento.</div>
+        </div>
+      </div>
+      <div class="pill" id="mlBox" style="display:none; margin-top:10px; border-radius:16px; padding:12px;">
+        <div
+          style="font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:11px; opacity:.82"
+          title="Asistente = Top 5 tareas más urgentes. Prioriza por fecha de evento más próxima y luego por vencimiento/prioridad."
+        >Asistente</div>
+        <div class="muted" style="margin-top:6px">Top 5 “qué hago ahora”: primero <strong>fecha de evento</strong>, luego <strong>vencimiento/prioridad</strong>.</div>
+        <div id="mlNext" style="display:flex; flex-direction:column; gap:8px; margin-top:10px"></div>
+      </div>
+      <div class="muted" style="margin-top:-2px">Agrupado por estado del lead: Nuevos / Contactados / Cotizados.</div>
+
+      <div style="max-height:76vh; overflow:auto; display:flex; flex-direction:column; gap:12px; margin-top:10px">
+        <details class="grp" open>
+          <summary>
+            <div class="sumL"><span class="mark" style="background:#22c55e"></span>Leads nuevos</div>
+            <div class="sumR"><span class="pill" id="bLeadNew">—</span></div>
+          </summary>
+          <table class="tbl">
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Evento</th><th>Seguimiento vence</th><th>Acciones</th></tr></thead>
+            <tbody id="tbLeadsNew"></tbody>
+          </table>
+        </details>
+
+        <details class="grp" open>
+          <summary>
+            <div class="sumL"><span class="mark" style="background:#0ea5e9"></span>Leads contactados</div>
+            <div class="sumR"><span class="pill" id="bLeadContact">—</span></div>
+          </summary>
+          <table class="tbl">
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Evento</th><th>Seguimiento vence</th><th>Acciones</th></tr></thead>
+            <tbody id="tbLeadsContact"></tbody>
+          </table>
+        </details>
+
+        <details class="grp" open>
+          <summary>
+            <div class="sumL"><span class="mark" style="background:#f59e0b"></span>Leads cotizados</div>
+            <div class="sumR"><span class="pill" id="bLeadQuote">—</span></div>
+          </summary>
+          <table class="tbl">
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Estado</th><th>Evento</th><th>Seguimiento vence</th><th>Acciones</th></tr></thead>
+            <tbody id="tbLeadsQuote"></tbody>
+          </table>
+        </details>
+      </div>
+    </section>
+
+    <section class="card section" id="secCobros" style="display:none;">
+      <div class="secHead">
+        <div>
+          <div class="secTitle"><span class="mark" style="background:#a855f7; box-shadow:0 0 0 4px rgba(168,85,247,.18)"></span>Cobros pendientes</div>
+          <div class="muted">Eventos confirmados con abono y saldo pendiente. Acción recomendada: “Cobrar” abre Finanzas → Registrar evento/pagos.</div>
+        </div>
+      </div>
+      <div style="max-height:76vh; overflow:auto; display:flex; flex-direction:column; gap:12px; margin-top:10px">
+        <details class="grp" open>
+          <summary>
+            <div class="sumL"><span class="mark" style="background:#a855f7; box-shadow:0 0 0 4px rgba(168,85,247,.18)"></span>Pendientes de cobro</div>
+            <div class="sumR"><span class="pill" id="bCobrosInner">—</span></div>
+          </summary>
+          <table class="tbl">
+            <thead><tr><th>Prioridad</th><th>Tarea</th><th>Lead</th><th>Marca</th><th>Evento</th><th>Saldo</th><th>Acciones</th></tr></thead>
+            <tbody id="tbCobros"></tbody>
+          </table>
+        </details>
+      </div>
+    </section>
+
+    <!-- Calendario removido: tareas solo para ejecutivos (leads). -->
+
+    <!-- Correos removido de tareas (se gestiona fuera) -->
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(u){
+      const s = String(u||"");
+      if (!s) return s;
+      if (s.startsWith("/crm/")) return s;
+      if (s.startsWith("/")) return API_BASE + s;
+      return s;
+    }
+    let TOKEN_OVERRIDE = "";
+    window.addEventListener("message", (ev)=>{
+      const d = ev?.data || {};
+      if (d?.type === "auth" && d?.token){
+        TOKEN_OVERRIDE = String(d.token || "");
+        try{ sessionStorage.setItem("gd_token", TOKEN_OVERRIDE); }catch(_){}
+      }
+    });
+    function getToken(){
+      return (
+        TOKEN_OVERRIDE ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("accessToken") ||
+        localStorage.getItem("token") ||
+        localStorage.getItem("gd_token") ||
+        sessionStorage.getItem("access_token") ||
+        sessionStorage.getItem("accessToken") ||
+        sessionStorage.getItem("token") ||
+        sessionStorage.getItem("gd_token") ||
+        ""
+      );
+    }
+    function authHeaders(extra){
+      const GD = window.parent && window.parent.GD;
+      if (GD && typeof GD.authHeaders === "function"){
+        try{ return GD.authHeaders(extra || {}); }catch(_){}
+      }
+      const t = getToken();
+      return t ? Object.assign({ "Authorization": "Bearer " + t }, extra || {}) : Object.assign({}, extra || {});
+    }
+
+    class ApiError extends Error{
+      constructor(message, info){
+        super(message || "Error");
+        this.name = "ApiError";
+        this.status = info?.status;
+        this.url = info?.url;
+        this.body = info?.body;
+      }
+    }
+
+    function _errTextFromResponse(status, txt){
+      const raw = String(txt || "").trim();
+      if (!raw) return `HTTP ${status}`;
+      try{
+        const j = JSON.parse(raw);
+        if (j && typeof j === "object"){
+          const d = j.detail || j.error || j.message;
+          if (typeof d === "string") return d;
+          if (d && typeof d === "object") return JSON.stringify(d);
+        }
+      }catch(_){}
+      return raw.length > 500 ? raw.slice(0,500) + "…" : raw;
+    }
+
+    function showErr(ctx, err){
+      const box = qs("#errBox");
+      const msg = qs("#errMsg");
+      const det = qs("#errDetail");
+      if (!box || !msg || !det) return;
+      const where = ctx ? `(${ctx}) ` : "";
+      const e = err || {};
+      const status = e.status ? `HTTP ${e.status} · ` : "";
+      const url = e.url ? ` · ${e.url}` : "";
+      msg.textContent = `${where}${status}${String(e.message || e).trim()}${url}`;
+      det.textContent = String(e.body || e.stack || e.message || e || "").trim();
+      box.style.display = "";
+    }
+
+    function clearErr(){
+      const box = qs("#errBox");
+      const det = qs("#errDetail");
+      if (box) box.style.display = "none";
+      if (det) det.style.display = "none";
+    }
+
+    qs("#btnErrClose")?.addEventListener("click", clearErr);
+    qs("#btnErrDetail")?.addEventListener("click", ()=>{
+      const det = qs("#errDetail");
+      if (!det) return;
+      det.style.display = (det.style.display === "none" || !det.style.display) ? "" : "none";
+    });
+
+    async function jget(url){
+      const u = apiURL(url);
+      const r = await fetch(u, { headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new ApiError(_errTextFromResponse(r.status, txt), { status: r.status, url: u, body: txt });
+      return txt ? JSON.parse(txt) : {};
+    }
+    async function jpost(url, body){
+      const u = apiURL(url);
+      const r = await fetch(u, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type":"application/json" }),
+        body: JSON.stringify(body || {}),
+      });
+      const txt = await r.text();
+      if (!r.ok) throw new ApiError(_errTextFromResponse(r.status, txt), { status: r.status, url: u, body: txt });
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    function parseDue(s){
+      if (!s) return null;
+      const d = new Date(String(s));
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function fmtDue(s){
+      const d = parseDue(s);
+      if (!d) return "—";
+      const pad = (n)=> String(n).padStart(2,"0");
+      return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function fmtDateOnly(s){
+      const d = parseDue(s);
+      if (!d) return "—";
+      const pad = (n)=> String(n).padStart(2,"0");
+      return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+    }
+
+    function calendarTone(s){
+      const d = parseDue(s);
+      if (!d) return { cls:"warn", title:"Sin fecha de evento" };
+      const now = new Date();
+      const daysTo = Math.ceil((d.getTime() - now.getTime()) / 86400000);
+      if (!isFinite(daysTo)) return { cls:"warn", title:"Fecha inválida" };
+      if (daysTo < 0) return { cls:"bad", title:`Evento vencido (${Math.abs(daysTo)}d)` };
+      if (daysTo < 3) return { cls:"bad", title:`Vence en ${daysTo} día(s)` };
+      if (daysTo <= 5) return { cls:"good", title:`Vence en ${daysTo} día(s)` };
+      return { cls:"warn", title:`Vence en ${daysTo} día(s)` };
+    }
+
+    function isOverdue(s){
+      const d = parseDue(s);
+      if (!d) return false;
+      return d.getTime() < Date.now();
+    }
+
+    function openLead(id){
+      const url = "/web/views/leads.html?v=20260331-leads3&stale_ids=" + encodeURIComponent(String(id));
+      try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+    }
+    function openLeadEditEvent(id){
+      const url = "/web/views/leads.html?v=20260331-leads3&open_lead=" + encodeURIComponent(String(id)) + "&edit_confirmed=1";
+      try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+    }
+    function openCorreoTools(){
+      const url = "/web/views/tools.html?v=20260327-tools7#correo";
+      try{ window.parent?.postMessage({ type:"openItem", id:"tools", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+    }
+
+    let CTX = { uid:null, is_admin:false, role:"", username:"" };
+    let TARGET_UID = null; // admin "ver como"
+    let ADMIN_USERS = [];  // cache /tasks/admin/users
+
+    function qpTarget(){
+      return (TARGET_UID && Number(TARGET_UID) > 0) ? `&for_user_id=${encodeURIComponent(String(TARGET_UID))}` : "";
+    }
+
+    async function sync(){
+      // SUPERADMIN: modo "Todos"
+      if (TARGET_UID === "__ALL__"){
+        try{
+          const sum = await jget("/tasks/summary?scope=all");
+          qs("#pOpen").textContent = `Abiertas: ${sum?.open_total ?? "—"}`;
+          qs("#pOver").textContent = `Vencidas: ${sum?.overdue_total ?? "—"}`;
+          qs("#pNew").textContent = `Nuevos: ${sum?.open_nuevos ?? "—"}`;
+          qs("#pContacted").textContent = `Contactados: ${sum?.open_contactados ?? "—"}`;
+          qs("#pQuoted").textContent = `Cotizados: ${sum?.open_cotizados ?? "—"}`;
+        }catch(_){}
+
+        const targets = (ADMIN_USERS || []).filter(u => Number(u?.open||0) > 0).slice(0, 20);
+        for (const u of targets){
+          try{ await jpost(`/tasks/sync?x=1&for_user_id=${encodeURIComponent(String(u.id))}`, {}); }catch(_){}
+        }
+        return;
+      }
+
+      const j = await jpost(`/tasks/sync?x=1${qpTarget()}`, {});
+      const leadsCount = Number(j?.counts?.open_nuevos || 0) + Number(j?.counts?.open_contactados || 0) + Number(j?.counts?.open_cotizados || 0);
+      const cobrosCount = Number(j?.counts?.open_cobros || 0);
+      qs("#pOpen").textContent = `Abiertas: ${j?.counts?.open_total ?? "—"}`;
+      qs("#pOver").textContent = `Vencidas: ${j?.overdue?.overdue_total ?? "—"}`;
+      qs("#pNew").textContent = `Nuevos: ${j?.counts?.open_nuevos ?? j?.counts?.open_contactar ?? "—"}`;
+      qs("#pContacted").textContent = `Contactados: ${j?.counts?.open_contactados ?? "—"}`;
+      qs("#pQuoted").textContent = `Cotizados: ${j?.counts?.open_cotizados ?? "—"}`;
+      qs("#pCobros").textContent = `Cobros: ${j?.counts?.open_cobros ?? "—"}`;
+      qs("#bLeads").textContent = String(leadsCount || 0);
+      qs("#bCobros").textContent = String(cobrosCount || 0);
+      try{ qs("#bCobrosInner").textContent = String(cobrosCount || 0); }catch(_){}
+    }
+
+    function prLabel(priority){
+      const pr = Number(priority||0);
+      return (pr <= 10) ? "Alta" : (pr <= 30) ? "Media" : "Baja";
+    }
+
+    function setDayCard(id, value){
+      try{ qs(id).textContent = String(value ?? "—"); }catch(_){}
+    }
+
+    function trLead(t){
+      const over = (t.status==="open" && isOverdue(t.due_at));
+      const kind = String(t.kind||"").toUpperCase();
+      const cal = calendarTone(t.lead_fecha_evento);
+      const who = String(t?._user_name || "").trim();
+      const dueHint = (() => {
+        try{
+          const d = parseDue(t.due_at);
+          if (!d) return "";
+          const diffMs = d.getTime() - Date.now();
+          const abs = Math.abs(diffMs);
+          const days = Math.floor(abs / (24*3600*1000));
+          const hrs = Math.floor((abs % (24*3600*1000)) / (3600*1000));
+          const tail = (days > 0) ? `${days}d` : `${hrs}h`;
+          return diffMs < 0 ? `Vencida hace ${tail}` : `Vence en ${tail}`;
+        }catch(_){ return ""; }
+      })();
+      return `
+        <tr data-task="${esc(t.id_task)}" data-lead="${esc(t.entity_id||"")}" data-kind="${esc(kind)}" data-etype="${esc(t.entity_type||"")}">
+          <td><span class="pill ${over ? "bad" : ""}">${esc(prLabel(t.priority))}</span></td>
+          <td><strong>${esc(t.title||t.kind||"—")}</strong><div class="muted">${esc(t.description||"")}</div></td>
+          <td><strong>${esc(t.lead_cliente||"—")}</strong><div class="muted">#${esc(t.entity_id||"")}</div></td>
+          <td class="muted">${esc(t.lead_marca||"")}${who ? `<div class="muted">👤 ${esc(who)}</div>` : ""}</td>
+          <td class="muted">${esc(t.lead_estado||"")}</td>
+          <td><span class="pill ${esc(cal.cls)}" title="${esc(cal.title)}">📅 ${esc(fmtDateOnly(t.lead_fecha_evento))}</span></td>
+          <td><span class="pill ${over ? "bad" : ""}">${esc(fmtDue(t.due_at))}</span><div class="muted">${esc(dueHint)}</div></td>
+          <td>
+            <button class="btn primary" data-act="go">Seguimiento</button>
+            <button class="btn" data-act="close">Cerrar</button>
+            <button class="btn danger" data-act="skip">Omitir</button>
+          </td>
+        </tr>
+      `;
+    }
+
+    const money = new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
+    function trCobro(t){
+      const over = (t.status==="open" && isOverdue(t.due_at));
+      const meta = t.meta || {};
+      const idLead = meta.id_lead || meta.lead_id || "";
+      const saldo = Number(meta.saldo || 0) || 0;
+      const cal = calendarTone(t.lead_fecha_evento);
+      const who = String(t?._user_name || "").trim();
+      return `
+        <tr data-task="${esc(t.id_task)}" data-lead="${esc(idLead)}" data-kind="${esc(String(t.kind||""))}" data-etype="${esc(t.entity_type||"")}" data-eid="${esc(t.entity_id||"")}">
+          <td><span class="pill ${over ? "bad" : ""}">${esc(prLabel(t.priority))}</span></td>
+          <td><strong>${esc(t.title||t.kind||"—")}</strong><div class="muted">${esc(t.description||"")}</div></td>
+          <td><strong>${esc(t.lead_cliente||"—")}</strong><div class="muted">#${esc(idLead||"—")}</div></td>
+          <td class="muted">${esc(t.lead_marca||"")}${who ? `<div class="muted">👤 ${esc(who)}</div>` : ""}</td>
+          <td><span class="pill ${esc(cal.cls)}" title="${esc(cal.title)}">📅 ${esc(fmtDateOnly(t.lead_fecha_evento))}</span></td>
+          <td><span class="pill ${over ? "bad" : ""}">${esc(money.format(saldo))}</span></td>
+          <td>
+            <button class="btn primary" data-act="go">Cobrar</button>
+            <button class="btn" data-act="close">Cerrar</button>
+            <button class="btn danger" data-act="skip">Omitir</button>
+          </td>
+        </tr>
+      `;
+    }
+
+    async function load(){
+      const st = String(qs("#status")?.value || "open");
+      let items = [];
+      if (TARGET_UID === "__ALL__"){
+        const targets = (ADMIN_USERS || []).filter(u => Number(u?.open||0) > 0).slice(0, 20);
+        const packs = [];
+        for (const u of targets){
+          try{
+            const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0&for_user_id=${encodeURIComponent(String(u.id))}`);
+            const arr = Array.isArray(j.items) ? j.items : [];
+            arr.forEach(t => { t._user_name = u.name || String(u.id); });
+            packs.push(...arr);
+          }catch(_){}
+        }
+        items = packs;
+      }else{
+        const j = await jget(`/tasks?status=${encodeURIComponent(st)}&limit=120&offset=0${qpTarget()}`);
+        items = Array.isArray(j.items) ? j.items : [];
+      }
+      const norm = (s)=> String(s||"").trim().toUpperCase();
+      const isCobro = (t)=> norm(t.kind) === "COBRO_PENDIENTE";
+      const score = (t)=> Number(t?.score || t?.meta?.score || 0) || 0;
+      function _eventKey(t){
+        const d = String(t?.lead_fecha_evento || "").slice(0,10);
+        return (d && d.length === 10) ? d : "9999-12-31";
+      }
+      const sortBest = (a,b)=> (
+        _eventKey(a).localeCompare(_eventKey(b)) ||
+        (score(b)-score(a)) ||
+        (Number(a.priority||0)-Number(b.priority||0)) ||
+        (String(a.due_at||"").localeCompare(String(b.due_at||""))) ||
+        (Number(b.id_task||0)-Number(a.id_task||0))
+      );
+      const cobros = items.filter(isCobro);
+      const leads = items.filter(t => !isCobro(t));
+
+      const isNew = (t)=> {
+        const k = norm(t.kind);
+        return k === "LEAD_NUEVO_SEGUIMIENTO";
+      };
+      const isContact = (t)=> {
+        const k = norm(t.kind);
+        return k === "LEAD_CONTACTADO_SEGUIMIENTO";
+      };
+      const isQuote = (t)=> {
+        const k = norm(t.kind);
+        return k === "LEAD_COTIZADO_SEGUIMIENTO";
+      };
+      const gNew = leads.filter(isNew).sort(sortBest);
+      const gContact = leads.filter(t => !isNew(t) && isContact(t)).sort(sortBest);
+      const gQuote = leads.filter(t => !isNew(t) && !isContact(t) && isQuote(t)).sort(sortBest);
+      const gOther = leads.filter(t => !isNew(t) && !isContact(t) && !isQuote(t)).sort(sortBest);
+      cobros.sort(sortBest);
+      const urgentNow = leads.filter(t => {
+        if (isOverdue(t.due_at)) return true;
+        const d = parseDue(t.lead_fecha_evento);
+        if (!d) return false;
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const days = Math.ceil((dd.getTime() - today.getTime()) / 86400000);
+        return days >= 0 && days <= 3;
+      }).length;
+
+      qs("#bLeadNew").textContent = String(gNew.length);
+      qs("#bLeadContact").textContent = String(gContact.length);
+      qs("#bLeadQuote").textContent = String(gQuote.length + gOther.length);
+      try{ qs("#bCobrosInner").textContent = String(cobros.length); }catch(_){}
+      setDayCard("#dNow", urgentNow);
+      setDayCard("#dNew", gNew.length);
+      setDayCard("#dQuoted", gQuote.length + gOther.length);
+      setDayCard("#dCobros", cobros.length);
+      try{
+        qs("#dNowHint").textContent = urgentNow ? "Abrir y registrar seguimiento primero" : "Sin urgencias fuertes en esta vista";
+      }catch(_){}
+
+      // Asistente (solo en "Abiertas"): top 5 por score.
+      try{
+        const ml = qs("#mlBox");
+        const mlNext = qs("#mlNext");
+        if (ml && mlNext && st === "open"){
+          const best = [...leads].sort(sortBest).slice(0,5);
+          if (best.length){
+            ml.style.display = "";
+            mlNext.innerHTML = best.map(t => {
+              const isC = isCobro(t);
+              const idLead = isC ? (t?.meta?.id_lead || t?.meta?.lead_id || "") : (t.entity_id || "");
+              const who = `${esc(t.lead_cliente||"—")}${t.lead_marca ? " · " + esc(t.lead_marca) : ""}`;
+              const hint = String(t.ml_hint || "").trim();
+              const s = score(t);
+              const btn = isC ? "Cobrar" : "Seguimiento";
+              return `
+                <div style="display:flex; gap:10px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; border:1px solid rgba(148,163,184,.16); border-radius:14px; padding:10px; background:rgba(2,6,23,.10)">
+                  <div style="min-width:240px; flex:1">
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                      <span class="pill" title="Score">${esc(s)}</span>
+                      <strong>${esc(t.title||t.kind||"—")}</strong>
+                      <span class="muted">#${esc(idLead||"—")}</span>
+                    </div>
+                    <div class="muted" style="margin-top:4px">${who}</div>
+                    ${hint ? `<div class="muted" style="margin-top:4px">Sugerencia: ${esc(hint)}</div>` : ""}
+                  </div>
+                  <div style="display:flex; gap:8px; align-items:center">
+	                    <button class="btn primary" data-act="go" data-task="${esc(t.id_task)}" data-lead="${esc(idLead||"")}" data-etype="${esc(t.entity_type||"")}" data-kind="${esc(String(t.kind||""))}">${btn}</button>
+                  </div>
+                </div>
+              `;
+            }).join("");
+          }else{
+            ml.style.display = "none";
+          }
+        }else if (ml){
+          ml.style.display = "none";
+        }
+      }catch(_){}
+
+      qs("#tbLeadsNew").innerHTML = gNew.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
+      qs("#tbLeadsContact").innerHTML = gContact.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
+      qs("#tbLeadsQuote").innerHTML = gQuote.map(trLead).join("") || `<tr><td colspan="8" class="muted">Sin tareas.</td></tr>`;
+      // Si hay otros estados, los anexamos al final de "cotizados" para no perderlos.
+      if (gOther.length){
+        qs("#tbLeadsQuote").innerHTML += gOther.map(trLead).join("");
+      }
+
+      qs("#tbCobros").innerHTML = cobros.map(trCobro).join("") || `<tr><td colspan="7" class="muted">Sin cobros pendientes.</td></tr>`;
+    }
+
+    async function init(){
+      function showTab(which){
+        try{
+          qs("#tabLeads")?.classList?.remove?.("active");
+          qs("#tabCobros")?.classList?.remove?.("active");
+          qs("#secLeads")?.classList?.remove?.("show");
+          qs("#secCobros")?.classList?.remove?.("show");
+          if (which === "cobros"){
+            qs("#tabCobros")?.classList?.add?.("active");
+            qs("#secCobros")?.classList?.add?.("show");
+          }else{
+            qs("#tabLeads")?.classList?.add?.("active");
+            qs("#secLeads")?.classList?.add?.("show");
+          }
+        }catch(_){}
+      }
+
+      qs("#tabLeads")?.addEventListener("click", ()=> showTab("leads"));
+      qs("#tabCobros")?.addEventListener("click", ()=> showTab("cobros"));
+      showTab("leads");
+
+      // Importante UX: NO abrir el lead por click/doble click en la fila.
+      // La acción correcta es el botón "Seguimiento" (inline) para no sacar al ejecutivo de Tareas.
+
+      document.addEventListener("click", async (ev)=>{
+        const btn = ev.target?.closest?.("button[data-act]");
+        if (!btn) return;
+        ev.preventDefault();
+        const tr = btn.closest("tr");
+        const idTask = btn.getAttribute("data-task") || tr?.getAttribute("data-task");
+        const act = String(btn.getAttribute("data-act")||"");
+        const etype = String(btn.getAttribute("data-etype") || tr?.getAttribute("data-etype") || "").toLowerCase();
+        if (act === "go"){
+          if (!idTask) return;
+          const idLead = btn.getAttribute("data-lead") || tr?.getAttribute("data-lead");
+          if (!idLead) return;
+          if (etype === "fin_evento"){
+            const url = `/web/views/finanzas_evento.html?lead=${encodeURIComponent(String(idLead))}`;
+            try{ window.parent?.postMessage({ type:"openItem", id:"evt", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+            return;
+          }
+          const kind = String(btn.getAttribute("data-kind") || tr?.getAttribute("data-kind") || "").toUpperCase();
+          const requireFollowup = new Set([
+            "LEAD_NUEVO_SEGUIMIENTO",
+            "LEAD_CONTACTADO_SEGUIMIENTO",
+            "LEAD_COTIZADO_SEGUIMIENTO",
+          ]);
+          // Seguimiento inline (sin salir de Tareas).
+          try{
+            const lead = await jget(`/tasks/${encodeURIComponent(String(idTask))}/lead`);
+            const cliente = lead?.cliente || lead?.nombre_cliente || lead?.nombre || "—";
+            const marca = lead?.marca || lead?.marca_nombre || "";
+            const comuna = lead?.comuna || lead?.comuna_nombre || "";
+            const fecha = lead?.fecha_evento ? String(lead.fecha_evento).slice(0,10) : "";
+            const tel = lead?.telefono || "";
+            const dir = lead?.direccion || "";
+            const notes = String(lead?.notas || "").trim();
+
+            const infoBits = [];
+            if (marca) infoBits.push(`<div class="muted"><strong>Marca:</strong> ${esc(marca)}</div>`);
+            if (comuna) infoBits.push(`<div class="muted"><strong>Comuna:</strong> ${esc(comuna)}</div>`);
+            if (fecha) infoBits.push(`<div class="muted"><strong>Evento:</strong> ${esc(fecha)}</div>`);
+            if (tel) infoBits.push(`<div class="muted"><strong>Tel:</strong> ${esc(tel)}</div>`);
+            if (dir) infoBits.push(`<div class="muted"><strong>Dir:</strong> ${esc(dir)}</div>`);
+
+            const res = await Swal.fire({
+              title: "Seguimiento",
+              html: `
+                <div style="text-align:left;display:flex;flex-direction:column;gap:10px">
+                  <div style="font-weight:1100">${esc(cliente)}${marca ? " · " + esc(marca) : ""} <span class="muted">#${esc(idLead)}</span></div>
+                  ${infoBits.join("")}
+                  ${
+                    notes
+                      ? `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-weight:950">Ver historial</summary><pre style="white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;margin:8px 0 0 0;padding:10px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:rgba(2,6,23,.18)">${esc(notes)}</pre></details>`
+                      : ""
+                  }
+                  <hr style="border:none;border-top:1px solid rgba(148,163,184,.14);margin:4px 0 2px" />
+                  <label style="font-weight:900;font-size:12px;opacity:.85">Vía</label>
+                  <select id="sw_via" class="swal2-input" style="height:42px">
+                    <option value="WSP">WhatsApp</option>
+                    <option value="CALL">Llamada</option>
+                    <option value="EMAIL">Email</option>
+                    <option value="NOTE">Nota</option>
+                  </select>
+                  <label style="font-weight:900;font-size:12px;opacity:.85">Detalle (requerido)</label>
+                  <textarea id="sw_text" class="swal2-textarea" placeholder="Qué hiciste / qué respondió el cliente / próximo paso..." style="min-height:110px"></textarea>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px">
+                    <button type="button" class="swal2-styled" id="sw_open_full" style="background:rgba(2,6,23,.22);border:1px solid rgba(148,163,184,.22);color:#fff">Abrir ficha completa</button>
+                  </div>
+                </div>
+              `,
+              focusConfirm: false,
+              showCancelButton: true,
+              confirmButtonText: "Guardar",
+              cancelButtonText: "Cancelar",
+              didOpen: () => {
+                const btnFull = document.getElementById("sw_open_full");
+                if (btnFull){
+                  btnFull.onclick = () => openLead(idLead);
+                }
+              },
+              preConfirm: () => {
+                if (!requireFollowup.has(kind)){
+                  // Igual guardamos seguimiento, pero no bloqueamos por tipo.
+                }
+                const via = (document.getElementById("sw_via")?.value || "").trim();
+                const text = (document.getElementById("sw_text")?.value || "").trim();
+                if (!text) {
+                  Swal.showValidationMessage("Escribe el detalle del seguimiento.");
+                  return null;
+                }
+                return { via, text };
+              }
+            });
+            if (!res.isConfirmed || !res.value) return;
+            await jpost(`/tasks/${encodeURIComponent(String(idTask))}/done`, { action: res.value.via, text: res.value.text });
+            await load();
+            await sync();
+          }catch(e){
+            Swal.fire("Error", String(e.message||e).slice(0,300), "error");
+          }
+          return;
+        }
+        if (!idTask) return;
+
+        try{
+          if (act === "close"){
+            const kind = String(tr?.getAttribute("data-kind")||"").toUpperCase();
+            const requireFollowup = new Set([
+              "LEAD_NUEVO_SEGUIMIENTO",
+              "LEAD_CONTACTADO_SEGUIMIENTO",
+              "LEAD_COTIZADO_SEGUIMIENTO",
+              "CONTACTAR_LEAD",
+              "RIESGO_AUTO_DECLINE_NUEVO",
+              "RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA",
+              "RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA",
+              "RIESGO_COTIZADO_EVENTO_CERCA",
+              "DECLINADO_FECHA_FUTURA",
+            ]);
+            if (requireFollowup.has(kind)){
+              const step = await Swal.fire({
+                title: "Cerrar tarea",
+                text: "¿Registraste seguimiento en este lead?",
+                icon: "question",
+                showCancelButton: true,
+                showDenyButton: true,
+                confirmButtonText: "Sí, registrar",
+                denyButtonText: "No, cerrar igual",
+                cancelButtonText: "Cancelar",
+              });
+              if (step.isDismissed) return;
+              if (step.isDenied){
+                const sure = await Swal.fire({
+                  title: "¿Seguro?",
+                  text: "Cerrar sin seguimiento dejará el lead sin evidencia. Esto quedará como “Omitido”.",
+                  icon: "warning",
+                  showCancelButton: true,
+                  confirmButtonText: "Cerrar igual",
+                  cancelButtonText: "Volver",
+                });
+                if (!sure.isConfirmed) return;
+                await jpost(`/tasks/${idTask}/skip`, { reason: "Cerrado sin seguimiento (confirmado)" });
+              }else{
+                const res = await Swal.fire({
+                  title: "Registrar seguimiento",
+                  html: `
+                    <div style="text-align:left;display:flex;flex-direction:column;gap:10px">
+                      <label style="font-weight:900;font-size:12px;opacity:.85">Vía</label>
+                      <select id="sw_via" class="swal2-input" style="height:42px">
+                        <option value="WSP">WhatsApp</option>
+                        <option value="CALL">Llamada</option>
+                        <option value="EMAIL">Email</option>
+                        <option value="NOTE">Nota</option>
+                      </select>
+                      <label style="font-weight:900;font-size:12px;opacity:.85">Detalle (requerido)</label>
+                      <textarea id="sw_text" class="swal2-textarea" placeholder="Qué hiciste / qué respondió el cliente / próximo paso..." style="min-height:110px"></textarea>
+                      <div style="font-size:12px;opacity:.7;font-weight:850">Esto se guarda en el historial del lead con timestamp y usuario.</div>
+                    </div>
+                  `,
+                  focusConfirm: false,
+                  showCancelButton: true,
+                  confirmButtonText: "Guardar",
+                  cancelButtonText: "Cancelar",
+                  preConfirm: () => {
+                    const via = (document.getElementById("sw_via")?.value || "").trim();
+                    const text = (document.getElementById("sw_text")?.value || "").trim();
+                    if (!text) {
+                      Swal.showValidationMessage("Escribe el detalle del seguimiento.");
+                      return null;
+                    }
+                    return { via, text };
+                  }
+                });
+                if (!res.isConfirmed || !res.value) return;
+                await jpost(`/tasks/${idTask}/done`, { action: res.value.via, text: res.value.text });
+              }
+            }else{
+              // No requiere evidencia, pero igual confirmamos si quiere cerrar sin abrir.
+              const sure = await Swal.fire({
+                title: "Cerrar tarea",
+                text: "¿Seguro que quieres cerrar esta tarea?",
+                icon: "question",
+                showCancelButton: true,
+                confirmButtonText: "Cerrar",
+                cancelButtonText: "Cancelar",
+              });
+              if (!sure.isConfirmed) return;
+              await jpost(`/tasks/${idTask}/done`, {});
+            }
+          }else if (act === "skip"){
+            const r = await Swal.fire({
+              title: "Omitir tarea",
+              input: "text",
+              inputPlaceholder: "Motivo (requerido)",
+              showCancelButton: true,
+              confirmButtonText: "Omitir",
+              cancelButtonText: "Cancelar",
+            });
+            if (!r.isConfirmed) return;
+            const reason = String(r.value||"").trim();
+            if (!reason) return;
+            await jpost(`/tasks/${idTask}/skip`, { reason });
+          }
+          await load();
+          await sync();
+        }catch(e){
+          Swal.fire("Error", String(e.message||e).slice(0,300), "error");
+        }
+      });
+
+      qs("#btnSync").onclick = async ()=>{
+        clearErr();
+        try{
+          await sync();
+          await load();
+        }catch(e){
+          showErr("sync", e);
+          Swal.fire("Error", String(e.message||e).slice(0,300), "error");
+        }
+      };
+      qs("#btnReload").onclick = async ()=>{
+        clearErr();
+        try{
+          await load();
+        }catch(e){
+          showErr("load", e);
+          Swal.fire("Error", String(e.message||e).slice(0,300), "error");
+        }
+      };
+      qs("#btnRules").onclick = ()=>{
+        const url = "/web/views/tareas_reglas.html?v=20260401-1";
+        try{ window.parent?.postMessage({ type:"openItem", id:"tareas_reglas", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+      };
+      qs("#status").addEventListener("change", ()=> load().catch(e => showErr("load", e)));
+
+      // Contexto + admin selector
+      try{
+        CTX = await jget("/tasks/context");
+      }catch(_){}
+      if (CTX?.is_admin){
+        try{
+          const j = await jget("/tasks/admin/users");
+          const items = Array.isArray(j.items) ? j.items : [];
+          ADMIN_USERS = items;
+          const sel = qs("#selUser");
+          const viewAs = qs("#viewAs");
+          if (sel && items.length){
+            sel.style.display = "";
+            if (viewAs) viewAs.style.display = "";
+            const saved = localStorage.getItem("gd_tasks_for_uid") || "";
+            sel.innerHTML =
+              `<option value="__ALL__">(Todos)</option>` +
+              `<option value="">(Mi usuario)</option>` +
+              items.map(u => `<option value="${esc(u.id)}">${esc(u.name)} · ${esc(u.open||0)} abiertas</option>`).join("");
+            if (saved) sel.value = saved;
+            if (!sel.value){
+              // SUPERADMIN: por defecto ve TODO
+              sel.value = "__ALL__";
+            }
+            TARGET_UID = (sel.value === "__ALL__") ? "__ALL__" : (sel.value ? Number(sel.value) : null);
+            if (viewAs){
+              const label = (TARGET_UID === "__ALL__")
+                ? "Todos"
+                : (TARGET_UID
+                    ? (items.find(u => Number(u.id) === Number(TARGET_UID))?.name || `UID ${String(TARGET_UID)}`)
+                    : (CTX?.username || "Mi usuario"));
+              viewAs.textContent = `Viendo: ${label}`;
+            }
+            sel.addEventListener("change", async ()=>{
+              const v = String(sel.value||"");
+              try{ localStorage.setItem("gd_tasks_for_uid", v); }catch(_){}
+              TARGET_UID = (v === "__ALL__") ? "__ALL__" : (v ? Number(v) : null);
+              if (viewAs){
+                const label = (TARGET_UID === "__ALL__")
+                  ? "Todos"
+                  : (TARGET_UID
+                      ? (items.find(u => Number(u.id) === Number(TARGET_UID))?.name || `UID ${String(TARGET_UID)}`)
+                      : (CTX?.username || "Mi usuario"));
+                viewAs.textContent = `Viendo: ${label}`;
+              }
+              clearErr();
+              try{ await sync(); }catch(e){ showErr("sync", e); }
+              try{ await load(); }catch(e){ showErr("load", e); }
+            });
+          }
+        }catch(_){}
+      }
+
+      clearErr();
+      try{ await sync(); }catch(e){ showErr("sync", e); }
+      try{ await load(); }catch(e){ showErr("load", e); }
+    }
+    init();
+  </script>
+</body>
+</html>

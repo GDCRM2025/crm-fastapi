@@ -1,0 +1,10 @@
+{
+  "//": "Copia este archivo como crm/data/backup_config.json en el servidor.",
+  "drive": {
+    "//": "Sube el .tar.gz a una carpeta de Google Drive para evitar llenar la cuota del hosting.",
+    "enabled": true,
+    "folder_id": "PON_AQUI_EL_FOLDER_ID_DE_DRIVE",
+    "service_account_jsons": ["data/drive_backup.json", "data/drive.json"],
+    "keep_local": 1
+  }
+}

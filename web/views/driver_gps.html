@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Conectar GPS</title>
+  <link rel="stylesheet" href="/web/styles.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    :root{ --app-bg:#07131F; --surface:#0C1B2B; --surface2:#102235; --border:#22384F; --text:#EAF2FF; --muted:#A9BBD2; --accent:#19C37D; --shadow:0 12px 30px rgba(0,0,0,.35); }
+    :root.light{ --app-bg:#f6f8ff; --surface:#fff; --surface2:#f2f5ff; --border:#d9e2f2; --text:#0b1220; --muted:#4b5f7a; --shadow:0 10px 24px rgba(0,0,0,.10); }
+    *{box-sizing:border-box;}
+    body{margin:0;background:var(--app-bg);color:var(--text);font-family:ui-sans-serif,system-ui;}
+    .wrap{padding:12px;}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:12px;}
+    .btn{border:1px solid rgba(25,195,125,.30);background: rgba(25,195,125,.16);color: var(--text);padding:10px 12px;border-radius:12px;font-weight:900;cursor:pointer;}
+    .btn.primary{background:var(--accent);color:#052016;border-color:rgba(0,0,0,.15);}
+    .muted{color:var(--muted);font-weight:800;font-size:12px;}
+    pre{background:var(--surface2);border:1px solid var(--border);padding:10px;border-radius:12px;overflow:auto;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div style="font-weight:950">Conectar GPS</div>
+      <div class="muted" style="margin-top:6px">
+        Requiere permiso de ubicación del navegador. Para iPhone: mantener la pestaña activa para tracking estable.
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+        <button class="btn primary" id="btnStart">Iniciar</button>
+        <button class="btn" id="btnStop">Detener</button>
+        <button class="btn" id="btnMe">Ver mi última ubicación</button>
+      </div>
+
+      <div style="margin-top:12px" class="muted">Log</div>
+      <pre id="log">—</pre>
+    </div>
+  </div>
+
+  <script type="module">
+    const qs=(s,el=document)=>el.querySelector(s);
+
+    function getToken(){ return localStorage.getItem("token")||sessionStorage.getItem("token")||""; }
+    function authHeaders(extra={}){ const t=getToken(); return t?{...extra,Authorization:`Bearer ${t}`} : extra; }
+
+    window.addEventListener("message",(ev)=>{
+      if(ev.data?.type==="theme") document.documentElement.classList.toggle("light", ev.data.mode==="light");
+    });
+
+    let watchId=null;
+
+    function log(s){
+      qs("#log").textContent = `[${new Date().toLocaleString()}] ${s}\n` + qs("#log").textContent;
+    }
+
+    async function ping(pos){
+      const p=pos.coords;
+      const payload={ lat:p.latitude, lon:p.longitude, accuracy:p.accuracy, speed:p.speed, heading:p.heading };
+      const r=await fetch("/gps/ping",{
+        method:"POST",
+        headers: authHeaders({"Content-Type":"application/json"}),
+        body: JSON.stringify(payload)
+      });
+      if(!r.ok) throw new Error(await r.text());
+      log(`PING ok: ${payload.lat}, ${payload.lon} (±${Math.round(payload.accuracy||0)}m)`);
+    }
+
+    qs("#btnStart").onclick=()=>{
+      if(!navigator.geolocation){
+        Swal.fire("GPS","Este navegador no soporta geolocalización.","error");
+        return;
+      }
+      if(watchId) return;
+
+      watchId = navigator.geolocation.watchPosition(
+        async (pos)=>{ try{ await ping(pos); }catch(e){ log("PING error: "+e); } },
+        (err)=>{ log("Geo error: "+err.message); },
+        { enableHighAccuracy:true, maximumAge: 5000, timeout: 15000 }
+      );
+
+      log("Tracking iniciado.");
+    };
+
+    qs("#btnStop").onclick=()=>{
+      if(watchId){
+        navigator.geolocation.clearWatch(watchId);
+        watchId=null;
+        log("Tracking detenido.");
+      }
+    };
+
+    qs("#btnMe").onclick=async ()=>{
+      try{
+        const r=await fetch("/gps/me",{headers:authHeaders()});
+        const j=await r.json();
+        log("ME: "+JSON.stringify(j.last||null));
+      }catch(e){
+        log("ME error: "+e);
+      }
+    };
+  </script>
+</body>
+</html>

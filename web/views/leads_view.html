@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ver Leads</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    html,body{height:100%; margin:0;}
+    body{padding:18px; background:transparent;}
+    .card{border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.22); backdrop-filter: blur(10px); color:rgba(255,255,255,.92);}
+    :root.light .card{background:rgba(255,255,255,.62); border-color:rgba(0,0,0,.10); color:rgba(0,0,0,.86);}
+    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+    .muted{opacity:.75}
+    input,select{height:34px; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:inherit; padding:0 10px;}
+    :root.light input,:root.light select{border-color:rgba(0,0,0,.10); background:rgba(255,255,255,.75);}
+    button{height:34px; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.08); color:inherit; padding:0 12px; font-weight:900; cursor:pointer;}
+    button:hover{background:rgba(255,255,255,.12);}
+
+    /* Toggle Tabla/Kanban */
+    .vToggle{display:flex; align-items:center; gap:8px;}
+    .vLabel{font-weight:900; opacity:.9; font-size:13px;}
+    .switch{position:relative; width:58px; height:30px; display:inline-block;}
+    .switch input{display:none;}
+    .slider{position:absolute; inset:0; border-radius:999px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.10); transition:.2s; cursor:pointer;}
+    .slider::after{content:""; position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:999px; background:rgba(255,255,255,.92); transition:.2s;}
+    .switch input:checked + .slider::after{ transform: translateX(28px); }
+    .vIcon{opacity:.9}
+
+    table{width:100%; border-collapse:collapse; font-size:13px; margin-top:12px;}
+    th,td{padding:10px 8px; border-bottom:1px solid rgba(255,255,255,.10); text-align:left; vertical-align:top;}
+    :root.light th,:root.light td{border-bottom-color:rgba(0,0,0,.08);}
+    .cta{display:flex; gap:8px;}
+    .chip{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); font-weight:900;}
+    :root.light .chip{border-color:rgba(0,0,0,.10); background:rgba(255,255,255,.75);}
+
+    /* Kanban */
+    .kanban{display:flex; gap:12px; overflow:auto; padding:12px 0;}
+    .col{min-width:300px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); padding:10px;}
+    :root.light .col{border-color:rgba(0,0,0,.10); background:rgba(255,255,255,.55);}
+    .col h4{margin:0 0 10px 0; font-size:13px; letter-spacing:.08em; opacity:.9; display:flex; align-items:center; gap:8px;}
+    .dot{width:10px; height:10px; border-radius:999px;}
+    .leadcard{border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.20); padding:10px; margin-bottom:10px; cursor:grab; border-left:6px solid rgba(34,197,94,.45);}
+    :root.light .leadcard{background:rgba(255,255,255,.75); border-color:rgba(0,0,0,.08);}
+    .leadcard b{display:block}
+    .small{font-size:12px; opacity:.78; margin-top:4px;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h2 style="margin:0">Ver Leads</h2>
+        <div class="muted">Tabla o Kanban. Sin mezclar Filtrar aquí.</div>
+      </div>
+
+      <div class="row">
+        <input id="q" placeholder="Buscar cliente / mail / teléfono / código" style="width:min(360px, 72vw)" />
+        <div class="vToggle" title="Tabla / Kanban">
+          <span class="vIcon">📋</span><span class="vLabel">Tabla</span>
+          <label class="switch">
+            <input id="viewSwitch" type="checkbox" />
+            <span class="slider"></span>
+          </label>
+          <span class="vLabel">Kanban</span><span class="vIcon">🧩</span>
+        </div>
+        <button id="btnNew">+ Nuevo Lead</button>
+        <button id="btnReload">Recargar</button>
+      </div>
+    </div>
+
+    <div id="out"></div>
+  </div>
+
+<script>
+  const getToken = () => localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+  const auth = () => ({ Authorization: "Bearer " + getToken() });
+
+  async function apiGet(url){
+    const r = await fetch(url, { headers: auth() });
+    if (!r.ok) throw new Error(url + " " + r.status);
+    return r.json();
+  }
+  async function apiJson(url, method, body){
+    const r = await fetch(url, {
+      method,
+      headers: { "Content-Type":"application/json", ...auth() },
+      body: JSON.stringify(body)
+    });
+    const txt = await r.text();
+    let j = null;
+    try{ j = JSON.parse(txt); }catch(_){}
+    if (!r.ok) throw new Error((j && (j.detail||j.message)) || txt || (url + " " + r.status));
+    return j;
+  }
+
+  function colorForState(id){
+    const pal = ["#22c55e","#60a5fa","#f59e0b","#ef4444","#a78bfa","#14b8a6","#f472b6","#eab308","#fb7185"];
+    return pal[(Number(id)||0) % pal.length];
+  }
+
+  function pickCatalog(obj){
+    return {
+      marcas: obj.marcas || obj.brands || [],
+      estados: obj.estados || obj.estados_lead || obj.states || []
+    };
+  }
+
+  function normLead(l){
+    return {
+      id: l.id_lead,
+      nombre: l.nombre_cliente || "",
+      email: l.email || "",
+      telefono: l.telefono || "",
+      codigo: l.codigo_cliente || "",
+      fecha: l.fecha_evento || "",
+      estado: l.id_estado ?? 0,
+      marca: l.id_marca ?? 0,
+      comuna: l.id_comuna ?? 0,
+      plataforma: l.plataforma || "",
+      notas: l.notas || "",
+      direccion: l.direccion || ""
+    };
+  }
+
+  function applySearch(arr, q){
+    q = (q||"").trim().toLowerCase();
+    if (!q) return arr;
+    return arr.filter(x => {
+      const s = `${x.nombre} ${x.email} ${x.telefono} ${x.codigo}`.toLowerCase();
+      return s.includes(q);
+    });
+  }
+
+  function renderTable(leads){
+    const rows = leads.map(l => `
+      <tr>
+        <td><span class="chip">#${l.id}</span></td>
+        <td><b>${l.nombre}</b><div class="small">${l.codigo || ""}</div></td>
+        <td>${l.email || ""}<div class="small">${l.telefono || ""}</div></td>
+        <td>${l.fecha || ""}<div class="small">${l.plataforma || ""}</div></td>
+        <td><span class="chip" style="border-color:${colorForState(l.estado)}55">${l.estado}</span></td>
+        <td class="cta">
+          <button data-edit="${l.id}">Editar</button>
+          <button data-state="${l.id}">Estado</button>
+        </td>
+      </tr>
+    `).join("");
+
+    return `
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Cliente</th><th>Contacto</th><th>Fecha/Origen</th><th>Estado</th><th>Acciones</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function renderKanban(leads, estadosMeta){
+    const by = new Map();
+    for (const s of estadosMeta){
+      const id = s.id_estado ?? s.id ?? s.value;
+      by.set(id, { id, nombre: (s.nombre||s.label||("Estado "+id)), leads: [] });
+    }
+    for (const l of leads){
+      const k = l.estado ?? 0;
+      if (!by.has(k)) by.set(k, { id:k, nombre:"Estado "+k, leads:[] });
+      by.get(k).leads.push(l);
+    }
+
+    const cols = Array.from(by.values()).map(col => {
+      const c = colorForState(col.id);
+      const cards = col.leads.map(l => `
+        <div class="leadcard" draggable="true" data-id="${l.id}" data-estado="${col.id}" style="border-left-color:${c}">
+          <b>${l.nombre}</b>
+          <div class="small">${l.codigo || ""}</div>
+          <div class="small">${l.fecha || "—"} · ${l.telefono || "—"}</div>
+          <div class="small">${l.plataforma || ""}</div>
+        </div>
+      `).join("") || '<div class="small muted">Sin leads</div>';
+
+      return `
+        <div class="col" data-drop="${col.id}">
+          <h4><span class="dot" style="background:${c}"></span>${col.nombre}</h4>
+          ${cards}
+        </div>
+      `;
+    }).join("");
+
+    return `<div class="kanban">${cols}</div>`;
+  }
+
+  async function modalEdit(l){
+    const html = `
+      <input id="m_nombre" class="swal2-input" placeholder="Nombre cliente" value="${l.nombre.replaceAll('"','&quot;')}">
+      <input id="m_email" class="swal2-input" placeholder="Email" value="${(l.email||"").replaceAll('"','&quot;')}">
+      <input id="m_tel" class="swal2-input" placeholder="Teléfono" value="${(l.telefono||"").replaceAll('"','&quot;')}">
+      <input id="m_fecha" class="swal2-input" type="date" value="${l.fecha||""}">
+      <input id="m_dir" class="swal2-input" placeholder="Dirección" value="${(l.direccion||"").replaceAll('"','&quot;')}">
+      <textarea id="m_notas" class="swal2-textarea" placeholder="Notas">${l.notas||""}</textarea>
+    `;
+    const res = await Swal.fire({
+      title: `Editar Lead #${l.id}`,
+      html,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: "Guardar",
+      cancelButtonText: "Cancelar",
+      preConfirm: () => ({
+        nombre_cliente: document.getElementById("m_nombre").value,
+        email: document.getElementById("m_email").value,
+        telefono: document.getElementById("m_tel").value,
+        fecha_evento: document.getElementById("m_fecha").value,
+        direccion: document.getElementById("m_dir").value,
+        notas: document.getElementById("m_notas").value
+      })
+    });
+    return res;
+  }
+
+  async function modalNew(){
+    const html = `
+      <input id="n_nombre" class="swal2-input" placeholder="Nombre cliente">
+      <input id="n_email" class="swal2-input" placeholder="Email">
+      <input id="n_tel" class="swal2-input" placeholder="Teléfono">
+      <input id="n_fecha" class="swal2-input" type="date">
+      <input id="n_cod" class="swal2-input" placeholder="Código cliente (opcional)">
+      <textarea id="n_notas" class="swal2-textarea" placeholder="Notas"></textarea>
+    `;
+    const res = await Swal.fire({
+      title: "Nuevo Lead",
+      html,
+      focusConfirm:false,
+      showCancelButton:true,
+      confirmButtonText:"Crear",
+      cancelButtonText:"Cancelar",
+      preConfirm: () => ({
+        nombre_cliente: document.getElementById("n_nombre").value,
+        email: document.getElementById("n_email").value,
+        telefono: document.getElementById("n_tel").value,
+        fecha_evento: document.getElementById("n_fecha").value,
+        codigo_cliente: document.getElementById("n_cod").value,
+        notas: document.getElementById("n_notas").value
+      })
+    });
+    return res;
+  }
+
+  async function modalState(id, estadosMeta, current){
+    const opts = estadosMeta.map(s=>{
+      const sid = s.id_estado ?? s.id ?? s.value;
+      const name = s.nombre || s.label || ("Estado " + sid);
+      const sel = String(sid) === String(current) ? "selected" : "";
+      return `<option value="${sid}" ${sel}>${name}</option>`;
+    }).join("");
+
+    const res = await Swal.fire({
+      title: "Cambiar estado",
+      html: `<select id="st" class="swal2-select">${opts}</select>`,
+      showCancelButton:true,
+      confirmButtonText:"Actualizar",
+      cancelButtonText:"Cancelar",
+      preConfirm: ()=> Number(document.getElementById("st").value)
+    });
+    return res;
+  }
+
+  let CAT = { marcas:[], estados:[] };
+  let ALL = [];
+  let MODE = "tabla"; // tabla|kanban
+
+  async function load(){
+    const [leads, cat] = await Promise.all([
+      apiGet("/leads"),
+      apiGet("/leads/catalogs").catch(() => apiGet("/leads/catalogos"))
+    ]);
+    CAT = pickCatalog(cat||{});
+    ALL = (Array.isArray(leads) ? leads : (leads.items||[])).map(normLead);
+    render();
+  }
+
+  function render(){
+    const q = document.getElementById("q").value;
+    const arr = applySearch(ALL, q);
+
+    const out = document.getElementById("out");
+    if (MODE === "tabla"){
+      out.innerHTML = renderTable(arr);
+      out.querySelectorAll("[data-edit]").forEach(b => {
+        b.addEventListener("click", async () => {
+          const id = Number(b.getAttribute("data-edit"));
+          const l = ALL.find(x=>x.id===id);
+          const r = await modalEdit(l);
+          if (!r.isConfirmed) return;
+          try{
+            // si no existe PUT /leads/{id}, al menos no revienta
+            await apiJson(`/leads/${id}`, "PUT", r.value);
+            await load();
+            Swal.fire({toast:true, position:"top-end", timer:1600, showConfirmButton:false, icon:"success", title:"Lead actualizado"});
+          }catch(e){
+            Swal.fire("No pude guardar", String(e.message||e), "error");
+          }
+        });
+      });
+
+      out.querySelectorAll("[data-state]").forEach(b => {
+        b.addEventListener("click", async () => {
+          const id = Number(b.getAttribute("data-state"));
+          const l = ALL.find(x=>x.id===id);
+          const r = await modalState(id, CAT.estados||[], l.estado);
+          if (!r.isConfirmed) return;
+          try{
+            await apiJson(`/leads/${id}/estado`, "PUT", { id_estado: r.value });
+            await load();
+            Swal.fire({toast:true, position:"top-end", timer:1600, showConfirmButton:false, icon:"success", title:"Estado actualizado"});
+          }catch(e){
+            Swal.fire("No pude cambiar estado", String(e.message||e), "error");
+          }
+        });
+      });
+
+      return;
+    }
+
+    // Kanban
+    out.innerHTML = renderKanban(arr, CAT.estados||[]);
+    let dragged = null;
+
+    out.querySelectorAll(".leadcard").forEach(c => {
+      c.addEventListener("dragstart", () => { dragged = c; });
+    });
+
+    out.querySelectorAll(".col").forEach(col => {
+      col.addEventListener("dragover", (e)=>e.preventDefault());
+      col.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        if (!dragged) return;
+        const id = Number(dragged.dataset.id);
+        const oldSt = Number(dragged.dataset.estado);
+        const newSt = Number(col.getAttribute("data-drop"));
+        if (oldSt === newSt) return;
+
+        try{
+          await apiJson(`/leads/${id}/estado`, "PUT", { id_estado: newSt });
+          Swal.fire({toast:true, position:"top-end", timer:1600, showConfirmButton:false, icon:"success", title:`Movido: ${oldSt} → ${newSt}`});
+          await load();
+        }catch(e){
+          Swal.fire("No pude mover", String(e.message||e), "error");
+        }
+      });
+    });
+  }
+
+  // UI events
+  document.getElementById("btnReload").addEventListener("click", load);
+  document.getElementById("q").addEventListener("input", render);
+
+  document.getElementById("viewSwitch").addEventListener("change", (e) => {
+    MODE = e.target.checked ? "kanban" : "tabla";
+    render();
+  });
+
+  document.getElementById("btnNew").addEventListener("click", async () => {
+    const r = await modalNew();
+    if (!r.isConfirmed) return;
+    try{
+      await apiJson("/leads", "POST", r.value);
+      await load();
+      Swal.fire({toast:true, position:"top-end", timer:1600, showConfirmButton:false, icon:"success", title:"Lead creado"});
+    }catch(e){
+      Swal.fire("No pude crear", String(e.message||e), "error");
+    }
+  });
+
+  // Theme bridge
+  window.addEventListener("message", (ev) => {
+    if (ev.data?.type === "theme"){
+      document.documentElement.classList.toggle("light", ev.data.mode === "light");
+    }
+  });
+  document.documentElement.classList.toggle("light", (localStorage.getItem("gd_theme")||"dark")==="light");
+
+  load().catch(e => Swal.fire("Error", "No pude cargar leads. Revisa token/API.", "error"));
+</script>
+</body>
+</html>

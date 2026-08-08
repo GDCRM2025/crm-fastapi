@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="gd-build" content="20260518-rrhh-month2" />
+  <title>RRHH · Planificador</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="/web/js/iframe-theme.js"></script>
+  <style>
+    body{ margin:0; padding:18px; color:inherit; }
+    .card{ border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.12); background:rgba(7,12,16,.45); }
+    :root.light .card{ background:rgba(255,255,255,.75); border-color:rgba(0,0,0,.1); color:#0f172a; }
+    .title{ font-weight:1000; font-size:18px; }
+    .muted{ opacity:.7; font-size:12px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .inp{ height:36px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:transparent; color:inherit; padding:0 10px; font-weight:800; min-width:200px; }
+    .btn{ height:36px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:transparent; color:inherit; padding:0 12px; cursor:pointer; font-weight:900; }
+    .btn:hover{ background: rgba(255,255,255,.06); }
+    table{ width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+    th,td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; white-space:nowrap; }
+    th{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; opacity:.7; }
+    .table-wrap{ overflow:auto; max-height:70vh; border:1px solid rgba(255,255,255,.12); border-radius:12px; margin-top:10px; }
+    .dow{ display:flex; gap:8px; flex-wrap:wrap; }
+    .chk{ display:flex; gap:8px; align-items:center; font-weight:900; font-size:12px; opacity:.9; }
+    .pill{ padding:4px 10px; border-radius:999px; border:1px solid rgba(148,163,184,.18); background:rgba(2,6,23,.18); font-weight:950; font-size:12px; }
+    .hrGrid{ display:grid; grid-template-columns: repeat(7, 1fr); gap:10px; margin-top:12px; }
+    @media (max-width: 980px){ .hrGrid{ grid-template-columns: repeat(2, 1fr);} }
+    .gridWrap{ overflow:auto; max-height: calc(100vh - 360px); border-radius:14px; border:1px solid rgba(255,255,255,.10); padding:10px; margin-top:10px; }
+    :root.light .gridWrap{ border-color: rgba(0,0,0,.10); }
+    .dayCol{ border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:10px; background: rgba(2,6,23,.12); min-height:140px; }
+    :root.light .dayCol{ background: rgba(255,255,255,.55); border-color: rgba(0,0,0,.10); }
+    .dayHead{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .dayName{ font-weight:1100; letter-spacing:.08em; text-transform:uppercase; font-size:11px; opacity:.85; }
+    .dropHint{ font-size:11px; opacity:.7; font-weight:850; margin-top:6px; }
+    .turnoPill{ display:inline-flex; align-items:center; gap:8px; border-radius:999px; padding:6px 10px; border:1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.18); font-weight:1000; cursor:grab; user-select:none; }
+    .turnoPill:active{ cursor:grabbing; }
+    .turnoPill small{ opacity:.7; font-weight:900; }
+    .slot{ margin-top:10px; border-radius:12px; border:1px dashed rgba(148,163,184,.28); padding:10px; min-height:70px; }
+    .slot.dragover{ background: rgba(59,130,246,.12); border-color: rgba(59,130,246,.45); }
+    .assignBox{ display:flex; flex-direction:column; gap:8px; }
+    .assignTop{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    .xbtn{ height:28px; min-width:28px; border-radius:10px; border:1px solid rgba(255,255,255,.14); background:transparent; color:inherit; cursor:pointer; font-weight:1100; }
+    .xbtn:hover{ background: rgba(255,255,255,.06); }
+    .bar{ height:10px; border-radius:999px; background: rgba(148,163,184,.20); overflow:hidden; }
+    .bar > i{ display:block; height:100%; width:0%; background: linear-gradient(90deg, rgba(34,197,94,.75), rgba(59,130,246,.75)); }
+    .kpiLine{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    details.card{ padding:12px 14px; }
+    details.card > summary{ list-style:none; cursor:pointer; font-weight:1000; font-size:14px; opacity:.9; }
+    details.card > summary::-webkit-details-marker{ display:none; }
+  </style>
+</head>
+<body>
+  <details class="card" id="advBox">
+    <summary>Crear turnos</summary>
+    <div class="row" style="justify-content:space-between; margin-top:10px;">
+      <div class="muted">Crea/edita turnos base (plantillas). Luego asigna desde el Planificador.</div>
+      <div class="row">
+        <button class="btn" id="btnTurnos">Turnos</button>
+        <button class="btn" id="btnReload">Actualizar</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px;">
+      <select class="inp" id="selTurno"><option value="">Turno…</option></select>
+      <input class="inp" id="hDesde" type="date" />
+      <input class="inp" id="hHasta" type="date" />
+      <label class="chk" style="min-width:auto;"><input type="checkbox" id="chkIndef" /> Indefinido</label>
+      <span class="pill">Días: si no marcas, aplica a todos</span>
+      <button class="btn" id="btnAsignar">Asignar</button>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div class="dow" id="dowBox"></div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Colaborador</th><th>Turno</th><th>Desde</th><th>Hasta</th><th>Días</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td class="muted">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </details>
+
+  <section class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;">
+      <div>
+        <div class="title">Planificador mensual</div>
+        <div class="muted">Arrastra turnos hacia días. Calcula horas por semana y marca en rojo si supera 42h.</div>
+      </div>
+      <div class="row">
+        <select class="inp" id="selStaff"><option value="">Colaborador…</option></select>
+        <input class="inp" id="monthPick" type="month" style="min-width:190px" />
+        <button class="btn" id="btnLoadMonth">Cargar mes</button>
+        <button class="btn secondary" id="btnClearPlan" title="Limpia el modelado actual (no toca la BD)">Limpiar</button>
+        <button class="btn secondary" id="btnDeletePlan" title="Elimina la planificación guardada del mes (BD)">Eliminar mes</button>
+        <button class="btn" id="btnSaveMonth">Guardar mes</button>
+      </div>
+    </div>
+    <div class="kpiLine">
+      <span class="pill" id="kpiMonth">Mes: —</span>
+      <span class="pill" id="kpiHours">Horas mes: —</span>
+      <span class="pill" id="kpiWeeks">Semanas sobre 42h: —</span>
+      <span class="pill" id="kpiTurnos">Días con turno: —</span>
+      <div style="flex:1; min-width:220px">
+        <div class="bar" title="Cobertura del mes (días con turno)"><i id="barCov"></i></div>
+      </div>
+    </div>
+    <div class="table-wrap" style="margin-top:10px; max-height:220px">
+      <table>
+        <thead><tr><th>Semana</th><th>Horas</th><th>Estado</th></tr></thead>
+        <tbody id="weekRows"><tr><td class="muted">—</td></tr></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div class="muted" style="font-weight:900">Turnos disponibles:</div>
+      <div class="row" id="turnosPills"></div>
+    </div>
+    <div class="gridWrap">
+      <div class="hrGrid" id="monthGrid"></div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;">
+      <div>
+        <div class="title">Feriados</div>
+        <div class="muted">Agrega feriados del año (se resaltan en el planificador).</div>
+      </div>
+      <div class="row">
+        <input class="inp" id="holDay" type="date" style="min-width:190px" />
+        <input class="inp" id="holName" placeholder="Nombre (opcional)" style="min-width:260px" />
+        <button class="btn" id="btnHolAdd">Agregar</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Día</th><th>Nombre</th><th></th></tr></thead>
+        <tbody id="holRows"><tr><td class="muted">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(path){
+      const p = String(path || "");
+      if (!p) return p;
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE) return p;
+      return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
+    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+    function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+    function getV(){
+      try{ return new URLSearchParams(location.search).get("v") || ""; }catch(_){ return ""; }
+    }
+    function toast(msg){
+      const t = document.createElement("div");
+      t.textContent = msg;
+      Object.assign(t.style,{position:"fixed",right:"16px",bottom:"16px",background:"rgba(0,0,0,.8)",color:"#fff",padding:"10px 14px",borderRadius:"10px",zIndex:99,fontWeight:"900",maxWidth:"70vw"});
+      document.body.appendChild(t);
+      setTimeout(()=> t.remove(), 2600);
+    }
+
+    const DOW = [
+      {k:0, n:"Lun"},
+      {k:1, n:"Mar"},
+      {k:2, n:"Mié"},
+      {k:3, n:"Jue"},
+      {k:4, n:"Vie"},
+      {k:5, n:"Sáb"},
+      {k:6, n:"Dom"},
+    ];
+    const DOW_FULL = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+    function renderDow(){
+      qs("#dowBox").innerHTML = DOW.map(d => `
+        <label class="chk"><input type="checkbox" data-dow="${d.k}" /> ${d.n}</label>
+      `).join("");
+    }
+    function getDowMask(){
+      const checks = Array.from(qs("#dowBox").querySelectorAll("input[type=checkbox][data-dow]")||[]);
+      const sel = checks.filter(c => c.checked).map(c => Number(c.getAttribute("data-dow")));
+      if (!sel.length) return null;
+      let m = 0;
+      for (const d of sel){ m |= (1<<d); }
+      return m;
+    }
+    function fmtMask(m){
+      if (m == null) return "Todos";
+      const out = [];
+      for (const d of DOW){
+        if (m & (1<<d.k)) out.push(d.n);
+      }
+      return out.join(",");
+    }
+
+    function parseHM(s){
+      const m = String(s||"").trim().match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return null;
+      const hh = Math.max(0, Math.min(23, Number(m[1] || 0)));
+      const mm = Math.max(0, Math.min(59, Number(m[2] || 0)));
+      return (hh*60+mm);
+    }
+    function turnoHours(t){
+      const a = parseHM(t?.hora_entrada);
+      const b0 = parseHM(t?.hora_salida);
+      if (a == null || b0 == null) return 0;
+      let b = b0;
+      if (b <= a) b += 24*60;
+      let dur = Math.max(0, b-a);
+      if (t?.colacion_auto) dur = Math.max(0, dur-60);
+      return dur/60.0;
+    }
+
+    function ymNow(){
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth()+1).padStart(2,"0");
+      return `${y}-${m}`;
+    }
+    function ensureMonthPick(){
+      const el = qs("#monthPick");
+      if (!el) return ymNow();
+      if (!el.value) el.value = ymNow();
+      return el.value || ymNow();
+    }
+    function monthStartDate(ym){
+      const [y,m] = String(ym||"").split("-").map(x=>Number(x||0));
+      if (!y || !m) return new Date();
+      return new Date(y, m-1, 1, 0, 0, 0, 0);
+    }
+    function addDays(d, n){
+      const x = new Date(d.getTime());
+      x.setDate(x.getDate()+n);
+      return x;
+    }
+    function mondayOf(d){
+      const x = new Date(d.getTime());
+      const wd = (x.getDay()+6)%7; // 0 Mon .. 6 Sun
+      x.setDate(x.getDate()-wd);
+      x.setHours(0,0,0,0);
+      return x;
+    }
+    function ymd(d){
+      const y = d.getFullYear();
+      const m = String(d.getMonth()+1).padStart(2,"0");
+      const dd = String(d.getDate()).padStart(2,"0");
+      return `${y}-${m}-${dd}`;
+    }
+    function inMonth(d, ym){
+      const ms = monthStartDate(ym);
+      return d.getFullYear() === ms.getFullYear() && d.getMonth() === ms.getMonth();
+    }
+
+    async function loadStaff(){
+      const r = await fetch(apiURL("/rrhh/staff/assignable"), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      const items = data.items || [];
+      window.__STAFF_ITEMS = items;
+      const prev = String(qs("#selStaff").value || "");
+      qs("#selStaff").innerHTML = `<option value="">Colaborador…</option>` + items.map(s=>`<option value="${s.id_staff}">${s.colaborador || ("#"+s.id_staff)}</option>`).join("");
+      if (prev && items.some(s => String(s.id_staff) === prev)) qs("#selStaff").value = prev;
+    }
+
+    async function loadTurnos(){
+      const r = await fetch(apiURL("/rrhh/turnos"), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      const items = data.items || [];
+      qs("#selTurno").innerHTML = `<option value="">Turno…</option>` + items.map(t=>`<option value="${t.id_turno}">${t.nombre} (${t.hora_entrada}-${t.hora_salida})</option>`).join("");
+      window.__TURNOS = items;
+      window.__TURNOS_BY_ID = new Map((items||[]).map(t => [Number(t.id_turno||0), t]));
+      qs("#turnosPills").innerHTML = items.map(t => `
+        <span class="turnoPill" draggable="true" data-turno="${t.id_turno}">
+          ${t.nombre || "Turno"} <small>${t.hora_entrada || "??:??"}–${t.hora_salida || "??:??"}</small>
+        </span>
+      `).join("");
+    }
+
+    async function loadHorarios(){
+      const r = await fetch(apiURL("/rrhh/horarios"), { headers: headers() });
+      const data = await r.json().catch(()=>({}));
+      const items = data.items || [];
+      const staffMap = {};
+      try{
+        const st = await fetch(apiURL("/rrhh/staff/assignable"), { headers: headers() }).then(x=>x.json());
+        (st.items||[]).forEach(s=> staffMap[String(s.id_staff)] = s.colaborador || ("#"+s.id_staff));
+      }catch(_){}
+      qs("#rows").innerHTML = items.map(h=>`
+        <tr>
+          <td><strong>${staffMap[String(h.id_staff)] || ("#"+h.id_staff)}</strong></td>
+          <td>${h.turno_nombre || "—"} (${h.hora_entrada || ""}-${h.hora_salida || ""})</td>
+          <td>${String(h.desde||"").slice(0,10) || "—"}</td>
+          <td>${h.hasta ? String(h.hasta).slice(0,10) : "Indefinido"}</td>
+          <td>${fmtMask(h.dow_mask)}</td>
+          <td style="text-align:right;">
+            <button class="btn" data-act="delHorario" data-id="${h.id_horario}">Eliminar</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td class="muted">Sin horarios.</td></tr>`;
+    }
+
+    function getMonthPlan(){
+      window.__MONTH_PLAN = window.__MONTH_PLAN || {};
+      return window.__MONTH_PLAN;
+    }
+    function setDayTurno(dayIso, idTurno){
+      const p = getMonthPlan();
+      if (!idTurno) delete p[dayIso];
+      else p[dayIso] = Number(idTurno);
+    }
+
+    function computeWeekSums(ym){
+      const p = getMonthPlan();
+      const byId = window.__TURNOS_BY_ID || new Map();
+      const sums = new Map(); // weekStartIso -> hours
+      for (const [dayIso, tid0] of Object.entries(p)){
+        if (!dayIso || !tid0) continue;
+        const d = new Date(dayIso + "T00:00:00");
+        if (!inMonth(d, ym)) continue;
+        const ws = ymd(mondayOf(d));
+        const t = byId.get(Number(tid0));
+        const h = turnoHours(t);
+        sums.set(ws, (sums.get(ws) || 0) + h);
+      }
+      const over = new Map();
+      for (const [ws, hrs] of sums.entries()){
+        if (hrs > 42.0 + 1e-6) over.set(ws, hrs);
+      }
+      return { sums, over };
+    }
+
+    function renderMonthKPIs(){
+      const ym = ensureMonthPick();
+      const p = getMonthPlan();
+      const byId = window.__TURNOS_BY_ID || new Map();
+      let hrs = 0;
+      let days = 0;
+      for (const [dayIso, tid0] of Object.entries(p)){
+        const d = new Date(dayIso + "T00:00:00");
+        if (!inMonth(d, ym)) continue;
+        const t = byId.get(Number(tid0));
+        hrs += turnoHours(t);
+        days += 1;
+      }
+      const { sums, over } = computeWeekSums(ym);
+      qs("#kpiMonth").textContent = `Mes: ${ym}`;
+      qs("#kpiHours").textContent = `Horas mes: ${hrs.toFixed(1)}h`;
+      qs("#kpiWeeks").textContent = `Semanas sobre 42h: ${over.size}`;
+      qs("#kpiTurnos").textContent = `Días con turno: ${days}`;
+      const ms = monthStartDate(ym);
+      const me = new Date(ms.getFullYear(), ms.getMonth()+1, 0, 0, 0, 0, 0);
+      const daysInMonth = me.getDate();
+      const pct = Math.max(0, Math.min(100, (days/daysInMonth)*100));
+      qs("#barCov").style.width = pct.toFixed(0) + "%";
+
+      // detalle semanal (Lun–Dom)
+      const weekTb = qs("#weekRows");
+      if (weekTb){
+        const ms = monthStartDate(ym);
+        const me = new Date(ms.getFullYear(), ms.getMonth()+1, 0, 0, 0, 0, 0);
+        const first = mondayOf(ms);
+        const last = mondayOf(me);
+        const rows = [];
+        for (let cur = new Date(first.getTime()); cur <= last; cur = addDays(cur, 7)){
+          const ws = ymd(cur);
+          const we = ymd(addDays(cur, 6));
+          // mostrar solo semanas que intersectan el mes
+          const inter = (addDays(cur, 6) >= ms) && (cur <= me);
+          if (!inter) continue;
+          const h = Number(sums.get(ws) || 0);
+          const isOver = over.has(ws);
+          rows.push(`
+            <tr>
+              <td><strong>${ws}</strong> → ${we} <span class="muted">(${DOW_FULL[0]}–${DOW_FULL[6]})</span></td>
+              <td><strong>${h.toFixed(1)}h</strong></td>
+              <td>${isOver ? `<span class="pill" style="border-color:rgba(239,68,68,.55); background:rgba(239,68,68,.14)">Sobre 42h</span>` : `<span class="muted">OK</span>`}</td>
+            </tr>
+          `);
+        }
+        weekTb.innerHTML = rows.join("") || `<tr><td class="muted">Sin semanas.</td></tr>`;
+      }
+    }
+
+    function renderMonthGrid(){
+      const ym = ensureMonthPick();
+      const ms = monthStartDate(ym);
+      const firstCell = mondayOf(ms);
+      const p = getMonthPlan();
+      const byId = window.__TURNOS_BY_ID || new Map();
+      const hol = window.__HOLIDAYS || new Map(); // dayIso -> name
+      const { over } = computeWeekSums(ym);
+
+      const cells = [];
+      for (let i=0;i<42;i++){
+        const d = addDays(firstCell, i);
+        const dayIso = ymd(d);
+        const inM = inMonth(d, ym);
+        const dow = (d.getDay()+6)%7; // 0 Mon..6 Sun
+        const ws = ymd(mondayOf(d));
+        const weekOver = over.has(ws);
+        const isSun = (dow === 6);
+        const holName = hol.get(dayIso) || "";
+        const tid = inM ? Number(p[dayIso] || 0) : 0;
+        const t = tid ? byId.get(tid) : null;
+
+        const titleParts = [];
+        if (holName) titleParts.push("Feriado: " + holName);
+        if (weekOver) titleParts.push("Semana sobre 42h");
+        const title = titleParts.join(" · ");
+
+        const borderColor = weekOver ? "rgba(239,68,68,.55)" : "rgba(255,255,255,.12)";
+        const bg = weekOver ? "rgba(239,68,68,.08)" : "rgba(2,6,23,.12)";
+        const dim = inM ? 1 : 0.45;
+
+        cells.push(`
+          <div class="dayCol" style="border-color:${borderColor}; background:${bg}; opacity:${dim}" title="${title}">
+            <div class="dayHead">
+              <div>
+                <div class="dayName">${DOW[dow].n} ${String(d.getDate()).padStart(2,"0")}</div>
+                <div class="muted">${dayIso}${holName ? (" · " + holName) : ""}${isSun ? " · DOM" : ""}</div>
+              </div>
+              ${inM ? `<button class="xbtn" data-act="clearDate" data-date="${dayIso}" title="Quitar turno">×</button>` : ``}
+            </div>
+            <div class="slot" data-date="${dayIso}">
+              ${inM ? (t ? `
+                <div class="assignBox">
+                  <div class="assignTop">
+                    <span class="turnoPill" draggable="false">${t?.nombre || "Turno"} <small>${t?.hora_entrada || "??:??"}–${t?.hora_salida || "??:??"}</small></span>
+                    ${holName ? `<span class="pill" style="border-color:rgba(234,179,8,.35); background:rgba(234,179,8,.10)">Feriado</span>` : (isSun ? `<span class="pill" style="border-color:rgba(99,102,241,.35); background:rgba(99,102,241,.10)">Domingo</span>` : ``)}
+                  </div>
+                </div>
+              ` : `<div class="dropHint">Suelta un turno aquí</div>`) : `<div class="dropHint muted">Fuera de mes</div>`}
+            </div>
+          </div>
+        `);
+      }
+      qs("#monthGrid").innerHTML = cells.join("");
+      renderMonthKPIs();
+    }
+
+    async function loadHolidaysForYear(year){
+      if (!year) return;
+      window.__HOLIDAYS = window.__HOLIDAYS || new Map();
+      qs("#holRows").innerHTML = `<tr><td class="muted">Cargando...</td></tr>`;
+      const r = await fetch(apiURL(`/rrhh/feriados?year=${encodeURIComponent(String(year))}`), { headers: headers() });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        qs("#holRows").innerHTML = `<tr><td class="muted">Error: ${t || r.status}</td></tr>`;
+        return;
+      }
+      const data = await r.json().catch(()=>({}));
+      const items = data.items || [];
+      const m = new Map();
+      for (const it of items){
+        const d = String(it.day || "").slice(0,10);
+        if (d) m.set(d, String(it.name || ""));
+      }
+      window.__HOLIDAYS = m;
+      qs("#holRows").innerHTML = items.map(it => `
+        <tr>
+          <td><strong>${String(it.day||"").slice(0,10)}</strong></td>
+          <td>${String(it.name||"") || "—"}</td>
+          <td style="text-align:right;"><button class="btn" data-act="delHoliday" data-day="${String(it.day||"").slice(0,10)}">Eliminar</button></td>
+        </tr>
+      `).join("") || `<tr><td class="muted">Sin feriados.</td></tr>`;
+      renderMonthGrid();
+    }
+
+    async function loadMonth(){
+      const idStaff = Number(qs("#selStaff").value || 0);
+      const ym = ensureMonthPick();
+      if (!idStaff){
+        toast("Selecciona un colaborador");
+        return;
+      }
+      const y = Number(String(ym).slice(0,4) || 0);
+      if (y) await loadHolidaysForYear(y);
+      const r = await fetch(apiURL(`/rrhh/horarios/month?id_staff=${encodeURIComponent(String(idStaff))}&month=${encodeURIComponent(ym)}`), { headers: headers() });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("Error al cargar mes: " + (t || r.status));
+        return;
+      }
+      const data = await r.json().catch(()=>({}));
+      window.__MONTH_PLAN = data.days || {};
+      renderMonthGrid();
+      toast("Mes cargado");
+    }
+
+    async function saveMonth(){
+      const idStaff = Number(qs("#selStaff").value || 0);
+      const ym = ensureMonthPick();
+      if (!idStaff){
+        toast("Selecciona un colaborador");
+        return;
+      }
+      const { over } = computeWeekSums(ym);
+      if (over.size){
+        const items = Array.from(over.entries()).slice(0,6).map(([ws,hrs]) => `${ws}: ${hrs.toFixed(1)}h`).join("\\n");
+        const ok = confirm(`Hay semanas sobre 42h (${over.size}).\\n\\n${items}\\n\\n¿Guardar igual?`);
+        if (!ok) return;
+      }
+      await fetch(apiURL("/rrhh/horarios/clear_month"), {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", ...headers() },
+        body: JSON.stringify({ id_staff: idStaff, month: ym }),
+      });
+      const payload = { id_staff: idStaff, month_start: `${ym}-01`, days: getMonthPlan() };
+      const r = await fetch(apiURL("/rrhh/horarios/plan_month"), {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", ...headers() },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("Error al guardar: " + (t || r.status));
+        return;
+      }
+      toast("Mes guardado");
+      await loadHorarios();
+      await loadMonth();
+    }
+
+    async function deleteMonth(){
+      const idStaff = Number(qs("#selStaff").value || 0);
+      const ym = ensureMonthPick();
+      if (!idStaff){
+        toast("Selecciona un colaborador");
+        return;
+      }
+      if (!confirm(`¿Eliminar planificación guardada de ${ym}?`)) return;
+      const r = await fetch(apiURL("/rrhh/horarios/clear_month"), {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", ...headers() },
+        body: JSON.stringify({ id_staff: idStaff, month: ym }),
+      });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("Error: " + (t || r.status));
+        return;
+      }
+      window.__MONTH_PLAN = {};
+      renderMonthGrid();
+      toast("Mes eliminado");
+      await loadHorarios();
+    }
+
+    qs("#btnAsignar").addEventListener("click", async ()=>{
+      const payload = {
+        id_staff: Number(qs("#selStaff").value || 0),
+        id_turno: Number(qs("#selTurno").value || 0),
+        desde: qs("#hDesde").value,
+        hasta: (qs("#chkIndef")?.checked ? null : (qs("#hHasta").value || null)),
+        dow_mask: getDowMask(),
+      };
+      if (!payload.id_staff || !payload.id_turno || !payload.desde){
+        toast("Falta colaborador/turno/desde");
+        return;
+      }
+      const r = await fetch(apiURL("/rrhh/horarios"), { method:"POST", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("Error: " + (t || r.status));
+        return;
+      }
+      toast("Horario asignado");
+      await loadHorarios();
+    });
+
+    document.addEventListener("click", async (ev)=>{
+      const b = ev.target?.closest?.("button[data-act]");
+      if (!b) return;
+      const act = b.getAttribute("data-act");
+      if (act === "delHorario"){
+        const id = Number(b.getAttribute("data-id") || 0);
+        if (!id) return;
+        if (!confirm("¿Eliminar este horario?")) return;
+        let r = await fetch(apiURL(`/rrhh/horarios/${encodeURIComponent(String(id))}`), { method:"DELETE", headers: headers() });
+        if (!r.ok && r.status === 404){
+          r = await fetch(apiURL(`/rrhh/horarios/${encodeURIComponent(String(id))}/delete`), { method:"POST", headers: headers() });
+        }
+        if (!r.ok){
+          const t = await r.text().catch(()=> "");
+          toast("Error: " + (t || r.status));
+          return;
+        }
+        toast("Horario eliminado");
+        await loadHorarios();
+        return;
+      }
+      if (act === "clearDate"){
+        const day = String(b.getAttribute("data-date") || "").slice(0,10);
+        if (day){
+          setDayTurno(day, 0);
+          renderMonthGrid();
+        }
+        return;
+      }
+      if (act === "delHoliday"){
+        const day = String(b.getAttribute("data-day") || "").slice(0,10);
+        if (!day) return;
+        if (!confirm(`¿Eliminar feriado ${day}?`)) return;
+        const r = await fetch(apiURL(`/rrhh/feriados/${encodeURIComponent(day)}`), { method:"DELETE", headers: headers() });
+        if (!r.ok){
+          const t = await r.text().catch(()=> "");
+          toast("Error: " + (t || r.status));
+          return;
+        }
+        const y = Number(String(ensureMonthPick()).slice(0,4) || 0);
+        if (y) await loadHolidaysForYear(y);
+        toast("Feriado eliminado");
+        return;
+      }
+    });
+
+    document.addEventListener("dragstart", (ev)=>{
+      const el = ev.target?.closest?.(".turnoPill");
+      if (!el) return;
+      const tid = el.getAttribute("data-turno");
+      if (!tid) return;
+      try{ ev.dataTransfer.setData("text/plain", String(tid||"")); }catch(_){}
+    });
+    document.addEventListener("dragover", (ev)=>{
+      const slot = ev.target?.closest?.(".slot[data-date]");
+      if (!slot) return;
+      ev.preventDefault();
+      slot.classList.add("dragover");
+    });
+    document.addEventListener("dragleave", (ev)=>{
+      const slot = ev.target?.closest?.(".slot[data-date]");
+      if (!slot) return;
+      slot.classList.remove("dragover");
+    });
+    document.addEventListener("drop", (ev)=>{
+      const slot = ev.target?.closest?.(".slot[data-date]");
+      if (!slot) return;
+      ev.preventDefault();
+      slot.classList.remove("dragover");
+      const day = String(slot.getAttribute("data-date") || "").slice(0,10);
+      let tid = "";
+      try{ tid = String(ev.dataTransfer.getData("text/plain") || ""); }catch(_){}
+      const idt = Number(tid || 0);
+      if (!idt || !day) return;
+      const ym = ensureMonthPick();
+      const d = new Date(day + "T00:00:00");
+      if (!inMonth(d, ym)){
+        toast("Ese día no pertenece al mes");
+        return;
+      }
+      setDayTurno(day, idt);
+      renderMonthGrid();
+    });
+
+    qs("#btnLoadMonth").addEventListener("click", loadMonth);
+    qs("#btnSaveMonth").addEventListener("click", saveMonth);
+    qs("#btnDeletePlan").addEventListener("click", deleteMonth);
+    qs("#btnClearPlan").addEventListener("click", ()=>{
+      window.__MONTH_PLAN = {};
+      renderMonthGrid();
+      toast("Plan limpiado");
+    });
+    qs("#selStaff").addEventListener("change", ()=>{
+      window.__MONTH_PLAN = {};
+      renderMonthGrid();
+    });
+    qs("#monthPick").addEventListener("change", ()=>{
+      window.__MONTH_PLAN = {};
+      renderMonthGrid();
+      const y = Number(String(ensureMonthPick()).slice(0,4) || 0);
+      if (y) loadHolidaysForYear(y);
+    });
+
+    qs("#btnHolAdd").addEventListener("click", async ()=>{
+      const day = String(qs("#holDay").value || "").slice(0,10);
+      const name = String(qs("#holName").value || "").trim();
+      if (!day){
+        toast("Selecciona día");
+        return;
+      }
+      const r = await fetch(apiURL("/rrhh/feriados"), {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", ...headers() },
+        body: JSON.stringify({ day, name }),
+      });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("Error: " + (t || r.status));
+        return;
+      }
+      qs("#holName").value = "";
+      const y = Number(String(day).slice(0,4) || 0);
+      if (y) await loadHolidaysForYear(y);
+      toast("Feriado guardado");
+    });
+
+    qs("#btnReload").addEventListener("click", async ()=>{
+      await loadStaff();
+      await loadTurnos();
+      await loadHorarios();
+      ensureMonthPick();
+      const y = Number(String(ensureMonthPick()).slice(0,4) || 0);
+      if (y) await loadHolidaysForYear(y);
+      renderMonthGrid();
+    });
+    qs("#btnTurnos").addEventListener("click", ()=>{
+      const base = API_BASE || "";
+      const v = getV();
+      window.location.href = `${base}/web/views/rrhh_turnos.html${v ? `?v=${encodeURIComponent(v)}` : ""}`;
+    });
+    qs("#chkIndef")?.addEventListener("change", ()=>{
+      const on = !!qs("#chkIndef").checked;
+      qs("#hHasta").disabled = on;
+      if (on) qs("#hHasta").value = "";
+    });
+
+    renderDow();
+    ensureMonthPick();
+    (async ()=>{
+      await loadStaff();
+      await loadTurnos();
+      await loadHorarios();
+      const y = Number(String(ensureMonthPick()).slice(0,4) || 0);
+      if (y) await loadHolidaysForYear(y);
+      renderMonthGrid();
+    })().catch(err => {
+      console.error(err);
+      toast("Error inicializando");
+    });
+  </script>
+</body>
+</html>

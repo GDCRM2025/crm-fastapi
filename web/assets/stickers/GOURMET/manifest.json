@@ -1,0 +1,35 @@
+{
+  "brand": "GOURMET",
+  "stickers": [
+    {
+      "label": "CONFIRMADO",
+      "src": "/web/assets/stickers/GOURMET/confirmado.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "OK",
+      "src": "/web/assets/stickers/GOURMET/ok.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "GRACIAS",
+      "src": "/web/assets/stickers/GOURMET/gracias.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "COTIZACION",
+      "src": "/web/assets/stickers/GOURMET/cotizacion.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "SEGUIMIENTO",
+      "src": "/web/assets/stickers/GOURMET/seguimiento.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "EN CAMINO",
+      "src": "/web/assets/stickers/GOURMET/en_camino.svg",
+      "type": "image/svg+xml"
+    }
+  ]
+}

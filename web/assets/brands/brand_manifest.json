@@ -1,0 +1,30 @@
+{
+  "DEL_SABOR": {
+    "name": "Carritos del Sabor",
+    "short": "DEL SABOR",
+    "color": "#07884a",
+    "accent": "#f97316",
+    "logo": "/web/assets/brands/DEL_SABOR/logo.svg"
+  },
+  "CAMALEON": {
+    "name": "Carritos Camaleon",
+    "short": "CAMALEON",
+    "color": "#16a34a",
+    "accent": "#65a30d",
+    "logo": "/web/assets/brands/CAMALEON/logo.svg"
+  },
+  "GOURMET": {
+    "name": "Green Diamond Gourmet",
+    "short": "GOURMET",
+    "color": "#7c3aed",
+    "accent": "#f59e0b",
+    "logo": "/web/assets/brands/GOURMET/logo.svg"
+  },
+  "EXPRESS": {
+    "name": "Green Diamond Express",
+    "short": "EXPRESS",
+    "color": "#2563eb",
+    "accent": "#06b6d4",
+    "logo": "/web/assets/brands/EXPRESS/logo.svg"
+  }
+}

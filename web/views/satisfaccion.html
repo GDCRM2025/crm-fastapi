@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Encuesta de satisfacción</title>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#102033;background:#f4f8f6;--brand:#0b7f43;--brand2:#102033;--accent:#38bdf8;--surface:#f4f8f6;--on-brand:#fff;--line:#dbe7df}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:18px;background:radial-gradient(900px 500px at 50% -10%, color-mix(in srgb,var(--brand) 18%, transparent), transparent 60%),linear-gradient(180deg,color-mix(in srgb,var(--surface) 74%,#fff),var(--surface));display:flex;align-items:center;justify-content:center}
+    .wrap{width:min(780px,100%)}.card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:22px;box-shadow:0 22px 70px rgba(15,23,42,.12)}
+    .center{text-align:center}.logo{width:96px;height:96px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:22px;padding:10px;margin:0 auto 14px;display:none}
+    h1{font-size:28px;line-height:1.08;margin:0;color:var(--brand2);letter-spacing:-.01em}.lead{font-size:15px;line-height:1.5;color:#506256;font-weight:750;margin:12px auto 0;max-width:590px}.meta{margin-top:14px;display:inline-flex;gap:10px;flex-wrap:wrap;justify-content:center}.pill{border:1px solid var(--line);border-radius:999px;background:#f9fcfa;padding:7px 11px;font-size:13px;font-weight:900;color:#425548}
+    .secure{margin:16px auto 0;border:1px solid color-mix(in srgb,var(--brand) 24%,var(--line));background:color-mix(in srgb,var(--brand) 6%,#fff);border-radius:14px;padding:10px 12px;color:#365244;font-weight:850;font-size:13px;max-width:590px}
+    .progress{height:10px;background:#e8f0eb;border-radius:999px;overflow:hidden;margin:18px 0 2px}.progress i{display:block;height:100%;width:var(--w);background:linear-gradient(90deg,var(--brand),var(--accent));transition:width .2s ease}.stepText{font-size:12px;color:#6a7c70;font-weight:900;text-align:center;margin-bottom:12px}
+    .page{display:none}.page.active{display:block}.questions{display:grid;gap:16px}.q{position:relative;border:1px solid color-mix(in srgb,var(--brand) 16%,var(--line));border-radius:20px;padding:20px;background:linear-gradient(145deg,#fff,#f8fbf9);box-shadow:0 12px 32px rgba(15,23,42,.055)}.qHead{display:flex;align-items:flex-start;gap:12px;margin-bottom:15px}.qIndex{width:34px;height:34px;flex:0 0 34px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--brand) 10%,#fff);border:1px solid color-mix(in srgb,var(--brand) 22%,var(--line));color:var(--brand);font-size:12px;font-weight:1000}.q b{display:block;font-size:16px;line-height:1.38;color:#172536;text-align:left}.qHint{display:block;margin-top:5px;color:#718077;font-size:11px;font-weight:800}
+    .scale{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}.scale label{min-height:72px;border:1px solid #cfddd4;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;font-weight:1000;cursor:pointer;background:#fff;transition:transform .12s ease,background .12s ease,border-color .12s ease,box-shadow .12s ease}.scale label:hover{transform:translateY(-2px);border-color:var(--brand);box-shadow:0 9px 22px rgba(15,23,42,.08)}.scale input{display:none}.scale label:has(input:checked){background:var(--brand);color:var(--on-brand);border-color:var(--brand);box-shadow:0 12px 28px color-mix(in srgb,var(--brand) 24%,transparent)}.num{width:30px;height:30px;border-radius:999px;display:grid;place-items:center;background:color-mix(in srgb,var(--brand) 9%,#fff);color:var(--brand);font-size:15px;border:1px solid color-mix(in srgb,var(--brand) 18%,var(--line))}.scale label:has(input:checked) .num{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.38);color:inherit}.txt{font-size:9px;line-height:1.1;opacity:.85;text-transform:uppercase;letter-spacing:.045em}
+    textarea{width:100%;min-height:110px;border:1px solid #cfddd4;border-radius:16px;padding:12px;font:inherit;resize:vertical}.actions{display:flex;gap:10px;margin-top:16px}.btn{flex:1;border:0;border-radius:14px;background:var(--brand);color:var(--on-brand);padding:14px 16px;font-weight:1000;font-size:15px;cursor:pointer;text-decoration:none;text-align:center}.btn.secondary{background:#fff;color:var(--brand2);border:1px solid var(--brand)}.btn:disabled{opacity:.6;cursor:not-allowed}
+    .done{display:none;text-align:center}.done h1{color:var(--brand)}.reviewBox{display:none;margin-top:16px;border:1px solid var(--line);border-radius:18px;background:#fbfdfc;padding:16px}.reviewBox p{margin:0 0 12px;color:#526257;font-weight:800;line-height:1.45}
+    @media(max-width:620px){body{align-items:flex-start}.card{padding:16px;border-radius:18px}.q{padding:15px}.scale{grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}.scale label{min-height:60px;border-radius:13px}.num{width:27px;height:27px}.txt{font-size:7px;letter-spacing:0}.actions{flex-direction:column}h1{font-size:24px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" id="formCard">
+      <section class="center" id="intro">
+        <img class="logo" id="logo" alt="Logo marca" />
+        <h1 id="title">Gracias por confiar en nosotros</h1>
+        <p class="lead" id="introText">Tu opinión nos ayuda a mejorar y crear mejores experiencias en cada evento. Son solo unos minutos.</p>
+        <div class="meta"><span class="pill" id="clientPill">Cliente</span><span class="pill" id="datePill">Evento</span></div>
+        <div class="secure" id="secureText">Encuesta oficial de la marca del evento. No pedimos claves, pagos ni datos bancarios.</div>
+        <div class="actions"><button class="btn" id="startBtn" type="button">Comenzar encuesta</button></div>
+      </section>
+      <section id="wizard" style="display:none;">
+        <div class="progress"><i id="bar" style="--w:33%"></i></div>
+        <div class="stepText" id="stepText">Paso 1 de 3</div>
+        <div class="page active" data-page="0"><div class="questions" id="page0"></div></div>
+        <div class="page" data-page="1"><div class="questions" id="page1"></div></div>
+        <div class="page" data-page="2"><div class="questions" id="page2"></div><div class="q"><b>Comentario opcional</b><textarea id="comment" placeholder="Cuéntanos qué estuvo bien o qué podemos mejorar."></textarea></div></div>
+        <div class="actions"><button class="btn secondary" id="backBtn" type="button">Volver</button><button class="btn" id="nextBtn" type="button">Continuar</button></div>
+      </section>
+    </div>
+    <div class="card done" id="doneCard">
+      <img class="logo" id="doneLogo" alt="Logo marca" />
+      <h1>Gracias por responder</h1>
+      <p class="lead">Tu respuesta quedó registrada. Nos ayuda a seguir mejorando la experiencia de nuestros eventos.</p>
+      <div class="reviewBox" id="reviewBox">
+        <p>Si tu experiencia fue buena, también puedes dejar una reseña pública para ayudar a otros clientes a decidir con confianza.</p>
+        <a class="btn" id="googleReview" target="_blank" rel="noopener">Dejar reseña en Google</a>
+      </div>
+    </div>
+  </div>
+  <script>
+    const qs=(s,el=document)=>el.querySelector(s);
+    const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+    const API_BASE=(()=>{
+      const host=String(location.hostname||"").toLowerCase();
+      const local=host==="localhost"||host==="127.0.0.1";
+      return local?"":"/crm";
+    })();
+    const token=new URLSearchParams(location.search).get("token")||"";
+    let questions=[], survey={}, page=0;
+    const pageSizes=[3,2,2];
+    const scoreLabels=["Deficiente","Bajo","Correcto","Muy bueno","Excelente"];
+    async function api(url,init){const r=await fetch(API_BASE+url,init);const j=await r.json().catch(()=>null);if(!r.ok)throw new Error((j&&(j.detail||j.error))||"Error");return j;}
+    function contrastText(hex){const s=String(hex||"").trim().replace("#","");if(!/^[0-9a-f]{6}$/i.test(s))return "#fff";const c=[0,2,4].map(i=>parseInt(s.slice(i,i+2),16)/255).map(v=>v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4));return (.2126*c[0]+.7152*c[1]+.0722*c[2])>.46?"#111827":"#fff";}
+    function logoUrl(s){const logo=s.logo_url||s.logo_path||"";return logo ? (logo.startsWith("/") ? `${API_BASE}${logo}` : logo) : "";}
+    function setLogo(el,url){if(url){el.src=url;el.style.display="block";}}
+    function qHtml(q,index){return `<div class="q" data-q="${esc(q.key)}"><div class="qHead"><span class="qIndex">${String(index+1).padStart(2,"0")}</span><div><b>${esc(q.label)}</b><span class="qHint">Selecciona la alternativa que mejor representa tu experiencia.</span></div></div><div class="scale">${[1,2,3,4,5].map(n=>`<label><input name="${esc(q.key)}" type="radio" value="${n}"><span class="num">${n}</span><span class="txt">${scoreLabels[n-1]}</span></label>`).join("")}</div></div>`;}
+    function render(j){
+      survey=j.survey||{}; questions=j.questions||[];
+      const brand=survey.marca||"la marca";
+      if(survey.color_primary) document.documentElement.style.setProperty("--brand", survey.color_primary);
+      if(survey.color_secondary) document.documentElement.style.setProperty("--brand2", survey.color_secondary);
+      if(survey.color_accent) document.documentElement.style.setProperty("--accent", survey.color_accent);
+      if(survey.color_surface) document.documentElement.style.setProperty("--surface", survey.color_surface);
+      document.documentElement.style.setProperty("--on-brand", contrastText(survey.color_primary));
+      const lu=logoUrl(survey); setLogo(qs("#logo"),lu); setLogo(qs("#doneLogo"),lu);
+      qs("#title").textContent=`Gracias por realizar tu evento con ${brand}`;
+      qs("#introText").textContent="Tu opinión nos ayuda a mejorar y crear mejores experiencias. La encuesta es breve y va directo al punto.";
+      qs("#clientPill").textContent=survey.cliente||"Cliente";
+      qs("#datePill").textContent=`Evento ${String(survey.event_day||"").slice(0,10)}`;
+      if(survey.responded_at){showDone(true,survey.ratings||{});return;}
+      let idx=0; for(let p=0;p<3;p++){const start=idx;const slice=questions.slice(idx,idx+pageSizes[p]);idx+=pageSizes[p];qs(`#page${p}`).innerHTML=slice.map((q,i)=>qHtml(q,start+i)).join("");}
+      updatePage();
+    }
+    function updatePage(){
+      document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active",Number(el.dataset.page)===page));
+      qs("#bar").style.setProperty("--w", `${Math.round(((page+1)/3)*100)}%`);
+      qs("#stepText").textContent=`Paso ${page+1} de 3 · ${survey.cliente||"Cliente"} · ${String(survey.event_day||"").slice(0,10)}`;
+      qs("#backBtn").disabled=page===0; qs("#nextBtn").textContent=page===2?"Enviar respuesta":"Continuar";
+    }
+    function pageQuestions(){let start=0;for(let i=0;i<page;i++)start+=pageSizes[i];return questions.slice(start,start+pageSizes[page]);}
+    function validatePage(){for(const q of pageQuestions()){if(!qs(`input[name="${CSS.escape(q.key)}"]:checked`)){alert("Responde las preguntas de esta página para continuar.");return false;}}return true;}
+    function ratings(){const out={};for(const q of questions){const c=qs(`input[name="${CSS.escape(q.key)}"]:checked`);if(c)out[q.key]=Number(c.value);}return out;}
+    function avgRating(r){const vals=Object.values(r||{}).map(Number).filter(n=>n>0);return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0;}
+    function showDone(checkScore=true,r={}){
+      qs("#formCard").style.display="none"; qs("#doneCard").style.display="block";
+      const url=survey.google_review_url||""; if(url && (!checkScore || avgRating(r)>=4)){qs("#reviewBox").style.display="block";qs("#googleReview").href=url;qs("#googleReview").onclick=()=>api(`/public/surveys/${encodeURIComponent(token)}/google_review_click`,{method:"POST"}).catch(()=>{});}
+    }
+    qs("#startBtn").onclick=()=>{qs("#intro").style.display="none";qs("#wizard").style.display="block";};
+    qs("#backBtn").onclick=()=>{if(page>0){page--;updatePage();}};
+    qs("#nextBtn").onclick=async()=>{if(!validatePage())return;if(page<2){page++;updatePage();return;}const r=ratings();qs("#nextBtn").disabled=true;try{await api(`/public/surveys/${encodeURIComponent(token)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ratings:r,comment:qs("#comment").value||""})});showDone(true,r);}catch(e){alert(e.message||e);qs("#nextBtn").disabled=false;}};
+    async function load(){if(!token)throw new Error("Falta token");render(await api(`/public/surveys/${encodeURIComponent(token)}`));}
+    load().catch(e=>{qs("#title").textContent="No pudimos cargar la encuesta";qs("#introText").textContent=e.message||String(e);});
+  </script>
+</body>
+</html>

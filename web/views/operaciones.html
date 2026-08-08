@@ -1,0 +1,14 @@
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Operaciones</title><link rel="stylesheet" href="/web/styles.css"/>
+<style>html,body{height:100%;margin:0}body{padding:18px;background:transparent}.card{border-radius:18px;padding:14px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.22);backdrop-filter:blur(10px);color:rgba(255,255,255,.92)}:root.light .card{background:rgba(255,255,255,.62);border-color:rgba(0,0,0,.10);color:rgba(0,0,0,.86)}.muted{opacity:.75}</style>
+</head><body>
+<div class="card">
+<h2 style="margin:0">Operaciones</h2>
+<p class="muted">Mice & Place, Recetas, Costeo, Inventarios y Ruta. (UI lista; lógica fase 2)</p>
+</div>
+<script>
+window.addEventListener("message",(ev)=>{if(ev.data?.type==="theme")document.documentElement.classList.toggle("light",ev.data.mode==="light")});
+document.documentElement.classList.toggle("light",(localStorage.getItem("gd_theme")||"dark")==="light");
+</script>
+</body></html>

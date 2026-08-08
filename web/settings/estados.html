@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Estados Lead</title>
+
+  <link rel="stylesheet" href="../styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script type="module" src="./_base.js"></script>
+</head>
+
+<body>
+
+<div class="toolbar">
+  <button id="btnNew" class="btn">Crear</button>
+  <input id="q" class="input" placeholder="Buscar estado...">
+  <div class="spacer"></div>
+  <label>Ver <select id="per" class="input"><option>20</option><option>50</option><option>100</option></select></label>
+</div>
+
+<h2 id="title">Estados Lead</h2>
+
+<table class="table">
+  <thead>
+    <tr><th>ID</th><th>Nombre</th><th>Acciones</th></tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<div class="pager">
+  <button id="prev" class="btn ghost">Anterior</button>
+  <span id="info"></span>
+  <button id="next" class="btn ghost">Siguiente</button>
+</div>
+
+<script type="module">
+  import { initCrud } from "./_base.js";
+
+  initCrud({
+    title:'Estados',
+    base:'/states',
+    id:'id_estado',
+    columns:[{key:'nombre',label:'Nombre',required:true}],
+    searchKeys:['nombre']
+  });
+</script>
+
+</body>
+</html>

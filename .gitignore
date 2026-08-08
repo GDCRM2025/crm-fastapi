@@ -1,0 +1,105 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+keys/
+credentials/
+secrets/
+backend/credentials/
+**/credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+*service-account*.json
+*oauth*.json
+
+# Python
+.venv/
+venv/
+env/
+env[0-9]*/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / frontend / mobile
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+**/build/
+coverage/
+.expo/
+**/.expo/
+Pods/
+**/Pods/
+.gradle/
+**/.gradle/
+DerivedData/
+**/DerivedData/
+xcuserdata/
+
+# Runtime data and user content
+logs/
+**/*.log
+runtime/
+uploads/
+web/downloads/
+web/_bak/
+backend/cotizaciones/
+tmp/
+temp/
+cache/
+**/cache/
+*.db
+*.bd
+*.sqlite
+*.sqlite3
+
+# Data is runtime by default; keep only reproducible seed/examples.
+data/*
+!data/backup_config.example.json
+!data/plan_cuentas_seed.csv
+!data/productos_import.csv
+
+# Backups, dumps and generated archives
+backups/
+*.dump
+*.backup
+*.sql.gz
+*.tar
+*.tar.gz
+*.tar.zst
+*.zip
+*.7z
+*.bak
+*.bak.*
+*.bak_*
+*.pre-uat*
+*.rpm
+
+# Local evidence/media not required to build the app
+IMAGENES/
+VIDEOS/
+
+# OS / IDE / tooling
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*.swo
+.../
+.codex/
+
+# Legacy migration copies with embedded historical DSNs.
+backend/scripts/migrate_crm_v3.py
+backend/routers/scripts/migrate_crm_v3.py

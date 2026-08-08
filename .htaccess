@@ -1,0 +1,17 @@
+# InMotion/cPanel + Apache + Passenger (tuning para evitar "queue full").
+# Ajusta según recursos reales del plan/servidor.
+#
+# Nota: algunas directivas pueden estar bloqueadas por el hosting; si Apache las rechaza,
+# InMotion debe habilitarlas o aplicarlas en la config global.
+
+PassengerAppEnv production
+
+# Mantén workers listos (reduce latencia y evita queue full en picos).
+PassengerMinInstances 4
+
+# Aumenta cola (por defecto suele ser baja; cuando se llena da 503 queue full).
+PassengerMaxRequestQueueSize 200
+
+# Concurrency por threads (más throughput con pocos procesos).
+PassengerConcurrencyModel thread
+PassengerThreadCount 8

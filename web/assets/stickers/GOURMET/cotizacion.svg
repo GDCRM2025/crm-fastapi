@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="none"/>
+  <rect x="34" y="34" width="444" height="444" rx="72" fill="white" stroke="#7c3aed" stroke-width="10"/>
+  <rect x="58" y="58" width="396" height="396" rx="56" fill="#f8fafc"/>
+  <text x="256" y="130" text-anchor="middle" font-family="Arial, sans-serif" font-size="64">🧾</text>
+  <text x="256" y="235" text-anchor="middle" font-family="Arial, sans-serif" font-size="44" font-weight="900" fill="#061827">COTIZACION</text>
+  <text x="256" y="296" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#334155">Cotizacion enviada</text>
+  <text x="256" y="370" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="900" fill="#7c3aed">GOURMET</text>
+  <text x="256" y="414" text-anchor="middle" font-family="Arial, sans-serif" font-size="23" font-weight="900" fill="#f59e0b">GREEN DIAMOND</text>
+</svg>

@@ -1,0 +1,35 @@
+{
+  "brand": "EXPRESS",
+  "stickers": [
+    {
+      "label": "CONFIRMADO",
+      "src": "/web/assets/stickers/EXPRESS/confirmado.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "OK",
+      "src": "/web/assets/stickers/EXPRESS/ok.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "GRACIAS",
+      "src": "/web/assets/stickers/EXPRESS/gracias.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "COTIZACION",
+      "src": "/web/assets/stickers/EXPRESS/cotizacion.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "SEGUIMIENTO",
+      "src": "/web/assets/stickers/EXPRESS/seguimiento.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "EN CAMINO",
+      "src": "/web/assets/stickers/EXPRESS/en_camino.svg",
+      "type": "image/svg+xml"
+    }
+  ]
+}

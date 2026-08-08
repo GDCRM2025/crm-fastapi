@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Filtrar Leads</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <style>
+    :root{
+      --surface:#0C1B2B; --surface2:#102235; --border:#22384F;
+      --text:#EAF2FF; --muted:#A9BBD2; --accent:#19C37D; --danger:#EF4444;
+      --shadow2: 0 10px 22px rgba(0,0,0,.28);
+      --radius:16px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    :root.light{
+      --surface:#FFFFFF; --surface2:#F3F6FF; --border:#D3DEEE;
+      --text:#0B1220; --muted:#4A607C;
+      --shadow2: 0 10px 22px rgba(10,30,60,.10);
+    }
+    body{ margin:0; font-family:var(--font); color:var(--text); }
+    .wrap{ padding:16px; }
+    .card{
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow2);
+      padding: 12px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(5, minmax(160px, 1fr));
+      gap: 10px;
+    }
+    @media (max-width: 980px){ .grid{ grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 560px){ .grid{ grid-template-columns: 1fr; } }
+
+    .field{
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px;
+    }
+    .label{ font-size:12px; color:var(--muted); font-weight:950; margin-bottom:6px; }
+    select,input{
+      width:100%;
+      border:0; outline:0;
+      background:transparent;
+      color: var(--text);
+      font-weight: 850;
+    }
+
+    .row{
+      display:flex; gap:10px; align-items:center; justify-content:flex-end;
+      margin-top: 10px;
+    }
+    .btn{
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-weight: 950;
+      cursor:pointer;
+    }
+    .btn.primary{
+      background: rgba(25,195,125,.14);
+      border-color: rgba(25,195,125,.35);
+    }
+
+    .tableWrap{
+      margin-top: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow2);
+      overflow:hidden;
+    }
+    table{ width:100%; border-collapse: collapse; font-size: 13px; }
+    thead th{
+      text-align:left; padding:10px 12px; background:var(--surface2); color:var(--muted);
+      border-bottom:1px solid var(--border); font-weight:950;
+    }
+    tbody td{ padding:10px 12px; border-bottom: 1px solid rgba(34,56,79,.35); vertical-align:top; }
+    :root.light tbody td{ border-bottom-color: rgba(211,222,238,.8); }
+    tbody tr:hover{ background: rgba(25,195,125,.06); }
+
+    .empty{ margin-top:14px; color: var(--muted); font-weight: 850; }
+
+    .toast{
+      position: fixed; right: 16px; bottom: 16px; z-index: 10000;
+      background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      border-radius: 14px; padding: 10px 12px; font-weight: 900;
+      box-shadow: var(--shadow2);
+      opacity:0; transform: translateY(10px); transition: all .18s ease;
+    }
+    .toast.show{ opacity:1; transform: translateY(0); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="grid">
+        <div class="field">
+          <div class="label">Marca</div>
+          <select id="f_marca"></select>
+        </div>
+        <div class="field">
+          <div class="label">Estado</div>
+          <select id="f_estado"></select>
+        </div>
+        <div class="field">
+          <div class="label">Desde</div>
+          <input id="f_desde" type="date" />
+        </div>
+        <div class="field">
+          <div class="label">Hasta</div>
+          <input id="f_hasta" type="date" />
+        </div>
+        <div class="field">
+          <div class="label">Texto</div>
+          <input id="f_texto" placeholder="cliente / código / notas..." />
+        </div>
+      </div>
+
+      <div class="row">
+        <div id="count" style="margin-right:auto;color:var(--muted);font-weight:950">Sin resultados (aplica filtros)</div>
+        <button class="btn" id="btnClear" type="button">Limpiar</button>
+        <button class="btn primary" id="btnApply" type="button">Aplicar</button>
+      </div>
+    </div>
+
+    <div class="tableWrap" id="tableWrap" style="display:none">
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Marca</th>
+            <th>Comuna</th>
+            <th>Fecha</th>
+            <th>Estado</th>
+            <th>Notas</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="empty" id="empty">Vacío por defecto. Aplica filtros para mostrar resultados.</div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    window.addEventListener("message", (ev) => {
+      if (ev.data?.type === "theme"){
+        document.documentElement.classList.toggle("light", ev.data.mode === "light");
+      }
+    });
+
+    const API = location.origin;
+    const qs = (s, el=document)=>el.querySelector(s);
+
+    function getToken(){
+      return (
+        localStorage.getItem("gd_token") ||
+        localStorage.getItem("token") ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("crm_token") ||
+        sessionStorage.getItem("gd_token") ||
+        sessionStorage.getItem("token") ||
+        sessionStorage.getItem("access_token") ||
+        ""
+      );
+    }
+
+    function toast(msg, ok=true){
+      const t = qs("#toast");
+      t.textContent = msg;
+      t.style.borderColor = ok ? "rgba(25,195,125,.45)" : "rgba(239,68,68,.45)";
+      t.style.background = ok ? "rgba(25,195,125,.08)" : "rgba(239,68,68,.08)";
+      t.classList.add("show");
+      clearTimeout(window.__toastTO);
+      window.__toastTO = setTimeout(()=>t.classList.remove("show"), 2600);
+    }
+
+    async function api(path, opts={}){
+      const token = getToken();
+      const r = await fetch(API + path, {
+        ...opts,
+        headers: {
+          "Content-Type":"application/json",
+          ...(opts.headers||{}),
+          ...(token ? {"Authorization":"Bearer "+token} : {}),
+        }
+      });
+      let data=null;
+      try{ data = await r.json(); }catch(e){}
+      if(!r.ok){
+        const msg = (data && (data.detail || data.message)) ? (data.detail || data.message) : ("HTTP "+r.status);
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    const maps = {
+      marcas: new Map(),
+      estados: new Map(),
+      comunas: new Map()
+    };
+
+    function fillSelect(sel, items, idKey, nameKey, placeholder){
+      sel.innerHTML = `<option value="">${placeholder}</option>` + items.map(x=>{
+        const id = x[idKey];
+        const name = x[nameKey];
+        return `<option value="${id}">${name}</option>`;
+      }).join("");
+    }
+
+    async function init(){
+      const cat = await api("/leads/catalogos");
+      const c = cat.catalogos || {};
+
+      const marcas = c.marcas || [];
+      const comunas = c.comunas || [];
+      const estados = (c.estados_lead || []).filter(e => e.is_active !== false);
+
+      for(const m of marcas) maps.marcas.set(Number(m.id_marca), m.nombre);
+      for(const co of comunas) maps.comunas.set(Number(co.id_comuna), co.nombre);
+      for(const e of estados) maps.estados.set(Number(e.id_estado), e.nombre);
+
+      fillSelect(qs("#f_marca"), marcas, "id_marca", "nombre", "Todas");
+      fillSelect(qs("#f_estado"), estados, "id_estado", "nombre", "Todos");
+    }
+
+    function render(items){
+      const wrap = qs("#tableWrap");
+      const empty = qs("#empty");
+      const tbody = qs("#tbody");
+
+      qs("#count").textContent = `Resultados: ${items.length}`;
+
+      if(items.length === 0){
+        wrap.style.display = "none";
+        empty.style.display = "block";
+        tbody.innerHTML = "";
+        return;
+      }
+
+      empty.style.display = "none";
+      wrap.style.display = "block";
+      tbody.innerHTML = "";
+
+      for(const L of items){
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><b>${L.nombre_cliente||""}</b><div style="opacity:.8;font-weight:900">${L.codigo_cliente||"—"}</div></td>
+          <td>${maps.marcas.get(Number(L.id_marca))||"—"}</td>
+          <td>${maps.comunas.get(Number(L.id_comuna))||"—"}</td>
+          <td>${String(L.fecha_evento||"").slice(0,10)||"—"}</td>
+          <td>${L.estado_nombre || maps.estados.get(Number(L.id_estado)) || "—"}</td>
+          <td>${(L.notas||"").slice(0,160)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function apply(){
+      const id_marca = qs("#f_marca").value || "";
+      const id_estado = qs("#f_estado").value || "";
+      const desde = qs("#f_desde").value || "";
+      const hasta = qs("#f_hasta").value || "";
+      const texto = qs("#f_texto").value.trim();
+
+      // Vacío por defecto: si no hay filtros, no trae todo
+      if(!id_marca && !id_estado && !desde && !hasta && !texto){
+        render([]);
+        toast("Aplica al menos un filtro.", false);
+        return;
+      }
+
+      const params = new URLSearchParams();
+      if(id_marca) params.set("id_marca", id_marca);
+      if(id_estado) params.set("id_estado", id_estado);
+      if(desde) params.set("desde", desde);
+      if(hasta) params.set("hasta", hasta);
+      if(texto) params.set("texto", texto);
+
+      try{
+        const res = await api("/leads/buscar?" + params.toString());
+        render(res.items || []);
+        toast("Filtro aplicado.");
+      }catch(e){
+        toast("Error filtrando: " + e.message, false);
+      }
+    }
+
+    function clearAll(){
+      qs("#f_marca").value = "";
+      qs("#f_estado").value = "";
+      qs("#f_desde").value = "";
+      qs("#f_hasta").value = "";
+      qs("#f_texto").value = "";
+      render([]);
+    }
+
+    qs("#btnApply").onclick = apply;
+    qs("#btnClear").onclick = clearAll;
+
+    (async ()=>{
+      try{
+        await init();
+        render([]); // vacío por defecto
+      }catch(e){
+        toast("Error cargando catálogos: " + e.message, false);
+      }
+    })();
+  </script>
+</body>
+</html>

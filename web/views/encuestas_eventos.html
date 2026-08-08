@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <title>Encuestas post-evento</title>
+  <style>
+    body{padding:16px;}
+    .wrap{max-width:none;margin:0 auto;display:grid;gap:12px;}
+    .card{border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:14px;}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .muted{color:var(--muted);font-weight:800;}
+    .btn{border:1px solid var(--border);background:var(--surface-2);color:var(--text);padding:9px 12px;border-radius:8px;font-weight:1000;cursor:pointer;text-decoration:none;display:inline-flex;gap:6px;align-items:center;}
+    .btn.ok{background:rgba(25,195,125,.14);border-color:rgba(25,195,125,.32);}
+    input,select{background:var(--surface-2);border:1px solid var(--border);color:var(--text);padding:9px 10px;border-radius:8px;font-weight:900;}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;}
+    .metric{border:1px solid var(--border);border-radius:8px;background:var(--surface-2);padding:12px;}
+    .metric .n{font-size:24px;font-weight:1100;}
+    .tableWrap{overflow:auto;border:1px solid var(--border);border-radius:8px;}
+    table{width:100%;border-collapse:collapse;min-width:980px;}
+    th,td{padding:9px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;font-size:13px;}
+    th{background:#0f172a;color:#fff;text-transform:uppercase;font-size:12px;}
+    .pill{display:inline-flex;border:1px solid var(--border);border-radius:999px;padding:3px 8px;font-weight:1000;font-size:12px;}
+    @media(max-width:900px){.metrics{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div class="row">
+        <div>
+          <h2 style="margin:0 0 4px 0;">Encuestas post-evento</h2>
+          <div class="muted">Eventos confirmados que ya pasaron. Envía la encuesta por WhatsApp y revisa respuestas.</div>
+        </div>
+        <div class="row">
+          <label class="muted">Día evento <input id="day" type="date" /></label>
+          <button class="btn" id="reload">Actualizar</button>
+        </div>
+      </div>
+    </section>
+    <section class="metrics">
+      <div class="metric"><div class="n" id="mTotal">0</div><div class="muted">Encuestas generadas</div></div>
+      <div class="metric"><div class="n" id="mResp">0</div><div class="muted">Respondidas</div></div>
+      <div class="metric"><div class="n" id="mAvg">-</div><div class="muted">Promedio experiencia</div></div>
+      <div class="metric"><div class="n" id="mRec">-</div><div class="muted">Promedio recomendación</div></div>
+    </section>
+    <section class="card">
+      <div class="row">
+        <h3 style="margin:0;">Pendientes para WhatsApp</h3>
+        <span class="pill" id="pendingMeta">Cargando...</span>
+      </div>
+      <div class="tableWrap" style="margin-top:10px;">
+        <table>
+          <thead><tr><th>Cliente</th><th>Marca</th><th>Teléfono</th><th>Estado</th><th>Acción</th></tr></thead>
+          <tbody id="pendingRows"><tr><td colspan="5">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="card">
+      <h3 style="margin:0 0 10px 0;">Últimas respuestas</h3>
+      <div class="tableWrap">
+        <table>
+          <thead><tr><th>Evento</th><th>Cliente</th><th>Marca</th><th>Promedio</th><th>Google</th><th>Comentario</th></tr></thead>
+          <tbody id="answerRows"><tr><td colspan="6">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <script>
+    const qs=(s,el=document)=>el.querySelector(s);
+    const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+    const API_BASE=(()=>{const h=location.hostname;return (h==="localhost"||h==="127.0.0.1")?"":"/crm";})();
+    const token=()=>localStorage.getItem("token")||sessionStorage.getItem("token")||"";
+    async function api(url,init={}){
+      const r=await fetch(API_BASE+url,{...init,headers:{...(init.headers||{}),Authorization:`Bearer ${token()}`}});
+      const j=await r.json().catch(()=>null);
+      if(!r.ok) throw new Error((j&&(j.detail||j.error))||`HTTP ${r.status}`);
+      return j;
+    }
+    function yday(){
+      const d=new Date(); d.setDate(d.getDate()-1);
+      const off=d.getTimezoneOffset();
+      return new Date(d.getTime()-off*60000).toISOString().slice(0,10);
+    }
+    function avg(r){
+      const vals=Object.values(r||{}).map(Number).filter(n=>n>0);
+      return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : "-";
+    }
+    async function markSent(surveyToken){
+      await api(`/surveys/${encodeURIComponent(surveyToken)}/mark_sent`,{method:"POST",keepalive:true});
+      await load();
+    }
+    async function loadPending(){
+      const d=qs("#day").value;
+      const j=await api(`/surveys/pending?day=${encodeURIComponent(d)}`);
+      const items=j.items||[];
+      qs("#pendingMeta").textContent=`${items.length} evento(s)`;
+      qs("#pendingRows").innerHTML=items.map(x=>`
+        <tr>
+          <td><b>${esc(x.cliente||"")}</b><div class="muted">Lead #${esc(x.id_lead)}</div></td>
+          <td>${esc(x.marca||"")}<div class="muted">${esc(x.comuna||"")}</div></td>
+          <td>${esc(x.telefono||"")}</td>
+          <td>${x.responded_at?`<span class="pill">Respondida</span>`:x.sent_at?`<span class="pill">Enviada</span>`:`<span class="pill">Pendiente</span>`}</td>
+          <td>
+            <div class="row" style="justify-content:flex-start">
+              ${x.whatsapp_url?`<a class="btn ok" target="_blank" rel="noopener" href="${esc(x.whatsapp_url)}">Abrir WhatsApp</a>`:`<span class="muted">Sin teléfono</span>`}
+              ${!x.sent_at?`<button class="btn" type="button" data-mark-sent="${esc(x.token)}">Marcar enviada</button>`:""}
+              <a class="btn" target="_blank" href="${esc(x.survey_url)}">Abrir encuesta</a>
+            </div>
+          </td>
+        </tr>
+      `).join("")||`<tr><td colspan="5" class="muted">Sin eventos de ese día.</td></tr>`;
+      qs("#pendingRows").querySelectorAll("[data-mark-sent]").forEach(button=>{
+        button.onclick=async()=>{
+          button.disabled=true;
+          try{ await markSent(button.dataset.markSent); }
+          catch(error){ button.disabled=false; alert(error.message||error); }
+        };
+      });
+    }
+    async function loadSummary(){
+      const j=await api("/surveys/summary?days=60");
+      const s=j.summary||{};
+      qs("#mTotal").textContent=String(s.total||0);
+      qs("#mResp").textContent=String(s.responded||0);
+      qs("#mAvg").textContent=s.avg_overall?Number(s.avg_overall).toFixed(1):"-";
+      qs("#mRec").textContent=s.avg_recommend?Number(s.avg_recommend).toFixed(1):"-";
+      qs("#answerRows").innerHTML=(j.items||[]).map(x=>`
+        <tr>
+          <td>${esc(String(x.event_day||"").slice(0,10))}<div class="muted">Lead #${esc(x.id_lead)}</div></td>
+          <td><b>${esc(x.cliente||"")}</b></td>
+          <td>${esc(x.marca||"")}<div class="muted">${esc(x.comuna||"")}</div></td>
+          <td>${esc(avg(x.ratings))}</td>
+          <td>${x.google_review_clicked_at?`<span class="pill">Click reseña</span>`:`<span class="muted">Sin click</span>`}</td>
+          <td>${esc(x.comment||"")}</td>
+        </tr>
+      `).join("")||`<tr><td colspan="6" class="muted">Sin respuestas aún.</td></tr>`;
+    }
+    async function load(){await Promise.all([loadPending(),loadSummary()]);}
+    qs("#day").value=yday();
+    qs("#reload").onclick=()=>load().catch(e=>alert(e.message||e));
+    qs("#day").onchange=()=>load().catch(e=>alert(e.message||e));
+    load().catch(e=>alert(e.message||e));
+  </script>
+</body>
+</html>

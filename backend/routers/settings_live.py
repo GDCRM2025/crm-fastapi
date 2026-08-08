@@ -1,0 +1,2686 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List
+import json
+import os
+import secrets
+import threading
+import time
+from datetime import datetime
+from html import escape as _html_escape
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+
+from backend.core.database import engine
+from backend.core.password import hash_password
+from backend.core.email import send_email, send_email_group, EmailConfigError
+
+# Intento importar auth (si existe). Si no existe, NO rompe el server.
+try:
+    from backend.routers.auth import get_current_user  # type: ignore
+except Exception:  # pragma: no cover
+    def get_current_user():  # type: ignore
+        return {"rol": "Admin"}  # fallback dev
+
+
+router = APIRouter(prefix="/settings", tags=["settings"])
+
+_drive_refresh_lock = threading.Lock()
+_drive_refresh_state: Dict[str, Dict[str, Any]] = {}
+
+
+def _drive_refresh_cooldown_seconds() -> int:
+    try:
+        v = (os.getenv("CRM_DRIVE_REFRESH_COOLDOWN_SECONDS") or "").strip()
+        if not v:
+            return 120
+        n = int(float(v))
+        return max(0, min(n, 3600))
+    except Exception:
+        return 120
+
+
+def _drive_refresh_enqueue(
+    *,
+    marca_key: str,
+    folder_id: str,
+    resolve_fn,
+) -> Dict[str, Any]:
+    """
+    Shared-hosting safety: do NOT run Drive refresh synchronously on the request thread.
+    Enqueue a single background refresh per brand, with cooldown and status snapshot.
+    """
+    now = time.time()
+    with _drive_refresh_lock:
+        st = dict(_drive_refresh_state.get(marca_key) or {})
+        if st.get("running"):
+            st.update({"ok": True, "queued": False, "running": True})
+            return st
+
+        # Global limit: Drive refresh is network+CPU heavy. Keep max 1 running to avoid saturating Passenger.
+        for other_key, other in (_drive_refresh_state or {}).items():
+            try:
+                if other_key != marca_key and (other or {}).get("running"):
+                    return {
+                        "ok": True,
+                        "queued": False,
+                        "running": False,
+                        "busy": True,
+                        "busy_marca": other_key,
+                    }
+            except Exception:
+                continue
+
+        done_ts = float(st.get("done_ts") or 0.0)
+        cooldown = _drive_refresh_cooldown_seconds()
+        if done_ts and cooldown and (now - done_ts) < cooldown and (not st.get("error")):
+            st.update({"ok": True, "queued": False, "cooldown": True, "cooldown_seconds": cooldown})
+            return st
+
+        _drive_refresh_state[marca_key] = {
+            "ok": True,
+            "marca": marca_key,
+            "folder_id": folder_id,
+            "queued": True,
+            "running": True,
+            "started_ts": now,
+            "done_ts": done_ts,
+            "error": "",
+            "assets": st.get("assets") or {},
+        }
+
+    def _bg():
+        assets = {}
+        err = ""
+        try:
+            # refresh=True + ttl=0 forces re-list & re-download (heavy); run off the request thread.
+            assets = resolve_fn(marca_key, folder_id, refresh=True, ttl_seconds=0)
+        except Exception as e:
+            err = f"{type(e).__name__}: {str(e)[:240]}"
+        done = time.time()
+        with _drive_refresh_lock:
+            _drive_refresh_state[marca_key] = {
+                "ok": True,
+                "marca": marca_key,
+                "folder_id": folder_id,
+                "queued": False,
+                "running": False,
+                "started_ts": float(_drive_refresh_state.get(marca_key, {}).get("started_ts") or 0.0),
+                "done_ts": done,
+                "error": err,
+                "assets": assets or {},
+            }
+
+    threading.Thread(target=_bg, daemon=True).start()
+    with _drive_refresh_lock:
+        return dict(_drive_refresh_state.get(marca_key) or {"ok": True, "queued": True})
+
+def _ensure_productos_brochure_cols() -> None:
+    """
+    Para menú/brochures: algunos productos necesitan categoría e ingredientes.
+    Se agregan como columnas opcionales (no rompen entornos legacy).
+    """
+    try:
+        with engine.begin() as cn:
+            cn.execute(text("ALTER TABLE public.productos ADD COLUMN IF NOT EXISTS categoria TEXT"))
+            cn.execute(text("ALTER TABLE public.productos ADD COLUMN IF NOT EXISTS ingredientes TEXT"))
+    except Exception:
+        return
+
+def _ensure_comunas_bruto_once() -> None:
+    """
+    Requisito: al editar el monto neto de comunas, debe quedar el bruto automáticamente.
+    Además, backfill para comunas existentes (idempotente, 1 vez por día).
+    """
+    try:
+        with engine.begin() as cn:
+            # lock para evitar concurrencia
+            got = bool(cn.execute(text("SELECT pg_try_advisory_lock(25032027)")).scalar())
+            if not got:
+                return
+            try:
+                cn.execute(
+                    text(
+                        """
+                        CREATE TABLE IF NOT EXISTS system_kv (
+                          key TEXT PRIMARY KEY,
+                          value TEXT NOT NULL,
+                          updated_at TIMESTAMP DEFAULT now()
+                        )
+                        """
+                    )
+                )
+                today = datetime.utcnow().date().isoformat()
+                last = cn.execute(text("SELECT value FROM system_kv WHERE key='comunas_bruto_last_run' LIMIT 1")).scalar()
+                if (last or "") == today:
+                    return
+
+                cols = {c["column_name"] for c in _cols_for("comunas")}
+                # Intentamos soportar varios schemas legacy.
+                if "neto" in cols and "bruto" in cols:
+                    cn.execute(
+                        text(
+                            """
+                            UPDATE public.comunas
+                            SET bruto = round(COALESCE(neto,0) * 1.19)
+                            WHERE (bruto IS NULL OR bruto=0) AND COALESCE(neto,0) > 0
+                            """
+                        )
+                    )
+                if "monto_neto" in cols and "monto_bruto" in cols:
+                    cn.execute(
+                        text(
+                            """
+                            UPDATE public.comunas
+                            SET monto_bruto = round(COALESCE(monto_neto,0) * 1.19)
+                            WHERE (monto_bruto IS NULL OR monto_bruto=0) AND COALESCE(monto_neto,0) > 0
+                            """
+                        )
+                    )
+                if "costo_traslado" in cols and "costo_traslado_bruto" in cols:
+                    cn.execute(
+                        text(
+                            """
+                            UPDATE public.comunas
+                            SET costo_traslado_bruto = round(COALESCE(costo_traslado,0) * 1.19)
+                            WHERE (costo_traslado_bruto IS NULL OR costo_traslado_bruto=0) AND COALESCE(costo_traslado,0) > 0
+                            """
+                        )
+                    )
+
+                cn.execute(
+                    text(
+                        """
+                        INSERT INTO system_kv(key,value,updated_at)
+                        VALUES ('comunas_bruto_last_run', :v, now())
+                        ON CONFLICT(key) DO UPDATE SET value=:v, updated_at=now()
+                        """
+                    ),
+                    {"v": today},
+                )
+            finally:
+                try:
+                    cn.execute(text("SELECT pg_advisory_unlock(25032027)"))
+                except Exception:
+                    pass
+    except Exception:
+        return
+
+
+def _apply_comunas_bruto(cols: List[Dict[str, Any]], data: Dict[str, Any]) -> None:
+    """
+    Si viene un neto en payload, setea el bruto automáticamente (si existen columnas).
+    CLP: redondeamos a entero.
+    """
+    try:
+        colset = {c["column_name"] for c in cols}
+        iva = 1.19
+
+        def _round_clp(x: Any) -> int | None:
+            try:
+                n = float(x)
+            except Exception:
+                return None
+            return int(round(n))
+
+        if "neto" in data and "bruto" in colset and "bruto" not in data:
+            n = _round_clp(float(data.get("neto")) * iva) if data.get("neto") is not None else None
+            if n is not None:
+                data["bruto"] = n
+        if "monto_neto" in data and "monto_bruto" in colset and "monto_bruto" not in data:
+            n = _round_clp(float(data.get("monto_neto")) * iva) if data.get("monto_neto") is not None else None
+            if n is not None:
+                data["monto_bruto"] = n
+        if "costo_traslado" in data and "costo_traslado_bruto" in colset and "costo_traslado_bruto" not in data:
+            n = _round_clp(float(data.get("costo_traslado")) * iva) if data.get("costo_traslado") is not None else None
+            if n is not None:
+                data["costo_traslado_bruto"] = n
+    except Exception:
+        return
+
+def _as_text(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        try:
+            return bytes(v).decode("utf-8", "ignore")
+        except Exception:
+            return str(v)
+    return str(v)
+
+
+def _emails_for_roles(conn, roles: list[str]) -> list[str]:
+    role_names = [str(r).upper().strip() for r in (roles or []) if str(r).strip()]
+    if not role_names:
+        return []
+    try:
+        rows = conn.execute(
+            text(
+                """
+                SELECT DISTINCT u.email
+                FROM public.usuarios u
+                LEFT JOIN public.roles r ON r.id_rol=u.id_rol
+                WHERE COALESCE(u.is_active, TRUE) = TRUE
+                  AND u.email IS NOT NULL AND btrim(u.email) <> ''
+                  AND (
+                    regexp_replace(upper(COALESCE(u.rol,'')), '[^A-Z0-9]+', '', 'g')
+                      = ANY(CAST(:roles AS text[]))
+                    OR regexp_replace(upper(COALESCE(r.nombre,'')), '[^A-Z0-9]+', '', 'g')
+                      = ANY(CAST(:roles AS text[]))
+                  )
+                """
+            ),
+            {"roles": ["".join(ch for ch in r if ch.isalnum()) for r in role_names]},
+        ).fetchall()
+        out = []
+        for r in rows:
+            e = str(r[0] or "").strip()
+            if "@" in e and "." in e:
+                out.append(e)
+        return sorted(set(out))
+    except Exception:
+        return []
+
+
+def _notify_new_product_for_ops(conn, row_id: Any, data: dict[str, Any], user: dict) -> None:
+    try:
+        id_producto = int(row_id)
+    except Exception:
+        return
+    try:
+        roles = ["OPERACIONES", "JEFE DE OPERACIONES", "MICE", "ADMIN", "SUPERADMIN"]
+        who = (
+            user.get("nombre")
+            or user.get("name")
+            or user.get("username")
+            or user.get("email")
+            or str(user.get("id") or "")
+        )
+        who = str(who or "CRM").strip() or "CRM"
+        producto = str(data.get("producto") or data.get("nombre") or "").strip()
+        marca = str(data.get("marca") or "").strip().upper()
+        url = f"/crm/web/views/operaciones_recetas.html?open_producto_id={id_producto}"
+        payload = {
+            "id_producto": id_producto,
+            "producto": producto,
+            "marca": marca,
+            "created_by": who,
+            "url": url,
+        }
+        pjson = json.dumps(payload, ensure_ascii=False)
+        fake_lead_id = -id_producto
+
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS public.system_notifs (
+                      id BIGSERIAL PRIMARY KEY,
+                      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                      kind TEXT NOT NULL,
+                      role_target TEXT NOT NULL,
+                      id_lead BIGINT,
+                      title TEXT NOT NULL,
+                      body TEXT NOT NULL,
+                      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                      read_at TIMESTAMPTZ,
+                      read_by TEXT,
+                      UNIQUE(kind, role_target, id_lead)
+                    )
+                    """
+                )
+            )
+            title = f"Nuevo producto ({marca or 'SIN MARCA'})"
+            body = f"{producto or 'Producto nuevo'} · creado por {who}"
+            for rt in roles:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO public.system_notifs(kind, role_target, id_lead, title, body, payload)
+                        VALUES ('PRODUCTO_NUEVO', :rt, :id, :t, :b, CAST(:p AS JSONB))
+                        ON CONFLICT (kind, role_target, id_lead) DO NOTHING
+                        """
+                    ),
+                    {"rt": rt, "id": fake_lead_id, "t": title, "b": body, "p": pjson},
+                )
+        except Exception:
+            pass
+
+        to = []
+        cc: list[str] = []
+        bcc: list[str] = []
+        try:
+            from backend.core.notify_routes import resolve_email_to, resolve_email_cc, resolve_email_bcc
+
+            to = resolve_email_to("AGENDA_EVENTOS", [])
+            cc = resolve_email_cc("AGENDA_EVENTOS", [])
+            bcc = resolve_email_bcc("AGENDA_EVENTOS", [])
+        except Exception:
+            to = []
+            cc = []
+            bcc = []
+        if not to:
+            to = _emails_for_roles(conn, roles)
+        if not to:
+            return
+        subj = f"CRM · Nuevo producto ({marca or 'SIN MARCA'})"
+        txt = (
+            "Se creó un producto de venta y necesita revisión/receta en Operaciones.\n\n"
+            f"Producto: {producto or '-'}\n"
+            f"Marca: {marca or '-'}\n"
+            f"Creado por: {who}\n"
+            f"Link: {url}\n"
+        )
+        html = f"""
+        <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.4">
+          <h2 style="margin:0 0 8px">Nuevo producto para receta</h2>
+          <div style="margin:0 0 14px;color:#334155">
+            Se creó un producto de venta y necesita revisión/receta en Operaciones.
+          </div>
+          <table style="border-collapse:collapse">
+            <tr><td style="padding:4px 10px 4px 0;font-weight:700">Marca</td><td style="padding:4px 0">{_html_escape(marca or '-')}</td></tr>
+            <tr><td style="padding:4px 10px 4px 0;font-weight:700">Producto</td><td style="padding:4px 0">{_html_escape(producto or '-')}</td></tr>
+            <tr><td style="padding:4px 10px 4px 0;font-weight:700">Creado por</td><td style="padding:4px 0">{_html_escape(who)}</td></tr>
+          </table>
+          <div style="margin-top:14px">
+            <a href="{_html_escape(url)}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:10px 14px;border-radius:12px;font-weight:700">
+              Crear receta / sub-receta
+            </a>
+          </div>
+          <div style="margin-top:16px;color:#64748b;font-size:12px;border-top:1px solid #e2e8f0;padding-top:10px">
+            CRM Green Diamond · Notificación automática
+          </div>
+        </div>
+        """
+        send_email_group(to, subj, txt, html=html, cc_addrs=cc, bcc_addrs=bcc)
+    except Exception:
+        return
+
+
+# -----------------------------
+# CONFIG
+# -----------------------------
+ENTITY_MAP: Dict[str, str] = {
+    # Settings (UI)
+    "usuarios": "usuarios",
+    "marcas": "marcas",
+    "productos": "productos",
+    "comunas": "comunas",
+    "roles": "roles",
+    "estados": "estados_lead",
+    "estados_lead": "estados_lead",
+    "comisiones": "comisiones",
+    "commission_rules": "commission_rules",
+    "commission_channel_bonus": "commission_channel_bonus",
+    "commission_group_bonus": "commission_group_bonus",
+    "plataformas": "plataformas",
+    "plataforma": "plataformas",
+
+    # Alias frecuentes (tu tabla real es tipocliente)
+    "tipo_cliente": "tipocliente",
+    "tipocliente": "tipocliente",
+    "tipos_cliente": "tipocliente",
+    "tiposcliente": "tipocliente",
+}
+
+# Columnas que NO se muestran (ni se editan) en Settings
+HIDDEN_COLS: Dict[str, List[str]] = {
+    "usuarios": ["hashed_password", "id_rol"],
+    # "marca" NO se oculta: en varios esquemas legacy, `marca` es la columna principal.
+    # Ocultarla deja Settings inutilizable (no se puede crear/editar marcas).
+    "marcas": [],
+    "productos": ["orden", "ingredientes"],
+    "comunas": ["costo_traslado", "comuna"],
+    "default": ["created_at", "updated_at"],
+}
+
+# Columnas que NO se pueden setear desde el CRUD (aunque existan)
+READONLY_COLS: Dict[str, List[str]] = {
+    "usuarios": ["hashed_password", "created_at", "updated_at"],
+    "default": ["created_at", "updated_at"],
+}
+
+# Labels mejores (UI)
+LABELS: Dict[str, Dict[str, str]] = {
+    "usuarios": {
+        "id_usuario": "ID",
+        "nombre": "Nombre",
+        "email": "Email",
+        "username": "Usuario",
+        "telefono": "Teléfono",
+        "cargo": "Cargo",
+        "rol": "Rol",
+        "avatar_url": "Avatar",
+        "is_active": "Activo",
+    },
+    "estados_lead": {
+        "id_estado": "ID",
+        "nombre": "Estado",
+        "color": "Color",
+        "orden": "Orden",
+        "is_active": "Activo",
+    },
+    "tipocliente": {
+        "id_tipo_cliente": "ID",
+        "nombre": "Tipo Cliente",
+        "is_active": "Activo",
+    },
+    "marcas": {
+        "id_marca": "ID",
+        "nombre": "Marca",
+        "marca": "Marca (alias)",
+        "logo_path": "Logo (URL o ruta)",
+        "logo_url": "Logo URL",
+        "color_primary": "Color principal",
+        "color_secondary": "Color secundario",
+        "google_review_url": "Google Review URL",
+        "pdf_portada_url": "PDF Portada URL",
+        "pdf_cotizacion_url": "PDF Cotización URL",
+        "pdf_terminos_url": "PDF Términos URL",
+        "pdf_banco_url": "PDF Banco URL",
+        "form_token": "Form Token",
+        "is_active": "Activo",
+    },
+    "productos": {
+        "id_producto": "ID",
+        "producto": "Producto",
+        "marca": "Marca",
+        "costo": "Costo",
+        "descripcion": "Descripción",
+        "orden": "Orden",
+        "is_active": "Activo",
+    },
+    "comisiones": {
+        "id_comision": "ID",
+        "marca": "Marca",
+        "rol": "Rol",
+        "porcentaje": "Porcentaje",
+        "is_active": "Activo",
+    },
+    "commission_rules": {
+        "id_rule": "ID",
+        "tipo_cliente": "Tipo Cliente",
+        "definicion": "Definición",
+        "porcentaje_base": "% Base",
+        "meses_antiguedad": "Meses historial",
+        "prioridad": "Prioridad",
+        "is_active": "Activo",
+    },
+    "commission_channel_bonus": {
+        "id_bonus": "ID",
+        "canal": "Canal",
+        "descripcion": "Descripción",
+        "porcentaje_extra": "% Extra",
+        "requiere_gestion_ejecutivo": "Requiere gestión ejecutivo",
+        "is_active": "Activo",
+    },
+    "commission_group_bonus": {
+        "id_group_bonus": "ID",
+        "nivel": "Nivel",
+        "cumplimiento_min_pct": "% Cumplimiento meta grupal",
+        "bono_sobre_comision_pct": "% Bono sobre comisión mes",
+        "orden": "Orden",
+        "is_active": "Activo",
+    },
+    "plataformas": {
+        "id_plataforma": "ID",
+        "nombre": "Plataforma",
+        "descripcion": "Descripción",
+        "orden": "Orden",
+        "is_active": "Activo",
+    },
+}
+
+
+def _ensure_comisiones() -> None:
+    with engine.connect() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS comisiones (
+                    id_comision SERIAL PRIMARY KEY,
+                    marca TEXT,
+                    rol TEXT,
+                    porcentaje NUMERIC(6,2) DEFAULT 0,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        cn.commit()
+
+
+def _ensure_commission_rules() -> None:
+    with engine.connect() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS commission_rules (
+                    id_rule SERIAL PRIMARY KEY,
+                    tipo_cliente TEXT NOT NULL,
+                    definicion TEXT,
+                    porcentaje_base NUMERIC(6,2) NOT NULL DEFAULT 0,
+                    meses_antiguedad INT NOT NULL DEFAULT 12,
+                    prioridad INT NOT NULL DEFAULT 10,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        cn.execute(
+            text(
+                """
+                INSERT INTO commission_rules(tipo_cliente, definicion, porcentaje_base, meses_antiguedad, prioridad)
+                SELECT 'CLIENTE NUEVO', 'Primera compra o sin compras en los últimos 12 meses', 3.00, 12, 10
+                WHERE NOT EXISTS (SELECT 1 FROM commission_rules WHERE upper(tipo_cliente)='CLIENTE NUEVO')
+                """
+            )
+        )
+        cn.execute(
+            text(
+                """
+                INSERT INTO commission_rules(tipo_cliente, definicion, porcentaje_base, meses_antiguedad, prioridad)
+                SELECT 'CLIENTE ANTIGUO', 'Compra confirmada en los últimos 12 meses', 1.50, 12, 20
+                WHERE NOT EXISTS (SELECT 1 FROM commission_rules WHERE upper(tipo_cliente)='CLIENTE ANTIGUO')
+                """
+            )
+        )
+        cn.commit()
+
+
+def _ensure_commission_channel_bonus() -> None:
+    with engine.connect() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS commission_channel_bonus (
+                    id_bonus SERIAL PRIMARY KEY,
+                    canal TEXT NOT NULL,
+                    descripcion TEXT,
+                    porcentaje_extra NUMERIC(6,2) NOT NULL DEFAULT 0,
+                    requiere_gestion_ejecutivo BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        for canal in ("INSTAGRAM", "MAIL"):
+            cn.execute(
+                text(
+                    """
+                    INSERT INTO commission_channel_bonus(canal, descripcion, porcentaje_extra, requiere_gestion_ejecutivo)
+                    SELECT :canal, 'Captación digital gestionada por ejecutivo', 1.00, TRUE
+                    WHERE NOT EXISTS (SELECT 1 FROM commission_channel_bonus WHERE upper(canal)=:canal)
+                    """
+                ),
+                {"canal": canal},
+            )
+        cn.commit()
+
+
+def _ensure_commission_group_bonus() -> None:
+    with engine.connect() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS commission_group_bonus (
+                    id_group_bonus SERIAL PRIMARY KEY,
+                    nivel TEXT NOT NULL,
+                    cumplimiento_min_pct NUMERIC(6,2) NOT NULL DEFAULT 100,
+                    bono_sobre_comision_pct NUMERIC(6,2) NOT NULL DEFAULT 0,
+                    orden INT NOT NULL DEFAULT 10,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        for nivel, cumplimiento, bono, orden in (("BRONCE", 100, 2, 10), ("PLATA", 115, 3, 20), ("ORO", 125, 5, 30)):
+            cn.execute(
+                text(
+                    """
+                    INSERT INTO commission_group_bonus(nivel, cumplimiento_min_pct, bono_sobre_comision_pct, orden)
+                    SELECT :nivel, :cumplimiento, :bono, :orden
+                    WHERE NOT EXISTS (SELECT 1 FROM commission_group_bonus WHERE upper(nivel)=:nivel)
+                    """
+                ),
+                {"nivel": nivel, "cumplimiento": cumplimiento, "bono": bono, "orden": orden},
+            )
+        cn.commit()
+
+
+def _ensure_plataformas() -> None:
+    with engine.connect() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS plataformas (
+                    id_plataforma SERIAL PRIMARY KEY,
+                    nombre TEXT NOT NULL UNIQUE,
+                    descripcion TEXT,
+                    orden INT NOT NULL DEFAULT 10,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        defaults = (
+            ("FORMULARIO WEB", "Formulario publicado en un sitio o landing page"),
+            ("CARTA WEB", "Carta o catálogo digital desde donde ingresa el cliente"),
+            ("BOTÓN WHATSAPP WEB", "Botón de WhatsApp instalado en un sitio web"),
+            ("WHATSAPP", "Contacto directo recibido por WhatsApp"),
+            ("EMAIL", "Contacto recibido por correo electrónico"),
+            ("INSTAGRAM", "Contacto o campaña originada en Instagram"),
+            ("LLAMADA", "Contacto originado mediante una llamada"),
+            ("OTRO", "Origen no clasificado o plataforma futura"),
+        )
+        for orden, (nombre, descripcion) in enumerate(defaults, start=1):
+            cn.execute(
+                text(
+                    """
+                    INSERT INTO plataformas(nombre, descripcion, orden)
+                    SELECT :nombre, :descripcion, :orden
+                    WHERE NOT EXISTS (SELECT 1 FROM plataformas WHERE UPPER(nombre)=:nombre)
+                    """
+                ),
+                {"nombre": nombre, "descripcion": descripcion, "orden": orden * 10},
+            )
+        cn.commit()
+
+
+def _ensure_users_extra_cols() -> None:
+    try:
+        with engine.connect() as cn:
+            cn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS avatar_url TEXT"))
+            cn.commit()
+    except Exception:
+        pass
+
+
+def _ensure_marcas_assets_cols() -> None:
+    """
+    Asegura columnas usadas para assets de cotización por marca.
+    (cPanel / ambientes antiguos pueden no tenerlas.)
+    """
+    try:
+        with engine.begin() as cn:
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS logo_url TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS color_primary TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS color_secondary TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS google_review_url TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS pdf_portada_url TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS pdf_cotizacion_url TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS pdf_terminos_url TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS pdf_banco_url TEXT"))
+    except Exception:
+        # No bloquear Settings si el hosting no permite ALTER.
+        pass
+
+
+@router.post("/marcas/import_quote_assets")
+def import_marca_quote_assets(payload: Dict[str, Any] = Body(...), user: dict = Depends(get_current_user)):
+    """
+    Upsert de marca + URLs de assets (portada/cotización/términos/banco/logo).
+    Pensado para que Admin no tenga que entrar manualmente a la BD.
+    """
+    if not (_is_privileged(_role(user)) or _is_privileged_user(user)):
+        raise HTTPException(status_code=403, detail="Solo Admin/Operaciones.")
+
+    name = (payload.get("marca") or payload.get("nombre") or payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="marca requerida")
+    # Normaliza para evitar duplicados por mayúsculas/tildes.
+    try:
+        from backend.core.quote_assets import normalize_marca
+        name = normalize_marca(name) or name.strip().upper()
+    except Exception:
+        name = name.strip().upper()
+
+    # Acepta varias keys por conveniencia
+    portada = (payload.get("pdf_portada_url") or payload.get("portada") or payload.get("portada_url") or "").strip() or None
+    cotiz = (payload.get("pdf_cotizacion_url") or payload.get("cotizacion") or payload.get("fondo") or payload.get("cotizacion_url") or "").strip() or None
+    term = (payload.get("pdf_terminos_url") or payload.get("terminos") or payload.get("terminos_url") or "").strip() or None
+    banco = (payload.get("pdf_banco_url") or payload.get("banco") or payload.get("banco_url") or "").strip() or None
+    logo = (payload.get("logo_url") or payload.get("logo") or payload.get("logo_path") or "").strip() or None
+
+    def _drive_direct_if_needed(u: str | None) -> str | None:
+        if not u:
+            return None
+        try:
+            if "drive.google.com" in u:
+                from backend.core.quote_assets import drive_direct
+                return drive_direct(u)
+        except Exception:
+            pass
+        return u
+
+    portada = _drive_direct_if_needed(portada)
+    cotiz = _drive_direct_if_needed(cotiz)
+    term = _drive_direct_if_needed(term)
+    banco = _drive_direct_if_needed(banco)
+    logo = _drive_direct_if_needed(logo)
+
+    _ensure_marcas_assets_cols()
+
+    try:
+        with engine.begin() as cn:
+            # Evita race-condition si dos admins crean marca al mismo tiempo.
+            # (Si el server no soporta advisory locks, simplemente seguimos.)
+            try:
+                cn.execute(text("SELECT pg_advisory_xact_lock(25032026)"))
+            except Exception:
+                pass
+
+            # Detectar columnas reales (compat entre esquemas antiguos/nuevos)
+            colmeta: Dict[str, Dict[str, Any]] = {}
+            try:
+                rows = cn.execute(
+                    text(
+                        """
+                        SELECT column_name, data_type, udt_name, is_nullable, column_default
+                        FROM information_schema.columns
+                        WHERE table_schema='public' AND table_name='marcas'
+                        """
+                    )
+                ).mappings().all()
+                colmeta = {str(r["column_name"]): dict(r) for r in rows}
+            except Exception:
+                colmeta = {}
+            colset = set(colmeta.keys())
+
+            def _has(col: str) -> bool:
+                return col in colset
+
+            def _is_required(col: str) -> bool:
+                m = colmeta.get(col) or {}
+                return (str(m.get("is_nullable") or "").upper() == "NO") and (m.get("column_default") in (None, ""))
+
+            def _default_for(col: str) -> Any:
+                m = colmeta.get(col) or {}
+                dt = str(m.get("data_type") or "").lower()
+                if dt in ("text", "character varying", "varchar", "citext"):
+                    return ""
+                if dt in ("boolean",):
+                    return True
+                if dt in ("integer", "bigint", "smallint"):
+                    return 0
+                if dt in ("numeric", "double precision", "real", "decimal"):
+                    return 0
+                if dt in ("date",):
+                    return datetime.utcnow().date()
+                if "timestamp" in dt:
+                    return datetime.utcnow()
+                return ""
+
+            # ¿Qué columna es el "nombre" real de la marca?
+            name_expr = None
+            if _has("nombre") and _has("marca"):
+                name_expr = "COALESCE(nombre,marca)"
+            elif _has("nombre"):
+                name_expr = "nombre"
+            elif _has("marca"):
+                name_expr = "marca"
+            else:
+                # fallback ultra-legacy (no debería pasar)
+                raise HTTPException(status_code=500, detail="Tabla marcas no tiene columna nombre/marca")
+
+            # Buscar existente
+            where = [f"UPPER({name_expr})=UPPER(:n)"]
+            if _has("marca") and name_expr != "marca":
+                where.append("UPPER(marca)=UPPER(:n)")
+            if _has("nombre") and name_expr != "nombre":
+                where.append("UPPER(nombre)=UPPER(:n)")
+
+            mid = cn.execute(
+                text(
+                    f"""
+                    SELECT id_marca
+                    FROM public.marcas
+                    WHERE {' OR '.join(where)}
+                    ORDER BY id_marca DESC
+                    LIMIT 1
+                    """
+                ),
+                {"n": name},
+            ).scalar()
+            if mid:
+                mid_i = int(mid)
+                sets: List[str] = []
+                params: Dict[str, Any] = {"id": mid_i}
+                if _has("is_active"):
+                    sets.append("is_active=TRUE")
+
+                def _set_if(col: str, v: str | None) -> None:
+                    if _has(col) and v:
+                        sets.append(f"{_qident(col)}=:{col}")
+                        params[col] = v
+
+                _set_if("logo_url", logo)
+                _set_if("logo_path", logo)
+                _set_if("pdf_portada_url", portada)
+                _set_if("pdf_cotizacion_url", cotiz)
+                _set_if("pdf_terminos_url", term)
+                _set_if("pdf_banco_url", banco)
+
+                # form_token: si existe y está vacío, lo generamos para formularios
+                if _has("form_token"):
+                    tok_in = str(payload.get("form_token") or payload.get("token") or "").strip() or None
+                    if tok_in:
+                        sets.append(f'{_qident("form_token")}=:_tok')
+                        params["_tok"] = tok_in
+                    else:
+                        cur_tok = ""
+                        try:
+                            cur_tok = str(
+                                cn.execute(
+                                    text("SELECT COALESCE(form_token,'') FROM public.marcas WHERE id_marca=:id"),
+                                    {"id": mid_i},
+                                ).scalar()
+                                or ""
+                            )
+                        except Exception:
+                            cur_tok = ""
+                        if not cur_tok.strip():
+                            sets.append(f'{_qident("form_token")}=:_tok')
+                            params["_tok"] = secrets.token_urlsafe(18)
+
+                if sets:
+                    cn.execute(text(f"UPDATE public.marcas SET {', '.join(sets)} WHERE id_marca=:id"), params)
+                return {"ok": True, "id_marca": mid_i, "updated_cols": [s.split("=")[0].strip() for s in sets]}
+
+            # Insert nuevo
+            cols: List[str] = []
+            vals: Dict[str, Any] = {}
+            # Ultra-legacy: hay instalaciones donde id_marca NO tiene default/serial.
+            # En ese caso debemos asignar un id manualmente (MAX+1).
+            if _has("id_marca") and _is_required("id_marca"):
+                try:
+                    next_id = int(cn.execute(text("SELECT COALESCE(MAX(id_marca),0)+1 FROM public.marcas")).scalar() or 1)
+                except Exception:
+                    next_id = 1
+                cols.append("id_marca")
+                vals["id_marca"] = next_id
+            if _has("nombre"):
+                cols.append("nombre")
+                vals["nombre"] = name
+            if _has("marca"):
+                cols.append("marca")
+                vals["marca"] = name
+            if _has("is_active"):
+                cols.append("is_active")
+                vals["is_active"] = True
+            if _has("form_token"):
+                cols.append("form_token")
+                tok = str(payload.get("form_token") or payload.get("token") or "").strip()
+                vals["form_token"] = tok or secrets.token_urlsafe(18)
+            if _has("logo_url") and logo:
+                cols.append("logo_url")
+                vals["logo_url"] = logo
+            if _has("logo_path") and logo:
+                cols.append("logo_path")
+                vals["logo_path"] = logo
+            if _has("pdf_portada_url"):
+                cols.append("pdf_portada_url")
+                vals["pdf_portada_url"] = portada
+            if _has("pdf_cotizacion_url"):
+                cols.append("pdf_cotizacion_url")
+                vals["pdf_cotizacion_url"] = cotiz
+            if _has("pdf_terminos_url"):
+                cols.append("pdf_terminos_url")
+                vals["pdf_terminos_url"] = term
+            if _has("pdf_banco_url"):
+                cols.append("pdf_banco_url")
+                vals["pdf_banco_url"] = banco
+
+            # Completa columnas NOT NULL sin default (legacy)
+            for col in sorted(colset):
+                if col in ("id_marca",) or col in vals:
+                    continue
+                if not _is_required(col):
+                    continue
+                cols.append(col)
+                if col in ("nombre", "marca"):
+                    vals[col] = name
+                elif col == "form_token":
+                    vals[col] = secrets.token_urlsafe(18)
+                else:
+                    vals[col] = _default_for(col)
+
+            if not cols:
+                raise HTTPException(status_code=500, detail="No hay columnas insertables en marcas")
+
+            cols_sql = ", ".join([_qident(c) for c in cols])
+            params_sql = ", ".join([f":{c}" for c in cols])
+            cn.execute(text(f"INSERT INTO public.marcas({cols_sql}) VALUES ({params_sql})"), vals)
+
+            mid2 = cn.execute(
+                text(
+                    f"""
+                    SELECT id_marca
+                    FROM public.marcas
+                    WHERE UPPER({name_expr})=UPPER(:n)
+                    ORDER BY id_marca DESC
+                    LIMIT 1
+                    """
+                ),
+                {"n": name},
+            ).scalar()
+            return {"ok": True, "id_marca": int(mid2 or 0), "inserted_cols": cols}
+    except HTTPException:
+        raise
+    except DBAPIError as e:
+        msg = str(getattr(e, "orig", "") or e).strip()
+        raise HTTPException(status_code=400, detail=f"No pude importar assets. {msg[:240]}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"import_quote_assets failed: {type(e).__name__}: {str(e)[:240]}")
+
+
+@router.post("/marcas/refresh_drive_assets")
+def refresh_drive_assets(payload: Dict[str, Any] = Body(...), user: dict = Depends(get_current_user)):
+    """
+    Fuerza refresh de assets desde la carpeta Drive configurada para la marca.
+    Sirve cuando se reemplazan imágenes en Drive y se quiere ver el cambio altiro.
+    """
+    if not (_is_privileged(_role(user)) or _is_privileged_user(user)):
+        raise HTTPException(status_code=403, detail="Solo Admin/Operaciones.")
+
+    marca_in = (payload.get("marca") or payload.get("nombre") or payload.get("name") or "").strip()
+    if not marca_in:
+        raise HTTPException(status_code=400, detail="marca requerida")
+    try:
+        from backend.core.quote_assets import DRIVE_ASSET_FOLDERS, normalize_marca
+        from backend.core.drive_assets import resolve_brand_assets_from_folder
+    except Exception:
+        raise HTTPException(status_code=500, detail="Drive assets no disponible en este servidor")
+
+    mkey = normalize_marca(marca_in)
+    folder_id = DRIVE_ASSET_FOLDERS.get(mkey, "") or ""
+    if not folder_id:
+        # Fallback: allow configuring per-brand folder_id in DB to avoid code deploys.
+        try:
+            with engine.begin() as cn:
+                # Allow configuring Drive folder id per brand without code deploys.
+                try:
+                    cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS drive_assets_folder_id TEXT"))
+                    cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS drive_folder_id TEXT"))
+                except Exception:
+                    pass
+                mcols = {r[0] for r in cn.execute(text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='marcas'
+                """)).fetchall()}
+                cand_cols = [
+                    "drive_assets_folder_id",
+                    "drive_folder_id",
+                    "folder_id_drive",
+                    "drive_folder",
+                ]
+                existing = [c for c in cand_cols if c in mcols]
+                if existing:
+                    name_expr = "marca"
+                    if ("marca" in mcols) and ("nombre" in mcols):
+                        name_expr = "COALESCE(marca, nombre)"
+                    elif "nombre" in mcols:
+                        name_expr = "nombre"
+                    row = cn.execute(
+                        text(
+                            f"""
+                            SELECT {", ".join(existing)}
+                            FROM public.marcas
+                            WHERE UPPER({name_expr}) = UPPER(:m)
+                            ORDER BY id_marca DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {"m": mkey},
+                    ).fetchone()
+                    if row:
+                        for v in row:
+                            vv = (str(v or "")).strip()
+                            if vv:
+                                folder_id = vv
+                                break
+        except Exception:
+            folder_id = folder_id or ""
+
+    if not folder_id:
+        raise HTTPException(status_code=404, detail=f"Marca sin carpeta Drive configurada: {mkey}")
+
+    # IMPORTANT: shared hosting. Do not block Passenger workers with Drive I/O.
+    st = _drive_refresh_enqueue(marca_key=mkey, folder_id=folder_id, resolve_fn=resolve_brand_assets_from_folder)
+    return st
+
+def _require_admin(user: dict) -> None:
+    """
+    Settings es un panel de administración: solo ADMIN/SUPERADMIN (y equivalentes) pueden entrar.
+    """
+    rk = _role_key(user)
+    if not rk:
+        raise HTTPException(status_code=401, detail="Token requerido")
+    if ("superadmin" in rk) or (rk == "admin") or ("admin" in rk):
+        return
+    raise HTTPException(status_code=403, detail="Solo Admin/SuperAdmin.")
+
+def _require_settings_access(user: dict, entity: str) -> None:
+    """
+    Acceso a /settings:
+    - Por defecto: ADMIN/SUPERADMIN.
+    - Excepción: entity=productos (productos de venta) lo puede usar cualquier usuario autenticado,
+      pero siempre se aplica scope por marcas en list/create/update/delete.
+    """
+    table = _resolve_table(entity)
+    rk = _role_key(user)
+    if not rk:
+        raise HTTPException(status_code=401, detail="Token requerido")
+    if table == "productos":
+        return
+    _require_admin(user)
+    _enforce_admin_entity_scope(user, entity)
+
+
+def _is_superadmin(user: dict) -> bool:
+    rk = _role_key(user)
+    return bool(rk and ("superadmin" in rk))
+
+
+def _enforce_admin_entity_scope(user: dict, entity: str) -> None:
+    """
+    Admin (no superadmin) ve solo settings operativos acotados.
+    """
+    if _is_superadmin(user):
+        return
+    # ADMIN: solo productos (venta), comunas y estados del lead.
+    allowed = {"productos", "comunas", "estados", "estados_lead", "commission_rules", "commission_channel_bonus", "commission_group_bonus"}
+    if (entity or "").strip().lower() not in allowed:
+        raise HTTPException(status_code=403, detail="Acceso denegado para este módulo de Settings.")
+
+
+def _ensure_usuarios_marcas() -> None:
+    """
+    Tabla puente: qué marcas puede ver un usuario (ejecutivos).
+    Si no existe, el ejecutivo queda con 0 leads.
+    """
+    try:
+        with engine.begin() as cn:
+            cn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS usuarios_marcas(
+                      id_usuario INTEGER NOT NULL REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+                      id_marca   INTEGER NOT NULL REFERENCES marcas(id_marca)   ON DELETE CASCADE,
+                      created_at TIMESTAMP DEFAULT now(),
+                      PRIMARY KEY (id_usuario, id_marca)
+                    )
+                    """
+                )
+            )
+    except Exception:
+        # no bloqueamos settings si falla, pero luego devolverá error al guardar
+        pass
+
+
+def _role(user: dict) -> str:
+    return (user.get("role") or user.get("rol") or "").upper()
+
+
+def _role_key(user: dict) -> str:
+    """
+    Normaliza el rol para comparaciones robustas.
+    Evita casos reales donde el rol viene como "Administrador" o con tildes/espacios.
+    """
+    raw = str(user.get("role") or user.get("rol") or "").strip().lower()
+    if not raw:
+        return ""
+    try:
+        import unicodedata
+
+        raw = unicodedata.normalize("NFD", raw)
+        raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Mn")
+    except Exception:
+        pass
+    raw = "".join(ch for ch in raw if ch.isalnum())
+    return raw
+
+
+def _is_privileged(role: str) -> bool:
+    """
+    Roles que ven todo (no filtramos por marcas).
+    Si agregas nuevos roles "no ejecutivos", ponlos aquí.
+    """
+    return role in (
+        "ADMIN",
+        "SUPERADMIN",
+        "JEFE DE OPERACIONES",
+        "OPERACIONES",
+        "COMPRAS",
+        "BODEGUERO",
+        "MICE",
+    )
+
+
+def _is_privileged_user(user: dict) -> bool:
+    rk = _role_key(user)
+    if not rk:
+        return False
+    return (
+        ("admin" in rk)
+        or ("superadmin" in rk)
+        or ("operac" in rk)
+        or ("compra" in rk)
+        or ("bodeg" in rk)
+        or ("mice" in rk)
+    )
+
+
+def _user_marcas_ids(user: dict) -> List[int]:
+    # 1) token
+    ids = []
+    for x in (user.get("marcas") or []):
+        try:
+            ids.append(int(x))
+        except Exception:
+            pass
+    ids = [i for i in ids if i > 0]
+    if ids:
+        return sorted(set(ids))
+
+    # 2) fallback DB
+    uid = user.get("id_usuario") or user.get("id") or user.get("user_id")
+    try:
+        uid = int(uid)
+    except Exception:
+        return []
+
+    _ensure_usuarios_marcas()
+    with engine.connect() as cn:
+        rows = cn.execute(
+            text("SELECT id_marca FROM usuarios_marcas WHERE id_usuario=:id ORDER BY id_marca"),
+            {"id": uid},
+        ).fetchall()
+    return [int(r[0]) for r in rows if r and r[0] is not None]
+
+
+def _resolve_table(entity: str) -> str:
+    e = (entity or "").strip().lower()
+    if e == "marcas":
+        _ensure_marcas_assets_cols()
+    if e == "comisiones":
+        _ensure_comisiones()
+    if e == "commission_rules":
+        _ensure_commission_rules()
+    if e == "commission_channel_bonus":
+        _ensure_commission_channel_bonus()
+    if e == "commission_group_bonus":
+        _ensure_commission_group_bonus()
+    if e in ("plataformas", "plataforma"):
+        _ensure_plataformas()
+    if e in ENTITY_MAP:
+        return ENTITY_MAP[e]
+    raise HTTPException(status_code=404, detail="Entidad no soportada")
+
+
+def _qident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+def _norm_expr(expr: str) -> str:
+    """
+    Normaliza texto para búsquedas sin acentos (es-CL).
+    """
+    return f"translate(lower({expr}), 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN')"
+
+def _norm_param(param: str) -> str:
+    return f"translate(lower({param}), 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN')"
+
+def _norm_key_py(s: str) -> str:
+    if not s:
+        return ""
+    key = (
+        str(s)
+        .strip()
+        .lower()
+        .translate(str.maketrans("áéíóúüñÁÉÍÓÚÜÑ", "aeiouunAEIOUUN"))
+    )
+    key = "".join(ch for ch in key if ch.isalnum())
+    return key
+
+
+def _resolve_marca_from_db(marca_in: str, restrict_ids: List[int] | None = None) -> tuple[str | None, int | None]:
+    """
+    Resuelve un texto de marca a una marca existente en DB, tolerando tildes/espacios.
+    Retorna (label_upper, id_marca) o (None, None).
+    """
+    want = _norm_key_py(marca_in)
+    if not want:
+        return (None, None)
+
+    try:
+        with engine.connect() as cn:
+            if restrict_ids:
+                rows = cn.execute(
+                    text(
+                        """
+                        SELECT id_marca, COALESCE(marca,nombre) AS label, nombre, marca
+                        FROM public.marcas
+                        WHERE id_marca = ANY(CAST(:m AS int[]))
+                        """
+                    ),
+                    {"m": list(map(int, restrict_ids))},
+                ).mappings().all()
+            else:
+                rows = cn.execute(
+                    text(
+                        """
+                        SELECT id_marca, COALESCE(marca,nombre) AS label, nombre, marca
+                        FROM public.marcas
+                        WHERE is_active=true
+                        """
+                    )
+                ).mappings().all()
+    except Exception:
+        rows = []
+
+    idx: dict[str, tuple[str, int]] = {}
+    for r in rows:
+        mid = int(r.get("id_marca") or 0)
+        if mid <= 0:
+            continue
+        label = str(r.get("label") or "").strip()
+        if not label:
+            continue
+        canon = label.strip().upper()
+        for k in (r.get("label"), r.get("nombre"), r.get("marca")):
+            kk = _norm_key_py(str(k or ""))
+            if kk:
+                idx.setdefault(kk, (canon, mid))
+
+    got = idx.get(want)
+    if got:
+        return got[0], got[1]
+    return (None, None)
+
+
+def _allowed_marca_codes(user: dict) -> List[str]:
+    """
+    Retorna las marcas permitidas para el usuario (como etiquetas en MAYÚSCULA).
+    Importante: debe ser dinámico (marcas nuevas deben funcionar sin hardcode).
+    """
+    role = _role(user)
+    if _is_privileged(role) or _is_privileged_user(user):
+        try:
+            with engine.connect() as cn:
+                rows = cn.execute(
+                    text(
+                        """
+                        SELECT COALESCE(marca,nombre) AS label
+                        FROM public.marcas
+                        WHERE is_active=true
+                        ORDER BY COALESCE(marca,nombre) ASC
+                        """
+                    )
+                ).fetchall()
+            return sorted({str(r[0] or "").strip().upper() for r in rows if (r and (r[0] or "").strip())})
+        except Exception:
+            return []
+    ids = _user_marcas_ids(user)
+    if not ids:
+        return []
+    try:
+        with engine.connect() as cn:
+            rows = cn.execute(
+                text("SELECT COALESCE(marca,nombre) AS label FROM marcas WHERE id_marca = ANY(CAST(:m AS int[]))"),
+                {"m": list(map(int, ids))},
+            ).fetchall()
+        out: List[str] = []
+        for r in rows:
+            label = str((r[0] if r else "") or "").strip()
+            if label:
+                out.append(label.upper())
+        return sorted(set(out))
+    except Exception:
+        return []
+
+
+def _normalize_productos_marcas_once() -> None:
+    """
+    Normaliza `public.productos.marca` a códigos en MAYÚSCULA:
+    GOURMET | CAMALEON | DEL SABOR | EXPRESS
+
+    Se ejecuta como max 1 vez por día (guardado en system_kv) y es idempotente.
+    """
+    _normalize_productos_marcas(force=False)
+
+
+def _normalize_productos_marcas(force: bool = False) -> Dict[str, Any]:
+    """
+    Normaliza `public.productos.marca` a MAYÚSCULA usando el catálogo de `public.marcas`.
+
+    En entornos reales hay dos causas de “no hay productos para la marca”:
+    1) productos.marca viene con textos variados (acentos/puntos/sufijos)
+    2) productos.id_marca puede estar (pero marca texto quedó vieja) o viceversa
+
+    Este job:
+    - Si existe id_marca en productos: setea marca por el label de `marcas` (robusto).
+    - Si existe id_marca: intenta inferir id_marca por texto cuando falta.
+    - Siempre intenta normalizar por el texto actual como fallback (match contra marcas).
+    - En modo normal corre 1 vez por día; force=True lo ejecuta siempre.
+    """
+    out = {
+        "ok": True,
+        "force": bool(force),
+        "has_id_marca": False,
+        "total_productos": None,
+        "null_marca": None,
+        "updated_by_id_marca": 0,
+        "updated_by_text": 0,
+    }
+    try:
+        with engine.begin() as cn:
+            # lock para evitar concurrencia
+            got = bool(cn.execute(text("SELECT pg_try_advisory_lock(25032026)")).scalar())
+            if not got:
+                return {**out, "ok": False, "detail": "lock_busy"}
+            try:
+                cn.execute(
+                    text(
+                        """
+                        CREATE TABLE IF NOT EXISTS system_kv (
+                          key TEXT PRIMARY KEY,
+                          value TEXT NOT NULL,
+                          updated_at TIMESTAMP DEFAULT now()
+                        )
+                        """
+                    )
+                )
+                today = datetime.utcnow().date().isoformat()
+                if not force:
+                    last = cn.execute(
+                        text("SELECT value FROM system_kv WHERE key='normalize_productos_marcas_last_run' LIMIT 1")
+                    ).scalar()
+                    if (last or "") == today:
+                        return {**out, "skipped": True, "reason": "already_ran_today"}
+
+                # Normalización fuerte en SQL (sin depender de unaccent):
+                def _norm(expr: str) -> str:
+                    return (
+                        "regexp_replace("
+                        f"translate(lower(coalesce({expr},'')), 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN')"
+                        ", '[^a-z0-9]+', '', 'g')"
+                    )
+
+                # 1) Por id_marca (si existe): usa nombre/marca de la tabla marcas.
+                has_id_marca = bool(
+                    cn.execute(
+                        text(
+                            """
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_schema='public' AND table_name='productos' AND column_name='id_marca'
+                            """
+                        )
+                    ).first()
+                )
+                out["has_id_marca"] = has_id_marca
+
+                try:
+                    out["total_productos"] = int(cn.execute(text("SELECT COUNT(*) FROM public.productos")).scalar() or 0)
+                    out["null_marca"] = int(
+                        cn.execute(text("SELECT COUNT(*) FROM public.productos WHERE marca IS NULL OR btrim(marca)=''")).scalar()
+                        or 0
+                    )
+                except Exception:
+                    pass
+                if has_id_marca:
+                    res = cn.execute(
+                        text(
+                            f"""
+                            UPDATE public.productos p
+                            SET marca = upper(coalesce(m.marca,m.nombre,''))
+                            FROM public.marcas m
+                            WHERE p.id_marca = m.id_marca
+                              AND btrim(coalesce(m.marca,m.nombre,'')) <> ''
+                              AND upper(coalesce(p.marca,'')) <> upper(coalesce(m.marca,m.nombre,''))
+                            """
+                        )
+                    )
+                    out["updated_by_id_marca"] = int(res.rowcount or 0)
+
+                # 2) Inferir por texto (match contra marcas) + setear id_marca cuando falte (si existe col)
+                try:
+                    res = cn.execute(
+                        text(
+                            f"""
+                            UPDATE public.productos p
+                            SET
+                              marca = upper(coalesce(m.marca,m.nombre,'')),
+                              id_marca = COALESCE(p.id_marca, m.id_marca)
+                            FROM public.marcas m
+                            WHERE {_norm("coalesce(p.marca,'')")} = {_norm("coalesce(m.marca,m.nombre,'')")}
+                              AND btrim(coalesce(m.marca,m.nombre,'')) <> ''
+                              AND (
+                                upper(coalesce(p.marca,'')) <> upper(coalesce(m.marca,m.nombre,''))
+                                OR (p.id_marca IS NULL)
+                              )
+                            """
+                        )
+                    )
+                    out["updated_by_text"] = int(res.rowcount or 0)
+                except Exception:
+                    # Si no hay id_marca en productos, deja solo marca:
+                    res = cn.execute(
+                        text(
+                            f"""
+                            UPDATE public.productos p
+                            SET marca = upper(coalesce(m.marca,m.nombre,''))
+                            FROM public.marcas m
+                            WHERE {_norm("coalesce(p.marca,'')")} = {_norm("coalesce(m.marca,m.nombre,'')")}
+                              AND btrim(coalesce(m.marca,m.nombre,'')) <> ''
+                              AND upper(coalesce(p.marca,'')) <> upper(coalesce(m.marca,m.nombre,''))
+                            """
+                        )
+                    )
+                    out["updated_by_text"] = int(res.rowcount or 0)
+
+                cn.execute(
+                    text(
+                        """
+                        INSERT INTO system_kv(key,value,updated_at)
+                        VALUES ('normalize_productos_marcas_last_run', :v, now())
+                        ON CONFLICT(key) DO UPDATE SET value=:v, updated_at=now()
+                        """
+                    ),
+                    {"v": today},
+                )
+            finally:
+                try:
+                    cn.execute(text("SELECT pg_advisory_unlock(25032026)"))
+                except Exception:
+                    pass
+        return out
+    except Exception:
+        # nunca debe romper Settings
+        return {**out, "ok": False}
+
+
+@router.post("/productos/normalize_marcas")
+def normalize_productos_marcas(
+    force: bool = Query(default=False),
+    user: dict = Depends(get_current_user),
+):
+    # Solo roles privilegiados
+    if not (_is_privileged(_role(user)) or _is_privileged_user(user)):
+        raise HTTPException(status_code=403, detail="Solo Admin/Operaciones puede normalizar marcas.")
+    return _normalize_productos_marcas(force=force)
+
+
+@router.get("/productos/marca_stats")
+def productos_marca_stats(user: dict = Depends(get_current_user)):
+    # Solo roles privilegiados
+    if not (_is_privileged(_role(user)) or _is_privileged_user(user)):
+        raise HTTPException(status_code=403, detail="Solo Admin/Operaciones.")
+
+    out: Dict[str, Any] = {"ok": True}
+    with engine.connect() as cn:
+        out["total_productos"] = int(cn.execute(text("SELECT COUNT(*) FROM public.productos")).scalar() or 0)
+        out["null_marca"] = int(
+            cn.execute(text("SELECT COUNT(*) FROM public.productos WHERE marca IS NULL OR btrim(marca)=''")).scalar() or 0
+        )
+        # Top valores de marca (texto)
+        out["by_marca"] = [
+            {"marca": r[0], "n": int(r[1])}
+            for r in cn.execute(
+                text(
+                    """
+                    SELECT COALESCE(NULLIF(btrim(marca),''), '(NULL/EMPTY)') AS marca, COUNT(*) AS n
+                    FROM public.productos
+                    GROUP BY 1
+                    ORDER BY n DESC, marca ASC
+                    LIMIT 80
+                    """
+                )
+            ).fetchall()
+        ]
+
+        has_id_marca = bool(
+            cn.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='productos' AND column_name='id_marca'
+                    """
+                )
+            ).first()
+        )
+        out["has_id_marca"] = has_id_marca
+        if has_id_marca:
+            out["by_id_marca"] = [
+                {"id_marca": int(r[0]) if r[0] is not None else None, "n": int(r[1])}
+                for r in cn.execute(
+                    text(
+                        """
+                        SELECT id_marca, COUNT(*) AS n
+                        FROM public.productos
+                        GROUP BY id_marca
+                        ORDER BY n DESC, id_marca NULLS LAST
+                        LIMIT 80
+                        """
+                    )
+                ).fetchall()
+            ]
+
+    return out
+
+def _pk_for(table: str) -> str:
+    """
+    PK por information_schema (NO usa ::regclass, NO rompe en Postgres).
+    """
+    q = text(
+        """
+        SELECT kcu.column_name AS pk
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name
+         AND tc.table_schema = kcu.table_schema
+        WHERE tc.constraint_type = 'PRIMARY KEY'
+          AND tc.table_schema = 'public'
+          AND tc.table_name = :t
+        ORDER BY kcu.ordinal_position
+        LIMIT 1
+        """
+    )
+    with engine.connect() as cn:
+        r = cn.execute(q, {"t": table}).fetchone()
+        if not r:
+            raise HTTPException(500, detail=f"No PK para {table}")
+        return _as_text(r._mapping["pk"]).strip()
+
+
+def _cols_for(table: str) -> List[Dict[str, Any]]:
+    q = text(
+        """
+        SELECT
+          column_name,
+          data_type,
+          is_nullable,
+          column_default
+        FROM information_schema.columns
+        WHERE table_schema='public' AND table_name=:t
+        ORDER BY ordinal_position
+        """
+    )
+    with engine.connect() as cn:
+        rows = cn.execute(q, {"t": table}).mappings().all()
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        d = dict(r)
+        # En algunos ambientes el driver devuelve bytes; normalizamos para no romper el CRUD.
+        if "column_name" in d:
+            d["column_name"] = _as_text(d.get("column_name")).strip()
+        if "data_type" in d:
+            d["data_type"] = _as_text(d.get("data_type")).strip()
+        if "is_nullable" in d:
+            d["is_nullable"] = _as_text(d.get("is_nullable")).strip()
+        if "column_default" in d and d.get("column_default") is not None:
+            d["column_default"] = _as_text(d.get("column_default"))
+        out.append(d)
+    return out
+
+
+def _has_col(cols: List[Dict[str, Any]], name: str) -> bool:
+    return any(c["column_name"] == name for c in cols)
+
+
+def _is_text_type(dt: str) -> bool:
+    dt = (dt or "").lower()
+    return dt in ("text", "character varying", "varchar", "citext")
+
+
+def _hidden_for(table: str) -> List[str]:
+    h: List[str] = []
+    h.extend(HIDDEN_COLS.get("default", []))
+    h.extend(HIDDEN_COLS.get(table, []))
+    out: List[str] = []
+    for x in h:
+        if x not in out:
+            out.append(x)
+    return out
+
+
+def _readonly_for(table: str) -> List[str]:
+    h: List[str] = []
+    h.extend(READONLY_COLS.get("default", []))
+    h.extend(READONLY_COLS.get(table, []))
+    out: List[str] = []
+    for x in h:
+        if x not in out:
+            out.append(x)
+    return out
+
+
+def _labels_for(table: str) -> Dict[str, str]:
+    return LABELS.get(table, {})
+
+
+def _ui_hint(table: str, col: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Hint para el frontend: widget recomendado.
+    """
+    name = col["column_name"]
+    dt = (col["data_type"] or "").lower()
+
+    if name == "is_active":
+        return {"widget": "toggle", "trueLabel": "Activo", "falseLabel": "Inactivo"}
+
+    if table == "estados_lead" and name == "color":
+        return {"widget": "color"}
+
+    if table == "usuarios" and name == "rol":
+        return {"widget": "select", "source": "roles", "labelField": "nombre", "valueField": "nombre"}
+
+    if table == "comisiones" and name == "marca":
+        return {"widget": "select", "source": "marcas", "labelField": "nombre", "valueField": "nombre"}
+
+    if table == "comisiones" and name == "rol":
+        return {"widget": "select", "source": "roles", "labelField": "nombre", "valueField": "nombre"}
+
+    if table == "productos" and name == "id_marca":
+        return {"widget": "select", "source": "marcas", "labelField": "nombre", "valueField": "id_marca"}
+
+    if dt in ("integer", "bigint", "numeric", "double precision", "real"):
+        return {"widget": "number"}
+
+    if dt in ("boolean",):
+        return {"widget": "toggle"}
+
+    if _is_text_type(dt):
+        return {"widget": "text"}
+
+    if dt in ("date",):
+        return {"widget": "date"}
+
+    if "timestamp" in dt:
+        return {"widget": "datetime"}
+
+    return {"widget": "text"}
+
+
+def _fetch_choices(source: str) -> List[Dict[str, Any]]:
+    src = _resolve_table(source)
+    cols = _cols_for(src)
+    pk = _pk_for(src)
+
+    if _has_col(cols, "nombre"):
+        label_col = "nombre"
+    elif _has_col(cols, "marca"):
+        # Legacy: public.marcas suele usar columna `marca` como nombre.
+        label_col = "marca"
+    elif _has_col(cols, "tipo"):
+        label_col = "tipo"
+    else:
+        label_col = pk
+
+    where_sql = ""
+    if _has_col(cols, "is_active"):
+        where_sql = 'WHERE "is_active"=TRUE '
+
+    q = text(
+        f"SELECT {_qident(pk)} AS id, {_qident(label_col)} AS nombre "
+        f"FROM {_qident(src)} "
+        f"{where_sql}"
+        f"ORDER BY {_qident(label_col)}"
+    )
+
+    with engine.connect() as cn:
+        rows = cn.execute(q).mappings().all()
+
+    return [dict(r) for r in rows]
+
+
+@router.get("/meta/{entity}")
+def meta(entity: str, user: dict = Depends(get_current_user)):
+    try:
+        _require_settings_access(user, entity)
+
+        table = _resolve_table(entity)
+        if table == "usuarios":
+            _ensure_users_extra_cols()
+        cols = _cols_for(table)
+        pk = _pk_for(table)
+
+        hidden = _hidden_for(table)
+        readonly = _readonly_for(table)
+        labels = _labels_for(table)
+
+        out_cols: List[Dict[str, Any]] = []
+        for c in cols:
+            name = c["column_name"]
+            if name in hidden:
+                continue
+            c2 = dict(c)
+            c2["label"] = labels.get(name, name.replace("_", " ").title())
+            c2["readonly"] = (name in readonly) or (name == pk)
+            c2["ui"] = _ui_hint(table, c)
+            out_cols.append(c2)
+
+        choices: Dict[str, List[Dict[str, Any]]] = {}
+        for c in out_cols:
+            ui = c.get("ui") or {}
+            if ui.get("widget") == "select":
+                src = ui.get("source")
+                if src and src not in choices:
+                    choices[src] = _fetch_choices(src)
+
+        return {
+            "ok": True,
+            "entity": entity,
+            "table": table,
+            "pk": pk,
+            "columns": out_cols,
+            "choices": choices,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+
+        raise HTTPException(
+            500,
+            detail={
+                "where": "settings.meta",
+                "entity": entity,
+                "type": e.__class__.__name__,
+                "msg": str(e),
+                "trace": traceback.format_exc().splitlines()[-25:],
+            },
+        )
+
+
+@router.get("/{entity}")
+@router.get("/rows/{entity}")  # compat
+def list_rows(
+    entity: str,
+    limit: int = Query(25, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    q: str = Query("", max_length=120),
+    active_only: bool = Query(False),
+    user: dict = Depends(get_current_user),
+):
+    _require_settings_access(user, entity)
+
+    table = _resolve_table(entity)
+    if table == "usuarios":
+        _ensure_users_extra_cols()
+    if table == "productos":
+        # Esto evita que ejecutivos pierdan catálogos por marcas escritas distinto.
+        _normalize_productos_marcas_once()
+        _ensure_productos_brochure_cols()
+    if table == "comunas":
+        # Backfill bruto 1 vez por día (idempotente).
+        _ensure_comunas_bruto_once()
+    cols = _cols_for(table)
+    pk = _pk_for(table)
+    hidden = set(_hidden_for(table))
+
+    colnames = [c["column_name"] for c in cols if c["column_name"] not in hidden]
+    if not colnames:
+        raise HTTPException(500, detail="No hay columnas visibles")
+
+    where_parts: List[str] = []
+    params: Dict[str, Any] = {"limit": limit, "offset": offset}
+
+    # Productos (venta): ejecutivos ven SOLO sus marcas (paginación incluida).
+    if table == "productos":
+        role = _role(user)
+        if not _is_privileged(role):
+            allowed_codes = _allowed_marca_codes(user)
+            if not allowed_codes:
+                return {"ok": True, "total": 0, "items": []}
+
+            if _has_col(cols, "id_marca"):
+                marcas_ids = _user_marcas_ids(user)
+                where_parts.append(f'{_qident("id_marca")} = ANY(:_user_marcas)')
+                params["_user_marcas"] = marcas_ids
+            elif _has_col(cols, "marca"):
+                where_parts.append(f"upper(coalesce({_qident('marca')},'')) = ANY(:_user_marcas_codes)")
+                params["_user_marcas_codes"] = allowed_codes
+            else:
+                return {"ok": True, "total": 0, "items": []}
+
+    if active_only and _has_col(cols, "is_active"):
+        where_parts.append(f'{_qident("is_active")} = TRUE')
+
+    qtxt = (q or "").strip()
+    if qtxt:
+        params["q"] = f"%{qtxt}%"
+        text_cols = [
+            c["column_name"]
+            for c in cols
+            if _is_text_type(c["data_type"]) and c["column_name"] not in hidden
+        ]
+        if text_cols:
+            ors = " OR ".join([f'{_norm_expr(_qident(c))} LIKE {_norm_param(":q")}' for c in text_cols])
+            where_parts.append(f"({ors})")
+
+    where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    sel_cols = ", ".join([_qident(c) for c in colnames])
+
+    # Orden por defecto: alfabético cuando aplica (mejor UX). Mantener orden técnico en tablas operativas.
+    order_sql = f'ORDER BY {_qident(pk)} DESC'
+    try:
+        if table == "marcas":
+            if _has_col(cols, "nombre") and _has_col(cols, "marca"):
+                order_sql = f'ORDER BY COALESCE({_qident("nombre")},{_qident("marca")}) ASC NULLS LAST, {_qident(pk)} ASC'
+            elif _has_col(cols, "nombre"):
+                order_sql = f'ORDER BY {_qident("nombre")} ASC NULLS LAST, {_qident(pk)} ASC'
+            elif _has_col(cols, "marca"):
+                order_sql = f'ORDER BY {_qident("marca")} ASC NULLS LAST, {_qident(pk)} ASC'
+        elif table == "usuarios":
+            # nombre -> username -> email
+            parts = []
+            if _has_col(cols, "nombre"):
+                parts.append(_qident("nombre"))
+            if _has_col(cols, "username"):
+                parts.append(_qident("username"))
+            if _has_col(cols, "email"):
+                parts.append(_qident("email"))
+            if parts:
+                order_sql = f"ORDER BY lower(COALESCE({', '.join(parts)})) ASC NULLS LAST, {_qident(pk)} ASC"
+        elif table == "roles" and _has_col(cols, "nombre"):
+            order_sql = f'ORDER BY lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+        elif table == "estados_lead":
+            if _has_col(cols, "orden") and _has_col(cols, "nombre"):
+                order_sql = f'ORDER BY {_qident("orden")} ASC NULLS LAST, lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+            elif _has_col(cols, "nombre"):
+                order_sql = f'ORDER BY lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+        elif table == "comunas":
+            if _has_col(cols, "nombre"):
+                order_sql = f'ORDER BY lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+            elif _has_col(cols, "comuna"):
+                order_sql = f'ORDER BY lower({_qident("comuna")}) ASC NULLS LAST, {_qident(pk)} ASC'
+        elif table == "tipocliente" and _has_col(cols, "nombre"):
+            order_sql = f'ORDER BY lower({_qident("nombre")}) ASC NULLS LAST, {_qident(pk)} ASC'
+    except Exception:
+        pass
+    if table == "productos" and _has_col(cols, "orden"):
+        # productos: respeta orden para catálogo (pero es sortable por click en UI).
+        order_sql = f'ORDER BY {_qident("orden")} DESC NULLS LAST, {_qident(pk)} DESC'
+    sql_items = text(
+        f'SELECT {sel_cols} FROM {_qident(table)} {where_sql} '
+        f'{order_sql} LIMIT :limit OFFSET :offset'
+    )
+    sql_total = text(f'SELECT COUNT(*) AS n FROM {_qident(table)} {where_sql}')
+
+    with engine.connect() as cn:
+        total = int(cn.execute(sql_total, params).scalar_one())
+        items = [dict(r) for r in cn.execute(sql_items, params).mappings().all()]
+
+    return {"ok": True, "total": total, "items": items}
+
+
+@router.post("/{entity}")
+@router.post("/rows/{entity}")  # compat
+def create_row(
+    entity: str,
+    payload: Dict[str, Any] = Body(...),
+    user: dict = Depends(get_current_user),
+):
+    _require_settings_access(user, entity)
+
+    table = _resolve_table(entity)
+    if table == "usuarios":
+        _ensure_users_extra_cols()
+    cols = _cols_for(table)
+    pk = _pk_for(table)
+    hidden = set(_hidden_for(table))
+    readonly = set(_readonly_for(table))
+
+    allowed = {
+        c["column_name"]
+        for c in cols
+        if c["column_name"] not in hidden
+        and c["column_name"] not in readonly
+        and c["column_name"] != pk
+    }
+    raw = payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
+    data = {}
+    for k, v in (raw or {}).items():
+        if k not in allowed:
+            continue
+        if v in ("", None):
+            continue
+        data[k] = v
+
+    # usuarios: permitir password plano (lo hasheamos)
+    if table == "usuarios":
+        pw = (raw or {}).get("password")
+        if pw:
+            data["hashed_password"] = hash_password(pw)
+
+    if not data:
+        raise HTTPException(400, detail="Nada para crear")
+
+    if table == "usuarios" and "hashed_password" not in data:
+        raise HTTPException(400, detail="Password requerido")
+
+    # comunas: auto-calcula bruto en base a neto (si corresponde).
+    if table == "comunas":
+        _apply_comunas_bruto(cols, data)
+
+    # roles: evitar error genérico por UNIQUE(nombre)
+    if table == "roles" and data.get("nombre"):
+        try:
+            nm = str(data.get("nombre") or "").strip()
+            if nm:
+                with engine.connect() as cn:
+                    exists = cn.execute(
+                        text("SELECT 1 FROM roles WHERE lower(nombre)=lower(:n) LIMIT 1"),
+                        {"n": nm},
+                    ).scalar()
+                if exists:
+                    raise HTTPException(400, detail="Ya existe un rol con ese nombre.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    # roles: algunos entornos tienen id_rol NOT NULL sin default/serial.
+    # Si detectamos ese caso, generamos un id_rol (max+1) para que el insert funcione.
+    # Ideal: arreglar schema (SEQUENCE/IDENTITY). Esto es un fallback seguro en baja concurrencia.
+    if table == "roles":
+        try:
+            id_col = next((c for c in cols if c["column_name"] == "id_rol"), None)
+            if id_col and not (id_col.get("column_default") or ""):
+                with engine.connect() as cn:
+                    next_id = cn.execute(text("SELECT COALESCE(MAX(id_rol),0)+1 FROM roles")).scalar()
+                if next_id is not None:
+                    data["id_rol"] = int(next_id)
+        except Exception:
+            pass
+
+    # marcas: algunos entornos tienen id_marca NOT NULL sin default/serial.
+    # Fallback seguro (baja concurrencia): max+1.
+    if table == "marcas":
+        try:
+            id_col = next((c for c in cols if c["column_name"] == pk), None)
+            if id_col and not (id_col.get("column_default") or "") and pk not in data:
+                with engine.connect() as cn:
+                    next_id = cn.execute(text("SELECT COALESCE(MAX(id_marca),0)+1 FROM marcas")).scalar()
+                if next_id is not None:
+                    data[pk] = int(next_id)
+        except Exception:
+            pass
+
+    # marcas: solo exigimos nombre (los assets se pueden cargar/después cachear)
+    if table == "marcas":
+        required = []
+        if "nombre" in allowed:
+            required.append("nombre")
+        elif "marca" in allowed:
+            required.append("marca")
+        missing = [f for f in required if not (raw or {}).get(f)]
+        if missing:
+            raise HTTPException(400, detail=f"Falta campo obligatorio: {', '.join(missing)}")
+
+    # Defaults seguros
+    if "orden" in allowed and "orden" not in data:
+        data["orden"] = 0
+
+    # roles: algunos entornos tienen created_at/updated_at NOT NULL sin default.
+    # Aunque estén ocultas en Settings, las llenamos server-side para que el INSERT no falle.
+    if table == "roles":
+        col_names = {c["column_name"] for c in cols}
+        now_ts = datetime.now()
+        if "created_at" in col_names and "created_at" not in data:
+            data["created_at"] = now_ts
+        if "updated_at" in col_names and "updated_at" not in data:
+            data["updated_at"] = now_ts
+
+    # usuarios: map rol -> id_rol si falta
+    if table == "usuarios" and "id_rol" not in data and data.get("rol"):
+        try:
+            with engine.connect() as cn:
+                rid = cn.execute(
+                    text("SELECT id_rol FROM roles WHERE nombre=:n LIMIT 1"),
+                    {"n": data.get("rol")},
+                ).scalar()
+            if rid is not None:
+                data["id_rol"] = int(rid)
+        except Exception:
+            pass
+
+    # marcas: set marca/logo_path si faltan
+    if table == "marcas":
+        try:
+            from backend.core.quote_assets import logo_for, normalize_marca
+            name = data.get("nombre") or data.get("marca") or ""
+            if "marca" in allowed and "marca" not in data and name:
+                data["marca"] = name
+            if data.get("logo_url") and not data.get("logo_path"):
+                data["logo_path"] = data.get("logo_url")
+            if "logo_path" in allowed and not data.get("logo_path"):
+                key = normalize_marca(name)
+                if key:
+                    data["logo_path"] = logo_for(key, prefer_local=True)
+        except Exception:
+            pass
+
+    # productos: marca debe ser elegible para el usuario + canonizada a MAYÚSCULA
+    if table == "productos":
+        _ensure_productos_brochure_cols()
+        allowed_codes = _allowed_marca_codes(user)
+        role = _role(user)
+        if not _is_privileged(role) and not allowed_codes:
+            raise HTTPException(403, detail="No tienes marcas asignadas para crear productos.")
+
+        raw_marca = (raw or {}).get("marca") or data.get("marca") or ""
+        restrict_ids = _user_marcas_ids(user) if not _is_privileged(role) else None
+        resolved_label, resolved_id = _resolve_marca_from_db(str(raw_marca or ""), restrict_ids=restrict_ids)
+        code = resolved_label or (str(raw_marca).strip().upper() if raw_marca else None)
+
+        if not _is_privileged(role):
+            if len(allowed_codes) == 1:
+                code = allowed_codes[0]
+                if restrict_ids:
+                    resolved_id = int(restrict_ids[0])
+            else:
+                if not code:
+                    raise HTTPException(400, detail="Marca requerida")
+                if not resolved_label:
+                    # si no resolvió contra marcas asignadas, se considera no permitido
+                    raise HTTPException(403, detail="No puedes crear productos para esa marca.")
+        else:
+            # Admin: si coincide con nuestras marcas conocidas, la canonizamos; si no, la dejamos en upper.
+            code = code or None
+
+        if not code:
+            raise HTTPException(400, detail="Marca requerida")
+        data["marca"] = str(code).upper()
+        if resolved_id and ("id_marca" in allowed):
+            data["id_marca"] = int(resolved_id)
+
+    keys = list(data.keys())
+    cols_sql = ", ".join([_qident(k) for k in keys])
+    vals_sql = ", ".join([f":{k}" for k in keys])
+
+    q = text(
+        f'INSERT INTO {_qident(table)} ({cols_sql}) VALUES ({vals_sql}) RETURNING {_qident(pk)}'
+    )
+    try:
+        with engine.begin() as cn:
+            # UX: usuarios suele chocar con email/username UNIQUE.
+            # En vez de devolver el SQL crudo, detectamos el caso y damos un mensaje útil.
+            if table == "usuarios":
+                # Busca por email/username (case-insensitive). Si existe y está inactivo, lo reactivamos.
+                email = (data.get("email") or raw.get("email") or "").strip()
+                username = (data.get("username") or raw.get("username") or "").strip()
+
+                if email:
+                    existing = cn.execute(
+                        text('SELECT id_usuario, is_active FROM usuarios WHERE lower(email)=lower(:e) LIMIT 1'),
+                        {"e": email},
+                    ).mappings().first()
+                    if existing:
+                        if existing.get("is_active") is False:
+                            # Reactiva + actualiza campos entregados.
+                            uid = int(existing["id_usuario"])
+                            sets = []
+                            params = {"id": uid}
+                            for k, v in data.items():
+                                if k in ("hashed_password",):  # se permite
+                                    sets.append(f'{_qident(k)}=:{k}')
+                                    params[k] = v
+                                elif k in ("nombre", "avatar_url", "email", "username", "telefono", "rol", "cargo", "id_rol"):
+                                    sets.append(f'{_qident(k)}=:{k}')
+                                    params[k] = v
+                            sets.append('"is_active"=TRUE')
+                            sets.append('"updated_at"=now()')
+                            cn.execute(text(f'UPDATE usuarios SET {", ".join(sets)} WHERE id_usuario=:id'), params)
+                            new_id = uid
+                            # Seguimos flujo normal (envío de correo más abajo)
+                        else:
+                            raise HTTPException(
+                                400,
+                                detail="Ya existe un usuario con ese correo (activo). Búscalo y edítalo en vez de crearlo de nuevo.",
+                            )
+
+                if "new_id" not in locals() and username:
+                    existing_u = cn.execute(
+                        text('SELECT id_usuario, is_active FROM usuarios WHERE lower(username)=lower(:u) LIMIT 1'),
+                        {"u": username},
+                    ).mappings().first()
+                    if existing_u:
+                        if existing_u.get("is_active") is False:
+                            uid = int(existing_u["id_usuario"])
+                            sets = []
+                            params = {"id": uid}
+                            for k, v in data.items():
+                                if k in ("hashed_password",):
+                                    sets.append(f'{_qident(k)}=:{k}')
+                                    params[k] = v
+                                elif k in ("nombre", "avatar_url", "email", "username", "telefono", "rol", "cargo", "id_rol"):
+                                    sets.append(f'{_qident(k)}=:{k}')
+                                    params[k] = v
+                            sets.append('"is_active"=TRUE')
+                            sets.append('"updated_at"=now()')
+                            cn.execute(text(f'UPDATE usuarios SET {", ".join(sets)} WHERE id_usuario=:id'), params)
+                            new_id = uid
+                        else:
+                            raise HTTPException(
+                                400,
+                                detail="Ya existe un usuario con ese username (activo). Búscalo y edítalo en vez de crearlo de nuevo.",
+                            )
+
+            if "new_id" not in locals():
+                new_id = cn.execute(q, data).scalar_one()
+    except HTTPException:
+        raise
+    except DBAPIError as e:
+        # Evita filtrar SQL/stack al frontend (mensaje específico por tabla)
+        if table == "roles":
+            hint = ""
+            try:
+                hint = str(getattr(e, "orig", "") or "").strip().splitlines()[0]
+            except Exception:
+                hint = ""
+            msg = "No pude crear el rol. Revisa si ya existe o si faltan datos obligatorios."
+            if hint:
+                msg += f" ({hint})"
+            raise HTTPException(400, detail=msg)
+        raise HTTPException(400, detail="No pude crear el registro. Revisa si ya existe (correo/usuario) o si faltan datos obligatorios.")
+    except Exception:
+        raise HTTPException(400, detail="No pude crear el registro (error interno).")
+
+    # usuarios: enviar credenciales por correo al crear (por defecto)
+    email_sent = False
+    email_error = None
+    if table == "usuarios":
+        try:
+            to_email = (data.get("email") or raw.get("email") or "").strip()
+            plain_pw = (raw or {}).get("password") or ""
+            if to_email and plain_pw:
+                app_url = (os.getenv("APP_URL") or "").rstrip("/")
+                login_url = f"{app_url}/crm/web/login.html" if app_url else "/crm/web/login.html"
+                subject = "Tus credenciales de acceso (Green Diamond CRM)"
+                usuario = (data.get("username") or raw.get("username") or "").strip() or to_email
+                nombre = (data.get("nombre") or raw.get("nombre") or "").strip() or usuario
+
+                plain_text = (
+                    f"Hola {nombre},\n\n"
+                    "Se creó tu usuario para el CRM.\n\n"
+                    f"Usuario: {usuario}\n"
+                    f"Clave: {plain_pw}\n\n"
+                    f"Ingreso: {login_url}\n\n"
+                    "Puedes cambiar tu clave desde el login una vez que ingreses.\n"
+                )
+                html = (
+                    f"<p>Hola <b>{nombre}</b>,</p>"
+                    "<p>Se creó tu usuario para el CRM.</p>"
+                    f"<p><b>Usuario:</b> {usuario}<br/>"
+                    f"<b>Clave:</b> {plain_pw}</p>"
+                    f"<p><b>Ingreso:</b> {login_url}</p>"
+                    "<p>Puedes cambiar tu clave desde el login una vez que ingreses.</p>"
+                )
+                send_email(to_email, subject, plain_text, html=html)
+                email_sent = True
+        except EmailConfigError as e:
+            email_error = str(e)
+        except Exception as e:
+            email_error = f"SMTP error: {e}"
+
+    # productos: avisar a Operaciones para que creen/revisen receta.
+    product_ops_notified = False
+    if table == "productos":
+        try:
+            with engine.begin() as cn:
+                _notify_new_product_for_ops(cn, new_id, data, user)
+            product_ops_notified = True
+        except Exception:
+            product_ops_notified = False
+
+    return {
+        "ok": True,
+        "id": new_id,
+        "email_sent": email_sent,
+        "email_error": email_error,
+        "product_ops_notified": product_ops_notified,
+    }
+
+
+@router.put("/{entity}/{row_id}")
+@router.put("/rows/{entity}/{row_id}")  # compat
+def update_row(
+    entity: str,
+    row_id: str = Path(...),
+    payload: Dict[str, Any] = Body(...),
+    user: dict = Depends(get_current_user),
+):
+    _require_settings_access(user, entity)
+
+    table = _resolve_table(entity)
+    if table == "usuarios":
+        _ensure_users_extra_cols()
+    cols = _cols_for(table)
+    pk = _pk_for(table)
+    hidden = set(_hidden_for(table))
+    readonly = set(_readonly_for(table))
+
+    allowed = {
+        c["column_name"]
+        for c in cols
+        if c["column_name"] not in hidden
+        and c["column_name"] not in readonly
+        and c["column_name"] != pk
+    }
+    raw = payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
+    data = {}
+    for k, v in (raw or {}).items():
+        if k not in allowed:
+            continue
+        if v in ("", None):
+            continue
+        data[k] = v
+
+    # usuarios: permitir password plano (lo hasheamos)
+    if table == "usuarios":
+        pw = (raw or {}).get("password")
+        if pw:
+            data["hashed_password"] = hash_password(pw)
+
+    if not data:
+        raise HTTPException(400, detail="Nada que actualizar")
+
+    # comunas: auto-calcula bruto en base a neto (si corresponde).
+    if table == "comunas":
+        _apply_comunas_bruto(cols, data)
+
+    # usuarios: map rol -> id_rol si falta
+    if table == "usuarios" and "id_rol" not in data and data.get("rol"):
+        try:
+            with engine.connect() as cn:
+                rid = cn.execute(
+                    text("SELECT id_rol FROM roles WHERE nombre=:n LIMIT 1"),
+                    {"n": data.get("rol")},
+                ).scalar()
+            if rid is not None:
+                data["id_rol"] = int(rid)
+        except Exception:
+            pass
+
+    # marcas: set marca/logo_path si faltan
+    if table == "marcas":
+        try:
+            from backend.core.quote_assets import logo_for, normalize_marca
+            name = data.get("nombre") or data.get("marca") or ""
+            if "marca" in allowed and "marca" not in data and name:
+                data["marca"] = name
+            if data.get("logo_url") and not data.get("logo_path"):
+                data["logo_path"] = data.get("logo_url")
+            if "logo_path" in allowed and not data.get("logo_path"):
+                key = normalize_marca(name)
+                if key:
+                    data["logo_path"] = logo_for(key, prefer_local=True)
+        except Exception:
+            pass
+
+    # productos: marca debe ser elegible para el usuario + canonizada a MAYÚSCULA
+    if table == "productos":
+        _ensure_productos_brochure_cols()
+        allowed_codes = _allowed_marca_codes(user)
+        role = _role(user)
+        if not _is_privileged(role) and not allowed_codes:
+            raise HTTPException(403, detail="No tienes marcas asignadas para editar productos.")
+
+        raw_marca = (raw or {}).get("marca") or data.get("marca") or ""
+        restrict_ids = _user_marcas_ids(user) if not _is_privileged(role) else None
+        resolved_label, resolved_id = _resolve_marca_from_db(str(raw_marca or ""), restrict_ids=restrict_ids)
+        code = resolved_label or (str(raw_marca).strip().upper() if raw_marca else None)
+
+        if not _is_privileged(role):
+            if len(allowed_codes) == 1:
+                code = allowed_codes[0]
+                if restrict_ids:
+                    resolved_id = int(restrict_ids[0])
+            else:
+                if not code:
+                    raise HTTPException(400, detail="Marca requerida")
+                if not resolved_label:
+                    raise HTTPException(403, detail="No puedes editar productos para esa marca.")
+        else:
+            code = code or None
+
+        if code:
+            data["marca"] = str(code).upper()
+        if resolved_id and ("id_marca" in allowed):
+            data["id_marca"] = int(resolved_id)
+
+    sets = ", ".join([f"{_qident(k)}=:{k}" for k in data.keys()])
+    data["__id"] = row_id
+
+    q = text(f'UPDATE {_qident(table)} SET {sets} WHERE {_qident(pk)} = :__id')
+    try:
+        with engine.begin() as cn:
+            res = cn.execute(q, data)
+            if res.rowcount == 0:
+                raise HTTPException(404, detail="No existe")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, detail=str(e))
+
+    return {"ok": True}
+
+
+@router.delete("/{entity}/{row_id}")
+@router.delete("/rows/{entity}/{row_id}")  # compat
+def delete_row(
+    entity: str,
+    row_id: str = Path(...),
+    user: dict = Depends(get_current_user),
+):
+    _require_settings_access(user, entity)
+
+    table = _resolve_table(entity)
+    cols = _cols_for(table)
+    pk = _pk_for(table)
+    if table == "productos":
+        _ensure_productos_brochure_cols()
+        _normalize_productos_marcas_once()
+
+    with engine.begin() as cn:
+        if _has_col(cols, "is_active"):
+            q = text(
+                f'UPDATE {_qident(table)} SET "is_active"=FALSE WHERE {_qident(pk)}=:id'
+            )
+            res = cn.execute(q, {"id": row_id})
+        else:
+            q = text(f'DELETE FROM {_qident(table)} WHERE {_qident(pk)}=:id')
+            res = cn.execute(q, {"id": row_id})
+
+        if res.rowcount == 0:
+            raise HTTPException(404, detail="No existe")
+
+    return {"ok": True}
+
+
+@router.post("/import/brochures")
+def import_brochures(payload: Dict[str, Any] = Body(...), user: dict = Depends(get_current_user)):
+    """
+    Import batch para productos/menú desde brochure (Petras/Mas Flow).
+    Requiere SUPERADMIN.
+    """
+    rk = _role_key(user)
+    if not rk:
+        raise HTTPException(status_code=401, detail="Token requerido")
+    if "superadmin" not in rk:
+        raise HTTPException(status_code=403, detail="Solo SuperAdmin.")
+
+    items = payload.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="items requerido")
+
+    _ensure_productos_brochure_cols()
+    cols = _cols_for("productos")
+    has_id_marca = _has_col(cols, "id_marca")
+    has_cat = _has_col(cols, "categoria")
+    has_ing = _has_col(cols, "ingredientes")
+    marcas_cols = _cols_for("marcas")
+    marcas_has_id = _has_col(marcas_cols, "id_marca")
+    marcas_has_nombre = _has_col(marcas_cols, "nombre")
+    marcas_has_marca = _has_col(marcas_cols, "marca")
+    marcas_has_active = _has_col(marcas_cols, "is_active")
+
+    created = 0
+    updated = 0
+    skipped = 0
+    errors: List[Dict[str, Any]] = []
+    ensured_brands: set[str] = set()
+
+    with engine.begin() as cn:
+        for it in items:
+            try:
+                if not isinstance(it, dict):
+                    skipped += 1
+                    continue
+                raw_marca = str(it.get("marca") or "").strip()
+                prod = str(it.get("producto") or "").strip()
+                if not raw_marca or not prod:
+                    skipped += 1
+                    continue
+
+                resolved_label, resolved_id = _resolve_marca_from_db(raw_marca, restrict_ids=None)
+                code = (resolved_label or raw_marca).strip().upper()
+
+                # Si la marca no existe en DB, la creamos (mínimo) para que:
+                # - aparezca en Settings / productos
+                # - podamos setear id_marca si existe la FK
+                if not resolved_id and code and code not in ensured_brands and marcas_has_id and (marcas_has_nombre or marcas_has_marca):
+                    ensured_brands.add(code)
+                    try:
+                        exists = cn.execute(
+                            text(
+                                """
+                                SELECT id_marca
+                                FROM public.marcas
+                                WHERE UPPER(COALESCE(marca,nombre,''))=UPPER(:c)
+                                LIMIT 1
+                                """
+                            ),
+                            {"c": code},
+                        ).scalar()
+                        if not exists:
+                            cols_i = []
+                            vals_i = []
+                            ins = {}
+                            if marcas_has_marca:
+                                cols_i.append("marca")
+                                vals_i.append(":m")
+                                ins["m"] = code
+                            if marcas_has_nombre:
+                                cols_i.append("nombre")
+                                vals_i.append(":n")
+                                ins["n"] = code
+                            if marcas_has_active:
+                                cols_i.append("is_active")
+                                vals_i.append("TRUE")
+                            if cols_i:
+                                cn.execute(text(f"INSERT INTO public.marcas({', '.join(cols_i)}) VALUES ({', '.join(vals_i)})"), ins)
+                    except Exception:
+                        pass
+
+                    # re-resolver para obtener id_marca si quedó creada
+                    resolved_label, resolved_id = _resolve_marca_from_db(code, restrict_ids=None)
+                    code = (resolved_label or code).strip().upper()
+
+                desc = str(it.get("descripcion") or "").strip()
+                cat = str(it.get("categoria") or "").strip()
+                ing = str(it.get("ingredientes") or "").strip()
+
+                params = {"p": prod, "m": code}
+                where = "LOWER(producto)=LOWER(:p) AND UPPER(COALESCE(marca,''))=UPPER(:m)"
+                if has_id_marca and resolved_id:
+                    where = "LOWER(producto)=LOWER(:p) AND id_marca=:id_marca"
+                    params["id_marca"] = int(resolved_id)
+
+                existing = cn.execute(
+                    text(f"SELECT id_producto FROM public.productos WHERE {where} ORDER BY id_producto DESC LIMIT 1"),
+                    params,
+                ).scalar()
+
+                if existing:
+                    sets = ["marca=:m", "producto=:p", "descripcion=:d", "is_active=TRUE"]
+                    upd = {"id": int(existing), "m": code, "p": prod, "d": desc}
+                    if has_id_marca and resolved_id:
+                        sets.append("id_marca=:id_marca")
+                        upd["id_marca"] = int(resolved_id)
+                    if has_cat:
+                        sets.append("categoria=:c")
+                        upd["c"] = cat
+                    if has_ing:
+                        sets.append("ingredientes=:i")
+                        upd["i"] = ing
+                    cn.execute(text(f"UPDATE public.productos SET {', '.join(sets)} WHERE id_producto=:id"), upd)
+                    updated += 1
+                else:
+                    cols_i = ["marca", "producto", "descripcion", "is_active"]
+                    vals_i = [":m", ":p", ":d", "TRUE"]
+                    ins = {"m": code, "p": prod, "d": desc}
+                    if has_id_marca and resolved_id:
+                        cols_i.append("id_marca")
+                        vals_i.append(":id_marca")
+                        ins["id_marca"] = int(resolved_id)
+                    if has_cat:
+                        cols_i.append("categoria")
+                        vals_i.append(":c")
+                        ins["c"] = cat
+                    if has_ing:
+                        cols_i.append("ingredientes")
+                        vals_i.append(":i")
+                        ins["i"] = ing
+                    q = f"INSERT INTO public.productos({', '.join(cols_i)}) VALUES ({', '.join(vals_i)})"
+                    cn.execute(text(q), ins)
+                    created += 1
+            except Exception as e:
+                errors.append({"item": it, "error": f"{type(e).__name__}: {str(e)[:200]}"})
+
+    return {"ok": True, "created": created, "updated": updated, "skipped": skipped, "errors": errors[:50]}
+
+
+@router.post("/usuarios/{user_id}/reset_password")
+def reset_password(
+    user_id: int,
+    new_password: str = Query(..., min_length=4),
+    send_email: bool = Query(default=True),
+    user: dict = Depends(get_current_user),
+):
+    _require_admin(user)
+
+    try:
+        hashed = hash_password(new_password)
+        with engine.begin() as cn:
+            row = cn.execute(
+                text("SELECT * FROM usuarios WHERE id_usuario=:id"),
+                {"id": user_id},
+            ).mappings().first()
+            if not row:
+                raise HTTPException(404, detail="Usuario no existe")
+            cn.execute(
+                text("UPDATE usuarios SET hashed_password=:hp, updated_at=now() WHERE id_usuario=:id"),
+                {"hp": hashed, "id": user_id},
+            )
+            # marca solicitudes como resueltas
+            try:
+                cn.execute(
+                    text("UPDATE password_requests SET status='resuelto' WHERE email=:e"),
+                    {"e": row.get("email")},
+                )
+            except Exception:
+                pass
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, detail=str(e))
+
+    email_sent = False
+    email_error = None
+    to_email = (row.get("email") or "").strip()
+
+    if to_email and send_email:
+        try:
+            app_url = (os.getenv("APP_URL") or "").rstrip("/")
+            login_url = f"{app_url}/web/login.html" if app_url else "/web/login.html"
+            subject = "Credenciales actualizadas"
+            plain_text = (
+                "Tu clave ha sido actualizada por un administrador.\n\n"
+                f"Usuario: {row.get('email') or row.get('id_usuario')}\n"
+                f"Clave nueva: {new_password}\n\n"
+                "Por favor cambia tu clave al ingresar.\n"
+                f"Ingreso: {login_url}\n"
+                "Si olvidaste tu clave, usa la opción 'Olvidaste tu contraseña' en el login."
+            )
+            html = (
+                "<p>Tu clave ha sido actualizada por un administrador.</p>"
+                f"<p><b>Usuario:</b> {row.get('email') or row.get('id_usuario')}</p>"
+                f"<p><b>Clave nueva:</b> {new_password}</p>"
+                "<p>Por favor cambia tu clave al ingresar.</p>"
+                f"<p><b>Ingreso:</b> {login_url}</p>"
+                "<p>Si olvidaste tu clave, usa la opción <b>Olvidaste tu contraseña</b> en el login.</p>"
+            )
+            send_email(to_email, subject, plain_text, html=html)
+            email_sent = True
+        except EmailConfigError as e:
+            email_error = str(e)
+        except Exception as e:
+            email_error = f"SMTP error: {e}"
+
+    return {
+        "ok": True,
+        "email_sent": email_sent,
+        "email_error": email_error,
+        "usuario": {
+            "id_usuario": row.get("id_usuario"),
+            "email": row.get("email"),
+            "telefono": row.get("telefono") or row.get("phone") or row.get("celular"),
+            "nombre": row.get("nombre") or row.get("username") or row.get("usuario"),
+        },
+    }
+
+
+@router.get("/usuarios/{user_id}/brands")
+def get_user_brands(
+    user_id: int,
+    user: dict = Depends(get_current_user),
+):
+    _require_admin(user)
+    _ensure_usuarios_marcas()
+    with engine.connect() as cn:
+        rows = cn.execute(
+            text("SELECT id_marca FROM usuarios_marcas WHERE id_usuario=:u ORDER BY id_marca"),
+            {"u": user_id},
+        ).fetchall()
+    return {"ok": True, "id_usuario": user_id, "marcas": [int(r[0]) for r in rows]}
+
+
+@router.put("/usuarios/{user_id}/brands")
+def set_user_brands(
+    user_id: int,
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    user: dict = Depends(get_current_user),
+):
+    _require_admin(user)
+    _ensure_usuarios_marcas()
+    marcas = payload.get("marcas") or []
+    mids: List[int] = []
+    for m in marcas:
+        try:
+            mids.append(int(m))
+        except Exception:
+            pass
+    with engine.begin() as cn:
+        ok = cn.execute(
+            text("SELECT 1 FROM usuarios WHERE id_usuario=:u"),
+            {"u": user_id},
+        ).scalar()
+        if not ok:
+            raise HTTPException(status_code=404, detail="Usuario no existe")
+        cn.execute(text("DELETE FROM usuarios_marcas WHERE id_usuario=:u"), {"u": user_id})
+        for mid in mids:
+            cn.execute(
+                text("INSERT INTO usuarios_marcas(id_usuario,id_marca) VALUES(:u,:m) ON CONFLICT DO NOTHING"),
+                {"u": user_id, "m": mid},
+            )
+    return {"ok": True, "id_usuario": user_id, "marcas": mids}

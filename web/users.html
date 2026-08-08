@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>CRM 2025 • Usuarios</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
+    .card { background: white; color: #111; padding: 16px; border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+    .row { display: grid; gap: 12px; }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    input, select, button { height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid #ddd; }
+    button.primary { background: #111; color: #fff; border: none; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+    .danger { background: #e11d48; color: #fff; border: none; border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+    .muted { color: #666; }
+    .badge { padding: 4px 8px; border-radius: 999px; background: #f1f5f9; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+    .token { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>Usuarios</h1>
+    <a href="/docs" target="_blank">API Docs</a>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="row">
+      <label>Token (bearer) del admin</label>
+      <input id="token" placeholder="Pega aquí tu JWT de /auth/token" />
+      <small class="muted">Tip: lo puedes guardar en localStorage y se recordará.</small>
+      <div>
+        <button class="primary" onclick="saveToken()">Guardar token</button>
+        <button onclick="clearToken()">Borrar token</button>
+      </div>
+      <div class="token" id="whoami"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>Crear usuario</h2>
+    <div class="grid">
+      <input id="email" placeholder="email@dominio.com" />
+      <input id="full_name" placeholder="Nombre completo (opcional)" />
+      <input id="password" type="password" placeholder="Contraseña" />
+      <select id="role">
+        <option value="ejecutivo">ejecutivo</option>
+        <option value="operaciones">operaciones</option>
+        <option value="bodega">bodega</option>
+        <option value="patio">patio</option>
+        <option value="admin">admin</option>
+      </select>
+    </div>
+    <div style="margin-top:12px;">
+      <button class="primary" onclick="createUser()">Crear</button>
+    </div>
+    <div id="create_msg" class="muted" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h2>Listado</h2>
+      <button onclick="loadUsers()">Recargar</button>
+    </div>
+    <table style="margin-top:8px;">
+      <thead>
+        <tr><th>ID</th><th>Email</th><th>Nombre</th><th>Rol</th><th></th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+<script>
+const API = location.origin
+const $ = (id) => document.getElementById(id)
+
+function bearer() {
+  const t = $('token').value.trim()
+  return t ? { 'Authorization': 'Bearer ' + t } : {}
+}
+function persistTokenInLS(v) { localStorage.setItem('crm_token', v || '') }
+function restoreTokenFromLS() { const v = localStorage.getItem('crm_token') || ''; $('token').value = v; return v }
+
+async function saveToken() {
+  persistTokenInLS($('token').value.trim())
+  await whoAmI()
+}
+function clearToken() {
+  $('token').value = ''
+  persistTokenInLS('')
+  $('whoami').textContent = ''
+}
+
+async function whoAmI() {
+  const res = await fetch(API + '/auth/me', { headers: { ...bearer() } })
+  if (res.ok) {
+    const me = await res.json()
+    $('whoami').textContent = `Autenticado como: ${me.email} (rol: ${me.role || '—'})`
+  } else {
+    $('whoami').textContent = 'Token inválido o no autorizado'
+  }
+}
+
+async function loadUsers() {
+  const res = await fetch(API + '/users', { headers: { 'Content-Type': 'application/json', ...bearer() } })
+  const tbody = $('rows')
+  tbody.innerHTML = ''
+  if (!res.ok) {
+    tbody.innerHTML = '<tr><td colspan="5" class="muted">Error al cargar (¿token admin?)</td></tr>'
+    return
+  }
+  const users = await res.json()
+  for (const u of users) {
+    const tr = document.createElement('tr')
+    tr.innerHTML = `
+      <td>${u.id}</td>
+      <td>${u.email}</td>
+      <td>${u.full_name ?? '—'}</td>
+      <td><span class="badge">${u.role ?? '—'}</span></td>
+      <td><button class="danger" onclick="delUser(${u.id})">Eliminar</button></td>
+    `
+    tbody.appendChild(tr)
+  }
+  if (users.length === 0) {
+    const tr = document.createElement('tr')
+    tr.innerHTML = '<td colspan="5" class="muted">Sin usuarios</td>'
+    tbody.appendChild(tr)
+  }
+}
+
+async function createUser() {
+  const email = $('email').value.trim()
+  const full_name = $('full_name').value.trim() || null
+  const password = $('password').value
+  const role = $('role').value
+  $('create_msg').textContent = ''
+  const res = await fetch(API + '/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...bearer() },
+    body: JSON.stringify({ email, password, full_name, role })
+  })
+  if (res.ok) {
+    $('create_msg').textContent = 'Usuario creado'
+    $('email').value = ''; $('full_name').value=''; $('password').value=''
+    await loadUsers()
+  } else {
+    const err = await res.json().catch(()=>({detail:'Error'}))
+    $('create_msg').textContent = 'Error: ' + (err.detail || res.statusText)
+  }
+}
+
+async function delUser(id) {
+  if (!confirm('¿Eliminar usuario ' + id + '?')) return
+  const res = await fetch(API + '/users/' + id, { method: 'DELETE', headers: { ...bearer() } })
+  if (res.status === 204) {
+    await loadUsers()
+  } else {
+    alert('No se pudo eliminar (¿admin?)')
+  }
+}
+
+restoreTokenFromLS()
+whoAmI()
+loadUsers()
+</script>
+</body>
+</html>

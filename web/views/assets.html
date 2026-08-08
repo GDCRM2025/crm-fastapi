@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Operaciones · Activos</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%; margin:0;}
+    body{background:transparent; padding:18px;}
+    .card{
+      height:calc(100vh - 36px);
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap:12px;
+      text-align:center;
+    }
+    .ttl{font-weight:1100; font-size:18px;}
+    .muted{opacity:.75; font-weight:850; max-width:760px;}
+    .links{display:flex; gap:10px; flex-wrap:wrap; justify-content:center;}
+    .btn{
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.22);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 10px 14px;
+      font-weight: 1100;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+    .btn.primary{
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 52%, transparent);
+      color:#fff;
+    }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <div class="ttl">Operaciones · Activos</div>
+    <div class="muted">
+      Este módulo fue dividido en secciones separadas (Categorías / Inventario / Fichas) para que sea más claro y operable.
+      Si llegaste aquí por un link viejo, usa los botones.
+    </div>
+    <div class="links">
+      <a class="btn primary" href="./op_maquinaria_categorias.html">Categorías maquinaria</a>
+      <a class="btn" href="./op_maquinaria_inventario.html">Inventario maquinaria</a>
+      <a class="btn" href="./op_maquinaria_ficha.html">Ficha maquinaria</a>
+      <a class="btn" href="./op_camiones_ficha.html">Ficha camiones</a>
+    </div>
+  </section>
+</body>
+</html>

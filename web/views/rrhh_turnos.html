@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="gd-build" content="20260423-rrhh2" />
+  <title>RRHH · Turnos</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <script src="/web/js/iframe-theme.js"></script>
+  <style>
+    body{ margin:0; padding:18px; color:inherit; }
+    .card{ border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.12); background:rgba(7,12,16,.45); }
+    :root.light .card{ background:rgba(255,255,255,.75); border-color:rgba(0,0,0,.1); color:#0f172a; }
+    .title{ font-weight:1000; font-size:18px; }
+    .muted{ opacity:.7; font-size:12px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .inp{ height:36px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:transparent; color:inherit; padding:0 10px; font-weight:800; min-width:160px; }
+    .btn{ height:36px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:transparent; color:inherit; padding:0 12px; cursor:pointer; font-weight:900; }
+    .btn:hover{ background: rgba(255,255,255,.06); }
+    table{ width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+    th,td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; white-space:nowrap; }
+    th{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; opacity:.7; }
+    .table-wrap{ overflow:auto; max-height:70vh; border:1px solid rgba(255,255,255,.12); border-radius:12px; margin-top:10px; }
+    .pill{ padding:4px 10px; border-radius:999px; border:1px solid rgba(148,163,184,.18); background:rgba(2,6,23,.18); font-weight:950; font-size:12px; }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div>
+        <div class="title">Turnos</div>
+        <div class="muted">Plantillas de jornada teórica. Formato 24h (HH:MM).</div>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnHorarios">Planificador</button>
+        <button class="btn" id="btnReload">Actualizar</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px;">
+      <input class="inp" id="tNombre" placeholder="Nombre turno (ej: Patio)" />
+      <input class="inp" id="tIni" placeholder="Entrada HH:MM" value="09:00" />
+      <input class="inp" id="tFin" placeholder="Salida HH:MM" value="18:00" />
+      <input class="inp" id="tTol" placeholder="Tolerancia (min)" value="0" />
+      <span class="pill">Colación auto 13:30–14:30</span>
+      <button class="btn" id="btnCrear">Guardar turno</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Turno</th>
+            <th>Entrada</th>
+            <th>Salida</th>
+            <th>Tolerancia</th>
+            <th>Colación</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td class="muted">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(path){
+      const p = String(path || "");
+      if (!p) return p;
+      if (/^https?:\/\//i.test(p)) return p;
+      if (!API_BASE) return p;
+      return p.startsWith("/") ? (API_BASE + p) : (API_BASE + "/" + p);
+    }
+    function token(){ return localStorage.getItem("token") || sessionStorage.getItem("token") || ""; }
+    function headers(){ return token() ? { Authorization: "Bearer " + token() } : {}; }
+    function getV(){
+      try{ return new URLSearchParams(location.search).get("v") || ""; }catch(_){ return ""; }
+    }
+    function toast(msg){
+      const t = document.createElement("div");
+      t.textContent = msg;
+      Object.assign(t.style,{position:"fixed",right:"16px",bottom:"16px",background:"rgba(0,0,0,.8)",color:"#fff",padding:"10px 14px",borderRadius:"10px",zIndex:99,fontWeight:"900"});
+      document.body.appendChild(t);
+      setTimeout(()=> t.remove(), 2400);
+    }
+
+    async function load(){
+      const r = await fetch(apiURL("/rrhh/turnos"), { headers: headers() });
+      const txt = await r.text().catch(()=> "");
+      if (!r.ok){
+        qs("#rows").innerHTML = `<tr><td class="muted">Error: ${txt || r.status}</td></tr>`;
+        return;
+      }
+      const data = txt ? JSON.parse(txt) : {};
+      const items = data.items || [];
+      qs("#rows").innerHTML = items.map(t => `
+        <tr>
+          <td><strong>${t.nombre || "—"}</strong><div class="muted">#${t.id_turno}</div></td>
+          <td>${t.hora_entrada || "—"}</td>
+          <td>${t.hora_salida || "—"}</td>
+          <td>${Number(t.tolerancia_min || 0)} min</td>
+          <td>${t.colacion_auto ? `${t.colacion_ini || "13:30"}–${t.colacion_fin || "14:30"}` : "No"}</td>
+          <td style="text-align:right;">
+            <button class="btn" data-act="del" data-id="${t.id_turno}" data-name="${(t.nombre||"").replace(/"/g,"&quot;")}">Eliminar</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td class="muted">Sin turnos.</td></tr>`;
+    }
+
+    document.addEventListener("click", async (ev)=>{
+      const b = ev.target?.closest?.("button[data-act]");
+      if (!b) return;
+      const act = b.getAttribute("data-act");
+      if (act !== "del") return;
+      const id = Number(b.getAttribute("data-id") || 0);
+      const name = String(b.getAttribute("data-name") || "");
+      if (!id) return;
+      if (!confirm(`¿Eliminar turno "${name || ("#" + id)}"?\n\nEsto solo permite eliminar si no está en uso en horarios activos.`)) return;
+      const r = await fetch(apiURL(`/rrhh/turnos/${encodeURIComponent(String(id))}`), { method:"DELETE", headers: headers() });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("Error: " + (t || r.status));
+        return;
+      }
+      toast("Turno eliminado");
+      await load();
+    });
+
+    qs("#btnCrear").addEventListener("click", async ()=>{
+      const payload = {
+        nombre: (qs("#tNombre").value || "").trim(),
+        hora_entrada: (qs("#tIni").value || "").trim(),
+        hora_salida: (qs("#tFin").value || "").trim(),
+        tolerancia_min: Number(qs("#tTol").value || 0) || 0,
+        colacion_auto: true,
+        colacion_ini: "13:30",
+        colacion_fin: "14:30",
+      };
+      if (!payload.nombre || !payload.hora_entrada || !payload.hora_salida){
+        toast("Completa nombre/entrada/salida");
+        return;
+      }
+      const r = await fetch(apiURL("/rrhh/turnos"), { method:"POST", headers:{ "Content-Type":"application/json", ...headers() }, body: JSON.stringify(payload) });
+      if (!r.ok){
+        const t = await r.text().catch(()=> "");
+        toast("Error: " + (t || r.status));
+        return;
+      }
+      toast("Turno guardado");
+      qs("#tNombre").value = "";
+      await load();
+    });
+    qs("#btnReload").addEventListener("click", load);
+    qs("#btnHorarios").addEventListener("click", ()=>{
+      const base = API_BASE || "";
+      const v = getV();
+      window.location.href = `${base}/web/views/rrhh_horarios.html${v ? `?v=${encodeURIComponent(v)}` : ""}`;
+    });
+    load();
+  </script>
+</body>
+</html>

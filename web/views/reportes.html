@@ -1,0 +1,2168 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Reportes</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../vendor/sweetalert2-11.22.2.all.min.js?v=20260729"></script>
+  <script src="../vendor/echarts-5.5.0.min.js?v=20260729"></script>
+  <script src="../vendor/exceljs-4.4.0.min.js?v=20260729"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;margin:0;}
+    body{background:transparent;padding:18px;overflow:auto;color:rgba(226,232,240,.96);}
+    :root.light body{ color:#0f172a; }
+    /* Reportes usa tema global (XP). Solo mantenemos acento GD para gráficos. */
+    :root{ --accent: #5B974E; }
+
+    .rwrap{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+    .head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .sub{opacity:.72;font-weight:850;font-size:12px;margin-top:4px;max-width:760px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .inp,.sel{
+      height:36px;border-radius:999px;
+      padding:0 12px;
+      font-weight:900;
+      outline:none;
+    }
+    .sel{ padding-right: 34px; }
+    .btn{
+      height:36px;border-radius:999px;
+      padding:0 14px;
+      font-weight:1000;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn:hover{filter:brightness(1.06);}
+
+    .grid{display:grid; grid-template-columns:repeat(12, minmax(0, 1fr)); gap:12px;}
+    @media (max-width: 1200px){ .grid{grid-template-columns:repeat(6, minmax(0, 1fr));} }
+    @media (max-width: 900px){ .grid{grid-template-columns:1fr;} }
+
+    .card{
+      min-height:0;
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.28);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+      padding:14px;
+    }
+    :root.light .card{
+      background: rgba(255,255,255,.86);
+      border-color: rgba(15,23,42,.14);
+      box-shadow: 0 14px 40px rgba(2,6,23,.08);
+    }
+    .h2{margin:0 0 10px 0; font-weight:1100; font-size:12px; letter-spacing:.12em; text-transform:uppercase; opacity:.86;}
+    .muted{opacity:.72; font-weight:850; font-size:12px;}
+
+    .kpis{display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:10px;}
+    @media (max-width:1200px){ .kpis{grid-template-columns:repeat(3, minmax(0,1fr));} }
+    @media (max-width:900px){ .kpis{grid-template-columns:1fr;} }
+    .kpi{
+      border-radius:16px;
+      padding:12px;
+      cursor:pointer;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+    }
+    :root.light .kpi{ background: rgba(255,255,255,.76); border-color: rgba(15,23,42,.12); }
+    .kpi .l{font-weight:1000; font-size:11px; letter-spacing:.12em; text-transform:uppercase; opacity:.72;}
+    .kpi .v{font-weight:1200; font-size:20px; margin-top:6px;}
+    .kpi .s{font-weight:850; font-size:12px; opacity:.70; margin-top:6px;}
+
+    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+    .tbl th{opacity:.78; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid color-mix(in srgb, var(--border) 55%, transparent); position:sticky; top:0; background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 92%, transparent), color-mix(in srgb, var(--surface-2) 72%, transparent)); z-index:2;}
+    .tbl td{padding:8px 10px; border-bottom:1px solid color-mix(in srgb, var(--border) 40%, transparent); vertical-align:top;}
+    .right{text-align:right;}
+    .rowlink{cursor:pointer;}
+    .rowlink:hover{background: rgba(255,255,255,.04);}
+
+    /* Barras minimalistas dentro de tablas */
+    .barcell{min-width:220px;}
+    .barwrap{
+      margin-top:6px;
+      height:8px;
+      border-radius:999px;
+      background:rgba(148,163,184,.14);
+      overflow:hidden;
+      border:1px solid rgba(148,163,184,.16);
+    }
+    .bar{height:100%; width:calc(var(--w,0) * 1%); background:rgba(25,195,125,.35);}
+
+    .tabs{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:10px;
+      align-items:center;
+    }
+    .tab{
+      height:30px;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:0 12px;
+      border-radius:999px;
+      background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+      border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+      cursor:pointer;
+      font-size:12px;
+      font-weight:1000;
+      user-select:none;
+    }
+    .tab:hover{filter:brightness(1.06);}
+    .tab.active{
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    }
+    .tabActions{
+      margin-left:auto;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .chartBox{
+      margin-top:10px;
+      border:1px solid color-mix(in srgb, var(--border) 45%, transparent);
+      border-radius:16px;
+      background: color-mix(in srgb, var(--surface) 70%, transparent);
+      padding:10px;
+      overflow:hidden;
+    }
+    .chartBox svg{width:100%; height:auto; display:block;}
+    .ech{
+      width:100%;
+      height:260px;
+    }
+    .ech.tall{height:340px;}
+    .ech.short{height:220px;}
+  </style>
+</head>
+<body>
+  <div class="rwrap">
+    <section class="card head">
+      <div>
+        <div class="ttl">Reportes</div>
+        <div class="sub">Funnel + cierre + ventas + top productos/comunas/clientes + finanzas. Todo sale del backend: `/tools/dashboard` y `/tools/dashboard/reportes`.</div>
+        <div class="tabs" id="tabs">
+          <button class="tab" type="button" data-tab="funnel">Funnel</button>
+          <button class="tab" type="button" data-tab="cierre">% cierre</button>
+          <button class="tab" type="button" data-tab="tipo_cliente">Tipo cliente</button>
+          <button class="tab" type="button" data-tab="total">Total venta</button>
+          <button class="tab" type="button" data-tab="comunas">Comunas</button>
+          <button class="tab" type="button" data-tab="productos">Productos</button>
+          <button class="tab" type="button" data-tab="clientes">Clientes</button>
+          <button class="tab" type="button" data-tab="leads_hoy">Leads hoy</button>
+          <button class="tab" type="button" data-tab="venta_diaria">Venta diaria</button>
+          <button class="tab" type="button" data-tab="cxc">Por cobrar</button>
+          <button class="tab" type="button" data-tab="cxp">Por pagar</button>
+
+          <div class="tabActions">
+            <button id="btnXlsx" class="btn" type="button" title="Exporta el reporte seleccionado a Excel (incluye el gráfico como imagen)">Export XLSX</button>
+            <button id="btnWsp" class="btn" type="button" title="Copia un resumen y abre WhatsApp Web (adjunta el archivo manualmente)">WhatsApp</button>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <select id="marca" class="sel" title="Marca">
+          <option value="">Todas las marcas</option>
+        </select>
+        <select id="ventaSource" class="sel" title="Fuente de venta">
+          <option value="confirmados" selected>Confirmados (monto cotizado)</option>
+          <option value="eventos">Eventos (finanzas)</option>
+        </select>
+        <select id="periodo" class="sel" title="Periodo">
+          <option value="mtd" selected>MTD</option>
+          <option value="ytd">YTD</option>
+          <option value="range">Rango</option>
+        </select>
+        <select id="topN" class="sel" title="Top">
+          <option value="5">Top 5</option>
+          <option value="10">Top 10</option>
+          <option value="20" selected>Top 20</option>
+          <option value="50">Top 50</option>
+        </select>
+        <select id="prodOrd" class="sel" title="Orden productos">
+          <option value="monto" selected>Prod: monto</option>
+          <option value="cantidad">Prod: cantidad</option>
+        </select>
+        <select id="comOrd" class="sel" title="Orden comunas">
+          <option value="monto" selected>Com: monto</option>
+          <option value="cantidad">Com: cantidad</option>
+        </select>
+        <select id="cliOrd" class="sel" title="Orden clientes">
+          <option value="monto" selected>Cli: monto</option>
+          <option value="cantidad">Cli: cantidad</option>
+        </select>
+        <input id="ini" class="inp" type="date" />
+        <input id="fin" class="inp" type="date" />
+        <button id="go" class="btn primary" type="button">Cargar</button>
+        <button id="openDash" class="btn" type="button">Abrir Dashboard</button>
+        <button id="viewAll" class="btn" type="button" style="display:none;">Ver todos</button>
+      </div>
+    </section>
+
+    <div class="muted" id="st">—</div>
+
+    <section class="card" id="kpi_card">
+      <div class="h2">KPIs</div>
+      <div class="kpis" id="kpis"></div>
+    </section>
+
+    <section class="grid">
+      <section class="card" style="grid-column: span 6" id="funnel">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h2" style="margin:0">Funnel</div>
+            <div class="muted">Click en una fila para abrir el filtro por estado.</div>
+          </div>
+          <button class="btn" id="expFunnel" type="button">Exportar CSV</button>
+        </div>
+        <div class="chartBox" id="chFunnel"></div>
+        <div style="max-height:420px;overflow:auto;margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Estado</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
+            <tbody id="tbFunnel"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="cierre">
+        <div class="h2">% cierre</div>
+        <div class="muted">Calculado por backend (semana actual / marca seleccionada).</div>
+        <div id="boxCierre" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="tipo_cliente">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h2" style="margin:0">Tipo de cliente</div>
+            <div class="muted">Cantidad de leads y monto (confirmados si aplica).</div>
+          </div>
+          <button class="btn" id="expTipo" type="button">Exportar CSV</button>
+        </div>
+        <div class="chartBox" id="chTipo"></div>
+        <div id="boxTipo" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="productos">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h2" style="margin:0">Top productos</div>
+            <div class="muted">Basado en items de cotizaciones en el rango.</div>
+          </div>
+          <button class="btn" id="expProd" type="button">Exportar CSV</button>
+        </div>
+        <div class="chartBox" id="chProd"></div>
+        <div style="max-height:420px;overflow:auto;margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Producto</th><th>Marca</th><th class="right">Cantidad</th><th class="right">Monto</th></tr></thead>
+            <tbody id="tbProd"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="comunas">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h2" style="margin:0">Comunas más vendidas</div>
+            <div class="muted">Confirmados por rango (si hay estado CONFIRM).</div>
+          </div>
+          <button class="btn" id="expCom" type="button">Exportar CSV</button>
+        </div>
+        <div class="chartBox" id="chCom"></div>
+        <div style="max-height:420px;overflow:auto;margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Comuna</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
+            <tbody id="tbCom"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="clientes">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h2" style="margin:0">Clientes</div>
+            <div class="muted">Top clientes por monto (confirmados si aplica).</div>
+          </div>
+          <button class="btn" id="expCli" type="button">Exportar CSV</button>
+        </div>
+        <div class="chartBox" id="chCli"></div>
+        <div style="max-height:420px;overflow:auto;margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Cliente</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
+            <tbody id="tbCli"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="leads_hoy">
+        <div class="h2">Leads creados hoy</div>
+        <div class="muted">Click para abrir el filtro del día.</div>
+        <div id="boxLeadsHoy" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 12" id="total">
+        <div class="h2">Total venta</div>
+        <div class="muted">Comparativo mensual por marca (backend).</div>
+        <div style="display:grid;grid-template-columns: 1.3fr .7fr; gap:12px; align-items:stretch">
+          <div class="chartBox" id="chTotal"></div>
+          <div class="chartBox" id="chMarcaPie"></div>
+        </div>
+        <div id="boxTotal" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="cxc">
+        <div class="h2">Cuentas por cobrar</div>
+        <div class="muted">Saldo pendiente desde <code>fin_eventos</code>.</div>
+        <div class="chartBox" id="chCxc"></div>
+        <div id="boxCxc" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 6" id="cxp">
+        <div class="h2">Cuentas por pagar</div>
+        <div class="muted">Pendiente por proveedor desde <code>fin_gastos</code> (pagado=false).</div>
+        <div class="chartBox" id="chCxp"></div>
+        <div id="boxCxp" style="margin-top:10px"></div>
+      </section>
+
+      <section class="card" style="grid-column: span 12" id="venta_diaria">
+        <div class="h2">Venta diaria</div>
+        <div class="muted">Doble click en una celda para abrir los leads confirmados ese día (si hay activity_log).</div>
+        <div class="chartBox" id="chDaily"></div>
+        <div id="boxDaily" style="margin-top:10px; overflow:auto"></div>
+      </section>
+    </section>
+  </div>
+
+  <script>
+    const qs = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m] || m));
+    const __nfCL = (() => {
+      try{ return new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }); }
+      catch(_){ return null; }
+    })();
+    const money = (n) => {
+      const v = Number(n||0);
+      const vv = isFinite(v) ? Math.round(v) : 0;
+      if (__nfCL) return `$${__nfCL.format(vv)}`;
+      return "$" + String(vv);
+    };
+
+    // Colores por marca (para barras por marca en Reportes)
+    function _hslToHex(h, s, l){
+      s /= 100; l /= 100;
+      const k = n => (n + h / 30) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+      const toHex = x => Math.round(255 * x).toString(16).padStart(2, "0");
+      return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+    }
+    function brandColor(name, preferred){
+      const c = String(preferred||"").trim();
+      if (c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c)){
+        return (c.length === 4) ? ("#" + c[1]+c[1]+c[2]+c[2]+c[3]+c[3]) : c;
+      }
+      const s = String(name||"").trim().toUpperCase();
+      let h = 0;
+      for (let i=0;i<s.length;i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
+      const hue = (h % 360);
+      return _hslToHex(hue, 62, 42);
+    }
+    function hexToRgba(hex, alpha){
+      const c = brandColor("", hex);
+      const h = c.replace("#", "");
+      const r = parseInt(h.slice(0,2), 16);
+      const g = parseInt(h.slice(2,4), 16);
+      const b = parseInt(h.slice(4,6), 16);
+      const a = Math.max(0, Math.min(1, Number(alpha ?? 1)));
+      return `rgba(${r},${g},${b},${a})`;
+    }
+    const LAST = { dash:null, rep:null, ini:"", fin:"", mid:"" };
+    const ME = { role:"", username:"" };
+    let CURRENT_TAB = "total";
+
+    // ---------- charts (ECharts, BI look) ----------
+    const EC = {};
+    function hasECharts(){ return typeof window.echarts !== "undefined" && !!window.echarts; }
+	    function ecColors(){
+	      const isLight = false; // reportes: siempre GD-dark (evita charts “blancos/rojos” por theme global)
+	      // Brandbook (GD Group) — verdes corporativos aproximados desde el arte compartido
+	      const g1 = "#587B0D"; // Pantone P155-16C (R88 G123 B13)
+	      const g2 = "#5B974E"; // Pantone P145-15C (R91 G151 B78)
+	      const g3 = "#96C251"; // Pantone P151-7C  (R150 G194 B81)
+	      return {
+	        axis: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.80)",
+	        grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.16)",
+	        title: isLight ? "rgba(0,0,0,.85)" : "rgba(255,255,255,.88)",
+	        sub: isLight ? "rgba(0,0,0,.60)" : "rgba(255,255,255,.70)",
+	        accent: g2,
+	        accentDark: g1,
+	        accentLight: g3,
+	        accent2: "#22c55e",
+	        warn: "#f59e0b",
+	        bad: "#ef4444",
+	        cyan: "#22d3ee",
+	      };
+	    }
+
+      function __registerGDThemes(){
+        try{
+          if (!hasECharts()) return;
+          if (window.__GD_ECHARTS_THEME__) return;
+          window.__GD_ECHARTS_THEME__ = true;
+
+          const mk = (isLight) => {
+            const c = (()=>{
+              // usa el mismo palette, solo cambia tintes base
+              const g1 = "#587B0D";
+              const g2 = "#5B974E";
+              const g3 = "#96C251";
+              return {
+                axis: isLight ? "rgba(0,0,0,.70)" : "rgba(255,255,255,.80)",
+                grid: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.16)",
+                title: isLight ? "rgba(0,0,0,.85)" : "rgba(255,255,255,.88)",
+                sub: isLight ? "rgba(0,0,0,.60)" : "rgba(255,255,255,.70)",
+                accent: g2,
+                accentDark: g1,
+                accentLight: g3,
+                warn: "#f59e0b",
+                bad: "#ef4444",
+                cyan: "#22d3ee",
+              };
+            })();
+            return {
+              color: [c.accent, c.accentDark, c.accentLight, c.cyan, c.warn, c.bad],
+              backgroundColor: "transparent",
+              textStyle: { color: c.axis, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" },
+              title: { textStyle: { color: c.title, fontWeight: 900 }, subtextStyle: { color: c.sub, fontWeight: 800 } },
+              legend: { textStyle: { color: c.axis, fontWeight: 850 } },
+              tooltip: {
+                backgroundColor: isLight ? "rgba(255,255,255,.94)" : "rgba(10,18,28,.92)",
+                borderColor: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.20)",
+                borderWidth: 1,
+              },
+              axisPointer: { lineStyle: { color: "rgba(148,163,184,.35)" }, crossStyle: { color: "rgba(148,163,184,.35)" } },
+              categoryAxis: { axisLine: { lineStyle: { color: c.grid } }, axisTick: { show: false }, axisLabel: { color: c.axis } },
+              valueAxis: { axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: c.axis }, splitLine: { lineStyle: { color: c.grid, type: "dashed" } } },
+            };
+          };
+
+          echarts.registerTheme("gd-dark", mk(false));
+          echarts.registerTheme("gd-light", mk(true));
+        }catch(_){}
+      }
+      __registerGDThemes();
+
+      function __ecTheme(){
+        return "gd-dark";
+      }
+
+	    function ecWatermark(c){
+	      // Watermark sutil con diamante + GD (sin assets externos)
+	      const op = 0.10;
+	      const x = "92%";
+	      const y = "90%";
+	      return [
+	        {
+	          type: "group",
+	          right: 10,
+	          bottom: 10,
+	          silent: true,
+	          opacity: op,
+	          children: [
+	            {
+	              type: "polygon",
+	              shape: { points: [[0,12],[12,0],[28,8],[16,28],[0,12]] },
+	              style: { fill: c.accentLight, stroke: c.accentDark, lineWidth: 1 }
+	            },
+	            {
+	              type: "text",
+	              style: { text: "GD", x: 34, y: 0, fill: c.title, font: "900 14px " + (getComputedStyle(document.documentElement).getPropertyValue("--font") || "system-ui") }
+	            },
+	            {
+	              type: "text",
+	              style: { text: "GROUP", x: 34, y: 16, fill: c.sub, font: "900 10px " + (getComputedStyle(document.documentElement).getPropertyValue("--font") || "system-ui"), letterSpacing: 2 }
+	            }
+	          ]
+	        }
+	      ];
+	    }
+
+	    function mergeGraphic(base, extra){
+	      const a = Array.isArray(base) ? base : (base ? [base] : []);
+	      const b = Array.isArray(extra) ? extra : (extra ? [extra] : []);
+	      return [...a, ...b];
+	    }
+    function ecTooltipSkin(c){
+      const isLight = false;
+      return {
+        backgroundColor: isLight ? "rgba(255,255,255,.92)" : "rgba(10,18,28,.92)",
+        borderColor: isLight ? "rgba(0,0,0,.10)" : "rgba(148,163,184,.20)",
+        borderWidth: 1,
+        textStyle: { color: c.axis, fontWeight: 850, fontSize: 12 },
+        extraCssText: "box-shadow:0 18px 50px rgba(0,0,0,.35);border-radius:14px;padding:10px 12px;"
+      };
+    }
+    function destroyEC(id){
+      try{ EC[id]?.dispose?.(); }catch(_){}
+      try{ delete EC[id]; }catch(_){}
+    }
+    function ensureECBox(id, cls){
+      const wrap = qs("#"+id);
+      if (!wrap) return null;
+      let el = wrap.querySelector(".ech");
+      if (!el){
+        wrap.innerHTML = `<div class="ech ${esc(cls||"")}"></div>`;
+        el = wrap.querySelector(".ech");
+      }
+      return el;
+    }
+    function setChartMsg(id, msg){
+      destroyEC(id);
+      const wrap = qs("#"+id);
+      if (!wrap) return;
+      wrap.innerHTML = `<div class="muted">${esc(msg || "Sin datos.")}</div>`;
+    }
+	    function initEC(id, cls){
+	      if (!hasECharts()) return null;
+	      const el = ensureECBox(id, cls);
+	      if (!el) return null;
+	      destroyEC(id);
+	      EC[id] = echarts.init(el, __ecTheme(), { renderer:"canvas" });
+	      return EC[id];
+	    }
+    function fmtAxisMoney(v){
+      const n = Number(v||0);
+      if (!isFinite(n)) return "0";
+      const abs = Math.abs(n);
+      if (abs >= 1_000_000_000) return (n/1_000_000_000).toFixed(1).replace(/\.0$/,"")+"B";
+      if (abs >= 1_000_000) return (n/1_000_000).toFixed(1).replace(/\.0$/,"")+"M";
+      if (abs >= 1_000) return (n/1_000).toFixed(1).replace(/\.0$/,"")+"k";
+      return String(Math.round(n));
+    }
+	    function ecBarH(id, title, rows, valueFmt, onClick){
+	      const r = (rows||[]).slice(0, 60);
+	      if (!r.length){ setChartMsg(id, "Sin datos."); return; }
+	      const c = ecColors();
+	      const chart = initEC(id, (r.length <= 8 ? "short" : "tall"));
+	      if (!chart) return;
+	      const labels = r.map(x => String(x.label||"—"));
+	      const vals = r.map(x => Number(x.value||0));
+	      const extra = r.map(x => String(x.tooltip||""));
+	      const maxV = Math.max(1, ...vals.map(v => Number(v||0)));
+	      const back = vals.map(()=> maxV * 1.02);
+	      const fmtV = (v)=> valueFmt ? valueFmt(v) : fmtAxisMoney(v);
+	      const windowSize = 10;
+	      const needsZoom = labels.length > windowSize;
+	      const barW = (labels.length > 14 ? 10 : (labels.length > 10 ? 12 : 14));
+	      const option = {
+	        title: { text: title, left: 0, top: 0, textStyle:{ color:c.title, fontWeight: 900, fontSize: 12 } },
+          toolbox:{
+            show:true,
+            right: 0,
+            top: 0,
+            iconStyle:{ borderColor: c.grid },
+            feature:{ saveAsImage:{ title:"Guardar PNG", name: (title || "chart").slice(0,32) } }
+          },
+	        grid: { left: 160, right: 24, top: 42, bottom: (needsZoom ? 32 : 10), containLabel: true },
+	        xAxis: {
+	          type: "value",
+	          axisLabel: { color: c.axis, fontWeight: 800, formatter: (v)=> fmtV(v) },
+	          axisLine: { lineStyle:{ color: "rgba(0,0,0,0)" } },
+	          splitLine: { lineStyle:{ color: c.grid, type:"dashed" } }
+	        },
+	        yAxis: {
+	          type: "category",
+	          data: labels,
+	          axisLabel: { color: c.axis, fontWeight: 1050, overflow:"truncate", width: 150 },
+	          axisTick: { show:false },
+	          axisLine: { show:false }
+	        },
+	        tooltip: {
+	          trigger: "axis",
+	          axisPointer: { type: "shadow" },
+	          ...ecTooltipSkin(c),
+	          formatter: (p) => {
+	            const i = p?.[0]?.dataIndex ?? 0;
+	            const v = vals[i] ?? 0;
+	            const x = extra[i] ? `<div style="opacity:.8;margin-top:4px">${esc(extra[i])}</div>` : "";
+	            const vv = fmtV(v);
+	            return `<div style="font-weight:1100">${esc(labels[i])}</div><div style="margin-top:4px">${esc(vv)}</div>${x}`;
+	          }
+	        },
+	        animationDuration: 520,
+	        animationEasing: "cubicOut",
+	        animationDurationUpdate: 420,
+	        animationEasingUpdate: "cubicOut",
+	        graphic: ecWatermark(c),
+	        dataZoom: needsZoom ? [
+	          { type:"inside", yAxisIndex:0, startValue: 0, endValue: windowSize - 1, zoomOnMouseWheel:true, moveOnMouseWheel:true, moveOnMouseMove:true },
+	          { type:"slider", yAxisIndex:0, startValue: 0, endValue: windowSize - 1, height: 16, bottom: 8, right: 20, left: 160,
+              borderColor:"rgba(148,163,184,.14)", backgroundColor:"rgba(148,163,184,.10)",
+              fillerColor: "rgba(91,151,78,.25)", handleStyle:{ color: c.accent, borderColor:"rgba(0,0,0,0)" },
+              textStyle:{ color: c.sub, fontWeight:900, fontSize:10 } }
+	        ] : [],
+	        series: [
+		          {
+		            // barra “ghost” para look BI (background uniforme)
+		            type: "bar",
+		            data: back,
+		            barWidth: barW,
+		            barGap: "-100%",
+		            itemStyle: { color: "rgba(148,163,184,.10)", borderRadius: 8 },
+		            silent: true,
+		            z: 1
+		          },
+		          {
+		            type: "bar",
+		            data: vals,
+		            barWidth: barW,
+		            z: 2,
+		            itemStyle: {
+		              borderRadius: 8,
+		              shadowBlur: 16,
+		              shadowColor: "rgba(0,0,0,.22)",
+		              color: {
+	                type: "linear", x: 0, y: 0, x2: 1, y2: 0,
+	                colorStops: [
+	                  { offset: 0, color: c.accentDark },
+	                  { offset: 0.55, color: c.accent },
+	                  { offset: 1, color: c.accentLight }
+	                ]
+	              }
+		            },
+		            label: {
+		              show: true,
+		              position: "right",
+		              distance: 8,
+		              color: c.axis,
+		              fontWeight: 1100,
+		              formatter: (p)=> {
+		                const i = p?.dataIndex ?? 0;
+		                const v = Number(p?.value || 0);
+		                const rank = String(i + 1).padStart(2, "0");
+		                return `#${rank} · ${fmtV(v)}`;
+		              }
+		            },
+	            emphasis: {
+	              itemStyle: { shadowBlur: 22, shadowColor: "rgba(23,195,125,.25)" }
+	            },
+	            universalTransition: true,
+	          }
+	        ]
+	      };
+	      chart.setOption(option, true);
+	      chart.off("click");
+	      if (onClick){
+	        chart.on("click", (p)=> {
+	          const i = p?.dataIndex ?? 0;
+	          // Solo responder al click del "foreground" (serie 1)
+	          if (p?.seriesIndex !== 1) return;
+	          onClick(r[i], i);
+	        });
+	      }
+	    }
+    function ecFunnel(id, items, onClick){
+      const arr = (items||[]).filter(x => x && (Number(x.monto||0) > 0 || Number(x.cantidad||0) > 0));
+      if (!arr.length){ setChartMsg(id, "Sin datos."); return; }
+      const c = ecColors();
+      const chart = initEC(id, "tall");
+      if (!chart) return;
+      // Usamos MONTO como valor principal para el funnel (BI)
+      const data = arr.map(x => ({ name: String(x.estado||"—"), value: Number(x.monto||0), cantidad: Number(x.cantidad||0) }))
+        .sort((a,b)=> b.value - a.value);
+	      chart.setOption({
+	        color: [c.accentDark, c.accent, c.accentLight, c.cyan, c.warn, c.bad],
+	        title:{ text:"Funnel de ventas (monto)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+	        tooltip:{
+	          trigger:"item",
+	          ...ecTooltipSkin(c),
+          formatter: (p) => {
+            const d = p.data || {};
+            return `<div style="font-weight:900">${esc(d.name||"—")}</div>` +
+              `<div style="margin-top:4px">Monto: ${esc(money(d.value||0))}</div>` +
+              `<div style="opacity:.8;margin-top:4px">Leads: ${esc(d.cantidad||0)}</div>`;
+          }
+        },
+	        animationDuration: 520,
+	        animationEasing: "cubicOut",
+	        animationDurationUpdate: 420,
+	        animationEasingUpdate: "cubicOut",
+	        graphic: ecWatermark(c),
+	        series:[{
+          type:"funnel",
+          left: 10, right: 10, top: 46, bottom: 10,
+          sort:"descending",
+          gap: 6,
+          minSize:"20%",
+          maxSize:"100%",
+          label:{
+            color: c.axis,
+            fontWeight: 1000,
+            formatter: (p)=>{
+              const d = p.data || {};
+              const nm = String(d.name||"—");
+              const m = money(d.value||0);
+              const n = Number(d.cantidad||0);
+              // Evita artefactos de rich-text (|, \n) en algunos navegadores/skins.
+              return `${nm}\n${m} · ${n} leads`;
+            }
+          },
+          labelLine:{ lineStyle:{ color:c.grid } },
+          itemStyle:{ borderRadius: 12, borderColor:"rgba(0,0,0,0)", borderWidth:0, shadowBlur: 18, shadowColor:"rgba(0,0,0,.18)" },
+          emphasis:{ label:{ fontSize: 13 } },
+          universalTransition: true,
+          data
+        }]
+      }, true);
+      chart.off("click");
+      if (onClick){
+        chart.on("click", (p)=>{
+          const name = String(p?.data?.name || "");
+          onClick(name);
+        });
+      }
+    }
+    function ecTipoCliente(id, all, conf){
+      const c = ecColors();
+      const a = (all||[]).map(x => ({ name: String(x.tipo||x.tipo_cliente||"—"), value: Number(x.cantidad||0) })).filter(x => x.value > 0);
+      const b = (conf||[]).map(x => ({ name: String(x.tipo||x.tipo_cliente||"—"), value: Number(x.cantidad||0) })).filter(x => x.value > 0);
+      if (!a.length && !b.length){ setChartMsg(id, "Sin datos."); return; }
+	      const chart = initEC(id, "tall");
+	      if (!chart) return;
+        const totA = a.reduce((s,x)=>s+(Number(x.value)||0),0);
+        const totB = b.reduce((s,x)=>s+(Number(x.value)||0),0);
+	      chart.setOption({
+	        color: [c.accentDark, c.accent, c.accentLight, c.cyan, c.warn, c.bad],
+	        title:{ text:"Tipo de cliente (cantidad)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+	        tooltip:{ trigger:"item", ...ecTooltipSkin(c), formatter: "{b}<br/>{c} · {d}%" },
+	        legend:{ top: 36, left: 0, textStyle:{ color:c.axis, fontWeight:800 } },
+	        animationDuration: 520,
+	        animationEasing: "cubicOut",
+	        animationDurationUpdate: 420,
+	        animationEasingUpdate: "cubicOut",
+        series:[
+          {
+            name:"Todos",
+            type:"pie",
+            radius:["42%","66%"],
+            center:["25%","64%"],
+            label:{ show:false },
+            data: a,
+            universalTransition:true,
+          },
+          {
+            name:"Confirmados",
+            type:"pie",
+            radius:["42%","66%"],
+            center:["75%","64%"],
+            label:{ show:false },
+            data: b,
+            universalTransition:true,
+          }
+	        ],
+	        graphic: mergeGraphic([
+	          { type:"text", left:"18%", top:"58%", style:{ text:"Todos", fill:c.sub, fontWeight:900 } },
+	          { type:"text", left:"18%", top:"64%", style:{ text:String(totA||0), fill:c.title, fontWeight:1100 } },
+	          { type:"text", left:"67%", top:"58%", style:{ text:"Confirm.", fill:c.sub, fontWeight:900 } },
+	          { type:"text", left:"67%", top:"64%", style:{ text:String(totB||0), fill:c.title, fontWeight:1100 } },
+	        ], ecWatermark(c))
+	      }, true);
+	    }
+
+    function ecDonut(id, title, rows, valueKey="value", nameKey="name"){
+      const dataRaw = (rows||[]).map(r=>({
+        name: String(r?.[nameKey] ?? r?.marca ?? r?.estado ?? "—"),
+        value: Number(r?.[valueKey] ?? r?.monto ?? r?.value ?? 0),
+        cantidad: Number(r?.cantidad ?? r?.count ?? 0),
+      })).filter(x=>x.value>0);
+      if (!dataRaw.length){ setChartMsg(id, "Sin datos."); return; }
+      const c = ecColors();
+      const chart = initEC(id, "tall");
+      if (!chart) return;
+      const total = dataRaw.reduce((a,b)=>a+(Number(b.value)||0),0);
+      const top = dataRaw.slice(0, 8);
+      const other = dataRaw.slice(8).reduce((a,b)=>a+(Number(b.value)||0),0);
+      const data = other > 0 ? top.concat([{ name:"Otros", value: other, cantidad: 0 }]) : top;
+	      chart.setOption({
+	        color: [c.accentDark, c.accent, c.accentLight, c.cyan, c.warn, c.bad],
+	        title:{ text:title, left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+        tooltip:{
+          trigger:"item",
+          ...ecTooltipSkin(c),
+          formatter:(p)=>{
+            const d = p.data || {};
+            const pct = total ? Math.round((Number(d.value||0)/total)*100) : 0;
+            return `<div style="font-weight:900">${esc(d.name||"—")}</div>` +
+              `<div style="margin-top:4px">Monto: ${esc(money(d.value||0))}</div>` +
+              (d.cantidad ? `<div style="opacity:.8;margin-top:4px">Leads: ${esc(d.cantidad||0)}</div>` : "") +
+              `<div style="opacity:.8;margin-top:4px">${pct}%</div>`;
+          }
+        },
+	        legend:{ show:false },
+	        graphic: mergeGraphic([
+	          {
+	            type:"text",
+	            left:"center",
+	            top:"48%",
+            style:{ text: money(total), fill:c.title, fontWeight:1100, fontSize:14, textAlign:"center" }
+          },
+          {
+            type:"text",
+            left:"center",
+            top:"58%",
+	            style:{ text:"Total", fill:c.sub, fontWeight:900, fontSize:12, textAlign:"center" }
+	          }
+	        ], ecWatermark(c)),
+	        series:[{
+	          type:"pie",
+	          radius:["54%","78%"],
+          center:["50%","62%"],
+          avoidLabelOverlap:true,
+          itemStyle:{ borderRadius: 12, borderColor:"rgba(0,0,0,0)", borderWidth: 0, shadowBlur: 16, shadowColor:"rgba(0,0,0,.18)" },
+          label:{
+            color:c.axis,
+            fontWeight:900,
+            formatter:(p)=> {
+              const nm = String(p?.name||"");
+              return nm.length > 12 ? (nm.slice(0,12)+"…") : nm;
+            }
+          },
+          labelLine:{ lineStyle:{ color:c.grid } },
+          data
+        }]
+      }, true);
+    }
+	    function ecDaily(id, labels, totals){
+	      if (!labels?.length){ setChartMsg(id, "Sin datos."); return; }
+	      const c = ecColors();
+	      const chart = initEC(id, "short");
+	      if (!chart) return;
+	      chart.setOption({
+	        color: [c.accentDark, c.accent, c.accentLight],
+	        title:{ text:"Venta diaria (semana)", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+          toolbox:{
+            show:true,
+            right: 0,
+            top: 0,
+            iconStyle:{ borderColor: c.grid },
+            feature:{ saveAsImage:{ title:"Guardar PNG", name:"venta_diaria" } }
+          },
+	        tooltip:{ trigger:"axis", ...ecTooltipSkin(c), formatter: (p)=> `${esc(p[0].axisValue)}<div style="margin-top:4px">${esc(money(p[0].data))}</div>` },
+	        grid:{ left: 10, right: 10, top: 42, bottom: 10, containLabel:true },
+	        xAxis:{ type:"category", data: labels, axisLabel:{ color:c.axis, fontWeight:800 }, axisTick:{ show:false }, axisLine:{ lineStyle:{ color:c.grid } } },
+	        yAxis:{ type:"value", axisLabel:{ color:c.axis, formatter: (v)=>fmtAxisMoney(v) }, splitLine:{ lineStyle:{ color:c.grid } } },
+	        graphic: ecWatermark(c),
+	        series:[{
+	          type:"bar",
+	          data: totals,
+	          barWidth: 18,
+	          itemStyle:{
+	            borderRadius: [10,10,10,10],
+	            shadowBlur: 14,
+	            shadowColor: "rgba(0,0,0,.18)",
+	            color: {
+	              type:"linear", x:0, y:0, x2:0, y2:1,
+	              colorStops: [
+	                { offset:0, color: "rgba(150,194,81,.92)" },
+	                { offset:.55, color: "rgba(91,151,78,.88)" },
+	                { offset:1, color: "rgba(88,123,13,.82)" },
+	              ]
+	            }
+	          },
+	          emphasis:{ itemStyle:{ shadowBlur: 22, shadowColor:"rgba(150,194,81,.22)" } },
+	          universalTransition:true,
+	        }]
+	      }, true);
+	    }
+	    function resizeEC(){
+	      for (const k of Object.keys(EC)){
+	        try{ EC[k]?.resize?.(); }catch(_){}
+	      }
+	    }
+	    let __ecResizeT = null;
+	    window.addEventListener("resize", () => {
+	      try{ if (__ecResizeT) clearTimeout(__ecResizeT); }catch(_){}
+	      __ecResizeT = setTimeout(() => resizeEC(), 120);
+	    }, { passive:true });
+    function fmtShort(n){
+      const v = Number(n||0);
+      if (!isFinite(v)) return "0";
+      const abs = Math.abs(v);
+      if (abs >= 1_000_000_000) return (v/1_000_000_000).toFixed(1).replace(/\.0$/,"")+"B";
+      if (abs >= 1_000_000) return (v/1_000_000).toFixed(1).replace(/\.0$/,"")+"M";
+      if (abs >= 1_000) return (v/1_000).toFixed(1).replace(/\.0$/,"")+"k";
+      return String(Math.round(v));
+    }
+    function chartBarH(rows, opts){
+      const o = Object.assign({
+        title: "",
+        maxRows: 10,
+        labelWidth: 260,
+        valueWidth: 110,
+        w: 900,
+        rowH: 28,
+        barH: 10,
+        barFill: "rgba(25,195,125,.35)",
+        barBg: "rgba(148,163,184,.14)",
+        text: "rgba(255,255,255,.86)",
+        subText: "rgba(255,255,255,.70)",
+      }, opts||{});
+
+      const r0 = (rows||[]).filter(x => x && isFinite(Number(x.value||0)));
+      const rows2 = r0.slice(0, o.maxRows);
+      if (!rows2.length) return "";
+
+      const maxV = Math.max(1, ...rows2.map(x => Number(x.value||0)));
+      const W = o.w;
+      const left = o.labelWidth;
+      const right = o.valueWidth;
+      const barW = Math.max(80, W - left - right - 20);
+      const H = 18 + rows2.length * o.rowH + (o.title ? 22 : 0);
+
+      const title = o.title ? `<text x="0" y="16" fill="${o.subText}" font-size="12" font-weight="900">${esc(o.title)}</text>` : "";
+      const y0 = o.title ? 30 : 10;
+
+      const bars = rows2.map((r, i) => {
+        const y = y0 + i*o.rowH;
+        const v = Number(r.value||0);
+        const w = Math.round((v/maxV) * barW);
+        const lbl = String(r.label||"—");
+        const sub = r.sub ? `<text x="0" y="${y+24}" fill="${o.subText}" font-size="11" font-weight="800">${esc(String(r.sub))}</text>` : "";
+        return `
+          <g>
+            <text x="0" y="${y+14}" fill="${o.text}" font-size="12" font-weight="1000">${esc(lbl)}</text>
+            ${sub}
+            <rect x="${left}" y="${y+6}" width="${barW}" height="${o.barH}" rx="999" fill="${o.barBg}"></rect>
+            <rect x="${left}" y="${y+6}" width="${w}" height="${o.barH}" rx="999" fill="${o.barFill}"></rect>
+            <text x="${W-right}" y="${y+14}" fill="${o.text}" font-size="12" font-weight="1000" text-anchor="end">${esc(r.valueText || fmtShort(v))}</text>
+          </g>
+        `;
+      }).join("");
+
+      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.title||"chart")}">${title}${bars}</svg>`;
+    }
+
+    function chartStackedBar(segments, opts){
+      const o = Object.assign({
+        title: "",
+        w: 900,
+        h: 34,
+        colors: ["rgba(25,195,125,.35)","rgba(99,102,241,.35)","rgba(245,158,11,.35)","rgba(239,68,68,.35)","rgba(148,163,184,.28)"],
+        text: "rgba(255,255,255,.86)",
+        subText: "rgba(255,255,255,.70)",
+      }, opts||{});
+      const segs = (segments||[]).filter(s => s && isFinite(Number(s.value||0)) && Number(s.value||0) > 0);
+      if (!segs.length) return "";
+      const total = segs.reduce((a,s)=>a+Number(s.value||0),0) || 1;
+      const W = o.w;
+      const H = (o.title ? 22 : 0) + o.h + 44;
+      let x = 0;
+      const title = o.title ? `<text x="0" y="16" fill="${o.subText}" font-size="12" font-weight="900">${esc(o.title)}</text>` : "";
+      const yBar = o.title ? 26 : 6;
+      const rects = segs.map((s, i) => {
+        const w = Math.max(2, Math.round((Number(s.value||0)/total)*W));
+        const r = `<rect x="${x}" y="${yBar}" width="${w}" height="${o.h}" rx="999" fill="${o.colors[i % o.colors.length]}"></rect>`;
+        x += w;
+        return r;
+      }).join("");
+      const legend = segs.slice(0, 6).map((s,i) => {
+        const pct = Math.round((Number(s.value||0)/total)*100);
+        const lx = (i%3)*300;
+        const ly = (o.title ? 74 : 54) + Math.floor(i/3)*18;
+        return `
+          <g>
+            <rect x="${lx}" y="${ly-10}" width="10" height="10" rx="3" fill="${o.colors[i % o.colors.length]}"></rect>
+            <text x="${lx+16}" y="${ly-1}" fill="${o.text}" font-size="12" font-weight="900">${esc(String(s.label||"—"))} · ${esc(pct)}%</text>
+          </g>
+        `;
+      }).join("");
+      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.title||"stack")}">${title}${rects}${legend}</svg>`;
+    }
+
+    function chartBarsV(labels, values, opts){
+      const o = Object.assign({
+        title: "",
+        w: 900,
+        h: 160,
+        barFill: "rgba(25,195,125,.35)",
+        barBg: "rgba(148,163,184,.14)",
+        text: "rgba(255,255,255,.78)",
+        subText: "rgba(255,255,255,.70)",
+      }, opts||{});
+      const L = (labels||[]).slice(0, 14);
+      const V = (values||[]).slice(0, L.length).map(x => Number(x||0));
+      if (!L.length) return "";
+      const maxV = Math.max(1, ...V.map(v => Number(v||0)));
+      const W = o.w;
+      const H = (o.title ? 22 : 0) + o.h;
+      const pad = 12;
+      const top = o.title ? 26 : 6;
+      const chartH = o.h - 38;
+      const barW = Math.max(10, Math.floor((W - pad*2) / (L.length*1.4)));
+      const gap = Math.floor(barW*0.4);
+      const startX = pad;
+      const title = o.title ? `<text x="0" y="16" fill="${o.subText}" font-size="12" font-weight="900">${esc(o.title)}</text>` : "";
+      const bars = L.map((lab, i) => {
+        const v = V[i] || 0;
+        const h = Math.round((v/maxV)*chartH);
+        const x = startX + i*(barW+gap);
+        const y = top + (chartH - h);
+        const lbl = String(lab||"").slice(0,5);
+        return `
+          <g>
+            <rect x="${x}" y="${top}" width="${barW}" height="${chartH}" rx="6" fill="${o.barBg}"></rect>
+            <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="${o.barFill}"></rect>
+            <text x="${x + barW/2}" y="${top + chartH + 16}" fill="${o.text}" font-size="11" font-weight="900" text-anchor="middle">${esc(lbl)}</text>
+          </g>
+        `;
+      }).join("");
+      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.title||"bars")}">${title}${bars}</svg>`;
+    }
+
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    function apiURL(u){
+      const s = String(u||"");
+      if (!s) return s;
+      if (s.startsWith("/crm/")) return s;
+      if (s.startsWith("/")) return API_BASE + s;
+      return API_BASE + "/" + s;
+    }
+    function token(){
+      return localStorage.getItem("token") || localStorage.getItem("gd_token") || sessionStorage.getItem("token") || sessionStorage.getItem("gd_token") || "";
+    }
+    function authHeaders(extra={}){
+      const t = token();
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+
+    function fmtDate(d){
+      const pad = (n) => String(n).padStart(2,"0");
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    }
+
+    function openInParent(url){
+      try{
+        window.parent?.postMessage({ type:"openItem", id:"rep_total", url }, "*");
+      }catch(_){
+        location.href = apiURL(url);
+      }
+    }
+
+    function scrollToHash(){
+      const h = String(location.hash||"").replace("#","");
+      if (!h) return;
+      const el = document.getElementById(h);
+      if (!el) return;
+      try{ el.scrollIntoView({ behavior:"smooth", block:"start" }); }catch(_){}
+    }
+
+    function openFilter(params){
+      const usp = new URLSearchParams();
+      Object.entries(params||{}).forEach(([k,v]) => { if (v!=null && v!=="") usp.set(k, String(v)); });
+      const url = "/web/views/filtro_leads.html?v=20260326-fil1&" + usp.toString();
+      try{ window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*"); }catch(_){ location.href = apiURL(url); }
+    }
+
+    async function jget(url){
+      const r = await fetch(apiURL(url), { headers: authHeaders() });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    async function jput(url, body){
+      const r = await fetch(apiURL(url), {
+        method: "PUT",
+        headers: authHeaders({ "Content-Type":"application/json" }),
+        body: JSON.stringify(body || {}),
+      });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ("HTTP " + r.status));
+      return txt ? JSON.parse(txt) : {};
+    }
+
+    async function loadMarcas(){
+      try{
+        const j = await jget("/marcas?solo_activas=1");
+        return j.items || j || [];
+      }catch(_){
+        try{
+          const c = await jget("/leads/catalogos");
+          return c.marcas || [];
+        }catch(__){
+          return [];
+        }
+      }
+    }
+
+    async function init(){
+      CURRENT_TAB = getInitialTab();
+      // bind tabs
+      qs("#tabs")?.addEventListener("click", (ev)=>{
+        const b = ev.target?.closest?.(".tab[data-tab]");
+        if (!b) return;
+        const t = String(b.getAttribute("data-tab") || "");
+        CURRENT_TAB = selectTab(t, { setHash:true, render:true });
+      });
+
+      const now = new Date();
+      const start = new Date(now.getTime() - 1000*60*60*24*30);
+      qs("#ini").value = fmtDate(start);
+      qs("#fin").value = fmtDate(now);
+
+      // Role (para secciones admin)
+      try{
+        const me = await jget("/me");
+        ME.role = String(me?.role || me?.rol || "").toUpperCase();
+        ME.username = String(me?.username || me?.id || me?.name || "");
+      }catch(_){
+        ME.role = "";
+      }
+
+      const marcas = await loadMarcas();
+      const sel = qs("#marca");
+      if (sel){
+        sel.innerHTML = `<option value="">Todas las marcas</option>` + (marcas||[]).map(m => {
+          const id = m.id_marca ?? m.id ?? "";
+          const nombre = m.nombre ?? m.marca ?? "";
+          return `<option value="${esc(id)}">${esc(nombre)}</option>`;
+        }).join("");
+      }
+
+      qs("#openDash").onclick = () => openInParent("/web/views/dashboard.html");
+      qs("#viewAll").onclick = () => openInParent("/web/views/reportes.html");
+      qs("#go").onclick = () => load().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
+
+      // Export (CSV)
+      qs("#expFunnel")?.addEventListener("click", ()=> exportCSV("funnel"));
+      qs("#expTipo")?.addEventListener("click", ()=> exportCSV("tipo_cliente"));
+      qs("#expProd")?.addEventListener("click", ()=> exportCSV("top_productos"));
+      qs("#expCom")?.addEventListener("click", ()=> exportCSV("comunas"));
+      qs("#expCli")?.addEventListener("click", ()=> exportCSV("clientes"));
+
+      // Auto-reload when changing filters/knobs
+      ["topN","prodOrd","comOrd","cliOrd","marca","ventaSource"].forEach(id=>{
+        const el = qs("#"+id);
+        if (!el) return;
+        el.addEventListener("change", ()=> qs("#go")?.click());
+      });
+
+      // exports
+      qs("#btnXlsx")?.addEventListener("click", ()=> doExportXLSX(CURRENT_TAB).catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
+      qs("#btnWsp")?.addEventListener("click", ()=> shareWhatsApp(CURRENT_TAB).catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error")));
+
+      // Mostrar el tab actual ANTES de cargar (evita inicializar ECharts en paneles hidden).
+      CURRENT_TAB = selectTab(CURRENT_TAB, { setHash: true, render:false });
+      // auto-load (await para que el primer render sea del tab visible)
+      await load();
+    }
+
+    const TAB_IDS = [
+      "funnel","cierre","tipo_cliente","total","comunas","productos",
+      "clientes","leads_hoy","venta_diaria","cxc","cxp"
+    ];
+
+    function getInitialTab(){
+      try{
+        const usp = new URLSearchParams(location.search || "");
+        const tab = String(usp.get("tab") || usp.get("only") || "").trim();
+        if (tab && TAB_IDS.includes(tab)) return tab;
+      }catch(_){}
+      try{
+        const h = String(location.hash || "").replace("#","").trim();
+        if (h && TAB_IDS.includes(h)) return h;
+      }catch(_){}
+      return "total";
+    }
+
+    function selectTab(id, { setHash=true, render=false } = {}){
+      const tab = TAB_IDS.includes(id) ? id : "total";
+      // activar UI
+      document.querySelectorAll("#tabs .tab[data-tab]").forEach(b => {
+        const t = b.getAttribute("data-tab");
+        b.classList.toggle("active", t === tab);
+      });
+      // mostrar solo 1 reporte (KPIs siempre arriba)
+      TAB_IDS.forEach(tid => {
+        const el = document.getElementById(tid);
+        if (!el) return;
+        el.style.display = (tid === tab) ? "" : "none";
+        // al usar tabs, el reporte activo debe ocupar todo el ancho
+        try{ el.style.gridColumn = (tid === tab) ? "span 12" : ""; }catch(_){}
+      });
+      if (setHash){
+        try{ history.replaceState(null, "", "#" + tab); }catch(_){ location.hash = "#" + tab; }
+      }
+      try{ window.scrollTo({ top: 0, behavior: "smooth" }); }catch(_){ window.scrollTo(0,0); }
+      // ECharts necesita resize cuando un panel pasa de display:none -> visible
+      try{
+        requestAnimationFrame(()=> {
+          try{ resizeEC(); }catch(_){}
+        });
+        setTimeout(()=> { try{ resizeEC(); }catch(_){}
+        }, 120);
+      }catch(_){}
+      if (render){
+        try{
+          // render on-demand con datos cacheados
+          Promise.resolve(renderTab(tab)).catch(()=>{});
+        }catch(_){}
+      }
+      return tab;
+    }
+
+    async function renderTab(tab){
+      const dash = LAST.dash;
+      const rep = LAST.rep;
+      if (!dash || !rep) return;
+      if (tab === "funnel") return void renderFunnel(rep);
+      if (tab === "cierre") return void renderCierre(dash);
+      if (tab === "tipo_cliente") return void renderTipos(rep);
+      if (tab === "total") { renderTotal(dash, rep); return void renderMarcaPie(rep); }
+      if (tab === "comunas") return void renderTop(rep, "comunas");
+      if (tab === "productos") return void renderTop(rep, "productos");
+      if (tab === "clientes") return void renderTop(rep, "clientes");
+      if (tab === "leads_hoy") return void (await renderLeadsHoyList(LAST.mid));
+      if (tab === "venta_diaria") return void renderDaily(dash, LAST.mid);
+      if (tab === "cxc") return void (await renderFinanzas(LAST.ini, LAST.fin, "cxc"));
+      if (tab === "cxp") return void (await renderFinanzas(LAST.ini, LAST.fin, "cxp"));
+    }
+
+    function syncPeriodoDates(){
+      const per = String(qs("#periodo")?.value || "mtd");
+      const iniEl = qs("#ini");
+      const finEl = qs("#fin");
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth()+1).padStart(2,"0");
+      const dd = String(now.getDate()).padStart(2,"0");
+      const today = `${yyyy}-${mm}-${dd}`;
+      if (per === "mtd"){
+        iniEl.value = `${yyyy}-${mm}-01`;
+        finEl.value = today;
+        iniEl.disabled = true;
+        finEl.disabled = true;
+      }else if (per === "ytd"){
+        iniEl.value = `${yyyy}-01-01`;
+        finEl.value = today;
+        iniEl.disabled = true;
+        finEl.disabled = true;
+      }else{
+        iniEl.disabled = false;
+        finEl.disabled = false;
+      }
+    }
+
+    async function load(){
+      const periodo = String(qs("#periodo")?.value || "mtd");
+      const ini = qs("#ini").value;
+      const fin = qs("#fin").value;
+      const mid = qs("#marca").value;
+      const ventaSource = String(qs("#ventaSource")?.value || "confirmados");
+      const topN = String(qs("#topN")?.value || "20");
+      const prodOrd = String(qs("#prodOrd")?.value || "monto");
+      const comOrd = String(qs("#comOrd")?.value || "monto");
+      const cliOrd = String(qs("#cliOrd")?.value || "monto");
+      qs("#st").textContent = "Cargando…";
+
+      const dashQs = new URLSearchParams();
+      if (mid) dashQs.set("id_marca", mid);
+      if (ventaSource) dashQs.set("venta_source", ventaSource);
+      const repQs = new URLSearchParams();
+      if (ini) repQs.set("fecha_inicio", ini);
+      if (fin) repQs.set("fecha_termino", fin);
+      if (periodo) repQs.set("periodo", periodo);
+      if (mid) repQs.set("id_marca", mid);
+      if (ventaSource) repQs.set("venta_source", ventaSource);
+      repQs.set("top_n", topN);
+      repQs.set("productos_order", prodOrd);
+      repQs.set("comunas_order", comOrd);
+      repQs.set("clientes_order", cliOrd);
+
+      const [dash, rep] = await Promise.all([
+        jget("/tools/dashboard" + (dashQs.toString() ? ("?"+dashQs.toString()) : "")),
+        jget("/tools/dashboard/reportes" + (repQs.toString() ? ("?"+repQs.toString()) : "")),
+      ]);
+
+      LAST.dash = dash;
+      LAST.rep = rep;
+      LAST.ini = rep?.range?.from || ini;
+      LAST.fin = rep?.range?.to || fin;
+      LAST.mid = mid;
+
+      renderKPIs(dash, rep, LAST.ini, LAST.fin, mid);
+      await renderTab(CURRENT_TAB);
+
+      const perLbl = (periodo === "mtd") ? "MTD" : ((periodo === "ytd") ? "YTD" : "Rango");
+      qs("#st").textContent = `OK · ${perLbl}: ${LAST.ini} → ${LAST.fin}${mid ? (" · Marca ID: " + mid) : ""}`;
+    }
+
+    function renderKPIs(dash, rep, ini, fin, mid){
+      const k = dash?.kpis || {};
+      const rk = rep?.kpis || {};
+      const comp = Array.isArray(rep?.ventas_comparativo) ? rep.ventas_comparativo : [];
+      const baseSum = comp.reduce((a,x)=> a + Number(x.base||0), 0);
+      const metaSum = comp.reduce((a,x)=> a + Number(x.meta||0), 0);
+      const actual = Number(rk.venta_total||0);
+      const vsBase = baseSum ? ((actual/baseSum - 1)*100) : null;
+      const vsMeta = metaSum ? ((actual/metaSum)*100) : null;
+      const el = qs("#kpis");
+      if (!el) return;
+      const blocks = [
+        { id:"k_venta_rango", l:"Venta", v: money(actual||0), s:`vs Base: ${vsBase===null?"—":vsBase.toFixed(1)+"%"} · vs Meta: ${vsMeta===null?"—":vsMeta.toFixed(1)+"%"}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
+        { id:"k_traslados_rango", l:"Traslados", v: money(rk.traslado_cobrado||0), s:`Costo: ${money(rk.traslado_costo||0)} · Margen: ${money(rk.traslado_margen||0)}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
+        { id:"k_cierre_rango", l:"% cierre", v: `${Number(rk.cierre_pct||0).toFixed(2)}%`, s:`Confirmados/Leads (${rk.confirmados_total||0}/${rk.leads_total||0})`, on: () => { try{ selectTab("cierre"); }catch(_){ location.hash="#cierre"; } } },
+        { id:"k_leads_hoy", l:"Leads hoy", v:String(k.leads_hoy||0), s:"Dashboard (hoy)", on: () => openFilter({ campo:"ingreso", desde: fmtDate(new Date()), hasta: fmtDate(new Date()), ...(mid?{marca:mid}:{}) }) },
+        { id:"k_venta_dia", l:"Venta día", v: money(k.venta_dia||0), s:"Dashboard (confirmados)", on: () => openConfirmedSales(fmtDate(new Date()), fmtDate(new Date()), mid) },
+        { id:"k_venta_sem", l:"Venta semana", v: money(k.venta_semana||0), s:"Dashboard (confirmados)", on: () => openConfirmedSales(dash?.week?.start||ini, dash?.week?.end||fin, mid) },
+        { id:"k_cierre", l:"% cierre (semana)", v: `${Number(k.cierre_pct||0).toFixed(2)}%`, s:"Dashboard", on: () => { try{ selectTab("cierre"); }catch(_){ location.hash = "#cierre"; } } },
+      ];
+      el.innerHTML = blocks.map(b => `
+        <div class="kpi" data-id="${esc(b.id)}">
+          <div class="l">${esc(b.l)}</div>
+          <div class="v">${esc(b.v)}</div>
+          <div class="s">${esc(b.s)}</div>
+        </div>
+      `).join("");
+      el.querySelectorAll(".kpi[data-id]").forEach(div => {
+        const id = div.getAttribute("data-id");
+        const b = blocks.find(x => x.id === id);
+        if (b?.on) div.addEventListener("click", b.on);
+      });
+    }
+
+    // init
+    try{
+      qs("#periodo")?.addEventListener("change", ()=> { syncPeriodoDates(); });
+      syncPeriodoDates();
+    }catch(_){}
+
+    function renderFunnel(rep){
+      const tb = qs("#tbFunnel");
+      const items = rep?.funnel || [];
+      if (!tb) return;
+      if (!items.length){
+        tb.innerHTML = `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
+        setChartMsg("chFunnel", "Sin datos.");
+        return;
+      }
+      // Funnel BI (click => filtro por estado)
+      ecFunnel("chFunnel", items, (estado)=> openFilter({ estado }));
+      const maxMonto = Math.max(1, ...items.map(x => Number(x?.monto||0)));
+      tb.innerHTML = items.map(r => `
+        <tr class="rowlink" data-estado="${encodeURIComponent(r.estado||"")}">
+          <td class="barcell">
+            <strong>${esc(r.estado||"—")}</strong>
+            <div class="barwrap" style="--w:${Math.round((Number(r.monto||0)/maxMonto)*100)}">
+              <div class="bar"></div>
+            </div>
+          </td>
+          <td class="right">${esc(r.cantidad||0)}</td>
+          <td class="right">${esc(money(r.monto||0))}</td>
+        </tr>
+      `).join("");
+      tb.querySelectorAll("tr.rowlink[data-estado]").forEach(tr => {
+        tr.addEventListener("click", () => {
+          const estado = decodeURIComponent(tr.getAttribute("data-estado") || "");
+          openFilter({ estado });
+        });
+      });
+    }
+
+    function renderTipos(rep){
+      const box = qs("#boxTipo");
+      if (!box) return;
+      const all = Array.isArray(rep?.tipo_cliente) ? rep.tipo_cliente : [];
+      const conf = Array.isArray(rep?.tipo_cliente_confirmados) ? rep.tipo_cliente_confirmados : [];
+      const sum = (arr, k)=> (arr||[]).reduce((a,x)=>a+Number(x?.[k]||0),0);
+      const totalAll = Math.max(1, sum(all, "cantidad"));
+      const totalConf = Math.max(1, sum(conf, "cantidad"));
+
+      const mk = (title, arr, total) => {
+        const rows = (arr||[]).map(r => ({
+          tipo: String(r.tipo_cliente||"—"),
+          cantidad: Number(r.cantidad||0),
+          monto: Number(r.monto||0),
+        }));
+        return `
+          <div style="flex:1; min-width:0;">
+            <div class="muted" style="font-weight:1000; margin-bottom:8px;">${esc(title)}</div>
+            <table class="tbl">
+              <thead><tr><th>Tipo</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
+              <tbody>
+                ${rows.map(r => {
+                  const pct = Math.round((r.cantidad/total)*100);
+                  return `
+                    <tr>
+                      <td style="min-width:160px;">
+                        <strong>${esc(r.tipo)}</strong>
+                        <div style="margin-top:6px;height:8px;border-radius:999px;background:rgba(148,163,184,.14);overflow:hidden;border:1px solid rgba(148,163,184,.16);">
+                          <div style="width:${pct}%;height:100%;background:rgba(91,151,78,.40)"></div>
+                        </div>
+                      </td>
+                      <td class="right">${esc(r.cantidad)}</td>
+                      <td class="right">${esc(money(r.monto))}</td>
+                    </tr>
+                  `;
+                }).join("") || `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        `;
+      };
+
+      box.innerHTML = `
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          ${mk("Todos (rango)", all, totalAll)}
+          ${mk("Confirmados (rango)", conf, totalConf)}
+        </div>
+      `;
+
+      // chart BI (2 donuts)
+      ecTipoCliente("chTipo", all, conf);
+    }
+
+    function renderMarcaPie(rep){
+      const rows = Array.isArray(rep?.ventas_por_marca) ? rep.ventas_por_marca : [];
+      if (!rows.length){
+        setChartMsg("chMarcaPie", "Sin datos.");
+        return;
+      }
+      ecDonut("chMarcaPie", "Torta por marca (confirmados)", rows, "monto", "marca");
+    }
+
+    function renderTop(rep, only){
+      const tp = rep?.top_productos || [];
+      const com = rep?.comunas || [];
+      const cli = rep?.clientes || [];
+      const chartN = (() => {
+        const n = Number(qs("#topN")?.value || 20);
+        if (!isFinite(n) || n <= 0) return 10;
+        return Math.max(5, Math.min(25, Math.round(n)));
+      })();
+
+      const wantProd = (!only || only === "productos");
+      const wantCom = (!only || only === "comunas");
+      const wantCli = (!only || only === "clientes");
+
+      if (wantProd){
+        ecBarH("chProd", "Top productos (monto)", tp.slice(0,chartN).map(x => ({
+          label: x.producto || "—",
+          value: Number(x.monto||0),
+          tooltip: `${x.marca ? String(x.marca) : ""}${x.marca ? " · " : ""}${Math.round(Number(x.cantidad||0))} uds`,
+        })), money);
+      }
+      if (wantCom){
+        ecBarH("chCom", "Top comunas (monto)", com.slice(0,chartN).map(x => ({
+          label: x.comuna || "—",
+          value: Number(x.monto||0),
+          tooltip: `${Number(x.cantidad||0)} leads · prom ${money((Number(x.monto||0)/Math.max(1,Number(x.cantidad||0))))}`,
+        })), money);
+      }
+      if (wantCli){
+        ecBarH("chCli", "Top clientes (monto)", cli.slice(0,chartN).map(x => ({
+          label: x.cliente || "—",
+          value: Number(x.monto||0),
+          tooltip: `${Number(x.cantidad||0)} leads · prom ${money((Number(x.monto||0)/Math.max(1,Number(x.cantidad||0))))}`,
+        })), money);
+      }
+
+      const tbP = qs("#tbProd");
+      if (tbP && wantProd){
+        const maxMonto = Math.max(1, ...tp.map(x => Number(x?.monto||0)));
+        tbP.innerHTML = tp.length ? tp.map(r => `
+          <tr>
+            <td class="barcell">
+              <strong>${esc(r.producto||"—")}</strong>
+              <div class="barwrap" style="--w:${Math.round((Number(r.monto||0)/maxMonto)*100)}">
+                <div class="bar"></div>
+              </div>
+            </td>
+            <td class="muted">${esc(r.marca||"")}</td>
+            <td class="right">${esc(Math.round(Number(r.cantidad||0)))}</td>
+            <td class="right">${esc(money(r.monto||0))}</td>
+          </tr>
+        `).join("") : `<tr><td colspan="4" class="muted">Sin datos.</td></tr>`;
+      }
+
+      const tbC = qs("#tbCom");
+      if (tbC && wantCom){
+        const maxMonto = Math.max(1, ...com.map(x => Number(x?.monto||0)));
+        tbC.innerHTML = com.length ? com.map(r => `
+          <tr>
+            <td class="barcell">
+              <strong>${esc(r.comuna||"—")}</strong>
+              <div class="barwrap" style="--w:${Math.round((Number(r.monto||0)/maxMonto)*100)}">
+                <div class="bar"></div>
+              </div>
+            </td>
+            <td class="right">${esc(r.cantidad||0)}</td>
+            <td class="right">${esc(money(r.monto||0))}</td>
+          </tr>
+        `).join("") : `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
+      }
+
+      const tbU = qs("#tbCli");
+      if (tbU && wantCli){
+        const maxMonto = Math.max(1, ...cli.map(x => Number(x?.monto||0)));
+        tbU.innerHTML = cli.length ? cli.map(r => `
+          <tr>
+            <td class="barcell">
+              <strong>${esc(r.cliente||"—")}</strong>
+              <div class="barwrap" style="--w:${Math.round((Number(r.monto||0)/maxMonto)*100)}">
+                <div class="bar"></div>
+              </div>
+            </td>
+            <td class="right">${esc(r.cantidad||0)}</td>
+            <td class="right">${esc(money(r.monto||0))}</td>
+          </tr>
+        `).join("") : `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
+      }
+    }
+
+    function renderCierre(dash){
+      const k = dash?.kpis || {};
+      const box = qs("#boxCierre");
+      if (!box) return;
+      box.innerHTML = `
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch">
+          <div class="kpi" style="flex:1;min-width:220px">
+            <div class="l">% cierre</div>
+            <div class="v">${esc((Number(k.cierre_pct||0)).toFixed(2))}%</div>
+            <div class="s">Semanal</div>
+          </div>
+          <div class="kpi" style="flex:1;min-width:220px">
+            <div class="l">Confirmados semana</div>
+            <div class="v">${esc(k.confirmados_semana||0)}</div>
+            <div class="s">Total semana</div>
+          </div>
+          <div class="kpi" style="flex:1;min-width:220px">
+            <div class="l">Leads semana</div>
+            <div class="v">${esc(k.total_semana||0)}</div>
+            <div class="s">Total semana</div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function renderLeadsHoyList(mid){
+      const box = qs("#boxLeadsHoy");
+      if (!box) return;
+      box.innerHTML = `<div class="muted">Cargando leads de hoy…</div>`;
+      const usp = new URLSearchParams({ limit:"60" });
+      if (mid) usp.set("id_marca", mid);
+      try{
+	        const j = await jget(`/tools/dashboard/leads_hoy?${usp.toString()}`);
+	        const items = Array.isArray(j.items) ? j.items : [];
+	        try{ LAST.leads_hoy_items = items; }catch(_){}
+	        if (!items.length){
+	          box.innerHTML = `<div class="muted">Sin leads creados hoy.</div>`;
+	          return;
+	        }
+        box.innerHTML = `
+          <div style="max-height:420px; overflow:auto">
+            <table class="tbl">
+              <thead><tr><th>ID</th><th>Cliente</th><th>Marca</th><th>Comuna</th><th>Estado</th><th>Tel</th><th class="right">Monto</th></tr></thead>
+              <tbody>
+                ${items.map(x => `
+                  <tr class="rowlink" data-lead="${esc(x.id_lead)}">
+                    <td><strong>${esc(x.id_lead)}</strong></td>
+                    <td>${esc(x.cliente||"—")}</td>
+                    <td class="muted">${esc(x.marca||"")}</td>
+                    <td class="muted">${esc(x.comuna||"—")}</td>
+                    <td><strong>${esc(x.estado||"")}</strong></td>
+                    <td class="muted">${esc(x.telefono||"")}</td>
+                    <td class="right">${esc(money(x.monto||0))}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+          <div class="muted" style="margin-top:10px;">Tip: click en una fila para abrir el lead.</div>
+        `;
+        box.querySelectorAll("tr.rowlink[data-lead]").forEach(tr => {
+          tr.addEventListener("click", ()=>{
+            const id = tr.getAttribute("data-lead");
+            if (!id) return;
+            const url = "/web/views/leads.html?stale_ids=" + encodeURIComponent(String(id));
+            try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+          });
+        });
+      }catch(e){
+        box.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+      }
+    }
+
+    function renderLeadsHoy(dash, mid){
+      const k = dash?.kpis || {};
+      const box = qs("#boxLeadsHoy");
+      if (!box) return;
+      const d = fmtDate(new Date());
+      box.innerHTML = `
+        <div class="kpi" id="openLeadsHoy">
+          <div class="l">Leads creados hoy</div>
+          <div class="v">${esc(k.leads_hoy||0)}</div>
+          <div class="s">${esc(d)} · abrir filtro</div>
+        </div>
+      `;
+      qs("#openLeadsHoy")?.addEventListener("click", () => openFilter({ campo:"ingreso", desde:d, hasta:d, ...(mid?{marca:mid}:{}) }));
+    }
+
+    function renderTotal(dash, rep){
+      const box = qs("#boxTotal");
+      const items = (rep?.ventas_comparativo || dash?.sales_compare || []);
+      if (!box) return;
+      if (!items.length){
+        box.innerHTML = `<div class="muted">Sin datos.</div>`;
+        setChartMsg("chTotal", "Sin datos.");
+        return;
+      }
+      const hasTras = items.some(r => Number(r?.traslado_cobrado||0) || Number(r?.traslado_costo||0));
+      const yinfo = rep?.years || {};
+      const yCur = Number(yinfo.current || new Date().getFullYear());
+      const yLy = Number(yinfo.ly || (yCur - 1));
+      const yExtra = Array.isArray(yinfo.extra) ? yinfo.extra.map(Number).filter(n=>isFinite(n)).sort((a,b)=>a-b) : [];
+      const yearCols = [yCur, yLy, ...yExtra].filter((v,i,a)=>a.indexOf(v)===i);
+      // chart: comparar actual vs baseline (Top 10 por actual)
+      const top = [...items].sort((a,b)=>Number(b.actual||0)-Number(a.actual||0)).slice(0,10);
+      // BI: bar agrupado Actual vs Baseline
+      (()=>{
+        const c = ecColors();
+        const chart = initEC("chTotal", "tall");
+        if (!chart) return;
+        const labels = top.map(r => String(r.marca||"—"));
+        const actual = top.map(r => Number(r.actual||0));
+        const base = top.map(r => Number(r.baseline ?? r.base ?? 0));
+        const meta = top.map(r => Number(r.meta ?? r.target ?? 0));
+        const colors = top.map(r => brandColor(r.marca, r.color));
+        const actualData = actual.map((v,i) => ({ value: v, itemStyle:{ color: colors[i] } }));
+        const baseData = base.map((v,i) => ({ value: v, itemStyle:{ color: hexToRgba(colors[i], 0.32) } }));
+        const metaData = meta.map((v)=> ({ value: v, itemStyle:{ color: "#2563eb" } }));
+	        chart.setOption({
+	          title:{ text:"Total venta por marca (Actual vs Meta vs Base) · Top 10", left:0, top:0, textStyle:{ color:c.title, fontWeight:900, fontSize:12 } },
+          tooltip:{ trigger:"axis", axisPointer:{ type:"shadow" }, formatter:(p)=>{
+            const i = p?.[0]?.dataIndex ?? 0;
+            const ly = Number(top?.[i]?.actual_ly ?? 0);
+            const yoy = (ly ? ((actual[i] / ly - 1) * 100) : null);
+            return `<div style="font-weight:900">${esc(labels[i])}</div>` +
+              `<div style="margin-top:4px">Actual: ${esc(money(actual[i]||0))}</div>` +
+              `<div style="opacity:.8;margin-top:4px">Año pasado: ${esc(money(ly||0))}${yoy===null?"":(" · YoY "+yoy.toFixed(1)+"%")}</div>` +
+              `<div style="opacity:.8;margin-top:4px">Meta: ${esc(money(meta[i]||0))}</div>` +
+              `<div style="opacity:.8;margin-top:4px">Base: ${esc(money(base[i]||0))}</div>`;
+          }},
+          legend:{ top: 28, right: 0, textStyle:{ color:c.axis, fontWeight:800 } },
+          grid:{ left: 10, right: 10, top: 58, bottom: 10, containLabel:true },
+	          xAxis:{ type:"category", data: labels, axisLabel:{ color:c.axis, fontWeight:800, rotate:0, overflow:"truncate" }, axisLine:{ lineStyle:{ color:c.grid } }, axisTick:{ show:false } },
+	          yAxis:{ type:"value", axisLabel:{ color:c.axis, formatter:(v)=>fmtAxisMoney(v) }, splitLine:{ lineStyle:{ color:c.grid } } },
+	          graphic: ecWatermark(c),
+	          series:[
+	            { name:"Actual", type:"bar", data: actualData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
+	            { name:"Meta", type:"bar", data: metaData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
+	            { name:"Base", type:"bar", data: baseData, barWidth: 14, itemStyle:{ borderRadius: 8 } },
+	          ]
+	        }, true);
+      })();
+      box.innerHTML = `
+        <div style="max-height:420px;overflow:auto">
+          <table class="tbl">
+            <thead><tr>
+              <th>Marca</th>
+              ${yearCols.map(y => `<th class="right">${esc(String(y))}</th>`).join("")}
+              <th class="right">YoY</th>
+              <th class="right">Meta</th>
+              <th class="right">% Meta</th>
+              <th class="right">Base</th>
+              <th class="right">Δ vs Meta</th>
+              ${hasTras?'<th class="right">Traslado</th><th class="right">Costo</th><th class="right">Margen</th>':''}
+            </tr></thead>
+            <tbody>
+              ${items.map(r => {
+                const a = Number(r.actual||0);
+                const b = Number(r.baseline ?? r.base ?? 0);
+                const m = Number(r.meta ?? r.target ?? 0);
+                const ly = Number(r.actual_ly || 0);
+                const d = a - m;
+                const pct = m ? (a / m * 100) : 0;
+                const yoy = ly ? ((a / ly - 1) * 100) : null;
+                const trC = Number(r.traslado_cobrado||0);
+                const trK = Number(r.traslado_costo||0);
+                const trM = Number(r.traslado_margen||0);
+                const ym = (r && typeof r === "object" && r.years && typeof r.years === "object") ? r.years : {};
+                return `<tr>
+                  <td><strong>${esc(r.marca||"—")}</strong></td>
+                  ${yearCols.map(y => `<td class="right">${esc(money(ym?.[String(y)] ?? ym?.[y] ?? (y===yCur?a:(y===yLy?ly:0))))}</td>`).join("")}
+                  <td class="right">${esc(yoy===null?"—":(yoy.toFixed(1)+"%"))}</td>
+                  <td class="right">${esc(money(m))}</td>
+                  <td class="right">${esc(pct.toFixed(1))}%</td>
+                  <td class="right">${esc(money(b))}</td>
+                  <td class="right">${esc(money(d))}</td>
+                  ${hasTras?`<td class="right">${esc(money(trC))}</td><td class="right">${esc(money(trK))}</td><td class="right">${esc(money(trM))}</td>`:""}
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+		    async function renderFinanzas(ini, fin, only){
+		      const boxCxc = qs("#boxCxc");
+		      const boxCxp = qs("#boxCxp");
+          const wantCxc = (!only || only === "cxc");
+          const wantCxp = (!only || only === "cxp");
+
+		      if (boxCxc && wantCxc) boxCxc.innerHTML = `<div class="muted">Cargando…</div>`;
+		      if (boxCxp && wantCxp) boxCxp.innerHTML = `<div class="muted">Cargando…</div>`;
+		      try{ LAST.fin = LAST.fin || {}; }catch(_){}
+
+      const ym = (ini && /^\d{4}-\d{2}-\d{2}$/.test(ini)) ? ini.slice(0,7) : "";
+      const [yy, mm] = ym ? ym.split("-").map(Number) : [0,0];
+      const qp = (mm && yy) ? `?month=${encodeURIComponent(String(mm))}&year=${encodeURIComponent(String(yy))}` : "";
+
+		      if (wantCxc){
+            try{
+              const out = await jget(`/finanzas/cxc_resumen${qp}`);
+              const items = Array.isArray(out?.items) ? out.items : [];
+              try{ LAST.fin.cxc = items; LAST.fin.cxc_qp = qp; }catch(_){}
+              ecBarH("chCxc", "Top clientes por saldo pendiente", items
+                .slice()
+                .sort((a,b)=>Number(b.saldo_pendiente||0)-Number(a.saldo_pendiente||0))
+                .slice(0,10)
+                .map(r => ({
+                  label: r.cliente || "—",
+                  value: Number(r.saldo_pendiente||0),
+                  tooltip: r.marca ? String(r.marca) : "",
+                })), money);
+              const total = items.reduce((a,x)=>a+Number(x.saldo_pendiente||0),0);
+              const rows = items.slice(0, 120);
+              if (boxCxc){
+                boxCxc.innerHTML = `
+                  <div class="row" style="justify-content:space-between;margin-bottom:10px">
+                    <div class="muted">Total pendiente</div>
+                    <div style="font-weight:1100">${esc(money(total))}</div>
+                  </div>
+                  <div style="max-height:420px;overflow:auto">
+                    <table class="tbl">
+                      <thead><tr><th>Cliente</th><th>Marca</th><th class="right">Saldo</th><th class="right">#</th><th>Último</th></tr></thead>
+                      <tbody>
+                        ${rows.map(r => `
+                          <tr>
+                            <td><strong>${esc(r.cliente||"—")}</strong></td>
+                            <td class="muted">${esc(r.marca||"")}</td>
+                            <td class="right">${esc(money(r.saldo_pendiente||0))}</td>
+                            <td class="right">${esc(r.n||0)}</td>
+                            <td>${esc(String(r.ultimo_evento||""))}</td>
+                          </tr>
+                        `).join("") || `<tr><td colspan="5" class="muted">Sin datos.</td></tr>`}
+                      </tbody>
+                    </table>
+                  </div>
+                `;
+              }
+            }catch(e){
+              if (boxCxc) boxCxc.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+              setChartMsg("chCxc", "No disponible.");
+              try{ LAST.fin.cxc = []; }catch(_){}
+            }
+          }
+
+		      if (wantCxp){
+            try{
+              const out = await jget(`/finanzas/cxp_resumen`);
+              const items = Array.isArray(out?.items) ? out.items : [];
+              try{ LAST.fin.cxp = items; }catch(_){}
+              ecBarH("chCxp", "Top proveedores por pendiente", items
+                .slice()
+                .sort((a,b)=>Number(b.pendiente||0)-Number(a.pendiente||0))
+                .slice(0,10)
+                .map(r => ({
+                  label: r.proveedor || "—",
+                  value: Number(r.pendiente||0),
+                  tooltip: `pagado ${money(r.pagado||0)}`,
+                })), money);
+              const total = items.reduce((a,x)=>a+Number(x.pendiente||0),0);
+              const rows = items.slice(0, 120);
+              if (boxCxp){
+                boxCxp.innerHTML = `
+                  <div class="row" style="justify-content:space-between;margin-bottom:10px">
+                    <div class="muted">Total pendiente</div>
+                    <div style="font-weight:1100">${esc(money(total))}</div>
+                  </div>
+                  <div style="max-height:420px;overflow:auto">
+                    <table class="tbl">
+                      <thead><tr><th>Proveedor</th><th class="right">Pendiente</th><th class="right">Pagado</th><th class="right">#</th></tr></thead>
+                      <tbody>
+                        ${rows.map(r => `
+                          <tr>
+                            <td><strong>${esc(r.proveedor||"—")}</strong></td>
+                            <td class="right">${esc(money(r.pendiente||0))}</td>
+                            <td class="right">${esc(money(r.pagado||0))}</td>
+                            <td class="right">${esc(r.n||0)}</td>
+                          </tr>
+                        `).join("") || `<tr><td colspan="4" class="muted">Sin datos.</td></tr>`}
+                      </tbody>
+                    </table>
+                  </div>
+                `;
+              }
+            }catch(e){
+              if (boxCxp) boxCxp.innerHTML = `<div class="muted">No disponible: ${esc(String(e.message||e))}</div>`;
+              setChartMsg("chCxp", "No disponible.");
+              try{ LAST.fin.cxp = []; }catch(_){}
+            }
+          }
+		    }
+
+    async function openConfirmedSales(desde, hasta, mid){
+      const qs2 = new URLSearchParams({ desde, hasta });
+      if (mid) qs2.set("id_marca", String(mid));
+      const j = await jget(`/tools/dashboard/sales_ids?${qs2.toString()}`);
+      const ids = j.ids || [];
+      if (!ids.length){
+        Swal.fire("Sin ventas", "No hay leads confirmados en ese rango.", "info");
+        return;
+      }
+      const url = "/web/views/leads.html?stale_ids=" + encodeURIComponent(ids.join(","));
+      try{ window.parent?.postMessage({ type:"openItem", id:"leads_ver", url }, "*"); }catch(_){ window.open(apiURL(url), "_blank"); }
+    }
+
+    function renderDaily(dash, mid){
+      const box = qs("#boxDaily");
+      const daily = dash?.sales_daily || [];
+      const days = dash?.week_days || [];
+      if (!box) return;
+      if (!daily.length || !days.length){
+        box.innerHTML = `<div class="muted">Sin datos diarios.</div>`;
+        setChartMsg("chDaily", "Sin datos.");
+        return;
+      }
+      const dayLabel = (iso) => {
+        try{
+          const d = new Date(String(iso).slice(0,10) + "T00:00:00");
+          const wd = d.toLocaleDateString("es-CL", { weekday:"short" }).replace(/\./g,"");
+          const s = String(iso||"");
+          const ddmm = s.slice(8,10)+"/"+s.slice(5,7);
+          return `${wd.toUpperCase()} ${ddmm}`;
+        }catch(_){
+          const s = String(iso||"");
+          return s.slice(8,10)+"/"+s.slice(5,7);
+        }
+      };
+      // chart: totales por día (marca seleccionada o global)
+      const totals = days.map(d => {
+        const rows = daily.filter(x => x.dia === d && (!mid || String(x.id_marca||"") === String(mid)));
+        return rows.reduce((a,x)=>a+Number(x.monto||0),0);
+      });
+      const labels = days.map(dayLabel);
+      ecDaily("chDaily", labels, totals);
+      const brands = [...new Set(daily.map(x => x.marca))];
+      box.innerHTML = `
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Marca</th>
+              ${days.map(d => `<th class="right">${esc(dayLabel(d))}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${brands.map(b => {
+              return `<tr>
+                <td><strong>${esc(b||"—")}</strong></td>
+                ${days.map(d => {
+                  const row = daily.find(x => x.marca===b && x.dia===d);
+                  const monto = Number(row?.monto||0);
+                  const mid2 = row?.id_marca ?? (mid||"");
+                  return `<td class="right rowlink" data-day="${esc(d)}" data-mid="${esc(mid2)}">${esc(money(monto))}</td>`;
+                }).join("")}
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+      box.querySelectorAll("td.rowlink[data-day]").forEach(td => {
+        td.title = "Doble click para abrir leads confirmados ese día";
+        td.addEventListener("dblclick", () => {
+          const day = td.getAttribute("data-day");
+          const mid3 = td.getAttribute("data-mid");
+          if (!day) return;
+          openConfirmedSales(day, day, mid3 || "");
+        });
+      });
+    }
+
+    function downloadText(name, text){
+      const blob = new Blob([text], { type:"text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){ } }, 60_000);
+    }
+
+    function toCSV(rows){
+      const escCsv = (v)=>{
+        const s = String(v ?? "");
+        if (/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+        return s;
+      };
+      return (rows||[]).map(r => r.map(escCsv).join(",")).join("\n") + "\n";
+    }
+
+    function exportCSV(kind){
+      const rep = LAST.rep || {};
+      const mid = LAST.mid ? ("_marca" + LAST.mid) : "";
+      const stamp = `${LAST.ini || "ini"}_${LAST.fin || "fin"}`.replace(/[^0-9A-Za-z_-]+/g, "-");
+      const name = `reporte_${kind}${mid}_${stamp}.csv`;
+
+      let rows = [];
+      if (kind === "funnel"){
+        const items = Array.isArray(rep.funnel) ? rep.funnel : [];
+        rows = [["estado","leads","monto"]].concat(items.map(r => [r.estado||"", r.cantidad||0, r.monto||0]));
+      } else if (kind === "top_productos"){
+        const items = Array.isArray(rep.top_productos) ? rep.top_productos : [];
+        rows = [["producto","marca","cantidad","monto"]].concat(items.map(r => [r.producto||"", r.marca||"", r.cantidad||0, r.monto||0]));
+      } else if (kind === "comunas"){
+        const items = Array.isArray(rep.comunas) ? rep.comunas : [];
+        rows = [["comuna","leads","monto"]].concat(items.map(r => [r.comuna||"", r.cantidad||0, r.monto||0]));
+      } else if (kind === "clientes"){
+        const items = Array.isArray(rep.clientes) ? rep.clientes : [];
+        rows = [["cliente","leads","monto"]].concat(items.map(r => [r.cliente||"", r.cantidad||0, r.monto||0]));
+      } else if (kind === "tipo_cliente"){
+        const all = Array.isArray(rep.tipo_cliente) ? rep.tipo_cliente : [];
+        const conf = Array.isArray(rep.tipo_cliente_confirmados) ? rep.tipo_cliente_confirmados : [];
+        rows = [["scope","tipo_cliente","leads","monto"]]
+          .concat(all.map(r => ["all", r.tipo_cliente||"", r.cantidad||0, r.monto||0]))
+          .concat(conf.map(r => ["confirmados", r.tipo_cliente||"", r.cantidad||0, r.monto||0]));
+      } else {
+        Swal.fire("Export", "Tipo de export no soportado.", "info");
+        return;
+      }
+      downloadText(name, toCSV(rows));
+    }
+
+    function _tabTitle(tab){
+      const m = {
+        funnel: "Funnel",
+        cierre: "% cierre",
+        tipo_cliente: "Tipo de cliente",
+        total: "Total venta",
+        comunas: "Comunas",
+        productos: "Productos",
+        clientes: "Clientes",
+        leads_hoy: "Leads hoy",
+        venta_diaria: "Venta diaria",
+        cxc: "Por cobrar",
+        cxp: "Por pagar",
+      };
+      return m[String(tab||"")] || String(tab||"Reporte");
+    }
+
+    function _safeSheetName(s){
+      return String(s||"Reporte").replace(/[\\/*?:[\]]+/g, " ").trim().slice(0, 28) || "Reporte";
+    }
+
+    function _chartDataUrl(id){
+      try{
+        const ch = EC[id];
+        if (!ch || !ch.getDataURL) return "";
+        return ch.getDataURL({ type:"png", pixelRatio: 2, backgroundColor: "rgba(0,0,0,0)" }) || "";
+      }catch(_){
+        return "";
+      }
+    }
+
+    function _dataUrlToBytes(dataUrl){
+      try{
+        const m = String(dataUrl||"").match(/^data:image\/png;base64,(.+)$/);
+        if (!m) return null;
+        const b64 = m[1];
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+        return bytes;
+      }catch(_){
+        return null;
+      }
+    }
+
+    function _tabDataset(tab){
+      const rep = LAST.rep || {};
+      const dash = LAST.dash || {};
+      const fin = LAST.fin || {};
+      const t = String(tab||"");
+
+      if (t === "funnel"){
+        const items = Array.isArray(rep.funnel) ? rep.funnel : [];
+        return { cols: ["estado","leads","monto"], rows: items.map(r => [r.estado||"", r.cantidad||0, r.monto||0]) };
+      }
+      if (t === "tipo_cliente"){
+        const all = Array.isArray(rep.tipo_cliente) ? rep.tipo_cliente : [];
+        const conf = Array.isArray(rep.tipo_cliente_confirmados) ? rep.tipo_cliente_confirmados : [];
+        const rows = []
+          .concat(all.map(r => ["all", r.tipo_cliente||"", r.cantidad||0, r.monto||0]))
+          .concat(conf.map(r => ["confirmados", r.tipo_cliente||"", r.cantidad||0, r.monto||0]));
+        return { cols: ["scope","tipo_cliente","leads","monto"], rows };
+      }
+      if (t === "productos"){
+        const items = Array.isArray(rep.top_productos) ? rep.top_productos : [];
+        return { cols: ["producto","marca","cantidad","monto"], rows: items.map(r => [r.producto||"", r.marca||"", r.cantidad||0, r.monto||0]) };
+      }
+      if (t === "comunas"){
+        const items = Array.isArray(rep.comunas) ? rep.comunas : [];
+        return { cols: ["comuna","leads","monto"], rows: items.map(r => [r.comuna||"", r.cantidad||0, r.monto||0]) };
+      }
+      if (t === "clientes"){
+        const items = Array.isArray(rep.clientes) ? rep.clientes : [];
+        return { cols: ["cliente","leads","monto"], rows: items.map(r => [r.cliente||"", r.cantidad||0, r.monto||0]) };
+      }
+      if (t === "leads_hoy"){
+        const items = LAST.leads_hoy_items || [];
+        return { cols: ["id_lead","cliente","marca","comuna","estado","telefono","monto"], rows: items.map(r => [r.id_lead||"", r.cliente||"", r.marca||"", r.comuna||"", r.estado||"", r.telefono||"", r.monto||0]) };
+      }
+      if (t === "venta_diaria"){
+        const items = Array.isArray(dash.sales_daily) ? dash.sales_daily : [];
+        return { cols: ["dia","marca","monto"], rows: items.map(r => [r.dia||"", r.marca||"", r.monto||0]) };
+      }
+      if (t === "cxc"){
+        const items = Array.isArray(fin.cxc) ? fin.cxc : [];
+        return { cols: ["cliente","marca","saldo_pendiente","total_bruto","n","#ultimo_evento"], rows: items.map(r => [r.cliente||"", r.marca||"", r.saldo_pendiente||0, r.total_bruto||0, r.n||0, r.ultimo_evento||""]) };
+      }
+      if (t === "cxp"){
+        const items = Array.isArray(fin.cxp) ? fin.cxp : [];
+        return { cols: ["proveedor","pendiente","pagado","n"], rows: items.map(r => [r.proveedor||"", r.pendiente||0, r.pagado||0, r.n||0]) };
+      }
+
+      // total/cierre: dejamos un resumen simple
+      const k = (dash.kpis || {});
+      return {
+        cols: ["metric","value"],
+        rows: [
+          ["leads_hoy", k.leads_hoy||0],
+          ["venta_dia", k.venta_dia||0],
+          ["venta_semana", k.venta_semana||0],
+          ["cierre_pct", k.cierre_pct||0],
+        ]
+      };
+    }
+
+    function _tabChartIds(tab){
+      const t = String(tab||"");
+      if (t === "funnel") return ["chFunnel"];
+      if (t === "tipo_cliente") return ["chTipo"];
+      if (t === "productos") return ["chProd"];
+      if (t === "comunas") return ["chCom"];
+      if (t === "clientes") return ["chCli"];
+      if (t === "venta_diaria") return ["chDaily"];
+      if (t === "cxc") return ["chCxc"];
+      if (t === "cxp") return ["chCxp"];
+      if (t === "total") return ["chTotal","chMarcaPie"];
+      return [];
+    }
+
+    async function doExportXLSX(tab){
+      if (!window.ExcelJS) throw new Error("ExcelJS no cargó (revisa conexión a CDN).");
+      const title = _tabTitle(tab);
+      const stamp = `${LAST.ini || "ini"}_${LAST.fin || "fin"}`.replace(/[^0-9A-Za-z_-]+/g, "-");
+      const mid = LAST.mid ? ("_marca" + LAST.mid) : "";
+      const fname = `reporte_${String(tab||"tab")}${mid}_${stamp}.xlsx`;
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "GD CRM";
+      wb.created = new Date();
+
+      const meta = wb.addWorksheet("Meta");
+      meta.addRow(["Reporte", title]);
+      meta.addRow(["Rango", `${LAST.ini || ""} → ${LAST.fin || ""}`]);
+      meta.addRow(["Marca", LAST.mid || "Todas"]);
+      meta.addRow(["Generado", new Date().toISOString()]);
+
+      const ds = _tabDataset(tab);
+      const ws = wb.addWorksheet(_safeSheetName(title));
+      ws.addRow(ds.cols);
+      ds.rows.forEach(r => ws.addRow(r));
+      ws.getRow(1).font = { bold: true };
+      ws.columns.forEach(c => { c.width = Math.min(48, Math.max(12, (c.header ? String(c.header).length : 10) + 2)); });
+
+      const charts = _tabChartIds(tab);
+      if (charts.length){
+        const chWs = wb.addWorksheet("Grafico");
+        let rowCursor = 1;
+        for (const id of charts){
+          const url = _chartDataUrl(id);
+          const bytes = _dataUrlToBytes(url);
+          if (!bytes) continue;
+          const imgId = wb.addImage({ buffer: bytes, extension: "png" });
+          chWs.addImage(imgId, { tl: { col: 0, row: rowCursor - 1 }, ext: { width: 900, height: 360 } });
+          rowCursor += 20;
+        }
+      }
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){ } }, 60_000);
+      return { ok:true, fname };
+    }
+
+    async function exportXLSXAndCopySummary(tab){
+      const ds = _tabDataset(tab);
+      const title = _tabTitle(tab);
+      const lines = [];
+      lines.push(`📊 ${title}`);
+      if (LAST.ini || LAST.fin) lines.push(`Rango: ${LAST.ini || "—"} → ${LAST.fin || "—"}`);
+      if (LAST.mid) lines.push(`Marca: ${LAST.mid}`);
+      if (ds?.cols?.length && ds?.rows?.length){
+        const head = ds.cols.slice(0,4);
+        lines.push("");
+        lines.push(head.join(" · "));
+        ds.rows.slice(0,5).forEach(r => lines.push(r.slice(0,4).join(" · ")));
+      }
+      const txt = lines.join("\n");
+      try{ await navigator.clipboard.writeText(txt); }catch(_){}
+      return txt;
+    }
+
+    async function shareWhatsApp(tab){
+      // Descarga primero el XLSX (para que el usuario lo adjunte en WA).
+      try{ await doExportXLSX(tab); }catch(_){}
+      const txt = await exportXLSXAndCopySummary(tab);
+      // WhatsApp Web no permite adjuntar automáticamente archivos desde JS.
+      // Abrimos WA con el texto y el usuario adjunta el XLSX descargado.
+      const u = "https://wa.me/?text=" + encodeURIComponent(txt);
+      window.open(u, "_blank", "noopener,noreferrer");
+      Swal.fire("WhatsApp", "Resumen copiado. Se abrió WhatsApp Web.\nAdjunta el XLSX descargado manualmente.", "info");
+    }
+
+    init().catch(e => Swal.fire("Error", String(e.message||e).slice(0,300), "error"));
+  </script>
+</body>
+</html>

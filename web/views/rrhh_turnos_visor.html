@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>RRHH · Mi Turno</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:14px;background:transparent;color:var(--text);}
+    .wrap{max-width:none;width:100%;margin:0 auto;}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+    }
+    :root.light .card{ background: rgba(255,255,255,.86); border-color: rgba(0,0,0,.10); }
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px; opacity:.9;}
+    .big{font-size:20px;font-weight:1200;margin-top:6px;}
+    .row{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; align-items:center;}
+    input,button{
+      font:inherit; color:inherit;
+      background: rgba(15,23,42,.55);
+      border:1px solid rgba(148,163,184,.22);
+      border-radius:12px;
+      padding:10px 12px;
+      outline:none;
+    }
+    :root.light input,:root.light button{ background: rgba(255,255,255,.9); border-color: rgba(0,0,0,.12); }
+    button{ cursor:pointer; font-weight:900; }
+    button.primary{ background: rgba(59,130,246,.22); border-color: rgba(59,130,246,.35); }
+    .muted{opacity:.85; font-size:12px;}
+    .tbl{ margin-top:12px; overflow:auto; max-height: calc(100vh - 220px); border-radius:14px; border:1px solid rgba(148,163,184,.18); }
+    table{ width:100%; border-collapse:separate; border-spacing:0; min-width: 860px; }
+    th,td{ padding:10px 10px; border-bottom:1px solid rgba(148,163,184,.14); }
+    th{ position:sticky; top:0; z-index:2; background: rgba(2,6,23,.92); text-align:left; font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
+    :root.light th{ background: rgba(248,250,252,.92); }
+    .pill{ display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid rgba(148,163,184,.22); font-size:12px; opacity:.9; }
+    .ok{ border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.10); }
+    .warn{ border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.10); }
+    .bad{ border-color: rgba(244,63,94,.45); background: rgba(244,63,94,.10); }
+    .kpi{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+    .kpi .box{flex:1 1 220px;border:1px solid rgba(148,163,184,.18);border-radius:14px;padding:10px;background:rgba(15,23,42,.28)}
+    :root.light .kpi .box{background:rgba(255,255,255,.7)}
+    .kpi .box .h{font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.8}
+    .kpi .box .v{font-size:18px;font-weight:1200;margin-top:6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="ttl">RRHH · SGJO</div>
+      <div class="big">Mi Turno (Teórico vs Real)</div>
+      <div class="muted" id="who">—</div>
+
+      <div class="row">
+        <label class="muted">Mes:</label>
+        <input id="month" type="month" />
+        <button class="primary" id="btnLoad">Cargar</button>
+        <span class="muted" id="st"></span>
+      </div>
+
+      <div class="kpi">
+        <div class="box"><div class="h">Horas esperadas</div><div class="v" id="kExp">—</div></div>
+        <div class="box"><div class="h">Horas trabajadas</div><div class="v" id="kReal">—</div></div>
+        <div class="box"><div class="h">Faltas IN/OUT</div><div class="v" id="kMiss">—</div></div>
+        <div class="box"><div class="h">Fuera de rango</div><div class="v" id="kOor">—</div></div>
+      </div>
+
+      <div class="tbl">
+        <table>
+          <thead>
+            <tr>
+              <th>Día</th>
+              <th>Turno teórico</th>
+              <th>Esperado</th>
+              <th>IN / OUT</th>
+              <th>Total</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs=(s,el=document)=>el.querySelector(s);
+    const API_BASE="/crm";
+    function apiURL(p){return API_BASE+(p.charAt(0)==="/"?"":"/")+p;}
+    function getToken(){try{return localStorage.getItem("gd_token")||localStorage.getItem("token")||"";}catch(_){return"";}}
+    async function apiJSON(path){
+      const t=getToken();
+      const headers={};
+      if(t) headers.Authorization="Bearer "+t;
+      const r=await fetch(apiURL(path),{headers});
+      const txt=await r.text();
+      let j=null; try{j=txt?JSON.parse(txt):null;}catch(_){}
+      if(!r.ok) throw new Error((j&&(j.detail||j.error||j.message))?(j.detail||j.error||j.message):(txt||("HTTP "+r.status)));
+      return j;
+    }
+    function pad2(n){n=String(n);return n.length===1?"0"+n:n;}
+    function hours(min){ if(min==null) return "—"; const h=Math.floor(min/60), m=min%60; return h+"h "+pad2(m)+"m"; }
+    function dayLabel(iso){
+      const d=new Date(iso+"T00:00:00");
+      const w=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()]||"";
+      return w+" "+iso.slice(8,10)+"/"+iso.slice(5,7);
+    }
+    function weekStartISO(iso){
+      const d=new Date(iso+"T00:00:00");
+      const wd=(d.getDay()+6)%7; // Mon=0
+      const m=new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      m.setDate(m.getDate()-wd);
+      return m.getFullYear()+"-"+pad2(m.getMonth()+1)+"-"+pad2(m.getDate());
+    }
+    function statePill(x){
+      const hasIn=!!x.actual_in, hasOut=!!x.actual_out;
+      if(!hasIn && !hasOut) return `<span class="pill bad">Sin marcas</span>`;
+      if(!hasIn || !hasOut) return `<span class="pill warn">Falta ${!hasIn?"IN":"OUT"}</span>`;
+      if((x.out_of_range_cnt||0)>0) return `<span class="pill warn">Fuera de rango</span>`;
+      return `<span class="pill ok">OK</span>`;
+    }
+    function initMonth(){
+      const d=new Date();
+      qs("#month").value = d.getFullYear()+"-"+pad2(d.getMonth()+1);
+    }
+    async function load(){
+      const ym=qs("#month").value||"";
+      qs("#st").textContent="Cargando...";
+      try{
+        const data=await apiJSON(`/rrhh/marcaciones/me/plan?month=${encodeURIComponent(ym)}`);
+        qs("#who").textContent = (data.colaborador? (data.colaborador+" · "+(data.rol||"")) : "Sin RRHH link");
+        const body=qs("#body");
+        body.innerHTML="";
+        let exp=0, real=0, miss=0, oor=0;
+        let curWs=null;
+        let wExp=0, wReal=0, wMiss=0, wOor=0;
+        const flushWeek = ()=>{
+          if(!curWs) return;
+          const tr=document.createElement("tr");
+          tr.innerHTML = `
+            <td colspan="6" style="padding:10px 10px;background:rgba(15,23,42,.22)">
+              <span class="pill ok">Semana ${curWs}</span>
+              <span class="muted" style="margin-left:10px">Σ Real: <b>${hours(wReal)}</b> · Σ Esp.: <b>${hours(wExp)}</b> · Faltas: <b>${wMiss}</b> · Fallback: <b>${wOor}</b></span>
+            </td>
+          `;
+          body.appendChild(tr);
+        };
+
+        (data.days||[]).forEach((x, idx)=>{
+          const ws = weekStartISO(x.day);
+          if(curWs!==ws){
+            flushWeek();
+            curWs=ws;
+            wExp=0; wReal=0; wMiss=0; wOor=0;
+          }
+          if(x.expected_worked_min!=null) exp += Number(x.expected_worked_min)||0;
+          if(x.worked_min!=null) real += Number(x.worked_min)||0;
+          if((!x.actual_in && x.actual_out) || (x.actual_in && !x.actual_out) || (!x.actual_in && !x.actual_out)) miss += 1;
+          if((x.out_of_range_cnt||0)>0) oor += 1;
+          if(x.expected_worked_min!=null) wExp += Number(x.expected_worked_min)||0;
+          if(x.worked_min!=null) wReal += Number(x.worked_min)||0;
+          if((!x.actual_in && x.actual_out) || (x.actual_in && !x.actual_out) || (!x.actual_in && !x.actual_out)) wMiss += 1;
+          if((x.out_of_range_cnt||0)>0) wOor += 1;
+
+          const tr=document.createElement("tr");
+          const expStr=(x.expected_in||x.expected_out)?`${x.expected_in||"—"} → ${x.expected_out||"—"}`:"—";
+          const showIn = x.actual_in || x.expected_in || "—";
+          const showOut = x.actual_out || x.expected_out || "—";
+          const inOut = `${showIn} / ${showOut}`;
+          tr.innerHTML = `
+            <td>${dayLabel(x.day)}</td>
+            <td>${x.turno||"—"}</td>
+            <td>${expStr}</td>
+            <td><b>${inOut}</b></td>
+            <td><b>${hours(x.worked_min)}</b> <span class="muted">/ ${hours(x.expected_worked_min)}</span></td>
+            <td>${statePill(x)}</td>
+          `;
+          body.appendChild(tr);
+          if(idx === (data.days||[]).length-1){
+            flushWeek();
+          }
+        });
+        qs("#kExp").textContent=hours(exp);
+        qs("#kReal").textContent=hours(real);
+        qs("#kMiss").textContent=String(miss);
+        qs("#kOor").textContent=String(oor);
+        qs("#st").textContent="OK";
+      }catch(e){
+        qs("#st").textContent="Error: "+(e&&e.message?e.message:e);
+      }
+    }
+    qs("#btnLoad").addEventListener("click", load);
+    initMonth();
+    load();
+  </script>
+</body>
+</html>

@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Leads</title>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <style>
+    :root{
+      --bg:#0b1220;
+      --panel:#111a2a;
+      --panel2:#0f1726;
+      --line:rgba(255,255,255,.10);
+      --text:rgba(255,255,255,.92);
+      --muted:rgba(255,255,255,.62);
+      --shadow:0 18px 55px rgba(0,0,0,.40);
+      --r16:16px;
+      --r12:12px;
+      --acc:#22c55e;
+
+      /* “Neumorphism” sobrio */
+      --neuTop: rgba(255,255,255,.07);
+      --neuBot: rgba(0,0,0,.28);
+      --neuFill: rgba(255,255,255,.03);
+    }
+    :root.light{
+      --bg:#eef5ff;
+      --panel:#ffffff;
+      --panel2:#f6f8fb;
+      --line:rgba(0,0,0,.10);
+      --text:rgba(0,0,0,.88);
+      --muted:rgba(0,0,0,.55);
+      --shadow:0 18px 55px rgba(0,0,0,.18);
+      --neuTop: rgba(255,255,255,.85);
+      --neuBot: rgba(0,0,0,.10);
+      --neuFill: rgba(0,0,0,.02);
+    }
+
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      padding:18px;
+      box-sizing:border-box;
+      background:transparent;
+      color:var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    .wrap{
+      height: calc(100vh - 36px);
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+
+    /* Top controls */
+    .top{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:12px;
+      border-radius:18px;
+      border:1px solid var(--line);
+      background: linear-gradient(180deg, var(--neuTop), var(--neuFill));
+      box-shadow: var(--shadow);
+    }
+
+    .left{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width: 520px;
+    }
+
+    .seg{
+      display:inline-flex;
+      gap:8px;
+      padding:6px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background: linear-gradient(180deg, var(--neuTop), var(--neuFill));
+    }
+    .seg button{
+      border:1px solid transparent;
+      background:transparent;
+      color:var(--text);
+      font-weight:900;
+      padding:8px 12px;
+      border-radius:999px;
+      cursor:pointer;
+      font-size:12.5px;
+      opacity:.9;
+    }
+    .seg button.active{
+      border-color: rgba(34,197,94,.55);
+      background: rgba(34,197,94,.14);
+      opacity:1;
+    }
+
+    .search{
+      flex:1;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background: linear-gradient(180deg, var(--neuTop), var(--neuFill));
+    }
+    .search span{ opacity:.8; }
+    .search input{
+      width:100%;
+      border:0;
+      outline:none;
+      background:transparent;
+      color:var(--text);
+      font-weight:800;
+      font-size:13px;
+    }
+
+    .meta{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      white-space:nowrap;
+      font-weight:900;
+      opacity:.9;
+    }
+    .pill{
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.03);
+      padding:8px 12px;
+      border-radius:999px;
+      font-size:12.5px;
+    }
+
+    .right{
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+
+    .btn{
+      border:1px solid var(--line);
+      background: linear-gradient(180deg, var(--neuTop), var(--neuFill));
+      color:var(--text);
+      border-radius:12px;
+      padding:10px 12px;
+      font-weight:1000;
+      cursor:pointer;
+      font-size:13px;
+    }
+    .btn.primary{
+      border-color: rgba(34,197,94,.55);
+      background: rgba(34,197,94,.14);
+    }
+    .btn:hover{ border-color: rgba(34,197,94,.35); }
+
+    /* Views container */
+    .views{
+      flex:1;
+      min-height:0;
+      border-radius:18px;
+      border:1px solid var(--line);
+      background: rgba(0,0,0,.10);
+      overflow:hidden;
+      box-shadow: var(--shadow);
+    }
+
+    /* Kanban */
+    .kanban{
+      height:100%;
+      display:none;
+      padding:12px;
+      box-sizing:border-box;
+      overflow:auto;
+    }
+    .kanban.active{ display:block; }
+
+    .board{
+      display:flex;
+      gap:12px;
+      align-items:flex-start;
+      min-width: 980px;
+    }
+
+    .col{
+      width: 280px;
+      border-radius:16px;
+      border:2px solid var(--line); /* se sobre-escribe con color de estado */
+      background: linear-gradient(180deg, var(--neuTop), var(--neuFill));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+      overflow:hidden;
+    }
+    .col-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:10px 10px;
+      border-bottom:1px solid var(--line);
+      font-weight:1000;
+    }
+    .col-title{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-size:13px;
+    }
+    .badge{
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:12px;
+      opacity:.9;
+    }
+
+    .drop{
+      min-height: 140px;
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .drop.over{
+      outline: 2px dashed rgba(34,197,94,.55);
+      outline-offset: -6px;
+    }
+
+    /* Lead card (minimalista) */
+    .card{
+      border-radius:14px;
+      border:1px solid var(--line);
+      background: rgba(0,0,0,.12);
+      padding:10px 10px 8px;
+      cursor:grab;
+      user-select:none;
+    }
+    :root.light .card{ background: rgba(0,0,0,.03); }
+
+    .card:active{ cursor:grabbing; }
+    .c-title{
+      font-weight:1000;
+      font-size:13px;
+      letter-spacing:.2px;
+      margin-bottom:4px;
+      line-height:1.2;
+    }
+    .c-sub{
+      font-size:12px;
+      opacity:.86;
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-bottom:6px;
+    }
+    .c-sub span{ opacity:.9; }
+    .c-meta{
+      font-size:12px;
+      opacity:.8;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:8px;
+    }
+    .c-actions{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:8px;
+    }
+    .iBtn{
+      width:30px; height:30px;
+      border-radius:10px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.03);
+      color:var(--text);
+      cursor:pointer;
+      display:grid;
+      place-items:center;
+      font-size:13px;
+    }
+    .iBtn:hover{ border-color: rgba(34,197,94,.35); }
+
+    /* Table */
+    .table{
+      height:100%;
+      display:none;
+      padding:12px;
+      box-sizing:border-box;
+      overflow:auto;
+    }
+    .table.active{ display:block; }
+
+    table{
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      overflow:hidden;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background: linear-gradient(180deg, var(--neuTop), var(--neuFill));
+    }
+    thead th{
+      text-align:left;
+      font-size:12px;
+      padding:10px 10px;
+      border-bottom:1px solid var(--line);
+      opacity:.85;
+      font-weight:1000;
+      letter-spacing:.2px;
+      white-space:nowrap;
+    }
+    tbody td{
+      padding:10px 10px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+      font-size:12.5px;
+      vertical-align:middle;
+    }
+    :root.light tbody td{ border-bottom:1px solid rgba(0,0,0,.06); }
+
+    tbody tr:hover td{ background: rgba(34,197,94,.06); }
+    tbody tr:last-child td{ border-bottom:0; }
+
+    .st{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      font-weight:1000;
+      white-space:nowrap;
+    }
+    .dot{
+      width:10px; height:10px;
+      border-radius:999px;
+      background: rgba(255,255,255,.35);
+      border:1px solid var(--line);
+    }
+
+    .t-actions{
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+    }
+
+    /* Helpers */
+    .muted{ opacity:.75; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="left">
+        <div class="seg" role="tablist" aria-label="Vista">
+          <button id="btnKanban" class="active" type="button">Kanban</button>
+          <button id="btnTable" type="button">Tabla</button>
+        </div>
+
+        <div class="search">
+          <span>🔎</span>
+          <input id="q" type="text" placeholder="Buscar por nombre / comuna / marca / código cliente…"/>
+        </div>
+
+        <div class="meta">
+          <span class="pill" id="leadCount">Leads: —</span>
+        </div>
+      </div>
+
+      <div class="right">
+        <button class="btn primary" id="btnCreate" type="button">+ Crear Lead</button>
+        <button class="btn" id="btnReload" type="button">Recargar</button>
+      </div>
+    </div>
+
+    <div class="views">
+      <!-- Kanban -->
+      <section class="kanban active" id="kanbanView">
+        <div class="board" id="board"></div>
+      </section>
+
+      <!-- Tabla -->
+      <section class="table" id="tableView">
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Fecha evento</th>
+              <th>Comuna</th>
+              <th>Marca</th>
+              <th>Estado</th>
+              <th class="muted" style="text-align:right;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </section>
+    </div>
+  </div>
+
+<script>
+  const qs = (s, el=document) => el.querySelector(s);
+
+  function getToken(){
+    return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+  }
+  function authHeaders(extra={}){
+    const t = getToken();
+    return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+  }
+
+  // ==== state ====
+  let CATALOG = { marcas:[], comunas:[], tipos_cliente:[], estados_lead:[] };
+  let EST_BY_ID = new Map();
+  let MARCA_BY_ID = new Map();
+  let COM_BY_ID = new Map();
+  let TIPO_BY_ID = new Map();
+
+  let ALL = [];
+  let VIEW = "kanban";
+
+  // extras UI (por si el backend aún no tiene campos)
+  const EXTRA_KEY = "gd_lead_extra_v1";
+  let EXTRAS = {};
+  try{ EXTRAS = JSON.parse(localStorage.getItem(EXTRA_KEY) || "{}"); }catch(_){ EXTRAS = {}; }
+  const saveExtras = () => localStorage.setItem(EXTRA_KEY, JSON.stringify(EXTRAS));
+
+  // ==== helpers ====
+  const fmtMoney = (n) => {
+    const v = Number(n||0);
+    return v.toLocaleString("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
+  };
+
+  function norm(s){
+    return (s||"").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  }
+
+  function getEstadoName(id){
+    const e = EST_BY_ID.get(Number(id));
+    return e ? e.nombre : `#${id}`;
+  }
+  function getEstadoColor(id){
+    const e = EST_BY_ID.get(Number(id));
+    return (e && e.color) ? e.color : "rgba(255,255,255,.18)";
+  }
+
+  function mergeExtra(lead){
+    const ex = EXTRAS[String(lead.id_lead)];
+    return ex ? { ...lead, _extra: ex } : lead;
+  }
+
+  // ==== fetchers ====
+  async function loadCatalogos(){
+    const r = await fetch("/leads/catalogos", { headers: authHeaders() });
+    if (!r.ok) throw new Error("catalogos");
+    const d = await r.json();
+    const cat = d.catalogos || d;
+
+    CATALOG.marcas = cat.marcas || [];
+    CATALOG.comunas = cat.comunas || [];
+    CATALOG.tipos_cliente = cat.tipos_cliente || cat.tipos || [];
+    CATALOG.estados_lead = cat.estados_lead || cat.estados || [];
+
+    // maps
+    EST_BY_ID = new Map(CATALOG.estados_lead.map(x => [Number(x.id_estado), x]));
+    MARCA_BY_ID = new Map(CATALOG.marcas.map(x => [Number(x.id_marca), x]));
+    COM_BY_ID = new Map(CATALOG.comunas.map(x => [Number(x.id_comuna), x]));
+    TIPO_BY_ID = new Map(CATALOG.tipos_cliente.map(x => [Number(x.id_tipo_cliente), x]));
+  }
+
+  async function loadLeads(){
+    const r = await fetch("/leads", { headers: authHeaders() });
+    if (!r.ok) throw new Error("leads");
+    const arr = await r.json();
+    ALL = (arr || []).map(mergeExtra);
+  }
+
+  async function updateEstado(id_lead, id_estado){
+    // endpoint principal
+    let ok = false;
+    try{
+      const r = await fetch(`/leads/${id_lead}/estado`, {
+        method:"PUT",
+        headers: { "Content-Type":"application/json", ...authHeaders() },
+        body: JSON.stringify({ id_estado })
+      });
+      ok = r.ok;
+    }catch(_){ ok = false; }
+
+    // fallback si existe /estado_ex
+    if (!ok){
+      try{
+        const r2 = await fetch(`/leads/${id_lead}/estado_ex`, {
+          method:"POST",
+          headers: { "Content-Type":"application/json", ...authHeaders() },
+          body: JSON.stringify({ id_estado })
+        });
+        ok = r2.ok;
+      }catch(_){ ok = false; }
+    }
+    return ok;
+  }
+
+  async function updateLeadFull(id_lead, payload){
+    // best-effort: si existe PUT /leads/{id}
+    try{
+      const r = await fetch(`/leads/${id_lead}`, {
+        method:"PUT",
+        headers: { "Content-Type":"application/json", ...authHeaders() },
+        body: JSON.stringify(payload)
+      });
+      return r.ok;
+    }catch(_){
+      return false;
+    }
+  }
+
+  // ==== rendering ====
+  function applyQuery(list){
+    const q = norm(qs("#q").value.trim());
+    if (!q) return list;
+
+    return list.filter(l => {
+      const marca = MARCA_BY_ID.get(Number(l.id_marca))?.nombre || "";
+      const comuna = COM_BY_ID.get(Number(l.id_comuna))?.nombre || "";
+      const estado = getEstadoName(l.id_estado) || "";
+      const code = l.codigo_cliente || "";
+      const blob = norm([
+        l.nombre_cliente, l.telefono, l.email, marca, comuna, estado, code
+      ].join(" "));
+      return blob.includes(q);
+    });
+  }
+
+  function render(){
+    const filtered = applyQuery(ALL);
+    qs("#leadCount").textContent = `Leads: ${filtered.length}`;
+
+    renderKanban(filtered);
+    renderTable(filtered);
+  }
+
+  function renderKanban(list){
+    const board = qs("#board");
+    board.innerHTML = "";
+
+    // ordenar estados por "orden" si existe
+    const estados = [...CATALOG.estados_lead].sort((a,b)=>(Number(a.orden||0)-Number(b.orden||0)));
+
+    for (const st of estados){
+      const col = document.createElement("div");
+      col.className = "col";
+      col.dataset.estado = st.id_estado;
+
+      // borde columna con color de estado (lo pediste)
+      col.style.borderColor = st.color || "rgba(255,255,255,.12)";
+
+      const inCol = list.filter(x => Number(x.id_estado) === Number(st.id_estado));
+
+      col.innerHTML = `
+        <div class="col-head">
+          <div class="col-title">
+            <span>${st.nombre}</span>
+          </div>
+          <span class="badge">${inCol.length}</span>
+        </div>
+        <div class="drop" data-estado="${st.id_estado}"></div>
+      `;
+
+      const drop = col.querySelector(".drop");
+
+      // drop handlers
+      drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+      drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+      drop.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        drop.classList.remove("over");
+
+        const idLead = Number(e.dataTransfer.getData("text/plain") || 0);
+        if (!idLead) return;
+
+        const toEstado = Number(drop.dataset.estado);
+
+        // si cae en el mismo estado, nada
+        const lead = ALL.find(x => Number(x.id_lead) === idLead);
+        if (!lead) return;
+        if (Number(lead.id_estado) === toEstado) return;
+
+        // workflow ligero para “Confirmado” / “Declinado” (UI + persistencia best-effort)
+        const toName = (EST_BY_ID.get(toEstado)?.nombre || "").toLowerCase();
+
+        if (toName.includes("confirm")){
+          const res = await Swal.fire({
+            icon:"info",
+            title:"Confirmado",
+            html: `
+              <div style="text-align:left; font-weight:800; margin-bottom:8px;">Completa lo mínimo:</div>
+              <input id="ops" class="swal2-input" placeholder="Operadores (número)" inputmode="numeric">
+              <input id="pm" class="swal2-input" placeholder="Pre-montaje (texto / horas)">
+            `,
+            showCancelButton:true,
+            confirmButtonText:"Guardar",
+            cancelButtonText:"Cancelar",
+            preConfirm: () => {
+              const ops = document.getElementById("ops").value.trim();
+              const pm  = document.getElementById("pm").value.trim();
+              return { ops, pm };
+            }
+          });
+          if (!res.isConfirmed) return;
+
+          // guarda extra local (si backend no soporta)
+          EXTRAS[String(idLead)] = { ...(EXTRAS[String(idLead)]||{}), operadores: res.value.ops, pre_montaje: res.value.pm };
+          saveExtras();
+        }
+
+        const ok = await updateEstado(idLead, toEstado);
+        if (!ok){
+          await Swal.fire({ icon:"error", title:"No se pudo mover", text:"API de cambio de estado no respondió." });
+          return;
+        }
+
+        // update local
+        lead.id_estado = toEstado;
+        // re-merge extras
+        const merged = mergeExtra(lead);
+        Object.assign(lead, merged);
+
+        render();
+      });
+
+      // cards
+      for (const l of inCol){
+        drop.appendChild(makeCard(l));
+      }
+
+      board.appendChild(col);
+    }
+  }
+
+  function makeCard(l){
+    const card = document.createElement("div");
+    card.className = "card";
+    card.draggable = true;
+    card.dataset.id = l.id_lead;
+
+    const marca = MARCA_BY_ID.get(Number(l.id_marca))?.nombre || "—";
+    const comuna = COM_BY_ID.get(Number(l.id_comuna))?.nombre || "—";
+    const fecha = l.fecha_evento || "—";
+    const monto = fmtMoney(l.monto_cotizado || 0);
+
+    card.innerHTML = `
+      <div class="c-title">${(l.nombre_cliente || "—").toString().toUpperCase()}</div>
+      <div class="c-sub">
+        <span>📅 ${fecha}</span>
+        <span>📍 ${comuna}</span>
+      </div>
+      <div class="c-meta">
+        <span>🏷️ ${marca}</span>
+        <span>💰 ${monto}</span>
+      </div>
+      <div class="c-actions">
+        <button class="iBtn" title="Editar" data-act="edit">✏️</button>
+        <button class="iBtn" title="Llamar" data-act="tel">📞</button>
+        <button class="iBtn" title="WhatsApp" data-act="wa">💬</button>
+        <button class="iBtn" title="Cotizar" data-act="quote">🧾</button>
+      </div>
+    `;
+
+    card.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/plain", String(l.id_lead));
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    card.addEventListener("click", async (e) => {
+      const act = e.target?.dataset?.act;
+      if (!act) return;
+
+      if (act === "tel"){
+        if (!l.telefono) return;
+        location.href = `tel:${l.telefono}`;
+      }
+      if (act === "wa"){
+        if (!l.telefono) return;
+        const t = String(l.telefono).replace(/[^\d]/g,"");
+        window.open(`https://wa.me/${t}`, "_blank", "noopener,noreferrer");
+      }
+      if (act === "quote"){
+        // placeholder: aquí conectas cotizador real
+        Swal.fire({ icon:"info", title:"Cotizar", text:`Lead #${l.id_lead} → Cotizador (pendiente de amarre).` });
+      }
+      if (act === "edit"){
+        await openEdit(l);
+      }
+    });
+
+    return card;
+  }
+
+  function renderTable(list){
+    const tb = qs("#tbody");
+    tb.innerHTML = "";
+
+    for (const l of list){
+      const tr = document.createElement("tr");
+
+      const comuna = COM_BY_ID.get(Number(l.id_comuna))?.nombre || "—";
+      const marca = MARCA_BY_ID.get(Number(l.id_marca))?.nombre || "—";
+      const stName = getEstadoName(l.id_estado);
+      const stColor = getEstadoColor(l.id_estado);
+
+      tr.innerHTML = `
+        <td><b>${l.nombre_cliente || "—"}</b><div class="muted" style="font-size:11.5px">${l.codigo_cliente || ""}</div></td>
+        <td>${l.fecha_evento || "—"}</td>
+        <td>${comuna}</td>
+        <td>${marca}</td>
+        <td>
+          <span class="st">
+            <span class="dot" style="background:${stColor}"></span>
+            ${stName}
+          </span>
+        </td>
+        <td>
+          <div class="t-actions">
+            <button class="iBtn" title="Editar" data-act="edit">✏️</button>
+            <button class="iBtn" title="Llamar" data-act="tel">📞</button>
+            <button class="iBtn" title="WhatsApp" data-act="wa">💬</button>
+            <button class="iBtn" title="Cotizar" data-act="quote">🧾</button>
+          </div>
+        </td>
+      `;
+
+      tr.addEventListener("click", async (e) => {
+        const act = e.target?.dataset?.act;
+        if (!act) return;
+
+        if (act === "tel"){
+          if (!l.telefono) return;
+          location.href = `tel:${l.telefono}`;
+        }
+        if (act === "wa"){
+          if (!l.telefono) return;
+          const t = String(l.telefono).replace(/[^\d]/g,"");
+          window.open(`https://wa.me/${t}`, "_blank", "noopener,noreferrer");
+        }
+        if (act === "quote"){
+          Swal.fire({ icon:"info", title:"Cotizar", text:`Lead #${l.id_lead} → Cotizador (pendiente de amarre).` });
+        }
+        if (act === "edit"){
+          await openEdit(l);
+        }
+      });
+
+      tb.appendChild(tr);
+    }
+  }
+
+  // ==== modals ====
+  async function openEdit(l){
+    const marcaOpts = CATALOG.marcas.map(m => `<option value="${m.id_marca}" ${Number(l.id_marca)===Number(m.id_marca)?"selected":""}>${m.nombre}</option>`).join("");
+    const comunaOpts = CATALOG.comunas.map(c => `<option value="${c.id_comuna}" ${Number(l.id_comuna)===Number(c.id_comuna)?"selected":""}>${c.nombre}</option>`).join("");
+    const tipoOpts = CATALOG.tipos_cliente.map(t => `<option value="${t.id_tipo_cliente}" ${Number(l.id_tipo_cliente)===Number(t.id_tipo_cliente)?"selected":""}>${t.nombre||t.descripcion||("Tipo "+t.id_tipo_cliente)}</option>`).join("");
+
+    const res = await Swal.fire({
+      title: `Editar Lead #${l.id_lead}`,
+      html: `
+        <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Nombre</div>
+        <input id="e_nombre" class="swal2-input" value="${(l.nombre_cliente||"").replace(/"/g,"&quot;")}">
+
+        <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Email</div>
+        <input id="e_email" class="swal2-input" value="${(l.email||"").replace(/"/g,"&quot;")}">
+
+        <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Teléfono</div>
+        <input id="e_tel" class="swal2-input" value="${(l.telefono||"").replace(/"/g,"&quot;")}">
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Marca</div>
+            <select id="e_marca" class="swal2-input" style="height:44px">${marcaOpts}</select>
+          </div>
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Comuna</div>
+            <select id="e_comuna" class="swal2-input" style="height:44px">${comunaOpts}</select>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Tipo cliente</div>
+            <select id="e_tipo" class="swal2-input" style="height:44px">${tipoOpts}</select>
+          </div>
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Fecha evento</div>
+            <input id="e_fecha" class="swal2-input" value="${(l.fecha_evento||"").replace(/"/g,"&quot;")}">
+          </div>
+        </div>
+
+        <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Notas</div>
+        <textarea id="e_notas" class="swal2-textarea" style="min-height:90px">${(l.notas||"").replace(/</g,"&lt;")}</textarea>
+      `,
+      showCancelButton:true,
+      confirmButtonText:"Guardar",
+      cancelButtonText:"Cancelar",
+      preConfirm: () => ({
+        nombre_cliente: document.getElementById("e_nombre").value.trim(),
+        email: document.getElementById("e_email").value.trim(),
+        telefono: document.getElementById("e_tel").value.trim(),
+        id_marca: Number(document.getElementById("e_marca").value),
+        id_comuna: Number(document.getElementById("e_comuna").value),
+        id_tipo_cliente: Number(document.getElementById("e_tipo").value),
+        fecha_evento: document.getElementById("e_fecha").value.trim(),
+        notas: document.getElementById("e_notas").value.trim(),
+      })
+    });
+
+    if (!res.isConfirmed) return;
+
+    // best effort PUT /leads/{id}
+    const ok = await updateLeadFull(l.id_lead, res.value);
+
+    if (!ok){
+      await Swal.fire({
+        icon:"warning",
+        title:"API editar no disponible",
+        text:"No existe PUT /leads/{id} o falló. El cambio de estado sí funciona; edición completa depende del backend."
+      });
+      return;
+    }
+
+    await reload();
+  }
+
+  async function openCreate(){
+    const marcaOpts = CATALOG.marcas.map(m => `<option value="${m.id_marca}">${m.nombre}</option>`).join("");
+    const comunaOpts = CATALOG.comunas.map(c => `<option value="${c.id_comuna}">${c.nombre}</option>`).join("");
+    const tipoOpts = CATALOG.tipos_cliente.map(t => `<option value="${t.id_tipo_cliente}">${t.nombre||t.descripcion||("Tipo "+t.id_tipo_cliente)}</option>`).join("");
+
+    const res = await Swal.fire({
+      title:"Crear Lead",
+      html: `
+        <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Nombre</div>
+        <input id="c_nombre" class="swal2-input" placeholder="Nombre cliente">
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Email</div>
+            <input id="c_email" class="swal2-input" placeholder="email@cliente.cl">
+          </div>
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Teléfono</div>
+            <input id="c_tel" class="swal2-input" placeholder="+56...">
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Marca</div>
+            <select id="c_marca" class="swal2-input" style="height:44px">${marcaOpts}</select>
+          </div>
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Comuna</div>
+            <select id="c_comuna" class="swal2-input" style="height:44px">${comunaOpts}</select>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Tipo cliente</div>
+            <select id="c_tipo" class="swal2-input" style="height:44px">${tipoOpts}</select>
+          </div>
+          <div>
+            <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Fecha evento</div>
+            <input id="c_fecha" class="swal2-input" placeholder="YYYY-MM-DD">
+          </div>
+        </div>
+
+        <div style="text-align:left; font-weight:800; margin:6px 0 4px;">Notas</div>
+        <textarea id="c_notas" class="swal2-textarea" style="min-height:90px" placeholder="Notas"></textarea>
+      `,
+      showCancelButton:true,
+      confirmButtonText:"Crear",
+      cancelButtonText:"Cancelar",
+      preConfirm: () => ({
+        nombre_cliente: document.getElementById("c_nombre").value.trim(),
+        email: document.getElementById("c_email").value.trim(),
+        telefono: document.getElementById("c_tel").value.trim(),
+        id_marca: Number(document.getElementById("c_marca").value),
+        id_comuna: Number(document.getElementById("c_comuna").value),
+        id_tipo_cliente: Number(document.getElementById("c_tipo").value),
+        fecha_evento: document.getElementById("c_fecha").value.trim(),
+        notas: document.getElementById("c_notas").value.trim(),
+        plataforma: "MANUAL",
+      })
+    });
+
+    if (!res.isConfirmed) return;
+
+    // POST /leads (best effort)
+    try{
+      const r = await fetch("/leads", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", ...authHeaders() },
+        body: JSON.stringify(res.value)
+      });
+      if (!r.ok){
+        const t = await r.text();
+        throw new Error(t);
+      }
+      await reload();
+    }catch(err){
+      Swal.fire({ icon:"error", title:"No se pudo crear", text:"Revisa endpoint POST /leads y campos requeridos." });
+    }
+  }
+
+  // ==== view toggles ====
+  function setView(v){
+    VIEW = v;
+    qs("#btnKanban").classList.toggle("active", v==="kanban");
+    qs("#btnTable").classList.toggle("active", v==="table");
+    qs("#kanbanView").classList.toggle("active", v==="kanban");
+    qs("#tableView").classList.toggle("active", v==="table");
+  }
+
+  async function reload(){
+    await loadCatalogos();
+    await loadLeads();
+    render();
+  }
+
+  // ==== init ====
+  (function init(){
+    qs("#btnKanban").onclick = () => setView("kanban");
+    qs("#btnTable").onclick = () => setView("table");
+    qs("#q").addEventListener("input", render);
+    qs("#btnReload").onclick = reload;
+    qs("#btnCreate").onclick = openCreate;
+
+    // tema desde parent (panel.js también aplica directo por contentDocument, esto es extra)
+    window.addEventListener("message", (ev) => {
+      if (ev.data?.type === "theme"){
+        document.documentElement.classList.toggle("light", ev.data.mode === "light");
+      }
+    });
+
+    reload().catch(() => {
+      Swal.fire({ icon:"error", title:"Error", text:"No se pudo cargar Leads (token/API)." });
+    });
+  })();
+</script>
+</body>
+</html>

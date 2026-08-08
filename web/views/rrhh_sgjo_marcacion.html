@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>RRHH · SGJO · Marcación</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    html,body{height:100%;}
+    body{
+      margin:0;
+      padding:14px;
+      padding-bottom: max(18px, env(safe-area-inset-bottom));
+      background:transparent;
+      color:var(--text);
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior:contain;
+    }
+    .wrap{max-width:780px;margin:0 auto;padding-bottom:16px;}
+    .card{
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.32);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.18);
+    }
+    :root.light .card{ background: rgba(255,255,255,.86); border-color: rgba(0,0,0,.10); }
+    .ttl{font-weight:1100; letter-spacing:.12em; text-transform:uppercase; font-size:12px;}
+    .big{font-size:22px;font-weight:1200;margin-top:6px;}
+    .muted{opacity:.75;font-weight:850;font-size:12px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:6px 10px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.18);
+      font-weight:1000;font-size:12px;
+    }
+    .btn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      height:42px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;
+      padding:0 14px;
+      font-weight:1100;
+      cursor:pointer;
+      flex:1;
+      min-width:220px;
+      text-decoration:none;
+    }
+    .btn.primary{background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent);}
+    .btn:disabled{opacity:.6;cursor:not-allowed;}
+    .sel{
+      height:42px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;
+      padding:0 12px;
+      font-weight:1100;
+      flex:1;
+      min-width:220px;
+      outline:none;
+    }
+    .modal{
+      position:fixed; inset:0; z-index:60;
+      display:none; align-items:center; justify-content:center;
+      background: rgba(0,0,0,.55);
+      padding: 14px;
+    }
+    .modal .mcard{
+      width:min(780px, 96vw);
+      border:1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.88);
+      border-radius:18px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 70px rgba(0,0,0,.28);
+    }
+    :root.light .modal .mcard{ background: rgba(255,255,255,.92); border-color: rgba(0,0,0,.10); }
+    .modal .mttl{ font-weight:1100; letter-spacing:.10em; text-transform:uppercase; font-size:12px; opacity:.9; }
+    .modal .mbig{ font-size:18px; font-weight:1200; margin-top:6px; }
+    .modal .mrow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    .inp{
+      height:42px;border-radius:14px;
+      border:1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.18);
+      color:inherit;
+      padding:0 12px;
+      font-weight:1100;
+      min-width:220px;
+      flex:1;
+      outline:none;
+    }
+    :root.light .inp{ background: rgba(255,255,255,.82); border-color: rgba(0,0,0,.10); }
+    .seg{
+      display:flex; gap:10px; flex-wrap:wrap;
+      padding:10px; border:1px solid rgba(148,163,184,.18); border-radius:14px;
+      background: rgba(2,6,23,.18);
+    }
+    :root.light .seg{ background: rgba(0,0,0,.03); border-color: rgba(0,0,0,.10); }
+    .seg label{ display:flex; gap:8px; align-items:center; font-weight:1100; cursor:pointer; }
+    .seg input{ transform: scale(1.1); }
+    .hint{ font-size:12px; opacity:.72; line-height:1.35; }
+    pre{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.35;margin:10px 0 0 0;opacity:.85}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="ttl">RRHH · SGJO</div>
+      <div class="big">Marcación</div>
+      <div class="muted">QR fijo + geolocalización + dispositivo enrolado + hora servidor.</div>
+
+      <div class="row">
+        <span class="pill" id="pSede">Sede: —</span>
+        <span class="pill" id="pPunto">Punto: —</span>
+        <span class="pill" id="pModo">Modo: —</span>
+        <span class="pill" id="pPolicy">Método: —</span>
+      </div>
+
+      <div class="row" style="margin-top:14px">
+        <a class="btn primary" id="btnEnroll" href="/crm/web/login.html?next=/crm/web/views/rrhh_sgjo_marcacion.html">Enrolar dispositivo</a>
+        <a class="btn" id="btnLogin" href="/crm/web/login.html?next=/crm/web/views/rrhh_sgjo_marcacion.html">Iniciar sesión</a>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="pill" id="pillTipo">Tipo sugerido: —</span>
+        <button class="btn" id="btnToggleTipo" type="button" style="min-width:220px;flex:1">Cambiar a salida</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="pill" id="pDev">Device: —</span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select class="sel" id="selPunto" title="Punto de marcación" style="display:none">
+          <option value="">Selecciona punto…</option>
+        </select>
+        <select class="sel" id="selMethod" title="Método de marcación">
+          <option value="QR">QR</option>
+          <option value="GEO">GPS</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn primary" id="btnMark" type="button" disabled>Marcar</button>
+      </div>
+
+      <pre id="log">Cargando…</pre>
+    </div>
+  </div>
+
+  <div class="modal" id="enrollModal" role="dialog" aria-modal="true">
+    <div class="mcard">
+      <div class="mttl">RRHH · SGJO</div>
+      <div class="mbig">Enrolar dispositivo</div>
+      <div class="hint" style="margin-top:6px;">
+        El enrolamiento es por dispositivo/navegador. Si cambias de teléfono o navegador, debes enrolar de nuevo.
+      </div>
+
+      <div class="mrow">
+        <div class="seg" style="flex:1;min-width:260px;">
+          <label><input type="radio" name="enrollKind" value="PC" checked> Este PC (navegador actual)</label>
+          <label><input type="radio" name="enrollKind" value="PHONE"> Mi teléfono</label>
+        </div>
+      </div>
+
+      <div class="mrow">
+        <input class="inp" id="enrollDeviceName" placeholder="Nombre del dispositivo (ej: PC Oficina Chrome, iPhone Mauricio)" />
+      </div>
+
+      <div class="mrow" id="enrollPhoneRow" style="display:none;">
+        <input class="inp" id="enrollPhone" placeholder="Teléfono (ej: +56912345678)" value="+56" />
+      </div>
+
+      <div class="mrow">
+        <button class="btn" id="enrollCancel" type="button" style="min-width:160px;flex:0">Cancelar</button>
+        <button class="btn primary" id="enrollDo" type="button" style="min-width:220px;flex:1">Enrolar PC</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/rrhh_sgjo_marcacion.js?v=20260519d"></script>
+</body>
+</html>

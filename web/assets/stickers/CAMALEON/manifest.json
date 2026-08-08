@@ -1,0 +1,35 @@
+{
+  "brand": "CAMALEON",
+  "stickers": [
+    {
+      "label": "CONFIRMADO",
+      "src": "/web/assets/stickers/CAMALEON/confirmado.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "OK",
+      "src": "/web/assets/stickers/CAMALEON/ok.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "GRACIAS",
+      "src": "/web/assets/stickers/CAMALEON/gracias.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "COTIZACION",
+      "src": "/web/assets/stickers/CAMALEON/cotizacion.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "SEGUIMIENTO",
+      "src": "/web/assets/stickers/CAMALEON/seguimiento.svg",
+      "type": "image/svg+xml"
+    },
+    {
+      "label": "EN CAMINO",
+      "src": "/web/assets/stickers/CAMALEON/en_camino.svg",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>Settings • Notificaciones (correo)</title>
+  <style>
+    body{padding:18px;}
+    .wrap{max-width:none;margin:0 auto;}
+    .muted{opacity:.75;}
+    .card{margin-bottom:14px;}
+    .btn{background:#22c55e; color:#062315; border:none; padding:8px 12px; border-radius:10px; font-weight:1000; cursor:pointer;}
+    .btn.secondary{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.15);}
+    .btn.ghost{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.10);}
+    input,textarea{width:100%; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px;}
+    textarea{resize:vertical;}
+    .grid{display:grid; grid-template-columns: 320px 1fr; gap:12px;}
+    .col{border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.10); border-radius:14px; padding:12px;}
+    .pill{display:inline-block; padding:3px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.14); font-size:12px; opacity:.85;}
+    .procBtn{
+      width:100%;
+      text-align:left;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 10px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.12);
+      color:inherit;
+      cursor:pointer;
+    }
+    .procBtn:hover{background:rgba(255,255,255,.05);}
+    .procBtn.active{border-color:rgba(34,197,94,.55); background:rgba(34,197,94,.12);}
+    .tabs{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+    .tab{padding:8px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.12); color:inherit; font-weight:1000; cursor:pointer;}
+    .tab.active{border-color:rgba(34,197,94,.6); background:rgba(34,197,94,.15);}
+    .row{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+    .sectionTitle{font-weight:1000; margin-top:12px; margin-bottom:6px;}
+    .list{border:1px solid rgba(255,255,255,.10); border-radius:12px; background:rgba(0,0,0,.08); padding:8px; max-height:260px; overflow:auto;}
+    .item{display:flex; gap:10px; align-items:flex-start; padding:8px; border-radius:10px;}
+    .item:hover{background:rgba(255,255,255,.05);}
+    .item input[type=checkbox]{width:auto; margin-top:2px;}
+    .item .t{line-height:1.15;}
+    .item .t .n{font-weight:1000;}
+    .item .t .s{font-size:12px; opacity:.75; margin-top:2px;}
+    .twoCol{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+    .hr{border-top:1px solid rgba(255,255,255,.08); margin-top:12px; padding-top:12px;}
+    .chips{display:flex; gap:8px; flex-wrap:wrap;}
+    .chip{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(0,0,0,.12);
+      font-weight:1000;
+      cursor:default;
+    }
+    .chip .x{
+      width:20px; height:20px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.18);
+      background:rgba(255,255,255,.06);
+      color:inherit;
+      display:inline-flex; align-items:center; justify-content:center;
+      cursor:pointer;
+      font-weight:1000;
+      line-height:1;
+    }
+    .chip .x:hover{background:rgba(255,255,255,.10);}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card col">
+      <div class="row">
+        <div>
+          <h2 style="margin:0 0 4px 0">Notificaciones (correo)</h2>
+          <div class="muted">Selecciona un proceso → define <b>To / CC / BCC</b> por roles, por usuarios y/o correos extra.</div>
+        </div>
+        <button class="btn secondary" id="btnReload" type="button">Actualizar</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="grid">
+        <div class="col">
+          <div class="row" style="align-items:flex-end;">
+            <div style="font-weight:1000">Procesos</div>
+            <span class="pill" id="procCnt">—</span>
+          </div>
+          <div style="margin-top:10px;">
+            <input id="procQ" placeholder="Buscar proceso..." />
+          </div>
+          <div id="procList" style="margin-top:10px; display:flex; flex-direction:column; gap:8px; max-height:70vh; overflow:auto;"></div>
+        </div>
+
+        <div class="col">
+          <div class="row" style="align-items:flex-start;">
+            <div>
+              <div id="procTitle" style="font-weight:1000; font-size:16px;">Selecciona un proceso</div>
+              <div id="procKey" class="muted" style="margin-top:4px;"></div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+              <label class="muted" style="display:flex; gap:8px; align-items:center; font-weight:1000;">
+                <input type="checkbox" id="procEnabled" checked style="width:auto" />
+                Habilitado
+              </label>
+              <button class="btn" id="btnSave" type="button" disabled>Guardar</button>
+            </div>
+          </div>
+
+          <div class="hr">
+            <div class="row">
+              <div class="tabs" role="tablist" aria-label="Tipo de destinatario">
+                <button class="tab active" data-kind="to" type="button">To</button>
+                <button class="tab" data-kind="cc" type="button">CC</button>
+                <button class="tab" data-kind="bcc" type="button">BCC</button>
+              </div>
+              <div class="muted" id="selSummary">—</div>
+            </div>
+            <div style="margin-top:10px; display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+              <button class="btn ghost" id="btnClearKind" type="button" disabled>Limpiar</button>
+            </div>
+
+            <div class="sectionTitle">Seleccionados</div>
+            <div id="selWrap" class="list" style="max-height:none;">
+              <div id="selEmpty" class="muted">—</div>
+              <div id="selChips" class="chips" style="display:none;"></div>
+            </div>
+
+            <div class="sectionTitle">Roles</div>
+            <div id="rolesWrap" class="list"></div>
+
+            <div class="sectionTitle">Usuarios</div>
+            <input id="userQ" placeholder="Buscar usuarios (nombre, rol, email)..." />
+            <div id="usersWrap" class="list" style="margin-top:8px;"></div>
+
+            <div class="sectionTitle">Correos extra (coma o salto de línea)</div>
+            <textarea id="extraEmails" style="min-height:84px;"></textarea>
+
+            <div class="sectionTitle">Nota (opcional)</div>
+            <input id="procNote" placeholder="opcional" />
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const qs = (s, el=document)=>el.querySelector(s);
+    const API_BASE = (() => {
+      try{
+        const h = String(location.hostname || "").toLowerCase();
+        const isLocal = (h === "localhost" || h === "127.0.0.1");
+        return isLocal ? "" : "/crm";
+      }catch(_){ return ""; }
+    })();
+    const apiURL = (p) => {
+      const s = String(p || "");
+      if (!s) return s;
+      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
+      if (s.startsWith("/crm/")) return s;
+      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
+    };
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+    }
+    async function api(url, opts={}){
+      const r = await fetch(apiURL(url), { ...opts, headers: authHeaders({ "Content-Type":"application/json", ...(opts.headers||{}) }) });
+      const data = await r.json().catch(()=>null);
+      if (!r.ok) throw new Error((data && (data.detail||data.message)) || ("HTTP "+r.status));
+      return data;
+    }
+    const esc = (s)=>String(s||"").replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
+    const roleKey = (r)=>String(r||"").toUpperCase().trim();
+    const emailRe = /^[^\s@<>;,]+@[^\s@<>;,]+\.[^\s@<>;,]+$/i;
+
+    const state = { procs:[], users:[], roles:[], byKey:new Map(), selectedKey:"", kind:"to" };
+    let usersById = new Map();
+
+    function filterUsers(list, q){
+      const qq = String(q||"").trim().toLowerCase();
+      if (!qq) return list;
+      return list.filter(u=>{
+        const t = (String(u.nombre||"") + " " + String(u.email||"") + " " + String(u.rol||"")).toLowerCase();
+        return t.includes(qq);
+      });
+    }
+    function getCfg(){
+      return state.byKey.get(state.selectedKey) || {};
+    }
+    function getSelIds(kind){
+      const cfg = getCfg();
+      const arr = cfg[`${kind}_user_ids`] || [];
+      return new Set((arr||[]).map(x=>Number(x||0)).filter(n=>n>0));
+    }
+    function getSelRoles(kind){
+      const cfg = getCfg();
+      const arr = cfg[`${kind}_roles`] || [];
+      return new Set((arr||[]).map(x=>String(x||"").trim().toUpperCase()).filter(Boolean));
+    }
+
+    function renderProcList(){
+      const q = String(qs("#procQ").value||"").trim().toLowerCase();
+      const items = (state.procs||[]).filter(p=>{
+        if (!q) return true;
+        return (String(p.label||"")+" "+String(p.process_key||"")).toLowerCase().includes(q);
+      });
+      qs("#procCnt").textContent = String(items.length);
+      qs("#procList").innerHTML = items.map(p=>{
+        const k = String(p.process_key||"");
+        const en = (p.enabled === null || p.enabled === undefined) ? true : !!p.enabled;
+        const isSel = (k === state.selectedKey);
+        return `
+          <button class="procBtn ${isSel ? "active":""}" data-k="${esc(k)}" type="button">
+            <div style="min-width:0;">
+              <div style="font-weight:1000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(p.label||k)}</div>
+              <div class="muted" style="font-size:12px; margin-top:2px;">${esc(k)} · ${en ? "ON":"OFF"}</div>
+            </div>
+            <span class="pill" style="${en ? "border-color:rgba(34,197,94,.45); background:rgba(34,197,94,.10)" : ""}">${en ? "ON":"OFF"}</span>
+          </button>
+        `;
+      }).join("") || `<div class="muted">Sin procesos</div>`;
+    }
+
+    function updateSummary(){
+      const k = state.kind;
+      const cfg = getCfg();
+      const roles = (cfg[`${k}_roles`]||[]).length;
+      const users = (cfg[`${k}_user_ids`]||[]).length;
+      const extraCnt = parseExtras(cfg[`${k}_list`]||"").length;
+      qs("#selSummary").textContent = `${k.toUpperCase()}: roles ${roles} · usuarios ${users} · extras ${extraCnt}`;
+      qs("#btnClearKind").disabled = !state.selectedKey;
+    }
+
+    function parseExtras(raw){
+      const matches = String(raw||"").match(/[^\s,;<>]+@[^\s,;<>]+\.[^\s,;<>]+/g) || [];
+      const out = [];
+      const seen = new Set();
+      for (const item of matches){
+        const email = String(item||"").trim().toLowerCase();
+        if (!emailRe.test(email) || seen.has(email)) continue;
+        seen.add(email);
+        out.push(email);
+      }
+      return out;
+    }
+
+    function invalidExtras(raw){
+      const valid = new Set(parseExtras(raw).map(x=>x.toLowerCase()));
+      return String(raw||"")
+        .split(/[,\n;]+/)
+        .map(s=>s.trim())
+        .filter(Boolean)
+        .filter(s=>!valid.has(s.toLowerCase()) && !emailRe.test(s.toLowerCase()));
+    }
+
+    function setExtras(list){
+      const cfg = getCfg();
+      cfg[`${state.kind}_list`] = (list || []).join("\\n");
+      state.byKey.set(state.selectedKey, cfg);
+      qs("#extraEmails").value = cfg[`${state.kind}_list`] || "";
+    }
+
+    function renderSelected(){
+      const cfg = getCfg();
+      const k = state.kind;
+      const roles = (cfg[`${k}_roles`]||[]).map(x=>String(x||"").trim()).filter(Boolean);
+      const userIds = (cfg[`${k}_user_ids`]||[]).map(x=>Number(x||0)).filter(n=>n>0);
+      const extras = parseExtras(cfg[`${k}_list`]||"");
+
+      const chips = [];
+      for (const r of roles){
+        chips.push({ t:"role", key:r, label:`ROL: ${r}` });
+      }
+      for (const id of userIds){
+        const u = usersById.get(id) || {};
+        const name = String(u.nombre||"ID "+id).trim();
+        const rol = String(u.rol||"").trim();
+        chips.push({ t:"user", key:String(id), label:`USR: ${name}${rol ? " · "+rol : ""}` });
+      }
+      for (const e of extras){
+        chips.push({ t:"extra", key:e, label:`MAIL: ${e}` });
+      }
+
+      const wrapEmpty = qs("#selEmpty");
+      const wrapChips = qs("#selChips");
+      if (!chips.length){
+        wrapEmpty.style.display = "";
+        wrapChips.style.display = "none";
+        wrapChips.innerHTML = "";
+        return;
+      }
+      wrapEmpty.style.display = "none";
+      wrapChips.style.display = "flex";
+      wrapChips.innerHTML = chips.map(c=>`
+        <span class="chip" data-t="${esc(c.t)}" data-k="${esc(c.key)}" title="${esc(c.label)}">
+          <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px;">${esc(c.label)}</span>
+          <button class="x" type="button" aria-label="Eliminar">×</button>
+        </span>
+      `).join("");
+    }
+
+    function renderRoles(){
+      const k = state.kind;
+      const sel = getSelRoles(k);
+      const roles = (state.roles||[]).map(r=>String(r||"").trim()).filter(Boolean);
+      qs("#rolesWrap").innerHTML = `
+        <div class="twoCol">
+          ${roles.map(name=>{
+            const rk = roleKey(name);
+            const checked = sel.has(rk) ? "checked" : "";
+            return `
+              <label class="item">
+                <input type="checkbox" data-kind="role" data-role="${esc(rk)}" ${checked}/>
+                <span class="t"><div class="n">${esc(name)}</div></span>
+              </label>
+            `;
+          }).join("")}
+        </div>
+      ` || `<div class="muted">Sin roles</div>`;
+    }
+
+    function renderUsers(){
+      const k = state.kind;
+      const q = String(qs("#userQ").value||"").trim().toLowerCase();
+      const sel = getSelIds(k);
+      const usersSorted = [...(state.users||[])].sort((a,b)=>{
+        const ra = roleKey(a.rol), rb = roleKey(b.rol);
+        if (ra !== rb) return ra.localeCompare(rb);
+        return String(a.nombre||"").toLowerCase().localeCompare(String(b.nombre||"").toLowerCase());
+      });
+      const list = filterUsers(usersSorted, q).slice(0, 300);
+      qs("#usersWrap").innerHTML = list.map(u=>{
+        const id = Number(u.id_usuario||0) || 0;
+        const checked = sel.has(id) ? "checked" : "";
+        const name = String(u.nombre||"").trim();
+        const rol = String(u.rol||"").trim();
+        const email = String(u.email||"").trim();
+        return `
+          <label class="item">
+            <input type="checkbox" data-kind="user" data-id="${id}" ${checked}/>
+            <span class="t">
+              <div class="n">${esc(name || ("ID "+id))}</div>
+              <div class="s">${esc(rol)}${email ? " · "+esc(email) : ""}</div>
+            </span>
+          </label>
+        `;
+      }).join("") || `<div class="muted">Sin usuarios</div>`;
+    }
+
+    function syncFormFromCfg(){
+      const cfg = getCfg();
+      const en = (cfg.enabled === null || cfg.enabled === undefined) ? true : !!cfg.enabled;
+      qs("#procEnabled").checked = en;
+      qs("#procNote").value = String(cfg.note || "");
+      qs("#extraEmails").value = String(cfg[`${state.kind}_list`] || "");
+      renderSelected();
+      renderRoles();
+      renderUsers();
+      updateSummary();
+      qs("#btnSave").disabled = !state.selectedKey;
+      qs("#btnClearKind").disabled = !state.selectedKey;
+    }
+
+    function selectProc(k){
+      state.selectedKey = String(k||"");
+      const cfg = getCfg();
+      qs("#procTitle").textContent = String(cfg.label || state.selectedKey || "Proceso");
+      qs("#procKey").textContent = state.selectedKey;
+      syncFormFromCfg();
+      renderProcList();
+    }
+
+    async function init(){
+      const [p,u,r] = await Promise.all([
+        api("/admin/notify_routes/email/processes"),
+        api("/admin/notify_routes/email/users"),
+        api("/admin/notify_routes/email/roles"),
+      ]);
+      state.procs = p.items || [];
+      state.users = u.items || [];
+      usersById = new Map((state.users||[]).map(x=>[Number(x.id_usuario||0), x]).filter(([id,_])=>id>0));
+      state.roles = r.items || [];
+      state.byKey = new Map(state.procs.map(x=>[String(x.process_key||""), { ...x }]));
+      renderProcList();
+      if (state.procs.length) selectProc(String(state.procs[0].process_key||""));
+    }
+
+    qs("#procQ").addEventListener("input", renderProcList);
+    qs("#procList").addEventListener("click", (ev)=>{
+      const btn = ev.target && ev.target.closest && ev.target.closest("button[data-k]");
+      if (!btn) return;
+      selectProc(btn.getAttribute("data-k"));
+    });
+
+    qs("#userQ").addEventListener("input", renderUsers);
+    qs("#extraEmails").addEventListener("input", ()=>{
+      if (!state.selectedKey) return;
+      const cfg = getCfg();
+      cfg[`${state.kind}_list`] = parseExtras(qs("#extraEmails").value || "").join("\n");
+      state.byKey.set(state.selectedKey, cfg);
+      updateSummary();
+      renderSelected();
+    });
+    qs("#extraEmails").addEventListener("blur", ()=>{
+      if (!state.selectedKey) return;
+      const raw = qs("#extraEmails").value || "";
+      const ignored = invalidExtras(raw);
+      const cfg = getCfg();
+      cfg[`${state.kind}_list`] = parseExtras(raw).join("\n");
+      state.byKey.set(state.selectedKey, cfg);
+      qs("#extraEmails").value = cfg[`${state.kind}_list`] || "";
+      if (ignored.length) {
+        alert("Texto ignorado porque no es correo válido: " + ignored.slice(0, 6).join(", "));
+      }
+      syncFormFromCfg();
+    });
+    document.querySelectorAll(".tab").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
+        btn.classList.add("active");
+        state.kind = String(btn.getAttribute("data-kind")||"to");
+        syncFormFromCfg();
+      });
+    });
+
+    document.body.addEventListener("change", (ev)=>{
+      const t = ev.target;
+      if (!(t && t.matches && t.matches("input[type=checkbox]"))) return;
+      if (!state.selectedKey) return;
+      const cfg = getCfg();
+      const kind = String(t.getAttribute("data-kind")||"");
+      if (kind === "user"){
+        const id = Number(t.getAttribute("data-id")||0) || 0;
+        const key = `${state.kind}_user_ids`;
+        const cur = Array.isArray(cfg[key]) ? [...cfg[key]] : [];
+        const set = new Set(cur.map(x=>Number(x||0)).filter(n=>n>0));
+        if (t.checked) set.add(id); else set.delete(id);
+        cfg[key] = Array.from(set);
+        state.byKey.set(state.selectedKey, cfg);
+        updateSummary();
+        renderSelected();
+      } else if (kind === "role"){
+        const role = String(t.getAttribute("data-role")||"").trim().toUpperCase();
+        const key = `${state.kind}_roles`;
+        const cur = Array.isArray(cfg[key]) ? [...cfg[key]] : [];
+        const set = new Set(cur.map(x=>String(x||"").trim().toUpperCase()).filter(Boolean));
+        if (t.checked) set.add(role); else set.delete(role);
+        cfg[key] = Array.from(set);
+        state.byKey.set(state.selectedKey, cfg);
+        updateSummary();
+        renderSelected();
+      }
+    });
+
+    qs("#selChips").addEventListener("click", (ev)=>{
+      const btn = ev.target && ev.target.closest && ev.target.closest("button.x");
+      if (!btn) return;
+      const chip = btn.closest(".chip");
+      if (!chip || !state.selectedKey) return;
+      const t = chip.getAttribute("data-t") || "";
+      const k = chip.getAttribute("data-k") || "";
+      const cfg = getCfg();
+      if (t === "role"){
+        const key = `${state.kind}_roles`;
+        cfg[key] = (cfg[key]||[]).map(x=>String(x||"").trim().toUpperCase()).filter(x=>x && x !== String(k).trim().toUpperCase());
+      } else if (t === "user"){
+        const id = Number(k||0) || 0;
+        const key = `${state.kind}_user_ids`;
+        cfg[key] = (cfg[key]||[]).map(x=>Number(x||0)).filter(n=>n>0 && n !== id);
+      } else if (t === "extra"){
+        const list = parseExtras(cfg[`${state.kind}_list`]||"").filter(e=>e.toLowerCase() !== String(k||"").trim().toLowerCase());
+        cfg[`${state.kind}_list`] = list.join("\\n");
+        qs("#extraEmails").value = cfg[`${state.kind}_list`] || "";
+      }
+      state.byKey.set(state.selectedKey, cfg);
+      syncFormFromCfg();
+    });
+
+    qs("#btnReload").onclick = ()=>init().catch(e=>alert(String(e.message||e)));
+    qs("#btnClearKind").onclick = ()=>{
+      if (!state.selectedKey) return;
+      const cfg = getCfg();
+      cfg[`${state.kind}_roles`] = [];
+      cfg[`${state.kind}_user_ids`] = [];
+      cfg[`${state.kind}_list`] = "";
+      state.byKey.set(state.selectedKey, cfg);
+      syncFormFromCfg();
+    };
+
+    qs("#btnSave").onclick = async ()=>{
+      if (!state.selectedKey) return;
+      const cfg = getCfg();
+      cfg.to_list = parseExtras(cfg.to_list || "").join("\n");
+      cfg.cc_list = parseExtras(cfg.cc_list || "").join("\n");
+      cfg.bcc_list = parseExtras(cfg.bcc_list || "").join("\n");
+      const payload = {
+        enabled: !!qs("#procEnabled").checked,
+        note: qs("#procNote").value || "",
+        to_user_ids: cfg.to_user_ids || [],
+        cc_user_ids: cfg.cc_user_ids || [],
+        bcc_user_ids: cfg.bcc_user_ids || [],
+        to_roles: cfg.to_roles || [],
+        cc_roles: cfg.cc_roles || [],
+        bcc_roles: cfg.bcc_roles || [],
+        to_list: cfg.to_list || "",
+        cc_list: cfg.cc_list || "",
+        bcc_list: cfg.bcc_list || "",
+      };
+      const btn = qs("#btnSave");
+      btn.disabled = true;
+      try{
+        const r = await api(`/admin/notify_routes/email/${encodeURIComponent(state.selectedKey)}`, { method:"PUT", body: JSON.stringify(payload) });
+        const item = r.item || {};
+        item.label = cfg.label || item.label;
+        state.byKey.set(state.selectedKey, { ...cfg, ...item });
+        btn.textContent = "OK";
+        setTimeout(()=>{ btn.textContent="Guardar"; btn.disabled=false; }, 900);
+        renderProcList();
+        updateSummary();
+      }catch(e){
+        btn.disabled=false;
+        alert(String(e.message||e));
+      }
+    };
+
+    init().catch(e=>alert(String(e.message||e)));
+  </script>
+</body>
+</html>
