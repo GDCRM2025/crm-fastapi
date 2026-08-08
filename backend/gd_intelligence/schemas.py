@@ -78,3 +78,13 @@ class SiteUpdate(BaseModel):
     @classmethod
     def validate_optional_domain(cls, value: str | None) -> str | None:
         return normalize_domain(value) if value is not None else None
+
+
+class UTMBuildRequest(BaseModel):
+    site_id: int = Field(gt=0)
+    url: str = Field(min_length=8, max_length=2048)
+    utm_source: str = Field(min_length=1, max_length=160)
+    utm_medium: str = Field(min_length=1, max_length=160)
+    utm_campaign: str = Field(min_length=1, max_length=200)
+    utm_term: str | None = Field(default=None, max_length=200)
+    utm_content: str | None = Field(default=None, max_length=200)

@@ -5,8 +5,15 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.core.database import engine
 from backend.gd_intelligence.permissions import PERMISSIONS, has_permission, resolve_permissions
-from backend.gd_intelligence.repository import create_site, list_sites, schema_ready, update_site
-from backend.gd_intelligence.schemas import SiteCreate, SiteUpdate
+from backend.gd_intelligence.repository import (
+    create_site,
+    create_utm_link,
+    list_sites,
+    list_utm_links,
+    schema_ready,
+    update_site,
+)
+from backend.gd_intelligence.schemas import SiteCreate, SiteUpdate, UTMBuildRequest
 from backend.routers.auth import get_current_user
 
 
@@ -98,3 +105,29 @@ def sites_update(site_id: int, payload: SiteUpdate, user: dict = Depends(get_cur
         if item is None:
             raise HTTPException(status_code=404, detail="Sitio no encontrado.")
     return {"ok": True, "item": dict(item)}
+
+
+@router.get("/campaigns/utm")
+def utm_list(
+    site_id: int | None = Query(default=None, gt=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+):
+    with engine.connect() as conn:
+        _require(conn, user, "web_intelligence_campaigns")
+        _require_schema(conn)
+        return {"ok": True, "items": list_utm_links(conn, site_id, limit)}
+
+
+@router.post("/campaigns/utm", status_code=201)
+def utm_create(payload: UTMBuildRequest, user: dict = Depends(get_current_user)):
+    try:
+        with engine.begin() as conn:
+            _require(conn, user, "web_intelligence_campaigns")
+            _require_schema(conn)
+            item = create_utm_link(conn, payload.model_dump(), _actor(user))
+            if item is None:
+                raise HTTPException(status_code=404, detail="Sitio no encontrado o deshabilitado.")
+        return {"ok": True, "item": item}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

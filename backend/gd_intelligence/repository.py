@@ -5,6 +5,8 @@ from typing import Any
 
 from sqlalchemy import text
 
+from backend.gd_intelligence.utm import build_utm_url, campaign_identifier
+
 
 def schema_ready(conn) -> bool:
     return bool(conn.execute(text("SELECT to_regclass('public.wi_sites') IS NOT NULL")).scalar())
@@ -85,3 +87,69 @@ def update_site(conn, site_id: int, changes: dict[str, Any], actor: str) -> dict
         ),
         params,
     ).mappings().one_or_none()
+
+
+def create_utm_link(conn, payload: dict[str, Any], actor: str) -> dict[str, Any] | None:
+    site = conn.execute(
+        text("SELECT id,code FROM public.wi_sites WHERE id=:id AND enabled"),
+        {"id": payload["site_id"]},
+    ).mappings().one_or_none()
+    if site is None:
+        return None
+    sequence = int(conn.execute(text("SELECT nextval('public.wi_campaign_identifier_seq')")).scalar_one())
+    identifier = campaign_identifier(str(site["code"]), sequence)
+    generated_url = build_utm_url(
+        payload["url"],
+        utm_source=payload["utm_source"],
+        utm_medium=payload["utm_medium"],
+        utm_campaign=payload["utm_campaign"],
+        utm_term=payload.get("utm_term"),
+        utm_content=payload.get("utm_content"),
+    )
+    row = conn.execute(
+        text(
+            """
+            INSERT INTO public.wi_utm_links(
+              identifier,site_id,base_url,generated_url,utm_source,utm_medium,
+              utm_campaign,utm_term,utm_content,created_by
+            ) VALUES (
+              :identifier,:site_id,:base_url,:generated_url,:utm_source,:utm_medium,
+              :utm_campaign,:utm_term,:utm_content,:actor
+            )
+            RETURNING id,identifier,site_id,base_url,generated_url,utm_source,utm_medium,
+                      utm_campaign,utm_term,utm_content,created_by,created_at
+            """
+        ),
+        {
+            "identifier": identifier,
+            "site_id": payload["site_id"],
+            "base_url": payload["url"],
+            "generated_url": generated_url,
+            "utm_source": payload["utm_source"],
+            "utm_medium": payload["utm_medium"],
+            "utm_campaign": payload["utm_campaign"],
+            "utm_term": payload.get("utm_term"),
+            "utm_content": payload.get("utm_content"),
+            "actor": actor,
+        },
+    ).mappings().one()
+    return dict(row)
+
+
+def list_utm_links(conn, site_id: int | None, limit: int) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT u.id,u.identifier,u.site_id,s.code AS site_code,s.name AS site_name,
+                   u.base_url,u.generated_url,u.utm_source,u.utm_medium,u.utm_campaign,
+                   u.utm_term,u.utm_content,u.created_by,u.created_at
+            FROM public.wi_utm_links u
+            JOIN public.wi_sites s ON s.id=u.site_id
+            WHERE (:site_id IS NULL OR u.site_id=:site_id)
+            ORDER BY u.created_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"site_id": site_id, "limit": min(max(limit, 1), 500)},
+    ).mappings()
+    return [dict(row) for row in rows]
