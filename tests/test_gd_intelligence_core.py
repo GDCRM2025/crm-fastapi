@@ -119,5 +119,25 @@ class UTMTests(unittest.TestCase):
         self.assertEqual(campaign_identifier("cam", 841, datetime(2026, 8, 8)), "GD-CAM-MKT-2026-00841")
 
 
+class DashboardContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (ROOT / "web/views/gd_intelligence.html").read_text()
+        cls.panel = (ROOT / "web/js/panel.js").read_text()
+
+    def test_dashboard_uses_authenticated_first_party_endpoints(self):
+        self.assertIn("/api/gd-intelligence/permissions/me", self.html)
+        self.assertIn("/api/gd-intelligence/overview", self.html)
+        self.assertIn("authHeaders", self.html)
+
+    def test_dashboard_honors_configure_and_campaign_permissions(self):
+        self.assertIn("web_intelligence_configure", self.html)
+        self.assertIn("web_intelligence_campaigns", self.html)
+
+    def test_dashboard_is_reachable_from_panel_menu(self):
+        self.assertIn('id: "gd_intelligence"', self.panel)
+        self.assertIn('/web/views/gd_intelligence.html', self.panel)
+
+
 if __name__ == "__main__":
     unittest.main()

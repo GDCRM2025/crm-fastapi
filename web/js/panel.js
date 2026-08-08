@@ -2480,6 +2480,16 @@ const MENU = [
     ]
   },
   {
+    id: "gd_intelligence",
+    ico: "\u{1F4E1}",
+    title: "GD Intelligence",
+    items: [
+      { id: "gdi_overview", label: "Dashboard web", url: "/web/views/gd_intelligence.html?v=20260808-1" },
+      { id: "gdi_sites", label: "Sitios e integraciones", url: "/web/views/gd_intelligence.html?v=20260808-1#sites" },
+      { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260808-1#utm" }
+    ]
+  },
+  {
     id: "emkt",
     ico: "\u{1F4E3}",
     title: "E\u2011Mkt",
