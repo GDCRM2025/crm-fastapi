@@ -4,7 +4,7 @@ Actualizado: 2026-08-08
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
-| 0 Auditoría | DONE | PASS | N/A | N/A | Estado live de VM/DB pendiente por red |
+| 0 Auditoría | DONE | PASS | N/A | N/A | VM/DB/backup verificados; consola Proxmox pendiente |
 | 1 Arquitectura base | DONE | PASS | DONE | NOT_DEPLOYED | Módulo y API base |
 | 2 RBAC y views | PARTIAL | PASS | PARTIAL | NOT_DEPLOYED | Permisos funcionales listos; UI pendiente |
 | 3 Sitios | DONE | PASS | NOT_CONFIGURED | NOT_DEPLOYED | CAM/EXP/GOU/DEL seed; extensible |
@@ -35,4 +35,7 @@ Actualizado: 2026-08-08
 - 14 pruebas unitarias GD Intelligence: PASS.
 - Compilación Python del módulo y router: PASS.
 - `git diff --check` sobre archivos GD Intelligence: PASS.
-- Migración productiva: no ejecutada por falta de conexión y gates live pendientes.
+- Conectividad VM y PostgreSQL: PASS mediante VPN.
+- CRM `/healthz`: HTTP 200; PostgreSQL sin locks ni transacciones largas.
+- Backup 20260808: checksums y `pg_restore --list` PASS; restore aislado pendiente.
+- Migración productiva: no ejecutada; falta restore aislado y rollback validado.

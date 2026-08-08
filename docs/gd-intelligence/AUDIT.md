@@ -10,7 +10,7 @@ GD Intelligence debe integrarse al monolito FastAPI existente y a su frontend HT
 
 La estrategia segura es aditiva: módulos Python bajo `backend/gd_intelligence`, un router con prefijo `/api/gd-intelligence`, vistas integradas bajo `web/views`, assets bajo `web/js`, y objetos PostgreSQL aislados mediante los prefijos `wi_`, `ai_` y `waba_`. El código actual usa casi exclusivamente `public` y crea múltiples tablas con SQL explícito; introducir schemas PostgreSQL separados ahora elevaría el riesgo y sería inconsistente con el patrón operativo.
 
-No se ejecutó ninguna migración ni escritura en base de datos durante esta auditoría. El entorno local no contiene `DATABASE_URL`. Las IP privadas documentadas para Ubuntu (`192.168.10.51` y `192.168.100.51`) no fueron alcanzables por SSH desde la red actual, por lo que los datos de VM, servicios y PostgreSQL en vivo se distinguen de la evidencia disponible en el repositorio.
+No se ejecutó ninguna migración ni escritura en base de datos durante esta auditoría. El primer intento se hizo sin VPN y no alcanzó las IP privadas. Con la VPN activa se confirmó que la VM vigente es `192.168.100.51`; `192.168.10.51` es una referencia obsoleta. Las comprobaciones posteriores de Ubuntu, CRM, PostgreSQL y backups fueron read-only.
 
 ## 2. Estado del repositorio y Git
 
@@ -101,11 +101,13 @@ GD Intelligence no debe duplicar `whatsapp_conversations` ni `whatsapp_messages`
 - Tablas críticas del dump: `leads`, `cotizaciones`, `cotizaciones_detalle`, `cotizacion_items`, `usuarios`, `roles`, `marcas` y las tablas WABA.
 - Hay claves primarias, uniques, foreign keys e índices específicos para estados/fechas de leads, relación de cotización-lead y conversación/mensajes WABA.
 - El reporte de InMotion del 2026-08-01 registró 3.786 leads, 3.084 cotizaciones, 203 usuarios y 21 encuestas, con dump productivo de 4,1 MiB.
-- La infraestructura Ubuntu está preparada para PostgreSQL 15 en Docker de desarrollo y para PostgreSQL del sistema en la VM; el dump más reciente demuestra PostgreSQL 16.11 en el origen local auditado. La versión de producción activa debe verificarse en vivo antes de migrar.
+- PostgreSQL activo en la VM: 16.14 sobre Ubuntu, base de 49 MB, UTF-8 y timezone de servidor UTC.
+- Estado live: 112 tablas de usuario, 213 índices, 34 foreign keys, 11 conexiones (1 activa), cero locks en espera y cero transacciones de más de 5 minutos.
+- Tablas mayores estimadas: `tasks` 12 MB/23.220 filas; `leads` 2,7 MB/3.897 filas; `activity_log` 2,3 MB/8.666 filas; `cotizaciones` 880 KB/3.252 filas.
 
 ### Limitación actual
 
-El `.env` local no define `DATABASE_URL`; sólo contiene variables de desarrollo/WABA/IA. No fue posible consultar de forma directa versión activa, tamaño activo, sesiones, locks, bloat, índices faltantes o latencia. Esta verificación es un gate obligatorio antes de ejecutar una migración en el servidor.
+El `.env` del Mac no define `DATABASE_URL`; la inspección live debe ejecutarse dentro de la VM, donde la configuración protegida sí existe. Quedan pendientes un análisis específico de bloat/índices redundantes y la restauración real en una base aislada. La consulta live de versión, tamaño, sesiones y locks ya fue completada.
 
 ### Estrategia de aislamiento
 
@@ -125,6 +127,7 @@ Usar tablas aditivas prefijadas `wi_`, `ai_` y `waba_`. No agregar decenas de co
 
 - Ubuntu: `deploy/ubuntu/backup-crm-nightly` crea `pg_dump` custom, inventario `pg_restore --list`, tar Zstandard del código, manifest y SHA-256; retención de 7 días.
 - Proxmox: VM ID 100; backup snapshot diario documentado a las 00:30, retención de 2 copias.
+- Backup Ubuntu más reciente: `20260808-001501`, dump 4,2 MB y archivos 1,3 GB. Los cuatro SHA-256 aprobaron y `pg_restore --list` leyó correctamente el dump.
 - Código antes de deployment: tar remoto con lista explícita y restauración automática ante healthcheck fallido.
 - InMotion: evidencia de dump `/home/bf68ec5/crm_backups/crm_db_20260801_204017.dump` y tar pre-release.
 
@@ -143,14 +146,17 @@ Crear un dump no demuestra restaurabilidad. Los reportes existentes mantienen pe
 - Nginx como reverse proxy bajo `/crm/`.
 - PostgreSQL como servicio requerido.
 - systemd con reinicio automático, `NoNewPrivileges`, `PrivateTmp` y filesystem protegido.
-- Acceso privado planificado mediante VPN; no publicar SSH, PostgreSQL ni Proxmox.
-- IPs registradas históricamente: `192.168.10.51` y `192.168.100.51`; deben reconciliarse en la LAN real.
+- Acceso privado activo mediante VPN; no publicar SSH, PostgreSQL ni Proxmox.
+- IP confirmada: `192.168.100.51`; WireGuard: `10.77.0.1/24`.
+- Ubuntu 24.04.4 LTS, kernel 6.8, 4 CPU, 7,8 GiB RAM, 4 GiB swap y disco de 97 GB con 65 GB libres (30% usado).
+- PostgreSQL, `crm-gd.service` y Nginx activos. CRM con 4 workers, aproximadamente 450 MB RAM y `/healthz` HTTP 200 en 1,5 ms durante la medición.
 
 ### Proxmox
 
 - Host permanente y VM 100 con Guest Agent previsto.
 - Rutina documentada: backup, apagado ordenado y encendido con healthcheck.
-- Estado en vivo, CPU/RAM/disco, snapshots y storage no pudieron consultarse desde la red actual.
+- El Guest Agent confirma `guest-fsfreeze` diario a las 00:30 hasta 2026-08-08, evidencia de ejecución del backup/snapshot Proxmox.
+- El host que figuraba como `192.168.100.50` no respondió por SSH ni 8006. CPU/RAM/storage y lista de snapshots del hipervisor siguen pendientes de acceso directo a Proxmox.
 
 ### InMotion
 
@@ -161,6 +167,8 @@ Crear un dump no demuestra restaurabilidad. Los reportes existentes mantienen pe
 ### Rollback actual
 
 Los scripts crean un tar previo, instalan una lista explícita, compilan, ejecutan migración, reinician y hacen healthcheck. Ante error restauran el tar. Falta formalizar rollback de datos aditivos y probar restore completo en entorno aislado.
+
+La copia desplegada está en la rama `feature/whatsapp-native-clean-20260806`, SHA `ec43b36`, y expone 378 paths OpenAPI. Su worktree contiene numerosos archivos staged/untracked, incluidos directorios completos de backend/frontend/deploy; no se debe hacer `git pull`, merge, checkout ni deployment basado en el estado Git remoto hasta inventariarlo y aislarlo. Los deployments GD Intelligence deberán transferir una lista explícita desde un artefacto/commit probado.
 
 ## 10. Secretos y configuración
 
@@ -174,7 +182,7 @@ Los scripts crean un tar previo, instalan una lista explícita, compilan, ejecut
 ## 11. Riesgos prioritarios
 
 1. **Crítico — worktree mezclado:** muchos cambios previos sin aislar; riesgo de commit/deploy accidental.
-2. **Alto — producción no consultable ahora:** faltan evidencias actuales de locks, conexiones, tamaño y backup reciente.
+2. **Medio — Proxmox no consultable directamente:** la VM y Guest Agent están sanos, pero falta inventario live del hipervisor, storage y snapshots.
 3. **Alto — restore no probado:** hay dumps y snapshots documentados, no una prueba reciente de restauración aislada.
 4. **Alto — secretos históricos:** rotaciones pendientes y archivos sensibles aún versionados.
 5. **Medio — migraciones heterogéneas:** Alembic y creación de tablas en runtime coexisten; GD Intelligence debe centralizar su propio esquema.
@@ -216,4 +224,4 @@ Los dashboards leerán datos locales agregados, no APIs externas en cada request
 
 ## 14. Decisión de avance
 
-La Fase 0 queda documentada con las limitaciones señaladas. Se puede avanzar con código, tests y migraciones no ejecutadas. La ejecución sobre PostgreSQL productivo y cualquier deployment permanecen bloqueados hasta completar los gates de seguridad; este bloqueo no impide implementar el resto de las fases como `NOT_CONFIGURED` cuando falten credenciales.
+La Fase 0 queda documentada con evidencia live de Ubuntu, CRM, PostgreSQL y backup lógico. Se puede avanzar con código, tests y migraciones no ejecutadas. La ejecución sobre PostgreSQL productivo y cualquier deployment permanecen bloqueados hasta probar restore aislado y confirmar rollback; la falta de acceso directo a Proxmox no impide implementar módulos como `NOT_CONFIGURED` cuando falten credenciales.
