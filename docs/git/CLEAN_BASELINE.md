@@ -19,4 +19,15 @@ Motivos: secretos reales en historial, repositorio público, 577 MiB de objetos 
 9. Verificar `MAC_BASELINE_SHA == GIT_BASELINE_SHA`.
 10. No desplegar hasta restore/migration/rollback gates.
 
-No se ha creado ni publicado todavía el repositorio nuevo porque faltan resolver las diez divergencias críticas y los assets/scripts funcionales del servidor.
+## Resultado verificado
+
+- Repositorio local limpio: `/Users/oscarmendoza/Desktop/GreenDiamond-CRM`.
+- Branch: `main`.
+- Commit raíz: `721a6e7d90824189354d450e3f0277aecab3795f`.
+- Remotos configurados: ninguno.
+- Bundle recuperable: `clean-baseline-721a6e7.bundle`.
+- SHA-256 del bundle: `9cfe41ae9609e0241f02f0a7863940e7f5eba05b92e69a03c14a2037359c96b6`.
+- `git bundle verify`, `git fsck --full --strict` y Gitleaks sobre el historial: PASS.
+- Las diez divergencias críticas y los assets/scripts funcionales del servidor fueron reconciliados antes del commit.
+
+El baseline no se ha publicado. Debe permanecer sin remoto hasta crear y verificar un repositorio GitHub nuevo y privado y completar la rotación de credenciales del legacy.

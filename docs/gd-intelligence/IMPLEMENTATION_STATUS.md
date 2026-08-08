@@ -36,9 +36,11 @@ Actualizado: 2026-08-08
 |---|---|---|
 | Backup Git Mac | PASS | Bundle + snapshot + checksums |
 | Backup código servidor | PASS | Bundle + snapshot + checksums |
-| Reconciliación Mac/Git/servidor | PENDING | Divergencias clasificadas |
+| Reconciliación Mac/Git/servidor | PASS | Divergencias críticas resueltas en baseline limpio |
+| Clean baseline local | PASS | Commit raíz `721a6e7`; sin remoto |
 | Repositorio privado | FAIL | GitHub informa PUBLIC; acción manual crítica |
-| Secret scan | FAIL | Secretos reales históricos; rotación pendiente |
+| Secret scan baseline | PASS | Gitleaks directory/history: 0 hallazgos |
+| Rotación secretos legacy | FAIL | Secretos reales históricos; revocación/rotación pendiente |
 | Restore aislado | PASS | 112 tablas, 213 índices, 34 FKs |
 | Migraciones en restore | PASS | Dos ejecuciones, core intacto |
 | Migración producción | NOT_RUN | Prohibida hasta readiness |
