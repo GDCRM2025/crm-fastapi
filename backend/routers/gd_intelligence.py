@@ -14,15 +14,21 @@ from backend.gd_intelligence.permissions import (
     user_id,
 )
 from backend.gd_intelligence.rbac_admin import ROLE_KEYS, role_matrix, save_role_permissions
+from backend.gd_intelligence.integration_inventory import scan_public_integrations
 from backend.gd_intelligence.repository import (
+    INTEGRATION_PROVIDERS,
     create_site,
     create_utm_link,
+    list_integrations,
     list_sites,
     list_utm_links,
     schema_ready,
+    store_integration_discovery,
+    update_public_integration,
     update_site,
 )
 from backend.gd_intelligence.schemas import (
+    IntegrationPublicUpdate,
     RolePermissionsUpdate,
     SiteCreate,
     SiteUpdate,
@@ -62,6 +68,21 @@ def _require_site_health_schema(conn) -> None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "SITE_HEALTH_MIGRATION_REQUIRED"},
+        )
+
+
+def _require_integration_inventory_schema(conn) -> None:
+    ready = conn.execute(
+        text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name='wi_integrations' "
+            "AND column_name='last_verified_at')"
+        )
+    ).scalar()
+    if not ready:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "INTEGRATION_INVENTORY_MIGRATION_REQUIRED"},
         )
 
 
@@ -172,6 +193,105 @@ def sites_update(site_id: int, payload: SiteUpdate, user: dict = Depends(get_cur
         if item is None:
             raise HTTPException(status_code=404, detail="Sitio no encontrado.")
     return {"ok": True, "item": dict(item)}
+
+
+@router.get("/web/integrations")
+def integrations_list(
+    site_id: int | None = Query(default=None, gt=0),
+    user: dict = Depends(get_current_user),
+):
+    with engine.connect() as conn:
+        _require(conn, user, "web_intelligence_view")
+        _require_schema(conn)
+        _require_integration_inventory_schema(conn)
+        return {"ok": True, "items": list_integrations(conn, site_id)}
+
+
+@router.put("/web/sites/{site_id}/integrations/{provider}")
+def integration_public_update(
+    site_id: int,
+    provider: str,
+    payload: IntegrationPublicUpdate,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    normalized = str(provider or "").strip().upper()
+    if normalized not in INTEGRATION_PROVIDERS:
+        raise HTTPException(status_code=404, detail="Integración no soportada.")
+    public_id = payload.external_id
+    patterns = {
+        "GTM": r"^GTM-[A-Z0-9]+$",
+        "GA4": r"^(G-[A-Z0-9]+|properties/[0-9]+|[0-9]{5,})$",
+        "SEARCH_CONSOLE": r"^(sc-domain:[A-Za-z0-9.-]+|https://[^\s]+)$",
+        "CLARITY": r"^[A-Za-z0-9]+$",
+        "PAGESPEED": r"^https://[^\s]+$",
+        "CRUX": r"^https://[^\s]+$",
+        "TRACKING": r"^(gd-tracker\.js|https://[^\s]+)$",
+        "META": r"^[0-9]{8,20}$",
+    }
+    if public_id:
+        import re
+        if not re.fullmatch(patterns[normalized], public_id, flags=re.IGNORECASE):
+            raise HTTPException(status_code=422, detail="Formato de ID público inválido para el proveedor.")
+    with engine.begin() as conn:
+        _require(conn, user, "web_intelligence_configure")
+        _require_integration_inventory_schema(conn)
+        item = update_public_integration(conn, site_id, normalized, public_id, payload.enabled)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Sitio no encontrado.")
+        log_activity(
+            conn,
+            username=_actor(user),
+            user_id=user_id(user),
+            role=role_key(user),
+            action="gd_intelligence.integration_public.update",
+            entity_type="wi_integration",
+            meta={"site_id": site_id, "provider": normalized, "enabled": payload.enabled},
+            request=request,
+            status_code=200,
+        )
+    return {"ok": True, "item": item}
+
+
+@router.post("/web/integrations/discover")
+def integrations_discover(
+    request: Request,
+    site_id: int | None = Query(default=None, gt=0),
+    user: dict = Depends(get_current_user),
+):
+    with engine.connect() as conn:
+        _require(conn, user, "web_intelligence_configure")
+        _require_integration_inventory_schema(conn)
+        sites = conn.execute(
+            text(
+                "SELECT id,code,name,domain FROM public.wi_sites "
+                "WHERE enabled AND (CAST(:site_id AS bigint) IS NULL OR id=CAST(:site_id AS bigint)) "
+                "ORDER BY code"
+            ),
+            {"site_id": site_id},
+        ).mappings().all()
+    if not sites:
+        raise HTTPException(status_code=404, detail="Sitio habilitado no encontrado.")
+    items = []
+    for site in sites:
+        discovered = scan_public_integrations(str(site["domain"]))
+        with engine.begin() as conn:
+            for integration in discovered:
+                stored = store_integration_discovery(conn, int(site["id"]), integration)
+                items.append({**stored, "site_code": site["code"], "domain": site["domain"]})
+    with engine.begin() as conn:
+        log_activity(
+            conn,
+            username=_actor(user),
+            user_id=user_id(user),
+            role=role_key(user),
+            action="gd_intelligence.integrations.discover",
+            entity_type="wi_integration",
+            meta={"site_id": site_id, "sites": len(sites), "items": len(items)},
+            request=request,
+            status_code=200,
+        )
+    return {"ok": True, "items": items}
 
 
 @router.get("/campaigns/utm")

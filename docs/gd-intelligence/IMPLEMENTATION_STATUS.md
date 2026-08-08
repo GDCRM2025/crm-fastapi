@@ -7,14 +7,14 @@ Actualizado: 2026-08-08
 | 0 Auditoría | DONE | PASS | N/A | N/A | VM/DB/backup verificados; consola Proxmox pendiente |
 | 1 Arquitectura base | DONE | PASS | DONE | NOT_DEPLOYED | Módulo y API base |
 | 2 RBAC y views | DONE | PASS | DONE | NOT_DEPLOYED | Menú y matriz Allow/Deny/Inherit respaldados por API y auditoría |
-| 3 Sitios | DONE | PASS | NOT_CONFIGURED | NOT_DEPLOYED | CAM/EXP/GOU/DEL seed; UI de alta/estado incluida |
-| 4 GA4 | PARTIAL | PASS | NOT_CONFIGURED | N/A | Parser y snapshot local; cliente/sync pendiente |
-| 5 Search Console | PARTIAL | PASS | NOT_CONFIGURED | N/A | Parser y snapshot local; cliente/sync pendiente |
+| 3 Sitios | DONE | PASS | DONE_LOCAL | NOT_DEPLOYED | CAM/EXP/GOU/DEL; matriz pública por sitio, configuración sin secretos y verificación live |
+| 4 GA4 | PARTIAL | PASS | DISCOVERED_LOCAL | NOT_DEPLOYED | Measurement IDs detectados vía GTM en 4/4; Property IDs y OAuth pendientes |
+| 5 Search Console | PARTIAL | PASS | PARTIAL_LOCAL | NOT_DEPLOYED | Verificación pública CAM; propiedades/API pendientes |
 | 6 Dashboard web | DONE | PASS | DONE_LOCAL | NOT_DEPLOYED | Nueva sección lateral Resumen/Sitios/Site Health/UTM/Permisos; cuatro sitios reales del restore aislado |
 | 7 Tracking first-party | PENDING | PENDING | PENDING | N/A | — |
 | 8 Atribución | PENDING | PENDING | PENDING | N/A | — |
-| 9 PageSpeed | PARTIAL | PASS | NOT_CONFIGURED | N/A | Parser lab/field y almacenamiento listos |
-| 10 CrUX | PARTIAL | PASS | NOT_CONFIGURED | N/A | Datos ausentes no se fabrican |
+| 9 PageSpeed | PARTIAL | PASS | ORIGINS_DISCOVERED | NOT_DEPLOYED | Parser lab/field y orígenes listos; API key pendiente |
+| 10 CrUX | PARTIAL | PASS | ORIGINS_DISCOVERED | NOT_DEPLOYED | Orígenes listos; disponibilidad/API pendiente, datos ausentes no se fabrican |
 | 11 Site Health | DONE | PASS | DONE_LOCAL | NOT_DEPLOYED | Scanner seguro, historial, UI, ejecución manual y timer systemd preparado |
 | 12 SEO Opportunity Engine | PENDING | PENDING | PENDING | N/A | — |
 | 13 UTM Builder | DONE | PASS | DONE | NOT_DEPLOYED | API + UI generan, identifican, guardan y listan URLs |
@@ -23,7 +23,7 @@ Actualizado: 2026-08-08
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | PENDING | PENDING | PENDING | N/A | — |
+| 19 Git deployment | PREPARED | PASS_LOCAL | BLOCKED_GATE | NOT_DEPLOYED | Ubuntu: 54 tracked + 192 untracked; repo privado/rotación pendientes |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
@@ -47,7 +47,7 @@ Actualizado: 2026-08-08
 
 ## Evidencia actual
 
-- 27 pruebas unitarias/contrato GD Intelligence: PASS.
+- 32 pruebas unitarias/contrato GD Intelligence: PASS.
 - `LOCAL_API_CONNECTIVITY=PASS`: login, auth, overview, sitios, UTM, RBAC y Site Health responden por FastAPI contra PostgreSQL aislada.
 - QA visual autenticada: el menú **📡 GD Intelligence** y las vistas Resumen/Sitios/Site Health/UTM/Permisos cargan por HTTP; cuatro sitios visibles.
 - Compilación Python del módulo y router: PASS.
@@ -58,4 +58,7 @@ Actualizado: 2026-08-08
 - Restore aislado 20260808: PASS.
 - Migraciones GD Intelligence ejecutadas dos veces en restore: PASS; core intacto.
 - Migración Site Health ejecutada dos veces en restore: PASS; cuatro resultados almacenados por ejecución.
+- Arranque Mac desde cero: PASS; navegador cerrado, PostgreSQL/FastAPI detenidos, arranque por `MAC_SETUP.md`, sesión limpia, login y cuatro sitios visibles.
+- Inventario público: GTM, GA4 y GD Tracker detectados en 4/4; Clarity 0/4; secretos no consultados ni persistidos.
 - Migración productiva: no ejecutada; Git/secret/rollback/readiness pendientes.
+- Preflight Ubuntu 2026-08-08: servicio activo, PostgreSQL 16.14 y rollback SHA `ec43b36`; deployment bloqueado antes de escrituras por worktree remoto con 246 entradas y gates Git/rotación pendientes.

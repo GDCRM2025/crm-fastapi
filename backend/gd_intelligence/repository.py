@@ -8,6 +8,11 @@ from sqlalchemy import text
 from backend.gd_intelligence.utm import build_utm_url, campaign_identifier
 
 
+INTEGRATION_PROVIDERS = (
+    "GTM", "GA4", "SEARCH_CONSOLE", "CLARITY", "PAGESPEED", "CRUX", "TRACKING", "META"
+)
+
+
 def schema_ready(conn) -> bool:
     return bool(conn.execute(text("SELECT to_regclass('public.wi_sites') IS NOT NULL")).scalar())
 
@@ -53,7 +58,7 @@ def create_site(conn, payload: dict[str, Any], actor: str) -> dict[str, Any]:
             """
             INSERT INTO public.wi_integrations(site_id,provider,status,enabled)
             SELECT :site_id, provider, 'NOT_CONFIGURED', false
-            FROM unnest(ARRAY['GA4','SEARCH_CONSOLE','PAGESPEED','CRUX','CLARITY','TRACKING']) provider
+            FROM unnest(ARRAY['GTM','GA4','SEARCH_CONSOLE','PAGESPEED','CRUX','CLARITY','TRACKING','META']) provider
             ON CONFLICT(site_id,provider) DO NOTHING
             """
         ),
@@ -87,6 +92,78 @@ def update_site(conn, site_id: int, changes: dict[str, Any], actor: str) -> dict
         ),
         params,
     ).mappings().one_or_none()
+
+
+def list_integrations(conn, site_id: int | None = None) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT i.id,i.site_id,s.code AS site_code,s.name AS site_name,s.domain,
+                   i.provider,i.status,i.enabled,i.external_id,i.last_verified_at,
+                   i.last_sync_at,i.last_success_at,i.last_error_code,i.last_error_safe,
+                   i.updated_at
+            FROM public.wi_integrations i
+            JOIN public.wi_sites s ON s.id=i.site_id
+            WHERE (CAST(:site_id AS bigint) IS NULL OR i.site_id=CAST(:site_id AS bigint))
+              AND i.provider=ANY(:providers)
+            ORDER BY s.code,i.provider
+            """
+        ),
+        {"site_id": site_id, "providers": list(INTEGRATION_PROVIDERS)},
+    ).mappings()
+    return [dict(row) for row in rows]
+
+
+def update_public_integration(
+    conn,
+    site_id: int,
+    provider: str,
+    external_id: str | None,
+    enabled: bool,
+) -> dict[str, Any] | None:
+    status = "WARNING" if enabled and external_id else "NOT_CONFIGURED" if enabled else "DISABLED"
+    row = conn.execute(
+        text(
+            """
+            INSERT INTO public.wi_integrations(site_id,provider,status,enabled,external_id,updated_at)
+            SELECT id,:provider,:status,:enabled,:external_id,now()
+            FROM public.wi_sites WHERE id=:site_id
+            ON CONFLICT(site_id,provider) DO UPDATE SET
+              status=excluded.status,enabled=excluded.enabled,external_id=excluded.external_id,
+              last_error_code=NULL,last_error_safe=NULL,updated_at=now()
+            RETURNING id,site_id,provider,status,enabled,external_id,last_verified_at,updated_at
+            """
+        ),
+        {
+            "site_id": site_id,
+            "provider": provider,
+            "status": status,
+            "enabled": enabled,
+            "external_id": external_id,
+        },
+    ).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+def store_integration_discovery(conn, site_id: int, item: dict[str, Any]) -> dict[str, Any]:
+    row = conn.execute(
+        text(
+            """
+            INSERT INTO public.wi_integrations(
+              site_id,provider,status,enabled,external_id,last_verified_at,last_error_safe,updated_at
+            ) VALUES (
+              :site_id,:provider,:status,:enabled,:external_id,:last_verified_at,:last_error_safe,now()
+            )
+            ON CONFLICT(site_id,provider) DO UPDATE SET
+              status=excluded.status,enabled=excluded.enabled,external_id=excluded.external_id,
+              last_verified_at=excluded.last_verified_at,last_error_safe=excluded.last_error_safe,
+              last_error_code=NULL,updated_at=now()
+            RETURNING id,site_id,provider,status,enabled,external_id,last_verified_at,last_error_safe,updated_at
+            """
+        ),
+        {"site_id": site_id, **item},
+    ).mappings().one()
+    return dict(row)
 
 
 def create_utm_link(conn, payload: dict[str, Any], actor: str) -> dict[str, Any] | None:

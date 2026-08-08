@@ -1,0 +1,62 @@
+# Production Deployment Report
+
+Fecha: 2026-08-08
+Resultado: **BLOCKED_PREDEPLOY — NO_PRODUCTION_CHANGES**
+
+## Identidad del release
+
+| Campo | Valor |
+|---|---|
+| Servidor | `crm-gd` / `192.168.100.51` |
+| Servicio | `crm-gd.service` (`active`) |
+| SHA anterior / rollback conocido | `ec43b363e52dc762b3b030ad421800f878ed6afc` |
+| Branch remota observada | `feature/whatsapp-native-clean-20260806` |
+| SHA candidato primer release | `74c120f` |
+| Alcance candidato | GD Intelligence core, RBAC, Sites, UTM, Site Health y navegación requerida |
+| SHA nuevo desplegado | `NOT_DEPLOYED` |
+
+## Gates previos
+
+| Gate | Estado | Evidencia |
+|---|---|---|
+| Servicio productivo previo | PASS | `crm-gd.service=active` |
+| PostgreSQL compatible | PASS | PostgreSQL 16.14 |
+| SHA anterior conocido | PASS | `ec43b363…` |
+| Tests/build local | PASS | 32 tests; compile/build/secret scan se ejecutan en `verify_environment.sh` |
+| Restore/migraciones aisladas | PASS | Migraciones GD/Site Health idempotentes; inventario ejecutado sólo en restore local |
+| Worktree servidor controlado | **FAIL CRÍTICO** | 54 entradas tracked y 192 untracked |
+| Repositorio privado/off-host | **FAIL CRÍTICO** | repo limpio Mac sin remoto configurado |
+| Rotación credenciales históricas | **FAIL CRÍTICO** | credenciales históricamente compartidas marcadas para rotación; no confirmada |
+| Secret scan candidato | PASS local | Gitleaks sin hallazgos en historial limpio; debe repetirse sobre SHA final |
+
+## Acciones productivas
+
+| Acción | Estado |
+|---|---|
+| Backup PostgreSQL nuevo + checksum | `NOT_RUN` (gate falló antes de escrituras) |
+| Backup de archivos/manifest | `NOT_RUN` |
+| Migraciones core/sources/site_health | `NOT_RUN` |
+| Transferencia de archivos | `NOT_RUN` |
+| Reinicio de servicio | `NOT_RUN` |
+| Instalación/enable timer Site Health | `NOT_RUN` |
+| Variables Google/Clarity/GTM | `NOT_RUN` |
+
+## Smoke tests
+
+Los smoke tests productivos post-deploy (`/healthz`, login, leads, cotizaciones, WABA, GD Intelligence y Site Health) están `NOT_RUN` porque no hubo deployment. El preflight read-only confirmó servicio activo, host correcto y acceso SSH. Las pruebas equivalentes de GD Intelligence pasaron en Mac/PostgreSQL aislada con auth real y cuatro sitios.
+
+## Migraciones candidatas
+
+- `2026_08_08_gd_intelligence_core.sql`
+- `2026_08_08_web_intelligence_sources.sql`
+- `2026_08_08_site_health.sql`
+
+La migración `2026_08_08_integration_inventory.sql` pertenece a la siguiente iteración y **no** forma parte del primer deployment restringido.
+
+## Errores y decisión
+
+No ocurrió error durante una mutación productiva: el bloqueo fue preventivo. Desplegar sobre 246 cambios no reconciliados impediría demostrar exactamente qué se conserva o revierte. La ausencia de un remoto privado y la rotación pendiente también contradicen los gates maestros.
+
+## Rollback status
+
+`NOT_NEEDED`; producción no cambió. El SHA de referencia permanece `ec43b363…`. Antes del siguiente intento se debe reconciliar/congelar el worktree remoto, publicar el baseline en repositorio privado, confirmar rotación de credenciales, crear backup nuevo con checksum y repetir todos los gates.

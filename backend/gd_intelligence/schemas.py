@@ -99,3 +99,21 @@ class RolePermissionsUpdate(BaseModel):
         if len(value) > 100:
             raise ValueError("Demasiados permisos en una sola actualización")
         return {str(key).strip(): allowed for key, allowed in value.items() if str(key).strip()}
+
+
+class IntegrationPublicUpdate(BaseModel):
+    external_id: str | None = Field(default=None, max_length=255)
+    enabled: bool = False
+
+    @field_validator("external_id")
+    @classmethod
+    def validate_public_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        public_id = str(value).strip()
+        if not public_id:
+            return None
+        lowered = public_id.lower()
+        if "=" in public_id or any(word in lowered for word in ("password", "secret", "token", "api_key", "apikey")):
+            raise ValueError("Sólo se admiten IDs públicos; secretos y tokens están prohibidos")
+        return public_id

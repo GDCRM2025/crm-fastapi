@@ -20,13 +20,19 @@ El bootstrap crea `.venv`, instala dependencias y copia `.env.example` a `.env` 
 
 ## Ejecución local
 
-Configurar una base de desarrollo/fixture en `DATABASE_URL`. Nunca apuntar tests destructivos a producción.
+Configurar una base de desarrollo/fixture en `DATABASE_URL` y su directorio en `GD_LOCAL_PGDATA`. Nunca apuntar tests destructivos a producción. Ambos valores viven en `.env`, que está ignorado por Git. El arranque rechaza hosts no-loopback y nombres de base que no indiquen `test`, `restore`, `dev` o `local`.
 
 ```bash
-source .venv/bin/activate
-export DATABASE_URL='postgresql://USUARIO@127.0.0.1:PUERTO/BASE_DE_RESTORE_O_DEV'
-export JWT_SECRET='SECRETO_LOCAL_NO_PRODUCTIVO'
-uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+bash scripts/dev/start_mac_local.sh --foreground
+```
+
+El comando levanta PostgreSQL 16 si está detenido, aplica las tres migraciones GD idempotentes e inicia FastAPI en primer plano. Mantener esa terminal abierta; el entorno está disponible cuando Uvicorn informa que escucha en `127.0.0.1:8000`. Para automatizaciones locales también existe el modo sin `--foreground`, que espera `/healthz`, imprime `MAC_LOCAL_READY` y deja logs/PID bajo `runtime/mac/` (ignorado por Git).
+
+Para detener FastAPI o todo el entorno:
+
+```bash
+bash scripts/dev/stop_mac_local.sh
+bash scripts/dev/stop_mac_local.sh --postgres
 ```
 
 FastAPI sirve API y frontend en el mismo origen; Vite no es necesario para las vistas legacy/GD Intelligence. Las URLs correctas son:
@@ -34,6 +40,8 @@ FastAPI sirve API y frontend en el mismo origen; Vite no es necesario para las v
 - Login CRM: `http://127.0.0.1:8000/web/login.html`
 - Panel autenticado: `http://127.0.0.1:8000/web/index.html`
 - GD Intelligence: abrir **📡 GD Intelligence** desde el menú del panel. No abrir `gd_intelligence.html` mediante `file://`.
+
+Para una prueba de autenticación completamente limpia, incluso si el navegador conserva un JWT anterior, abrir una vez `http://127.0.0.1:8000/web/login.html?reset_session=1`. El parámetro sólo elimina la sesión local del navegador y deja visible el formulario; no desactiva auth.
 
 El frontend deriva el prefijo API desde la ruta (`/` o `/crm`) y no contiene IPs, hosts ni URLs productivas hardcodeadas.
 

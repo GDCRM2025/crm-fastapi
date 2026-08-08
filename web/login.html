@@ -142,6 +142,19 @@
     // Shared hosting: NO llamamos /me aquí (puede colgarse y dejar el login “muerto”).
     // En su lugar, validamos exp del JWT (best-effort) y redirigimos por rol.
     (function(){
+      const resetSession = new URLSearchParams(location.search || "").get("reset_session") === "1";
+      if (resetSession) {
+        try {
+          localStorage.removeItem("token");
+          localStorage.removeItem("gd_token");
+          sessionStorage.removeItem("token");
+          sessionStorage.removeItem("gd_token");
+          document.cookie = "gd_token=; path=/; max-age=0; samesite=lax";
+          document.cookie = "gd_token=; path=/; max-age=0; samesite=lax; domain=.greendiamond.cl";
+          history.replaceState(null, "", `${location.pathname}`);
+        } catch(_) {}
+        return;
+      }
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       if (!token) return;
       try{

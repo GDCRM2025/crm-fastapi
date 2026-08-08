@@ -5,7 +5,7 @@ from unittest.mock import patch
 from pydantic import ValidationError
 
 from backend.gd_intelligence.permissions import PERMISSIONS, default_permissions
-from backend.gd_intelligence.schemas import SiteCreate, normalize_domain
+from backend.gd_intelligence.schemas import IntegrationPublicUpdate, SiteCreate, normalize_domain
 from backend.gd_intelligence.connectors import (
     parse_crux_metrics,
     parse_ga4_report,
@@ -15,6 +15,7 @@ from backend.gd_intelligence.connectors import (
 from backend.gd_intelligence.utm import build_utm_url, campaign_identifier
 from backend.gd_intelligence.rbac_admin import ROLE_KEYS
 from backend.gd_intelligence.site_health import PageSignals, _request
+from backend.gd_intelligence.integration_inventory import GA4_RE, GTM_RE, _ids
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,6 +75,12 @@ class MigrationSafetyTests(unittest.TestCase):
             self.assertNotIn(forbidden, sql)
         self.assertIn("LOCK_TIMEOUT", sql)
         self.assertIn("WI_SITE_HEALTH_RUNS", sql)
+
+    def test_integration_inventory_migration_is_additive(self):
+        sql = (ROOT / "migrations/2026_08_08_integration_inventory.sql").read_text().upper()
+        for forbidden in ("DROP TABLE", "TRUNCATE", "DELETE FROM", "DROP COLUMN"):
+            self.assertNotIn(forbidden, sql)
+        self.assertIn("ADD COLUMN IF NOT EXISTS LAST_VERIFIED_AT", sql)
 
 
 class ConnectorParserTests(unittest.TestCase):
@@ -159,6 +166,11 @@ class DashboardContractTests(unittest.TestCase):
         self.assertNotIn("location.hostname", self.html)
         self.assertNotIn("location.hostname", self.panel)
 
+    def test_login_supports_explicit_clean_session(self):
+        login = (ROOT / "web/login.html").read_text()
+        self.assertIn('get("reset_session") === "1"', login)
+        self.assertIn('localStorage.removeItem("token")', login)
+
     def test_gd_navigation_bypasses_only_legacy_menu_matrix(self):
         self.assertIn("!CURRENT_ALLOWED.has(it.id) && !isGdMenuAllowed(it)", self.panel)
 
@@ -176,6 +188,11 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('data-tab="permissions"', self.html)
         self.assertIn("/api/gd-intelligence/web/site-health/latest", self.html)
         self.assertIn("/api/gd-intelligence/permissions/roles", self.html)
+
+    def test_dashboard_exposes_public_integration_inventory(self):
+        self.assertIn("Inventario público por sitio", self.html)
+        self.assertIn("/api/gd-intelligence/web/integrations", self.html)
+        self.assertIn("credenciales nunca se muestran", self.html)
 
 
 class RbacAdminTests(unittest.TestCase):
@@ -221,6 +238,17 @@ class SiteHealthParserTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 _request(session, "GET", "https://example.com/", timeout=1)
         self.assertEqual(session.calls, 1)
+
+
+class IntegrationInventoryTests(unittest.TestCase):
+    def test_public_tag_ids_are_detected_without_false_assistant_match(self):
+        content = "GTM-52G8CVS G-4ZMLEC3SWJ G-ASSISTANT"
+        self.assertEqual(_ids(GTM_RE, content), ["GTM-52G8CVS"])
+        self.assertEqual(_ids(GA4_RE, content), ["G-4ZMLEC3SWJ"])
+
+    def test_secret_like_values_are_rejected(self):
+        with self.assertRaises(ValidationError):
+            IntegrationPublicUpdate(external_id="api_key=do-not-store", enabled=True)
 
 
 if __name__ == "__main__":
