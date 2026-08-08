@@ -1924,7 +1924,7 @@ function _ensureSgjoGateHost() {
   document.body.appendChild(el);
   return el;
 }
-function _showSgjoGate({ onGo = null } = {}) {
+function _showSgjoGate({ onGo = null, onDismiss = null } = {}) {
   const host = _ensureSgjoGateHost();
   host.style.display = "flex";
   const btnGo = host.querySelector("#sgjoGateGo");
@@ -1947,6 +1947,10 @@ function _showSgjoGate({ onGo = null } = {}) {
       } else {
         btnDismiss.style.display = "";
         btnDismiss.onclick = () => {
+          try {
+            if (onDismiss) onDismiss();
+          } catch (_) {
+          }
           try {
             host.style.display = "none";
           } catch (_) {
@@ -1972,6 +1976,23 @@ async function enforceSgjoMarkInGate() {
     const j = await r.json().catch(() => null);
     if (!(j && j.ok)) return;
     if (j.puede_marcar !== true) return;
+    const today = String(j.today || "").trim();
+    const dismissKey = today ? `gd_sgjo_in_dismissed_${today}` : "";
+    const role = String(((window.GD && (GD.me?.role || GD.me?.rol)) || "")).toUpperCase();
+    const isEjecutivo = role.includes("EJECUTIV");
+    if (!isEjecutivo && dismissKey) {
+      let dismissed = false;
+      try { dismissed = localStorage.getItem(dismissKey) === "1"; } catch (_) {}
+      try { dismissed = dismissed || sessionStorage.getItem(dismissKey) === "1"; } catch (_) {}
+      if (dismissed) {
+        _hideSgjoGate();
+        if (_sgjoGateTimer) {
+          clearInterval(_sgjoGateTimer);
+          _sgjoGateTimer = null;
+        }
+        return;
+      }
+    }
     const punto = String(j.default_punto_code || "").trim();
     const markURL = punto ? `/web/views/rrhh_sgjo_marcacion.html?p=${encodeURIComponent(punto)}&auto=1&v=${Date.now()}` : `/web/views/rrhh_sgjo_marcacion.html?auto=1&v=${Date.now()}`;
     const openMark = () => {
@@ -1994,7 +2015,16 @@ async function enforceSgjoMarkInGate() {
       return;
     }
     // Bloqueo suave: muestra gate y además abre marcación en el frame.
-    _showSgjoGate({ onGo: openMark });
+    const dismiss = () => {
+      if (!dismissKey) return;
+      try { localStorage.setItem(dismissKey, "1"); } catch (_) {}
+      try { sessionStorage.setItem(dismissKey, "1"); } catch (_) {}
+      if (_sgjoGateTimer) {
+        clearInterval(_sgjoGateTimer);
+        _sgjoGateTimer = null;
+      }
+    };
+    _showSgjoGate({ onGo: openMark, onDismiss: dismiss });
     try { openMark(); } catch (_) {}
     if (!_sgjoGateTimer) {
       _sgjoGateTimer = setInterval(() => {

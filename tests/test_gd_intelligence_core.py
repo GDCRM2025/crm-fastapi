@@ -162,6 +162,11 @@ class DashboardContractTests(unittest.TestCase):
     def test_gd_navigation_bypasses_only_legacy_menu_matrix(self):
         self.assertIn("!CURRENT_ALLOWED.has(it.id) && !isGdMenuAllowed(it)", self.panel)
 
+    def test_admin_can_really_dismiss_rrhh_gate_for_the_day(self):
+        self.assertIn("onDismiss: dismiss", self.panel)
+        self.assertIn("gd_sgjo_in_dismissed_", self.panel)
+        self.assertIn("clearInterval(_sgjoGateTimer)", self.panel)
+
     def test_optional_utm_site_filter_has_explicit_postgres_type(self):
         repository = (ROOT / "backend/gd_intelligence/repository.py").read_text()
         self.assertIn("CAST(:site_id AS bigint) IS NULL", repository)

@@ -47,7 +47,7 @@ Actualizado: 2026-08-08
 
 ## Evidencia actual
 
-- 26 pruebas unitarias/contrato GD Intelligence: PASS.
+- 27 pruebas unitarias/contrato GD Intelligence: PASS.
 - `LOCAL_API_CONNECTIVITY=PASS`: login, auth, overview, sitios, UTM, RBAC y Site Health responden por FastAPI contra PostgreSQL aislada.
 - QA visual autenticada: el menú **📡 GD Intelligence** y las vistas Resumen/Sitios/Site Health/UTM/Permisos cargan por HTTP; cuatro sitios visibles.
 - Compilación Python del módulo y router: PASS.
