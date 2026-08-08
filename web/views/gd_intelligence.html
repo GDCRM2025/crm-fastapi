@@ -37,7 +37,7 @@
   const API_BASE=(()=>{const h=String(location.hostname||'').toLowerCase();return h==='localhost'||h==='127.0.0.1'?'':'/crm' })();
   const apiURL=p=>API_BASE?(String(p).startsWith('/crm/')?p:API_BASE+p):String(p).replace(/^\/crm/,'');
   const authHeaders=extra=>{const GD=window.parent&&window.parent.GD;if(GD&&GD.authHeaders)return GD.authHeaders(extra);const t=localStorage.getItem('token')||sessionStorage.getItem('token')||'';return t?{...extra,Authorization:'Bearer '+t}:extra};
-  async function api(path,opts={}){const r=await fetch(apiURL(path),{...opts,headers:authHeaders({'Content-Type':'application/json',...(opts.headers||{})})});const j=await r.json().catch(()=>null);if(!r.ok){const d=j&&j.detail;throw new Error(typeof d==='string'?d:(d&&d.code)||`HTTP ${r.status}`)}return j}
+  async function api(path,opts={}){let r;try{r=await fetch(apiURL(path),{...opts,headers:authHeaders({'Content-Type':'application/json',...(opts.headers||{})})})}catch(_){throw new Error('Backend GD Intelligence no disponible. Verifica que el backend local esté iniciado.')}const j=await r.json().catch(()=>null);if(!r.ok){const d=j&&j.detail;if(r.status===404||r.status===502||r.status===503)throw new Error('Backend GD Intelligence no disponible en este entorno.');throw new Error(typeof d==='string'?d:(d&&d.code)||`Error de API (${r.status})`)}return j}
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const state={permissions:{},sites:[]};
   const allowed=k=>!!state.permissions[k];

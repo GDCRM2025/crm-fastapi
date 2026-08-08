@@ -137,6 +137,11 @@ class DashboardContractTests(unittest.TestCase):
     def test_dashboard_is_reachable_from_panel_menu(self):
         self.assertIn('id: "gd_intelligence"', self.panel)
         self.assertIn('/web/views/gd_intelligence.html', self.panel)
+        self.assertIn('gdPermission: "web_intelligence_view"', self.panel)
+        self.assertIn('gdPermission: "web_intelligence_campaigns"', self.panel)
+
+    def test_dashboard_has_friendly_backend_error(self):
+        self.assertIn("Backend GD Intelligence no disponible", self.html)
 
 
 if __name__ == "__main__":

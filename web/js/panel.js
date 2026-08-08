@@ -1728,20 +1728,36 @@ async function fetchMe() {
 
 async function loadUserMenuAccess() {
   USER_MENU_ACCESS = null;
+  GD_INTELLIGENCE_PERMISSIONS = null;
   try {
     const r = await fetch(`${API_BASE}/me/permissions`, { headers: authHeaders() });
-    if (!r.ok) return;
-    const data = await r.json().catch(() => null);
-    const perms = data && data.permissions && typeof data.permissions === "object" ? data.permissions : null;
-    if (!perms) return;
-    const ids = Object.entries(perms)
-      .filter(([, access]) => String(access || "").toLowerCase() === "read" || String(access || "").toLowerCase() === "full")
-      .map(([id]) => String(id));
-    // Si no hay permisos guardados, mantenemos matriz antigua para no bloquear usuarios al activar el módulo.
-    if (ids.length) USER_MENU_ACCESS = new Set(ids);
+    if (r.ok) {
+      const data = await r.json().catch(() => null);
+      const perms = data && data.permissions && typeof data.permissions === "object" ? data.permissions : null;
+      if (perms) {
+        const ids = Object.entries(perms)
+          .filter(([, access]) => String(access || "").toLowerCase() === "read" || String(access || "").toLowerCase() === "full")
+          .map(([id]) => String(id));
+        // Si no hay permisos guardados, mantenemos matriz antigua para no bloquear usuarios al activar el módulo.
+        if (ids.length) USER_MENU_ACCESS = new Set(ids);
+      }
+    }
   } catch (_) {
     USER_MENU_ACCESS = null;
   }
+  try {
+    const r = await fetch(`${API_BASE}/api/gd-intelligence/permissions/me`, { headers: authHeaders() });
+    if (r.ok) {
+      const data = await r.json().catch(() => null);
+      if (data && data.items && typeof data.items === "object") GD_INTELLIGENCE_PERMISSIONS = data.items;
+    }
+  } catch (_) {
+    GD_INTELLIGENCE_PERMISSIONS = null;
+  }
+}
+
+function isGdMenuAllowed(item) {
+  return Boolean(item && item.gdPermission && GD_INTELLIGENCE_PERMISSIONS && GD_INTELLIGENCE_PERMISSIONS[item.gdPermission]);
 }
 
 function bootstrapFromToken() {
@@ -2484,9 +2500,9 @@ const MENU = [
     ico: "\u{1F4E1}",
     title: "GD Intelligence",
     items: [
-      { id: "gdi_overview", label: "Dashboard web", url: "/web/views/gd_intelligence.html?v=20260808-1" },
-      { id: "gdi_sites", label: "Sitios e integraciones", url: "/web/views/gd_intelligence.html?v=20260808-1#sites" },
-      { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260808-1#utm" }
+      { id: "gdi_overview", label: "Dashboard web", url: "/web/views/gd_intelligence.html?v=20260808-2", gdPermission: "web_intelligence_view" },
+      { id: "gdi_sites", label: "Sitios e integraciones", url: "/web/views/gd_intelligence.html?v=20260808-2#sites", gdPermission: "web_intelligence_view" },
+      { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260808-2#utm", gdPermission: "web_intelligence_campaigns" }
     ]
   },
   {
@@ -2662,7 +2678,7 @@ function listVisibleMenuItems() {
     for (const it of g.items) {
       if (it.sep || it.noSidebar || it.disabled || !it.url || !isItemFeatureEnabled(it.id)) continue;
       if (allowed && !allowed.has(it.id)) continue;
-      if (USER_MENU_ACCESS && !USER_MENU_ACCESS.has(String(it.id))) continue;
+      if (USER_MENU_ACCESS && !USER_MENU_ACCESS.has(String(it.id)) && !isGdMenuAllowed(it)) continue;
       if (it.driverOnly && !isDriver && !isAdmin) continue;
       out.push({ ...it, groupId: g.id, groupTitle: g.title, groupIco: g.ico });
     }
@@ -2673,6 +2689,7 @@ let ACTIVE_ITEM_ID = null;
 let CURRENT_ROLE_ID = null;
 let CURRENT_ALLOWED = /* @__PURE__ */ new Set();
 let USER_MENU_ACCESS = null;
+let GD_INTELLIGENCE_PERMISSIONS = null;
 let SYSTEM_FEATURES = null;
 let TASKS_BADGE = { open_total: 0, overdue_total: 0, open_contactar: 0, overdue_contactar: 0 };
 let TASKS_POLL_HANDLE = null;
@@ -2758,6 +2775,9 @@ function isOpsAppRole(roleName) {
 const PERMISSIONS = {
 		  1: /* @__PURE__ */ new Set([
     "dash_home",
+    "gdi_overview",
+    "gdi_sites",
+    "gdi_utm",
     "rrhh_hub",
     "op_gps",
     "op_vruta",
@@ -2842,6 +2862,15 @@ const PERMISSIONS = {
 		    ,"system_notifs"
 		    ,"events_calendar"
 		  ]),
+	  13: /* @__PURE__ */ new Set([
+    "dash_home",
+    "gdi_overview",
+    "gdi_sites",
+    "gdi_utm",
+    "rep_total",
+    "emkt_email",
+    "system_notifs"
+  ]),
 	  10: /* @__PURE__ */ new Set([
 	    "rrhh_hub",
 	    "leads_ver",
@@ -3131,8 +3160,8 @@ function buildMenu() {
   }
   for (const g of MENU) {
     const visibleItems = allowed
-      ? g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && allowed.has(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id))) && (!it.driverOnly || isDriver))
-      : g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id))) && (!it.driverOnly || isDriver));
+      ? g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && allowed.has(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id)) || isGdMenuAllowed(it)) && (!it.driverOnly || isDriver))
+      : g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id)) || isGdMenuAllowed(it)) && (!it.driverOnly || isDriver));
     if (!visibleItems.length) continue;
     if (lastGroupId === "operadores" && (g.id === "rrhh" || g.id === "tools" || g.id === "settings")) {
       const divider = document.createElement("div");

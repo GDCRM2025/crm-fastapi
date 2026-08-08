@@ -6,11 +6,11 @@ Actualizado: 2026-08-08
 |---|---|---|---|---|---|
 | 0 Auditoría | DONE | PASS | N/A | N/A | VM/DB/backup verificados; consola Proxmox pendiente |
 | 1 Arquitectura base | DONE | PASS | DONE | NOT_DEPLOYED | Módulo y API base |
-| 2 RBAC y views | PARTIAL | PASS | PARTIAL | NOT_DEPLOYED | Permisos funcionales listos; UI pendiente |
+| 2 RBAC y views | PARTIAL | PASS | PARTIAL | NOT_DEPLOYED | Menú GD usa permisos backend por rol; administración explícita de grants aún pendiente |
 | 3 Sitios | DONE | PASS | NOT_CONFIGURED | NOT_DEPLOYED | CAM/EXP/GOU/DEL seed; UI de alta/estado incluida |
 | 4 GA4 | PARTIAL | PASS | NOT_CONFIGURED | N/A | Parser y snapshot local; cliente/sync pendiente |
 | 5 Search Console | PARTIAL | PASS | NOT_CONFIGURED | N/A | Parser y snapshot local; cliente/sync pendiente |
-| 6 Dashboard web | DONE | PASS | PARTIAL | NOT_DEPLOYED | Resumen, sitios, estados y navegación RBAC; fuentes externas aún deshabilitadas |
+| 6 Dashboard web | DONE | PASS | PARTIAL | NOT_DEPLOYED | Nueva sección lateral Resumen/Sitios/UTM; error de backend amigable; fuentes externas aún deshabilitadas |
 | 7 Tracking first-party | PENDING | PENDING | PENDING | N/A | — |
 | 8 Atribución | PENDING | PENDING | PENDING | N/A | — |
 | 9 PageSpeed | PARTIAL | PASS | NOT_CONFIGURED | N/A | Parser lab/field y almacenamiento listos |
