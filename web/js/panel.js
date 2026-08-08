@@ -37,11 +37,8 @@ function decodeJwtPayload(token) {
 }
 const API_BASE = (() => {
   try {
-    const h = String(location.hostname || "").toLowerCase();
-    const isLocal = h === "localhost" || h === "127.0.0.1";
-    if (isLocal) return "";
-    // Hosting puede montar el CRM en /crm o en / (según Passenger/Apache).
     const p = String(location.pathname || "");
+    // El mismo frontend funciona montado en /crm o en la raíz del servidor.
     return p.startsWith("/crm/") || p === "/crm" ? "/crm" : "";
   } catch (_) {
     return "";
@@ -2500,9 +2497,11 @@ const MENU = [
     ico: "\u{1F4E1}",
     title: "GD Intelligence",
     items: [
-      { id: "gdi_overview", label: "Dashboard web", url: "/web/views/gd_intelligence.html?v=20260808-2", gdPermission: "web_intelligence_view" },
-      { id: "gdi_sites", label: "Sitios e integraciones", url: "/web/views/gd_intelligence.html?v=20260808-2#sites", gdPermission: "web_intelligence_view" },
-      { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260808-2#utm", gdPermission: "web_intelligence_campaigns" }
+      { id: "gdi_overview", label: "Dashboard web", url: "/web/views/gd_intelligence.html?v=20260808-4", gdPermission: "web_intelligence_view" },
+      { id: "gdi_sites", label: "Sitios e integraciones", url: "/web/views/gd_intelligence.html?v=20260808-4#sites", gdPermission: "web_intelligence_view" },
+      { id: "gdi_health", label: "Site Health", url: "/web/views/gd_intelligence.html?v=20260808-4#health", gdPermission: "web_intelligence_view" },
+      { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260808-4#utm", gdPermission: "web_intelligence_campaigns" },
+      { id: "gdi_permissions", label: "Permisos GD", url: "/web/views/gd_intelligence.html?v=20260808-4#permissions", gdPermission: "system_users_manage" }
     ]
   },
   {
@@ -2777,7 +2776,9 @@ const PERMISSIONS = {
     "dash_home",
     "gdi_overview",
     "gdi_sites",
+    "gdi_health",
     "gdi_utm",
+    "gdi_permissions",
     "rrhh_hub",
     "op_gps",
     "op_vruta",
@@ -2866,6 +2867,7 @@ const PERMISSIONS = {
     "dash_home",
     "gdi_overview",
     "gdi_sites",
+    "gdi_health",
     "gdi_utm",
     "rep_total",
     "emkt_email",
@@ -3346,7 +3348,7 @@ function closeAllGroups() {
 async function openItem(it) {
   var _a;
   if (!(it == null ? void 0 : it.url)) return;
-  if (CURRENT_ALLOWED && !CURRENT_ALLOWED.has(it.id)) return;
+  if (CURRENT_ALLOWED && !CURRENT_ALLOWED.has(it.id) && !isGdMenuAllowed(it)) return;
   if (!isItemFeatureEnabled(it.id)) {
     try { toast("Este módulo está temporalmente deshabilitado por administración.", "warning"); } catch (_) {}
     return;

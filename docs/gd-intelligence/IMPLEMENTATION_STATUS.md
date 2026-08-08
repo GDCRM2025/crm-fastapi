@@ -6,16 +6,16 @@ Actualizado: 2026-08-08
 |---|---|---|---|---|---|
 | 0 Auditoría | DONE | PASS | N/A | N/A | VM/DB/backup verificados; consola Proxmox pendiente |
 | 1 Arquitectura base | DONE | PASS | DONE | NOT_DEPLOYED | Módulo y API base |
-| 2 RBAC y views | PARTIAL | PASS | PARTIAL | NOT_DEPLOYED | Menú GD usa permisos backend por rol; administración explícita de grants aún pendiente |
+| 2 RBAC y views | DONE | PASS | DONE | NOT_DEPLOYED | Menú y matriz Allow/Deny/Inherit respaldados por API y auditoría |
 | 3 Sitios | DONE | PASS | NOT_CONFIGURED | NOT_DEPLOYED | CAM/EXP/GOU/DEL seed; UI de alta/estado incluida |
 | 4 GA4 | PARTIAL | PASS | NOT_CONFIGURED | N/A | Parser y snapshot local; cliente/sync pendiente |
 | 5 Search Console | PARTIAL | PASS | NOT_CONFIGURED | N/A | Parser y snapshot local; cliente/sync pendiente |
-| 6 Dashboard web | DONE | PASS | PARTIAL | NOT_DEPLOYED | Nueva sección lateral Resumen/Sitios/UTM; error de backend amigable; fuentes externas aún deshabilitadas |
+| 6 Dashboard web | DONE | PASS | DONE_LOCAL | NOT_DEPLOYED | Nueva sección lateral Resumen/Sitios/Site Health/UTM/Permisos; cuatro sitios reales del restore aislado |
 | 7 Tracking first-party | PENDING | PENDING | PENDING | N/A | — |
 | 8 Atribución | PENDING | PENDING | PENDING | N/A | — |
 | 9 PageSpeed | PARTIAL | PASS | NOT_CONFIGURED | N/A | Parser lab/field y almacenamiento listos |
 | 10 CrUX | PARTIAL | PASS | NOT_CONFIGURED | N/A | Datos ausentes no se fabrican |
-| 11 Site Health | PENDING | PENDING | PENDING | N/A | — |
+| 11 Site Health | DONE | PASS | DONE_LOCAL | NOT_DEPLOYED | Scanner seguro, historial, UI, ejecución manual y timer systemd preparado |
 | 12 SEO Opportunity Engine | PENDING | PENDING | PENDING | N/A | — |
 | 13 UTM Builder | DONE | PASS | DONE | NOT_DEPLOYED | API + UI generan, identifican, guardan y listan URLs |
 | 14 Marketing campaigns | PENDING | PENDING | PENDING | N/A | — |
@@ -47,8 +47,9 @@ Actualizado: 2026-08-08
 
 ## Evidencia actual
 
-- 17 pruebas unitarias/contrato GD Intelligence: PASS.
-- QA visual local: tabs Resumen/Sitios/UTM renderizan y el error de API sin backend se presenta de forma controlada.
+- 26 pruebas unitarias/contrato GD Intelligence: PASS.
+- `LOCAL_API_CONNECTIVITY=PASS`: login, auth, overview, sitios, UTM, RBAC y Site Health responden por FastAPI contra PostgreSQL aislada.
+- QA visual autenticada: el menú **📡 GD Intelligence** y las vistas Resumen/Sitios/Site Health/UTM/Permisos cargan por HTTP; cuatro sitios visibles.
 - Compilación Python del módulo y router: PASS.
 - `git diff --check` sobre archivos GD Intelligence: PASS.
 - Conectividad VM y PostgreSQL: PASS mediante VPN.
@@ -56,4 +57,5 @@ Actualizado: 2026-08-08
 - Backup 20260808: checksums y `pg_restore --list` PASS.
 - Restore aislado 20260808: PASS.
 - Migraciones GD Intelligence ejecutadas dos veces en restore: PASS; core intacto.
+- Migración Site Health ejecutada dos veces en restore: PASS; cuatro resultados almacenados por ejecución.
 - Migración productiva: no ejecutada; Git/secret/rollback/readiness pendientes.

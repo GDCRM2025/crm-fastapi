@@ -1,10 +1,19 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from backend.core.activity_log import log_activity
 from backend.core.database import engine
-from backend.gd_intelligence.permissions import PERMISSIONS, has_permission, resolve_permissions
+from backend.gd_intelligence.permissions import (
+    PERMISSIONS,
+    has_permission,
+    resolve_permissions,
+    role_key,
+    user_id,
+)
+from backend.gd_intelligence.rbac_admin import ROLE_KEYS, role_matrix, save_role_permissions
 from backend.gd_intelligence.repository import (
     create_site,
     create_utm_link,
@@ -13,7 +22,14 @@ from backend.gd_intelligence.repository import (
     schema_ready,
     update_site,
 )
-from backend.gd_intelligence.schemas import SiteCreate, SiteUpdate, UTMBuildRequest
+from backend.gd_intelligence.schemas import (
+    RolePermissionsUpdate,
+    SiteCreate,
+    SiteUpdate,
+    UTMBuildRequest,
+)
+from backend.gd_intelligence.site_health import history as site_health_history
+from backend.gd_intelligence.site_health import latest_results, scan_site, store_result
 from backend.routers.auth import get_current_user
 
 
@@ -35,6 +51,17 @@ def _require_schema(conn) -> None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "GD_INTELLIGENCE_MIGRATION_REQUIRED"},
+        )
+
+
+def _require_site_health_schema(conn) -> None:
+    ready = conn.execute(
+        text("SELECT to_regclass('public.wi_site_health_runs') IS NOT NULL")
+    ).scalar()
+    if not ready:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "SITE_HEALTH_MIGRATION_REQUIRED"},
         )
 
 
@@ -66,6 +93,46 @@ def my_permissions(user: dict = Depends(get_current_user)):
         "ok": True,
         "items": {permission: permission in granted for permission in PERMISSIONS},
     }
+
+
+@router.get("/permissions/roles")
+def permissions_roles(user: dict = Depends(get_current_user)):
+    with engine.connect() as conn:
+        _require(conn, user, "system_users_manage")
+        _require_schema(conn)
+        return {"ok": True, "permissions": list(PERMISSIONS), "items": role_matrix(conn)}
+
+
+@router.put("/permissions/roles/{target_role}")
+def permissions_role_update(
+    target_role: str,
+    payload: RolePermissionsUpdate,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    normalized = str(target_role or "").strip().upper().replace(" ", "_")
+    if normalized not in ROLE_KEYS:
+        raise HTTPException(status_code=404, detail="Rol no encontrado.")
+    with engine.begin() as conn:
+        _require(conn, user, "system_users_manage")
+        if normalized in {"ADMIN", "SUPER_ADMIN"}:
+            _require(conn, user, "system_super_admin")
+        try:
+            result = save_role_permissions(conn, normalized, payload.permissions, _actor(user))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        log_activity(
+            conn,
+            username=_actor(user),
+            user_id=user_id(user),
+            role=role_key(user),
+            action="gd_intelligence.role_permissions.update",
+            entity_type="gd_role",
+            meta={"target_role": normalized, **result},
+            request=request,
+            status_code=200,
+        )
+    return {"ok": True, "role": normalized, **result}
 
 
 @router.get("/web/sites")
@@ -131,3 +198,74 @@ def utm_create(payload: UTMBuildRequest, user: dict = Depends(get_current_user))
         return {"ok": True, "item": item}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/web/site-health/latest")
+def site_health_latest(user: dict = Depends(get_current_user)):
+    with engine.connect() as conn:
+        _require(conn, user, "web_intelligence_view")
+        _require_schema(conn)
+        _require_site_health_schema(conn)
+        return {"ok": True, "items": latest_results(conn)}
+
+
+@router.get("/web/site-health/history")
+def site_health_history_list(
+    site_id: int = Query(gt=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+):
+    with engine.connect() as conn:
+        _require(conn, user, "web_intelligence_view")
+        _require_site_health_schema(conn)
+        return {"ok": True, "items": site_health_history(conn, site_id, limit)}
+
+
+@router.post("/web/site-health/run")
+def site_health_run(
+    request: Request,
+    site_id: int | None = Query(default=None, gt=0),
+    user: dict = Depends(get_current_user),
+):
+    with engine.connect() as conn:
+        _require(conn, user, "web_intelligence_performance")
+        _require_schema(conn)
+        _require_site_health_schema(conn)
+        sites = conn.execute(
+            text(
+                """
+                SELECT id,code,name,domain
+                FROM public.wi_sites
+                WHERE enabled AND (CAST(:site_id AS bigint) IS NULL OR id=CAST(:site_id AS bigint))
+                ORDER BY code
+                """
+            ),
+            {"site_id": site_id},
+        ).mappings().all()
+    if not sites:
+        raise HTTPException(status_code=404, detail="Sitio habilitado no encontrado.")
+
+    items = []
+    for site in sites:
+        scanned = scan_site(str(site["domain"]))
+        with engine.begin() as conn:
+            item = store_result(conn, int(site["id"]), scanned, _actor(user))
+        items.append({**item, "code": site["code"], "name": site["name"], "domain": site["domain"]})
+
+    with engine.begin() as conn:
+        log_activity(
+            conn,
+            username=_actor(user),
+            user_id=user_id(user),
+            role=role_key(user),
+            action="gd_intelligence.site_health.run",
+            entity_type="wi_site_health",
+            meta={
+                "site_id": site_id,
+                "count": len(items),
+                "statuses": {str(item["code"]): str(item["status"]) for item in items},
+            },
+            request=request,
+            status_code=200,
+        )
+    return {"ok": True, "items": items}

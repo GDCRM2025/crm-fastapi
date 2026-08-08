@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Green Diamond Site Health every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+AccuracySec=1min
+Persistent=true
+Unit=gd-site-health.service
+
+[Install]
+WantedBy=timers.target

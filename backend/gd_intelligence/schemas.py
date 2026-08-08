@@ -88,3 +88,14 @@ class UTMBuildRequest(BaseModel):
     utm_campaign: str = Field(min_length=1, max_length=200)
     utm_term: str | None = Field(default=None, max_length=200)
     utm_content: str | None = Field(default=None, max_length=200)
+
+
+class RolePermissionsUpdate(BaseModel):
+    permissions: dict[str, bool | None]
+
+    @field_validator("permissions")
+    @classmethod
+    def validate_permissions(cls, value: dict[str, bool | None]) -> dict[str, bool | None]:
+        if len(value) > 100:
+            raise ValueError("Demasiados permisos en una sola actualización")
+        return {str(key).strip(): allowed for key, allowed in value.items() if str(key).strip()}

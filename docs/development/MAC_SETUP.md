@@ -24,9 +24,41 @@ Configurar una base de desarrollo/fixture en `DATABASE_URL`. Nunca apuntar tests
 
 ```bash
 source .venv/bin/activate
-uvicorn backend.main:app --reload
-npm --prefix frontend run dev
+export DATABASE_URL='postgresql://USUARIO@127.0.0.1:PUERTO/BASE_DE_RESTORE_O_DEV'
+export JWT_SECRET='SECRETO_LOCAL_NO_PRODUCTIVO'
+uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+FastAPI sirve API y frontend en el mismo origen; Vite no es necesario para las vistas legacy/GD Intelligence. Las URLs correctas son:
+
+- Login CRM: `http://127.0.0.1:8000/web/login.html`
+- Panel autenticado: `http://127.0.0.1:8000/web/index.html`
+- GD Intelligence: abrir **📡 GD Intelligence** desde el menú del panel. No abrir `gd_intelligence.html` mediante `file://`.
+
+El frontend deriva el prefijo API desde la ruta (`/` o `/crm`) y no contiene IPs, hosts ni URLs productivas hardcodeadas.
+
+Para crear una cuenta exclusivamente en una base local cuyo nombre incluya `test`, `restore`, `dev` o `local`:
+
+```bash
+python scripts/dev/create_local_admin.py
+```
+
+El script rechaza hosts que no sean loopback y solicita la contraseña sin imprimirla.
+
+## PostgreSQL aislada validada el 2026-08-08
+
+La restauración aislada se ejecuta en el puerto `55432`. Con FastAPI conectado a `gd_restore_test_20260808` se verificó:
+
+- `/healthz`: HTTP 200.
+- `/login`: HTTP 200 con fixture local autenticado.
+- `/api/gd-intelligence/permissions/me`: HTTP 200.
+- `/api/gd-intelligence/overview`: HTTP 200, cuatro sitios.
+- `/api/gd-intelligence/web/sites`: HTTP 200, CAM/EXP/GOU/DEL.
+- `/api/gd-intelligence/campaigns/utm`: HTTP 200.
+- `/api/gd-intelligence/permissions/roles`: HTTP 200, cuatro roles.
+- `/api/gd-intelligence/web/site-health/latest`: HTTP 200.
+
+Resultado: `LOCAL_API_CONNECTIVITY=PASS`. Producción no fue consultada ni modificada para esta validación.
 
 ## Verificación
 

@@ -1,5 +1,6 @@
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from pydantic import ValidationError
 
@@ -12,6 +13,8 @@ from backend.gd_intelligence.connectors import (
     parse_search_console_rows,
 )
 from backend.gd_intelligence.utm import build_utm_url, campaign_identifier
+from backend.gd_intelligence.rbac_admin import ROLE_KEYS
+from backend.gd_intelligence.site_health import PageSignals, _request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,6 +67,13 @@ class MigrationSafetyTests(unittest.TestCase):
         sql = (ROOT / "migrations/2026_08_08_web_intelligence_sources.sql").read_text().upper()
         for forbidden in ("DROP TABLE", "TRUNCATE", "DELETE FROM", "ALTER TABLE"):
             self.assertNotIn(forbidden, sql)
+
+    def test_site_health_migration_is_additive(self):
+        sql = (ROOT / "migrations/2026_08_08_site_health.sql").read_text().upper()
+        for forbidden in ("DROP TABLE", "TRUNCATE", "DELETE FROM", "ALTER TABLE"):
+            self.assertNotIn(forbidden, sql)
+        self.assertIn("LOCK_TIMEOUT", sql)
+        self.assertIn("WI_SITE_HEALTH_RUNS", sql)
 
 
 class ConnectorParserTests(unittest.TestCase):
@@ -142,6 +152,70 @@ class DashboardContractTests(unittest.TestCase):
 
     def test_dashboard_has_friendly_backend_error(self):
         self.assertIn("Backend GD Intelligence no disponible", self.html)
+
+    def test_frontend_api_base_is_path_derived(self):
+        login = (ROOT / "web/login.html").read_text()
+        self.assertIn("location.pathname.startsWith('/crm/')", login)
+        self.assertNotIn("location.hostname", self.html)
+        self.assertNotIn("location.hostname", self.panel)
+
+    def test_gd_navigation_bypasses_only_legacy_menu_matrix(self):
+        self.assertIn("!CURRENT_ALLOWED.has(it.id) && !isGdMenuAllowed(it)", self.panel)
+
+    def test_optional_utm_site_filter_has_explicit_postgres_type(self):
+        repository = (ROOT / "backend/gd_intelligence/repository.py").read_text()
+        self.assertIn("CAST(:site_id AS bigint) IS NULL", repository)
+
+    def test_dashboard_exposes_site_health_and_rbac_tabs(self):
+        self.assertIn('data-tab="health"', self.html)
+        self.assertIn('data-tab="permissions"', self.html)
+        self.assertIn("/api/gd-intelligence/web/site-health/latest", self.html)
+        self.assertIn("/api/gd-intelligence/permissions/roles", self.html)
+
+
+class RbacAdminTests(unittest.TestCase):
+    def test_supported_roles_are_explicit(self):
+        self.assertEqual(ROLE_KEYS, ("EXECUTIVO", "MARKETING", "ADMIN", "SUPER_ADMIN"))
+
+
+class SiteHealthParserTests(unittest.TestCase):
+    def test_html_signals_are_separated(self):
+        parser = PageSignals()
+        parser.feed(
+            '<html itemscope itemtype="https://schema.org/WebPage"><head>'
+            '<title>GD</title><meta name="description" content="Servicios">'
+            '<meta name="viewport" content="width=device-width">'
+            '<link rel="canonical" href="https://example.cl/"></head>'
+            '<body><h1>Hola</h1><img src="/x.png"><a href="/contacto">Contacto</a></body></html>'
+        )
+        self.assertTrue(parser.title and parser.meta_description and parser.viewport)
+        self.assertTrue(parser.canonical and parser.h1 and parser.schema_org)
+        self.assertEqual(parser.missing_alt_count, 1)
+
+    def test_redirect_to_private_network_is_rejected(self):
+        class RedirectResponse:
+            status_code = 302
+            headers = {"location": "http://127.0.0.1/private"}
+
+            def close(self):
+                return None
+
+        class Session:
+            calls = 0
+
+            def request(self, *args, **kwargs):
+                self.calls += 1
+                return RedirectResponse()
+
+        def dns(hostname, *_args, **_kwargs):
+            address = "93.184.216.34" if hostname == "example.com" else "127.0.0.1"
+            return [(2, 1, 6, "", (address, 443))]
+
+        session = Session()
+        with patch("backend.gd_intelligence.site_health.socket.getaddrinfo", side_effect=dns):
+            with self.assertRaises(ValueError):
+                _request(session, "GET", "https://example.com/", timeout=1)
+        self.assertEqual(session.calls, 1)
 
 
 if __name__ == "__main__":

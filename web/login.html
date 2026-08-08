@@ -80,7 +80,7 @@
       }catch(_){}
       return { isConfirmed: false };
     };
-    const API_BASE = (location.pathname.startsWith('/crm/') || location.pathname.startsWith('/web/')) ? '/crm' : '';
+    const API_BASE = location.pathname === '/crm' || location.pathname.startsWith('/crm/') ? '/crm' : '';
     const WEB_BASE = API_BASE + '/web';
     const cv=$('#field'),ctx=cv.getContext('2d'); function fit(){cv.width=cv.clientWidth;cv.height=cv.clientHeight} addEventListener('resize',fit);fit();
     const pts=Array.from({length:90},()=>({x:Math.random()*cv.width,y:Math.random()*cv.height,vx:(Math.random()*2-1)*.4,vy:(Math.random()*2-1)*.4,r:Math.random()*1.7+.6}));

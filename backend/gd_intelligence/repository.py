@@ -145,7 +145,7 @@ def list_utm_links(conn, site_id: int | None, limit: int) -> list[dict[str, Any]
                    u.utm_term,u.utm_content,u.created_by,u.created_at
             FROM public.wi_utm_links u
             JOIN public.wi_sites s ON s.id=u.site_id
-            WHERE (:site_id IS NULL OR u.site_id=:site_id)
+            WHERE (CAST(:site_id AS bigint) IS NULL OR u.site_id=CAST(:site_id AS bigint))
             ORDER BY u.created_at DESC
             LIMIT :limit
             """
