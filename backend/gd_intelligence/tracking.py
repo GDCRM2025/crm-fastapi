@@ -8,6 +8,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from sqlalchemy import text
 
+from backend.gd_intelligence.paid_media_intelligence import click_ids_from_url
+
 
 UTM_KEYS = ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content")
 EVENT_TYPES = {"page_view", "click_whatsapp", "form_start", "form_submit", "lead_created"}
@@ -58,20 +60,22 @@ def upsert_session(conn, *, site_id: int, payload: dict[str, Any], user_agent: s
     if not landing.startswith(("http://", "https://")):
         raise ValueError("landing_url debe ser HTTP(S)")
     parsed = parse_utm(landing)
+    click_ids = click_ids_from_url(landing)
     supplied = payload.get("utm") if isinstance(payload.get("utm"), dict) else {}
     utm = {key: str(supplied.get(key) or parsed.get(key) or "").strip()[:200] or None for key in UTM_KEYS}
     params = {
         "site_id": int(site_id), "visitor_id": visitor_id, "session_id": session_id,
         "landing_url": landing, "referrer": str(payload.get("referrer") or "")[:2048] or None,
         "device": device_from_user_agent(user_agent), **utm,
+        "gclid_hash": click_ids["gclid"], "fbclid_hash": click_ids["fbclid"],
     }
     row = conn.execute(text("""
       INSERT INTO public.wi_sessions(
         site_id,visitor_id,session_id,landing_url,referrer,device,
-        utm_source,utm_medium,utm_campaign,utm_term,utm_content
+        utm_source,utm_medium,utm_campaign,utm_term,utm_content,gclid_hash,fbclid_hash
       ) VALUES (
         :site_id,:visitor_id,:session_id,:landing_url,:referrer,:device,
-        :utm_source,:utm_medium,:utm_campaign,:utm_term,:utm_content
+        :utm_source,:utm_medium,:utm_campaign,:utm_term,:utm_content,:gclid_hash,:fbclid_hash
       ) ON CONFLICT(session_id) DO UPDATE SET last_seen_at=now()
       RETURNING id,site_id,visitor_id,session_id,started_at,last_seen_at
     """), params).mappings().one()

@@ -142,13 +142,79 @@ Acciones visibles extraídas de botones HTML; deben verificarse en pruebas de in
 | gdi_utm | Constructor UTM | ⚡ Integraciones | web/views/gd_intelligence.html |
 | gdi_paid_media | Paid Media | ? Ayuda | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Actualizar | web/views/paid_media.html |
-| gdi_paid_media | Paid Media | Change Log | web/views/paid_media.html |
+| gdi_paid_media | Paid Media | Actualizar inteligencia | web/views/paid_media.html |
+| gdi_paid_media | Paid Media | Alertas | web/views/paid_media.html |
+| gdi_paid_media | Paid Media | Atribución | web/views/paid_media.html |
+| gdi_paid_media | Paid Media | Cerrar | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Change Risk | web/views/paid_media.html |
+| gdi_paid_media | Paid Media | Creatividad | web/views/paid_media.html |
+| gdi_paid_media | Paid Media | Ejecutivo | web/views/paid_media.html |
+| gdi_paid_media | Paid Media | GD AI | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Google Ads | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Meta Ads | web/views/paid_media.html |
-| gdi_paid_media | Paid Media | Recomendaciones | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Resumen | web/views/paid_media.html |
+| gdi_paid_media | Paid Media | SEO | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Search Terms | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | ? Ayuda | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Actualizar | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Actualizar inteligencia | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Alertas | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Atribución | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Cerrar | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Change Risk | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Creatividad | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Ejecutivo | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | GD AI | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Google Ads | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Meta Ads | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Resumen | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | SEO | web/views/paid_media.html |
+| gdi_search_terms | Search Terms | Search Terms | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | ? Ayuda | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Actualizar | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Actualizar inteligencia | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Alertas | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Atribución | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Cerrar | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Change Risk | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Creatividad | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Ejecutivo | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | GD AI | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Google Ads | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Meta Ads | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Resumen | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | SEO | web/views/paid_media.html |
+| gdi_seo | Oportunidades SEO | Search Terms | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | ? Ayuda | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Actualizar | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Actualizar inteligencia | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Alertas | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Atribución | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Cerrar | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Change Risk | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Creatividad | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Ejecutivo | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | GD AI | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Google Ads | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Meta Ads | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Resumen | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | SEO | web/views/paid_media.html |
+| gdi_alerts | Alertas Intelligence | Search Terms | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | ? Ayuda | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Actualizar | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Actualizar inteligencia | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Alertas | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Atribución | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Cerrar | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Change Risk | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Creatividad | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Ejecutivo | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | GD AI | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Google Ads | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Meta Ads | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Resumen | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | SEO | web/views/paid_media.html |
+| gdi_executive | Dashboard Ejecutivo | Search Terms | web/views/paid_media.html |
 | gdi_permissions | Permisos GD | Actualizar información | web/views/gd_intelligence.html |
 | gdi_permissions | Permisos GD | Analizar sitios ahora | web/views/gd_intelligence.html |
 | gdi_permissions | Permisos GD | Cancelar | web/views/gd_intelligence.html |
@@ -307,6 +373,14 @@ Acciones visibles extraídas de botones HTML; deben verificarse en pruebas de in
 | rrhh_mark_plan | Turnos (planificador) | Cargar | web/views/rrhh_marcaciones_planificador.html |
 | rrhh_mark_plan | Turnos (planificador) | Este mes | web/views/rrhh_marcaciones_planificador.html |
 | rrhh_turnos_visor | Mi turno (teórico vs real) | Cargar | web/views/rrhh_turnos_visor.html |
+| tool_inbox | Inbox omnicanal | Actualizar | web/views/omnichannel_inbox.html |
+| tool_inbox | Inbox omnicanal | Cerrar | web/views/omnichannel_inbox.html |
+| tool_inbox | Inbox omnicanal | Email | web/views/omnichannel_inbox.html |
+| tool_inbox | Inbox omnicanal | Guardar gestión | web/views/omnichannel_inbox.html |
+| tool_inbox | Inbox omnicanal | Instagram | web/views/omnichannel_inbox.html |
+| tool_inbox | Inbox omnicanal | Messenger | web/views/omnichannel_inbox.html |
+| tool_inbox | Inbox omnicanal | Todos | web/views/omnichannel_inbox.html |
+| tool_inbox | Inbox omnicanal | WhatsApp | web/views/omnichannel_inbox.html |
 | tool_gmail | Correo | Cerrar | web/views/tools.html |
 | tool_gmail | Correo | 🧰 Tools | web/views/tools.html |
 | tool_ig | Instagram | Cerrar | web/views/tools.html |

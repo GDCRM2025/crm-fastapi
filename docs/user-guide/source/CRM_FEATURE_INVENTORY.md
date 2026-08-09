@@ -1,6 +1,6 @@
 # Inventario funcional CRM
 
-Cobertura descubierta: **72 accesos de menú** y **485 endpoints FastAPI**. Esto es inventario técnico, no afirmación de QA funcional.
+Cobertura descubierta: **77 accesos de menú** y **501 endpoints FastAPI**. Esto es inventario técnico, no afirmación de QA funcional.
 
 ## Endpoints
 
@@ -163,6 +163,18 @@ Cobertura descubierta: **72 accesos de menú** y **485 endpoints FastAPI**. Esto
 | GET | /gia/instagram/events | gia_instagram_events | backend/routers/greeni_instagram.py |
 | GET | /api/help/search | search | backend/routers/help_center.py |
 | GET | /api/help/context/{screen_id} | context | backend/routers/help_center.py |
+| GET | /api/gd-intelligence/intelligence/ad-accounts/discover | discover_ad_accounts | backend/routers/intelligence_platform.py |
+| POST | /api/gd-intelligence/intelligence/ad-accounts/select | select_ad_account | backend/routers/intelligence_platform.py |
+| POST | /api/gd-intelligence/intelligence/ad-accounts/{account_id}/sync | sync_ad_account | backend/routers/intelligence_platform.py |
+| POST | /api/gd-intelligence/intelligence/paid-media/analyze | analyze_paid_media | backend/routers/intelligence_platform.py |
+| GET | /api/gd-intelligence/intelligence/paid-media/attribution | paid_media_attribution | backend/routers/intelligence_platform.py |
+| GET | /api/gd-intelligence/intelligence/paid-media/search-terms | intelligent_search_terms | backend/routers/intelligence_platform.py |
+| GET | /api/gd-intelligence/intelligence/paid-media/creatives | creative_intelligence | backend/routers/intelligence_platform.py |
+| GET | /api/gd-intelligence/intelligence/paid-media/change-risk | paid_media_change_risk | backend/routers/intelligence_platform.py |
+| GET | /api/gd-intelligence/intelligence/seo/opportunities | seo_opportunities | backend/routers/intelligence_platform.py |
+| POST | /api/gd-intelligence/intelligence/alerts/refresh | refresh_alerts | backend/routers/intelligence_platform.py |
+| GET | /api/gd-intelligence/intelligence/executive/readiness | executive_dashboard_readiness | backend/routers/intelligence_platform.py |
+| POST | /api/gd-intelligence/intelligence/ai/context | ai_context | backend/routers/intelligence_platform.py |
 | GET | /ops/inventario/catalogos | catalogos | backend/routers/inventario.py |
 | GET | /ops/inventario/categorias | list_categorias | backend/routers/inventario.py |
 | POST | /ops/inventario/categorias | create_categoria | backend/routers/inventario.py |
@@ -250,6 +262,10 @@ Cobertura descubierta: **72 accesos de menú** y **485 endpoints FastAPI**. Esto
 | GET | /admin/notify_routes/email/users | list_email_users | backend/routers/notify_routes.py |
 | GET | /admin/notify_routes/email/roles | list_email_roles | backend/routers/notify_routes.py |
 | PUT | /admin/notify_routes/email/{process_key} | upsert_email_route | backend/routers/notify_routes.py |
+| GET | /api/omnichannel/capabilities | capabilities | backend/routers/omnichannel.py |
+| GET | /api/omnichannel/inbox | inbox | backend/routers/omnichannel.py |
+| PATCH | /api/omnichannel/items/{channel}/{source_ref} | update_work_item | backend/routers/omnichannel.py |
+| GET | /api/omnichannel/analytics | analytics | backend/routers/omnichannel.py |
 | GET | /api/gd-intelligence/paid-media/status | status | backend/routers/paid_media.py |
 | GET | /api/gd-intelligence/paid-media/summary | summary | backend/routers/paid_media.py |
 | GET | /api/gd-intelligence/paid-media/search-terms | search_terms | backend/routers/paid_media.py |

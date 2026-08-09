@@ -20,7 +20,7 @@ GD Intelligence no solicita usuario ni contraseña. El flujo operativo usa una s
 4. Configura `GOOGLE_SERVICE_ACCOUNT_FILE` con la ruta absoluta protegida y reinicia el backend.
 5. En **GD Intelligence → Integration Center → CONECTAR GOOGLE**, lista y selecciona por sitio el `GA4 Property ID` numérico y la propiedad Search Console (`sc-domain:dominio` o URL-prefix).
 
-OAuth opcional requiere `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` y `GOOGLE_OAUTH_REDIRECT_URI` desde el secret store. No se persisten refresh tokens hasta disponer de almacenamiento cifrado administrado. El `GA4 Measurement ID` (`G-…`) es público, pero no reemplaza al Property ID numérico de API.
+OAuth delegado requiere `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI` y el refresh token protegido correspondiente. El refresh token nunca se devuelve al frontend y se configura como `GOOGLE_ADS_REFRESH_TOKEN` mediante el secret store; alternativamente puede utilizarse `GOOGLE_SERVICE_ACCOUNT_FILE` cuando la cuenta de servicio dispone de acceso explícito. El `GA4 Measurement ID` (`G-…`) es público, pero no reemplaza al Property ID numérico de API.
 
 ## Google Tag Manager
 
@@ -45,8 +45,9 @@ El Pixel ID numérico es público. Regístralo por sitio y verifica su existenci
 
 La primera etapa es `READ · ANALYZE · RECOMMEND`: no publica campañas, presupuestos, anuncios ni palabras negativas.
 
-- Google Ads: habilita la API y configura en backend `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_FILE` y los Customer ID públicos elegidos en Integration Center. Si la cuenta requiere manager account, registra su ID público como configuración, no como secreto.
-- Meta Ads: configura `META_ACCESS_TOKEN` en secret store y registra el Ad Account ID público por sitio. Usa permisos de lectura mínimos (`ads_read`, según la app aprobada).
+- Google Ads: habilita la API y configura `GOOGLE_ADS_DEVELOPER_TOKEN` más OAuth refresh o `GOOGLE_SERVICE_ACCOUNT_FILE`. Integration Center llama `customers:listAccessibleCustomers`, permite seleccionar Customer ID y marca/sitio, y sincroniza mediante `googleAds:searchStream` en modo READ ONLY. `GOOGLE_ADS_LOGIN_CUSTOMER_ID` es público y sólo se usa cuando existe una cuenta manager.
+- Meta Ads: configura `META_ACCESS_TOKEN` en secret store con permisos de lectura aprobados. Integration Center lista Business, Ad Account, Page e Instagram Account, permite asociarlos a marca/sitio y sincroniza entidades e insights mediante solicitudes GET. No existe ninguna operación de publicación o mutación.
+- Histórico inicial: 90 días por defecto, ampliable hasta 730 cuando el proveedor lo permite. Las referencias GCLID disponibles en Google se limitan al periodo soportado por `click_view` y se persisten únicamente como hash.
 - Los conectores deben sincronizar en forma idempotente por cuenta, fecha, entidad, dispositivo y red. Un reintento actualiza la misma clave; no duplica gasto.
 - `platform_conversions` y valor de conversión de plataforma se conservan separados de Leads, Cotizaciones, Ventas, Revenue y ROAS del CRM.
 
@@ -66,6 +67,9 @@ El tracker conserva `gd_visitor_id`, `gd_session_id`, referrer, landing y UTM; a
 | `GOOGLE_OAUTH_REDIRECT_URI` | Callback exacto | No |
 | `PAGESPEED_API_KEY` | PageSpeed/CrUX | Sí |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | Lectura de Google Ads API | Sí |
+| `GOOGLE_ADS_REFRESH_TOKEN` | OAuth Google Ads delegado | Sí |
+| `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Cuenta manager pública | No |
+| `GOOGLE_ADS_API_VERSION` | Versión REST validada | No |
 | `META_ACCESS_TOKEN` | Lectura de Meta Marketing API | Sí |
 
 Toda credencial históricamente compartida debe revocarse y rotarse antes del deployment. La UI y la API sólo devuelven booleanos de disponibilidad, IDs públicos y diagnósticos sanitizados.

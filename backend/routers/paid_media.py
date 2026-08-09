@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,6 +7,7 @@ from sqlalchemy import text
 
 from backend.core.database import engine
 from backend.gd_intelligence.paid_media import business_metrics
+from backend.gd_intelligence.ad_platforms import google_ads_capabilities, meta_ads_capabilities
 from backend.gd_intelligence.permissions import has_permission
 from backend.routers.auth import get_current_user
 
@@ -32,9 +32,12 @@ def status(user: dict = Depends(get_current_user)):
           FROM wi_ad_accounts a LEFT JOIN wi_ad_account_sites x ON x.account_id=a.id
           LEFT JOIN wi_sites s ON s.id=x.site_id GROUP BY a.id ORDER BY a.platform,a.name
         """)).mappings()]
+    google = google_ads_capabilities()
+    meta = meta_ads_capabilities()
     return {"ok": True, "mode": "READ_ANALYZE_RECOMMEND", "accounts": accounts,
-            "backend": {"google_ads": bool(os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN") and os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")),
-                        "meta_ads": bool(os.getenv("META_ACCESS_TOKEN"))}}
+            "backend": {"google_ads": bool(google["developer_token"] and (google["service_account"] or google["oauth_refresh"])),
+                        "meta_ads": bool(meta["system_user_or_oauth_token"])},
+            "authorization": {"google_ads": google, "meta_ads": meta}}
 
 
 @router.get("/summary")

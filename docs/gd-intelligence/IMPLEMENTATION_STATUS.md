@@ -25,7 +25,7 @@ SHA funcional local validado: `b315574` (CredentialVault e Integration Center pr
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | PREPARED | PASS_LOCAL | BLOCKED_GATE | NOT_DEPLOYED | Ubuntu: 54 tracked + 192 untracked; repo privado/rotación pendientes |
+| 19 Git deployment | PREPARED | PASS_LOCAL | BLOCKED_GATE | NOT_DEPLOYED | Ubuntu: 54 tracked preservados, 5.965 untracked y 6.284 ignored aún no clasificados; repo privado/rotación pendientes |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
@@ -37,12 +37,24 @@ SHA funcional local validado: `b315574` (CredentialVault e Integration Center pr
 | 28 Paid Media UI | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Modo READ/ANALYZE/RECOMMEND; plataforma y CRM separados; sin writes |
 | 29 Change Risk | CORE_READY | PASS | DONE_LOCAL | NOT_DEPLOYED | RECENT_CHANGE, LEARNING, LOW_DATA y budget risk; sin recomendaciones sin evidencia |
 | 30 Help Engine | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Artículos persistentes, búsqueda por nivel/rol y ayuda por `screen_id` |
-| 31 CRM inventory | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | 72 accesos de menú y 485 endpoints extraídos desde código |
+| 31 CRM inventory | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | 77 accesos de menú y 501 endpoints extraídos desde código |
 | 32 Manual source package | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | Pantallas, acciones, permisos, procesos, cobertura, capturas y handoff |
 | 33 Omnichannel Inbox | AUDITED | N/A | REUSE_REQUIRED | NOT_DEPLOYED | Tools y webhooks existentes confirmados; no se creó una bandeja duplicada |
 | 34 CredentialVault | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Write-only, Fernet at-rest, replace/revoke/verify, key local 0600 y eventos sanitizados |
 | 35 Integration Center UX | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Navegación lateral, filtros, tarjetas legibles, estados humanizados, wizards y confirmaciones |
 | 36 Site Health UX | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Hallazgos traducidos a Crítico/Importante/Mejora y last-known-good |
+| 37 Google Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | NOT_DEPLOYED | OAuth refresh/service credential, selección Customer ID/sitio y sync REST READ ONLY; credencial externa ausente |
+| 38 Meta Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | NOT_DEPLOYED | Business/Ad Account/Page/Instagram selector y sync Graph GET; token externo ausente |
+| 39 Paid Media Attribution | DONE_LOCAL | PASS | READY_NO_AD_DATA | NOT_DEPLOYED | GCLID/FBCLID hash, UTM y CRM; EXACT/STRONG/INFERRED/UNKNOWN fail-closed |
+| 40 Search Terms Intelligence | DONE_LOCAL | PASS | READY_NO_AD_DATA | NOT_DEPLOYED | HIGH_VALUE/WASTE/NEGATIVE_CANDIDATE/INSUFFICIENT_DATA; cero publicaciones |
+| 41 Creative Intelligence | DONE_LOCAL | PASS | READY_NO_AD_DATA | NOT_DEPLOYED | Frequency, CTR, CPA CRM, conversión, edad y umbral de volumen |
+| 42 Change Risk ampliado | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Siete estados; reason/confidence/risk/next_review_date/métricas |
+| 43 SEO Opportunity Engine | DONE_LOCAL | PASS | PARTIAL_REAL | NOT_DEPLOYED | Score 0–100; Site Health real disponible, Search Console pendiente; no simula |
+| 44 Inbox omnicanal | DONE_LOCAL | PASS | PARTIAL_REAL | NOT_DEPLOYED | Reutiliza WABA/Instagram/Messenger/Email; work items por referencia sin copiar mensajes |
+| 45 BI por canal | DONE_LOCAL | PASS | REAL_LOCAL | NOT_DEPLOYED | WhatsApp y Email con datos; Instagram/Messenger sin registros; sin inferencias |
+| 46 Alert Engine | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Deduplicación, cooldown, evidencia, acción y próxima revisión |
+| 47 Executive Dashboard | DONE_LOCAL | PASS | PARTIAL_REAL | NOT_DEPLOYED | CRM sales, tracking y Site Health habilitan el tablero; Paid Spend/CPA/ROAS muestran Sin datos hasta sincronizar Ads |
+| 48 GD AI base | DONE_LOCAL | PASS | CONTEXT_READY | NOT_DEPLOYED | Context builder allowlisted por rol; read/analyze/suggest; sin SQL ni writes |
 
 ## Gates transversales
 
@@ -50,7 +62,7 @@ SHA funcional local validado: `b315574` (CredentialVault e Integration Center pr
 |---|---|---|
 | Backup Git Mac | PASS | Bundle + snapshot + checksums |
 | Backup código servidor | PASS | Bundle + snapshot + checksums |
-| Reconciliación Mac/Git/servidor | FAIL | Ubuntu conserva 54 cambios tracked y 192 untracked; no se desplegará sobre ese worktree |
+| Reconciliación Mac/Git/servidor | FAIL | 54/54 tracked preservados; 5.965 untracked y 6.284 ignored impiden un SHA inmutable |
 | Clean baseline local | PASS | Commit raíz `721a6e7`; sin remoto |
 | Repositorio privado | FAIL | GitHub informa PUBLIC; acción manual crítica |
 | Secret scan baseline | PASS | Gitleaks directory/history: 0 hallazgos |
@@ -61,7 +73,10 @@ SHA funcional local validado: `b315574` (CredentialVault e Integration Center pr
 
 ## Evidencia actual
 
-- 59 pruebas unitarias/contrato GD Intelligence: PASS.
+- 94 pruebas unitarias/contrato GD Intelligence y Omnichannel: PASS.
+- OpenAPI local incorpora 16 rutas nuevas de inteligencia real y Omnichannel; `/healthz` PASS.
+- Google Ads y Meta Ads no se marcan conectados: los conectores, selectores y sync están listos, pero las credenciales externas autorizadas no existen en el entorno.
+- Inbox local usa datos reales: WhatsApp 1 conversación/1 lead; Email 199 registros consultados/8 leads/31 cotizaciones; Instagram y Messenger 0 registros. No se inventaron ventas ni revenue.
 - CredentialVault no expone endpoint GET ni método frontend; ciphertext y master key permanecen fuera de respuestas, logs y auditoría.
 - Migración CredentialVault ejecutada dos veces en PostgreSQL aislada: PASS; no importa credenciales legacy.
 - Formulario de credencial siempre vacío, tipo password, confirma valor, prueba proveedor antes de persistir y permite reemplazar/revocar.
@@ -70,7 +85,7 @@ SHA funcional local validado: `b315574` (CredentialVault e Integration Center pr
 - Migración Paid Media + Help aplicada dos veces en PostgreSQL aislada: PASS; 8 artículos y 6 contextos seed; cero cuentas publicitarias inventadas.
 - Paid Media local está visible como sección de GD Intelligence y Settings incluye acceso explícito a Integraciones.
 - Motor de ayuda conserva fallback estático y añade búsqueda autenticada por nivel/rol y contexto de pantalla.
-- Catálogo reproducible generado desde navegación, 137 vistas HTML/archivos relacionados y routers: 72 accesos de menú, 485 endpoints; las lagunas se marcan, no se completan por inferencia.
+- Catálogo reproducible generado desde navegación y routers: 77 accesos de menú, 501 endpoints y 0 archivos faltantes. Las cinco pantallas nuevas tienen ayuda contextual; permanecen 66 lagunas legacy explícitas.
 - `LOCAL_API_CONNECTIVITY=PASS`: login, auth, overview, sitios, UTM, RBAC y Site Health responden por FastAPI contra PostgreSQL aislada.
 - QA visual autenticada: el menú **📡 GD Intelligence** y las vistas Resumen/Sitios/Site Health/UTM/Permisos cargan por HTTP; cuatro sitios visibles.
 - Compilación Python del módulo y router: PASS.

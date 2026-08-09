@@ -1404,19 +1404,222 @@
       "buttons": [
         "? Ayuda",
         "Actualizar",
-        "Change Log",
+        "Actualizar inteligencia",
+        "Alertas",
+        "Atribución",
+        "Cerrar",
         "Change Risk",
+        "Creatividad",
+        "Ejecutivo",
+        "GD AI",
         "Google Ads",
         "Meta Ads",
-        "Recomendaciones",
         "Resumen",
+        "SEO",
         "Search Terms"
       ],
       "fields": [],
       "api_references": [
-        "/api/gd-intelligence/paid-media/search-terms?limit=100",
+        "/api/gd-intelligence/intelligence/ad-accounts/${b.dataset.sync}/sync?days=90",
+        "/api/gd-intelligence/intelligence/ad-accounts/discover?platform=${platform}",
+        "/api/gd-intelligence/intelligence/ad-accounts/select",
+        "/api/gd-intelligence/intelligence/ai/context",
+        "/api/gd-intelligence/intelligence/alerts/refresh",
+        "/api/gd-intelligence/intelligence/executive/readiness",
+        "/api/gd-intelligence/intelligence/paid-media/analyze",
+        "/api/gd-intelligence/intelligence/paid-media/attribution",
+        "/api/gd-intelligence/intelligence/paid-media/change-risk",
+        "/api/gd-intelligence/intelligence/paid-media/creatives",
+        "/api/gd-intelligence/intelligence/paid-media/search-terms",
+        "/api/gd-intelligence/intelligence/seo/opportunities",
+        "/api/gd-intelligence/overview",
         "/api/gd-intelligence/paid-media/status",
-        "/api/gd-intelligence/paid-media/summary?days=30"
+        "/api/gd-intelligence/paid-media/summary?days=30",
+        "/api/gd-intelligence/permissions/me"
+      ]
+    },
+    {
+      "id": "gdi_search_terms",
+      "label": "Search Terms",
+      "url": "/web/views/paid_media.html?v=20260810-2#terms",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "paid_media_view",
+      "file": "web/views/paid_media.html",
+      "exists": true,
+      "title": "Paid Media — GD Intelligence",
+      "buttons": [
+        "? Ayuda",
+        "Actualizar",
+        "Actualizar inteligencia",
+        "Alertas",
+        "Atribución",
+        "Cerrar",
+        "Change Risk",
+        "Creatividad",
+        "Ejecutivo",
+        "GD AI",
+        "Google Ads",
+        "Meta Ads",
+        "Resumen",
+        "SEO",
+        "Search Terms"
+      ],
+      "fields": [],
+      "api_references": [
+        "/api/gd-intelligence/intelligence/ad-accounts/${b.dataset.sync}/sync?days=90",
+        "/api/gd-intelligence/intelligence/ad-accounts/discover?platform=${platform}",
+        "/api/gd-intelligence/intelligence/ad-accounts/select",
+        "/api/gd-intelligence/intelligence/ai/context",
+        "/api/gd-intelligence/intelligence/alerts/refresh",
+        "/api/gd-intelligence/intelligence/executive/readiness",
+        "/api/gd-intelligence/intelligence/paid-media/analyze",
+        "/api/gd-intelligence/intelligence/paid-media/attribution",
+        "/api/gd-intelligence/intelligence/paid-media/change-risk",
+        "/api/gd-intelligence/intelligence/paid-media/creatives",
+        "/api/gd-intelligence/intelligence/paid-media/search-terms",
+        "/api/gd-intelligence/intelligence/seo/opportunities",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/paid-media/status",
+        "/api/gd-intelligence/paid-media/summary?days=30",
+        "/api/gd-intelligence/permissions/me"
+      ]
+    },
+    {
+      "id": "gdi_seo",
+      "label": "Oportunidades SEO",
+      "url": "/web/views/paid_media.html?v=20260810-2#seo",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "web_intelligence_seo",
+      "file": "web/views/paid_media.html",
+      "exists": true,
+      "title": "Paid Media — GD Intelligence",
+      "buttons": [
+        "? Ayuda",
+        "Actualizar",
+        "Actualizar inteligencia",
+        "Alertas",
+        "Atribución",
+        "Cerrar",
+        "Change Risk",
+        "Creatividad",
+        "Ejecutivo",
+        "GD AI",
+        "Google Ads",
+        "Meta Ads",
+        "Resumen",
+        "SEO",
+        "Search Terms"
+      ],
+      "fields": [],
+      "api_references": [
+        "/api/gd-intelligence/intelligence/ad-accounts/${b.dataset.sync}/sync?days=90",
+        "/api/gd-intelligence/intelligence/ad-accounts/discover?platform=${platform}",
+        "/api/gd-intelligence/intelligence/ad-accounts/select",
+        "/api/gd-intelligence/intelligence/ai/context",
+        "/api/gd-intelligence/intelligence/alerts/refresh",
+        "/api/gd-intelligence/intelligence/executive/readiness",
+        "/api/gd-intelligence/intelligence/paid-media/analyze",
+        "/api/gd-intelligence/intelligence/paid-media/attribution",
+        "/api/gd-intelligence/intelligence/paid-media/change-risk",
+        "/api/gd-intelligence/intelligence/paid-media/creatives",
+        "/api/gd-intelligence/intelligence/paid-media/search-terms",
+        "/api/gd-intelligence/intelligence/seo/opportunities",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/paid-media/status",
+        "/api/gd-intelligence/paid-media/summary?days=30",
+        "/api/gd-intelligence/permissions/me"
+      ]
+    },
+    {
+      "id": "gdi_alerts",
+      "label": "Alertas Intelligence",
+      "url": "/web/views/paid_media.html?v=20260810-2#alerts",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "web_intelligence_view",
+      "file": "web/views/paid_media.html",
+      "exists": true,
+      "title": "Paid Media — GD Intelligence",
+      "buttons": [
+        "? Ayuda",
+        "Actualizar",
+        "Actualizar inteligencia",
+        "Alertas",
+        "Atribución",
+        "Cerrar",
+        "Change Risk",
+        "Creatividad",
+        "Ejecutivo",
+        "GD AI",
+        "Google Ads",
+        "Meta Ads",
+        "Resumen",
+        "SEO",
+        "Search Terms"
+      ],
+      "fields": [],
+      "api_references": [
+        "/api/gd-intelligence/intelligence/ad-accounts/${b.dataset.sync}/sync?days=90",
+        "/api/gd-intelligence/intelligence/ad-accounts/discover?platform=${platform}",
+        "/api/gd-intelligence/intelligence/ad-accounts/select",
+        "/api/gd-intelligence/intelligence/ai/context",
+        "/api/gd-intelligence/intelligence/alerts/refresh",
+        "/api/gd-intelligence/intelligence/executive/readiness",
+        "/api/gd-intelligence/intelligence/paid-media/analyze",
+        "/api/gd-intelligence/intelligence/paid-media/attribution",
+        "/api/gd-intelligence/intelligence/paid-media/change-risk",
+        "/api/gd-intelligence/intelligence/paid-media/creatives",
+        "/api/gd-intelligence/intelligence/paid-media/search-terms",
+        "/api/gd-intelligence/intelligence/seo/opportunities",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/paid-media/status",
+        "/api/gd-intelligence/paid-media/summary?days=30",
+        "/api/gd-intelligence/permissions/me"
+      ]
+    },
+    {
+      "id": "gdi_executive",
+      "label": "Dashboard Ejecutivo",
+      "url": "/web/views/paid_media.html?v=20260810-2#executive",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "web_intelligence_view",
+      "file": "web/views/paid_media.html",
+      "exists": true,
+      "title": "Paid Media — GD Intelligence",
+      "buttons": [
+        "? Ayuda",
+        "Actualizar",
+        "Actualizar inteligencia",
+        "Alertas",
+        "Atribución",
+        "Cerrar",
+        "Change Risk",
+        "Creatividad",
+        "Ejecutivo",
+        "GD AI",
+        "Google Ads",
+        "Meta Ads",
+        "Resumen",
+        "SEO",
+        "Search Terms"
+      ],
+      "fields": [],
+      "api_references": [
+        "/api/gd-intelligence/intelligence/ad-accounts/${b.dataset.sync}/sync?days=90",
+        "/api/gd-intelligence/intelligence/ad-accounts/discover?platform=${platform}",
+        "/api/gd-intelligence/intelligence/ad-accounts/select",
+        "/api/gd-intelligence/intelligence/ai/context",
+        "/api/gd-intelligence/intelligence/alerts/refresh",
+        "/api/gd-intelligence/intelligence/executive/readiness",
+        "/api/gd-intelligence/intelligence/paid-media/analyze",
+        "/api/gd-intelligence/intelligence/paid-media/attribution",
+        "/api/gd-intelligence/intelligence/paid-media/change-risk",
+        "/api/gd-intelligence/intelligence/paid-media/creatives",
+        "/api/gd-intelligence/intelligence/paid-media/search-terms",
+        "/api/gd-intelligence/intelligence/seo/opportunities",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/paid-media/status",
+        "/api/gd-intelligence/paid-media/summary?days=30",
+        "/api/gd-intelligence/permissions/me"
       ]
     },
     {
@@ -3142,6 +3345,76 @@
         }
       ],
       "api_references": []
+    },
+    {
+      "id": "tool_inbox",
+      "label": "Inbox omnicanal",
+      "url": "/web/views/omnichannel_inbox.html?v=20260810-1",
+      "menu_group": "Tools",
+      "gd_permission": null,
+      "file": "web/views/omnichannel_inbox.html",
+      "exists": true,
+      "title": "Inbox omnicanal — Green Diamond",
+      "buttons": [
+        "Actualizar",
+        "Cerrar",
+        "Email",
+        "Guardar gestión",
+        "Instagram",
+        "Messenger",
+        "Todos",
+        "WhatsApp"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "channel",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "source_ref",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "lead_id",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "quote_id",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "assigned_user_name",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "follow_up_at",
+          "type": "datetime-local",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "status",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": [
+        "/api/omnichannel/analytics?limit=200",
+        "/api/omnichannel/capabilities",
+        "/api/omnichannel/inbox?limit=200",
+        "/api/omnichannel/items/${encodeURIComponent"
+      ]
     },
     {
       "id": "tool_gmail",
@@ -4897,6 +5170,78 @@
     },
     {
       "method": "GET",
+      "path": "/api/gd-intelligence/intelligence/ad-accounts/discover",
+      "handler": "discover_ad_accounts",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/intelligence/ad-accounts/select",
+      "handler": "select_ad_account",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/intelligence/ad-accounts/{account_id}/sync",
+      "handler": "sync_ad_account",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/intelligence/paid-media/analyze",
+      "handler": "analyze_paid_media",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/intelligence/paid-media/attribution",
+      "handler": "paid_media_attribution",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/intelligence/paid-media/search-terms",
+      "handler": "intelligent_search_terms",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/intelligence/paid-media/creatives",
+      "handler": "creative_intelligence",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/intelligence/paid-media/change-risk",
+      "handler": "paid_media_change_risk",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/intelligence/seo/opportunities",
+      "handler": "seo_opportunities",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/intelligence/alerts/refresh",
+      "handler": "refresh_alerts",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/intelligence/executive/readiness",
+      "handler": "executive_dashboard_readiness",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/intelligence/ai/context",
+      "handler": "ai_context",
+      "file": "backend/routers/intelligence_platform.py"
+    },
+    {
+      "method": "GET",
       "path": "/ops/inventario/catalogos",
       "handler": "catalogos",
       "file": "backend/routers/inventario.py"
@@ -5416,6 +5761,30 @@
       "path": "/admin/notify_routes/email/{process_key}",
       "handler": "upsert_email_route",
       "file": "backend/routers/notify_routes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/omnichannel/capabilities",
+      "handler": "capabilities",
+      "file": "backend/routers/omnichannel.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/omnichannel/inbox",
+      "handler": "inbox",
+      "file": "backend/routers/omnichannel.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/omnichannel/items/{channel}/{source_ref}",
+      "handler": "update_work_item",
+      "file": "backend/routers/omnichannel.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/omnichannel/analytics",
+      "handler": "analytics",
+      "file": "backend/routers/omnichannel.py"
     },
     {
       "method": "GET",

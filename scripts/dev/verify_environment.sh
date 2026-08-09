@@ -20,7 +20,7 @@ if [[ ! -x "${PYTHON}" ]]; then
 fi
 
 "${PYTHON}" -m compileall -q backend
-"${PYTHON}" -m unittest -q tests/test_gd_intelligence_core.py
+"${PYTHON}" -m unittest discover -s tests -p 'test*.py' -q
 npm --prefix frontend run build
 git diff --check
 

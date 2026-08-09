@@ -8,7 +8,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = ROOT / "docs/user-guide/source/screen_catalog.json"
-CONTEXTUAL = {"leads_ver", "gdi_utm", "gdi_integrations", "gdi_paid_media", "tool_wapp"}
+CONTEXTUAL = {
+    "leads_ver", "gdi_utm", "gdi_integrations", "gdi_paid_media", "tool_wapp",
+    "gdi_search_terms", "gdi_seo", "gdi_alerts", "gdi_executive", "tool_inbox",
+}
 
 
 def main() -> int:

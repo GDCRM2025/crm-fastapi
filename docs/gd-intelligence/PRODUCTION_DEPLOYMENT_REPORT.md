@@ -22,9 +22,9 @@ Resultado: **BLOCKED_PREDEPLOY — NO_PRODUCTION_CHANGES**
 | Servicio productivo previo | PASS | `crm-gd.service=active` |
 | PostgreSQL compatible | PASS | PostgreSQL 16.14 |
 | SHA anterior conocido | PASS | `ec43b363…` |
-| Tests/build local | PASS | 59 tests, compile, frontend build y Gitleaks PASS |
+| Tests/build local | PASS | 94 tests, compile, frontend build y Gitleaks PASS |
 | Restore/migraciones aisladas | PASS | Migraciones GD/Site Health idempotentes; inventario ejecutado sólo en restore local |
-| Worktree servidor controlado | **FAIL CRÍTICO** | 54 entradas tracked y 192 untracked |
+| Worktree servidor controlado | **FAIL CRÍTICO** | 54/54 tracked preservados; 5.965 untracked y 6.284 ignored aún impiden un SHA inmutable |
 | Repositorio privado/off-host | **FAIL CRÍTICO** | repo limpio Mac sin remoto configurado |
 | Rotación credenciales históricas | **FAIL CRÍTICO** | credenciales históricamente compartidas marcadas para rotación; no confirmada |
 | Secret scan candidato | PASS local | Gitleaks sin hallazgos en historial limpio; debe repetirse sobre SHA final |
@@ -54,12 +54,15 @@ Los smoke tests productivos post-deploy (`/healthz`, login, leads, cotizaciones,
 - `2026_08_09_tracking_attribution.sql`
 - `2026_08_09_paid_media_help.sql`
 - `2026_08_10_credential_vault.sql`
+- `2026_08_10_paid_media_intelligence.sql`
+- `2026_08_10_intelligence_platform.sql`
+- `2026_08_11_omnichannel_inbox.sql`
 
 Todas permanecen `NOT_RUN` en producción hasta que los tres gates críticos estén en PASS y exista un SHA candidato inmutable.
 
 ## Errores y decisión
 
-No ocurrió error durante una mutación productiva: el bloqueo fue preventivo. Desplegar sobre 246 cambios no reconciliados impediría demostrar exactamente qué se conserva o revierte. La ausencia de un remoto privado y la rotación pendiente también contradicen los gates maestros.
+No ocurrió error durante una mutación productiva: el bloqueo fue preventivo. Aunque el código tracked quedó preservado, los archivos no clasificados/ignorados todavía impiden demostrar un worktree reproducible e inmutable. La ausencia de un remoto privado y la rotación pendiente también contradicen los gates maestros.
 
 ## Rollback status
 

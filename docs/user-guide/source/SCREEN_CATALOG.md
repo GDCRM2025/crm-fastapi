@@ -19,6 +19,10 @@ Fuente: navegación y HTML reales. Los datos no inferibles quedan declarados com
 | GD Intelligence | gdi_health | Site Health | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | web_intelligence_view | Sí |
 | GD Intelligence | gdi_utm | Constructor UTM | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | web_intelligence_campaigns | Sí |
 | GD Intelligence | gdi_paid_media | Paid Media | Paid Media — GD Intelligence | web/views/paid_media.html | paid_media_view | Sí |
+| GD Intelligence | gdi_search_terms | Search Terms | Paid Media — GD Intelligence | web/views/paid_media.html | paid_media_view | Sí |
+| GD Intelligence | gdi_seo | Oportunidades SEO | Paid Media — GD Intelligence | web/views/paid_media.html | web_intelligence_seo | Sí |
+| GD Intelligence | gdi_alerts | Alertas Intelligence | Paid Media — GD Intelligence | web/views/paid_media.html | web_intelligence_view | Sí |
+| GD Intelligence | gdi_executive | Dashboard Ejecutivo | Paid Media — GD Intelligence | web/views/paid_media.html | web_intelligence_view | Sí |
 | GD Intelligence | gdi_permissions | Permisos GD | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | system_users_manage | Sí |
 | E\u2011Mkt | emkt_email | Email marketing | E‑Mkt | web/views/emkt.html | Permiso de menú por rol | Sí |
 | Operaciones | op_rec | Recetas | Operaciones • Recetas | web/views/operaciones_recetas.html | Permiso de menú por rol | Sí |
@@ -55,6 +59,7 @@ Fuente: navegación y HTML reales. Los datos no inferibles quedan declarados com
 | RRHH | rrhh_hub | RRHH | RRHH | web/views/rrhh.html | Permiso de menú por rol | Sí |
 | RRHH | rrhh_mark_plan | Turnos (planificador) | RRHH · Turnos (Planificador) | web/views/rrhh_marcaciones_planificador.html | Permiso de menú por rol | Sí |
 | RRHH | rrhh_turnos_visor | Mi turno (teórico vs real) | RRHH · Mi Turno | web/views/rrhh_turnos_visor.html | Permiso de menú por rol | Sí |
+| Tools | tool_inbox | Inbox omnicanal | Inbox omnicanal — Green Diamond | web/views/omnichannel_inbox.html | Permiso de menú por rol | Sí |
 | Tools | tool_gmail | Correo | Tools | web/views/tools.html | Permiso de menú por rol | Sí |
 | Tools | tool_ig | Instagram | Tools | web/views/tools.html | Permiso de menú por rol | Sí |
 | Tools | tool_wapp | WhatsApp | Tools | web/views/tools.html | Permiso de menú por rol | Sí |

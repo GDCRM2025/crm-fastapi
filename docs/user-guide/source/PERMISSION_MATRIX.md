@@ -19,6 +19,10 @@ La visibilidad del menú no sustituye autorización backend.
 | gdi_health | Site Health | web_intelligence_view | Backend y UI deben validarse conjuntamente |
 | gdi_utm | Constructor UTM | web_intelligence_campaigns | Backend y UI deben validarse conjuntamente |
 | gdi_paid_media | Paid Media | paid_media_view | Backend y UI deben validarse conjuntamente |
+| gdi_search_terms | Search Terms | paid_media_view | Backend y UI deben validarse conjuntamente |
+| gdi_seo | Oportunidades SEO | web_intelligence_seo | Backend y UI deben validarse conjuntamente |
+| gdi_alerts | Alertas Intelligence | web_intelligence_view | Backend y UI deben validarse conjuntamente |
+| gdi_executive | Dashboard Ejecutivo | web_intelligence_view | Backend y UI deben validarse conjuntamente |
 | gdi_permissions | Permisos GD | system_users_manage | Backend y UI deben validarse conjuntamente |
 | emkt_email | Email marketing | Controlado por PERMISSIONS del panel | Backend y UI deben validarse conjuntamente |
 | op_rec | Recetas | Controlado por PERMISSIONS del panel | Backend y UI deben validarse conjuntamente |
@@ -55,6 +59,7 @@ La visibilidad del menú no sustituye autorización backend.
 | rrhh_hub | RRHH | Controlado por PERMISSIONS del panel | Backend y UI deben validarse conjuntamente |
 | rrhh_mark_plan | Turnos (planificador) | Controlado por PERMISSIONS del panel | Backend y UI deben validarse conjuntamente |
 | rrhh_turnos_visor | Mi turno (teórico vs real) | Controlado por PERMISSIONS del panel | Backend y UI deben validarse conjuntamente |
+| tool_inbox | Inbox omnicanal | Controlado por PERMISSIONS del panel | Backend y UI deben validarse conjuntamente |
 | tool_gmail | Correo | Controlado por PERMISSIONS del panel | Backend y UI deben validarse conjuntamente |
 | tool_ig | Instagram | Controlado por PERMISSIONS del panel | Backend y UI deben validarse conjuntamente |
 | tool_wapp | WhatsApp | Controlado por PERMISSIONS del panel | Backend y UI deben validarse conjuntamente |
