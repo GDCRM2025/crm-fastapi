@@ -64,7 +64,8 @@ for migration in \
   migrations/2026_08_08_site_health.sql \
   migrations/2026_08_08_integration_inventory.sql \
   migrations/2026_08_09_tracking_attribution.sql \
-  migrations/2026_08_09_paid_media_help.sql; do
+  migrations/2026_08_09_paid_media_help.sql \
+  migrations/2026_08_10_credential_vault.sql; do
   "${PSQL}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -q -f "${migration}"
 done
 

@@ -7,15 +7,19 @@ from typing import Any
 
 
 PROVIDER_GUIDANCE = {
-    "GTM": ("Contenedor público detectado", "Falta detectar un contenedor GTM publicado", "VERIFICAR"),
-    "GA4": ("Tag GA4 público detectado", "Falta seleccionar la propiedad GA4 numérica y verificar el tag", "CONFIGURAR"),
-    "SEARCH_CONSOLE": ("Propiedad Search Console registrada", "Falta seleccionar una propiedad con acceso backend", "CONFIGURAR"),
-    "CLARITY": ("Project ID público registrado", "Falta crear/registrar el Project ID de Clarity", "CONFIGURAR"),
-    "PAGESPEED": ("API backend disponible", "Falta configurar PAGESPEED_API_KEY en el secret store", "VER INSTRUCCIONES"),
-    "CRUX": ("CrUX backend disponible", "Falta configurar PAGESPEED_API_KEY y validar datos del origen", "VERIFICAR"),
-    "TRACKING": ("gd-tracker.js detectado", "Falta instalar gd-tracker.js mediante GTM", "VER INSTRUCCIONES"),
-    "META": ("Meta Pixel público detectado", "Falta registrar o verificar el Pixel ID", "CONFIGURAR"),
+    "GTM": ("Contenedor publicado", "No detectamos un contenedor de Tag Manager.", "VERIFICAR"),
+    "GA4": ("Etiqueta de Analytics detectada", "Conecta Google y selecciona la propiedad de este sitio.", "CONECTAR GOOGLE"),
+    "SEARCH_CONSOLE": ("Propiedad registrada", "Conecta Google y selecciona la propiedad de búsqueda.", "CONECTAR GOOGLE"),
+    "CLARITY": ("Project ID registrado", "Registra el proyecto de Microsoft Clarity.", "CONFIGURAR"),
+    "PAGESPEED": ("Servicio de rendimiento", "Configura la clave de PageSpeed para comenzar las mediciones.", "CONFIGURAR"),
+    "CRUX": ("Experiencia real de usuarios", "Configura PageSpeed para consultar disponibilidad de datos CrUX.", "CONFIGURAR"),
+    "TRACKING": ("GD Tracker detectado", "Instala GD Tracker mediante Tag Manager.", "VER INSTRUCCIONES"),
+    "META": ("Meta Pixel detectado", "Conecta Meta y selecciona los activos autorizados.", "CONECTAR META"),
 }
+
+PROVIDER_NAMES = {"GTM":"Google Tag Manager","GA4":"Google Analytics 4","SEARCH_CONSOLE":"Google Search Console","CLARITY":"Microsoft Clarity","PAGESPEED":"Google PageSpeed","CRUX":"Chrome UX Report","TRACKING":"GD Tracker","META":"Meta"}
+PROVIDER_GROUPS = {"GTM":"Google","GA4":"Google","SEARCH_CONSOLE":"Google","PAGESPEED":"Google","CRUX":"Google","META":"Meta","CLARITY":"Microsoft","TRACKING":"Green Diamond"}
+STATUS_LABELS = {"CONNECTED":"Conectado","NOT_CONFIGURED":"Falta configurar","WARNING":"Requiere atención","ERROR":"Error de conexión","DISABLED":"Deshabilitado"}
 
 
 def backend_capabilities() -> dict[str, bool]:
@@ -37,8 +41,8 @@ def actionable_integration(item: dict[str, Any], capabilities: dict[str, bool] |
     if provider == "GA4" and item.get("property_id"):
         detected += f" · Property {item['property_id']}"
     if status == "CONNECTED":
-        missing = "Nada pendiente; puedes volver a verificar la conexión"
-        action = "VERIFICAR"
+        missing = "La integración está operativa."
+        action = "VERIFICAR CONEXIÓN"
     elif status == "ERROR":
         missing = str(item.get("last_error_safe") or "La última verificación falló")
         action = "RECONECTAR"
@@ -47,17 +51,21 @@ def actionable_integration(item: dict[str, Any], capabilities: dict[str, bool] |
         action = "CONFIGURAR"
     else:
         action = fallback_action
-    if provider in {"GA4", "SEARCH_CONSOLE"} and not (
-        capabilities["google_service_credentials"] or capabilities["google_oauth_configured"]
-    ):
-        missing = "Falta habilitar credenciales Google sólo en el backend"
-        action = "VER INSTRUCCIONES"
-        if status == "CONNECTED":
-            status = "WARNING"
-    if provider in {"PAGESPEED", "CRUX"} and not capabilities["pagespeed_api"]:
-        missing = "Falta PAGESPEED_API_KEY en el secret store del backend"
-        action = "VER INSTRUCCIONES"
-    return {**item, "status": status, "detected": detected, "missing": missing, "action": action}
+    if provider in {"GA4", "SEARCH_CONSOLE"} and not item.get("credential_configured") and status != "CONNECTED":
+        action = "CONECTAR GOOGLE"
+    if provider in {"PAGESPEED", "CRUX"}:
+        if item.get("credential_configured") or capabilities["pagespeed_api"]:
+            detected = "Credencial configurada de forma segura"
+            missing = "La conexión está lista para verificarse."
+            action = "VERIFICAR CONEXIÓN"
+        else:
+            action = "CONFIGURAR"
+    if item.get("credential_configured"):
+        detected += f" · Credencial ••••••••{item.get('credential_suffix') or ''}"
+    return {**item, "status": status, "status_label": STATUS_LABELS.get(status,status.title()),
+            "provider_name": PROVIDER_NAMES.get(provider,provider.title()),"provider_group": PROVIDER_GROUPS.get(provider,"Otros"),
+            "detected": detected, "missing": missing, "action": action,
+            "can_write_secret": provider in {"PAGESPEED","CRUX"}}
 
 
 def list_google_properties() -> dict[str, list[dict[str, str]]]:

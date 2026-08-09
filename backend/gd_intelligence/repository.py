@@ -100,11 +100,20 @@ def list_integrations(conn, site_id: int | None = None) -> list[dict[str, Any]]:
             """
             SELECT i.id,i.site_id,s.code AS site_code,s.name AS site_name,s.domain,
                    i.provider,i.status,i.enabled,i.external_id,i.last_verified_at,
-                   i.last_sync_at,i.last_success_at,i.last_error_code,i.last_error_safe,
+                   i.last_sync_at,i.last_success_at,i.last_failure_at,i.last_error_code,i.last_error_safe,
                    i.updated_at,
-                   CASE WHEN i.provider='GA4' THEN i.config->>'property_id' END AS property_id
+                   CASE WHEN i.provider='GA4' THEN i.config->>'property_id' END AS property_id,
+                   (c.id IS NOT NULL AND c.status='CONFIGURED') AS credential_configured,
+                   c.credential_type,c.masked_suffix AS credential_suffix,c.updated_at AS credential_updated_at,
+                   c.last_verified_at AS credential_last_verified_at
             FROM public.wi_integrations i
             JOIN public.wi_sites s ON s.id=i.site_id
+            LEFT JOIN LATERAL (
+              SELECT id,status,credential_type,masked_suffix,updated_at,last_verified_at
+              FROM public.wi_integration_credentials
+              WHERE integration_id=i.id
+              ORDER BY (status='CONFIGURED') DESC,updated_at DESC LIMIT 1
+            ) c ON true
             WHERE (CAST(:site_id AS bigint) IS NULL OR i.site_id=CAST(:site_id AS bigint))
               AND i.provider=ANY(:providers)
             ORDER BY s.code,i.provider

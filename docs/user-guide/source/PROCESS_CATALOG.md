@@ -39,6 +39,16 @@ Resultado esperado: cuentas/estado o un `NOT_CONFIGURED` accionable. Excepción:
 
 Resultado esperado: artículo específico cuando exista; en caso contrario, manual general y cobertura marcada pendiente.
 
+## Configurar o reemplazar una credencial
+
+1. Admin abre Integraciones, filtra el sitio y selecciona **Configurar** o **Reemplazar**.
+2. El formulario write-only aparece vacío y exige confirmación.
+3. Backend prueba la credencial sin incluirla en logs ni auditoría.
+4. Si falla, no reemplaza la conexión válida anterior. Si funciona, guarda sólo ciphertext y metadata segura.
+5. La UI recibe estado, fechas y hasta cuatro caracteres finales; nunca recibe el valor.
+
+Desconectar requiere confirmación, revoca el ciphertext y conserva datos históricos. No existe proceso de recuperación: se reemplaza.
+
 ## Omnicanal operativo existente
 
 Correo, Instagram y WhatsApp permanecen en Tools y sus routers existentes. BI consume resultados agregados; no reemplaza webhooks ni crea una segunda bandeja. La unificación completa de conversaciones requiere una capa adaptadora y QA por canal antes de declararse terminada.

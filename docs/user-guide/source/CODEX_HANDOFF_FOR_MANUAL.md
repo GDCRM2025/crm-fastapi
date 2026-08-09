@@ -9,3 +9,5 @@
 7. Ejecutar tests, secret scan y una búsqueda de PII antes de publicar el manual.
 
 Pendientes deliberados: sync real de Google/Meta requiere credenciales externas; unificación omnicanal completa requiere adaptadores y pruebas de conversaciones. Ninguno autoriza cambios productivos.
+
+Regla editorial obligatoria: nunca documentar una acción para consultar, mostrar o copiar credenciales. El manual de Admin sólo explica configurar, verificar, reemplazar y desconectar.

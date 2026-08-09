@@ -1,6 +1,6 @@
 # Inventario funcional CRM
 
-Cobertura descubierta: **72 accesos de menú** y **483 endpoints FastAPI**. Esto es inventario técnico, no afirmación de QA funcional.
+Cobertura descubierta: **72 accesos de menú** y **485 endpoints FastAPI**. Esto es inventario técnico, no afirmación de QA funcional.
 
 ## Endpoints
 
@@ -133,6 +133,8 @@ Cobertura descubierta: **72 accesos de menú** y **483 endpoints FastAPI**. Esto
 | POST | /api/gd-intelligence/web/sites | sites_create | backend/routers/gd_intelligence.py |
 | PATCH | /api/gd-intelligence/web/sites/{site_id} | sites_update | backend/routers/gd_intelligence.py |
 | GET | /api/gd-intelligence/web/integrations | integrations_list | backend/routers/gd_intelligence.py |
+| POST | /api/gd-intelligence/web/integrations/{integration_id}/verify | integration_credential_verify | backend/routers/gd_intelligence.py |
+| DELETE | /api/gd-intelligence/web/integrations/{integration_id}/credential | integration_credential_revoke | backend/routers/gd_intelligence.py |
 | GET | /api/gd-intelligence/web/integrations/google/properties | google_properties | backend/routers/gd_intelligence.py |
 | PUT | /api/gd-intelligence/web/integrations/google/selection | google_property_selection | backend/routers/gd_intelligence.py |
 | POST | /api/gd-intelligence/tracking/session | tracking_session | backend/routers/gd_intelligence.py |

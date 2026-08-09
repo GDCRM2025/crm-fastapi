@@ -22,7 +22,7 @@ Resultado: **BLOCKED_PREDEPLOY — NO_PRODUCTION_CHANGES**
 | Servicio productivo previo | PASS | `crm-gd.service=active` |
 | PostgreSQL compatible | PASS | PostgreSQL 16.14 |
 | SHA anterior conocido | PASS | `ec43b363…` |
-| Tests/build local | PASS | 43 tests, compile, frontend build y Gitleaks PASS |
+| Tests/build local | PASS | 59 tests, compile, frontend build y Gitleaks PASS |
 | Restore/migraciones aisladas | PASS | Migraciones GD/Site Health idempotentes; inventario ejecutado sólo en restore local |
 | Worktree servidor controlado | **FAIL CRÍTICO** | 54 entradas tracked y 192 untracked |
 | Repositorio privado/off-host | **FAIL CRÍTICO** | repo limpio Mac sin remoto configurado |
@@ -53,6 +53,7 @@ Los smoke tests productivos post-deploy (`/healthz`, login, leads, cotizaciones,
 - `2026_08_08_integration_inventory.sql`
 - `2026_08_09_tracking_attribution.sql`
 - `2026_08_09_paid_media_help.sql`
+- `2026_08_10_credential_vault.sql`
 
 Todas permanecen `NOT_RUN` en producción hasta que los tres gates críticos estén en PASS y exista un SHA candidato inmutable.
 

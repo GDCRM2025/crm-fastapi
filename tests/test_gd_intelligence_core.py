@@ -19,6 +19,8 @@ from backend.gd_intelligence.integration_inventory import GA4_RE, GTM_RE, _ids
 from backend.gd_intelligence.integration_center import actionable_integration
 from backend.gd_intelligence.tracking import attribution_touches, parse_utm, public_event_metadata, waba_confidence
 from backend.gd_intelligence.paid_media import business_metrics, change_risk, parse_google_ads_row, parse_meta_ads_row
+from backend.gd_intelligence.credential_vault import CredentialValidationError, CredentialVault, redact
+from cryptography.fernet import Fernet
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -232,7 +234,7 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('gdPermission: "web_intelligence_campaigns"', self.panel)
 
     def test_dashboard_has_friendly_backend_error(self):
-        self.assertIn("Backend GD Intelligence no disponible", self.html)
+        self.assertIn("No pudimos comunicarnos con el CRM", self.html)
 
     def test_frontend_api_base_is_path_derived(self):
         login = (ROOT / "web/login.html").read_text()
@@ -264,14 +266,16 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("/api/gd-intelligence/permissions/roles", self.html)
 
     def test_dashboard_exposes_public_integration_inventory(self):
-        self.assertIn("Inventario público por sitio", self.html)
+        self.assertIn("Dominios administrados y sus identificadores públicos", self.html)
         self.assertIn("/api/gd-intelligence/web/integrations", self.html)
-        self.assertIn("credenciales nunca se muestran", self.html)
+        self.assertIn("nunca pueden volver a mostrarse", self.html)
 
     def test_integration_center_has_actionable_statuses(self):
         self.assertIn('data-tab="integrations"', self.html)
-        self.assertIn("Qué está detectado", self.html)
-        self.assertIn("data-integration-action", self.html)
+        self.assertIn("Detectado", self.html)
+        self.assertIn("data-action", self.html)
+        for label in ("Conectado", "Falta configurar", "Requiere atención", "Error de conexión", "Deshabilitado"):
+            self.assertIn(label, self.html)
 
     def test_tracker_persists_visitor_and_session_without_hardcoded_host(self):
         tracker = (ROOT / "web/js/gd-tracker.js").read_text()
@@ -369,7 +373,68 @@ class IntegrationInventoryTests(unittest.TestCase):
         with patch.dict("os.environ", {"PAGESPEED_API_KEY": "never-return-this"}, clear=False):
             item = actionable_integration({"provider": "PAGESPEED", "status": "WARNING", "external_id": "https://example.cl/"})
         self.assertNotIn("never-return-this", str(item))
-        self.assertIn(item["action"], {"VERIFICAR", "VER INSTRUCCIONES"})
+        self.assertEqual(item["action"], "VERIFICAR CONEXIÓN")
+
+
+class CredentialVaultSecurityTests(unittest.TestCase):
+    def test_encryption_at_rest_and_internal_use_only(self):
+        value = "test-api-key-123456789"
+        vault = CredentialVault(Fernet.generate_key(), validator=lambda *_a, **_k: {"valid": True})
+        encrypted = vault.encrypt(value)
+        self.assertNotIn(value, encrypted)
+        self.assertEqual(vault._decrypt_internal(encrypted), value)
+        self.assertFalse(hasattr(vault, "get_secret_for_frontend"))
+
+    def test_invalid_secret_is_rejected_before_storage(self):
+        def reject(*_args, **_kwargs):
+            raise CredentialValidationError("AUTH_REJECTED", "Credencial rechazada")
+        vault = CredentialVault(Fernet.generate_key(), validator=reject)
+        with self.assertRaises(CredentialValidationError):
+            vault.validate("PAGESPEED", "invalid-key-value", domain="example.cl")
+
+    def test_successful_validation_is_supported(self):
+        vault = CredentialVault(Fernet.generate_key(), validator=lambda provider, _secret, **_k: {"valid": True, "provider": provider})
+        self.assertTrue(vault.validate("PAGESPEED", "valid-key-value", domain="example.cl")["valid"])
+
+    def test_redaction_removes_secret_values_from_nested_metadata(self):
+        safe = redact({"provider": "PAGESPEED", "api_key": "hidden", "nested": {"refresh_token": "hidden", "result": "ok"}})
+        self.assertEqual(safe, {"provider": "PAGESPEED", "nested": {"result": "ok"}})
+
+    def test_no_credential_read_endpoint_exists(self):
+        router = (ROOT / "backend/routers/gd_intelligence.py").read_text()
+        self.assertNotIn('@router.get("/web/integrations/{integration_id}/credential")', router)
+        self.assertIn('@router.put("/web/integrations/{integration_id}/credential")', router)
+        self.assertIn('@router.delete("/web/integrations/{integration_id}/credential")', router)
+
+    def test_api_list_never_selects_ciphertext(self):
+        repository = (ROOT / "backend/gd_intelligence/repository.py").read_text()
+        list_query = repository[repository.index("def list_integrations"):repository.index("def update_public_integration")]
+        self.assertNotIn("encrypted_value", list_query)
+        self.assertIn("credential_suffix", list_query)
+
+    def test_replacement_form_is_password_only_and_blank(self):
+        html = (ROOT / "web/views/gd_intelligence.html").read_text()
+        self.assertIn('name="credential" type="password"', html)
+        self.assertIn('name="confirmation" type="password"', html)
+        self.assertIn("f.reset();f.integration_id.value", html)
+        self.assertNotRegex(html, r'name="credential"[^>]*\svalue=')
+        self.assertNotIn("Mostrar credencial", html)
+        self.assertNotIn("Copiar credencial", html)
+
+    def test_vault_migration_supports_replace_revoke_and_safe_audit(self):
+        sql = (ROOT / "migrations/2026_08_10_credential_vault.sql").read_text().upper()
+        self.assertIn("ENCRYPTED_VALUE", sql)
+        self.assertIn("CREDENTIAL_REPLACED", sql)
+        self.assertIn("INTEGRATION_DISCONNECTED", sql)
+        self.assertIn("status='REVOKED'", (ROOT / "backend/gd_intelligence/credential_vault.py").read_text())
+        self.assertNotIn("CREDENTIAL PAYLOAD", sql)
+
+    def test_backend_rbac_guards_configure_and_disconnect(self):
+        router = (ROOT / "backend/routers/gd_intelligence.py").read_text()
+        write = router[router.index("async def integration_credential_write"):router.index('@router.post("/web/integrations/{integration_id}/verify")')]
+        revoke = router[router.index("def integration_credential_revoke"):router.index('@router.get("/web/integrations/google/properties")')]
+        self.assertIn('"web_intelligence_configure"', write)
+        self.assertIn('"system_integrations_manage"', revoke)
 
 
 if __name__ == "__main__":

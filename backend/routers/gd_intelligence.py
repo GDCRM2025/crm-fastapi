@@ -16,6 +16,7 @@ from backend.gd_intelligence.permissions import (
 from backend.gd_intelligence.rbac_admin import ROLE_KEYS, role_matrix, save_role_permissions
 from backend.gd_intelligence.integration_inventory import scan_public_integrations
 from backend.gd_intelligence.integration_center import actionable_integration, backend_capabilities, list_google_properties
+from backend.gd_intelligence.credential_vault import CredentialValidationError, CredentialVault, VaultUnavailable
 from backend.gd_intelligence.tracking import record_event, upsert_session
 from backend.gd_intelligence.repository import (
     INTEGRATION_PROVIDERS,
@@ -31,6 +32,7 @@ from backend.gd_intelligence.repository import (
 )
 from backend.gd_intelligence.schemas import (
     IntegrationPublicUpdate,
+    CredentialWrite,
     RolePermissionsUpdate,
     SiteCreate,
     SiteUpdate,
@@ -86,6 +88,11 @@ def _require_integration_inventory_schema(conn) -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "INTEGRATION_INVENTORY_MIGRATION_REQUIRED"},
         )
+
+
+def _require_credential_vault_schema(conn) -> None:
+    if not conn.execute(text("SELECT to_regclass('public.wi_integration_credentials') IS NOT NULL")).scalar():
+        raise HTTPException(status_code=503, detail="La administración segura de integraciones aún no está disponible.")
 
 
 def _require(conn, user: dict, permission: str) -> None:
@@ -206,9 +213,95 @@ def integrations_list(
         _require(conn, user, "web_intelligence_view")
         _require_schema(conn)
         _require_integration_inventory_schema(conn)
+        _require_credential_vault_schema(conn)
         capabilities = backend_capabilities()
         items = [actionable_integration(item, capabilities) for item in list_integrations(conn, site_id)]
         return {"ok": True, "items": items, "backend": capabilities}
+
+
+def _credential_context(conn, integration_id: int) -> dict:
+    item = conn.execute(text("""
+      SELECT i.id,i.provider,s.domain FROM wi_integrations i
+      JOIN wi_sites s ON s.id=i.site_id WHERE i.id=:id
+    """), {"id": integration_id}).mappings().one_or_none()
+    if not item:
+        raise HTTPException(404, "Integración no encontrada.")
+    return dict(item)
+
+
+@router.put("/web/integrations/{integration_id}/credential")
+async def integration_credential_write(integration_id: int, request: Request, user: dict = Depends(get_current_user)):
+    try:
+        raw = await request.json()
+        payload = CredentialWrite.model_validate(raw if isinstance(raw, dict) else {})
+    except Exception:
+        raise HTTPException(422, "Revisa la credencial y su confirmación.")
+    actor = _actor(user)
+    credential_type = payload.credential_type
+    try:
+        with engine.begin() as conn:
+            _require(conn, user, "web_intelligence_configure")
+            _require_credential_vault_schema(conn)
+            context = _credential_context(conn, integration_id)
+            if context["provider"] not in {"PAGESPEED", "CRUX"}:
+                raise HTTPException(422, "Esta integración debe conectarse mediante autorización del proveedor.")
+            item = CredentialVault().store(conn, integration_id=integration_id, credential_type=credential_type,
+                                           secret=payload.secret, actor=actor, domain=context["domain"])
+            log_activity(conn, username=actor, user_id=user_id(user), role=role_key(user),
+                         action="CREDENTIAL_CONFIGURED_OR_REPLACED", entity_type="wi_integration", entity_id=integration_id,
+                         meta={"provider": context["provider"], "credential_type": credential_type, "result": "SUCCESS"}, request=request, status_code=200)
+        return {"ok": True, "credential": item, "message": "Credencial verificada y guardada de forma segura."}
+    except CredentialValidationError as exc:
+        with engine.begin() as conn:
+            CredentialVault().record_failure(conn, integration_id=integration_id, credential_type=credential_type, actor=actor, error_code=exc.code, message=str(exc))
+            log_activity(conn, username=actor, user_id=user_id(user), role=role_key(user),
+                         action="CONNECTION_FAILED", entity_type="wi_integration", entity_id=integration_id,
+                         meta={"credential_type": credential_type, "error_code": exc.code}, request=request, status_code=422)
+        raise HTTPException(422, str(exc))
+    except VaultUnavailable as exc:
+        raise HTTPException(503, str(exc))
+
+
+@router.post("/web/integrations/{integration_id}/verify")
+def integration_credential_verify(integration_id: int, request: Request, credential_type: str = Body("API_KEY", embed=True), user: dict = Depends(get_current_user)):
+    actor = _actor(user)
+    try:
+        with engine.begin() as conn:
+            _require(conn, user, "web_intelligence_configure")
+            _require_credential_vault_schema(conn)
+            context = _credential_context(conn, integration_id)
+            item = CredentialVault().verify(conn, integration_id=integration_id, credential_type=credential_type, actor=actor, domain=context["domain"])
+            log_activity(conn, username=actor, user_id=user_id(user), role=role_key(user), action="CONNECTION_VERIFIED",
+                         entity_type="wi_integration", entity_id=integration_id, meta={"credential_type": credential_type, "result": "SUCCESS"}, request=request, status_code=200)
+        return {"ok": True, "item": item, "message": "Conexión correcta."}
+    except KeyError:
+        raise HTTPException(409, "Configura una credencial antes de verificar.")
+    except CredentialValidationError as exc:
+        with engine.begin() as conn:
+            CredentialVault().record_failure(conn, integration_id=integration_id, credential_type=credential_type, actor=actor, error_code=exc.code, message=str(exc))
+            log_activity(conn, username=actor, user_id=user_id(user), role=role_key(user), action="CONNECTION_FAILED",
+                         entity_type="wi_integration", entity_id=integration_id,
+                         meta={"credential_type": credential_type, "error_code": exc.code}, request=request, status_code=422)
+        raise HTTPException(422, str(exc))
+    except VaultUnavailable as exc:
+        raise HTTPException(503, str(exc))
+
+
+@router.delete("/web/integrations/{integration_id}/credential")
+def integration_credential_revoke(integration_id: int, request: Request, credential_type: str = Query("API_KEY"), user: dict = Depends(get_current_user)):
+    actor = _actor(user)
+    with engine.begin() as conn:
+        _require(conn, user, "system_integrations_manage")
+        _require_credential_vault_schema(conn)
+        context = _credential_context(conn, integration_id)
+        try:
+            item = CredentialVault().revoke(conn, integration_id=integration_id, credential_type=credential_type, actor=actor)
+        except KeyError:
+            raise HTTPException(409, "Esta integración no tiene una credencial activa.")
+        log_activity(conn, username=actor, user_id=user_id(user), role=role_key(user), action="INTEGRATION_DISCONNECTED",
+                     entity_type="wi_integration", entity_id=integration_id,
+                     meta={"provider": context["provider"], "credential_type": credential_type, "result": "SUCCESS"}, request=request, status_code=200)
+    return {"ok": True, "item": item, "message": "Integración desconectada. Los datos históricos se conservan."}
 
 
 @router.get("/web/integrations/google/properties")

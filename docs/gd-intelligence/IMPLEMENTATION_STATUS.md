@@ -37,9 +37,12 @@ SHA local validado: `d0408c8` (documentación de gates ajustada inmediatamente d
 | 28 Paid Media UI | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Modo READ/ANALYZE/RECOMMEND; plataforma y CRM separados; sin writes |
 | 29 Change Risk | CORE_READY | PASS | DONE_LOCAL | NOT_DEPLOYED | RECENT_CHANGE, LEARNING, LOW_DATA y budget risk; sin recomendaciones sin evidencia |
 | 30 Help Engine | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Artículos persistentes, búsqueda por nivel/rol y ayuda por `screen_id` |
-| 31 CRM inventory | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | 72 accesos de menú y 483 endpoints extraídos desde código |
+| 31 CRM inventory | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | 72 accesos de menú y 485 endpoints extraídos desde código |
 | 32 Manual source package | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | Pantallas, acciones, permisos, procesos, cobertura, capturas y handoff |
 | 33 Omnichannel Inbox | AUDITED | N/A | REUSE_REQUIRED | NOT_DEPLOYED | Tools y webhooks existentes confirmados; no se creó una bandeja duplicada |
+| 34 CredentialVault | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Write-only, Fernet at-rest, replace/revoke/verify, key local 0600 y eventos sanitizados |
+| 35 Integration Center UX | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Navegación lateral, filtros, tarjetas legibles, estados humanizados, wizards y confirmaciones |
+| 36 Site Health UX | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Hallazgos traducidos a Crítico/Importante/Mejora y last-known-good |
 
 ## Gates transversales
 
@@ -58,11 +61,16 @@ SHA local validado: `d0408c8` (documentación de gates ajustada inmediatamente d
 
 ## Evidencia actual
 
-- 50 pruebas unitarias/contrato GD Intelligence: PASS.
+- 59 pruebas unitarias/contrato GD Intelligence: PASS.
+- CredentialVault no expone endpoint GET ni método frontend; ciphertext y master key permanecen fuera de respuestas, logs y auditoría.
+- Migración CredentialVault ejecutada dos veces en PostgreSQL aislada: PASS; no importa credenciales legacy.
+- Formulario de credencial siempre vacío, tipo password, confirma valor, prueba proveedor antes de persistir y permite reemplazar/revocar.
+- RBAC backend: configurar/verificar requiere `web_intelligence_configure`; desconectar requiere `system_integrations_manage`.
+- Integration Center profesional: filtros sitio/proveedor/estado/búsqueda, 2–3 columnas, progreso, estados en español y acciones concretas.
 - Migración Paid Media + Help aplicada dos veces en PostgreSQL aislada: PASS; 8 artículos y 6 contextos seed; cero cuentas publicitarias inventadas.
 - Paid Media local está visible como sección de GD Intelligence y Settings incluye acceso explícito a Integraciones.
 - Motor de ayuda conserva fallback estático y añade búsqueda autenticada por nivel/rol y contexto de pantalla.
-- Catálogo reproducible generado desde navegación, 137 vistas HTML/archivos relacionados y routers: 72 accesos de menú, 483 endpoints; las lagunas se marcan, no se completan por inferencia.
+- Catálogo reproducible generado desde navegación, 137 vistas HTML/archivos relacionados y routers: 72 accesos de menú, 485 endpoints; las lagunas se marcan, no se completan por inferencia.
 - `LOCAL_API_CONNECTIVITY=PASS`: login, auth, overview, sitios, UTM, RBAC y Site Health responden por FastAPI contra PostgreSQL aislada.
 - QA visual autenticada: el menú **📡 GD Intelligence** y las vistas Resumen/Sitios/Site Health/UTM/Permisos cargan por HTTP; cuatro sitios visibles.
 - Compilación Python del módulo y router: PASS.
@@ -75,7 +83,7 @@ SHA local validado: `d0408c8` (documentación de gates ajustada inmediatamente d
 - Migración Site Health ejecutada dos veces en restore: PASS; cuatro resultados almacenados por ejecución.
 - Arranque Mac desde cero: PASS; navegador cerrado, PostgreSQL/FastAPI detenidos, arranque por `MAC_SETUP.md`, sesión limpia, login y cuatro sitios visibles.
 - Inventario público: GTM, GA4 y GD Tracker detectados en 4/4; Clarity 0/4; secretos no consultados ni persistidos.
-- Integration Center muestra detectado, faltante y acción por integración; Google/PageSpeed reportan sólo disponibilidad backend.
+- Integration Center muestra detectado, faltante, última verificación/sync, last-known-good y acción; PageSpeed puede configurarse desde CRM sin terminal.
 - Creación manual usa orígenes comerciales y campaña opcional; no expone campos UTM al Ejecutivo.
 - WABA dispone de reglas explícitas de confidence y no atribuye sin evidencia suficiente.
 - Migración productiva: no ejecutada; Git/secret/rollback/readiness pendientes.

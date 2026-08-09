@@ -4,7 +4,7 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 SITE_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_-]{1,15}$")
@@ -118,3 +118,15 @@ class IntegrationPublicUpdate(BaseModel):
         if "=" in public_id or any(word in lowered for word in ("password", "secret", "token", "api_key", "apikey")):
             raise ValueError("Sólo se admiten IDs públicos; secretos y tokens están prohibidos")
         return public_id
+
+
+class CredentialWrite(BaseModel):
+    credential_type: str = Field(default="API_KEY", pattern=r"^[A-Z][A-Z0-9_]{2,59}$")
+    secret: str = Field(min_length=8, max_length=12000)
+    confirm_secret: str = Field(min_length=8, max_length=12000)
+
+    @model_validator(mode="after")
+    def secrets_match(self):
+        if self.secret != self.confirm_secret:
+            raise ValueError("Las credenciales ingresadas no coinciden.")
+        return self

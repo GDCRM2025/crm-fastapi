@@ -55,86 +55,91 @@ Acciones visibles extraídas de botones HTML; deben verificarse en pruebas de in
 | rep_total | Ir a Reportes | Ver todos | web/views/reportes_v2.html |
 | rep_total | Ir a Reportes | Visión general MTD/Meta/LY | web/views/reportes_v2.html |
 | rep_total | Ir a Reportes | WhatsApp | web/views/reportes_v2.html |
-| gdi_overview | Dashboard web | Actualizar | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | CONECTAR GOOGLE | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | Actualizar información | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | Analizar sitios ahora | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | Cancelar | web/views/gd_intelligence.html |
 | gdi_overview | Dashboard web | Crear sitio | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | Ejecutar ahora | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | Generar y guardar | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | Desconectar | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | Generar enlace | web/views/gd_intelligence.html |
 | gdi_overview | Dashboard web | Guardar cambios | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | Guardar configuración pública | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | Integration Center | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | Permisos | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | Recargar | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | Resumen | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | Site Health | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | Sitios | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | UTM | web/views/gd_intelligence.html |
-| gdi_overview | Dashboard web | VERIFICAR TODO | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | Guardar y verificar | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | Probar y guardar | web/views/gd_intelligence.html |
 | gdi_overview | Dashboard web | Verificar tags públicos | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Actualizar | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | CONECTAR GOOGLE | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | ↗ Campañas y UTM | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | ⌂ Resumen | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | ◉ Sitios | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | ◎ Paid Media | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | ♙ Permisos | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | ♡ Site Health | web/views/gd_intelligence.html |
+| gdi_overview | Dashboard web | ⚡ Integraciones | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | Actualizar información | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | Analizar sitios ahora | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | Cancelar | web/views/gd_intelligence.html |
 | gdi_sites | Sitios | Crear sitio | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Ejecutar ahora | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Generar y guardar | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | Desconectar | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | Generar enlace | web/views/gd_intelligence.html |
 | gdi_sites | Sitios | Guardar cambios | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Guardar configuración pública | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Integration Center | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Permisos | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Recargar | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Resumen | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Site Health | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | Sitios | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | UTM | web/views/gd_intelligence.html |
-| gdi_sites | Sitios | VERIFICAR TODO | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | Guardar y verificar | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | Probar y guardar | web/views/gd_intelligence.html |
 | gdi_sites | Sitios | Verificar tags públicos | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Actualizar | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | CONECTAR GOOGLE | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | ↗ Campañas y UTM | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | ⌂ Resumen | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | ◉ Sitios | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | ◎ Paid Media | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | ♙ Permisos | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | ♡ Site Health | web/views/gd_intelligence.html |
+| gdi_sites | Sitios | ⚡ Integraciones | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | Actualizar información | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | Analizar sitios ahora | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | Cancelar | web/views/gd_intelligence.html |
 | gdi_integrations | Integration Center | Crear sitio | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Ejecutar ahora | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Generar y guardar | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | Desconectar | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | Generar enlace | web/views/gd_intelligence.html |
 | gdi_integrations | Integration Center | Guardar cambios | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Guardar configuración pública | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Integration Center | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Permisos | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Recargar | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Resumen | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Site Health | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | Sitios | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | UTM | web/views/gd_intelligence.html |
-| gdi_integrations | Integration Center | VERIFICAR TODO | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | Guardar y verificar | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | Probar y guardar | web/views/gd_intelligence.html |
 | gdi_integrations | Integration Center | Verificar tags públicos | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Actualizar | web/views/gd_intelligence.html |
-| gdi_health | Site Health | CONECTAR GOOGLE | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | ↗ Campañas y UTM | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | ⌂ Resumen | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | ◉ Sitios | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | ◎ Paid Media | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | ♙ Permisos | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | ♡ Site Health | web/views/gd_intelligence.html |
+| gdi_integrations | Integration Center | ⚡ Integraciones | web/views/gd_intelligence.html |
+| gdi_health | Site Health | Actualizar información | web/views/gd_intelligence.html |
+| gdi_health | Site Health | Analizar sitios ahora | web/views/gd_intelligence.html |
+| gdi_health | Site Health | Cancelar | web/views/gd_intelligence.html |
 | gdi_health | Site Health | Crear sitio | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Ejecutar ahora | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Generar y guardar | web/views/gd_intelligence.html |
+| gdi_health | Site Health | Desconectar | web/views/gd_intelligence.html |
+| gdi_health | Site Health | Generar enlace | web/views/gd_intelligence.html |
 | gdi_health | Site Health | Guardar cambios | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Guardar configuración pública | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Integration Center | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Permisos | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Recargar | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Resumen | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Site Health | web/views/gd_intelligence.html |
-| gdi_health | Site Health | Sitios | web/views/gd_intelligence.html |
-| gdi_health | Site Health | UTM | web/views/gd_intelligence.html |
-| gdi_health | Site Health | VERIFICAR TODO | web/views/gd_intelligence.html |
+| gdi_health | Site Health | Guardar y verificar | web/views/gd_intelligence.html |
+| gdi_health | Site Health | Probar y guardar | web/views/gd_intelligence.html |
 | gdi_health | Site Health | Verificar tags públicos | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Actualizar | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | CONECTAR GOOGLE | web/views/gd_intelligence.html |
+| gdi_health | Site Health | ↗ Campañas y UTM | web/views/gd_intelligence.html |
+| gdi_health | Site Health | ⌂ Resumen | web/views/gd_intelligence.html |
+| gdi_health | Site Health | ◉ Sitios | web/views/gd_intelligence.html |
+| gdi_health | Site Health | ◎ Paid Media | web/views/gd_intelligence.html |
+| gdi_health | Site Health | ♙ Permisos | web/views/gd_intelligence.html |
+| gdi_health | Site Health | ♡ Site Health | web/views/gd_intelligence.html |
+| gdi_health | Site Health | ⚡ Integraciones | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | Actualizar información | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | Analizar sitios ahora | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | Cancelar | web/views/gd_intelligence.html |
 | gdi_utm | Constructor UTM | Crear sitio | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Ejecutar ahora | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Generar y guardar | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | Desconectar | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | Generar enlace | web/views/gd_intelligence.html |
 | gdi_utm | Constructor UTM | Guardar cambios | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Guardar configuración pública | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Integration Center | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Permisos | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Recargar | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Resumen | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Site Health | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | Sitios | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | UTM | web/views/gd_intelligence.html |
-| gdi_utm | Constructor UTM | VERIFICAR TODO | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | Guardar y verificar | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | Probar y guardar | web/views/gd_intelligence.html |
 | gdi_utm | Constructor UTM | Verificar tags públicos | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | ↗ Campañas y UTM | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | ⌂ Resumen | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | ◉ Sitios | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | ◎ Paid Media | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | ♙ Permisos | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | ♡ Site Health | web/views/gd_intelligence.html |
+| gdi_utm | Constructor UTM | ⚡ Integraciones | web/views/gd_intelligence.html |
 | gdi_paid_media | Paid Media | ? Ayuda | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Actualizar | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Change Log | web/views/paid_media.html |
@@ -144,22 +149,23 @@ Acciones visibles extraídas de botones HTML; deben verificarse en pruebas de in
 | gdi_paid_media | Paid Media | Recomendaciones | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Resumen | web/views/paid_media.html |
 | gdi_paid_media | Paid Media | Search Terms | web/views/paid_media.html |
-| gdi_permissions | Permisos GD | Actualizar | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | CONECTAR GOOGLE | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | Actualizar información | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | Analizar sitios ahora | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | Cancelar | web/views/gd_intelligence.html |
 | gdi_permissions | Permisos GD | Crear sitio | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | Ejecutar ahora | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | Generar y guardar | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | Desconectar | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | Generar enlace | web/views/gd_intelligence.html |
 | gdi_permissions | Permisos GD | Guardar cambios | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | Guardar configuración pública | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | Integration Center | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | Permisos | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | Recargar | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | Resumen | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | Site Health | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | Sitios | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | UTM | web/views/gd_intelligence.html |
-| gdi_permissions | Permisos GD | VERIFICAR TODO | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | Guardar y verificar | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | Probar y guardar | web/views/gd_intelligence.html |
 | gdi_permissions | Permisos GD | Verificar tags públicos | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | ↗ Campañas y UTM | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | ⌂ Resumen | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | ◉ Sitios | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | ◎ Paid Media | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | ♙ Permisos | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | ♡ Site Health | web/views/gd_intelligence.html |
+| gdi_permissions | Permisos GD | ⚡ Integraciones | web/views/gd_intelligence.html |
 | emkt_email | Email marketing | Enviar | web/views/emkt.html |
 | emkt_email | Email marketing | Export CSV | web/views/emkt.html |
 | emkt_email | Email marketing | Snapshot | web/views/emkt.html |
@@ -316,22 +322,23 @@ Acciones visibles extraídas de botones HTML; deben verificarse en pruebas de in
 | set_users | Usuarios | Solicitudes clave | web/views/settings.html |
 | set_users | Usuarios | ↓ | web/views/settings.html |
 | set_users | Usuarios | ✕ | web/views/settings.html |
-| set_integrations | Integraciones | Actualizar | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | CONECTAR GOOGLE | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | Actualizar información | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | Analizar sitios ahora | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | Cancelar | web/views/gd_intelligence.html |
 | set_integrations | Integraciones | Crear sitio | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | Ejecutar ahora | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | Generar y guardar | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | Desconectar | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | Generar enlace | web/views/gd_intelligence.html |
 | set_integrations | Integraciones | Guardar cambios | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | Guardar configuración pública | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | Integration Center | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | Permisos | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | Recargar | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | Resumen | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | Site Health | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | Sitios | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | UTM | web/views/gd_intelligence.html |
-| set_integrations | Integraciones | VERIFICAR TODO | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | Guardar y verificar | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | Probar y guardar | web/views/gd_intelligence.html |
 | set_integrations | Integraciones | Verificar tags públicos | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | ↗ Campañas y UTM | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | ⌂ Resumen | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | ◉ Sitios | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | ◎ Paid Media | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | ♙ Permisos | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | ♡ Site Health | web/views/gd_intelligence.html |
+| set_integrations | Integraciones | ⚡ Integraciones | web/views/gd_intelligence.html |
 | set_marcas | Marcas | + Crear | web/views/settings.html |
 | set_marcas | Marcas | Cambiar clave (Admin) | web/views/settings.html |
 | set_marcas | Marcas | Cargar más | web/views/settings.html |

@@ -1,6 +1,14 @@
 # Configuración de integraciones
 
-Este documento enumera IDs públicos y variables requeridas. No pegues credenciales en GD Intelligence, HTML, API payloads, logs ni Git. En Mac se cargan desde `.env` ignorado; en Ubuntu, desde el secret store o archivo de entorno protegido del servicio.
+Este documento enumera IDs públicos y requisitos técnicos. No pegues credenciales en HTML, documentación, logs ni Git. Las API keys operables se introducen únicamente en el formulario write-only del CRM; las credenciales bootstrap de la aplicación OAuth permanecen en el mecanismo protegido del servicio.
+
+La operación diaria no utiliza este documento: Admin trabaja desde **Settings → Integraciones**. Este archivo conserva únicamente requisitos de plataforma y recuperación DevOps.
+
+## CredentialVault
+
+Las API keys introducidas desde el CRM se validan antes de persistir y se cifran at-rest en `wi_integration_credentials`. La clave maestra nunca reside en PostgreSQL ni Git. En Mac aislado se crea automáticamente un archivo `runtime/mac/credential_vault.key` con permisos `0600`; en servidor debe configurarse `GD_CREDENTIAL_MASTER_KEY` o `GD_CREDENTIAL_MASTER_KEY_FILE` desde el mecanismo protegido del servicio.
+
+No existe endpoint de lectura. Backend sólo puede descifrar mediante `use_internal()` durante una llamada al proveedor. Rotación y revocación conservan eventos sanitizados en `wi_integration_credential_events`.
 
 ## Google Analytics 4 y Search Console
 

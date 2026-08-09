@@ -2527,13 +2527,13 @@ const MENU = [
     ico: "\u{1F4E1}",
     title: "GD Intelligence",
     items: [
-      { id: "gdi_overview", label: "Dashboard web", url: "/web/views/gd_intelligence.html?v=20260809-1", gdPermission: "web_intelligence_view" },
-      { id: "gdi_sites", label: "Sitios", url: "/web/views/gd_intelligence.html?v=20260809-1#sites", gdPermission: "web_intelligence_view" },
-      { id: "gdi_integrations", label: "Integration Center", url: "/web/views/gd_intelligence.html?v=20260809-1#integrations", gdPermission: "web_intelligence_view" },
-      { id: "gdi_health", label: "Site Health", url: "/web/views/gd_intelligence.html?v=20260809-1#health", gdPermission: "web_intelligence_view" },
-      { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260809-1#utm", gdPermission: "web_intelligence_campaigns" },
+      { id: "gdi_overview", label: "Dashboard web", url: "/web/views/gd_intelligence.html?v=20260809-ux-v1", gdPermission: "web_intelligence_view" },
+      { id: "gdi_sites", label: "Sitios", url: "/web/views/gd_intelligence.html?v=20260809-ux-v1#sites", gdPermission: "web_intelligence_view" },
+      { id: "gdi_integrations", label: "Integration Center", url: "/web/views/gd_intelligence.html?v=20260809-ux-v1#integrations", gdPermission: "web_intelligence_view" },
+      { id: "gdi_health", label: "Site Health", url: "/web/views/gd_intelligence.html?v=20260809-ux-v1#health", gdPermission: "web_intelligence_view" },
+      { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260809-ux-v1#utm", gdPermission: "web_intelligence_campaigns" },
       { id: "gdi_paid_media", label: "Paid Media", url: "/web/views/paid_media.html?v=20260809-1", gdPermission: "paid_media_view" },
-      { id: "gdi_permissions", label: "Permisos GD", url: "/web/views/gd_intelligence.html?v=20260809-1#permissions", gdPermission: "system_users_manage" }
+      { id: "gdi_permissions", label: "Permisos GD", url: "/web/views/gd_intelligence.html?v=20260809-ux-v1#permissions", gdPermission: "system_users_manage" }
     ]
   },
   {
@@ -2649,7 +2649,7 @@ const MENU = [
     title: "Settings",
     items: [
       { id: "set_users", label: "Usuarios", url: "/web/views/settings.html?entity=usuarios&v=20260218-6" },
-      { id: "set_integrations", label: "Integraciones", url: "/web/views/gd_intelligence.html?v=20260809-1#integrations", gdPermission: "web_intelligence_configure" },
+      { id: "set_integrations", label: "Integraciones", url: "/web/views/gd_intelligence.html?v=20260809-ux-v1#integrations", gdPermission: "web_intelligence_configure" },
       { id: "set_marcas", label: "Marcas", url: "/web/views/settings.html?entity=marcas&v=20260218-6" },
       { id: "set_prod", label: "Productos (venta)", url: "/web/views/settings.html?entity=productos&v=20260218-6" },
       { id: "set_commissions_config", label: "Configuración comisiones", url: "/web/views/settings_comisiones.html?v=20260722-comm3" },

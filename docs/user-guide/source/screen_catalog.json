@@ -380,31 +380,56 @@
     {
       "id": "gdi_overview",
       "label": "Dashboard web",
-      "url": "/web/views/gd_intelligence.html?v=20260809-1",
+      "url": "/web/views/gd_intelligence.html?v=20260809-ux-v1",
       "menu_group": "GD Intelligence",
       "gd_permission": "web_intelligence_view",
       "file": "web/views/gd_intelligence.html",
       "exists": true,
-      "title": "GD Intelligence",
+      "title": "GD Intelligence — Centro de Inteligencia Digital",
       "buttons": [
-        "Actualizar",
-        "CONECTAR GOOGLE",
+        "Actualizar información",
+        "Analizar sitios ahora",
+        "Cancelar",
         "Crear sitio",
-        "Ejecutar ahora",
-        "Generar y guardar",
+        "Desconectar",
+        "Generar enlace",
         "Guardar cambios",
-        "Guardar configuración pública",
-        "Integration Center",
-        "Permisos",
-        "Recargar",
-        "Resumen",
-        "Site Health",
-        "Sitios",
-        "UTM",
-        "VERIFICAR TODO",
-        "Verificar tags públicos"
+        "Guardar y verificar",
+        "Probar y guardar",
+        "Verificar tags públicos",
+        "↗ Campañas y UTM",
+        "⌂ Resumen",
+        "◉ Sitios",
+        "◎ Paid Media",
+        "♙ Permisos",
+        "♡ Site Health",
+        "⚡ Integraciones"
       ],
       "fields": [
+        {
+          "tag": "select",
+          "name": "filterSite",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterProvider",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterStatus",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "filterText",
+          "type": "search",
+          "required": false
+        },
         {
           "tag": "input",
           "name": "showDisabled",
@@ -438,30 +463,6 @@
         {
           "tag": "input",
           "name": "currency",
-          "type": "input",
-          "required": false
-        },
-        {
-          "tag": "input",
-          "name": "enabled",
-          "type": "checkbox",
-          "required": false
-        },
-        {
-          "tag": "select",
-          "name": "site_id",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "select",
-          "name": "provider",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "input",
-          "name": "external_id",
           "type": "input",
           "required": false
         },
@@ -518,6 +519,42 @@
           "name": "rbacRole",
           "type": "select",
           "required": false
+        },
+        {
+          "tag": "input",
+          "name": "integration_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "credential",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "confirmation",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "site_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "provider",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": true
         }
       ],
       "api_references": [
@@ -528,7 +565,11 @@
         "/api/gd-intelligence/permissions/roles",
         "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
         "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/${Number",
+        "/api/gd-intelligence/web/integrations/${state.revokeId}/credential?credential_type=API_KEY",
+        "/api/gd-intelligence/web/integrations/${x.id}/verify",
         "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/discover?site_id=${x.site_id}",
         "/api/gd-intelligence/web/integrations/google/properties",
         "/api/gd-intelligence/web/integrations/google/selection",
         "/api/gd-intelligence/web/site-health/latest",
@@ -542,31 +583,56 @@
     {
       "id": "gdi_sites",
       "label": "Sitios",
-      "url": "/web/views/gd_intelligence.html?v=20260809-1#sites",
+      "url": "/web/views/gd_intelligence.html?v=20260809-ux-v1#sites",
       "menu_group": "GD Intelligence",
       "gd_permission": "web_intelligence_view",
       "file": "web/views/gd_intelligence.html",
       "exists": true,
-      "title": "GD Intelligence",
+      "title": "GD Intelligence — Centro de Inteligencia Digital",
       "buttons": [
-        "Actualizar",
-        "CONECTAR GOOGLE",
+        "Actualizar información",
+        "Analizar sitios ahora",
+        "Cancelar",
         "Crear sitio",
-        "Ejecutar ahora",
-        "Generar y guardar",
+        "Desconectar",
+        "Generar enlace",
         "Guardar cambios",
-        "Guardar configuración pública",
-        "Integration Center",
-        "Permisos",
-        "Recargar",
-        "Resumen",
-        "Site Health",
-        "Sitios",
-        "UTM",
-        "VERIFICAR TODO",
-        "Verificar tags públicos"
+        "Guardar y verificar",
+        "Probar y guardar",
+        "Verificar tags públicos",
+        "↗ Campañas y UTM",
+        "⌂ Resumen",
+        "◉ Sitios",
+        "◎ Paid Media",
+        "♙ Permisos",
+        "♡ Site Health",
+        "⚡ Integraciones"
       ],
       "fields": [
+        {
+          "tag": "select",
+          "name": "filterSite",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterProvider",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterStatus",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "filterText",
+          "type": "search",
+          "required": false
+        },
         {
           "tag": "input",
           "name": "showDisabled",
@@ -600,30 +666,6 @@
         {
           "tag": "input",
           "name": "currency",
-          "type": "input",
-          "required": false
-        },
-        {
-          "tag": "input",
-          "name": "enabled",
-          "type": "checkbox",
-          "required": false
-        },
-        {
-          "tag": "select",
-          "name": "site_id",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "select",
-          "name": "provider",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "input",
-          "name": "external_id",
           "type": "input",
           "required": false
         },
@@ -680,6 +722,42 @@
           "name": "rbacRole",
           "type": "select",
           "required": false
+        },
+        {
+          "tag": "input",
+          "name": "integration_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "credential",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "confirmation",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "site_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "provider",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": true
         }
       ],
       "api_references": [
@@ -690,7 +768,11 @@
         "/api/gd-intelligence/permissions/roles",
         "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
         "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/${Number",
+        "/api/gd-intelligence/web/integrations/${state.revokeId}/credential?credential_type=API_KEY",
+        "/api/gd-intelligence/web/integrations/${x.id}/verify",
         "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/discover?site_id=${x.site_id}",
         "/api/gd-intelligence/web/integrations/google/properties",
         "/api/gd-intelligence/web/integrations/google/selection",
         "/api/gd-intelligence/web/site-health/latest",
@@ -704,31 +786,56 @@
     {
       "id": "gdi_integrations",
       "label": "Integration Center",
-      "url": "/web/views/gd_intelligence.html?v=20260809-1#integrations",
+      "url": "/web/views/gd_intelligence.html?v=20260809-ux-v1#integrations",
       "menu_group": "GD Intelligence",
       "gd_permission": "web_intelligence_view",
       "file": "web/views/gd_intelligence.html",
       "exists": true,
-      "title": "GD Intelligence",
+      "title": "GD Intelligence — Centro de Inteligencia Digital",
       "buttons": [
-        "Actualizar",
-        "CONECTAR GOOGLE",
+        "Actualizar información",
+        "Analizar sitios ahora",
+        "Cancelar",
         "Crear sitio",
-        "Ejecutar ahora",
-        "Generar y guardar",
+        "Desconectar",
+        "Generar enlace",
         "Guardar cambios",
-        "Guardar configuración pública",
-        "Integration Center",
-        "Permisos",
-        "Recargar",
-        "Resumen",
-        "Site Health",
-        "Sitios",
-        "UTM",
-        "VERIFICAR TODO",
-        "Verificar tags públicos"
+        "Guardar y verificar",
+        "Probar y guardar",
+        "Verificar tags públicos",
+        "↗ Campañas y UTM",
+        "⌂ Resumen",
+        "◉ Sitios",
+        "◎ Paid Media",
+        "♙ Permisos",
+        "♡ Site Health",
+        "⚡ Integraciones"
       ],
       "fields": [
+        {
+          "tag": "select",
+          "name": "filterSite",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterProvider",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterStatus",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "filterText",
+          "type": "search",
+          "required": false
+        },
         {
           "tag": "input",
           "name": "showDisabled",
@@ -762,30 +869,6 @@
         {
           "tag": "input",
           "name": "currency",
-          "type": "input",
-          "required": false
-        },
-        {
-          "tag": "input",
-          "name": "enabled",
-          "type": "checkbox",
-          "required": false
-        },
-        {
-          "tag": "select",
-          "name": "site_id",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "select",
-          "name": "provider",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "input",
-          "name": "external_id",
           "type": "input",
           "required": false
         },
@@ -842,6 +925,42 @@
           "name": "rbacRole",
           "type": "select",
           "required": false
+        },
+        {
+          "tag": "input",
+          "name": "integration_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "credential",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "confirmation",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "site_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "provider",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": true
         }
       ],
       "api_references": [
@@ -852,7 +971,11 @@
         "/api/gd-intelligence/permissions/roles",
         "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
         "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/${Number",
+        "/api/gd-intelligence/web/integrations/${state.revokeId}/credential?credential_type=API_KEY",
+        "/api/gd-intelligence/web/integrations/${x.id}/verify",
         "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/discover?site_id=${x.site_id}",
         "/api/gd-intelligence/web/integrations/google/properties",
         "/api/gd-intelligence/web/integrations/google/selection",
         "/api/gd-intelligence/web/site-health/latest",
@@ -866,31 +989,56 @@
     {
       "id": "gdi_health",
       "label": "Site Health",
-      "url": "/web/views/gd_intelligence.html?v=20260809-1#health",
+      "url": "/web/views/gd_intelligence.html?v=20260809-ux-v1#health",
       "menu_group": "GD Intelligence",
       "gd_permission": "web_intelligence_view",
       "file": "web/views/gd_intelligence.html",
       "exists": true,
-      "title": "GD Intelligence",
+      "title": "GD Intelligence — Centro de Inteligencia Digital",
       "buttons": [
-        "Actualizar",
-        "CONECTAR GOOGLE",
+        "Actualizar información",
+        "Analizar sitios ahora",
+        "Cancelar",
         "Crear sitio",
-        "Ejecutar ahora",
-        "Generar y guardar",
+        "Desconectar",
+        "Generar enlace",
         "Guardar cambios",
-        "Guardar configuración pública",
-        "Integration Center",
-        "Permisos",
-        "Recargar",
-        "Resumen",
-        "Site Health",
-        "Sitios",
-        "UTM",
-        "VERIFICAR TODO",
-        "Verificar tags públicos"
+        "Guardar y verificar",
+        "Probar y guardar",
+        "Verificar tags públicos",
+        "↗ Campañas y UTM",
+        "⌂ Resumen",
+        "◉ Sitios",
+        "◎ Paid Media",
+        "♙ Permisos",
+        "♡ Site Health",
+        "⚡ Integraciones"
       ],
       "fields": [
+        {
+          "tag": "select",
+          "name": "filterSite",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterProvider",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterStatus",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "filterText",
+          "type": "search",
+          "required": false
+        },
         {
           "tag": "input",
           "name": "showDisabled",
@@ -924,30 +1072,6 @@
         {
           "tag": "input",
           "name": "currency",
-          "type": "input",
-          "required": false
-        },
-        {
-          "tag": "input",
-          "name": "enabled",
-          "type": "checkbox",
-          "required": false
-        },
-        {
-          "tag": "select",
-          "name": "site_id",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "select",
-          "name": "provider",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "input",
-          "name": "external_id",
           "type": "input",
           "required": false
         },
@@ -1004,6 +1128,42 @@
           "name": "rbacRole",
           "type": "select",
           "required": false
+        },
+        {
+          "tag": "input",
+          "name": "integration_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "credential",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "confirmation",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "site_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "provider",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": true
         }
       ],
       "api_references": [
@@ -1014,7 +1174,11 @@
         "/api/gd-intelligence/permissions/roles",
         "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
         "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/${Number",
+        "/api/gd-intelligence/web/integrations/${state.revokeId}/credential?credential_type=API_KEY",
+        "/api/gd-intelligence/web/integrations/${x.id}/verify",
         "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/discover?site_id=${x.site_id}",
         "/api/gd-intelligence/web/integrations/google/properties",
         "/api/gd-intelligence/web/integrations/google/selection",
         "/api/gd-intelligence/web/site-health/latest",
@@ -1028,31 +1192,56 @@
     {
       "id": "gdi_utm",
       "label": "Constructor UTM",
-      "url": "/web/views/gd_intelligence.html?v=20260809-1#utm",
+      "url": "/web/views/gd_intelligence.html?v=20260809-ux-v1#utm",
       "menu_group": "GD Intelligence",
       "gd_permission": "web_intelligence_campaigns",
       "file": "web/views/gd_intelligence.html",
       "exists": true,
-      "title": "GD Intelligence",
+      "title": "GD Intelligence — Centro de Inteligencia Digital",
       "buttons": [
-        "Actualizar",
-        "CONECTAR GOOGLE",
+        "Actualizar información",
+        "Analizar sitios ahora",
+        "Cancelar",
         "Crear sitio",
-        "Ejecutar ahora",
-        "Generar y guardar",
+        "Desconectar",
+        "Generar enlace",
         "Guardar cambios",
-        "Guardar configuración pública",
-        "Integration Center",
-        "Permisos",
-        "Recargar",
-        "Resumen",
-        "Site Health",
-        "Sitios",
-        "UTM",
-        "VERIFICAR TODO",
-        "Verificar tags públicos"
+        "Guardar y verificar",
+        "Probar y guardar",
+        "Verificar tags públicos",
+        "↗ Campañas y UTM",
+        "⌂ Resumen",
+        "◉ Sitios",
+        "◎ Paid Media",
+        "♙ Permisos",
+        "♡ Site Health",
+        "⚡ Integraciones"
       ],
       "fields": [
+        {
+          "tag": "select",
+          "name": "filterSite",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterProvider",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterStatus",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "filterText",
+          "type": "search",
+          "required": false
+        },
         {
           "tag": "input",
           "name": "showDisabled",
@@ -1086,30 +1275,6 @@
         {
           "tag": "input",
           "name": "currency",
-          "type": "input",
-          "required": false
-        },
-        {
-          "tag": "input",
-          "name": "enabled",
-          "type": "checkbox",
-          "required": false
-        },
-        {
-          "tag": "select",
-          "name": "site_id",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "select",
-          "name": "provider",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "input",
-          "name": "external_id",
           "type": "input",
           "required": false
         },
@@ -1166,6 +1331,42 @@
           "name": "rbacRole",
           "type": "select",
           "required": false
+        },
+        {
+          "tag": "input",
+          "name": "integration_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "credential",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "confirmation",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "site_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "provider",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": true
         }
       ],
       "api_references": [
@@ -1176,7 +1377,11 @@
         "/api/gd-intelligence/permissions/roles",
         "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
         "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/${Number",
+        "/api/gd-intelligence/web/integrations/${state.revokeId}/credential?credential_type=API_KEY",
+        "/api/gd-intelligence/web/integrations/${x.id}/verify",
         "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/discover?site_id=${x.site_id}",
         "/api/gd-intelligence/web/integrations/google/properties",
         "/api/gd-intelligence/web/integrations/google/selection",
         "/api/gd-intelligence/web/site-health/latest",
@@ -1217,31 +1422,56 @@
     {
       "id": "gdi_permissions",
       "label": "Permisos GD",
-      "url": "/web/views/gd_intelligence.html?v=20260809-1#permissions",
+      "url": "/web/views/gd_intelligence.html?v=20260809-ux-v1#permissions",
       "menu_group": "GD Intelligence",
       "gd_permission": "system_users_manage",
       "file": "web/views/gd_intelligence.html",
       "exists": true,
-      "title": "GD Intelligence",
+      "title": "GD Intelligence — Centro de Inteligencia Digital",
       "buttons": [
-        "Actualizar",
-        "CONECTAR GOOGLE",
+        "Actualizar información",
+        "Analizar sitios ahora",
+        "Cancelar",
         "Crear sitio",
-        "Ejecutar ahora",
-        "Generar y guardar",
+        "Desconectar",
+        "Generar enlace",
         "Guardar cambios",
-        "Guardar configuración pública",
-        "Integration Center",
-        "Permisos",
-        "Recargar",
-        "Resumen",
-        "Site Health",
-        "Sitios",
-        "UTM",
-        "VERIFICAR TODO",
-        "Verificar tags públicos"
+        "Guardar y verificar",
+        "Probar y guardar",
+        "Verificar tags públicos",
+        "↗ Campañas y UTM",
+        "⌂ Resumen",
+        "◉ Sitios",
+        "◎ Paid Media",
+        "♙ Permisos",
+        "♡ Site Health",
+        "⚡ Integraciones"
       ],
       "fields": [
+        {
+          "tag": "select",
+          "name": "filterSite",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterProvider",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterStatus",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "filterText",
+          "type": "search",
+          "required": false
+        },
         {
           "tag": "input",
           "name": "showDisabled",
@@ -1275,30 +1505,6 @@
         {
           "tag": "input",
           "name": "currency",
-          "type": "input",
-          "required": false
-        },
-        {
-          "tag": "input",
-          "name": "enabled",
-          "type": "checkbox",
-          "required": false
-        },
-        {
-          "tag": "select",
-          "name": "site_id",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "select",
-          "name": "provider",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "input",
-          "name": "external_id",
           "type": "input",
           "required": false
         },
@@ -1355,6 +1561,42 @@
           "name": "rbacRole",
           "type": "select",
           "required": false
+        },
+        {
+          "tag": "input",
+          "name": "integration_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "credential",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "confirmation",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "site_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "provider",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": true
         }
       ],
       "api_references": [
@@ -1365,7 +1607,11 @@
         "/api/gd-intelligence/permissions/roles",
         "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
         "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/${Number",
+        "/api/gd-intelligence/web/integrations/${state.revokeId}/credential?credential_type=API_KEY",
+        "/api/gd-intelligence/web/integrations/${x.id}/verify",
         "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/discover?site_id=${x.site_id}",
         "/api/gd-intelligence/web/integrations/google/properties",
         "/api/gd-intelligence/web/integrations/google/selection",
         "/api/gd-intelligence/web/site-health/latest",
@@ -2998,31 +3244,56 @@
     {
       "id": "set_integrations",
       "label": "Integraciones",
-      "url": "/web/views/gd_intelligence.html?v=20260809-1#integrations",
+      "url": "/web/views/gd_intelligence.html?v=20260809-ux-v1#integrations",
       "menu_group": "Settings",
       "gd_permission": "web_intelligence_configure",
       "file": "web/views/gd_intelligence.html",
       "exists": true,
-      "title": "GD Intelligence",
+      "title": "GD Intelligence — Centro de Inteligencia Digital",
       "buttons": [
-        "Actualizar",
-        "CONECTAR GOOGLE",
+        "Actualizar información",
+        "Analizar sitios ahora",
+        "Cancelar",
         "Crear sitio",
-        "Ejecutar ahora",
-        "Generar y guardar",
+        "Desconectar",
+        "Generar enlace",
         "Guardar cambios",
-        "Guardar configuración pública",
-        "Integration Center",
-        "Permisos",
-        "Recargar",
-        "Resumen",
-        "Site Health",
-        "Sitios",
-        "UTM",
-        "VERIFICAR TODO",
-        "Verificar tags públicos"
+        "Guardar y verificar",
+        "Probar y guardar",
+        "Verificar tags públicos",
+        "↗ Campañas y UTM",
+        "⌂ Resumen",
+        "◉ Sitios",
+        "◎ Paid Media",
+        "♙ Permisos",
+        "♡ Site Health",
+        "⚡ Integraciones"
       ],
       "fields": [
+        {
+          "tag": "select",
+          "name": "filterSite",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterProvider",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "filterStatus",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "filterText",
+          "type": "search",
+          "required": false
+        },
         {
           "tag": "input",
           "name": "showDisabled",
@@ -3056,30 +3327,6 @@
         {
           "tag": "input",
           "name": "currency",
-          "type": "input",
-          "required": false
-        },
-        {
-          "tag": "input",
-          "name": "enabled",
-          "type": "checkbox",
-          "required": false
-        },
-        {
-          "tag": "select",
-          "name": "site_id",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "select",
-          "name": "provider",
-          "type": "select",
-          "required": true
-        },
-        {
-          "tag": "input",
-          "name": "external_id",
           "type": "input",
           "required": false
         },
@@ -3136,6 +3383,42 @@
           "name": "rbacRole",
           "type": "select",
           "required": false
+        },
+        {
+          "tag": "input",
+          "name": "integration_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "credential",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "confirmation",
+          "type": "password",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "site_id",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "provider",
+          "type": "hidden",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": true
         }
       ],
       "api_references": [
@@ -3146,7 +3429,11 @@
         "/api/gd-intelligence/permissions/roles",
         "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
         "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/${Number",
+        "/api/gd-intelligence/web/integrations/${state.revokeId}/credential?credential_type=API_KEY",
+        "/api/gd-intelligence/web/integrations/${x.id}/verify",
         "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/discover?site_id=${x.site_id}",
         "/api/gd-intelligence/web/integrations/google/properties",
         "/api/gd-intelligence/web/integrations/google/selection",
         "/api/gd-intelligence/web/site-health/latest",
@@ -4426,6 +4713,18 @@
       "method": "GET",
       "path": "/api/gd-intelligence/web/integrations",
       "handler": "integrations_list",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/web/integrations/{integration_id}/verify",
+      "handler": "integration_credential_verify",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/gd-intelligence/web/integrations/{integration_id}/credential",
+      "handler": "integration_credential_revoke",
       "file": "backend/routers/gd_intelligence.py"
     },
     {

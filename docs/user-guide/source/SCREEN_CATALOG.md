@@ -13,13 +13,13 @@ Fuente: navegación y HTML reales. Los datos no inferibles quedan declarados com
 | Checklist | encuestas_eventos | Encuestas post-evento | Encuestas post-evento | web/views/encuestas_eventos.html | Permiso de menú por rol | Sí |
 | Cotizador | historial | Historial | Historial Cotizaciones | web/views/historial_cotizaciones.html | Permiso de menú por rol | Sí |
 | Reportes | rep_total | Ir a Reportes | Reportes | web/views/reportes_v2.html | Permiso de menú por rol | Sí |
-| GD Intelligence | gdi_overview | Dashboard web | GD Intelligence | web/views/gd_intelligence.html | web_intelligence_view | Sí |
-| GD Intelligence | gdi_sites | Sitios | GD Intelligence | web/views/gd_intelligence.html | web_intelligence_view | Sí |
-| GD Intelligence | gdi_integrations | Integration Center | GD Intelligence | web/views/gd_intelligence.html | web_intelligence_view | Sí |
-| GD Intelligence | gdi_health | Site Health | GD Intelligence | web/views/gd_intelligence.html | web_intelligence_view | Sí |
-| GD Intelligence | gdi_utm | Constructor UTM | GD Intelligence | web/views/gd_intelligence.html | web_intelligence_campaigns | Sí |
+| GD Intelligence | gdi_overview | Dashboard web | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | web_intelligence_view | Sí |
+| GD Intelligence | gdi_sites | Sitios | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | web_intelligence_view | Sí |
+| GD Intelligence | gdi_integrations | Integration Center | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | web_intelligence_view | Sí |
+| GD Intelligence | gdi_health | Site Health | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | web_intelligence_view | Sí |
+| GD Intelligence | gdi_utm | Constructor UTM | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | web_intelligence_campaigns | Sí |
 | GD Intelligence | gdi_paid_media | Paid Media | Paid Media — GD Intelligence | web/views/paid_media.html | paid_media_view | Sí |
-| GD Intelligence | gdi_permissions | Permisos GD | GD Intelligence | web/views/gd_intelligence.html | system_users_manage | Sí |
+| GD Intelligence | gdi_permissions | Permisos GD | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | system_users_manage | Sí |
 | E\u2011Mkt | emkt_email | Email marketing | E‑Mkt | web/views/emkt.html | Permiso de menú por rol | Sí |
 | Operaciones | op_rec | Recetas | Operaciones • Recetas | web/views/operaciones_recetas.html | Permiso de menú por rol | Sí |
 | Operaciones | op_mice | Mice and Place | Operaciones • Mice and Place | web/views/operaciones_mice.html | Permiso de menú por rol | Sí |
@@ -60,7 +60,7 @@ Fuente: navegación y HTML reales. Los datos no inferibles quedan declarados com
 | Tools | tool_wapp | WhatsApp | Tools | web/views/tools.html | Permiso de menú por rol | Sí |
 | Tools | tool_calc | Calculadora | Tools | web/views/tools.html | Permiso de menú por rol | Sí |
 | Settings | set_users | Usuarios | Settings | web/views/settings.html | Permiso de menú por rol | Sí |
-| Settings | set_integrations | Integraciones | GD Intelligence | web/views/gd_intelligence.html | web_intelligence_configure | Sí |
+| Settings | set_integrations | Integraciones | GD Intelligence — Centro de Inteligencia Digital | web/views/gd_intelligence.html | web_intelligence_configure | Sí |
 | Settings | set_marcas | Marcas | Settings | web/views/settings.html | Permiso de menú por rol | Sí |
 | Settings | set_prod | Productos (venta) | Settings | web/views/settings.html | Permiso de menú por rol | Sí |
 | Settings | set_commissions_config | Configuración comisiones | Settings · Comisiones | web/views/settings_comisiones.html | Permiso de menú por rol | Sí |
