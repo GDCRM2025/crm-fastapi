@@ -2,7 +2,7 @@
 
 Actualizado: 2026-08-09
 
-SHA local validado: `d0408c8` (documentación de gates ajustada inmediatamente después, sin deployment).
+SHA funcional local validado: `b315574` (CredentialVault e Integration Center profesional; sin deployment).
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
