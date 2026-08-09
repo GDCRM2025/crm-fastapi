@@ -2,7 +2,7 @@
 
 Actualizado: 2026-08-09
 
-SHA funcional local validado: `b315574` (CredentialVault e Integration Center profesional; sin deployment).
+SHA funcional local validado: `6c62b4b` (inteligencia con fuentes reales, Ads read-only y Omnichannel; sin deployment).
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|

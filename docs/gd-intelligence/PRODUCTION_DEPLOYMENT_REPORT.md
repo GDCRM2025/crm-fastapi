@@ -11,8 +11,8 @@ Resultado: **BLOCKED_PREDEPLOY — NO_PRODUCTION_CHANGES**
 | Servicio | `crm-gd.service` (`active`) |
 | SHA anterior / rollback conocido | `ec43b363e52dc762b3b030ad421800f878ed6afc` |
 | Branch remota observada | `feature/whatsapp-native-clean-20260806` |
-| SHA candidato funcional validado | `b315574` |
-| Alcance candidato | GD Intelligence core, RBAC, Sites, CredentialVault, Integration Center, UTM, Site Health, tracking, atribución, Paid Media read-only y Help Engine |
+| SHA candidato funcional validado | `6c62b4b` |
+| Alcance candidato | GD Intelligence core, RBAC, Sites, CredentialVault, Integration Center, UTM, Site Health, tracking, atribución Ads, Search Terms, Creative Intelligence, SEO, alertas, Dashboard Ejecutivo parcial, Omnichannel y Help Engine |
 | SHA nuevo desplegado | `NOT_DEPLOYED` |
 
 ## Gates previos
