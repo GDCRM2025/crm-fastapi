@@ -26,7 +26,7 @@ Configurar una base de desarrollo/fixture en `DATABASE_URL` y su directorio en `
 bash scripts/dev/start_mac_local.sh --foreground
 ```
 
-El comando levanta PostgreSQL 16 si está detenido, aplica las tres migraciones GD idempotentes e inicia FastAPI en primer plano. Mantener esa terminal abierta; el entorno está disponible cuando Uvicorn informa que escucha en `127.0.0.1:8000`. Para automatizaciones locales también existe el modo sin `--foreground`, que espera `/healthz`, imprime `MAC_LOCAL_READY` y deja logs/PID bajo `runtime/mac/` (ignorado por Git).
+El comando levanta PostgreSQL 16 si está detenido, aplica todas las migraciones GD idempotentes —incluyendo tracking y atribución— e inicia FastAPI en primer plano. Mantener esa terminal abierta; el entorno está disponible cuando Uvicorn informa que escucha en `127.0.0.1:8000`. Para automatizaciones locales también existe el modo sin `--foreground`, que espera `/healthz`, imprime `MAC_LOCAL_READY` y deja logs/PID bajo `runtime/mac/` (ignorado por Git).
 
 Para detener FastAPI o todo el entorno:
 
@@ -40,6 +40,7 @@ FastAPI sirve API y frontend en el mismo origen; Vite no es necesario para las v
 - Login CRM: `http://127.0.0.1:8000/web/login.html`
 - Panel autenticado: `http://127.0.0.1:8000/web/index.html`
 - GD Intelligence: abrir **📡 GD Intelligence** desde el menú del panel. No abrir `gd_intelligence.html` mediante `file://`.
+- Integration Center: dentro de GD Intelligence, abrir **Integration Center** desde su submenú o pestaña.
 
 Para una prueba de autenticación completamente limpia, incluso si el navegador conserva un JWT anterior, abrir una vez `http://127.0.0.1:8000/web/login.html?reset_session=1`. El parámetro sólo elimina la sesión local del navegador y deja visible el formulario; no desactiva auth.
 

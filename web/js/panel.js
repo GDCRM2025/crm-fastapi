@@ -2491,7 +2491,7 @@ const MENU = [
     ico: "\u{1F4CC}",
     title: "Leads",
     items: [
-      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260728-month1" },
+      { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260809-attribution-v1" },
       { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html?v=20260326-fil1" },
       { id: "crm360", label: "Comercial 360", url: "/web/views/crm360.html?v=20260723-fin-task1" }
     ]
@@ -2527,11 +2527,12 @@ const MENU = [
     ico: "\u{1F4E1}",
     title: "GD Intelligence",
     items: [
-      { id: "gdi_overview", label: "Dashboard web", url: "/web/views/gd_intelligence.html?v=20260808-4", gdPermission: "web_intelligence_view" },
-      { id: "gdi_sites", label: "Sitios e integraciones", url: "/web/views/gd_intelligence.html?v=20260808-4#sites", gdPermission: "web_intelligence_view" },
-      { id: "gdi_health", label: "Site Health", url: "/web/views/gd_intelligence.html?v=20260808-4#health", gdPermission: "web_intelligence_view" },
-      { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260808-4#utm", gdPermission: "web_intelligence_campaigns" },
-      { id: "gdi_permissions", label: "Permisos GD", url: "/web/views/gd_intelligence.html?v=20260808-4#permissions", gdPermission: "system_users_manage" }
+      { id: "gdi_overview", label: "Dashboard web", url: "/web/views/gd_intelligence.html?v=20260809-1", gdPermission: "web_intelligence_view" },
+      { id: "gdi_sites", label: "Sitios", url: "/web/views/gd_intelligence.html?v=20260809-1#sites", gdPermission: "web_intelligence_view" },
+      { id: "gdi_integrations", label: "Integration Center", url: "/web/views/gd_intelligence.html?v=20260809-1#integrations", gdPermission: "web_intelligence_view" },
+      { id: "gdi_health", label: "Site Health", url: "/web/views/gd_intelligence.html?v=20260809-1#health", gdPermission: "web_intelligence_view" },
+      { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260809-1#utm", gdPermission: "web_intelligence_campaigns" },
+      { id: "gdi_permissions", label: "Permisos GD", url: "/web/views/gd_intelligence.html?v=20260809-1#permissions", gdPermission: "system_users_manage" }
     ]
   },
   {
@@ -2806,6 +2807,7 @@ const PERMISSIONS = {
     "dash_home",
     "gdi_overview",
     "gdi_sites",
+    "gdi_integrations",
     "gdi_health",
     "gdi_utm",
     "gdi_permissions",
@@ -2897,6 +2899,7 @@ const PERMISSIONS = {
     "dash_home",
     "gdi_overview",
     "gdi_sites",
+    "gdi_integrations",
     "gdi_health",
     "gdi_utm",
     "rep_total",

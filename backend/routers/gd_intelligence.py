@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -15,6 +15,8 @@ from backend.gd_intelligence.permissions import (
 )
 from backend.gd_intelligence.rbac_admin import ROLE_KEYS, role_matrix, save_role_permissions
 from backend.gd_intelligence.integration_inventory import scan_public_integrations
+from backend.gd_intelligence.integration_center import actionable_integration, backend_capabilities, list_google_properties
+from backend.gd_intelligence.tracking import record_event, upsert_session
 from backend.gd_intelligence.repository import (
     INTEGRATION_PROVIDERS,
     create_site,
@@ -204,7 +206,84 @@ def integrations_list(
         _require(conn, user, "web_intelligence_view")
         _require_schema(conn)
         _require_integration_inventory_schema(conn)
-        return {"ok": True, "items": list_integrations(conn, site_id)}
+        capabilities = backend_capabilities()
+        items = [actionable_integration(item, capabilities) for item in list_integrations(conn, site_id)]
+        return {"ok": True, "items": items, "backend": capabilities}
+
+
+@router.get("/web/integrations/google/properties")
+def google_properties(user: dict = Depends(get_current_user)):
+    with engine.connect() as conn:
+        _require(conn, user, "web_intelligence_configure")
+    try:
+        return {"ok": True, **list_google_properties()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail={"code": str(exc)}) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail={"code": "GOOGLE_CONNECTION_FAILED"}) from exc
+
+
+@router.put("/web/integrations/google/selection")
+def google_property_selection(payload: dict = Body(...), request: Request = None, user: dict = Depends(get_current_user)):
+    import re
+    site_id = int(payload.get("site_id") or 0)
+    ga4_id = str(payload.get("ga4_property_id") or "").strip()
+    sc_property = str(payload.get("search_console_property") or "").strip()
+    if ga4_id and not re.fullmatch(r"[0-9]{5,}", ga4_id):
+        raise HTTPException(422, "GA4 Property ID debe ser numérico")
+    if sc_property and not re.fullmatch(r"sc-domain:[A-Za-z0-9.-]+|https://[^\s]+", sc_property):
+        raise HTTPException(422, "Propiedad Search Console inválida")
+    if not ga4_id and not sc_property:
+        raise HTTPException(422, "Selecciona al menos una propiedad")
+    with engine.begin() as conn:
+        _require(conn, user, "web_intelligence_configure")
+        if not conn.execute(text("SELECT 1 FROM public.wi_sites WHERE id=:id"), {"id": site_id}).scalar():
+            raise HTTPException(404, "Sitio no encontrado")
+        if ga4_id:
+            conn.execute(text("""
+              UPDATE public.wi_integrations SET
+                config=jsonb_set(COALESCE(config,'{}'::jsonb),'{property_id}',to_jsonb(CAST(:value AS text)),true),
+                enabled=true,status='WARNING',updated_at=now()
+              WHERE site_id=:site_id AND provider='GA4'
+            """), {"site_id": site_id, "value": ga4_id})
+        if sc_property:
+            conn.execute(text("""
+              UPDATE public.wi_integrations SET external_id=:value,enabled=true,status='WARNING',updated_at=now()
+              WHERE site_id=:site_id AND provider='SEARCH_CONSOLE'
+            """), {"site_id": site_id, "value": sc_property})
+        log_activity(conn, username=_actor(user), user_id=user_id(user), role=role_key(user),
+                     action="gd_intelligence.google_properties.select", entity_type="wi_integration",
+                     meta={"site_id": site_id, "ga4_selected": bool(ga4_id), "search_console_selected": bool(sc_property)},
+                     request=request, status_code=200)
+    return {"ok": True}
+
+
+@router.post("/tracking/session", status_code=201)
+def tracking_session(payload: dict = Body(...), request: Request = None):
+    site_code = str(payload.get("site_code") or "").strip().upper()
+    with engine.begin() as conn:
+        site_id = conn.execute(text("SELECT id FROM public.wi_sites WHERE code=:code AND enabled"), {"code": site_code}).scalar()
+        if not site_id:
+            raise HTTPException(status_code=404, detail="Sitio no encontrado")
+        try:
+            item = upsert_session(conn, site_id=int(site_id), payload=payload, user_agent=request.headers.get("user-agent") if request else None)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@router.post("/tracking/event", status_code=201)
+def tracking_event(payload: dict = Body(...)):
+    site_code = str(payload.get("site_code") or "").strip().upper()
+    with engine.begin() as conn:
+        site_id = conn.execute(text("SELECT id FROM public.wi_sites WHERE code=:code AND enabled"), {"code": site_code}).scalar()
+        if not site_id:
+            raise HTTPException(status_code=404, detail="Sitio no encontrado")
+        try:
+            item = record_event(conn, site_id=int(site_id), payload=payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True, "item": item}
 
 
 @router.put("/web/sites/{site_id}/integrations/{provider}")

@@ -1,4 +1,5 @@
 const qs = (s, el=document) => el.querySelector(s);
+const escHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 function token(){
   return window.parent?.GD?.getToken?.() || localStorage.getItem("token") || sessionStorage.getItem("token") || "";
@@ -408,6 +409,8 @@ function generateCodigoCliente(id_marca, nombre_cliente){
 }
 
 async function openLeadModal(lead){
+  const attributionResponse = await jfetch(`/leads/${lead.id_lead}/attribution`).catch(() => ({item:null,editable:false}));
+  const attribution = attributionResponse.item;
   const estM = estadoMap();
   const marM = marcaMap();
   const comM = comunaMap();
@@ -508,6 +511,21 @@ async function openLeadModal(lead){
         <div style="font-weight:900; margin-bottom:4px">Notas</div>
         <input id="notas" type="text" value="${(lead.notas||"").replaceAll('"',"&quot;")}" style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid rgba(0,0,0,.12)" />
       </label>
+      <section style="margin-top:14px;padding:12px;border:1px solid rgba(59,130,246,.28);border-radius:12px;background:rgba(59,130,246,.06)">
+        <div style="font-weight:1000;margin-bottom:8px">Atribución Digital</div>
+        ${attribution ? `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+            <div><b>First Touch</b><br>${escHtml(JSON.stringify(attribution.first_touch||{}))}</div>
+            <div><b>Last Touch</b><br>${escHtml(JSON.stringify(attribution.last_touch||{}))}</div>
+            <div><b>Fuente / Medio</b><br>${escHtml(attribution.source||'—')} / ${escHtml(attribution.medium||'—')}</div>
+            <div><b>Campaña</b><br>${escHtml(attribution.campaign||'—')}</div>
+            <div><b>Landing</b><br>${escHtml(attribution.landing_url||'—')}</div>
+            <div><b>Dispositivo</b><br>${escHtml(attribution.device||'—')}</div>
+            <div><b>Método</b><br>${escHtml(attribution.attribution_method||'—')}</div>
+            <div><b>Confidence</b><br>${attribution.confidence == null ? '—' : Math.round(Number(attribution.confidence)*100)+'%'}</div>
+          </div><div style="margin-top:8px;font-size:11px;opacity:.65">${attributionResponse.editable?'Editable sólo mediante acción auditada para roles autorizados.':'Datos automáticos de sólo lectura.'}</div>
+        ` : '<div style="opacity:.65">Este lead no tiene una sesión digital asociada.</div>'}
+      </section>
     </div>
   `;
 
@@ -582,6 +600,7 @@ async function createLead(){
   const defaultComuna = comunas[0]?.id_comuna ?? 0;
   const defaultTC = tipos[0]?.id_tipo_cliente ?? 1;
   const defaultEstado = estados[0]?.id_estado ?? 0;
+  const campaigns = await jfetch('/lead-catalogs/marketing-campaigns').then(r=>r.items||[]).catch(()=>[]);
 
   const html = `
     <div style="text-align:left">
@@ -649,15 +668,16 @@ async function createLead(){
         <input id="dir" type="text" style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid rgba(0,0,0,.12)" />
       </label>
 
-      <label style="display:block; margin:8px 0">
-        <div style="font-weight:900; margin-bottom:4px">Plataforma</div>
-        <select id="pl" style="width:100%; padding:10px 12px; border-radius:12px">
-          <option value="FORMULARIO">FORMULARIO</option>
-          <option value="MANUAL" selected>MANUAL</option>
-          <option value="WHATSAPP">WHATSAPP</option>
-          <option value="INSTAGRAM">INSTAGRAM</option>
-        </select>
-      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="display:block; margin:8px 0"><div style="font-weight:900; margin-bottom:4px">Origen del lead</div>
+          <select id="pl" style="width:100%; padding:10px 12px; border-radius:12px">
+            ${['Web','WhatsApp','Teléfono','Instagram','Facebook','Google','Referido','Evento','Otro'].map(x=>`<option value="${x.toUpperCase()}">${x}</option>`).join('')}
+          </select>
+        </label>
+        <label style="display:block; margin:8px 0"><div style="font-weight:900; margin-bottom:4px">Campaña (opcional)</div>
+          <select id="campaign" style="width:100%; padding:10px 12px; border-radius:12px"><option value="">Sin campaña</option>${campaigns.map(x=>`<option value="${Number(x.id)}">${escHtml(x.name)}</option>`).join('')}</select>
+        </label>
+      </div>
 
       <label style="display:block; margin:8px 0">
         <div style="font-weight:900; margin-bottom:4px">Notas</div>
@@ -694,7 +714,8 @@ async function createLead(){
       id_estado: Number(document.getElementById("st").value),
       codigo_cliente: document.getElementById("cod").value,
       direccion: document.getElementById("dir").value,
-      plataforma: document.getElementById("pl").value,
+      lead_source: document.getElementById("pl").value,
+      campaign_id: Number(document.getElementById("campaign").value) || null,
       notas: document.getElementById("x").value
     })
   });

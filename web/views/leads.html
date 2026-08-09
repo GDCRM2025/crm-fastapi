@@ -5219,7 +5219,8 @@ async function openCreateModal(){
   const comunas = CATS.comunas || [];
   const tipos  = CATS.tipos  || [];
   const estados = CATS.estados || [];
-  const plataformas = CATS.plataformas?.length ? CATS.plataformas : ["FORMULARIO","WHATSAPP","EMAIL","INSTAGRAM","LLAMADO","OTRO"].map((nombre,i)=>({nombre, orden:i+1}));
+  const leadSources = ["Web","WhatsApp","Teléfono","Instagram","Facebook","Google","Referido","Evento","Otro"];
+  const campaigns = await apiJSON("/lead-catalogs/marketing-campaigns").then(r=>r.items||[]).catch(()=>[]);
 
   const defaultEstado = estados[0]?.id_estado ?? null;
 
@@ -5242,8 +5243,11 @@ async function openCreateModal(){
       '<option value="">- Seleccionar -</option>' +
       tipos.map(t=>`<option value="${t.id_tipo_cliente}">${escapeHtml(t.nombre || t.tipo || t.id_tipo_cliente)}</option>`).join("") +
     '</select></label>' +
-    '<label>Plataforma<select id="c_plataforma" class="swSel">' +
-      plataformas.map(p=>`<option value="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</option>`).join("") +
+    '<label>Origen del lead<select id="c_plataforma" class="swSel">' +
+      leadSources.map(name=>`<option value="${escapeHtml(name.toUpperCase())}">${escapeHtml(name)}</option>`).join("") +
+    '</select></label>' +
+    '<label>Campaña (opcional)<select id="c_campaign" class="swSel"><option value="">Sin campaña</option>' +
+      campaigns.map(c=>`<option value="${Number(c.id)}">${escapeHtml(c.name)}</option>`).join("") +
     '</select></label>' +
     '<label>Teléfono<input id="c_tel" class="swInp" placeholder="+569..." /></label>' +
     '<label>Fecha evento<input id="c_fecha" class="swInp" type="date" /></label>' +
@@ -5280,7 +5284,8 @@ async function openCreateModal(){
         id_marca: Number(qs("#c_marca").value),
         id_comuna: Number(qs("#c_comuna").value),
         id_tipo_cliente: qs("#c_tipo").value ? Number(qs("#c_tipo").value) : null,
-        plataforma: (qs("#c_plataforma").value || "").trim() || null,
+        lead_source: (qs("#c_plataforma").value || "").trim() || "OTRO",
+        campaign_id: Number(qs("#c_campaign").value) || null,
         fecha_evento: (qs("#c_fecha").value || null),
         direccion: (qs("#c_dir").value || "").trim() || null,
         notas: (qs("#c_notas").value || "").trim() || null
@@ -5318,6 +5323,8 @@ async function openEditModal(lead){
   const platforms = Array.from(new Set([curPlat, ...platformsBase].filter(Boolean)));
   let pdfFile = null;
   let isAdmin = false;
+  const attributionResponse = await apiJSON(`/leads/${lead.id_lead}/attribution`).catch(()=>({item:null,editable:false}));
+  const attribution = attributionResponse.item;
 
   try{
     const GD = window.parent && window.parent.GD;
@@ -5385,6 +5392,17 @@ async function openEditModal(lead){
      </label>` +
     `<label>Creado<input id="e_created" class="swInp" value="${escapeHtml(String(lead.created_at||lead.fecha_ingreso||"").replace("T"," ").slice(0,16))}" disabled /></label>` +
     `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa" spellcheck="false">${escapeHtml(lead.notas || "")}</textarea></label>` +
+    `<section class="span2" style="padding:12px;border:1px solid rgba(59,130,246,.35);border-radius:12px">
+      <strong>Atribución Digital</strong>
+      ${attribution ? `<div class="grid2" style="margin-top:8px;font-size:12px">
+        <div><b>First Touch</b><br>${escapeHtml(JSON.stringify(attribution.first_touch||{}))}</div>
+        <div><b>Last Touch</b><br>${escapeHtml(JSON.stringify(attribution.last_touch||{}))}</div>
+        <div><b>Fuente / Medio</b><br>${escapeHtml(attribution.source||'—')} / ${escapeHtml(attribution.medium||'—')}</div>
+        <div><b>Campaña</b><br>${escapeHtml(attribution.campaign||'—')}</div>
+        <div><b>Landing</b><br>${escapeHtml(attribution.landing_url||'—')}</div>
+        <div><b>Dispositivo / Confidence</b><br>${escapeHtml(attribution.device||'—')} · ${attribution.confidence==null?'—':Math.round(Number(attribution.confidence)*100)+'%'}</div>
+      </div><div class="muted" style="margin-top:7px">${attributionResponse.editable?'Los cambios requieren una acción auditada de rol autorizado.':'Valores automáticos de sólo lectura.'}</div>`:'<div class="muted" style="margin-top:7px">Sin sesión digital asociada.</div>'}
+    </section>` +
     `<label class="span2">Agregar comentario
       <div class="gdQuickRow" style="margin:6px 0 8px">
         <button type="button" class="gdQBtn" id="qf_wsp" title="Registrar seguimiento WhatsApp">🟢 WSP</button>

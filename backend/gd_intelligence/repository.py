@@ -101,7 +101,8 @@ def list_integrations(conn, site_id: int | None = None) -> list[dict[str, Any]]:
             SELECT i.id,i.site_id,s.code AS site_code,s.name AS site_name,s.domain,
                    i.provider,i.status,i.enabled,i.external_id,i.last_verified_at,
                    i.last_sync_at,i.last_success_at,i.last_error_code,i.last_error_safe,
-                   i.updated_at
+                   i.updated_at,
+                   CASE WHEN i.provider='GA4' THEN i.config->>'property_id' END AS property_id
             FROM public.wi_integrations i
             JOIN public.wi_sites s ON s.id=i.site_id
             WHERE (CAST(:site_id AS bigint) IS NULL OR i.site_id=CAST(:site_id AS bigint))
@@ -183,23 +184,39 @@ def create_utm_link(conn, payload: dict[str, Any], actor: str) -> dict[str, Any]
         utm_term=payload.get("utm_term"),
         utm_content=payload.get("utm_content"),
     )
+    campaign_id = payload.get("campaign_id")
+    if campaign_id:
+        campaign_id = conn.execute(
+            text("SELECT id FROM public.wi_marketing_campaigns WHERE id=:id AND site_id=:site_id"),
+            {"id": campaign_id, "site_id": payload["site_id"]},
+        ).scalar()
+        if not campaign_id:
+            raise ValueError("La campaña no pertenece al sitio seleccionado")
+    else:
+        campaign_id = conn.execute(text("""
+          INSERT INTO public.wi_marketing_campaigns(site_id,name,created_by)
+          VALUES (:site_id,:name,:actor)
+          ON CONFLICT(site_id,name) DO UPDATE SET updated_at=now()
+          RETURNING id
+        """), {"site_id": payload["site_id"], "name": payload["utm_campaign"], "actor": actor}).scalar_one()
     row = conn.execute(
         text(
             """
             INSERT INTO public.wi_utm_links(
-              identifier,site_id,base_url,generated_url,utm_source,utm_medium,
+              identifier,site_id,campaign_id,base_url,generated_url,utm_source,utm_medium,
               utm_campaign,utm_term,utm_content,created_by
             ) VALUES (
-              :identifier,:site_id,:base_url,:generated_url,:utm_source,:utm_medium,
+              :identifier,:site_id,:campaign_id,:base_url,:generated_url,:utm_source,:utm_medium,
               :utm_campaign,:utm_term,:utm_content,:actor
             )
-            RETURNING id,identifier,site_id,base_url,generated_url,utm_source,utm_medium,
+            RETURNING id,identifier,site_id,campaign_id,base_url,generated_url,utm_source,utm_medium,
                       utm_campaign,utm_term,utm_content,created_by,created_at
             """
         ),
         {
             "identifier": identifier,
             "site_id": payload["site_id"],
+            "campaign_id": campaign_id,
             "base_url": payload["url"],
             "generated_url": generated_url,
             "utm_source": payload["utm_source"],
@@ -217,12 +234,23 @@ def list_utm_links(conn, site_id: int | None, limit: int) -> list[dict[str, Any]
     rows = conn.execute(
         text(
             """
-            SELECT u.id,u.identifier,u.site_id,s.code AS site_code,s.name AS site_name,
+            SELECT u.id,u.identifier,u.site_id,u.campaign_id,s.code AS site_code,s.name AS site_name,
                    u.base_url,u.generated_url,u.utm_source,u.utm_medium,u.utm_campaign,
-                   u.utm_term,u.utm_content,u.created_by,u.created_at
+                   u.utm_term,u.utm_content,u.created_by,u.created_at,
+                   COUNT(DISTINCT ws.session_id) AS visits,
+                   COUNT(DISTINCT la.lead_id) AS leads,
+                   COUNT(DISTINCT c.id_cotizacion) AS quotes,
+                   CASE WHEN COUNT(DISTINCT ws.session_id)=0 THEN 0
+                        ELSE ROUND(COUNT(DISTINCT la.lead_id)::numeric / COUNT(DISTINCT ws.session_id), 4) END AS conversion,
+                   COALESCE(SUM(c.total),0) AS revenue
             FROM public.wi_utm_links u
             JOIN public.wi_sites s ON s.id=u.site_id
+            LEFT JOIN public.wi_sessions ws ON ws.site_id=u.site_id AND ws.utm_campaign=u.utm_campaign
+              AND COALESCE(ws.utm_source,'')=COALESCE(u.utm_source,'') AND COALESCE(ws.utm_medium,'')=COALESCE(u.utm_medium,'')
+            LEFT JOIN public.wi_lead_attribution la ON la.session_id=ws.session_id
+            LEFT JOIN public.cotizaciones c ON c.id_lead=la.lead_id
             WHERE (CAST(:site_id AS bigint) IS NULL OR u.site_id=CAST(:site_id AS bigint))
+            GROUP BY u.id,s.code,s.name
             ORDER BY u.created_at DESC
             LIMIT :limit
             """

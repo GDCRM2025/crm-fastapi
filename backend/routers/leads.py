@@ -13,6 +13,7 @@ from backend.core.stale_leads import auto_decline_stale_leads
 from backend.core.pdf_parse import extract_text as _pdf_extract_text, parse_items_from_text as _pdf_parse_items, sample_lines as _pdf_sample_lines
 from backend.core.public_tokens import sign as sign_public
 from backend.routers.auth import get_current_user
+from backend.gd_intelligence.tracking import attach_lead_attribution
 
 router = APIRouter()
 
@@ -1188,8 +1189,11 @@ def delete_lead(id_lead: int, request: Request, payload: dict | None = Body(None
         conn.commit()
     return {"ok": True, "id_lead": id_lead}
 
+MANUAL_LEAD_SOURCES = {"WEB", "WHATSAPP", "TELÉFONO", "TELEFONO", "INSTAGRAM", "FACEBOOK", "GOOGLE", "REFERIDO", "EVENTO", "OTRO"}
+
+
 @router.post("/leads")
-def create_lead(payload: dict = Body(...), user: dict = Depends(get_current_user)):
+def create_lead(payload: dict = Body(...), request: Request = None, user: dict = Depends(get_current_user)):
     # mínimos razonables
     cliente = (payload.get("cliente") or payload.get("nombre_cliente") or payload.get("nombre") or "").strip()
     if not cliente:
@@ -1224,6 +1228,13 @@ def create_lead(payload: dict = Body(...), user: dict = Depends(get_current_user
     marca_name = (payload.get("marca") or payload.get("brand") or "").strip()
     id_tipo_cliente = payload.get("id_tipo_cliente")
     id_tipo_cliente = int(id_tipo_cliente) if id_tipo_cliente not in (None, "", "null") else None
+
+    explicit_source = payload.get("lead_source")
+    lead_source = str(explicit_source or payload.get("plataforma") or "OTRO").strip().upper()[:80]
+    if explicit_source is not None and lead_source not in MANUAL_LEAD_SOURCES:
+        raise HTTPException(422, "Origen del lead inválido")
+    if lead_source == "TELEFONO":
+        lead_source = "TELÉFONO"
 
     with get_connection() as conn:
         def _norm_key(s: str) -> str:
@@ -1383,10 +1394,29 @@ def create_lead(payload: dict = Body(...), user: dict = Depends(get_current_user
             "id_tipo_cliente": id_tipo_cliente,
             "fecha_evento": fecha_evento,
             "monto_cotizado": payload.get("monto_cotizado") or 0,
-            "plataforma": payload.get("plataforma"),
+            "plataforma": lead_source,
             "notas": notas_in,
             "num_cotizacion": payload.get("num_cotizacion"),
         }).scalar_one()
+        tracking_ready = bool(conn.execute(text("SELECT to_regclass('public.wi_lead_attribution') IS NOT NULL")).scalar())
+        session_id = payload.get("gd_session_id") or (request.headers.get("X-GD-Session-ID") if request else None)
+        if tracking_ready and session_id:
+            try:
+                attach_lead_attribution(conn, lead_id=int(new_id), session_id=session_id)
+            except ValueError:
+                pass
+        elif tracking_ready:
+            campaign_id = payload.get("campaign_id")
+            if campaign_id:
+                valid_campaign = conn.execute(text("SELECT id FROM public.wi_marketing_campaigns WHERE id=:id"), {"id": campaign_id}).scalar()
+                if not valid_campaign:
+                    raise HTTPException(422, "Campaña inválida")
+            conn.execute(text("""
+              INSERT INTO public.wi_lead_attribution(
+                lead_id,campaign_id,source,attribution_method,confidence,is_manual,updated_by
+              ) VALUES (:lead_id,:campaign_id,:source,'MANUAL_SOURCE',1.0,true,:actor)
+              ON CONFLICT(lead_id) DO NOTHING
+            """), {"lead_id": int(new_id), "campaign_id": campaign_id, "source": lead_source, "actor": username(user)})
         conn.commit()
         return {"ok": True, "id_lead": int(new_id)}
 
@@ -1728,8 +1758,65 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
             "notas": notas,
             "num_cotizacion": payload.get("num_cotizacion"),
         }).scalar_one()
+        tracking_ready = bool(conn.execute(text("SELECT to_regclass('public.wi_lead_attribution') IS NOT NULL")).scalar())
+        session_id = payload.get("gd_session_id") or (request.headers.get("X-GD-Session-ID") if request else None)
+        if tracking_ready and session_id:
+            try:
+                attach_lead_attribution(conn, lead_id=int(new_id), session_id=session_id)
+            except ValueError:
+                pass
         conn.commit()
         return {"ok": True, "id_lead": int(new_id)}
+
+
+@router.get("/leads/{id_lead}/attribution")
+def lead_attribution(id_lead: int, user: dict = Depends(get_current_user)):
+    get_lead(id_lead, user)
+    with get_connection() as conn:
+        ready = bool(conn.execute(text("SELECT to_regclass('public.wi_lead_attribution') IS NOT NULL")).scalar())
+        if not ready:
+            return {"ok": True, "item": None, "editable": False}
+        row = conn.execute(text("""
+          SELECT lead_id,session_id,campaign_id,first_touch,last_touch,source,medium,campaign,
+                 landing_url,device,attribution_method,confidence,is_manual,updated_by,updated_at
+          FROM public.wi_lead_attribution WHERE lead_id=:id
+        """), {"id": id_lead}).mappings().one_or_none()
+    role = _role(user).replace("_", " ")
+    editable = any(key in role for key in ("ADMIN", "MARKETING", "MERCADO"))
+    return {"ok": True, "item": dict(row) if row else None, "editable": editable}
+
+
+@router.patch("/leads/{id_lead}/attribution")
+def lead_attribution_update(id_lead: int, request: Request, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+    get_lead(id_lead, user)
+    role = _role(user).replace("_", " ")
+    if not any(key in role for key in ("ADMIN", "MARKETING", "MERCADO")):
+        raise HTTPException(403, "Sólo roles autorizados pueden editar atribución")
+    allowed = {"source", "medium", "campaign", "landing_url", "device", "confidence"}
+    values = {key: payload[key] for key in allowed if key in payload}
+    if "confidence" in values:
+        values["confidence"] = max(0, min(float(values["confidence"]), 1))
+    with get_connection() as conn:
+        if not values:
+            raise HTTPException(422, "Sin cambios permitidos")
+        params = {"id": id_lead, "actor": username(user), **values}
+        assignments = [f"{key}=:{key}" for key in values]
+        row = conn.execute(text("UPDATE public.wi_lead_attribution SET " + ",".join(assignments) + ",is_manual=true,updated_by=:actor,updated_at=now() WHERE lead_id=:id RETURNING *"), params).mappings().one_or_none()
+        if not row:
+            raise HTTPException(404, "Atribución no encontrada")
+        log_activity(conn, username=username(user), user_id=user_id(user), role=role_key(user), action="lead.attribution.update", entity_type="lead", entity_id=id_lead, meta={"fields": sorted(values)}, request=request)
+        conn.commit()
+    return {"ok": True, "item": dict(row)}
+
+
+@router.get("/lead-catalogs/marketing-campaigns")
+def lead_marketing_campaigns(user: dict = Depends(get_current_user)):
+    if not _can_access_leads(_role(user)):
+        raise HTTPException(403, "Sin permiso para Leads")
+    with get_connection() as conn:
+        ready = bool(conn.execute(text("SELECT to_regclass('public.wi_marketing_campaigns') IS NOT NULL")).scalar())
+        rows = conn.execute(text("SELECT id,site_id,name,status FROM public.wi_marketing_campaigns WHERE status IN ('ACTIVE','DRAFT') ORDER BY name"), {}).mappings().all() if ready else []
+    return {"ok": True, "items": [dict(row) for row in rows]}
 
 @router.put("/leads/{id_lead}")
 def update_lead(id_lead: int, request: Request, payload: dict = Body(...), user: dict = Depends(get_current_user)):

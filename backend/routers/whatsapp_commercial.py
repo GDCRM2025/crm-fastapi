@@ -21,6 +21,7 @@ from backend.core.database import get_db
 from backend.core.greenie_schema import acquire_greenie_schema_lock
 from backend.core.whatsapp_window import require_open_customer_window
 from backend.routers.auth import get_current_user
+from backend.gd_intelligence.tracking import attach_lead_attribution
 
 
 router = APIRouter(
@@ -372,6 +373,34 @@ def _lead_belongs_to_phone(db: Session, lead_id: int, wa_id: str) -> dict[str, A
     return dict(row)
 
 
+def _try_attach_web_attribution(db: Session, conversation_id: int, lead_id: int) -> dict[str, Any] | None:
+    """Use an explicit Ref GD UUID only; never infer attribution from phone alone."""
+    ready = db.execute(text("""
+      SELECT to_regclass('public.wi_events') IS NOT NULL
+         AND to_regclass('public.wi_lead_attribution') IS NOT NULL
+    """)).scalar()
+    if not ready:
+        return None
+    rows = db.execute(text("""
+      SELECT body FROM public.whatsapp_messages
+      WHERE conversation_id=:conversation_id AND direction='inbound' AND body ILIKE '%Ref GD:%'
+      ORDER BY sent_at DESC LIMIT 20
+    """), {"conversation_id": conversation_id}).scalars().all()
+    import re
+    for body in rows:
+        match = re.search(r"Ref GD:([0-9a-fA-F-]{36})", str(body or ""))
+        if not match:
+            continue
+        session_id = db.execute(text("""
+          SELECT session_id FROM public.wi_events
+          WHERE event_id=CAST(:event_id AS uuid) AND event_type='click_whatsapp'
+          LIMIT 1
+        """), {"event_id": match.group(1)}).scalar()
+        if session_id:
+            return attach_lead_attribution(db, lead_id=lead_id, session_id=session_id, method="WABA_CLICK_ID", confidence=1.0)
+    return None
+
+
 def _find_quote_source(db: Session, lead: dict[str, Any]) -> tuple[str, str]:
     lead_cols = _cols(db, "leads")
     candidates: list[tuple[str, str]] = []
@@ -610,6 +639,7 @@ def select_lead(
         SET selected_lead_id=:lead_id, updated_at=now()
         WHERE id=:id
     """), {"lead_id": body.lead_id, "id": conversation_id})
+    _try_attach_web_attribution(db, conversation_id, body.lead_id)
     db.commit()
     return {"ok": True, "selected_lead_id": body.lead_id}
 

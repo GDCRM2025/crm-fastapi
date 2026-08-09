@@ -16,6 +16,8 @@ from backend.gd_intelligence.utm import build_utm_url, campaign_identifier
 from backend.gd_intelligence.rbac_admin import ROLE_KEYS
 from backend.gd_intelligence.site_health import PageSignals, _request
 from backend.gd_intelligence.integration_inventory import GA4_RE, GTM_RE, _ids
+from backend.gd_intelligence.integration_center import actionable_integration
+from backend.gd_intelligence.tracking import attribution_touches, parse_utm, public_event_metadata, waba_confidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,6 +84,14 @@ class MigrationSafetyTests(unittest.TestCase):
             self.assertNotIn(forbidden, sql)
         self.assertIn("ADD COLUMN IF NOT EXISTS LAST_VERIFIED_AT", sql)
 
+    def test_tracking_migration_keeps_core_leads_intact(self):
+        sql = (ROOT / "migrations/2026_08_09_tracking_attribution.sql").read_text().upper()
+        self.assertIn("WI_SESSIONS", sql)
+        self.assertIn("WI_EVENTS", sql)
+        self.assertIn("WI_LEAD_ATTRIBUTION", sql)
+        for forbidden in ("DROP TABLE", "TRUNCATE", "DELETE FROM", "ALTER TABLE PUBLIC.LEADS"):
+            self.assertNotIn(forbidden, sql)
+
 
 class ConnectorParserTests(unittest.TestCase):
     def test_ga4_rows(self):
@@ -134,6 +144,35 @@ class UTMTests(unittest.TestCase):
     def test_campaign_identifier(self):
         from datetime import datetime
         self.assertEqual(campaign_identifier("cam", 841, datetime(2026, 8, 8)), "GD-CAM-MKT-2026-00841")
+
+    def test_tracking_utm_parser(self):
+        parsed = parse_utm("https://example.cl/?utm_source=google&utm_medium=cpc&utm_campaign=invierno")
+        self.assertEqual(parsed["utm_source"], "google")
+        self.assertEqual(parsed["utm_campaign"], "invierno")
+
+
+class AttributionTests(unittest.TestCase):
+    def test_first_touch_is_persistent_and_last_touch_updates(self):
+        first, last = attribution_touches(None, {"source": "google"})
+        first2, last2 = attribution_touches(first, {"source": "instagram"})
+        self.assertEqual(first2["source"], "google")
+        self.assertEqual(last2["source"], "instagram")
+
+    def test_waba_confidence_never_invents_a_match(self):
+        self.assertEqual(waba_confidence(session_id_match=True, click_id_match=False, phone_match=False), ("WABA_SESSION_ID", 0.95))
+        self.assertEqual(waba_confidence(session_id_match=False, click_id_match=False, phone_match=True), ("WABA_PHONE_TIME_WINDOW", 0.65))
+        self.assertIsNone(waba_confidence(session_id_match=False, click_id_match=False, phone_match=False))
+
+    def test_waba_linking_requires_explicit_click_reference(self):
+        tracker = (ROOT / "web/js/gd-tracker.js").read_text()
+        waba = (ROOT / "backend/routers/whatsapp_commercial.py").read_text()
+        self.assertIn("Ref GD:", tracker)
+        self.assertIn("WABA_CLICK_ID", waba)
+        self.assertIn("never infer attribution from phone alone", waba)
+
+    def test_event_metadata_removes_secret_and_pii_keys(self):
+        safe = public_event_metadata({"click_id": "public", "token": "hidden", "email": "hidden"})
+        self.assertEqual(safe, {"click_id": "public"})
 
 
 class DashboardContractTests(unittest.TestCase):
@@ -194,6 +233,30 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("/api/gd-intelligence/web/integrations", self.html)
         self.assertIn("credenciales nunca se muestran", self.html)
 
+    def test_integration_center_has_actionable_statuses(self):
+        self.assertIn('data-tab="integrations"', self.html)
+        self.assertIn("Qué está detectado", self.html)
+        self.assertIn("data-integration-action", self.html)
+
+    def test_tracker_persists_visitor_and_session_without_hardcoded_host(self):
+        tracker = (ROOT / "web/js/gd-tracker.js").read_text()
+        self.assertIn('localStorage, "gd_visitor_id"', tracker)
+        self.assertIn('sessionStorage, "gd_session_id"', tracker)
+        self.assertNotIn("127.0.0.1", tracker)
+        self.assertNotIn("localhost", tracker)
+
+    def test_manual_lead_ui_has_commercial_sources_not_utm_fields(self):
+        leads = (ROOT / "web/js/leads_app.js").read_text()
+        for label in ("Web", "WhatsApp", "Teléfono", "Instagram", "Facebook", "Google", "Referido", "Evento", "Otro"):
+            self.assertIn(label, leads)
+        create_section = leads[leads.index("async function createLead"):]
+        self.assertNotIn('id="utm_', create_section)
+
+    def test_attribution_edit_is_rbac_guarded(self):
+        leads_router = (ROOT / "backend/routers/leads.py").read_text()
+        self.assertIn("Sólo roles autorizados pueden editar atribución", leads_router)
+        self.assertIn('action="lead.attribution.update"', leads_router)
+
 
 class RbacAdminTests(unittest.TestCase):
     def test_supported_roles_are_explicit(self):
@@ -249,6 +312,12 @@ class IntegrationInventoryTests(unittest.TestCase):
     def test_secret_like_values_are_rejected(self):
         with self.assertRaises(ValidationError):
             IntegrationPublicUpdate(external_id="api_key=do-not-store", enabled=True)
+
+    def test_integration_center_response_contains_no_secret_value(self):
+        with patch.dict("os.environ", {"PAGESPEED_API_KEY": "never-return-this"}, clear=False):
+            item = actionable_integration({"provider": "PAGESPEED", "status": "WARNING", "external_id": "https://example.cl/"})
+        self.assertNotIn("never-return-this", str(item))
+        self.assertIn(item["action"], {"VERIFICAR", "VER INSTRUCCIONES"})
 
 
 if __name__ == "__main__":

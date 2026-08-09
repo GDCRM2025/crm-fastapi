@@ -82,6 +82,7 @@ class SiteUpdate(BaseModel):
 
 class UTMBuildRequest(BaseModel):
     site_id: int = Field(gt=0)
+    campaign_id: int | None = Field(default=None, gt=0)
     url: str = Field(min_length=8, max_length=2048)
     utm_source: str = Field(min_length=1, max_length=160)
     utm_medium: str = Field(min_length=1, max_length=160)
