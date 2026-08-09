@@ -10,7 +10,7 @@
     .wrap{max-width:1180px;margin:auto;padding:24px}.hero{padding:26px;border:1px solid var(--line);border-radius:20px;background:rgba(13,38,59,.94)}
     h1{margin:0 0 8px;font-size:clamp(27px,4vw,42px)}h2{margin:0 0 12px;font-size:24px}h3{margin:20px 0 8px;color:#bfead6}p{margin:7px 0}.muted{color:var(--muted)}
     .search{position:sticky;top:10px;z-index:3;margin:18px 0;padding:12px;background:rgba(6,19,31,.94);border-radius:16px;border:1px solid var(--line)}
-    input{width:100%;padding:14px 16px;border-radius:12px;border:1px solid #356483;background:#071827;color:white;font-size:16px;outline:none}input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(39,198,122,.15)}
+    input,select{width:100%;padding:14px 16px;border-radius:12px;border:1px solid #356483;background:#071827;color:white;font-size:16px;outline:none}input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(39,198,122,.15)}
     .toc{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.toc a,.open{color:#dff8ec;text-decoration:none;border:1px solid #2c6b54;background:#123c32;border-radius:999px;padding:6px 11px;cursor:pointer}
     .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}.card{margin-top:16px;padding:20px;border:1px solid var(--line);border-radius:18px;background:rgba(13,38,59,.92)}.wide{grid-column:1/-1}
     .steps{counter-reset:s}.step{position:relative;padding:10px 10px 10px 44px;margin:8px 0;border-left:2px solid #2b5b76}.step:before{counter-increment:s;content:counter(s);position:absolute;left:10px;top:9px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#062014;font-weight:800}
@@ -26,7 +26,9 @@
     <p>Busca una tarea o un error. Cada procedimiento explica qué hacer, qué resultado esperar y cuándo pedir ayuda.</p>
     <div class="toc"><a href="#leads">Leads</a><a href="#cotizaciones">Cotizaciones</a><a href="#filtros">Filtros</a><a href="#reportes">Reportes</a><a href="#encuestas">Encuestas</a><a href="#whatsapp">WhatsApp</a><a href="#crm360">Comercial 360</a><a href="#marcacion">Marcación</a><a href="#errores">Errores</a></div>
   </section>
-  <div class="search"><input id="q" type="search" placeholder="Buscar: crear lead, token inválido, PDF, encuesta, marcación…" autocomplete="off"><div id="count" class="muted"></div></div>
+  <div class="search"><div style="display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:10px"><input id="q" type="search" placeholder="Buscar: crear lead, atribución, Paid Media, error…" autocomplete="off"><select id="level"><option value="">Todos los niveles</option><option value="BASIC">Básico</option><option value="INTERMEDIATE">Intermedio</option><option value="ADVANCED">Avanzado</option></select></div><div id="count" class="muted"></div></div>
+  <section id="contextHelp" class="card wide" style="display:none"><div class="tag">Ayuda contextual</div><div id="contextBody"></div></section>
+  <section id="engineResults" class="card wide" style="display:none"><div class="tag">Resultados del motor de ayuda</div><div id="engineBody"></div></section>
   <div id="empty" class="empty">No encontramos esa consulta. Prueba con una palabra más corta o revisa “Errores frecuentes”.</div>
   <div class="grid">
     <section id="leads" class="card help-section" data-keywords="lead crear editar eliminar estado seguimiento nuevo contactado cotizado confirmado declinado">
@@ -78,8 +80,14 @@
   const sections=[...document.querySelectorAll('.help-section')],q=document.querySelector('#q'),count=document.querySelector('#count'),empty=document.querySelector('#empty');
   const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   function filter(){const term=norm(q.value.trim());let visible=0;sections.forEach(s=>{const hay=norm(s.textContent+' '+(s.dataset.keywords||''));const show=!term||hay.includes(term);s.classList.toggle('hidden',!show);if(show)visible++;});count.textContent=term?`${visible} sección(es) encontrada(s)`:'';empty.style.display=visible?'none':'block'}
-  q.addEventListener('input',filter);
+  const API_BASE=(()=>{const p=String(location.pathname||'');return p==='/crm'||p.startsWith('/crm/')?'/crm':''})();
+  const apiURL=p=>API_BASE?(String(p).startsWith('/crm/')?p:API_BASE+p):String(p).replace(/^\/crm/,'');
+  const authHeaders=()=>{const GD=window.parent&&window.parent.GD;if(GD&&GD.authHeaders)return GD.authHeaders();const t=localStorage.getItem('token')||sessionStorage.getItem('token')||'';return t?{Authorization:'Bearer '+t}:{}};
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let timer;async function searchEngine(){clearTimeout(timer);timer=setTimeout(async()=>{const term=q.value.trim(),level=document.querySelector('#level').value;try{const r=await fetch(apiURL(`/api/help/search?q=${encodeURIComponent(term)}&level=${encodeURIComponent(level)}`),{headers:authHeaders()});if(!r.ok)return;const data=await r.json(),items=data.items||[],box=document.querySelector('#engineResults');box.style.display=(term||level)?'block':'none';document.querySelector('#engineBody').innerHTML=items.length?items.map(x=>`<article><h3>${esc(x.title)} <span class="tag">${esc(x.level)} · v${esc(x.version)}</span></h3><p>${esc(x.summary)}</p><p class="muted">${esc(x.content)}</p></article>`).join(''):'<p class="muted">Sin artículos para esta consulta y nivel.</p>'}catch(_){/* La guía estática sigue disponible si el backend no responde. */}},180)}
+  q.addEventListener('input',()=>{filter();searchEngine()});document.querySelector('#level').addEventListener('change',searchEngine);
   document.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',()=>window.parent?.postMessage({type:'openItem',id:b.dataset.open,url:b.dataset.url},'*')));
+  (async()=>{const screen=new URLSearchParams(location.search).get('screen_id');if(!screen)return;try{const r=await fetch(apiURL(`/api/help/context/${encodeURIComponent(screen)}`),{headers:authHeaders()});if(!r.ok)return;const data=await r.json(),x=data.item;if(!x)return;document.querySelector('#contextHelp').style.display='block';document.querySelector('#contextBody').innerHTML=`<h2>${esc(x.title)} <span class="tag">${esc(x.level)} · v${esc(x.version)}</span></h2><p>${esc(x.summary)}</p><p>${esc(x.content)}</p>`}catch(_){}})();
 </script>
 </body>
 </html>

@@ -29,6 +29,15 @@ Actualizado: 2026-08-09
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
 | 23 Alerts | PENDING | PENDING | PENDING | N/A | — |
 | 24 Executive dashboard | PENDING | PENDING | PENDING | N/A | — |
+| 25 Paid Media data model | DONE_LOCAL | PASS | EMPTY_READY | NOT_DEPLOYED | Cuentas, entidades, métricas diarias, search terms y change log; constraints idempotentes |
+| 26 Google Ads adapter | CORE_READY | PASS | READY_FOR_CREDENTIAL | NOT_DEPLOYED | Parser normalizado y gate backend; sync externo pendiente |
+| 27 Meta Ads adapter | CORE_READY | PASS | READY_FOR_CREDENTIAL | NOT_DEPLOYED | Parser normalizado y gate backend; sync externo pendiente |
+| 28 Paid Media UI | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Modo READ/ANALYZE/RECOMMEND; plataforma y CRM separados; sin writes |
+| 29 Change Risk | CORE_READY | PASS | DONE_LOCAL | NOT_DEPLOYED | RECENT_CHANGE, LEARNING, LOW_DATA y budget risk; sin recomendaciones sin evidencia |
+| 30 Help Engine | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Artículos persistentes, búsqueda por nivel/rol y ayuda por `screen_id` |
+| 31 CRM inventory | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | 72 accesos de menú y 483 endpoints extraídos desde código |
+| 32 Manual source package | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | Pantallas, acciones, permisos, procesos, cobertura, capturas y handoff |
+| 33 Omnichannel Inbox | AUDITED | N/A | REUSE_REQUIRED | NOT_DEPLOYED | Tools y webhooks existentes confirmados; no se creó una bandeja duplicada |
 
 ## Gates transversales
 
@@ -47,7 +56,11 @@ Actualizado: 2026-08-09
 
 ## Evidencia actual
 
-- 43 pruebas unitarias/contrato GD Intelligence: PASS.
+- 50 pruebas unitarias/contrato GD Intelligence: PASS.
+- Migración Paid Media + Help aplicada dos veces en PostgreSQL aislada: PASS; 8 artículos y 6 contextos seed; cero cuentas publicitarias inventadas.
+- Paid Media local está visible como sección de GD Intelligence y Settings incluye acceso explícito a Integraciones.
+- Motor de ayuda conserva fallback estático y añade búsqueda autenticada por nivel/rol y contexto de pantalla.
+- Catálogo reproducible generado desde navegación, 137 vistas HTML/archivos relacionados y routers: 72 accesos de menú, 483 endpoints; las lagunas se marcan, no se completan por inferencia.
 - `LOCAL_API_CONNECTIVITY=PASS`: login, auth, overview, sitios, UTM, RBAC y Site Health responden por FastAPI contra PostgreSQL aislada.
 - QA visual autenticada: el menú **📡 GD Intelligence** y las vistas Resumen/Sitios/Site Health/UTM/Permisos cargan por HTTP; cuatro sitios visibles.
 - Compilación Python del módulo y router: PASS.

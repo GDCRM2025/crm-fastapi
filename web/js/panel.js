@@ -2532,6 +2532,7 @@ const MENU = [
       { id: "gdi_integrations", label: "Integration Center", url: "/web/views/gd_intelligence.html?v=20260809-1#integrations", gdPermission: "web_intelligence_view" },
       { id: "gdi_health", label: "Site Health", url: "/web/views/gd_intelligence.html?v=20260809-1#health", gdPermission: "web_intelligence_view" },
       { id: "gdi_utm", label: "Constructor UTM", url: "/web/views/gd_intelligence.html?v=20260809-1#utm", gdPermission: "web_intelligence_campaigns" },
+      { id: "gdi_paid_media", label: "Paid Media", url: "/web/views/paid_media.html?v=20260809-1", gdPermission: "paid_media_view" },
       { id: "gdi_permissions", label: "Permisos GD", url: "/web/views/gd_intelligence.html?v=20260809-1#permissions", gdPermission: "system_users_manage" }
     ]
   },
@@ -2648,6 +2649,7 @@ const MENU = [
     title: "Settings",
     items: [
       { id: "set_users", label: "Usuarios", url: "/web/views/settings.html?entity=usuarios&v=20260218-6" },
+      { id: "set_integrations", label: "Integraciones", url: "/web/views/gd_intelligence.html?v=20260809-1#integrations", gdPermission: "web_intelligence_configure" },
       { id: "set_marcas", label: "Marcas", url: "/web/views/settings.html?entity=marcas&v=20260218-6" },
       { id: "set_prod", label: "Productos (venta)", url: "/web/views/settings.html?entity=productos&v=20260218-6" },
       { id: "set_commissions_config", label: "Configuración comisiones", url: "/web/views/settings_comisiones.html?v=20260722-comm3" },
@@ -2810,6 +2812,7 @@ const PERMISSIONS = {
     "gdi_integrations",
     "gdi_health",
     "gdi_utm",
+    "gdi_paid_media",
     "gdi_permissions",
     "rrhh_hub",
     "op_gps",
@@ -2876,6 +2879,7 @@ const PERMISSIONS = {
     "rrhh_sgjo",
     "rrhh_solicitudes",
     "set_users",
+    "set_integrations",
     "set_marcas",
     "set_prod",
     "set_commissions_config",
@@ -2902,6 +2906,7 @@ const PERMISSIONS = {
     "gdi_integrations",
     "gdi_health",
     "gdi_utm",
+    "gdi_paid_media",
     "rep_total",
     "emkt_email",
     "system_notifs"
@@ -3714,7 +3719,8 @@ function bindTopbar() {
   const helpBtn = qs("#btnHelp");
   helpBtn == null ? void 0 : helpBtn.addEventListener("click", () => {
     const frame = qs("#mainFrame");
-    if (frame) frame.src = viewURL(`/web/views/ayuda.html?v=${Date.now()}`);
+    const screen = encodeURIComponent(ACTIVE_ITEM_ID || "dash_home");
+    if (frame) frame.src = viewURL(`/web/views/ayuda.html?v=${Date.now()}&screen_id=${screen}`);
   });
   (_a = qs("#brandHome")) == null ? void 0 : _a.addEventListener("click", () => {
     if (CURRENT_ALLOWED && CURRENT_ALLOWED.has("dash_home")) {

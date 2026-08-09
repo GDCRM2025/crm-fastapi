@@ -33,6 +33,15 @@ Configura `PAGESPEED_API_KEY` únicamente en el backend, restringida por API, ho
 
 El Pixel ID numérico es público. Regístralo por sitio y verifica su existencia antes de publicar. Los access tokens de Meta son secretos backend y no forman parte de esta configuración pública.
 
+## Google Ads y Meta Ads (Paid Media)
+
+La primera etapa es `READ · ANALYZE · RECOMMEND`: no publica campañas, presupuestos, anuncios ni palabras negativas.
+
+- Google Ads: habilita la API y configura en backend `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_FILE` y los Customer ID públicos elegidos en Integration Center. Si la cuenta requiere manager account, registra su ID público como configuración, no como secreto.
+- Meta Ads: configura `META_ACCESS_TOKEN` en secret store y registra el Ad Account ID público por sitio. Usa permisos de lectura mínimos (`ads_read`, según la app aprobada).
+- Los conectores deben sincronizar en forma idempotente por cuenta, fecha, entidad, dispositivo y red. Un reintento actualiza la misma clave; no duplica gasto.
+- `platform_conversions` y valor de conversión de plataforma se conservan separados de Leads, Cotizaciones, Ventas, Revenue y ROAS del CRM.
+
 ## GD Tracker first-party
 
 Publica `/web/js/gd-tracker.js` mediante GTM con `data-site-code` (`CAM`, `EXP`, `GOU` o `DEL`). Si el colector vive en otro origen, `data-api-base` apunta a un endpoint aprobado o proxy same-origin; no se codifican IP, localhost ni URLs productivas en el archivo.
@@ -48,5 +57,7 @@ El tracker conserva `gd_visitor_id`, `gd_session_id`, referrer, landing y UTM; a
 | `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth opcional | Sí |
 | `GOOGLE_OAUTH_REDIRECT_URI` | Callback exacto | No |
 | `PAGESPEED_API_KEY` | PageSpeed/CrUX | Sí |
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | Lectura de Google Ads API | Sí |
+| `META_ACCESS_TOKEN` | Lectura de Meta Marketing API | Sí |
 
 Toda credencial históricamente compartida debe revocarse y rotarse antes del deployment. La UI y la API sólo devuelven booleanos de disponibilidad, IDs públicos y diagnósticos sanitizados.

@@ -15,6 +15,8 @@ PERMISSIONS = (
     "web_intelligence_approve_change",
     "web_intelligence_deploy",
     "web_intelligence_rollback",
+    "paid_media_view",
+    "paid_media_manage",
     "ai_use",
     "ai_admin",
     "ai_view_metrics",
@@ -40,6 +42,7 @@ MARKETING_DEFAULTS = {
     "web_intelligence_campaigns",
     "web_intelligence_performance",
     "web_intelligence_change_request",
+    "paid_media_view",
     "ai_use",
 }
 ADMIN_DEFAULTS = set(PERMISSIONS) - {

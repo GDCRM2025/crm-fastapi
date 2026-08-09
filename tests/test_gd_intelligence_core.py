@@ -18,6 +18,7 @@ from backend.gd_intelligence.site_health import PageSignals, _request
 from backend.gd_intelligence.integration_inventory import GA4_RE, GTM_RE, _ids
 from backend.gd_intelligence.integration_center import actionable_integration
 from backend.gd_intelligence.tracking import attribution_touches, parse_utm, public_event_metadata, waba_confidence
+from backend.gd_intelligence.paid_media import business_metrics, change_risk, parse_google_ads_row, parse_meta_ads_row
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,6 +93,14 @@ class MigrationSafetyTests(unittest.TestCase):
         for forbidden in ("DROP TABLE", "TRUNCATE", "DELETE FROM", "ALTER TABLE PUBLIC.LEADS"):
             self.assertNotIn(forbidden, sql)
 
+    def test_paid_media_help_migration_is_additive_and_secret_free(self):
+        sql = (ROOT / "migrations/2026_08_09_paid_media_help.sql").read_text().upper()
+        for forbidden in ("DROP TABLE", "TRUNCATE", "DELETE FROM", "ALTER TABLE PUBLIC.LEADS"):
+            self.assertNotIn(forbidden, sql)
+        self.assertIn("WI_AD_METRICS_DAILY", sql)
+        self.assertIn("HELP_ARTICLES", sql)
+        self.assertNotIn("PASSWORD", sql)
+
 
 class ConnectorParserTests(unittest.TestCase):
     def test_ga4_rows(self):
@@ -127,6 +136,32 @@ class ConnectorParserTests(unittest.TestCase):
 
     def test_crux_missing_data_is_not_fabricated(self):
         self.assertEqual(parse_crux_metrics({}), {})
+
+    def test_paid_media_platform_parsers_normalize_without_credentials(self):
+        google = parse_google_ads_row({"segments": {"date": "2026-08-09"}, "campaign": {"id": 12}, "metrics": {"costMicros": 2500000, "clicks": 4}})
+        meta = parse_meta_ads_row({"date_start": "2026-08-09", "campaign_id": "m1", "spend": "4.5", "actions": [{"action_type": "lead", "value": "2"}]})
+        self.assertEqual(google["spend"], 2.5)
+        self.assertEqual(google["campaign_id"], "12")
+        self.assertEqual(meta["conversions"], 2.0)
+
+
+class PaidMediaTests(unittest.TestCase):
+    def test_crm_metrics_are_separate_and_zero_safe(self):
+        metrics = business_metrics(spend=100, impressions=1000, clicks=20, leads=5, quotes=2, sales=1, revenue=400)
+        self.assertEqual(metrics["ctr"], .02)
+        self.assertEqual(metrics["cpl_crm"], 20)
+        self.assertEqual(metrics["roas_crm"], 4)
+        self.assertIsNone(business_metrics(spend=0, impressions=0, clicks=0, leads=0, quotes=0, sales=0, revenue=0)["cpc"])
+
+    def test_change_risk_respects_cooldown_learning_and_low_data(self):
+        self.assertEqual(change_risk(hours_since_change=12, conversions_30d=100, learning=False)["state"], "RECENT_CHANGE")
+        self.assertEqual(change_risk(hours_since_change=100, conversions_30d=100, learning=True)["state"], "LEARNING")
+        self.assertEqual(change_risk(hours_since_change=100, conversions_30d=3, learning=False)["recommendation"], "INSUFFICIENT_EVIDENCE")
+
+    def test_marketing_can_view_but_not_manage_paid_media(self):
+        marketing = default_permissions("MARKETING")
+        self.assertIn("paid_media_view", marketing)
+        self.assertNotIn("paid_media_manage", marketing)
 
 
 class UTMTests(unittest.TestCase):
@@ -256,6 +291,23 @@ class DashboardContractTests(unittest.TestCase):
         leads_router = (ROOT / "backend/routers/leads.py").read_text()
         self.assertIn("Sólo roles autorizados pueden editar atribución", leads_router)
         self.assertIn('action="lead.attribution.update"', leads_router)
+
+    def test_paid_media_and_context_help_are_reachable_without_hardcoded_host(self):
+        paid = (ROOT / "web/views/paid_media.html").read_text()
+        help_html = (ROOT / "web/views/ayuda.html").read_text()
+        self.assertIn('id: "gdi_paid_media"', self.panel)
+        self.assertIn("/api/gd-intelligence/paid-media/summary", paid)
+        self.assertIn("READ · ANALYZE · RECOMMEND", paid)
+        self.assertNotIn("127.0.0.1", paid)
+        self.assertNotIn("localhost", paid)
+        self.assertIn("/api/help/context/", help_html)
+        self.assertIn("screen_id", self.panel)
+
+    def test_generated_catalog_has_real_coverage(self):
+        catalog = __import__("json").loads((ROOT / "docs/user-guide/source/screen_catalog.json").read_text())
+        self.assertGreaterEqual(len(catalog["screens"]), 60)
+        self.assertGreaterEqual(len(catalog["routes"]), 300)
+        self.assertTrue(any(x["id"] == "gdi_paid_media" for x in catalog["screens"]))
 
 
 class RbacAdminTests(unittest.TestCase):

@@ -52,6 +52,7 @@ Los smoke tests productivos post-deploy (`/healthz`, login, leads, cotizaciones,
 - `2026_08_08_site_health.sql`
 - `2026_08_08_integration_inventory.sql`
 - `2026_08_09_tracking_attribution.sql`
+- `2026_08_09_paid_media_help.sql`
 
 Todas permanecen `NOT_RUN` en producción hasta que los tres gates críticos estén en PASS y exista un SHA candidato inmutable.
 

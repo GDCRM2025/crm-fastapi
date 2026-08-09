@@ -458,6 +458,8 @@ include_router_safe(app, "backend.routers.event_checklist")
 include_router_safe(app, "backend.routers.event_surveys")
 include_router_safe(app, "backend.routers.commissions")
 include_router_safe(app, "backend.routers.gd_intelligence")
+include_router_safe(app, "backend.routers.paid_media")
+include_router_safe(app, "backend.routers.help_center")
 include_router_safe(app, "backend.routers.gia_email")
 include_router_safe(app, "backend.routers.sgjo")
 

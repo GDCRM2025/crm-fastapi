@@ -1,0 +1,6568 @@
+{
+  "generated_from": [
+    "web/js/panel.js",
+    "web/views/*.html",
+    "backend/routers/*.py"
+  ],
+  "screens": [
+    {
+      "id": "system_notifs",
+      "label": "Alertas",
+      "url": "/web/views/system_notifs.html?v=20260326-1",
+      "menu_group": "No determinado",
+      "gd_permission": null,
+      "file": "web/views/system_notifs.html",
+      "exists": true,
+      "title": "Notificaciones internas",
+      "buttons": [
+        "Recargar"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "unreadOnly",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "chkReadAll",
+          "type": "checkbox",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "leads_ver",
+      "label": "Ver Leads",
+      "url": "/web/views/leads.html?v=20260728-month1",
+      "menu_group": "No determinado",
+      "gd_permission": null,
+      "file": "web/views/leads.html",
+      "exists": true,
+      "title": "Leads",
+      "buttons": [
+        "+ Crear lead",
+        "Kanban",
+        "Tabla",
+        "Todos",
+        "🗑️ Declinados 0"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "monthPicker",
+          "type": "month",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "leads_ver",
+      "label": "Ver Leads",
+      "url": "/web/views/leads.html?v=20260809-attribution-v1",
+      "menu_group": "Leads",
+      "gd_permission": null,
+      "file": "web/views/leads.html",
+      "exists": true,
+      "title": "Leads",
+      "buttons": [
+        "+ Crear lead",
+        "Kanban",
+        "Tabla",
+        "Todos",
+        "🗑️ Declinados 0"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "monthPicker",
+          "type": "month",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "leads_fil",
+      "label": "Filtrar Leads",
+      "url": "/web/views/filtro_leads.html?v=20260326-fil1",
+      "menu_group": "Leads",
+      "gd_permission": null,
+      "file": "web/views/filtro_leads.html",
+      "exists": true,
+      "title": "Filtrar Leads",
+      "buttons": [
+        "Buscar",
+        "Enviar resultados por WhatsApp",
+        "Limpiar"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "marca",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "estado",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "f1",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "f2",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "comuna",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "crm360",
+      "label": "Comercial 360",
+      "url": "/web/views/crm360.html?v=20260723-fin-task1",
+      "menu_group": "Leads",
+      "gd_permission": null,
+      "file": "web/views/crm360.html",
+      "exists": true,
+      "title": "Comercial 360",
+      "buttons": [
+        "Abrir lead",
+        "Actualizar",
+        "Actualizar todo",
+        "Buscar",
+        "Cotizaciones",
+        "Finanzas",
+        "Guardar cierre operativo",
+        "Operaciones",
+        "Resumen",
+        "Sincronizar",
+        "Timeline"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "taskUser",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "taskSort",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "opStatus",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "opCosto",
+          "type": "number",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "opCierre",
+          "type": "textarea",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "opInc",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "chk_hoy",
+      "label": "Eventos (día)",
+      "url": "/web/views/checklist_eventos.html?v=20260728-ops2",
+      "menu_group": "Checklist",
+      "gd_permission": null,
+      "file": "web/views/checklist_eventos.html",
+      "exists": true,
+      "title": "Checklist de eventos",
+      "buttons": [
+        "Actualizar",
+        "¿Cómo se usa?"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "day",
+          "type": "date",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "encuestas_eventos",
+      "label": "Encuestas post-evento",
+      "url": "/web/views/encuestas_eventos.html?v=20260728-surveys5",
+      "menu_group": "Checklist",
+      "gd_permission": null,
+      "file": "web/views/encuestas_eventos.html",
+      "exists": true,
+      "title": "Encuestas post-evento",
+      "buttons": [
+        "Actualizar"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "day",
+          "type": "date",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "historial",
+      "label": "Historial",
+      "url": "/web/views/historial_cotizaciones.html",
+      "menu_group": "Cotizador",
+      "gd_permission": null,
+      "file": "web/views/historial_cotizaciones.html",
+      "exists": true,
+      "title": "Historial Cotizaciones",
+      "buttons": [
+        "Recargar",
+        "‹",
+        "›"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "rep_total",
+      "label": "Ir a Reportes",
+      "url": "/web/views/reportes_v2.html?v=20260723-rep-layout2",
+      "menu_group": "Reportes",
+      "gd_permission": null,
+      "file": "web/views/reportes_v2.html",
+      "exists": true,
+      "title": "Reportes",
+      "buttons": [
+        "% cierre ratios",
+        "Cargar",
+        "Clientes top",
+        "Comunas top",
+        "Dashboard",
+        "Encuestas / satisfacción post-evento",
+        "Export XLSX",
+        "Exportar CSV",
+        "Funnel etapas",
+        "Imprimir",
+        "Leads hoy lista",
+        "Mis comisiones mes",
+        "Por cobrar CxC",
+        "Por pagar CxP",
+        "Productos top",
+        "Tipo cliente mix",
+        "Venta diaria serie",
+        "Ver todos",
+        "Visión general MTD/Meta/LY",
+        "WhatsApp"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "marca",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "ventaSource",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "periodo",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "topN",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "prodOrd",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "comOrd",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "cliOrd",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "ini",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fin",
+          "type": "date",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "gdi_overview",
+      "label": "Dashboard web",
+      "url": "/web/views/gd_intelligence.html?v=20260809-1",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "web_intelligence_view",
+      "file": "web/views/gd_intelligence.html",
+      "exists": true,
+      "title": "GD Intelligence",
+      "buttons": [
+        "Actualizar",
+        "CONECTAR GOOGLE",
+        "Crear sitio",
+        "Ejecutar ahora",
+        "Generar y guardar",
+        "Guardar cambios",
+        "Guardar configuración pública",
+        "Integration Center",
+        "Permisos",
+        "Recargar",
+        "Resumen",
+        "Site Health",
+        "Sitios",
+        "UTM",
+        "VERIFICAR TODO",
+        "Verificar tags públicos"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "showDisabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "code",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "name",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "domain",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "timezone",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "currency",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "select",
+          "name": "provider",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "url",
+          "type": "url",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_source",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_medium",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_campaign",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_term",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "utm_content",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "rbacRole",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": [
+        "/api/gd-intelligence/campaigns/utm",
+        "/api/gd-intelligence/campaigns/utm?limit=100",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/permissions/me",
+        "/api/gd-intelligence/permissions/roles",
+        "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
+        "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/google/properties",
+        "/api/gd-intelligence/web/integrations/google/selection",
+        "/api/gd-intelligence/web/site-health/latest",
+        "/api/gd-intelligence/web/site-health/run",
+        "/api/gd-intelligence/web/sites",
+        "/api/gd-intelligence/web/sites/${Number",
+        "/api/gd-intelligence/web/sites/${b.dataset.toggle}",
+        "/api/gd-intelligence/web/sites?include_disabled=${$"
+      ]
+    },
+    {
+      "id": "gdi_sites",
+      "label": "Sitios",
+      "url": "/web/views/gd_intelligence.html?v=20260809-1#sites",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "web_intelligence_view",
+      "file": "web/views/gd_intelligence.html",
+      "exists": true,
+      "title": "GD Intelligence",
+      "buttons": [
+        "Actualizar",
+        "CONECTAR GOOGLE",
+        "Crear sitio",
+        "Ejecutar ahora",
+        "Generar y guardar",
+        "Guardar cambios",
+        "Guardar configuración pública",
+        "Integration Center",
+        "Permisos",
+        "Recargar",
+        "Resumen",
+        "Site Health",
+        "Sitios",
+        "UTM",
+        "VERIFICAR TODO",
+        "Verificar tags públicos"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "showDisabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "code",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "name",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "domain",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "timezone",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "currency",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "select",
+          "name": "provider",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "url",
+          "type": "url",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_source",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_medium",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_campaign",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_term",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "utm_content",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "rbacRole",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": [
+        "/api/gd-intelligence/campaigns/utm",
+        "/api/gd-intelligence/campaigns/utm?limit=100",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/permissions/me",
+        "/api/gd-intelligence/permissions/roles",
+        "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
+        "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/google/properties",
+        "/api/gd-intelligence/web/integrations/google/selection",
+        "/api/gd-intelligence/web/site-health/latest",
+        "/api/gd-intelligence/web/site-health/run",
+        "/api/gd-intelligence/web/sites",
+        "/api/gd-intelligence/web/sites/${Number",
+        "/api/gd-intelligence/web/sites/${b.dataset.toggle}",
+        "/api/gd-intelligence/web/sites?include_disabled=${$"
+      ]
+    },
+    {
+      "id": "gdi_integrations",
+      "label": "Integration Center",
+      "url": "/web/views/gd_intelligence.html?v=20260809-1#integrations",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "web_intelligence_view",
+      "file": "web/views/gd_intelligence.html",
+      "exists": true,
+      "title": "GD Intelligence",
+      "buttons": [
+        "Actualizar",
+        "CONECTAR GOOGLE",
+        "Crear sitio",
+        "Ejecutar ahora",
+        "Generar y guardar",
+        "Guardar cambios",
+        "Guardar configuración pública",
+        "Integration Center",
+        "Permisos",
+        "Recargar",
+        "Resumen",
+        "Site Health",
+        "Sitios",
+        "UTM",
+        "VERIFICAR TODO",
+        "Verificar tags públicos"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "showDisabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "code",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "name",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "domain",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "timezone",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "currency",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "select",
+          "name": "provider",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "url",
+          "type": "url",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_source",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_medium",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_campaign",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_term",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "utm_content",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "rbacRole",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": [
+        "/api/gd-intelligence/campaigns/utm",
+        "/api/gd-intelligence/campaigns/utm?limit=100",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/permissions/me",
+        "/api/gd-intelligence/permissions/roles",
+        "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
+        "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/google/properties",
+        "/api/gd-intelligence/web/integrations/google/selection",
+        "/api/gd-intelligence/web/site-health/latest",
+        "/api/gd-intelligence/web/site-health/run",
+        "/api/gd-intelligence/web/sites",
+        "/api/gd-intelligence/web/sites/${Number",
+        "/api/gd-intelligence/web/sites/${b.dataset.toggle}",
+        "/api/gd-intelligence/web/sites?include_disabled=${$"
+      ]
+    },
+    {
+      "id": "gdi_health",
+      "label": "Site Health",
+      "url": "/web/views/gd_intelligence.html?v=20260809-1#health",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "web_intelligence_view",
+      "file": "web/views/gd_intelligence.html",
+      "exists": true,
+      "title": "GD Intelligence",
+      "buttons": [
+        "Actualizar",
+        "CONECTAR GOOGLE",
+        "Crear sitio",
+        "Ejecutar ahora",
+        "Generar y guardar",
+        "Guardar cambios",
+        "Guardar configuración pública",
+        "Integration Center",
+        "Permisos",
+        "Recargar",
+        "Resumen",
+        "Site Health",
+        "Sitios",
+        "UTM",
+        "VERIFICAR TODO",
+        "Verificar tags públicos"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "showDisabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "code",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "name",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "domain",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "timezone",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "currency",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "select",
+          "name": "provider",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "url",
+          "type": "url",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_source",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_medium",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_campaign",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_term",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "utm_content",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "rbacRole",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": [
+        "/api/gd-intelligence/campaigns/utm",
+        "/api/gd-intelligence/campaigns/utm?limit=100",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/permissions/me",
+        "/api/gd-intelligence/permissions/roles",
+        "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
+        "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/google/properties",
+        "/api/gd-intelligence/web/integrations/google/selection",
+        "/api/gd-intelligence/web/site-health/latest",
+        "/api/gd-intelligence/web/site-health/run",
+        "/api/gd-intelligence/web/sites",
+        "/api/gd-intelligence/web/sites/${Number",
+        "/api/gd-intelligence/web/sites/${b.dataset.toggle}",
+        "/api/gd-intelligence/web/sites?include_disabled=${$"
+      ]
+    },
+    {
+      "id": "gdi_utm",
+      "label": "Constructor UTM",
+      "url": "/web/views/gd_intelligence.html?v=20260809-1#utm",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "web_intelligence_campaigns",
+      "file": "web/views/gd_intelligence.html",
+      "exists": true,
+      "title": "GD Intelligence",
+      "buttons": [
+        "Actualizar",
+        "CONECTAR GOOGLE",
+        "Crear sitio",
+        "Ejecutar ahora",
+        "Generar y guardar",
+        "Guardar cambios",
+        "Guardar configuración pública",
+        "Integration Center",
+        "Permisos",
+        "Recargar",
+        "Resumen",
+        "Site Health",
+        "Sitios",
+        "UTM",
+        "VERIFICAR TODO",
+        "Verificar tags públicos"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "showDisabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "code",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "name",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "domain",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "timezone",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "currency",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "select",
+          "name": "provider",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "url",
+          "type": "url",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_source",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_medium",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_campaign",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_term",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "utm_content",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "rbacRole",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": [
+        "/api/gd-intelligence/campaigns/utm",
+        "/api/gd-intelligence/campaigns/utm?limit=100",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/permissions/me",
+        "/api/gd-intelligence/permissions/roles",
+        "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
+        "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/google/properties",
+        "/api/gd-intelligence/web/integrations/google/selection",
+        "/api/gd-intelligence/web/site-health/latest",
+        "/api/gd-intelligence/web/site-health/run",
+        "/api/gd-intelligence/web/sites",
+        "/api/gd-intelligence/web/sites/${Number",
+        "/api/gd-intelligence/web/sites/${b.dataset.toggle}",
+        "/api/gd-intelligence/web/sites?include_disabled=${$"
+      ]
+    },
+    {
+      "id": "gdi_paid_media",
+      "label": "Paid Media",
+      "url": "/web/views/paid_media.html?v=20260809-1",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "paid_media_view",
+      "file": "web/views/paid_media.html",
+      "exists": true,
+      "title": "Paid Media — GD Intelligence",
+      "buttons": [
+        "? Ayuda",
+        "Actualizar",
+        "Change Log",
+        "Change Risk",
+        "Google Ads",
+        "Meta Ads",
+        "Recomendaciones",
+        "Resumen",
+        "Search Terms"
+      ],
+      "fields": [],
+      "api_references": [
+        "/api/gd-intelligence/paid-media/search-terms?limit=100",
+        "/api/gd-intelligence/paid-media/status",
+        "/api/gd-intelligence/paid-media/summary?days=30"
+      ]
+    },
+    {
+      "id": "gdi_permissions",
+      "label": "Permisos GD",
+      "url": "/web/views/gd_intelligence.html?v=20260809-1#permissions",
+      "menu_group": "GD Intelligence",
+      "gd_permission": "system_users_manage",
+      "file": "web/views/gd_intelligence.html",
+      "exists": true,
+      "title": "GD Intelligence",
+      "buttons": [
+        "Actualizar",
+        "CONECTAR GOOGLE",
+        "Crear sitio",
+        "Ejecutar ahora",
+        "Generar y guardar",
+        "Guardar cambios",
+        "Guardar configuración pública",
+        "Integration Center",
+        "Permisos",
+        "Recargar",
+        "Resumen",
+        "Site Health",
+        "Sitios",
+        "UTM",
+        "VERIFICAR TODO",
+        "Verificar tags públicos"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "showDisabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "code",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "name",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "domain",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "timezone",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "currency",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "select",
+          "name": "provider",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "url",
+          "type": "url",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_source",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_medium",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_campaign",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_term",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "utm_content",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "rbacRole",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": [
+        "/api/gd-intelligence/campaigns/utm",
+        "/api/gd-intelligence/campaigns/utm?limit=100",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/permissions/me",
+        "/api/gd-intelligence/permissions/roles",
+        "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
+        "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/google/properties",
+        "/api/gd-intelligence/web/integrations/google/selection",
+        "/api/gd-intelligence/web/site-health/latest",
+        "/api/gd-intelligence/web/site-health/run",
+        "/api/gd-intelligence/web/sites",
+        "/api/gd-intelligence/web/sites/${Number",
+        "/api/gd-intelligence/web/sites/${b.dataset.toggle}",
+        "/api/gd-intelligence/web/sites?include_disabled=${$"
+      ]
+    },
+    {
+      "id": "emkt_email",
+      "label": "Email marketing",
+      "url": "/web/views/emkt.html",
+      "menu_group": "E\\u2011Mkt",
+      "gd_permission": null,
+      "file": "web/views/emkt.html",
+      "exists": true,
+      "title": "E‑Mkt",
+      "buttons": [
+        "Enviar",
+        "Export CSV",
+        "Snapshot",
+        "Ver audiencia"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "yyyymm",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "marca",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "limit",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "dry",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "subject",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fromHint",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "text",
+          "type": "textarea",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "html",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_rec",
+      "label": "Recetas",
+      "url": "/web/views/operaciones_recetas.html?v=20260304-1",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/operaciones_recetas.html",
+      "exists": true,
+      "title": "Operaciones • Recetas",
+      "buttons": [
+        "Agregar",
+        "Crear receta",
+        "Eliminar receta",
+        "Guardar receta",
+        "Nueva sub‑receta"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "listMode",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "brandFilter",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "onlyMissing",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "recetaProducto",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "recetaMarca",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "recetaRend",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "recetaMerma",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "recetaExtra",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "recetaSub",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "useSubRecipe",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "newIng",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "newQty",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "newUnit",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "newCost",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "newMerma",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "newTotal",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_mice",
+      "label": "Mice and Place",
+      "url": "/web/views/operaciones_mice.html",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/operaciones_mice.html",
+      "exists": true,
+      "title": "Operaciones • Mice and Place",
+      "buttons": [
+        "Actualizar",
+        "Cerrar",
+        "Cerrar detalle",
+        "Imprimir",
+        "Imprimir resumen",
+        "Semana actual",
+        "Semana anterior",
+        "Siguiente semana",
+        "Ver detalle"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "brandFilter",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_ruta",
+      "label": "Ruta",
+      "url": "/web/views/ruta.html",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/ruta.html",
+      "exists": true,
+      "title": "Ruta diaria",
+      "buttons": [
+        "Actualizar"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "day",
+          "type": "date",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_ma_cat",
+      "label": "Categorias Maquinaria",
+      "url": "/web/views/op_maquinaria_categorias.html?v=20260304-1",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/op_maquinaria_categorias.html",
+      "exists": true,
+      "title": "Operaciones · Categorías Maquinaria",
+      "buttons": [
+        "+ Nueva",
+        "Recargar"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_ma_inv",
+      "label": "Inventario Maquinaria",
+      "url": "/web/views/op_maquinaria_inventario.html?v=20260304-1",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/op_maquinaria_inventario.html",
+      "exists": true,
+      "title": "Operaciones · Inventario Maquinaria",
+      "buttons": [
+        "+ Nuevo",
+        "Crear unidades",
+        "Recargar"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "cat",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "st",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_ma_ficha",
+      "label": "Ficha Maquinaria",
+      "url": "/web/views/op_maquinaria_ficha.html?v=20260304-1",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/op_maquinaria_ficha.html",
+      "exists": true,
+      "title": "Operaciones · Ficha Maquinaria",
+      "buttons": [
+        "Agregar mantención",
+        "Asignar a evento",
+        "Recargar"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "cat",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_ca_ficha",
+      "label": "Ficha Camiones",
+      "url": "/web/views/op_camiones_ficha.html?v=20260304-1",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/op_camiones_ficha.html",
+      "exists": true,
+      "title": "Operaciones · Ficha Camiones",
+      "buttons": [
+        "+ Nuevo camión",
+        "Asignar a evento",
+        "Devolución",
+        "Entrega",
+        "Recargar"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_ca_ent",
+      "label": "Entrega de Camiones",
+      "url": "/web/views/op_camiones_entrega.html?v=20260304-1",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/op_camiones_entrega.html",
+      "exists": true,
+      "title": "Operaciones · Entrega de Camiones",
+      "buttons": [
+        "Cargar historial",
+        "Guardar checklist"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "id_asset",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fecha",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "conductor",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_docs",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_luces",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_neumaticos",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_herr",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_comb",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_limpio",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "notes",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_ca_dev",
+      "label": "Devolucion de Camiones",
+      "url": "/web/views/op_camiones_devolucion.html?v=20260304-1",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/op_camiones_devolucion.html",
+      "exists": true,
+      "title": "Operaciones · Devolución de Camiones",
+      "buttons": [
+        "Cargar historial",
+        "Guardar checklist"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "id_asset",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fecha",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "conductor",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_limpio",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_danos",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_faltantes",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_comb",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_km",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "c_docs",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "notes",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_chk_ev",
+      "label": "Checklist eventos",
+      "url": "/web/views/checklist_eventos.html?v=20260728-ops2",
+      "menu_group": "Operaciones",
+      "gd_permission": null,
+      "file": "web/views/checklist_eventos.html",
+      "exists": true,
+      "title": "Checklist de eventos",
+      "buttons": [
+        "Actualizar",
+        "¿Cómo se usa?"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "day",
+          "type": "date",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "inv_tomar",
+      "label": "Tomar inventario",
+      "url": "/web/views/inventario_mercancia.html#tomar",
+      "menu_group": "Inventario",
+      "gd_permission": null,
+      "file": "web/views/inventario_mercancia.html",
+      "exists": true,
+      "title": "Inventario • Mercancía",
+      "buttons": [
+        "Actualizar",
+        "Cerrar",
+        "Eliminar",
+        "Guardar",
+        "Nuevo"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "inv_stock",
+      "label": "Stock ingredientes",
+      "url": "/web/views/inventario_mercancia.html#stock",
+      "menu_group": "Inventario",
+      "gd_permission": null,
+      "file": "web/views/inventario_mercancia.html",
+      "exists": true,
+      "title": "Inventario • Mercancía",
+      "buttons": [
+        "Actualizar",
+        "Cerrar",
+        "Eliminar",
+        "Guardar",
+        "Nuevo"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "inv_class",
+      "label": "Clasificación MICE/OPS",
+      "url": "/web/views/inventario_clasificacion.html?v=20260504-1",
+      "menu_group": "Inventario",
+      "gd_permission": null,
+      "file": "web/views/inventario_clasificacion.html",
+      "exists": true,
+      "title": "Inventario · Clasificación",
+      "buttons": [
+        "Cargar",
+        "▶",
+        "◀"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fClas",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "pageSize",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "inv_cat",
+      "label": "Categorías",
+      "url": "/web/views/inventario_mercancia.html#categorias",
+      "menu_group": "Inventario",
+      "gd_permission": null,
+      "file": "web/views/inventario_mercancia.html",
+      "exists": true,
+      "title": "Inventario • Mercancía",
+      "buttons": [
+        "Actualizar",
+        "Cerrar",
+        "Eliminar",
+        "Guardar",
+        "Nuevo"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "inv_uni",
+      "label": "Unidades",
+      "url": "/web/views/inventario_mercancia.html#unidades",
+      "menu_group": "Inventario",
+      "gd_permission": null,
+      "file": "web/views/inventario_mercancia.html",
+      "exists": true,
+      "title": "Inventario • Mercancía",
+      "buttons": [
+        "Actualizar",
+        "Cerrar",
+        "Eliminar",
+        "Guardar",
+        "Nuevo"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "inv_prov",
+      "label": "Proveedores",
+      "url": "/web/views/inventario_mercancia.html#proveedores",
+      "menu_group": "Inventario",
+      "gd_permission": null,
+      "file": "web/views/inventario_mercancia.html",
+      "exists": true,
+      "title": "Inventario • Mercancía",
+      "buttons": [
+        "Actualizar",
+        "Cerrar",
+        "Eliminar",
+        "Guardar",
+        "Nuevo"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "inv_mov",
+      "label": "Movimiento de Inventario",
+      "url": "/web/views/inventario_mercancia.html#movimientos",
+      "menu_group": "Inventario",
+      "gd_permission": null,
+      "file": "web/views/inventario_mercancia.html",
+      "exists": true,
+      "title": "Inventario • Mercancía",
+      "buttons": [
+        "Actualizar",
+        "Cerrar",
+        "Eliminar",
+        "Guardar",
+        "Nuevo"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "pl",
+      "label": "P&L",
+      "url": "/web/views/finanzas_pl.html",
+      "menu_group": "Finanzas",
+      "gd_permission": null,
+      "file": "web/views/finanzas_pl.html",
+      "exists": true,
+      "title": "finanzas_pl",
+      "buttons": [
+        "Actualizar",
+        "Agregar",
+        "Cerrar",
+        "Colapsar todo",
+        "Eliminar",
+        "Expandir todo",
+        "Guardar",
+        "Nueva cuenta",
+        "P&L",
+        "Plan de cuentas"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "pnlMonth",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "pnlYear",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sMarca",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "sMonto",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "sFecha",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "sNota",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "typeFilter",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "activeFilter",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fCode",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fName",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fType",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fClass",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fParent",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fActive",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "fDesc",
+          "type": "textarea",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "fExample",
+          "type": "textarea",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fWho",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fHow",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "gast",
+      "label": "Cargar Gastos",
+      "url": "/web/views/finanzas_gastos.html",
+      "menu_group": "Finanzas",
+      "gd_permission": null,
+      "file": "web/views/finanzas_gastos.html",
+      "exists": true,
+      "title": "Finanzas • Gastos",
+      "buttons": [
+        "Actualizar",
+        "Aplicar",
+        "Cerrar",
+        "Eliminar",
+        "Guardar cambios",
+        "Guardar gasto",
+        "Limpiar",
+        "Primera",
+        "Siguiente ▶",
+        "Última",
+        "◀ Anterior"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "fFecha",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fCuenta",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fMonto",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fProveedor",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fMarca",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fCentro",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fTipoDoc",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fDoc",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fVenc",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fPag",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fPago",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fDesc",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "sMes",
+          "type": "month",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sPagado",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sCuenta",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sMarca",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sCentro",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "sQ",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sLimit",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "eFecha",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "eCuenta",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "eMonto",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "eProveedor",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "eMarca",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "eCentro",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "eTipoDoc",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "eDoc",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "eVenc",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "ePag",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "ePago",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "eDesc",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "plan_cuentas",
+      "label": "Plan de Cuentas",
+      "url": "/web/views/finanzas_pl.html#plan",
+      "menu_group": "Finanzas",
+      "gd_permission": null,
+      "file": "web/views/finanzas_pl.html",
+      "exists": true,
+      "title": "finanzas_pl",
+      "buttons": [
+        "Actualizar",
+        "Agregar",
+        "Cerrar",
+        "Colapsar todo",
+        "Eliminar",
+        "Expandir todo",
+        "Guardar",
+        "Nueva cuenta",
+        "P&L",
+        "Plan de cuentas"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "pnlMonth",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "pnlYear",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sMarca",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "sMonto",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "sFecha",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "sNota",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "typeFilter",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "activeFilter",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fCode",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fName",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fType",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fClass",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fParent",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "fActive",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "fDesc",
+          "type": "textarea",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "fExample",
+          "type": "textarea",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fWho",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "fHow",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_gps",
+      "label": "Conectar GPS",
+      "url": "/web/views/conductores_gps.html",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/conductores_gps.html",
+      "exists": true,
+      "title": "conductores_gps",
+      "buttons": [
+        "Detener",
+        "Iniciar tracking"
+      ],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "op_vruta",
+      "label": "Ver ruta (actual)",
+      "url": "/web/views/conductores_ruta.html",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/conductores_ruta.html",
+      "exists": true,
+      "title": "Ruta conductores",
+      "buttons": [],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "op_cal",
+      "label": "Calendario",
+      "url": "/web/views/calendar.html?v=20260305-gcal1",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/calendar.html",
+      "exists": true,
+      "title": "Calendario",
+      "buttons": [
+        "Abrir en Google",
+        "Recargar"
+      ],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "op_menu_cam",
+      "label": "Menu Camaleón",
+      "url": "/web/views/operadores.html?only=menu&brand=CAMALEON&v=20260305-m1#recetas",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/operadores.html",
+      "exists": true,
+      "title": "Operadores – Green Diamond Group",
+      "buttons": [
+        "Abrir",
+        "Agenda",
+        "Mes",
+        "Semana"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "brandSel",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_menu_gou",
+      "label": "Menu Gourmet",
+      "url": "/web/views/operadores.html?only=menu&brand=GOURMET&v=20260305-m1#recetas",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/operadores.html",
+      "exists": true,
+      "title": "Operadores – Green Diamond Group",
+      "buttons": [
+        "Abrir",
+        "Agenda",
+        "Mes",
+        "Semana"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "brandSel",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_menu_exp",
+      "label": "Menu Express",
+      "url": "/web/views/operadores.html?only=menu&brand=EXPRESS&v=20260305-m1#recetas",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/operadores.html",
+      "exists": true,
+      "title": "Operadores – Green Diamond Group",
+      "buttons": [
+        "Abrir",
+        "Agenda",
+        "Mes",
+        "Semana"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "brandSel",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_menu_del",
+      "label": "Menu Del Sabor",
+      "url": "/web/views/operadores.html?only=menu&brand=DEL%20SABOR&v=20260305-m1#recetas",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/operadores.html",
+      "exists": true,
+      "title": "Operadores – Green Diamond Group",
+      "buttons": [
+        "Abrir",
+        "Agenda",
+        "Mes",
+        "Semana"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "brandSel",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_menu_pet",
+      "label": "Menu Petras",
+      "url": "/web/views/operadores.html?only=menu&brand=PETRAS&v=20260305-m1#recetas",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/operadores.html",
+      "exists": true,
+      "title": "Operadores – Green Diamond Group",
+      "buttons": [
+        "Abrir",
+        "Agenda",
+        "Mes",
+        "Semana"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "brandSel",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_menu_mf",
+      "label": "Menu Mas Flow",
+      "url": "/web/views/operadores.html?only=menu&brand=MAS%20FLOW&v=20260305-m1#recetas",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/operadores.html",
+      "exists": true,
+      "title": "Operadores – Green Diamond Group",
+      "buttons": [
+        "Abrir",
+        "Agenda",
+        "Mes",
+        "Semana"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "brandSel",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_uni",
+      "label": "Universidad GD",
+      "url": "/web/views/operadores.html?only=uni&v=20260305-m1#videos",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/operadores.html",
+      "exists": true,
+      "title": "Operadores – Green Diamond Group",
+      "buttons": [
+        "Abrir",
+        "Agenda",
+        "Mes",
+        "Semana"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "brandSel",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "op_vruta2",
+      "label": "Ver Ruta (próx.)",
+      "url": "/web/views/operadores_ruta_futura.html",
+      "menu_group": "Operadores/CHOPS",
+      "gd_permission": null,
+      "file": "web/views/operadores_ruta_futura.html",
+      "exists": true,
+      "title": "Ver Ruta (próx.)",
+      "buttons": [],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "rrhh_hub",
+      "label": "RRHH",
+      "url": "/web/views/rrhh.html?v=20260518-rrhh5",
+      "menu_group": "RRHH",
+      "gd_permission": null,
+      "file": "web/views/rrhh.html",
+      "exists": true,
+      "title": "RRHH",
+      "buttons": [
+        "Recargar",
+        "Volver"
+      ],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "rrhh_mark_plan",
+      "label": "Turnos (planificador)",
+      "url": "/web/views/rrhh_marcaciones_planificador.html?v=20260518-1",
+      "menu_group": "RRHH",
+      "gd_permission": null,
+      "file": "web/views/rrhh_marcaciones_planificador.html",
+      "exists": true,
+      "title": "RRHH · Turnos (Planificador)",
+      "buttons": [
+        "Cargar",
+        "Este mes"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "monthPick",
+          "type": "month",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "rrhh_turnos_visor",
+      "label": "Mi turno (teórico vs real)",
+      "url": "/web/views/rrhh_turnos_visor.html?v=20260518-1",
+      "menu_group": "RRHH",
+      "gd_permission": null,
+      "file": "web/views/rrhh_turnos_visor.html",
+      "exists": true,
+      "title": "RRHH · Mi Turno",
+      "buttons": [
+        "Cargar"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "month",
+          "type": "month",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "tool_gmail",
+      "label": "Correo",
+      "url": "/web/views/tools.html?v=20260807-greenie-live-v1#correo",
+      "menu_group": "Tools",
+      "gd_permission": null,
+      "file": "web/views/tools.html",
+      "exists": true,
+      "title": "Tools",
+      "buttons": [
+        "Cerrar",
+        "🧰 Tools"
+      ],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "tool_ig",
+      "label": "Instagram",
+      "url": "/web/views/tools.html?v=20260807-greenie-live-v1#instagram",
+      "menu_group": "Tools",
+      "gd_permission": null,
+      "file": "web/views/tools.html",
+      "exists": true,
+      "title": "Tools",
+      "buttons": [
+        "Cerrar",
+        "🧰 Tools"
+      ],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "tool_wapp",
+      "label": "WhatsApp",
+      "url": "/web/views/tools.html?v=20260807-greenie-live-v1#whatsapp",
+      "menu_group": "Tools",
+      "gd_permission": null,
+      "file": "web/views/tools.html",
+      "exists": true,
+      "title": "Tools",
+      "buttons": [
+        "Cerrar",
+        "🧰 Tools"
+      ],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "tool_calc",
+      "label": "Calculadora",
+      "url": "/web/views/tools.html?v=20260807-greenie-live-v1#calc",
+      "menu_group": "Tools",
+      "gd_permission": null,
+      "file": "web/views/tools.html",
+      "exists": true,
+      "title": "Tools",
+      "buttons": [
+        "Cerrar",
+        "🧰 Tools"
+      ],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "set_users",
+      "label": "Usuarios",
+      "url": "/web/views/settings.html?entity=usuarios&v=20260218-6",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings.html",
+      "exists": true,
+      "title": "Settings",
+      "buttons": [
+        "+ Crear",
+        "Cambiar clave (Admin)",
+        "Cargar más",
+        "Recargar",
+        "Solicitudes clave",
+        "↓",
+        "✕"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sortCol",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_integrations",
+      "label": "Integraciones",
+      "url": "/web/views/gd_intelligence.html?v=20260809-1#integrations",
+      "menu_group": "Settings",
+      "gd_permission": "web_intelligence_configure",
+      "file": "web/views/gd_intelligence.html",
+      "exists": true,
+      "title": "GD Intelligence",
+      "buttons": [
+        "Actualizar",
+        "CONECTAR GOOGLE",
+        "Crear sitio",
+        "Ejecutar ahora",
+        "Generar y guardar",
+        "Guardar cambios",
+        "Guardar configuración pública",
+        "Integration Center",
+        "Permisos",
+        "Recargar",
+        "Resumen",
+        "Site Health",
+        "Sitios",
+        "UTM",
+        "VERIFICAR TODO",
+        "Verificar tags públicos"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "showDisabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "code",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "name",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "domain",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "timezone",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "currency",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "select",
+          "name": "provider",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "external_id",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "enabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "site_id",
+          "type": "select",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "url",
+          "type": "url",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_source",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_medium",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_campaign",
+          "type": "input",
+          "required": true
+        },
+        {
+          "tag": "input",
+          "name": "utm_term",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "utm_content",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "rbacRole",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": [
+        "/api/gd-intelligence/campaigns/utm",
+        "/api/gd-intelligence/campaigns/utm?limit=100",
+        "/api/gd-intelligence/overview",
+        "/api/gd-intelligence/permissions/me",
+        "/api/gd-intelligence/permissions/roles",
+        "/api/gd-intelligence/permissions/roles/${encodeURIComponent",
+        "/api/gd-intelligence/web/integrations",
+        "/api/gd-intelligence/web/integrations/discover",
+        "/api/gd-intelligence/web/integrations/google/properties",
+        "/api/gd-intelligence/web/integrations/google/selection",
+        "/api/gd-intelligence/web/site-health/latest",
+        "/api/gd-intelligence/web/site-health/run",
+        "/api/gd-intelligence/web/sites",
+        "/api/gd-intelligence/web/sites/${Number",
+        "/api/gd-intelligence/web/sites/${b.dataset.toggle}",
+        "/api/gd-intelligence/web/sites?include_disabled=${$"
+      ]
+    },
+    {
+      "id": "set_marcas",
+      "label": "Marcas",
+      "url": "/web/views/settings.html?entity=marcas&v=20260218-6",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings.html",
+      "exists": true,
+      "title": "Settings",
+      "buttons": [
+        "+ Crear",
+        "Cambiar clave (Admin)",
+        "Cargar más",
+        "Recargar",
+        "Solicitudes clave",
+        "↓",
+        "✕"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sortCol",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_prod",
+      "label": "Productos (venta)",
+      "url": "/web/views/settings.html?entity=productos&v=20260218-6",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings.html",
+      "exists": true,
+      "title": "Settings",
+      "buttons": [
+        "+ Crear",
+        "Cambiar clave (Admin)",
+        "Cargar más",
+        "Recargar",
+        "Solicitudes clave",
+        "↓",
+        "✕"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sortCol",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_commissions_config",
+      "label": "Configuración comisiones",
+      "url": "/web/views/settings_comisiones.html?v=20260722-comm3",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings_comisiones.html",
+      "exists": true,
+      "title": "Settings · Comisiones",
+      "buttons": [
+        "Agregar bono",
+        "Agregar canal",
+        "Agregar regla"
+      ],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "set_com",
+      "label": "Comunas",
+      "url": "/web/views/settings.html?entity=comunas&v=20260218-6",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings.html",
+      "exists": true,
+      "title": "Settings",
+      "buttons": [
+        "+ Crear",
+        "Cambiar clave (Admin)",
+        "Cargar más",
+        "Recargar",
+        "Solicitudes clave",
+        "↓",
+        "✕"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sortCol",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_tc",
+      "label": "Tipos Cliente",
+      "url": "/web/views/settings.html?entity=tipos_cliente&v=20260218-6",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings.html",
+      "exists": true,
+      "title": "Settings",
+      "buttons": [
+        "+ Crear",
+        "Cambiar clave (Admin)",
+        "Cargar más",
+        "Recargar",
+        "Solicitudes clave",
+        "↓",
+        "✕"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sortCol",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_platforms",
+      "label": "Plataformas / origen de leads",
+      "url": "/web/views/settings.html?entity=plataformas&v=20260729-plat2",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings.html",
+      "exists": true,
+      "title": "Settings",
+      "buttons": [
+        "+ Crear",
+        "Cambiar clave (Admin)",
+        "Cargar más",
+        "Recargar",
+        "Solicitudes clave",
+        "↓",
+        "✕"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sortCol",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_el",
+      "label": "Estados Lead",
+      "url": "/web/views/settings.html?entity=estados_lead&v=20260218-6",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings.html",
+      "exists": true,
+      "title": "Settings",
+      "buttons": [
+        "+ Crear",
+        "Cambiar clave (Admin)",
+        "Cargar más",
+        "Recargar",
+        "Solicitudes clave",
+        "↓",
+        "✕"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sortCol",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_roles",
+      "label": "Roles",
+      "url": "/web/views/settings.html?entity=roles&v=20260218-6",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings.html",
+      "exists": true,
+      "title": "Settings",
+      "buttons": [
+        "+ Crear",
+        "Cambiar clave (Admin)",
+        "Cargar más",
+        "Recargar",
+        "Solicitudes clave",
+        "↓",
+        "✕"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "q",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "sortCol",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_permissions",
+      "label": "Permisos",
+      "url": "/web/views/settings_permissions.html?v=20260610-1",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings_permissions.html",
+      "exists": true,
+      "title": "Settings · Permisos",
+      "buttons": [
+        "Actualizar",
+        "Copiar",
+        "Guardar",
+        "Limpiar",
+        "Todo Full",
+        "Todo Ver"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "userQ",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "includeOps",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "copyFrom",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_features",
+      "label": "Funcionamiento de módulos",
+      "url": "/web/views/settings_features.html?v=20260728-1",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings_features.html",
+      "exists": true,
+      "title": "Funcionamiento de módulos",
+      "buttons": [
+        "Actualizar"
+      ],
+      "fields": [],
+      "api_references": []
+    },
+    {
+      "id": "set_whatsapp_coexistence",
+      "label": "Coexistencia WhatsApp",
+      "url": "/web/views/settings_whatsapp_coexistence.html?v=20260728-1",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings_whatsapp_coexistence.html",
+      "exists": true,
+      "title": "Coexistencia WhatsApp",
+      "buttons": [
+        "Conectar con Meta"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "brand",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_audit",
+      "label": "Auditoría",
+      "url": "/web/views/settings_audit.html?v=20260720-audit-lead-modal1",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings_audit.html",
+      "exists": true,
+      "title": "Settings · Auditoría",
+      "buttons": [
+        "Actualizar semáforo",
+        "Anterior",
+        "Buscar",
+        "Cancelar",
+        "Cerrar lead",
+        "Cerrar preview",
+        "Confirmar envío",
+        "Descargar reporte",
+        "Enviar correo a Admins",
+        "Limpiar",
+        "Previsualizar reporte",
+        "Siguiente"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "reportDateTop",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "reportFormat",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "reportRecipients",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "username",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "action",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "entityType",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "reportDate",
+          "type": "date",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "hours",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "limit",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_notify_email",
+      "label": "Notificaciones (correo)",
+      "url": "/web/views/settings_notifs_email.html?v=20260601-3",
+      "menu_group": "Settings",
+      "gd_permission": null,
+      "file": "web/views/settings_notifs_email.html",
+      "exists": true,
+      "title": "Settings • Notificaciones (correo)",
+      "buttons": [
+        "Actualizar",
+        "BCC",
+        "CC",
+        "Guardar",
+        "Limpiar",
+        "To"
+      ],
+      "fields": [
+        {
+          "tag": "input",
+          "name": "procQ",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "procEnabled",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "userQ",
+          "type": "input",
+          "required": false
+        },
+        {
+          "tag": "textarea",
+          "name": "extraEmails",
+          "type": "textarea",
+          "required": false
+        },
+        {
+          "tag": "input",
+          "name": "procNote",
+          "type": "input",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_metas",
+      "label": "Metas ventas",
+      "url": "/web/views/settings_metas.html?v=20260723-metas1",
+      "menu_group": "No determinado",
+      "gd_permission": null,
+      "file": "web/views/settings_metas.html",
+      "exists": true,
+      "title": "Settings · Metas ventas",
+      "buttons": [
+        "Cargar"
+      ],
+      "fields": [
+        {
+          "tag": "select",
+          "name": "metaYear",
+          "type": "select",
+          "required": false
+        },
+        {
+          "tag": "select",
+          "name": "metaMonth",
+          "type": "select",
+          "required": false
+        }
+      ],
+      "api_references": []
+    },
+    {
+      "id": "set_bak",
+      "label": "Backups",
+      "url": "/web/views/backups.html",
+      "menu_group": "No determinado",
+      "gd_permission": null,
+      "file": "web/views/backups.html",
+      "exists": true,
+      "title": "Puntos de restauración",
+      "buttons": [
+        "Crear punto",
+        "Recargar"
+      ],
+      "fields": [],
+      "api_references": []
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/_debug/dbinfo",
+      "handler": "dbinfo",
+      "file": "backend/routers/_debug.py"
+    },
+    {
+      "method": "POST",
+      "path": "/_debug/bootstrap",
+      "handler": "bootstrap",
+      "file": "backend/routers/_debug.py"
+    },
+    {
+      "method": "GET",
+      "path": "/activity/digest",
+      "handler": "activity_digest",
+      "file": "backend/routers/activity.py"
+    },
+    {
+      "method": "GET",
+      "path": "/activity/digest_download",
+      "handler": "activity_digest_download",
+      "file": "backend/routers/activity.py"
+    },
+    {
+      "method": "GET",
+      "path": "/activity/recipients",
+      "handler": "activity_recipients",
+      "file": "backend/routers/activity.py"
+    },
+    {
+      "method": "GET",
+      "path": "/activity/logs",
+      "handler": "activity_logs",
+      "file": "backend/routers/activity.py"
+    },
+    {
+      "method": "GET",
+      "path": "/activity/users_summary",
+      "handler": "activity_users_summary",
+      "file": "backend/routers/activity.py"
+    },
+    {
+      "method": "GET",
+      "path": "/activity/digest_cron",
+      "handler": "activity_digest_cron",
+      "file": "backend/routers/activity.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/{id_lead}/confirmar_agendamiento",
+      "handler": "confirmar_agendamiento",
+      "file": "backend/routers/agenda_confirmacion.py"
+    },
+    {
+      "method": "POST",
+      "path": "/agenda/solicitudes",
+      "handler": "crear_solicitud",
+      "file": "backend/routers/agenda_solicitudes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/agenda/solicitudes",
+      "handler": "listar_solicitudes",
+      "file": "backend/routers/agenda_solicitudes.py"
+    },
+    {
+      "method": "POST",
+      "path": "/agenda/solicitudes/{id}/estado",
+      "handler": "cambiar_estado",
+      "file": "backend/routers/agenda_solicitudes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/assets/categories",
+      "handler": "list_categories",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "POST",
+      "path": "/assets/categories",
+      "handler": "create_category",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/assets/categories/{id_category}",
+      "handler": "update_category",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/assets/categories/{id_category}",
+      "handler": "delete_category",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "GET",
+      "path": "/assets",
+      "handler": "list_assets",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "POST",
+      "path": "/assets",
+      "handler": "create_asset",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/assets/{id_asset}",
+      "handler": "update_asset",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/assets/{id_asset}",
+      "handler": "delete_asset",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "GET",
+      "path": "/assets/category_stats",
+      "handler": "category_stats",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "POST",
+      "path": "/assets/bulk_create",
+      "handler": "bulk_create_assets",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "GET",
+      "path": "/assets/{id_asset}/history",
+      "handler": "asset_history",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "GET",
+      "path": "/assets/{id_asset}/maintenance",
+      "handler": "list_maintenance",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "POST",
+      "path": "/assets/{id_asset}/maintenance",
+      "handler": "add_maintenance",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "POST",
+      "path": "/assets/{id_asset}/assign",
+      "handler": "assign_to_lead",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "GET",
+      "path": "/assets/lead/{id_lead}",
+      "handler": "assets_for_lead",
+      "file": "backend/routers/assets.py"
+    },
+    {
+      "method": "GET",
+      "path": "/assets/vehicle_checklists",
+      "handler": "list_vehicle_checklists",
+      "file": "backend/routers/assets_checklists.py"
+    },
+    {
+      "method": "POST",
+      "path": "/assets/vehicle_checklists",
+      "handler": "create_vehicle_checklist",
+      "file": "backend/routers/assets_checklists.py"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "handler": "login",
+      "file": "backend/routers/auth.py"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/register",
+      "handler": "register",
+      "file": "backend/routers/auth.py"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/logout",
+      "handler": "logout",
+      "file": "backend/routers/auth.py"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/password-request",
+      "handler": "request_password_reset",
+      "file": "backend/routers/auth.py"
+    },
+    {
+      "method": "GET",
+      "path": "/auth/password-requests",
+      "handler": "list_password_requests",
+      "file": "backend/routers/auth.py"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/password-requests/{id_request}/resolve",
+      "handler": "resolve_password_request",
+      "file": "backend/routers/auth.py"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/password-reset",
+      "handler": "password_reset",
+      "file": "backend/routers/auth.py"
+    },
+    {
+      "method": "GET",
+      "path": "/backups",
+      "handler": "list_backups",
+      "file": "backend/routers/backups.py"
+    },
+    {
+      "method": "GET",
+      "path": "/backups/jobs/{job_id}",
+      "handler": "get_job",
+      "file": "backend/routers/backups.py"
+    },
+    {
+      "method": "POST",
+      "path": "/backups/run_async",
+      "handler": "run_backup_async",
+      "file": "backend/routers/backups.py"
+    },
+    {
+      "method": "POST",
+      "path": "/backups/run",
+      "handler": "run_backup",
+      "file": "backend/routers/backups.py"
+    },
+    {
+      "method": "GET",
+      "path": "/backups/{backup_id}/download",
+      "handler": "download_backup",
+      "file": "backend/routers/backups.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/backups/{backup_id}",
+      "handler": "delete_backup",
+      "file": "backend/routers/backups.py"
+    },
+    {
+      "method": "POST",
+      "path": "/backups/{backup_id}/restore",
+      "handler": "restore_backup",
+      "file": "backend/routers/backups.py"
+    },
+    {
+      "method": "GET",
+      "path": "/calendar/pre-agenda",
+      "handler": "pre_agenda",
+      "file": "backend/routers/calendar.py"
+    },
+    {
+      "method": "GET",
+      "path": "/calendar/events",
+      "handler": "events",
+      "file": "backend/routers/calendar.py"
+    },
+    {
+      "method": "GET",
+      "path": "/calendar/lead_info",
+      "handler": "lead_info",
+      "file": "backend/routers/calendar.py"
+    },
+    {
+      "method": "POST",
+      "path": "/calendar/{id_evento}/approve",
+      "handler": "approve",
+      "file": "backend/routers/calendar.py"
+    },
+    {
+      "method": "POST",
+      "path": "/calendar/{id_evento}/reject",
+      "handler": "reject",
+      "file": "backend/routers/calendar.py"
+    },
+    {
+      "method": "GET",
+      "path": "/catalogos",
+      "handler": "catalogos",
+      "file": "backend/routers/catalogos.py"
+    },
+    {
+      "method": "GET",
+      "path": "/catalogs/all",
+      "handler": "all_catalogs",
+      "file": "backend/routers/catalogs.py"
+    },
+    {
+      "method": "GET",
+      "path": "/chat/users",
+      "handler": "list_users",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "GET",
+      "path": "/chat/threads",
+      "handler": "threads",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "POST",
+      "path": "/chat/threads/group",
+      "handler": "create_group",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "POST",
+      "path": "/chat/threads/direct",
+      "handler": "create_direct",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "GET",
+      "path": "/chat/threads/{id_thread}/messages",
+      "handler": "thread_messages",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "POST",
+      "path": "/chat/threads/{id_thread}/messages",
+      "handler": "thread_send",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "POST",
+      "path": "/chat/heartbeat",
+      "handler": "heartbeat",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "GET",
+      "path": "/chat/presence",
+      "handler": "presence",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "GET",
+      "path": "/chat/messages",
+      "handler": "list_messages",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "POST",
+      "path": "/chat/messages",
+      "handler": "create_message",
+      "file": "backend/routers/chat.py"
+    },
+    {
+      "method": "POST",
+      "path": "/commissions/ensure",
+      "handler": "commissions_ensure",
+      "file": "backend/routers/commissions.py"
+    },
+    {
+      "method": "GET",
+      "path": "/commissions/preview",
+      "handler": "commissions_preview",
+      "file": "backend/routers/commissions.py"
+    },
+    {
+      "method": "GET",
+      "path": "/comunas",
+      "handler": "list_comunas",
+      "file": "backend/routers/comunas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/cotizador/version",
+      "handler": "version",
+      "file": "backend/routers/cotizador.py"
+    },
+    {
+      "method": "GET",
+      "path": "/cotizador/catalogos",
+      "handler": "catalogos",
+      "file": "backend/routers/cotizador.py"
+    },
+    {
+      "method": "POST",
+      "path": "/cotizador/cotizar",
+      "handler": "cotizar",
+      "file": "backend/routers/cotizador.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/cotizador/cotizaciones/{id_cotizacion}",
+      "handler": "actualizar_cotizacion",
+      "file": "backend/routers/cotizador.py"
+    },
+    {
+      "method": "GET",
+      "path": "/crm360/clientes",
+      "handler": "search_clientes",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "GET",
+      "path": "/crm360/clientes/{id_lead}/360",
+      "handler": "cliente_360",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "GET",
+      "path": "/crm360/ventas/hoy",
+      "handler": "ventas_hoy",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "GET",
+      "path": "/crm360/seguimiento/pendientes",
+      "handler": "seguimiento_pendientes",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "GET",
+      "path": "/crm360/seguimiento/rules",
+      "handler": "seguimiento_rules",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "POST",
+      "path": "/crm360/quotes/{id_cotizacion}/approval/request",
+      "handler": "request_quote_approval",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "POST",
+      "path": "/crm360/quotes/{id_cotizacion}/approval/approve",
+      "handler": "approve_quote",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "POST",
+      "path": "/crm360/quotes/{id_cotizacion}/mark_sent",
+      "handler": "mark_quote_sent",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "GET",
+      "path": "/crm360/finanzas/cierre",
+      "handler": "finanzas_cierre",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "POST",
+      "path": "/crm360/operaciones/{id_lead}/closure",
+      "handler": "save_operation_closure",
+      "file": "backend/routers/crm360.py"
+    },
+    {
+      "method": "POST",
+      "path": "/cron/run",
+      "handler": "cron_run",
+      "file": "backend/routers/cron.py"
+    },
+    {
+      "method": "GET",
+      "path": "/dashboard/reportes",
+      "handler": "reportes",
+      "file": "backend/routers/dashboard.py"
+    },
+    {
+      "method": "GET",
+      "path": "/checklist/events",
+      "handler": "events_for_day",
+      "file": "backend/routers/event_checklist.py"
+    },
+    {
+      "method": "POST",
+      "path": "/checklist/events/{id_lead}/confirm",
+      "handler": "confirm_event",
+      "file": "backend/routers/event_checklist.py"
+    },
+    {
+      "method": "GET",
+      "path": "/surveys/pending",
+      "handler": "surveys_pending",
+      "file": "backend/routers/event_surveys.py"
+    },
+    {
+      "method": "POST",
+      "path": "/surveys/{token}/mark_sent",
+      "handler": "survey_mark_sent",
+      "file": "backend/routers/event_surveys.py"
+    },
+    {
+      "method": "GET",
+      "path": "/surveys/summary",
+      "handler": "surveys_summary",
+      "file": "backend/routers/event_surveys.py"
+    },
+    {
+      "method": "GET",
+      "path": "/public/surveys/{token}",
+      "handler": "public_survey_get",
+      "file": "backend/routers/event_surveys.py"
+    },
+    {
+      "method": "POST",
+      "path": "/public/surveys/{token}/google_review_click",
+      "handler": "public_survey_google_click",
+      "file": "backend/routers/event_surveys.py"
+    },
+    {
+      "method": "POST",
+      "path": "/public/surveys/{token}",
+      "handler": "public_survey_submit",
+      "file": "backend/routers/event_surveys.py"
+    },
+    {
+      "method": "GET",
+      "path": "/features",
+      "handler": "list_features",
+      "file": "backend/routers/features.py"
+    },
+    {
+      "method": "GET",
+      "path": "/settings/features",
+      "handler": "settings_list_features",
+      "file": "backend/routers/features.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/settings/features/{feature_key}",
+      "handler": "settings_update_feature",
+      "file": "backend/routers/features.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/plan-cuentas",
+      "handler": "list_plan_cuentas",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/finanzas/plan-cuentas",
+      "handler": "create_plan_cuenta",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/finanzas/plan-cuentas/{code}",
+      "handler": "update_plan_cuenta",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/finanzas/plan-cuentas/{code}",
+      "handler": "delete_plan_cuenta",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/finanzas/eventos",
+      "handler": "create_evento",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/eventos/by_lead",
+      "handler": "get_evento_by_lead",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/eventos",
+      "handler": "list_eventos",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/eventos/resumen",
+      "handler": "eventos_resumen",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/eventos/pendientes_anteriores",
+      "handler": "eventos_pendientes_anteriores",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/eventos/facturacion",
+      "handler": "eventos_facturacion",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/finanzas/eventos/{id_evento}/facturacion",
+      "handler": "update_facturacion_evento",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/finanzas/eventos/sync_confirmados",
+      "handler": "sync_confirmados_a_fin_eventos",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/finanzas/gastos",
+      "handler": "create_gasto",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/gastos",
+      "handler": "list_gastos",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/finanzas/gastos/{id_gasto}",
+      "handler": "update_gasto",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/finanzas/gastos/{id_gasto}",
+      "handler": "delete_gasto",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/centros_costo",
+      "handler": "list_centros_costo",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/finanzas/centros_costo",
+      "handler": "create_centro_costo",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/finanzas/centros_costo/{id_cc}",
+      "handler": "update_centro_costo",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/finanzas/centros_costo/{id_cc}",
+      "handler": "delete_centro_costo",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/cxp_resumen",
+      "handler": "cxp_resumen",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/cxc_resumen",
+      "handler": "cxc_resumen",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/eventos/{id_evento}/pagos",
+      "handler": "list_pagos",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/finanzas/eventos/{id_evento}/pagos",
+      "handler": "add_pago",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/pnl",
+      "handler": "pnl",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/finanzas/saldos",
+      "handler": "saldos_list",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/finanzas/saldos",
+      "handler": "saldos_create",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/finanzas/saldos/{id_saldo}",
+      "handler": "saldos_update",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/finanzas/saldos/{id_saldo}",
+      "handler": "saldos_delete",
+      "file": "backend/routers/finanzas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/overview",
+      "handler": "overview",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/permissions/me",
+      "handler": "my_permissions",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/permissions/roles",
+      "handler": "permissions_roles",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/gd-intelligence/permissions/roles/{target_role}",
+      "handler": "permissions_role_update",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/web/sites",
+      "handler": "sites_list",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/web/sites",
+      "handler": "sites_create",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/gd-intelligence/web/sites/{site_id}",
+      "handler": "sites_update",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/web/integrations",
+      "handler": "integrations_list",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/web/integrations/google/properties",
+      "handler": "google_properties",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/gd-intelligence/web/integrations/google/selection",
+      "handler": "google_property_selection",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/tracking/session",
+      "handler": "tracking_session",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/tracking/event",
+      "handler": "tracking_event",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/gd-intelligence/web/sites/{site_id}/integrations/{provider}",
+      "handler": "integration_public_update",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/web/integrations/discover",
+      "handler": "integrations_discover",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/campaigns/utm",
+      "handler": "utm_list",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/campaigns/utm",
+      "handler": "utm_create",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/web/site-health/latest",
+      "handler": "site_health_latest",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/web/site-health/history",
+      "handler": "site_health_history_list",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gd-intelligence/web/site-health/run",
+      "handler": "site_health_run",
+      "file": "backend/routers/gd_intelligence.py"
+    },
+    {
+      "method": "GET",
+      "path": "/gia/email/folders",
+      "handler": "folders",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "GET",
+      "path": "/gia/email/status",
+      "handler": "status",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "GET",
+      "path": "/gia/email/summary",
+      "handler": "summary",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "POST",
+      "path": "/gia/email/sync",
+      "handler": "sync",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "POST",
+      "path": "/gia/email/cron_sync",
+      "handler": "cron_sync",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "GET",
+      "path": "/gia/email/inbox",
+      "handler": "inbox",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "GET",
+      "path": "/gia/email/inbox/{id_msg}",
+      "handler": "inbox_get",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "POST",
+      "path": "/gia/email/inbox/{id_msg}/create_lead",
+      "handler": "create_lead_from_inbox",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "POST",
+      "path": "/gia/email/inbox/{id_msg}/reply",
+      "handler": "reply",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "POST",
+      "path": "/gia/email/inbox/{id_msg}/send",
+      "handler": "send",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "POST",
+      "path": "/gia/email/compose/send",
+      "handler": "compose_send",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/gia/email/templates",
+      "handler": "templates_upsert",
+      "file": "backend/routers/gia_email.py"
+    },
+    {
+      "method": "POST",
+      "path": "/gps/ping",
+      "handler": "gps_ping",
+      "file": "backend/routers/gps.py"
+    },
+    {
+      "method": "GET",
+      "path": "/gps/live",
+      "handler": "gps_live",
+      "file": "backend/routers/gps.py"
+    },
+    {
+      "method": "GET",
+      "path": "/gia/instagram/events",
+      "handler": "gia_instagram_events",
+      "file": "backend/routers/greeni_instagram.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/help/search",
+      "handler": "search",
+      "file": "backend/routers/help_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/help/context/{screen_id}",
+      "handler": "context",
+      "file": "backend/routers/help_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/catalogos",
+      "handler": "catalogos",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/categorias",
+      "handler": "list_categorias",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/categorias",
+      "handler": "create_categoria",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/ops/inventario/categorias/{id_categoria}",
+      "handler": "delete_categoria",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/ops/inventario/categorias/{id_categoria}",
+      "handler": "update_categoria",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/unidades",
+      "handler": "list_unidades",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/unidades",
+      "handler": "create_unidad",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/ops/inventario/unidades/{id_unidad}",
+      "handler": "delete_unidad",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/ops/inventario/unidades/{id_unidad}",
+      "handler": "update_unidad",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/proveedores",
+      "handler": "list_proveedores",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/proveedores",
+      "handler": "create_proveedor",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/ops/inventario/proveedores/{id_proveedor}",
+      "handler": "delete_proveedor",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/ops/inventario/proveedores/{id_proveedor}",
+      "handler": "update_proveedor",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/productos",
+      "handler": "list_productos",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/productos",
+      "handler": "create_producto",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/ops/inventario/productos/{id_producto}",
+      "handler": "delete_producto",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/ops/inventario/productos/{id_producto}/marcas",
+      "handler": "update_producto_marcas",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/stock",
+      "handler": "list_stock",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/stock",
+      "handler": "ajustar_stock",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/ops/inventario/stock/{id_producto}",
+      "handler": "update_stock",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/stock/bulk",
+      "handler": "bulk_stock",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/tomas",
+      "handler": "list_tomas",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/tomas/{id_toma}/approve",
+      "handler": "approve_toma",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/movimientos",
+      "handler": "list_movimientos",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/movimientos",
+      "handler": "create_movimiento",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/centros-costo",
+      "handler": "list_centros_costo",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/ops/inventario/productos/{id_producto}",
+      "handler": "update_producto",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/camiones/{id_asset}/documentos",
+      "handler": "list_camion_documentos",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/ops/inventario/camiones/{id_asset}/documentos/{id_documento}",
+      "handler": "delete_camion_documento",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/camiones/conductores/activos",
+      "handler": "camion_conductores_activos",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/camiones/{id_asset}/conductores-entrega",
+      "handler": "camion_conductores_entrega",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/camiones/{id_asset}/documentos",
+      "handler": "camion_documentos",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/camiones/{id_asset}/documentos/upload",
+      "handler": "camion_documento_upload",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/ops/inventario/camiones/{id_asset}/documentos/{tipo_doc}",
+      "handler": "camion_documento_delete",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/inventario/camiones/checklists",
+      "handler": "camion_checklists",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/inventario/camiones/checklists",
+      "handler": "camion_checklists_create",
+      "file": "backend/routers/inventario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/lead-estados",
+      "handler": "lead_estados",
+      "file": "backend/routers/lead_estados.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads/catalogos",
+      "handler": "leads_catalogos",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads/catalogs",
+      "handler": "leads_catalogs",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads",
+      "handler": "list_leads",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads/by_ids",
+      "handler": "leads_by_ids",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads/{id_lead}",
+      "handler": "get_lead",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads/{id_lead}/vcard",
+      "handler": "lead_vcard",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads/{id_lead}/vcard_link",
+      "handler": "lead_vcard_link",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/leads/{id_lead}",
+      "handler": "delete_lead",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads",
+      "handler": "create_lead",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/form",
+      "handler": "create_lead_from_form",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads/{id_lead}/attribution",
+      "handler": "lead_attribution",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/leads/{id_lead}/attribution",
+      "handler": "lead_attribution_update",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/lead-catalogs/marketing-campaigns",
+      "handler": "lead_marketing_campaigns",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/leads/{id_lead}",
+      "handler": "update_lead",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/{id_lead}/append_note",
+      "handler": "append_note",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/leads/{id_lead}/estado",
+      "handler": "move_estado",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/{id_lead}/estado",
+      "handler": "move_estado_post",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/{id_lead}/estado_ex",
+      "handler": "move_estado_ex",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/{id_lead}/cotizacion_pdf",
+      "handler": "upload_cotizacion_pdf",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads/{id_lead}/cotizacion_pdf",
+      "handler": "get_cotizacion_pdf",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/{id_lead}/cotizacion_pdf/parse",
+      "handler": "parse_cotizacion_pdf",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/auto_decline",
+      "handler": "leads_auto_decline",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/admin/purge/leads",
+      "handler": "purge_all_leads",
+      "file": "backend/routers/leads.py"
+    },
+    {
+      "method": "GET",
+      "path": "/leads/{id_lead}/mice_items",
+      "handler": "get_lead_mice_items",
+      "file": "backend/routers/leads_agenda.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/leads/{id_lead}/mice_items",
+      "handler": "put_lead_mice_items",
+      "file": "backend/routers/leads_agenda.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/{id_lead}/move",
+      "handler": "move_lead_and_maybe_agenda",
+      "file": "backend/routers/leads_agenda.py"
+    },
+    {
+      "method": "POST",
+      "path": "/leads/{id_lead}/estado_ex",
+      "handler": "estado_ex",
+      "file": "backend/routers/leads_live.py"
+    },
+    {
+      "method": "GET",
+      "path": "/marcas",
+      "handler": "list_marcas",
+      "file": "backend/routers/marcas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/marcas",
+      "handler": "upsert_marca",
+      "file": "backend/routers/marcas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/marketing/audiencia/opt_out",
+      "handler": "audiencia_opt_out",
+      "file": "backend/routers/marketing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/marketing/campanas",
+      "handler": "campanas_list",
+      "file": "backend/routers/marketing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/marketing/campanas/send",
+      "handler": "campanas_send",
+      "file": "backend/routers/marketing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/marketing/audiencia/snapshot",
+      "handler": "snapshot_audiencia",
+      "file": "backend/routers/marketing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/marketing/audiencia",
+      "handler": "list_audiencia",
+      "file": "backend/routers/marketing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/marketing/audiencia/export.csv",
+      "handler": "export_audiencia_csv",
+      "file": "backend/routers/marketing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/me",
+      "handler": "me",
+      "file": "backend/routers/me.py"
+    },
+    {
+      "method": "GET",
+      "path": "/auth/me",
+      "handler": "me_alias",
+      "file": "backend/routers/me.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/me",
+      "handler": "patch_me",
+      "file": "backend/routers/me.py"
+    },
+    {
+      "method": "GET",
+      "path": "/notifications",
+      "handler": "get_notifications",
+      "file": "backend/routers/notifications.py"
+    },
+    {
+      "method": "GET",
+      "path": "/notifications/lead_lock",
+      "handler": "lead_lock_status",
+      "file": "backend/routers/notifications.py"
+    },
+    {
+      "method": "POST",
+      "path": "/notifications/lead_lock/bypass",
+      "handler": "lead_lock_bypass",
+      "file": "backend/routers/notifications.py"
+    },
+    {
+      "method": "GET",
+      "path": "/notifications/system",
+      "handler": "list_system_notifs",
+      "file": "backend/routers/notifications.py"
+    },
+    {
+      "method": "POST",
+      "path": "/notifications/system/{id}/read",
+      "handler": "mark_system_notif_read",
+      "file": "backend/routers/notifications.py"
+    },
+    {
+      "method": "POST",
+      "path": "/notifications/system/read_all",
+      "handler": "mark_system_notifs_read_all",
+      "file": "backend/routers/notifications.py"
+    },
+    {
+      "method": "GET",
+      "path": "/notifications/sold_latest",
+      "handler": "sold_latest",
+      "file": "backend/routers/notifications.py"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/notify_routes/email/processes",
+      "handler": "list_email_processes",
+      "file": "backend/routers/notify_routes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/notify_routes/email",
+      "handler": "list_email_routes",
+      "file": "backend/routers/notify_routes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/notify_routes/email/users",
+      "handler": "list_email_users",
+      "file": "backend/routers/notify_routes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/notify_routes/email/roles",
+      "handler": "list_email_roles",
+      "file": "backend/routers/notify_routes.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/admin/notify_routes/email/{process_key}",
+      "handler": "upsert_email_route",
+      "file": "backend/routers/notify_routes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/paid-media/status",
+      "handler": "status",
+      "file": "backend/routers/paid_media.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/paid-media/summary",
+      "handler": "summary",
+      "file": "backend/routers/paid_media.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/gd-intelligence/paid-media/search-terms",
+      "handler": "search_terms",
+      "file": "backend/routers/paid_media.py"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/permissions/catalog",
+      "handler": "permissions_catalog",
+      "file": "backend/routers/permissions.py"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/permissions/users",
+      "handler": "permissions_users",
+      "file": "backend/routers/permissions.py"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/permissions/roles",
+      "handler": "permissions_roles",
+      "file": "backend/routers/permissions.py"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/permissions/roles/{rol}",
+      "handler": "permissions_get_role",
+      "file": "backend/routers/permissions.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/admin/permissions/roles/{rol}",
+      "handler": "permissions_set_role",
+      "file": "backend/routers/permissions.py"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/permissions/users/{id_usuario}",
+      "handler": "permissions_get_user",
+      "file": "backend/routers/permissions.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/admin/permissions/users/{id_usuario}",
+      "handler": "permissions_set_user",
+      "file": "backend/routers/permissions.py"
+    },
+    {
+      "method": "GET",
+      "path": "/me/permissions",
+      "handler": "me_permissions",
+      "file": "backend/routers/permissions.py"
+    },
+    {
+      "method": "GET",
+      "path": "/productos",
+      "handler": "list_productos",
+      "file": "backend/routers/productos.py"
+    },
+    {
+      "method": "GET",
+      "path": "/public/vcard/{token}",
+      "handler": "public_vcard",
+      "file": "backend/routers/public_links.py"
+    },
+    {
+      "method": "GET",
+      "path": "/push/vapid_public_key",
+      "handler": "vapid_public_key",
+      "file": "backend/routers/push.py"
+    },
+    {
+      "method": "POST",
+      "path": "/push/subscribe",
+      "handler": "subscribe",
+      "file": "backend/routers/push.py"
+    },
+    {
+      "method": "POST",
+      "path": "/push/unsubscribe",
+      "handler": "unsubscribe",
+      "file": "backend/routers/push.py"
+    },
+    {
+      "method": "POST",
+      "path": "/push/test",
+      "handler": "test_push",
+      "file": "backend/routers/push.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quotes/history",
+      "handler": "historial",
+      "file": "backend/routers/quotes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quotes/by_numero",
+      "handler": "quote_by_numero",
+      "file": "backend/routers/quotes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quotes/history",
+      "handler": "history",
+      "file": "backend/routers/quotes_override.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quotes/_debug/drive",
+      "handler": "debug_drive",
+      "file": "backend/routers/quotes_override.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quotes/_debug/assets",
+      "handler": "debug_assets",
+      "file": "backend/routers/quotes_override.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quotes/_debug/assets_access",
+      "handler": "debug_assets_access",
+      "file": "backend/routers/quotes_override.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quotes/{id_cotizacion}",
+      "handler": "get_cotizacion",
+      "file": "backend/routers/quotes_override.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quotes/{id_cotizacion}/items",
+      "handler": "get_items",
+      "file": "backend/routers/quotes_override.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quotes/{id_cotizacion}/pdf",
+      "handler": "pdf_placeholder",
+      "file": "backend/routers/quotes_override.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/recetas",
+      "handler": "list_recetas",
+      "file": "backend/routers/recetas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/recetas/{id_receta}",
+      "handler": "get_receta",
+      "file": "backend/routers/recetas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/recetas/{id_receta}/audit",
+      "handler": "receta_audit",
+      "file": "backend/routers/recetas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/recetas",
+      "handler": "create_receta",
+      "file": "backend/routers/recetas.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/ops/recetas/{id_receta}",
+      "handler": "update_receta",
+      "file": "backend/routers/recetas.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/ops/recetas/{id_receta}",
+      "handler": "delete_receta",
+      "file": "backend/routers/recetas.py"
+    },
+    {
+      "method": "POST",
+      "path": "/ops/recetas/{id_receta}/items",
+      "handler": "add_item",
+      "file": "backend/routers/recetas.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/ops/recetas/{id_receta}/items/{id_item}",
+      "handler": "update_item",
+      "file": "backend/routers/recetas.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/ops/recetas/{id_receta}/items/{id_item}",
+      "handler": "delete_item",
+      "file": "backend/routers/recetas.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/feriados",
+      "handler": "list_feriados",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/feriados",
+      "handler": "upsert_feriado",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/rrhh/feriados/{day}",
+      "handler": "delete_feriado",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/horarios/plan_month",
+      "handler": "horarios_plan_month",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/horarios/month",
+      "handler": "horarios_month",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/horarios/clear_month",
+      "handler": "horarios_clear_month",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/desvios/detect",
+      "handler": "detect_desvios",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/desvios",
+      "handler": "list_desvios",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/desvios/report",
+      "handler": "report_desvios",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/desvios/report_email",
+      "handler": "email_desvios_report",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/rrhh/desvios/{id_desvio}",
+      "handler": "decide_desvio",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/desvios/me",
+      "handler": "my_desvios",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/desvios/{id_desvio}/respond",
+      "handler": "respond_desvio",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/desvios/{id_desvio}/request_approval",
+      "handler": "request_desvio_approval",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/desvios/action",
+      "handler": "desvio_action",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/nomina",
+      "handler": "nomina_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/nomina/snapshot",
+      "handler": "nomina_snapshot",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/nomina/snapshots",
+      "handler": "nomina_snapshots_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/nomina/snapshots/{id_snapshot}",
+      "handler": "nomina_snapshot_get",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/push/status",
+      "handler": "rrhh_push_status",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/reminders/run",
+      "handler": "rrhh_reminders_run",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/reminders/state",
+      "handler": "rrhh_reminders_state",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/portal/me",
+      "handler": "rrhh_portal_me",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/marcaciones/me",
+      "handler": "marcaciones_me",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/solicitudes/me",
+      "handler": "solicitudes_me",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/solicitudes/me",
+      "handler": "solicitudes_me_create",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/turnos",
+      "handler": "turnos_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/turnos",
+      "handler": "turnos_create",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/rrhh/turnos/{id_turno}",
+      "handler": "turnos_delete",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/horarios",
+      "handler": "horarios_assign",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/horarios/plan_week",
+      "handler": "horarios_plan_week",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/horarios/clear_week",
+      "handler": "horarios_clear_week",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/horarios/clear_template",
+      "handler": "horarios_clear_template",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/horarios/plan_template",
+      "handler": "horarios_plan_template",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/rrhh/horarios/{id_horario}",
+      "handler": "horarios_delete",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/horarios/{id_horario}/delete",
+      "handler": "horarios_delete_post",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/horarios",
+      "handler": "horarios_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/marcaciones",
+      "handler": "marcaciones_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/marcaciones/planificador",
+      "handler": "marcaciones_planificador",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/marcaciones/me/plan",
+      "handler": "marcaciones_me_plan",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/nomina/fields",
+      "handler": "nomina_fields",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/nomina",
+      "handler": "nomina_create",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/rrhh/nomina/{id_nomina}",
+      "handler": "nomina_update",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/rrhh/nomina/{id_nomina}",
+      "handler": "nomina_delete",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/nomina/clear",
+      "handler": "nomina_clear",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/adelantos",
+      "handler": "adelantos_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/adelantos",
+      "handler": "adelanto_create",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/rrhh/adelantos/{id_adelanto}",
+      "handler": "adelanto_update",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/rrhh/adelantos/{id_adelanto}",
+      "handler": "adelanto_delete",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/staff",
+      "handler": "staff_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/staff/assignable",
+      "handler": "staff_assignable",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/staff/{id_staff}",
+      "handler": "staff_get",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/users",
+      "handler": "users_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/staff/{id_staff}/link_user",
+      "handler": "staff_link_user",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/rrhh/staff/{id_staff}/link_user",
+      "handler": "staff_unlink_user",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/staff/{id_staff}/ficha",
+      "handler": "staff_ficha",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/afp",
+      "handler": "afp_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/salud",
+      "handler": "salud_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/staff",
+      "handler": "staff_create",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/staff/bulk_upsert",
+      "handler": "staff_bulk_upsert",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/rrhh/staff/{id_staff}",
+      "handler": "staff_update",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/staff/{id_staff}/deactivate",
+      "handler": "staff_deactivate",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/rrhh/staff/{id_staff}",
+      "handler": "staff_delete",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/inasistencias",
+      "handler": "inasistencia_create",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/inasistencias",
+      "handler": "inasistencia_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/rrhh/inasistencias/{id_inasistencia}",
+      "handler": "inasistencia_update",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/rrhh/inasistencias/{id_inasistencia}",
+      "handler": "inasistencia_delete",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/solicitudes",
+      "handler": "solicitudes_list",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/solicitudes",
+      "handler": "solicitudes_create",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/rrhh/solicitudes/{id_solicitud}",
+      "handler": "solicitudes_update",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/solicitudes/{id_solicitud}/pdf",
+      "handler": "solicitud_pdf",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/vacaciones",
+      "handler": "vacaciones_create",
+      "file": "backend/routers/rrhh.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/config",
+      "handler": "config",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/qr",
+      "handler": "qr_png",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/m",
+      "handler": "sgjo_mark_redirect",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/today",
+      "handler": "today_status",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/rrhh/sgjo/admin/sede/{id_sede}",
+      "handler": "admin_update_sede",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/me",
+      "handler": "sgjo_me",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/sgjo/device/enroll",
+      "handler": "enroll_device",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/sgjo/device/issue",
+      "handler": "issue_device_id",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/admin/device_requests",
+      "handler": "admin_device_requests",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/admin/marks/stats",
+      "handler": "admin_marks_stats",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/admin/marks/debug",
+      "handler": "admin_marks_debug",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/admin/devices",
+      "handler": "admin_devices",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/admin/hours_summary",
+      "handler": "admin_hours_summary",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/sgjo/admin/devices/{id_device}/revoke",
+      "handler": "admin_device_revoke",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/sgjo/admin/devices/prune",
+      "handler": "admin_devices_prune",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/sgjo/admin/devices/restore",
+      "handler": "admin_devices_restore",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/admin/devices/overlimit",
+      "handler": "admin_devices_overlimit",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/sgjo/admin/device_requests/{id_request}/approve",
+      "handler": "admin_device_request_approve",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/sgjo/admin/device_requests/{id_request}/reject",
+      "handler": "admin_device_request_reject",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/rrhh/sgjo/marcar",
+      "handler": "marcar",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rrhh/sgjo/device/status",
+      "handler": "device_status",
+      "file": "backend/routers/rrhh_sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/legacy_settings/marcas",
+      "handler": "list_marcas",
+      "file": "backend/routers/settings.py"
+    },
+    {
+      "method": "POST",
+      "path": "/legacy_settings/marcas",
+      "handler": "upsert_marca",
+      "file": "backend/routers/settings.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/legacy_settings/marcas/{id_marca}",
+      "handler": "update_marca",
+      "file": "backend/routers/settings.py"
+    },
+    {
+      "method": "GET",
+      "path": "/legacy_settings/productos",
+      "handler": "list_productos",
+      "file": "backend/routers/settings.py"
+    },
+    {
+      "method": "POST",
+      "path": "/legacy_settings/productos",
+      "handler": "create_producto",
+      "file": "backend/routers/settings.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/legacy_settings/productos/{id_producto}",
+      "handler": "update_producto",
+      "file": "backend/routers/settings.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/legacy_settings/productos/{id_producto}/estado",
+      "handler": "toggle_producto",
+      "file": "backend/routers/settings.py"
+    },
+    {
+      "method": "POST",
+      "path": "/settings/marcas/import_quote_assets",
+      "handler": "import_marca_quote_assets",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "POST",
+      "path": "/settings/marcas/refresh_drive_assets",
+      "handler": "refresh_drive_assets",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "POST",
+      "path": "/settings/productos/normalize_marcas",
+      "handler": "normalize_productos_marcas",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "GET",
+      "path": "/settings/productos/marca_stats",
+      "handler": "productos_marca_stats",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "GET",
+      "path": "/settings/meta/{entity}",
+      "handler": "meta",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "GET",
+      "path": "/settings/{entity}",
+      "handler": "list_rows",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "POST",
+      "path": "/settings/{entity}",
+      "handler": "create_row",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/settings/{entity}/{row_id}",
+      "handler": "update_row",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/settings/{entity}/{row_id}",
+      "handler": "delete_row",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "POST",
+      "path": "/settings/import/brochures",
+      "handler": "import_brochures",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "POST",
+      "path": "/settings/usuarios/{user_id}/reset_password",
+      "handler": "reset_password",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "GET",
+      "path": "/settings/usuarios/{user_id}/brands",
+      "handler": "get_user_brands",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/settings/usuarios/{user_id}/brands",
+      "handler": "set_user_brands",
+      "file": "backend/routers/settings_live.py"
+    },
+    {
+      "method": "GET",
+      "path": "/sgjo/config",
+      "handler": "config",
+      "file": "backend/routers/sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/sgjo/me",
+      "handler": "sgjo_me",
+      "file": "backend/routers/sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/sgjo/device/enroll",
+      "handler": "enroll_device",
+      "file": "backend/routers/sgjo.py"
+    },
+    {
+      "method": "POST",
+      "path": "/sgjo/marcar",
+      "handler": "marcar",
+      "file": "backend/routers/sgjo.py"
+    },
+    {
+      "method": "GET",
+      "path": "/staffing/week",
+      "handler": "staffing_week",
+      "file": "backend/routers/staffing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/staffing/week_admin",
+      "handler": "staffing_week_admin",
+      "file": "backend/routers/staffing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/staffing/signup",
+      "handler": "signup_event",
+      "file": "backend/routers/staffing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/staffing/unsignup",
+      "handler": "unsignup_event",
+      "file": "backend/routers/staffing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/staffing/assign",
+      "handler": "assign_staff",
+      "file": "backend/routers/staffing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/staffing/respond",
+      "handler": "respond_assignment",
+      "file": "backend/routers/staffing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/summary",
+      "handler": "get_summary",
+      "file": "backend/routers/summary.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tasks/context",
+      "handler": "context",
+      "file": "backend/routers/tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tasks/admin/users",
+      "handler": "admin_users",
+      "file": "backend/routers/tasks.py"
+    },
+    {
+      "method": "POST",
+      "path": "/tasks/sync",
+      "handler": "sync_tasks",
+      "file": "backend/routers/tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tasks",
+      "handler": "get_tasks",
+      "file": "backend/routers/tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tasks/{id_task}/lead",
+      "handler": "task_lead",
+      "file": "backend/routers/tasks.py"
+    },
+    {
+      "method": "POST",
+      "path": "/tasks/{id_task}/done",
+      "handler": "mark_done",
+      "file": "backend/routers/tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tasks/summary",
+      "handler": "summary",
+      "file": "backend/routers/tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tasks/debug",
+      "handler": "debug_tasks",
+      "file": "backend/routers/tasks.py"
+    },
+    {
+      "method": "POST",
+      "path": "/tasks/{id_task}/skip",
+      "handler": "mark_skipped",
+      "file": "backend/routers/tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/metas",
+      "handler": "metas_get",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/tools/metas",
+      "handler": "metas_upsert",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "POST",
+      "path": "/tools/metas/init",
+      "handler": "metas_init",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "POST",
+      "path": "/tools/metas/sync",
+      "handler": "metas_sync",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "POST",
+      "path": "/tools/sales_snapshot/close",
+      "handler": "sales_snapshot_close",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/gcal/status",
+      "handler": "gcal_status",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/gcal/calendars",
+      "handler": "gcal_calendars",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/gcal/stats",
+      "handler": "gcal_stats",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/gcal/events",
+      "handler": "gcal_events",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/gcal/start",
+      "handler": "gcal_start",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/gcal/callback",
+      "handler": "gcal_callback",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "POST",
+      "path": "/tools/gcal/sync",
+      "handler": "gcal_sync",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/agenda",
+      "handler": "agenda",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "POST",
+      "path": "/tools/agenda/repair_confirmados_sin_agenda",
+      "handler": "repair_confirmados_sin_agenda",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/dashboard/ops_alertas",
+      "handler": "dashboard_ops_alertas",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/dashboard",
+      "handler": "dashboard",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/dashboard/reportes",
+      "handler": "dashboard_reportes",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/dashboard/leads_hoy",
+      "handler": "dashboard_leads_hoy",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/dashboard/sales_ids",
+      "handler": "dashboard_sales_ids",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/dashboard_v2/sales_ids",
+      "handler": "dashboard_v2_sales_ids",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/dashboard_v2",
+      "handler": "dashboard_v2",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/dashboard/events",
+      "handler": "dashboard_events",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/calendar/events_list",
+      "handler": "calendar_events_list",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/mice/ingredients_catalog",
+      "handler": "mice_ingredients_catalog",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/mice/day",
+      "handler": "mice_day_report",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/tools/mice/week",
+      "handler": "mice_week_report",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/tools/agenda/{id_lead}/approve",
+      "handler": "approve_agenda",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/tools/agenda/{id_lead}/edit_confirmed",
+      "handler": "edit_confirmed_event",
+      "file": "backend/routers/tools.py"
+    },
+    {
+      "method": "GET",
+      "path": "/dashboard/reportes",
+      "handler": "reportes",
+      "file": "backend/routers/users.py"
+    },
+    {
+      "method": "GET",
+      "path": "/users/{id_usuario}/brands",
+      "handler": "get_user_brands",
+      "file": "backend/routers/users_admin.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/users/{id_usuario}/brands",
+      "handler": "set_user_brands",
+      "file": "backend/routers/users_admin.py"
+    },
+    {
+      "method": "POST",
+      "path": "/users/create",
+      "handler": "create_user",
+      "file": "backend/routers/users_admin.py"
+    },
+    {
+      "method": "GET",
+      "path": "/usuarios/",
+      "handler": "list_usuarios",
+      "file": "backend/routers/usuario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/usuarios/",
+      "handler": "create_usuario",
+      "file": "backend/routers/usuario.py"
+    },
+    {
+      "method": "GET",
+      "path": "/usuarios/{id_usuario}",
+      "handler": "get_usuario",
+      "file": "backend/routers/usuario.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/usuarios/{id_usuario}",
+      "handler": "update_usuario",
+      "file": "backend/routers/usuario.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/usuarios/{id_usuario}",
+      "handler": "delete_usuario",
+      "file": "backend/routers/usuario.py"
+    },
+    {
+      "method": "POST",
+      "path": "/gia/whatsapp/conversations/{conversation_id}/ai-assist",
+      "handler": "ai_assist",
+      "file": "backend/routers/whatsapp_ai.py"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{conversation_id}/commercial-360",
+      "handler": "commercial_360",
+      "file": "backend/routers/whatsapp_commercial.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/select-lead",
+      "handler": "select_lead",
+      "file": "backend/routers/whatsapp_commercial.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/channels/{phone_number_id}/routing",
+      "handler": "update_channel_routing",
+      "file": "backend/routers/whatsapp_commercial.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/assign-executive",
+      "handler": "assign_executive",
+      "file": "backend/routers/whatsapp_commercial.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/leads/{lead_id}/followup",
+      "handler": "add_followup",
+      "file": "backend/routers/whatsapp_commercial.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/leads/{lead_id}/send-quote",
+      "handler": "send_quote",
+      "file": "backend/routers/whatsapp_commercial.py"
+    },
+    {
+      "method": "POST",
+      "path": "/state",
+      "handler": "embedded_signup_state",
+      "file": "backend/routers/whatsapp_embedded_signup.py"
+    },
+    {
+      "method": "GET",
+      "path": "/callback",
+      "handler": "embedded_signup_callback",
+      "file": "backend/routers/whatsapp_embedded_signup.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quick-replies",
+      "handler": "quick_replies",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/quick-replies",
+      "handler": "create_quick_reply",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/quick-replies/{reply_id}",
+      "handler": "update_quick_reply",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "GET",
+      "path": "/templates",
+      "handler": "message_templates",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/templates",
+      "handler": "create_message_template",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/templates/{template_name}",
+      "handler": "delete_message_template",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/send-template",
+      "handler": "send_message_template",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "GET",
+      "path": "/events",
+      "handler": "greenie_events",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations",
+      "handler": "list_conversations",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{conversation_id}/messages",
+      "handler": "conversation_messages",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "GET",
+      "path": "/messages/{message_id}/media",
+      "handler": "get_message_media",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/send",
+      "handler": "send_message",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/send-media",
+      "handler": "send_media",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{conversation_id}/stickers",
+      "handler": "conversation_stickers",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/stickers/library",
+      "handler": "add_brand_sticker",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{conversation_id}/stickers/library/{sticker_id}/content",
+      "handler": "brand_sticker_content",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/conversations/{conversation_id}/stickers/library/{sticker_id}",
+      "handler": "delete_brand_sticker",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/send-sticker",
+      "handler": "send_existing_sticker",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "GET",
+      "path": "/metadata/comunas",
+      "handler": "whatsapp_comunas",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{conversation_id}/messages-v2",
+      "handler": "conversation_messages_v2",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/send-v2",
+      "handler": "send_message_v2",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/send-reaction",
+      "handler": "send_reaction",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/send-media-v2",
+      "handler": "send_media_v2",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/assign",
+      "handler": "assign_conversation",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/create-lead",
+      "handler": "create_lead_from_whatsapp",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/close",
+      "handler": "close_conversation",
+      "file": "backend/routers/whatsapp_gia.py"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/reopen",
+      "handler": "reopen_conversation",
+      "file": "backend/routers/whatsapp_gia.py"
+    }
+  ]
+}
