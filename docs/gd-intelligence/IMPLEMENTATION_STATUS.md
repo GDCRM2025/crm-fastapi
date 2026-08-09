@@ -2,6 +2,8 @@
 
 Actualizado: 2026-08-09
 
+SHA local validado: `d0408c8` (documentación de gates ajustada inmediatamente después, sin deployment).
+
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
 | 0 Auditoría | DONE | PASS | N/A | N/A | VM/DB/backup verificados; consola Proxmox pendiente |
