@@ -2449,7 +2449,7 @@ const MENU = [
     title: "Leads",
     items: [
       { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260728-month1" },
-      { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html?v=20260326-fil1" },
+      { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html?v=20260810-filtros1" },
       { id: "crm360", label: "Comercial 360", url: "/web/views/crm360.html?v=20260723-fin-task1" }
     ]
   },
@@ -2467,7 +2467,7 @@ const MENU = [
     ico: "\u{1F9FE}",
     title: "Cotizador",
     items: [
-      { id: "historial", label: "Historial", url: "/web/views/historial_cotizaciones.html" }
+      { id: "historial", label: "Historial", url: "/web/views/historial_cotizaciones.html?v=20260810-filtros1" }
     ]
   },
   {

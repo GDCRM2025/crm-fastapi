@@ -37,8 +37,8 @@
       margin:0 auto;
     }
     .side{
-      width:280px;
-      min-width:280px;
+      width:230px;
+      min-width:230px;
       display:flex;
       flex-direction:column;
       gap:12px;
@@ -87,20 +87,18 @@
     .scroll{overflow:auto;padding-right:4px;display:flex;flex-direction:column;gap:12px;}
     /* KPIs siempre visibles en todos los tabs */
     #kpi_card{
-      position: sticky;
-      top: 0;
-      z-index: 30;
+      position: static;
+      top: auto;
+      z-index: 1;
       background: color-mix(in srgb, var(--surface) 96%, transparent);
       backdrop-filter: blur(8px);
       border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-      box-shadow: 0 18px 50px rgba(0,0,0,.18);
+      box-shadow: none;
       margin-bottom: 10px;
     }
-    /* Evita traslape: deja un “respiro” bajo KPIs cuando quedan sticky */
-    .grid{ padding-top: 8px; }
-    /* Evita que al navegar por tabs el sticky tape el inicio de cada sección */
-    .scroll{ scroll-padding-top: 190px; }
-    .scroll .card[id]{ scroll-margin-top: 190px; }
+    .grid{ padding-top: 0; }
+    .scroll{ scroll-padding-top: 24px; }
+    .scroll .card[id]{ scroll-margin-top: 24px; }
 
     .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
     .topbar .left{min-width:260px;}
@@ -167,7 +165,7 @@
     .kpi .v{font-weight:1200; font-size:20px; margin-top:6px;}
     .kpi .s{font-weight:850; font-size:12px; opacity:.70; margin-top:6px;}
 
-    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
+    .tbl{width:100%; border-collapse:separate; border-spacing:0; font-size:13px; table-layout:fixed;}
     .tbl{font-variant-numeric: tabular-nums; font-feature-settings: \"tnum\" 1, \"lnum\" 1;}
     .tbl th{opacity:.78; font-size:11px; text-transform:uppercase; letter-spacing:.12em; text-align:left; padding:8px 10px; border-bottom:1px solid color-mix(in srgb, var(--border) 55%, transparent); position:sticky; top:0; background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 92%, transparent), color-mix(in srgb, var(--surface-2) 72%, transparent)); z-index:2;}
     .tbl td{padding:8px 10px; border-bottom:1px solid color-mix(in srgb, var(--border) 40%, transparent); vertical-align:top;}
@@ -314,6 +312,8 @@
           <button class="tab" type="button" data-tab="clientes">Clientes <small>top</small></button>
           <button class="tab" type="button" data-tab="leads_hoy">Leads hoy <small>lista</small></button>
           <button class="tab" type="button" data-tab="venta_diaria">Venta diaria <small>serie</small></button>
+          <button class="tab" type="button" data-tab="comisiones">Mis comisiones <small>mes</small></button>
+          <button class="tab" type="button" data-tab="encuestas">Encuestas / satisfacción <small>post-evento</small></button>
           <button class="tab" type="button" data-tab="cxc">Por cobrar <small>CxC</small></button>
           <button class="tab" type="button" data-tab="cxp">Por pagar <small>CxP</small></button>
         </nav>
@@ -418,6 +418,26 @@
         <div id="boxTipo" style="margin-top:10px"></div>
       </section>
 
+      <section class="card" style="grid-column: span 12" id="comisiones">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h2" style="margin:0">Mis comisiones</div>
+            <div class="muted">Ejecutivo ve su reporte. Admin/Super Admin ve el general.</div>
+          </div>
+        </div>
+        <iframe id="frameComisiones" title="Mis comisiones" data-src="/web/views/comisiones.html?v=20260723-comm4" style="width:100%;height:760px;border:0;border-radius:14px;margin-top:10px;background:transparent;"></iframe>
+      </section>
+
+      <section class="card" style="grid-column: span 12" id="encuestas">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h2" style="margin:0">Encuestas / satisfacción</div>
+            <div class="muted">Eventos confirmados ya realizados, envío por WhatsApp y seguimiento de respuestas.</div>
+          </div>
+        </div>
+        <iframe id="frameEncuestas" title="Encuestas / satisfacción" data-src="/web/views/encuestas_eventos.html?v=20260728-surveys5" style="width:100%;height:760px;border:0;border-radius:14px;margin-top:10px;background:transparent;"></iframe>
+      </section>
+
       <section class="card" style="grid-column: span 6" id="productos">
         <div class="row" style="justify-content:space-between;">
           <div>
@@ -451,7 +471,7 @@
         </div>
         <div style="max-height:420px;overflow:auto;margin-top:10px">
           <table class="tbl">
-            <thead><tr><th>Comuna</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
+            <thead><tr><th>Comuna</th><th class="right">Eventos</th><th class="right">Ticket prom.</th><th class="right">Monto</th></tr></thead>
             <tbody id="tbCom"></tbody>
           </table>
         </div>
@@ -1225,8 +1245,17 @@
     function openFilter(params){
       const usp = new URLSearchParams();
       Object.entries(params||{}).forEach(([k,v]) => { if (v!=null && v!=="") usp.set(k, String(v)); });
-      const url = "/web/views/filtro_leads.html?v=20260326-fil1&" + usp.toString();
+      const url = "/web/views/filtro_leads.html?v=20260810-filtros1&" + usp.toString();
       try{ window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*"); }catch(_){ location.href = apiURL(url); }
+    }
+
+    function initEmbeddedReports(){
+      ["frameComisiones","frameEncuestas"].forEach(id => {
+        const fr = qs("#" + id);
+        if (!fr || fr.getAttribute("src")) return;
+        const src = fr.getAttribute("data-src") || "";
+        if (src) fr.setAttribute("src", apiURL(src));
+      });
     }
 
     async function jget(url){
@@ -1268,6 +1297,7 @@
         document.documentElement.classList.add("dark");
       }catch(_){}
       CURRENT_TAB = getInitialTab();
+      initEmbeddedReports();
       // bind tabs
       qs("#tabs")?.addEventListener("click", (ev)=>{
         const b = ev.target?.closest?.(".tab[data-tab]");
@@ -1289,6 +1319,17 @@
       }catch(_){
         ME.role = "";
       }
+      try{
+        const features = await jget("/features");
+        const surveys = (features?.items || []).find(item=>String(item.key)==="surveys");
+        if (surveys && surveys.enabled === false){
+          const surveyTab = qs('.tab[data-tab="encuestas"]');
+          const surveySection = qs("#encuestas");
+          if (surveyTab) surveyTab.style.display = "none";
+          if (surveySection) surveySection.style.display = "none";
+          if (CURRENT_TAB === "encuestas") CURRENT_TAB = "total";
+        }
+      }catch(_){}
 
       const marcas = await loadMarcas();
       const sel = qs("#marca");
@@ -1331,7 +1372,7 @@
 
     const TAB_IDS = [
       "funnel","cierre","tipo_cliente","total","comunas","productos",
-      "clientes","leads_hoy","venta_diaria","cxc","cxp"
+      "clientes","leads_hoy","venta_diaria","comisiones","encuestas","cxc","cxp"
     ];
 
     function getInitialTab(){
@@ -1396,6 +1437,8 @@
       if (tab === "clientes") return void renderTop(rep, "clientes");
       if (tab === "leads_hoy") return void (await renderLeadsHoyList(LAST.mid));
       if (tab === "venta_diaria") return void renderDaily(dash, LAST.mid);
+      if (tab === "comisiones") return;
+      if (tab === "encuestas") return;
       if (tab === "cxc") return void (await renderFinanzas(LAST.ini, LAST.fin, "cxc"));
       if (tab === "cxp") return void (await renderFinanzas(LAST.ini, LAST.fin, "cxp"));
     }
@@ -1509,7 +1552,7 @@
       const el = qs("#kpis");
       if (!el) return;
       const blocks = [
-        { id:"k_venta_rango", l:"Venta", v: money(actual||0), s:`vs M-1: ${deltaPrev===null?"—":deltaPrev.toFixed(1)+"%"} · vs Base: ${vsBase===null?"—":vsBase.toFixed(1)+"%"} · vs Meta: ${vsMeta===null?"—":vsMeta.toFixed(1)+"%"}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
+        { id:"k_venta_rango", l:"Venta", v: money(actual||0), s:`Ticket prom: ${money(actual/Math.max(1, Number(rk.confirmados_total||0)))} · vs M-1: ${deltaPrev===null?"—":deltaPrev.toFixed(1)+"%"} · vs Meta: ${vsMeta===null?"—":vsMeta.toFixed(1)+"%"}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
         { id:"k_traslados_rango", l:"Traslados", v: money(trasladoCobrado||0), s:`Costo: ${money(trasladoCosto||0)} · Margen: ${money(trasladoMargen||0)}`, on: () => { try{ selectTab("total"); }catch(_){ location.hash="#total"; } } },
         { id:"k_cierre_rango", l:"% cierre", v: `${Number(rk.cierre_pct||0).toFixed(2)}%`, s:`Confirmados/Leads (${rk.confirmados_total||0}/${rk.leads_total||0})`, on: () => { try{ selectTab("cierre"); }catch(_){ location.hash="#cierre"; } } },
         { id:"k_leads_hoy", l:"Leads hoy", v:String(k.leads_hoy||0), s:"Dashboard v2 (hoy)", on: () => openFilter({ campo:"ingreso", desde: fmtDate(new Date()), hasta: fmtDate(new Date()), ...(mid?{marca:mid}:{}) }) },
@@ -1573,6 +1616,9 @@
       if (!box) return;
       const all = Array.isArray(rep?.tipo_cliente) ? rep.tipo_cliente : [];
       const conf = Array.isArray(rep?.tipo_cliente_confirmados) ? rep.tipo_cliente_confirmados : [];
+      const resumen = Array.isArray(rep?.tipo_cliente_resumen) ? rep.tipo_cliente_resumen : [];
+      const recencia = Array.isArray(rep?.cliente_recencia) ? rep.cliente_recencia : [];
+      const mix = Array.isArray(rep?.tipo_cliente_mix) ? rep.tipo_cliente_mix : [];
       const sum = (arr, k)=> (arr||[]).reduce((a,x)=>a+Number(x?.[k]||0),0);
       const totalAll = Math.max(1, sum(all, "cantidad"));
       const totalConf = Math.max(1, sum(conf, "cantidad"));
@@ -1587,7 +1633,7 @@
           <div style="flex:1; min-width:0;">
             <div class="muted" style="font-weight:1000; margin-bottom:8px;">${esc(title)}</div>
             <table class="tbl">
-              <thead><tr><th>Tipo</th><th class="right">Leads</th><th class="right">Monto</th></tr></thead>
+              <thead><tr><th>Tipo</th><th class="right">Leads</th><th class="right">Ticket</th><th class="right">Monto</th></tr></thead>
               <tbody>
                 ${rows.map(r => {
                   const pct = Math.round((r.cantidad/total)*100);
@@ -1600,20 +1646,59 @@
                         </div>
                       </td>
                       <td class="right">${esc(r.cantidad)}</td>
+                      <td class="right">${esc(money(r.monto/Math.max(1,r.cantidad)))}</td>
                       <td class="right">${esc(money(r.monto))}</td>
                     </tr>
                   `;
-                }).join("") || `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`}
+                }).join("") || `<tr><td colspan="4" class="muted">Sin datos.</td></tr>`}
               </tbody>
             </table>
           </div>
         `;
       };
 
+      const mkSimple = (title, arr, cols) => `
+        <div style="flex:1; min-width:320px;">
+          <div class="muted" style="font-weight:1000; margin-bottom:8px;">${esc(title)}</div>
+          <table class="tbl">
+            <thead><tr>${cols.map(c=>`<th class="${c.right?"right":""}">${esc(c.label)}</th>`).join("")}</tr></thead>
+            <tbody>
+              ${(arr||[]).map(r=>`
+                <tr>
+                  ${cols.map(c=>{
+                    const v = r[c.key];
+                    const txt = c.money ? money(v||0) : c.avg ? money(v||0) : (v ?? "—");
+                    return `<td class="${c.right?"right":""}">${esc(txt)}</td>`;
+                  }).join("")}
+                </tr>
+              `).join("") || `<tr><td colspan="${cols.length}" class="muted">Sin datos.</td></tr>`}
+            </tbody>
+          </table>
+        </div>`;
+
       box.innerHTML = `
         <div style="display:flex; gap:12px; flex-wrap:wrap;">
-          ${mk("Todos (rango)", all, totalAll)}
-          ${mk("Confirmados (rango)", conf, totalConf)}
+          ${mkSimple("Confirmados por empresa / particular", resumen, [
+            {key:"segmento",label:"Segmento"},
+            {key:"cantidad",label:"Eventos",right:true},
+            {key:"ticket_promedio",label:"Ticket prom.",right:true,money:true},
+            {key:"monto",label:"Monto",right:true,money:true},
+          ])}
+          ${mkSimple("Cliente nuevo / antiguo", recencia, [
+            {key:"recencia",label:"Tipo"},
+            {key:"cantidad",label:"Eventos",right:true},
+            {key:"ticket_promedio",label:"Ticket prom.",right:true,money:true},
+            {key:"monto",label:"Monto",right:true,money:true},
+          ])}
+          ${mkSimple("Cruce tipo cliente + recencia", mix, [
+            {key:"segmento",label:"Segmento"},
+            {key:"recencia",label:"Nuevo/antiguo"},
+            {key:"cantidad",label:"Eventos",right:true},
+            {key:"ticket_promedio",label:"Ticket prom.",right:true,money:true},
+            {key:"monto",label:"Monto",right:true,money:true},
+          ])}
+          ${mk("Todos los leads del rango", all, totalAll)}
+          ${mk("Confirmados del rango", conf, totalConf)}
         </div>
       `;
 
@@ -1698,9 +1783,10 @@
               </div>
             </td>
             <td class="right">${esc(r.cantidad||0)}</td>
+            <td class="right">${esc(money(Number(r.monto||0)/Math.max(1,Number(r.cantidad||0))))}</td>
             <td class="right">${esc(money(r.monto||0))}</td>
           </tr>
-        `).join("") : `<tr><td colspan="3" class="muted">Sin datos.</td></tr>`;
+        `).join("") : `<tr><td colspan="4" class="muted">Sin datos.</td></tr>`;
 
         // “Heatmap” simple (no mapa geográfico): pills por comuna con intensidad por monto.
         const heat = qs("#heatCom");
@@ -2241,9 +2327,15 @@
       } else if (kind === "tipo_cliente"){
         const all = Array.isArray(rep.tipo_cliente) ? rep.tipo_cliente : [];
         const conf = Array.isArray(rep.tipo_cliente_confirmados) ? rep.tipo_cliente_confirmados : [];
+        const resumen = Array.isArray(rep.tipo_cliente_resumen) ? rep.tipo_cliente_resumen : [];
+        const recencia = Array.isArray(rep.cliente_recencia) ? rep.cliente_recencia : [];
+        const mix = Array.isArray(rep.tipo_cliente_mix) ? rep.tipo_cliente_mix : [];
         rows = [["scope","tipo_cliente","leads","monto"]]
           .concat(all.map(r => ["all", r.tipo_cliente||"", r.cantidad||0, r.monto||0]))
-          .concat(conf.map(r => ["confirmados", r.tipo_cliente||"", r.cantidad||0, r.monto||0]));
+          .concat(conf.map(r => ["confirmados", r.tipo_cliente||"", r.cantidad||0, r.monto||0]))
+          .concat(resumen.map(r => ["segmento", r.segmento||"", r.cantidad||0, r.monto||0]))
+          .concat(recencia.map(r => ["recencia", r.recencia||"", r.cantidad||0, r.monto||0]))
+          .concat(mix.map(r => [`${r.segmento||""}`, r.recencia||"", r.cantidad||0, r.monto||0]));
       } else {
         Swal.fire("Export", "Tipo de export no soportado.", "info");
         return;

@@ -20,12 +20,19 @@
     body{ margin:0; background:var(--app-bg); color:var(--text); font-family: ui-sans-serif, system-ui; }
     .wrap{ padding:12px; height:100%; display:flex; flex-direction:column; gap:12px; }
     .bar{
-      display:flex; gap:10px; align-items:center;
+      display:grid; grid-template-columns:minmax(220px,1.5fr) repeat(3,minmax(150px,.7fr)) auto auto; gap:10px; align-items:end;
       background:var(--surface);
       border:1px solid var(--border);
       border-radius:18px;
       box-shadow: var(--shadow);
       padding: 12px;
+    }
+    @media(max-width:1100px){ .bar{ grid-template-columns:1fr 1fr 1fr; } }
+    @media(max-width:680px){ .bar{ grid-template-columns:1fr; } }
+    .filter label{ display:block; margin:0 0 6px; color:var(--muted); font-size:12px; font-weight:900; }
+    .filter input,.filter select{
+      width:100%; min-height:40px; border:1px solid var(--border); border-radius:12px;
+      background:var(--surface2); color:var(--text); padding:8px 10px; outline:0;
     }
     .search{
       flex:1; display:flex; align-items:center; gap:10px;
@@ -98,6 +105,9 @@
       cursor:pointer;
     }
     .mini:hover{ filter:brightness(1.10); }
+    .mini:disabled{ opacity:.4; cursor:not-allowed; }
+    .mini.wa{ border-color:rgba(25,195,125,.42); background:rgba(25,195,125,.12); }
+    .mini.tel{ border-color:rgba(96,165,250,.42); background:rgba(96,165,250,.12); }
 
     .tooltip{
       position: fixed;
@@ -146,8 +156,32 @@
         <span style="opacity:.85">⌕</span>
         <input id="q" placeholder="Buscar por cliente, marca o código..." />
       </div>
+      <div class="filter">
+        <label for="mes">Mes de cotización</label>
+        <input id="mes" type="month" />
+      </div>
+      <div class="filter">
+        <label for="tipoCliente">Tipo de cliente</label>
+        <select id="tipoCliente">
+          <option value="">Todos</option>
+          <option value="EMPRESA">Solo empresas</option>
+          <option value="PARTICULAR">Solo particulares</option>
+        </select>
+      </div>
+      <div class="filter">
+        <label for="orden">Ordenar por</label>
+        <select id="orden">
+          <option value="fecha_desc">Fecha: más reciente</option>
+          <option value="fecha_asc">Fecha: más antigua</option>
+          <option value="total_desc">Monto: mayor a menor</option>
+          <option value="total_asc">Monto: menor a mayor</option>
+        </select>
+      </div>
       <div class="pill" id="cnt">0</div>
-      <button class="btn" id="btnReload" type="button">Recargar</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="btnClear" type="button">Limpiar</button>
+        <button class="btn primary" id="btnReload" type="button">Filtrar</button>
+      </div>
     </div>
 
     <div class="table-wrap">
@@ -158,13 +192,14 @@
               <th style="width:90px">N°</th>
               <th style="width:170px">Fecha</th>
               <th>Cliente</th>
+              <th style="width:120px">Tipo</th>
               <th style="width:160px">Marca</th>
               <th style="width:120px">Neto</th>
               <th style="width:120px">Desc.</th>
               <th style="width:120px">IVA</th>
               <th style="width:120px">Traslado</th>
               <th style="width:140px">Total</th>
-              <th style="width:200px">Acciones</th>
+              <th style="width:280px">Acciones</th>
             </tr>
           </thead>
           <tbody id="tb"></tbody>
@@ -190,7 +225,18 @@
   <script type="module">
     const qs=(s,el=document)=>el.querySelector(s);
 
-    function getToken(){ return localStorage.getItem("token")||sessionStorage.getItem("token")||""; }
+    function getToken(){
+      const keys=["token","gd_token","access_token","gd_access_token","jwt","crm_token"];
+      for(const store of [localStorage,sessionStorage]){
+        for(const key of keys){
+          try{
+            const value=String(store.getItem(key)||"").trim();
+            if(value)return value;
+          }catch(_){}
+        }
+      }
+      return "";
+    }
     function authHeaders(extra={}){ const t=getToken(); return t?{...extra,Authorization:`Bearer ${t}`} : extra; }
 
     const API_BASE = (() => {
@@ -243,40 +289,96 @@
     const params = new URLSearchParams(location.search);
     const leadId = params.get("id_lead");
 
-    const STATE = { limit: 50, offset: 0, hasMore: false };
+    const STATE = { limit: 50, offset: 0, hasMore: false, total: 0 };
+
+    function esc(value){
+      return String(value ?? "").replace(/[&<>"']/g, ch=>({
+        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+      }[ch]));
+    }
+
+    function monthRange(value){
+      const match=String(value||"").match(/^(\d{4})-(\d{2})$/);
+      if(!match) return null;
+      const year=Number(match[1]);
+      const month=Number(match[2]);
+      const lastDay=new Date(year, month, 0).getDate();
+      return { desde:`${match[1]}-${match[2]}-01`, hasta:`${match[1]}-${match[2]}-${String(lastDay).padStart(2,"0")}` };
+    }
 
 	    async function getHistory(){
       const q=(qs("#q").value||"").trim();
-      let url = apiURL(`/quotes/history?limit=${STATE.limit}&offset=${STATE.offset}`);
-      if (leadId) url += `&id_lead=${encodeURIComponent(leadId)}`;
-      if (q) url += `&q=${encodeURIComponent(q)}`;
+      const query=new URLSearchParams({limit:String(STATE.limit),offset:String(STATE.offset)});
+      if(leadId) query.set("id_lead",leadId);
+      if(q) query.set("q",q);
+      const range=monthRange(qs("#mes").value);
+      if(range){ query.set("fecha_desde",range.desde); query.set("fecha_hasta",range.hasta); }
+      if(qs("#tipoCliente").value) query.set("tipo_cliente",qs("#tipoCliente").value);
+      query.set("orden",qs("#orden").value||"fecha_desc");
+      const url=apiURL(`/quotes/history?${query.toString()}`);
       const r=await fetch(url,{headers:authHeaders()});
       if(!r.ok) throw new Error(await r.text());
       const j=await r.json();
       const items = Array.isArray(j) ? j : (j.items||[]);
-      // sin total aún: inferimos “siguiente página” por cantidad
-      STATE.hasMore = items.length >= STATE.limit;
+      STATE.total = Array.isArray(j) ? (STATE.offset+items.length) : Number(j.total||0);
+      STATE.hasMore = STATE.offset + items.length < STATE.total;
       return items;
 	    }
 
-	    async function downloadPdf(id){
-	      const url = apiURL(`/quotes/${id}/pdf?download=1&v=${Date.now()}`);
-	      toast("Descargando PDF…", `Cotización #${id}`, "info");
+	    function filenameFromDisposition(value, fallback){
+	      const source=String(value||"");
+	      const utf=source.match(/filename\*=UTF-8''([^;]+)/i);
+	      if(utf?.[1]){
+	        try{return decodeURIComponent(utf[1].trim().replace(/^"|"$/g,""));}catch(_){}
+	      }
+	      const plain=source.match(/filename="?([^";]+)"?/i);
+	      return plain?.[1]?.trim() || fallback || "cotizacion.pdf";
+	    }
+
+	    async function fetchPdf(id, {download=false}={}){
+	      const suffix = download ? "?download=1" : "";
+	      const url = apiURL(`/quotes/${id}/pdf${suffix}${suffix ? "&" : "?"}v=${Date.now()}`);
 	      const r = await fetch(url, { headers: authHeaders() });
 	      if (!r.ok){
 	        const txt = await r.text();
 	        throw new Error(txt || `HTTP ${r.status}`);
 	      }
 	      const blob = await r.blob();
+	      if(!String(blob.type||"").toLowerCase().includes("pdf")){
+	        throw new Error("El servidor no devolvió un PDF válido.");
+	      }
+	      const filename = filenameFromDisposition(
+	        r.headers.get("content-disposition"),
+	        `cotizacion_${id}.pdf`
+	      );
+	      return {blob, filename};
+	    }
 
-	      let filename = `cotizacion_${id}.pdf`;
-	      try{
-	        const disp = r.headers.get("content-disposition") || "";
-	        const m = disp.match(/filename\\*?=(?:UTF-8''|\\\")?([^\\\";]+)/i);
-	        if (m && m[1]){
-	          filename = decodeURIComponent(m[1].replace(/\"/g,"").trim());
-	        }
-	      }catch(_){}
+	    async function viewPdf(id){
+	      toast("Preparando vista previa…", `Cotización #${id}`, "info");
+	      const {blob, filename} = await fetchPdf(id);
+	      const href = URL.createObjectURL(new File([blob], filename, {type:"application/pdf"}));
+	      const safe = String(filename).replace(/[&<>"']/g,ch=>({
+	        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+	      }[ch]));
+	      await Swal.fire({
+	        title: safe,
+	        html: `
+	          <div style="display:flex;justify-content:flex-end;margin:0 0 10px">
+	            <a class="btn primary" href="${href}" download="${safe}">⬇ Descargar con nombre</a>
+	          </div>
+	          <iframe title="${safe}" src="${href}" style="width:100%;height:72vh;border:0;border-radius:12px;background:#fff"></iframe>
+	        `,
+	        width: "min(1100px, 96vw)",
+	        showConfirmButton: false,
+	        showCloseButton: true,
+	        didClose: ()=>{ try{ URL.revokeObjectURL(href); }catch(_){} },
+	      });
+	    }
+
+	    async function downloadPdf(id){
+	      toast("Descargando PDF…", `Cotización #${id}`, "info");
+	      const {blob, filename} = await fetchPdf(id, {download:true});
 
 	      const a = document.createElement("a");
 	      const href = URL.createObjectURL(blob);
@@ -303,6 +405,16 @@
       return items;
     }
 
+    function registerContact(row, kind, title, text){
+      const id=Number(row?.id_lead||0);
+      if(!id) return;
+      apiJSON(`/leads/${id}/append_note`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({kind,title,text})
+      }).catch(()=>{});
+    }
+
     const tip = qs("#tip");
     function showTip(x,y,html){
       tip.innerHTML=html;
@@ -316,7 +428,7 @@
       const from = STATE.offset + 1;
       const to = STATE.offset + count;
       const page = Math.floor(STATE.offset / STATE.limit) + 1;
-      qs("#pgMeta").textContent = count ? `Mostrando ${from}–${to} · Página ${page}` : `Sin resultados`;
+      qs("#pgMeta").textContent = count ? `Mostrando ${from}–${to} de ${STATE.total} · Página ${page}` : `Sin resultados`;
       qs("#btnPrev").disabled = STATE.offset <= 0;
       qs("#btnNext").disabled = !STATE.hasMore;
     }
@@ -324,17 +436,15 @@
     async function render(){
       try{
         const rows = await getHistory();
-        qs("#cnt").textContent = `${rows.length} cotizaciones`;
+        qs("#cnt").textContent = `${STATE.total} cotizaciones`;
         const tb=qs("#tb");
         tb.innerHTML="";
         updatePager(rows.length);
 
 	      for(const r of rows){
 	        const tr=document.createElement("tr");
-          const fecha = r.fecha_evento ? String(r.fecha_evento).slice(0,10)
-            : (r.fecha ? String(r.fecha).replace("T"," ").slice(0,16)
-            : (r.created_at ? String(r.created_at).replace("T"," ").slice(0,16)
-            : "—"));
+          const fecha = r.fecha_emision ? String(r.fecha_emision).replace("T"," ").slice(0,16)
+            : (r.fecha_evento ? String(r.fecha_evento).slice(0,10) : "—");
           const rev = (r.revision != null) ? Number(r.revision) : Number(r.version || 0);
           const neto = (r.neto != null) ? Number(r.neto) : Number(r.subtotal || 0);
           const descTipo = String(r.descuento_tipo || "").trim();
@@ -343,29 +453,33 @@
           const subtotalBruto = (r.subtotal_bruto != null) ? Number(r.subtotal_bruto) : Math.max(0, neto + Math.max(0, descAbs));
           const descCell = (descAbs > 0) ? ("-" + money(descAbs)) : money(0);
 	          const canOpenLead = !!(r.id_lead);
+              const canContact = !!String(r.telefono||"").trim();
 	          tr.innerHTML=`
-	            <td>${r.numero || r.id_cotizacion}${(rev > 0) ? ` (${rev})` : ""}</td>
-	            <td>${fecha}</td>
-	            <td>${(r.nombre_cliente||"")}</td>
-	            <td>${(r.marca||"")}</td>
+	            <td>${esc(r.numero || r.id_cotizacion)}${(rev > 0) ? ` (${rev})` : ""}</td>
+	            <td>${esc(fecha)}</td>
+	            <td>${esc(r.nombre_cliente||"")}</td>
+	            <td>${esc(r.tipo_cliente||"—")}</td>
+	            <td>${esc(r.marca||"")}</td>
 	            <td>${money(neto)}</td>
 	            <td>${descCell}</td>
 	            <td>${money(r.iva)}</td>
 	            <td>${money(r.traslado)}</td>
 	            <td>${money(r.total)}</td>
 		            <td>
-		              <div class="act">
-		                <button class="mini" title="Abrir lead" data-act="lead" data-lead="${r.id_lead||""}" ${canOpenLead ? "" : "disabled"}>🧾</button>
-		                <button class="mini" title="Ver PDF" data-act="view" data-id="${r.id_cotizacion}">👁</button>
-		                <button class="mini" title="Descargar PDF" data-act="download" data-id="${r.id_cotizacion}">⬇</button>
-		              </div>
+	              <div class="act">
+	                <button class="mini" title="Abrir lead" data-act="lead" data-lead="${esc(r.id_lead||"")}" ${canOpenLead ? "" : "disabled"}>Abrir</button>
+	                <button class="mini tel" title="Llamar al cliente" data-act="call" ${canContact ? "" : "disabled"}>☎</button>
+	                <button class="mini wa" title="Contactar por WhatsApp" data-act="wa" ${canContact ? "" : "disabled"}>WhatsApp</button>
+	                <button class="mini" title="Ver PDF" data-act="view" data-id="${esc(r.id_cotizacion)}">👁</button>
+	                <button class="mini" title="Descargar PDF" data-act="download" data-id="${esc(r.id_cotizacion)}">⬇</button>
+	              </div>
 		            </td>
 		          `;
 
           tr.addEventListener("mouseenter", async (ev)=>{
             const id=r.id_cotizacion;
             const items = await getItems(id);
-            const li = items.map(it=>`<li>${it.producto} × ${it.cantidad}</li>`).join("");
+            const li = items.map(it=>`<li>${esc(it.producto)} × ${esc(it.cantidad)}</li>`).join("");
             const descLabel = (descValor > 0 && descTipo === "%") ? `Descuento (${descValor}%)` : "Descuento";
             const html = `
               <div class="t">Productos (${items.length})</div>
@@ -388,7 +502,7 @@
 	            const lid = Number(idLead||0);
 	            if (!lid) return;
 	            // Abrir en embed para no sacar al ejecutivo del historial.
-	            const url = apiURL(`/web/views/leads.html?v=20260326-leads2&embed=1&open_lead=${lid}&from=historial`);
+	            const url = apiURL(`/web/views/leads.html?v=20260729-uat1&embed=1&audit_focus=1&stale_ids=${lid}&open_lead=${lid}&from=historial`);
 	            await Swal.fire({
 	              title: `Lead #${lid}`,
 	              html: `<iframe src="${url}" style="width:100%;height:72vh;border:0;border-radius:16px;background:transparent" allow="clipboard-read; clipboard-write"></iframe>`,
@@ -419,12 +533,29 @@
 	              try{ await openLeadEmbed(lid); }catch(_){}
 	              return;
 	            }
+	            if(act==="call"){
+	              const phone=String(r.telefono||"").trim();
+	              if(phone){
+	                registerContact(r,"CALL","Llamada iniciada",`Llamada iniciada desde Historial de cotizaciones por la cotización #${r.numero||r.id_cotizacion}.`);
+	                location.href=`tel:${phone}`;
+	              }
+	              return;
+	            }
+	            if(act==="wa"){
+	              const phone=String(r.telefono||"").replace(/\D/g,"");
+	              if(phone){
+	                const msg=`Hola ${String(r.nombre_cliente||"").trim()}, te contacto por tu cotización N° ${r.numero||r.id_cotizacion}.`;
+	                registerContact(r,"WSP","WhatsApp iniciado",msg);
+	                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
+	              }
+	              return;
+	            }
 		            if(act==="view"){
-		              // Usar <a target="_blank"> (menos bloqueos que window.open)
-		              // No forzar refresh por defecto: si no, regeneramos y se vuelve lento.
-		              const pdf = apiURL(`/quotes/${id}/pdf`);
-                const wait = apiURL(`/web/views/pdf_wait.html?u=${encodeURIComponent(pdf)}&t=${encodeURIComponent("Abriendo PDF…")}`);
-                window.open(wait, "_blank", "noopener,noreferrer");
+		              try{
+		                await viewPdf(id);
+		              }catch(e){
+		                toast("No se pudo previsualizar", String(e?.message||e).slice(0,200), "error");
+		              }
 	              return;
 	            }
 		            if(act==="download"){
@@ -445,6 +576,17 @@
     }
 
     qs("#btnReload").onclick = () => { STATE.offset = 0; render(); };
+    qs("#btnClear").onclick = () => {
+      qs("#q").value="";
+      qs("#mes").value="";
+      qs("#tipoCliente").value="";
+      qs("#orden").value="fecha_desc";
+      STATE.offset=0;
+      render();
+    };
+    for(const id of ["#mes","#tipoCliente","#orden"]){
+      qs(id).addEventListener("change",()=>{ STATE.offset=0; render(); });
+    }
     qs("#btnPrev").onclick = () => {
       STATE.offset = Math.max(0, STATE.offset - STATE.limit);
       render();

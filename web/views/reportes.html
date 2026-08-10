@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Reportes</title>
   <link rel="stylesheet" href="../styles.css" />
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="../vendor/sweetalert2-11.22.2.all.min.js?v=20260729"></script>
+  <script src="../vendor/echarts-5.5.0.min.js?v=20260729"></script>
+  <script src="../vendor/exceljs-4.4.0.min.js?v=20260729"></script>
   <script src="../js/iframe-theme.js"></script>
   <style>
     html,body{height:100%;margin:0;}
@@ -1079,7 +1079,7 @@
     function openFilter(params){
       const usp = new URLSearchParams();
       Object.entries(params||{}).forEach(([k,v]) => { if (v!=null && v!=="") usp.set(k, String(v)); });
-      const url = "/web/views/filtro_leads.html?v=20260326-fil1&" + usp.toString();
+      const url = "/web/views/filtro_leads.html?v=20260810-filtros1&" + usp.toString();
       try{ window.parent?.postMessage({ type:"openItem", id:"leads_fil", url }, "*"); }catch(_){ location.href = apiURL(url); }
     }
 
