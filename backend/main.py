@@ -94,16 +94,44 @@ def _apply_security_headers(request: Request, resp):
         resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         resp.headers.setdefault(
             "Permissions-Policy",
-            "geolocation=(self), notifications=(self), microphone=(), camera=(), payment=(), usb=()",
+            "geolocation=(self), notifications=(self), microphone=(self), camera=(), payment=(), usb=()",
         )
         # HSTS (solo HTTPS). No forzamos includeSubDomains para evitar sorpresas.
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
 
-        # Evita cachear JSON sensible en navegadores/proxies.
+        # Las vistas del CRM cambian con despliegues frecuentes y viven dentro de
+        # iframes. No permitir que el navegador conserve HTML/JS antiguos: de lo
+        # contrario el panel puede mostrar una versión previa aun cuando el
+        # servidor ya fue actualizado.
         try:
             p = str(request.url.path or "/")
             ct = str(resp.headers.get("content-type") or "").lower()
-            if ("/web/" not in p) and ("application/json" in ct or p.startswith(("/auth", "/me", "/leads", "/tasks", "/finanzas", "/rrhh", "/chat"))):
+            web_asset = p.startswith("/web/") or p.startswith("/crm/web/")
+            if web_asset and (
+                p.endswith(".html")
+                or p.endswith(".js")
+                or "text/html" in ct
+                or "javascript" in ct
+            ):
+                resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                resp.headers["Pragma"] = "no-cache"
+                resp.headers["Expires"] = "0"
+            # Evita cachear JSON sensible en navegadores/proxies.
+            elif ("/web/" not in p) and (
+                "application/json" in ct
+                or p.startswith(
+                    (
+                        "/auth",
+                        "/me",
+                        "/leads",
+                        "/tasks",
+                        "/finanzas",
+                        "/rrhh",
+                        "/chat",
+                        "/gia/whatsapp",
+                    )
+                )
+            ):
                 resp.headers.setdefault("Cache-Control", "no-store")
                 resp.headers.setdefault("Pragma", "no-cache")
         except Exception:
@@ -286,6 +314,28 @@ async def rid_middleware(request: Request, call_next):
         except Exception:
             pass
 
+        # Interruptores operativos globales. Los permisos controlan quién accede;
+        # estas banderas controlan si el proceso está funcionando para todos.
+        try:
+            from backend.core.feature_flags import FEATURES, feature_enabled, feature_for_path
+
+            feature_key = feature_for_path(str(request.scope.get("path") or request.url.path or "/"))
+            if feature_key and not feature_enabled(feature_key):
+                label = str((FEATURES.get(feature_key) or {}).get("label") or feature_key)
+                resp = JSONResponse(
+                    {
+                        "detail": f"{label} está temporalmente deshabilitado por administración.",
+                        "code": "feature_disabled",
+                        "feature": feature_key,
+                    },
+                    status_code=503,
+                    headers={"X-RID": rid, "Retry-After": "60"},
+                )
+                return _apply_security_headers(request, resp)
+        except Exception:
+            # Fail-open: si el control no puede consultarse, no botamos el CRM.
+            pass
+
         # Tick RRHH reminders (best-effort throttled).
         # Important on shared hosting: never block the only Passenger worker with background jobs.
         try:
@@ -378,6 +428,9 @@ if _enable_cors:
 # IMPORTANT: esto es lo que te falta hoy; por eso todo está 404.
 include_router_safe(app, "backend.routers.greeni_instagram")
 include_router_safe(app, "backend.routers.whatsapp_webhook")
+include_router_safe(app, "backend.routers.whatsapp_embedded_signup")
+include_router_safe(app, "backend.routers.whatsapp_commercial")
+include_router_safe(app, "backend.routers.whatsapp_gia")
 include_router_safe(app, "backend.routers.auth")
 include_router_safe(app, "backend.routers.leads")
 include_router_safe(app, "backend.routers.public_links")
@@ -388,11 +441,12 @@ include_router_safe(app, "backend.routers.settings")
 include_router_safe(app, "backend.routers.cotizador")
 include_router_safe(app, "backend.routers.quotes_override")
 include_router_safe(app, "backend.routers.productos")
-include_router_safe(app, "backend.routers.cotizaciones")
 include_router_safe(app, "backend.routers.leads_agenda")
+include_router_safe(app, "backend.routers.agenda_confirmacion")
 include_router_safe(app, "backend.routers.notifications")
 include_router_safe(app, "backend.routers.notify_routes")
 include_router_safe(app, "backend.routers.permissions")
+include_router_safe(app, "backend.routers.features")
 include_router_safe(app, "backend.routers.cron")
 include_router_safe(app, "backend.routers.tools")
 include_router_safe(app, "backend.routers.gps")
@@ -412,8 +466,12 @@ include_router_safe(app, "backend.routers.backups")
 include_router_safe(app, "backend.routers.assets")
 include_router_safe(app, "backend.routers.assets_checklists")
 include_router_safe(app, "backend.routers.activity")
+include_router_safe(app, "backend.routers.crm360")
 include_router_safe(app, "backend.routers.tasks")
 include_router_safe(app, "backend.routers.event_checklist")
+include_router_safe(app, "backend.routers.event_surveys")
+include_router_safe(app, "backend.routers.commissions")
+include_router_safe(app, "backend.routers.gd_intelligence")
 include_router_safe(app, "backend.routers.gia_email")
 include_router_safe(app, "backend.routers.sgjo")
 
