@@ -2,7 +2,7 @@
 
 Actualizado: 2026-08-12
 
-SHA productivo inmutable: `b14d547ca2f92fe6bcb2c9b87e22364fa24c51b7`.
+SHA productivo inmutable: `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117`.
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
@@ -25,7 +25,7 @@ SHA productivo inmutable: `b14d547ca2f92fe6bcb2c9b87e22364fa24c51b7`.
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `b14d547`; rollback inmediato `4cd4321` y releases previos preservados |
+| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `aa9d24a`; rollback inmediato `b14d547` y releases previos preservados |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
@@ -108,6 +108,7 @@ SHA productivo inmutable: `b14d547ca2f92fe6bcb2c9b87e22364fa24c51b7`.
 - WABA contextual P1: acciones comerciales reales por clic derecho/pulsación larga, sin auto-send y sin endpoints Meta ficticios; liberación productiva agrupada con la corrección de discovery.
 - Cutover P1 `4cd4321`: PASS. Backup PostgreSQL + código con checksum y catálogo validado; migración collector aplicada dos veces; candidato y post-cutover PASS; rollback `ba89090` listo y no ejecutado. QA visual sobre una conversación real confirmó el menú contextual completo, incluido “Eliminar” deshabilitado.
 - Hotfix Agenda `b14d547`: PASS. Se eliminó el lock global de Calendar en favor de locks por lead, se acotó Google HTTP a 20 segundos y se impidió terminar operaciones activas a los 90 segundos. 146 tests PASS; rollback `4cd4321` listo y no ejecutado.
+- Montaje operativo `aa9d24a`: PASS. Evento exclusivo de Calendar con fecha/hora independiente, mismos equipos del evento comercial y claves idempotentes separadas. No crea evento CRM/financiero ni reemplaza el ancla comercial del lead. 149 tests PASS; rollback `b14d547` listo y no ejecutado.
 - Smoke productivo P1: health, login, Leads, Cotizador, WABA, GD Intelligence, Site Health y métricas HTTP 200; collector interno preflight 204; ADMIN 403; 0 Router SKIP y 0 tracebacks. Candidato 9090 detenido y sesión QA temporal eliminada.
 - Cutover inmutable `babfea8`: PASS; candidato aislado, migración idempotente, QA visual, Vault persistente, todos los routers cargados y smoke tests ampliados PASS. Rollback `8600cc2` listo y no ejecutado. Git privado y rotación de credenciales históricas siguen pendientes.
 - Hotfix crítico PDF `ba89090`: PASS. El generador de cotizaciones usa `/opt/greendiamond/shared/persistent-data/data/quotes`, no escribe dentro del release inmutable. PDF real verificado HTTP 200, `application/pdf`, `%PDF`, descarga attachment y archivo persistente; rollback `babfea8` listo y no ejecutado.

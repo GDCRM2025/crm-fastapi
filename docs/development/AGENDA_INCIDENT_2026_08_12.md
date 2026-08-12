@@ -35,3 +35,14 @@ La recuperación de locks también consideraba stale cualquier operación de má
 ## Worker exclusivo — siguiente endurecimiento
 
 Un worker de agenda sigue siendo recomendable para resiliencia, no como sustituto de este hotfix. Debe usar una cola durable con estados `queued/processing/completed/failed`, lease renovable, reintentos con backoff, dead-letter explícito e idempotencia por lead/request. La API debe responder con un job consultable y la UI mostrar progreso. No se debe separar el trabajo en un proceso en memoria ni aumentar workers indiscriminadamente.
+
+## Montaje operativo — actualización posterior
+
+Release `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117` separa formalmente el montaje del evento comercial.
+
+- Montaje es un evento exclusivo de Google Calendar, relacionado al lead pero sin crear un segundo evento CRM, financiero ni de venta.
+- Fecha, inicio, fin, comuna y dirección son independientes: puede realizarse antes, el mismo día o después del evento comercial.
+- El montaje incluye los mismos equipos de la cotización/evento comercial y el montaje calculado en su descripción operacional.
+- El evento CRM, el estado del lead y los campos `calendar_start`/`calendar_event_id` conservan como ancla el evento comercial; nunca el montaje.
+- Cada evento Calendar usa una llave idempotente distinta, por lo que montaje y evento principal no se sobrescriben incluso si ocurren el mismo día.
+- Rollback inmediato: `b14d547ca2f92fe6bcb2c9b87e22364fa24c51b7`.

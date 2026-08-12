@@ -3,6 +3,20 @@
 Fecha: 2026-08-12
 Resultado: **IMMUTABLE_CUTOVER_PASS**
 
+## Agenda — montaje operativo separado
+
+Release activo: `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117`. Rollback inmediato: `b14d547ca2f92fe6bcb2c9b87e22364fa24c51b7`.
+
+El wizard ahora declara montaje como operación exclusiva de Google Calendar. Puede programarse antes, el mismo día o después del evento; usa los equipos de la cotización. El CRM conserva solamente el evento comercial como evento, referencia financiera y ancla de Calendar.
+
+- Backup previo: `/opt/greendiamond/backups/mounting_calendar_only/20260812_183047`.
+- Código previo SHA-256: `cc0778f972515e22314664fc84df329969a6cbd7a403909b261f4c5fe19f3b51`.
+- PostgreSQL previo SHA-256: `5f423c715c642b9a87e3288a93fd84d9be2e21353543df3dfae5331061931f18`; `pg_restore --list` PASS.
+- 149 tests PASS, 0 FAIL; Python compile y diff-check PASS.
+- Candidato: health, Leads, Agenda, Cotizador y WABA autenticado 200; cero routers omitidos.
+- Post-cutover: service active, health 200, Leads/Agenda/Cotizador 200, candidato detenido y 0 tracebacks.
+- `ROLLBACK_EXECUTED=NO`.
+
 ## Hotfix crítico — disponibilidad de Agenda
 
 Release activo: `b14d547ca2f92fe6bcb2c9b87e22364fa24c51b7`. Rollback inmediato: `4cd4321564b7f3279a2c32e9b049b8ac79bf7453`.
