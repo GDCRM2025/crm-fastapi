@@ -3,6 +3,29 @@
 Fecha: 2026-08-12
 Resultado: **IMMUTABLE_CUTOVER_PASS**
 
+## Actualización — bootstrap persistente y acceso SUPERADMIN
+
+El release productivo activo es `8600cc2c4e51f7abc52ba362670f43af0016c276` en `/opt/greendiamond/releases/8600cc2c4e51f7abc52ba362670f43af0016c276`. `/opt/greendiamond/current` y el proceso systemd resuelven a ese directorio.
+
+- PostgreSQL y la llave maestra del Vault se cargan desde `/opt/greendiamond/shared/secrets/bootstrap`, fuera del release. Directorio `0700`, archivos `0600`.
+- El loader soporta `systemd LoadCredential=` con precedencia superior; la activación del binding systemd queda pendiente de autoridad administrativa sobre `/etc/systemd/system`. El fallback seguro está operativo.
+- El Vault tenía `0` registros configurados antes de crear la llave. No se reemplazó ni perdió material cifrado existente.
+- Re-ejecutar el instalador preservó la llave y su checksum; `VAULT_DECRYPT=PASS`.
+- El arranque verifica todos los registros configurados y falla cerrado si falta la llave o algún valor no puede descifrarse.
+- GD Intelligence, Paid Media e Intelligence Platform están temporalmente restringidos a `SUPERADMIN` tanto en backend como en menú. Smoke productivo: SUPERADMIN `200`, ADMIN `403`.
+- El runtime temporal de Backups fue movido al enlace compartido `runtime/backup-tmp`; el release continúa read-only y todos los routers cargan sin `Router SKIP`.
+
+Validación final: 108 tests PASS, frontend build PASS, Python compile PASS, Gitleaks PASS, manifest del release PASS, health interno/Nginx 200 y smoke 200 para Leads, Cotizaciones, WABA, Omnichannel, Backups, GD Intelligence, Integration Center, Site Health y Paid Media.
+
+Backup inmediatamente anterior al release final: `/opt/greendiamond/backups/bootstrap/20260812_105912`.
+
+| Artefacto | SHA-256 |
+|---|---|
+| `release_before.tar.gz` | `c14b38ca1c4dc03a21e200dc6d56d1c6248dd027fcd6365f7a43c68c6e7084d2` |
+| `postgres_before.dump` | `f29c2d205237d93585f20e86b14d2e3720d885be2147e2a2eb171ea4f76eb4f0` |
+
+Rollback inmediato: release anterior `eb65fc430faee3e80514d23cef3a1795a420456f`; release estable previo `88704006e10c87ecd813a7f24e3eb91da8718a50`. `ROLLBACK_EXECUTED=NO` para el cutover final. Dos intentos previos fueron revertidos automáticamente durante el gate (arranque de candidato y ruta de smoke incorrecta), sin dejar producción en estado fallido.
+
 ## Release y arquitectura
 
 | Campo | Resultado |
