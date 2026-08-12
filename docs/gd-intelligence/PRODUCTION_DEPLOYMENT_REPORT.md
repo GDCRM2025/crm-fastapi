@@ -3,6 +3,26 @@
 Fecha: 2026-08-12
 Resultado: **IMMUTABLE_CUTOVER_PASS**
 
+## Release P1 — WABA contextual y verdad de Tracking
+
+Release activo: `4cd4321564b7f3279a2c32e9b049b8ac79bf7453`. Rollback inmediato: `ba89090c6d9d7c12a97fe638ad5ab9f16c3df58d`.
+
+- Backup previo: `/opt/greendiamond/backups/p1_preflight/20260812_164754`.
+- Código previo SHA-256: `fab0e9988b177f709c5ffb72822865fdd8c3ae8a86fb237de80b54318a53f3af`.
+- PostgreSQL previo SHA-256: `8ca84372d32a65283ea72edf8b4af40ef9907effb6868ce9ecff0bd42ca2612a`; `pg_restore --list` PASS.
+- Release archive SHA-256: `a6060c97ba5c555c3eac6716142b7708de7b1cc0772e2a720c91c8aaaa320097`.
+- Suite: 142 PASS, 0 FAIL; Python compile, JavaScript parse, diff-check y Gitleaks PASS.
+- Migración `2026_08_12_tracking_collector.sql`: PASS en dos ejecuciones productivas.
+- Candidato `127.0.0.1:9090`: health, WABA, collector, GD Intelligence, Leads y Cotizador PASS; ADMIN 403; cero routers omitidos.
+- Cutover atómico: servicio `crm-gd` activo, MainPID ejecutando el release exacto y health 200.
+- Smoke posterior: health, login, Leads, Cotizador, WABA, GD Intelligence, Site Health y métricas 200; collector interno 204; 0 tracebacks.
+- Discovery real corregido: GTM `DETECTED` 4/4, GA4 `DETECTED` 4/4 y Tracking `NOT_CONFIGURED` 4/4. La regla anterior generaba falsos positivos por texto genérico de GTM.
+- QA visual WABA con conversación real: clic derecho abre Responder, reacciones, reenvío revisable, Copiar, Información y acciones CRM. Eliminar queda explícitamente deshabilitado; no se envió ningún mensaje ni se mutó la conversación durante QA.
+- El candidato 9090 y el acceso QA temporal se eliminaron después de validar.
+- `ROLLBACK_EXECUTED=NO`.
+
+El collector está desplegado dentro de Ubuntu, pero Ubuntu no es un borde público. Los cuatro sitios todavía no cargan `gd-tracker.js`; `TRACKING_DATA=BLOCKED_NETWORK` hasta publicar exclusivamente `/collect/v1/*` mediante un proxy/túnel restringido o una cola con pull firmado. El panel administrativo y PostgreSQL no se publican.
+
 ## Hotfix crítico — guardar y descargar cotización
 
 Release activo: `ba89090c6d9d7c12a97fe638ad5ab9f16c3df58d`. Rollback inmediato: `babfea832fcbbcc182e7779fbd0fe359a239c050`.
