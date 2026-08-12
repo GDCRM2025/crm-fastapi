@@ -2,7 +2,7 @@
 
 Actualizado: 2026-08-12
 
-SHA productivo inmutable: `babfea832fcbbcc182e7779fbd0fe359a239c050`.
+SHA productivo inmutable: `ba89090c6d9d7c12a97fe638ad5ab9f16c3df58d`.
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
@@ -25,7 +25,7 @@ SHA productivo inmutable: `babfea832fcbbcc182e7779fbd0fe359a239c050`.
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `babfea8`; rollback inmediato `8600cc2` y releases previos preservados |
+| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `ba89090`; rollback inmediato `babfea8` y releases previos preservados |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
@@ -75,7 +75,7 @@ SHA productivo inmutable: `babfea832fcbbcc182e7779fbd0fe359a239c050`.
 
 ## Evidencia actual
 
-- 122 pruebas unitarias/contrato GD Intelligence, Omnichannel, bootstrap y reconciliación: PASS; 0 fallas.
+- 125 pruebas unitarias/contrato CRM, GD Intelligence, almacenamiento persistente, Omnichannel, bootstrap y reconciliación: PASS; 0 fallas.
 - OpenAPI local incorpora 16 rutas nuevas de inteligencia real y Omnichannel; `/healthz` PASS.
 - Google Ads y Meta Ads no se marcan conectados: los conectores, selectores y sync están listos, pero las credenciales externas autorizadas no existen en el entorno. Meta pagina por cursor sin seguir URLs absolutas que puedan contener token, sanea activos anidados e ingiere `action_values`.
 - Inbox local usa datos reales: WhatsApp 1 conversación/1 lead; Email 199 registros consultados/8 leads/31 cotizaciones; Instagram y Messenger 0 registros. No se inventaron ventas ni revenue.
@@ -106,4 +106,5 @@ SHA productivo inmutable: `babfea832fcbbcc182e7779fbd0fe359a239c050`.
 - WABA dispone de reglas explícitas de confidence y no atribuye sin evidencia suficiente.
 - Paridad P0 de Integration Center: PASS. Producción detecta 16 instalaciones públicas; 0 APIs conectadas; 20 capacidades listas para credencial; 4 requieren atención; 4 no configuradas; 0 errores. Tracking está instalado 4/4 y permanece `NO_DATA` porque no existen sesiones/eventos reales todavía.
 - Cutover inmutable `babfea8`: PASS; candidato aislado, migración idempotente, QA visual, Vault persistente, todos los routers cargados y smoke tests ampliados PASS. Rollback `8600cc2` listo y no ejecutado. Git privado y rotación de credenciales históricas siguen pendientes.
+- Hotfix crítico PDF `ba89090`: PASS. El generador de cotizaciones usa `/opt/greendiamond/shared/persistent-data/data/quotes`, no escribe dentro del release inmutable. PDF real verificado HTTP 200, `application/pdf`, `%PDF`, descarga attachment y archivo persistente; rollback `babfea8` listo y no ejecutado.
 - Preflight Ubuntu read-only 2026-08-09: servicio activo y rollback SHA `ec43b36`; deployment bloqueado antes de escrituras por 54 entradas tracked + 192 untracked y gates Git/rotación pendientes.

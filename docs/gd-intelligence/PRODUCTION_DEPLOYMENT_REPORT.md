@@ -3,6 +3,19 @@
 Fecha: 2026-08-12
 Resultado: **IMMUTABLE_CUTOVER_PASS**
 
+## Hotfix crítico — guardar y descargar cotización
+
+Release activo: `ba89090c6d9d7c12a97fe638ad5ab9f16c3df58d`. Rollback inmediato: `babfea832fcbbcc182e7779fbd0fe359a239c050`.
+
+El guardado funcionaba, pero la generación posterior intentaba crear `data/quotes` dentro del release inmutable y fallaba con `PermissionError`. El hotfix centraliza el almacenamiento persistente: Ubuntu usa `/opt/greendiamond/shared/persistent-data/data`; Mac/desarrollo conserva `<proyecto>/data`, con override explícito `GD_PERSISTENT_DATA_DIR`.
+
+- 125 tests PASS, 0 FAIL; compileall, JS parse, diff-check y Gitleaks PASS.
+- Candidato aislado: PDF real HTTP 200, `application/pdf`, encabezado attachment, magic `%PDF`, archivo persistido fuera del release.
+- Producción: cotizador HTML/JS, PDF real, Leads, Historial y WABA HTTP 200.
+- Servicio activo; sin tracebacks ni nuevos errores de permiso después del cutover.
+- Sin migraciones ni modificación de esquema. Releases y PDFs históricos preservados.
+- `ROLLBACK_EXECUTED=NO`.
+
 ## Actualización — paridad P0 de Integration Center
 
 El release productivo activo es `babfea832fcbbcc182e7779fbd0fe359a239c050` en `/opt/greendiamond/releases/babfea832fcbbcc182e7779fbd0fe359a239c050`. Reemplaza a `8600cc2c4e51f7abc52ba362670f43af0016c276`, que queda disponible como rollback inmediato.
