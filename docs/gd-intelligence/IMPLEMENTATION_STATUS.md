@@ -2,59 +2,59 @@
 
 Actualizado: 2026-08-12
 
-SHA funcional local validado: `8c9697a` (inteligencia con fuentes reales, Ads read-only, Omnichannel y hotfixes reconciliados; sin deployment).
+SHA productivo desplegado: `b35e075` (inteligencia con fuentes reales, Ads read-only, Omnichannel y hotfixes reconciliados).
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
 | 0 Auditoría | DONE | PASS | N/A | N/A | VM/DB/backup verificados; consola Proxmox pendiente |
-| 1 Arquitectura base | DONE | PASS | DONE | NOT_DEPLOYED | Módulo y API base |
-| 2 RBAC y views | DONE | PASS | DONE | NOT_DEPLOYED | Menú y matriz Allow/Deny/Inherit respaldados por API y auditoría |
-| 3 Sitios | DONE | PASS | DONE_LOCAL | NOT_DEPLOYED | CAM/EXP/GOU/DEL; matriz pública por sitio, configuración sin secretos y verificación live |
-| 4 GA4 | READY_FOR_CREDENTIAL | PASS | DISCOVERED_LOCAL | NOT_DEPLOYED | Measurement IDs 4/4; selector Property ID mediante credencial backend; credencial externa pendiente |
-| 5 Search Console | READY_FOR_CREDENTIAL | PASS | PARTIAL_LOCAL | NOT_DEPLOYED | Selector de propiedades backend listo; acceso externo pendiente |
-| 6 Dashboard web | DONE | PASS | DONE_LOCAL | NOT_DEPLOYED | Nueva sección lateral Resumen/Sitios/Site Health/UTM/Permisos; cuatro sitios reales del restore aislado |
-| 7 Tracking first-party | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | visitor/session persistentes, UTM/referrer/landing y click_whatsapp |
-| 8 Atribución | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | sesión→lead automática, first/last touch, método/confidence y RBAC |
-| 9 PageSpeed | PARTIAL | PASS | ORIGINS_DISCOVERED | NOT_DEPLOYED | Parser lab/field y orígenes listos; API key pendiente |
-| 10 CrUX | PARTIAL | PASS | ORIGINS_DISCOVERED | NOT_DEPLOYED | Orígenes listos; disponibilidad/API pendiente, datos ausentes no se fabrican |
-| 11 Site Health | DONE | PASS | DONE_LOCAL | NOT_DEPLOYED | Scanner seguro, historial, UI, ejecución manual y timer systemd preparado |
+| 1 Arquitectura base | DONE | PASS | DONE | DEPLOYED | Módulo y API base |
+| 2 RBAC y views | DONE | PASS | DONE | DEPLOYED | Menú y matriz Allow/Deny/Inherit respaldados por API y auditoría |
+| 3 Sitios | DONE | PASS | DONE_LOCAL | DEPLOYED | CAM/EXP/GOU/DEL; matriz pública por sitio, configuración sin secretos y verificación live |
+| 4 GA4 | READY_FOR_CREDENTIAL | PASS | DISCOVERED_LOCAL | DEPLOYED | Measurement IDs 4/4; selector Property ID mediante credencial backend; credencial externa pendiente |
+| 5 Search Console | READY_FOR_CREDENTIAL | PASS | PARTIAL_LOCAL | DEPLOYED | Selector de propiedades backend listo; acceso externo pendiente |
+| 6 Dashboard web | DONE | PASS | DONE_LOCAL | DEPLOYED | Nueva sección lateral Resumen/Sitios/Site Health/UTM/Permisos; cuatro sitios reales del restore aislado |
+| 7 Tracking first-party | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | visitor/session persistentes, UTM/referrer/landing y click_whatsapp |
+| 8 Atribución | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | sesión→lead automática, first/last touch, método/confidence y RBAC |
+| 9 PageSpeed | PARTIAL | PASS | ORIGINS_DISCOVERED | DEPLOYED | Parser lab/field y orígenes listos; API key pendiente |
+| 10 CrUX | PARTIAL | PASS | ORIGINS_DISCOVERED | DEPLOYED | Orígenes listos; disponibilidad/API pendiente, datos ausentes no se fabrican |
+| 11 Site Health | DONE | PASS | DONE_PROD | DEPLOYED | Scanner, historial y UI; ciclo productivo 4/4 HTTP 200 y cron cada 15 minutos |
 | 12 SEO Opportunity Engine | PENDING | PENDING | PENDING | N/A | — |
-| 13 UTM Builder | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | URLs ligadas a campañas; Visits/Leads/Quotes/Conversion/Revenue |
-| 14 Marketing campaigns | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | `wi_marketing_campaigns` y campaña opcional en lead manual |
+| 13 UTM Builder | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | URLs ligadas a campañas; Visits/Leads/Quotes/Conversion/Revenue |
+| 14 Marketing campaigns | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | `wi_marketing_campaigns` y campaña opcional en lead manual |
 | 15 GD AI base | PENDING | PENDING | NOT_CONFIGURED | N/A | API key local existe; uso no validado |
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | PREPARED | PASS_LOCAL | BLOCKED_GATE | NOT_DEPLOYED | Ubuntu: 54 tracked preservados, 5.965 untracked y 6.284 ignored aún no clasificados; repo privado/rotación pendientes |
+| 19 Git deployment | DEPLOYED | PASS | USER_OVERRIDE | DEPLOYED | Release `b35e075`; backup y rollback verificados; gates de gobierno continúan abiertos |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
 | 23 Alerts | PENDING | PENDING | PENDING | N/A | — |
 | 24 Executive dashboard | PENDING | PENDING | PENDING | N/A | — |
-| 25 Paid Media data model | DONE_LOCAL | PASS | EMPTY_READY | NOT_DEPLOYED | Cuentas, entidades, métricas diarias, search terms y change log; constraints idempotentes |
-| 26 Google Ads adapter | CORE_READY | PASS | READY_FOR_CREDENTIAL | NOT_DEPLOYED | Parser normalizado y gate backend; sync externo pendiente |
-| 27 Meta Ads adapter | CORE_READY | PASS | READY_FOR_CREDENTIAL | NOT_DEPLOYED | Parser normalizado y gate backend; sync externo pendiente |
-| 28 Paid Media UI | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Modo READ/ANALYZE/RECOMMEND; plataforma y CRM separados; sin writes |
-| 29 Change Risk | CORE_READY | PASS | DONE_LOCAL | NOT_DEPLOYED | RECENT_CHANGE, LEARNING, LOW_DATA y budget risk; sin recomendaciones sin evidencia |
-| 30 Help Engine | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Artículos persistentes, búsqueda por nivel/rol y ayuda por `screen_id` |
-| 31 CRM inventory | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | 77 accesos de menú y 501 endpoints extraídos desde código |
-| 32 Manual source package | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | Pantallas, acciones, permisos, procesos, cobertura, capturas y handoff |
-| 33 Omnichannel Inbox | DONE_LOCAL | PASS | PARTIAL_REAL | NOT_DEPLOYED | Bandeja por referencia, navegación a Tools real y controles comerciales sin duplicar mensajes |
-| 34 CredentialVault | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Write-only, Fernet at-rest, replace/revoke/verify, key local 0600 y eventos sanitizados |
-| 35 Integration Center UX | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Navegación lateral, filtros, tarjetas legibles, estados humanizados, wizards y confirmaciones |
-| 36 Site Health UX | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Hallazgos traducidos a Crítico/Importante/Mejora y last-known-good |
-| 37 Google Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | NOT_DEPLOYED | OAuth refresh/service credential, selección Customer ID/sitio y sync REST READ ONLY; credencial externa ausente; API v25 vigente |
-| 38 Meta Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | NOT_DEPLOYED | Business/Ad Account/Page/Instagram selector, paginación por cursor y sync Graph GET; token externo ausente |
-| 39 Paid Media Attribution | DONE_LOCAL | PASS | READY_NO_AD_DATA | NOT_DEPLOYED | GCLID/FBCLID hash, UTM y CRM; EXACT/STRONG/INFERRED/UNKNOWN fail-closed |
-| 40 Search Terms Intelligence | DONE_LOCAL | PASS | READY_NO_AD_DATA | NOT_DEPLOYED | HIGH_VALUE/WASTE/NEGATIVE_CANDIDATE/INSUFFICIENT_DATA; cero publicaciones |
-| 41 Creative Intelligence | DONE_LOCAL | PASS | READY_NO_AD_DATA | NOT_DEPLOYED | Frequency, CTR, CPA CRM, conversión, edad y umbral de volumen |
-| 42 Change Risk ampliado | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Siete estados; reason/confidence/risk/next_review_date/métricas |
-| 43 SEO Opportunity Engine | DONE_LOCAL | PASS | PARTIAL_REAL | NOT_DEPLOYED | Score 0–100; Site Health real disponible, Search Console pendiente; no simula |
-| 44 Inbox omnicanal | DONE_LOCAL | PASS | PARTIAL_REAL | NOT_DEPLOYED | Reutiliza WABA/Instagram/Messenger/Email; work items por referencia sin copiar mensajes |
-| 45 BI por canal | DONE_LOCAL | PASS | REAL_LOCAL | NOT_DEPLOYED | WhatsApp y Email con datos; Instagram/Messenger sin registros; sin inferencias |
-| 46 Alert Engine | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Deduplicación, cooldown, evidencia, acción y próxima revisión |
-| 47 Executive Dashboard | DONE_LOCAL | PASS | PARTIAL_REAL | NOT_DEPLOYED | CRM sales, tracking y Site Health habilitan el tablero; Paid Spend/CPA/ROAS muestran Sin datos hasta sincronizar Ads |
-| 48 GD AI base | DONE_LOCAL | PASS | CONTEXT_READY | NOT_DEPLOYED | Context builder allowlisted por rol; read/analyze/suggest; sin SQL ni writes |
+| 25 Paid Media data model | DONE_LOCAL | PASS | EMPTY_READY | DEPLOYED | Cuentas, entidades, métricas diarias, search terms y change log; constraints idempotentes |
+| 26 Google Ads adapter | CORE_READY | PASS | READY_FOR_CREDENTIAL | DEPLOYED | Parser normalizado y gate backend; sync externo pendiente |
+| 27 Meta Ads adapter | CORE_READY | PASS | READY_FOR_CREDENTIAL | DEPLOYED | Parser normalizado y gate backend; sync externo pendiente |
+| 28 Paid Media UI | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Modo READ/ANALYZE/RECOMMEND; plataforma y CRM separados; sin writes |
+| 29 Change Risk | CORE_READY | PASS | DONE_LOCAL | DEPLOYED | RECENT_CHANGE, LEARNING, LOW_DATA y budget risk; sin recomendaciones sin evidencia |
+| 30 Help Engine | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Artículos persistentes, búsqueda por nivel/rol y ayuda por `screen_id` |
+| 31 CRM inventory | DONE_LOCAL | PASS | GENERATED | DEPLOYED | 77 accesos de menú y 501 endpoints extraídos desde código |
+| 32 Manual source package | DONE_LOCAL | PASS | GENERATED | DEPLOYED | Pantallas, acciones, permisos, procesos, cobertura, capturas y handoff |
+| 33 Omnichannel Inbox | DONE_LOCAL | PASS | PARTIAL_REAL | DEPLOYED | Bandeja por referencia, navegación a Tools real y controles comerciales sin duplicar mensajes |
+| 34 CredentialVault | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Write-only, Fernet at-rest, replace/revoke/verify, key local 0600 y eventos sanitizados |
+| 35 Integration Center UX | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Navegación lateral, filtros, tarjetas legibles, estados humanizados, wizards y confirmaciones |
+| 36 Site Health UX | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Hallazgos traducidos a Crítico/Importante/Mejora y last-known-good |
+| 37 Google Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | DEPLOYED | OAuth/service credential y sync READ ONLY disponibles; credencial externa ausente |
+| 38 Meta Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | DEPLOYED | Selector de activos y sync Graph GET disponibles; token externo ausente |
+| 39 Paid Media Attribution | DONE_LOCAL | PASS | READY_NO_AD_DATA | DEPLOYED | GCLID/FBCLID hash, UTM y CRM; EXACT/STRONG/INFERRED/UNKNOWN fail-closed |
+| 40 Search Terms Intelligence | DONE_LOCAL | PASS | READY_NO_AD_DATA | DEPLOYED | HIGH_VALUE/WASTE/NEGATIVE_CANDIDATE/INSUFFICIENT_DATA; cero publicaciones |
+| 41 Creative Intelligence | DONE_LOCAL | PASS | READY_NO_AD_DATA | DEPLOYED | Frequency, CTR, CPA CRM, conversión, edad y umbral de volumen |
+| 42 Change Risk ampliado | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Siete estados; reason/confidence/risk/next_review_date/métricas |
+| 43 SEO Opportunity Engine | DONE_LOCAL | PASS | PARTIAL_REAL | DEPLOYED | Score 0–100; Site Health real disponible, Search Console pendiente; no simula |
+| 44 Inbox omnicanal | DONE_LOCAL | PASS | PARTIAL_REAL | DEPLOYED | Reutiliza WABA/Instagram/Messenger/Email; work items por referencia sin copiar mensajes |
+| 45 BI por canal | DONE_LOCAL | PASS | REAL_LOCAL | DEPLOYED | WhatsApp y Email con datos; Instagram/Messenger sin registros; sin inferencias |
+| 46 Alert Engine | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Deduplicación, cooldown, evidencia, acción y próxima revisión |
+| 47 Executive Dashboard | DONE_LOCAL | PASS | PARTIAL_REAL | DEPLOYED | CRM sales, tracking y Site Health habilitan el tablero; Paid Spend/CPA/ROAS muestran Sin datos hasta sincronizar Ads |
+| 48 GD AI base | DONE_LOCAL | PASS | CONTEXT_READY | DEPLOYED | Context builder allowlisted por rol; read/analyze/suggest; sin SQL ni writes |
 
 ## Gates transversales
 
@@ -69,7 +69,7 @@ SHA funcional local validado: `8c9697a` (inteligencia con fuentes reales, Ads re
 | Rotación secretos legacy | FAIL | Secretos reales históricos; revocación/rotación pendiente |
 | Restore aislado | PASS | 112 tablas, 213 índices, 34 FKs |
 | Migraciones en restore | PASS | Dos ejecuciones, core intacto |
-| Migración producción | NOT_RUN | Prohibida hasta readiness |
+| Migración producción | PASS | Diez migraciones aditivas ejecutadas el 2026-08-12 por autorización explícita |
 
 ## Evidencia actual
 
@@ -102,5 +102,5 @@ SHA funcional local validado: `8c9697a` (inteligencia con fuentes reales, Ads re
 - Integration Center muestra detectado, faltante, última verificación/sync, last-known-good y acción; PageSpeed puede configurarse desde CRM sin terminal.
 - Creación manual usa orígenes comerciales y campaña opcional; no expone campos UTM al Ejecutivo.
 - WABA dispone de reglas explícitas de confidence y no atribuye sin evidencia suficiente.
-- Migración productiva: no ejecutada; Git/secret/rollback/readiness pendientes.
+- Deployment productivo `b35e075`: PASS; 10 migraciones, reinicio y smoke tests autenticados PASS. Git privado, rotación y clasificación total siguen pendientes.
 - Preflight Ubuntu read-only 2026-08-09: servicio activo y rollback SHA `ec43b36`; deployment bloqueado antes de escrituras por 54 entradas tracked + 192 untracked y gates Git/rotación pendientes.

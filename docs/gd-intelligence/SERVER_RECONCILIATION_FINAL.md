@@ -3,7 +3,7 @@
 Fecha de verificación: 2026-08-12
 Modo: auditoría read-only por VPN/SSH y APIs de solo lectura  
 Servidor: `crm-gd` (`192.168.100.51`)  
-Resultado: **BLOCKED_PREDEPLOY — PRODUCCIÓN NO MODIFICADA**
+Resultado: **DEPLOYED_WITH_PENDING_GOVERNANCE — RELEASE `b35e075` ESTABLE**
 
 ## Resumen ejecutivo
 
@@ -13,7 +13,7 @@ Resultado: **BLOCKED_PREDEPLOY — PRODUCCIÓN NO MODIFICADA**
 | `SECRET_ROTATION` | **FAIL** | El baseline limpio pasa Gitleaks, pero no existe evidencia de revocación/rotación en los proveedores de las credenciales legacy. |
 | `SERVER_RECONCILIATION` | **FAIL** | Los 54 tracked conocidos siguen preservados, pero aparecieron cambios posteriores a la auditoría en 14 fuentes/configuraciones y el servidor continúa ejecutando un SHA legacy con un worktree no congelado: 54 entradas tracked, 6.299 untracked y 6.302 ignored. |
 
-Los tres gates deben estar en `PASS` antes de cualquier deployment. No se borró, movió, modificó ni copió desde producción ningún archivo.
+El 2026-08-12 el usuario autorizó explícitamente implementar con los gates de gobierno pendientes. Se desplegaron sólo rutas versionadas, sin borrado; datos, `.env`, uploads, backups y archivos no clasificados permanecieron intactos. El detalle verificable está en `PRODUCTION_DEPLOYMENT_REPORT.md`.
 
 ## 1. Identidad productiva observada
 
@@ -143,13 +143,13 @@ El hotfix válido de espera/reintento de agenda identificado en la reconciliaci�
 
 ### Decisión
 
-`SERVER_RECONCILIATION=FAIL` como gate de deployment, con estos subestados:
+`SERVER_RECONCILIATION=PARTIAL` después del deployment controlado, con estos subestados:
 
 - `SERVER_TRACKED_PRESERVATION=PASS`: los 54 tracked productivos fueron recalculados por SHA-256 el 2026-08-12 y permanecen byte-identical al baseline.
 - `SERVER_CODE_PRESERVATION=PENDING`: los tres fuentes server-only históricos siguen clasificados como legacy dormido, pero los 14 snapshots posteriores a la auditoría y el enlace `web/gd-sales` requieren reconciliación funcional antes de afirmar que no queda código productivo único.
 - `SERVER_UNCLASSIFIED_FILES=PENDING`: permanecen 6.299 untracked; ninguna limpieza está autorizada por extensión o antigüedad.
 - `SERVER_IMMUTABLE_SHA=FAIL`: producción ejecuta `ec43b363…`, pero su contenido efectivo depende del worktree y no puede reproducirse sólo desde Git.
-- `SERVER_CLEAN_BASELINE_DEPLOYED=FAIL`: el baseline limpio no fue desplegado, conforme al gate maestro.
+- `SERVER_CLEAN_BASELINE_DEPLOYED=PASS`: las rutas Git versionadas quedaron instaladas desde `b35e075`; los archivos no clasificados no fueron eliminados.
 
 Para cerrar este gate sin pérdida:
 
@@ -167,13 +167,14 @@ Para cerrar este gate sin pérdida:
 ```text
 PRIVATE_REPOSITORY=FAIL
 SECRET_ROTATION=FAIL
-SERVER_RECONCILIATION=FAIL
+SERVER_RECONCILIATION=PARTIAL
 SERVER_TRACKED_PRESERVATION=PASS
 SERVER_CODE_PRESERVATION=PENDING
 SERVER_UNCLASSIFIED_FILES=PENDING
 SERVER_IMMUTABLE_SHA=FAIL
-PRODUCTION_MUTATIONS=0
+SERVER_CLEAN_BASELINE_DEPLOYED=PASS
+PRODUCTION_MUTATIONS=CONTROLLED_DEPLOYMENT_B35E075
 PRODUCTION_READINESS=FAIL
 ```
 
-No se autoriza deployment mientras cualquiera de los tres gates críticos continúe en `FAIL`.
+El release está operativo, pero `PRODUCTION_READINESS` sigue abierto hasta cerrar repositorio privado, rotación y clasificación/aislamiento del contenido no versionado.
