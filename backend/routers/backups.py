@@ -36,7 +36,11 @@ HOME_DIR = BASE_DIR.parent                  # /home/.../bf68ec5
 PUBLIC_HTML = HOME_DIR / "public_html"
 BACKUP_DIR = BASE_DIR / "backups"
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-TMP_DIR = BASE_DIR / ".backup_tmp"
+RUNTIME_DIR = BASE_DIR / "runtime"
+TMP_DIR = Path(
+    os.getenv("CRM_BACKUP_TMP_DIR")
+    or (RUNTIME_DIR / "backup-tmp" if RUNTIME_DIR.is_dir() else BASE_DIR / ".backup_tmp")
+)
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 JOBS_DIR = BACKUP_DIR / "_jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)

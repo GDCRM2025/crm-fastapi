@@ -88,6 +88,12 @@ class SuperadminVisibilityTests(unittest.TestCase):
             source = (root / relative).read_text(encoding="utf-8")
             self.assertIn("dependencies=[Depends(_superadmin_only)]", source)
 
+    def test_backups_use_shared_runtime_in_immutable_release(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "backend/routers/backups.py").read_text(encoding="utf-8")
+        self.assertIn('RUNTIME_DIR = BASE_DIR / "runtime"', source)
+        self.assertIn('RUNTIME_DIR / "backup-tmp"', source)
+
 
 if __name__ == "__main__":
     unittest.main()
