@@ -69,7 +69,8 @@ for migration in \
   migrations/2026_08_10_credential_vault.sql \
   migrations/2026_08_10_intelligence_platform.sql \
   migrations/2026_08_11_omnichannel_inbox.sql \
-  migrations/2026_08_12_integration_state_parity.sql; do
+  migrations/2026_08_12_integration_state_parity.sql \
+  migrations/2026_08_12_tracking_collector.sql; do
   "${PSQL}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -q -f "${migration}"
 done
 

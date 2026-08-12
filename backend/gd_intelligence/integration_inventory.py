@@ -68,7 +68,11 @@ def scan_public_integrations(domain: str) -> list[dict[str, Any]]:
     ga4_page = _ids(GA4_RE, page)
     clarity_ids = _ids(CLARITY_RE, combined)
     meta_ids = _ids(META_PIXEL_RE, combined)
-    tracker_seen = bool(re.search(r"gd[-_]tracker|first[ -]?party", container, re.I))
+    tracker_seen = bool(re.search(
+        r"<script[^>]+(?:src|data-[a-z-]+)=[\"'][^\"']*gd[-_]tracker(?:\.min)?\.js(?:\?[^\"']*)?[\"']",
+        page,
+        re.I,
+    ))
     gsc_seen = bool(re.search(r"google-site-verification", page, re.I))
     duplicate_ga4 = bool(gtm_ids and ga4_page and set(ga4_page) - set(ga4_container))
 

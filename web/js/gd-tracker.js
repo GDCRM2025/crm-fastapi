@@ -29,11 +29,15 @@
   function send(path, body) {
     return fetch(apiBase + path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body), keepalive: true}).catch(function () {});
   }
-  send("/api/gd-intelligence/tracking/session", {
+  send("/collect/v1/session", {
     site_code: siteCode, visitor_id: visitorId, session_id: sessionId,
     landing_url: location.href, referrer: document.referrer || null, utm: utm
   }).then(function () {
-    return send("/api/gd-intelligence/tracking/event", {
+    return send("/collect/v1/event", {
+      site_code: siteCode, session_id: sessionId, event_id: uuid(), event_type: "session_start", page_url: location.href
+    });
+  }).then(function () {
+    return send("/collect/v1/event", {
       site_code: siteCode, session_id: sessionId, event_id: uuid(), event_type: "page_view", page_url: location.href
     });
   });
@@ -50,7 +54,7 @@
         link.href = target.toString();
       }
     } catch (_) {}
-    send("/api/gd-intelligence/tracking/event", {
+    send("/collect/v1/event", {
       site_code: siteCode, session_id: sessionId, event_id: clickId,
       event_type: "click_whatsapp", page_url: location.href, metadata: {click_id: clickId}
     });

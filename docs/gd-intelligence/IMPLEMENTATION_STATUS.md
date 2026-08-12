@@ -13,7 +13,7 @@ SHA productivo inmutable: `ba89090c6d9d7c12a97fe638ad5ab9f16c3df58d`.
 | 4 GA4 | READY_FOR_CREDENTIAL | PASS | DISCOVERED_LOCAL | DEPLOYED | Measurement IDs 4/4; selector Property ID mediante credencial backend; credencial externa pendiente |
 | 5 Search Console | READY_FOR_CREDENTIAL | PASS | PARTIAL_LOCAL | DEPLOYED | Selector de propiedades backend listo; acceso externo pendiente |
 | 6 Dashboard web | DONE | PASS | DONE_LOCAL | DEPLOYED | Nueva sección lateral Resumen/Sitios/Site Health/UTM/Permisos; cuatro sitios reales del restore aislado |
-| 7 Tracking first-party | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | visitor/session persistentes, UTM/referrer/landing y click_whatsapp |
+| 7 Tracking first-party | COLLECTOR_READY | PASS | BLOCKED_NETWORK | NOT_INSTALLED_PUBLIC | collector mínimo validado; scripts ausentes 4/4 y borde público seguro pendiente |
 | 8 Atribución | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | sesión→lead automática, first/last touch, método/confidence y RBAC |
 | 9 PageSpeed | PARTIAL | PASS | ORIGINS_DISCOVERED | DEPLOYED | Parser lab/field y orígenes listos; API key pendiente |
 | 10 CrUX | PARTIAL | PASS | ORIGINS_DISCOVERED | DEPLOYED | Orígenes listos; disponibilidad/API pendiente, datos ausentes no se fabrican |
@@ -75,7 +75,7 @@ SHA productivo inmutable: `ba89090c6d9d7c12a97fe638ad5ab9f16c3df58d`.
 
 ## Evidencia actual
 
-- 125 pruebas unitarias/contrato CRM, GD Intelligence, almacenamiento persistente, Omnichannel, bootstrap y reconciliación: PASS; 0 fallas.
+- 142 pruebas unitarias/contrato CRM, GD Intelligence, almacenamiento persistente, Omnichannel, WABA contextual, collector, bootstrap y reconciliación: PASS; 0 fallas.
 - OpenAPI local incorpora 16 rutas nuevas de inteligencia real y Omnichannel; `/healthz` PASS.
 - Google Ads y Meta Ads no se marcan conectados: los conectores, selectores y sync están listos, pero las credenciales externas autorizadas no existen en el entorno. Meta pagina por cursor sin seguir URLs absolutas que puedan contener token, sanea activos anidados e ingiere `action_values`.
 - Inbox local usa datos reales: WhatsApp 1 conversación/1 lead; Email 199 registros consultados/8 leads/31 cotizaciones; Instagram y Messenger 0 registros. No se inventaron ventas ni revenue.
@@ -100,11 +100,12 @@ SHA productivo inmutable: `ba89090c6d9d7c12a97fe638ad5ab9f16c3df58d`.
 - Migraciones GD Intelligence ejecutadas dos veces en restore: PASS; core intacto.
 - Migración Site Health ejecutada dos veces en restore: PASS; cuatro resultados almacenados por ejecución.
 - Arranque Mac desde cero: PASS; navegador cerrado, PostgreSQL/FastAPI detenidos, arranque por `MAC_SETUP.md`, sesión limpia, login y cuatro sitios visibles.
-- Inventario público: GTM, GA4 y GD Tracker detectados en 4/4; Clarity 0/4; secretos no consultados ni persistidos.
+- Inventario público corregido: GTM y GA4 detectados; `gd-tracker.js` y `data-site-code` ausentes 4/4; Clarity 0/4. El falso positivo de GD Tracker se eliminó y no se consultaron ni persistieron secretos.
 - Integration Center muestra detectado, faltante, última verificación/sync, last-known-good y acción; PageSpeed puede configurarse desde CRM sin terminal.
 - Creación manual usa orígenes comerciales y campaña opcional; no expone campos UTM al Ejecutivo.
 - WABA dispone de reglas explícitas de confidence y no atribuye sin evidencia suficiente.
-- Paridad P0 de Integration Center: PASS. Producción detecta 16 instalaciones públicas; 0 APIs conectadas; 20 capacidades listas para credencial; 4 requieren atención; 4 no configuradas; 0 errores. Tracking está instalado 4/4 y permanece `NO_DATA` porque no existen sesiones/eventos reales todavía.
+- Paridad visual P0 permanece operativa, pero la verdad de discovery de GD Tracker requiere el release P1: el estado correcto de los cuatro sitios es `NOT_CONFIGURED`, no `NO_DATA`. El collector está listo en baseline; `TRACKING_DATA=BLOCKED_NETWORK` hasta publicar un borde exclusivo y completar navegador → evento → PostgreSQL productivo.
+- WABA contextual P1: acciones comerciales reales por clic derecho/pulsación larga, sin auto-send y sin endpoints Meta ficticios; liberación productiva agrupada con la corrección de discovery.
 - Cutover inmutable `babfea8`: PASS; candidato aislado, migración idempotente, QA visual, Vault persistente, todos los routers cargados y smoke tests ampliados PASS. Rollback `8600cc2` listo y no ejecutado. Git privado y rotación de credenciales históricas siguen pendientes.
 - Hotfix crítico PDF `ba89090`: PASS. El generador de cotizaciones usa `/opt/greendiamond/shared/persistent-data/data/quotes`, no escribe dentro del release inmutable. PDF real verificado HTTP 200, `application/pdf`, `%PDF`, descarga attachment y archivo persistente; rollback `babfea8` listo y no ejecutado.
 - Preflight Ubuntu read-only 2026-08-09: servicio activo y rollback SHA `ec43b36`; deployment bloqueado antes de escrituras por 54 entradas tracked + 192 untracked y gates Git/rotación pendientes.

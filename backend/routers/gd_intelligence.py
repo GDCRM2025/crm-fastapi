@@ -450,6 +450,34 @@ def tracking_event(payload: dict = Body(...)):
     return {"ok": True, "item": item}
 
 
+@router.get("/tracking/metrics")
+def tracking_metrics(user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        _require(conn, user, "web_intelligence_view")
+        ready = conn.execute(text("SELECT to_regclass('public.wi_tracking_collector_metrics') IS NOT NULL")).scalar()
+        if not ready:
+            return {"ok": True, "status": "MIGRATION_REQUIRED", "totals": {}, "events_by_site": []}
+        rows = conn.execute(text("""
+          SELECT site_code,
+                 sum(events_received)::bigint AS events_received,
+                 sum(events_accepted)::bigint AS events_accepted,
+                 sum(events_rejected)::bigint AS events_rejected,
+                 sum(sessions_created)::bigint AS sessions_created,
+                 sum(duplicate_events)::bigint AS duplicate_events,
+                 max(last_event_at) AS last_event_at
+          FROM public.wi_tracking_collector_metrics
+          WHERE metric_date >= CURRENT_DATE - 30
+          GROUP BY site_code ORDER BY site_code
+        """)).mappings().all()
+        items = [dict(row) for row in rows]
+        totals = {
+            key: sum(int(item.get(key) or 0) for item in items)
+            for key in ("events_received", "events_accepted", "events_rejected", "sessions_created", "duplicate_events")
+        }
+        totals["last_event_at"] = max((item.get("last_event_at") for item in items if item.get("last_event_at")), default=None)
+    return {"ok": True, "status": "REAL" if totals["events_accepted"] else "NO_DATA", "totals": totals, "events_by_site": items}
+
+
 @router.put("/web/sites/{site_id}/integrations/{provider}")
 def integration_public_update(
     site_id: int,
