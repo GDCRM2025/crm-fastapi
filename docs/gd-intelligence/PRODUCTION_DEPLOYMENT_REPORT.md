@@ -3,6 +3,20 @@
 Fecha: 2026-08-12
 Resultado: **IMMUTABLE_CUTOVER_PASS**
 
+## Hotfix crítico — disponibilidad de Agenda
+
+Release activo: `b14d547ca2f92fe6bcb2c9b87e22364fa24c51b7`. Rollback inmediato: `4cd4321564b7f3279a2c32e9b049b8ac79bf7453`.
+
+El lock global de Google Calendar serializaba todas las marcas y produjo los `503 Agenda ocupada`. El hotfix usa locks por lead, conserva idempotencia y agrega timeout HTTP de 20 segundos. La recuperación ya no termina conexiones activas después de 90 segundos.
+
+- Backup y checksums: `docs/development/AGENDA_INCIDENT_2026_08_12.md`.
+- 146 tests PASS, 0 FAIL; candidato y post-cutover PASS.
+- Health, login, Leads, Agenda, Cotizador y WABA: HTTP 200.
+- Replay de un lead ya confirmado: idempotente, evento existente preservado.
+- Locks de agenda posteriores: 0; Router SKIP: 0; tracebacks: 0.
+- Lead afectado 3903: pendiente, sin evento y listo para reintento; no se fabricó una confirmación.
+- El candidato 9090 fue detenido. `ROLLBACK_EXECUTED=NO`.
+
 ## Release P1 — WABA contextual y verdad de Tracking
 
 Release activo: `4cd4321564b7f3279a2c32e9b049b8ac79bf7453`. Rollback inmediato: `ba89090c6d9d7c12a97fe638ad5ab9f16c3df58d`.
