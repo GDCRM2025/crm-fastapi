@@ -2754,7 +2754,9 @@ def move_lead_and_maybe_agenda(
             if segments:
                 segments_used = True
 
-        # Montaje previo (evento separado)
+        # Montaje operativo: sólo Calendar. No crea un segundo evento CRM ni financiero.
+        # Su fecha/hora es independiente del evento comercial: puede ser antes, el mismo
+        # día o después, según la necesidad real de operaciones.
         montaje_event = payload.get("montaje_event") or payload.get("montaje_previo") or None
         montaje_ev: dict | None = None
         if isinstance(montaje_event, dict):
@@ -3056,7 +3058,7 @@ def move_lead_and_maybe_agenda(
                     )
                 )
 
-        # Inserta evento montaje previo (si viene) al inicio (para que se vea primero).
+        # Agrega el montaje al plan de Calendar sin convertirlo en el evento principal CRM.
         if montaje_ev:
             try:
                 mt_txt = (override_montaje_global or "").strip() or (montaje_text or "").strip()
@@ -3073,16 +3075,25 @@ def move_lead_and_maybe_agenda(
                     start_time=str(montaje_ev.get("start_time") or ""),
                     end_time=str(montaje_ev.get("end_time") or ""),
                     hr_tbd=False,
-                    ops=1,
-                    products_text="• —",
+                    ops=max(1, int(ops or 1)),
+                    # El montaje usa los mismos equipos de la cotización/evento comercial.
+                    products_text=str(products_text or "").strip() or "• Equipos del evento comercial",
                     montaje_text=str(mt_txt or "").strip() or "• —",
                     label="MONTAJE",
                 )
-                eventos.insert(0, evm)
+                evm["calendar_only"] = True
+                evm["calendar_kind"] = "MOUNTING"
+                evm["calendar_key"] = "mounting:%s:%s:%s" % (
+                    montaje_ev["day"].isoformat(),
+                    montaje_ev["start_time"],
+                    montaje_ev["end_time"],
+                )
+                eventos.append(evm)
             except Exception:
                 pass
 
-        ev = eventos[0] if eventos else None
+        commercial_events = [item for item in eventos if not bool(item.get("calendar_only"))]
+        ev = commercial_events[0] if commercial_events else None
         if not ev:
             raise HTTPException(500, detail="No se pudo construir el evento para agendar")
 
@@ -3107,6 +3118,8 @@ def move_lead_and_maybe_agenda(
                         "ops": e.get("ops"),
                         "montaje_text": e.get("montaje_text"),
                         "products_text": e.get("products_text"),
+                        "calendar_only": bool(e.get("calendar_only")),
+                        "calendar_kind": e.get("calendar_kind") or "COMMERCIAL",
                     }
                     for e in (eventos or [])
                 ],
@@ -3123,6 +3136,8 @@ def move_lead_and_maybe_agenda(
                     "ops": ev.get("ops"),
                     "montaje_text": ev.get("montaje_text"),
                     "products_text": ev.get("products_text"),
+                    "calendar_only": False,
+                    "calendar_kind": "COMMERCIAL",
                 },
             }
 
@@ -3496,6 +3511,8 @@ def move_lead_and_maybe_agenda(
                     "ops": e.get("ops"),
                     "montaje_text": e.get("montaje_text"),
                     "products_text": e.get("products_text"),
+                    "calendar_only": bool(e.get("calendar_only")),
+                    "calendar_kind": e.get("calendar_kind") or "COMMERCIAL",
                 }
                 for e in (eventos or [])
             ],

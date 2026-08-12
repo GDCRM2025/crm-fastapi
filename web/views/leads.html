@@ -2809,7 +2809,7 @@ async function handleConfirmado(lead, newEstado, movementComment=""){
           </label>
           <label style="display:flex;align-items:center;gap:8px;margin-top:26px">
             <input id="ag_flag_montaje_event" type="checkbox" />
-            <span class="muted" style="font-weight:1000">Agendar montaje previo</span>
+            <span class="muted" style="font-weight:1000">Agregar montaje al Calendar</span>
           </label>
         </div>
 
@@ -2820,8 +2820,8 @@ async function handleConfirmado(lead, newEstado, movementComment=""){
         </div>
 
         <div id="ag_montaje_event_box" style="display:none;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.08);display:grid;gap:10px">
-          <div class="muted" style="font-weight:1100">Montaje previo (evento separado)</div>
-          <div class="muted agSmall">Se crea un evento adicional “MONTAJE …” con fecha/hora/dirección. Montaje general se usa como descripción.</div>
+          <div class="muted" style="font-weight:1100">Montaje operativo · sólo Calendar</div>
+          <div class="muted agSmall">Es independiente del evento comercial: puede ser el día anterior, el mismo día o después. Usa automáticamente los mismos equipos de la cotización. No crea un segundo evento CRM ni financiero.</div>
           <div class="agRow" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
             <label class="agLabel" style="width:180px">
               <div class="muted">Día montaje</div>
@@ -2844,6 +2844,7 @@ async function handleConfirmado(lead, newEstado, movementComment=""){
             <div class="muted">Dirección</div>
             <input id="ag_mont_dir" class="swInp" placeholder="Ej: Av. Apoquindo 2730" />
           </label>
+          <div id="ag_mont_schedule_hint" class="muted agSmall" aria-live="polite">Selecciona fecha y horario independiente para el montaje.</div>
         </div>
 
         <div id="ag_setup_editor" style="display:grid;gap:10px">
@@ -3901,6 +3902,21 @@ async function handleConfirmado(lead, newEstado, movementComment=""){
           if (row.ops != null || row.montaje_text) overrideByDay.push(row);
         }
       }catch(_){}
+
+      const updateMountingScheduleHint = ()=>{
+        const hint = qs("#ag_mont_schedule_hint");
+        if (!hint) return;
+        const eventDay = String(lead.fecha_evento || "").slice(0,10);
+        const mountingDay = String(qs("#ag_mont_day")?.value || "").slice(0,10);
+        if (!eventDay || !mountingDay) { hint.textContent = "Selecciona fecha y horario independiente para el montaje."; return; }
+        if (mountingDay < eventDay) hint.textContent = "Montaje antes del evento comercial. Se verá sólo como evento operativo en Calendar.";
+        else if (mountingDay === eventDay) hint.textContent = "Montaje el mismo día. Revisa que termine antes del inicio del evento comercial.";
+        else hint.textContent = "Montaje posterior al evento comercial. Confirma que es la operación requerida.";
+      };
+      qs("#ag_mont_day")?.addEventListener("change", updateMountingScheduleHint);
+      qs("#ag_mont_hini")?.addEventListener("change", updateMountingScheduleHint);
+      qs("#ag_mont_hfin")?.addEventListener("change", updateMountingScheduleHint);
+      updateMountingScheduleHint();
       const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
         method:"POST",
         headers: {"Content-Type":"application/json"},

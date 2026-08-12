@@ -6914,7 +6914,7 @@ def approve_agenda(
 
         to_create: list[dict] = []
         if isinstance(plan, list) and plan:
-            for e in plan:
+            for index, e in enumerate(plan, start=1):
                 if not isinstance(e, dict):
                     continue
                 st = _as_dt(e.get("start_at"))
@@ -6929,6 +6929,9 @@ def approve_agenda(
                         "description": str(e.get("description") or details or ""),
                         "start": st,
                         "end": en,
+                        "calendar_only": bool(e.get("calendar_only")),
+                        "calendar_kind": str(e.get("calendar_kind") or ("MOUNTING" if e.get("calendar_only") else "COMMERCIAL")),
+                        "calendar_key": str(e.get("calendar_key") or ("commercial:%s:%s" % (st.date().isoformat(), index))),
                     }
                 )
         else:
@@ -6943,6 +6946,9 @@ def approve_agenda(
                         "description": details or "",
                         "start": st,
                         "end": en,
+                        "calendar_only": False,
+                        "calendar_kind": "COMMERCIAL",
+                        "calendar_key": "commercial:%s:1" % st.date().isoformat(),
                     }
                 ]
 
@@ -6950,7 +6956,7 @@ def approve_agenda(
         if not to_create:
             st = _as_dt(start) or datetime.now(tz)
             en = _as_dt(end) or (st + timedelta(hours=2))
-            to_create = [{"day": st.date().isoformat(), "title": title, "location": loc, "description": details or "", "start": st, "end": en}]
+            to_create = [{"day": st.date().isoformat(), "title": title, "location": loc, "description": details or "", "start": st, "end": en, "calendar_only": False, "calendar_kind": "COMMERCIAL", "calendar_key": "commercial:%s:1" % st.date().isoformat()}]
 
         links: list[str] = []
         event_ids: list[str | None] = []
@@ -6963,7 +6969,7 @@ def approve_agenda(
             connected = True
             cal_id = _gcal_default_calendar_id(db, None)
             for ev2 in to_create:
-                lead_key = f"{id_lead}:{ev2.get('day')}"
+                lead_key = f"{id_lead}:{ev2.get('calendar_key') or ev2.get('day')}"
                 cal_id_used = cal_id
                 try:
                     # 1) Intento encontrar evento existente (idempotencia).
@@ -7058,8 +7064,11 @@ def approve_agenda(
                 event_ids.append(None)
                 calendar_ids.append("")
 
-        first_link = links[0] if links else _gcal_link(title, to_create[0]["start"], to_create[0]["end"], details=details, location=loc)
-        first_eid = event_ids[0] if event_ids else None
+        primary_indexes = [index for index, item in enumerate(to_create) if not bool(item.get("calendar_only"))]
+        primary_index = primary_indexes[0] if primary_indexes else 0
+        primary_event = to_create[primary_index]
+        first_link = links[primary_index] if len(links) > primary_index else _gcal_link(title, primary_event["start"], primary_event["end"], details=details, location=loc)
+        first_eid = event_ids[primary_index] if len(event_ids) > primary_index else None
 
         # Regla UX (urgente): evitar "tengo que hacerlo dos veces".
         # Consideramos "aprobado" si logramos crear/actualizar AL MENOS 1 evento real (event_id),
@@ -7068,14 +7077,16 @@ def approve_agenda(
         # - Pero SÍ guardamos calendar_* y el lead puede pasar a CONFIRMADO (venta).
         ok_ids = [str(eid).strip() for eid in (event_ids or []) if eid is not None and str(eid).strip()]
         ok_any = bool(connected) and bool(event_ids) and bool(ok_ids)
+        ok_primary = bool(connected) and any(index < len(event_ids) and str(event_ids[index] or "").strip() for index in primary_indexes)
         ok_all = ok_any and (len(ok_ids) == len(event_ids))
-        ok_calendar = ok_any
+        ok_calendar = ok_primary
 
         # Anchor: si el primer evento falló pero otro sí se creó, no guardemos eid/link vacíos.
         if ok_any and event_ids and links:
             try:
                 anchor_idx = None
-                for i, eid in enumerate(event_ids):
+                for i in primary_indexes:
+                    eid = event_ids[i] if i < len(event_ids) else None
                     if eid is not None and str(eid).strip():
                         anchor_idx = i
                         break
@@ -7115,8 +7126,8 @@ def approve_agenda(
                 """
             ),
             {
-                "s": to_create[0]["start"],
-                "e": to_create[0]["end"],
+                "s": primary_event["start"],
+                "e": primary_event["end"],
                 "conf": int(confirmado_id) if confirmado_id else None,
                 "decl": int(declinado_id) if declinado_id else None,
                 "lnk": first_link,
