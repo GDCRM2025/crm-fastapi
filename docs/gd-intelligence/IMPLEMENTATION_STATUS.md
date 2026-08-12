@@ -2,7 +2,7 @@
 
 Actualizado: 2026-08-12
 
-SHA funcional local validado: `6c62b4b` (inteligencia con fuentes reales, Ads read-only y Omnichannel; sin deployment).
+SHA funcional local validado: `8c9697a` (inteligencia con fuentes reales, Ads read-only, Omnichannel y hotfixes reconciliados; sin deployment).
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
