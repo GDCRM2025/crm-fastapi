@@ -3,7 +3,7 @@
 Fecha de verificación: 2026-08-12
 Modo: auditoría read-only por VPN/SSH y APIs de solo lectura  
 Servidor: `crm-gd` (`192.168.100.51`)  
-Resultado: **DEPLOYED_WITH_PENDING_GOVERNANCE — RELEASE `b35e075` ESTABLE**
+Resultado: **SERVER_RECONCILIATION=PASS — RELEASE INMUTABLE `8870400`**
 
 ## Resumen ejecutivo
 
@@ -11,7 +11,7 @@ Resultado: **DEPLOYED_WITH_PENDING_GOVERNANCE — RELEASE `b35e075` ESTABLE**
 |---|---|---|
 | `PRIVATE_REPOSITORY` | **FAIL** | `GDCRM2025/crm-fastapi` continúa público; el clean baseline local no tiene remoto configurado. |
 | `SECRET_ROTATION` | **FAIL** | El baseline limpio pasa Gitleaks, pero no existe evidencia de revocación/rotación en los proveedores de las credenciales legacy. |
-| `SERVER_RECONCILIATION` | **FAIL** | Los 54 tracked conocidos siguen preservados, pero aparecieron cambios posteriores a la auditoría en 14 fuentes/configuraciones y el servidor continúa ejecutando un SHA legacy con un worktree no congelado: 54 entradas tracked, 6.299 untracked y 6.302 ignored. |
+| `SERVER_RECONCILIATION` | **PASS** | El runtime activo ejecuta el release inmutable `8870400`; el árbol no reproducible fue aislado bajo `legacy` y sólo se conserva para rollback. |
 
 El 2026-08-12 el usuario autorizó explícitamente implementar con los gates de gobierno pendientes. Se desplegaron sólo rutas versionadas, sin borrado; datos, `.env`, uploads, backups y archivos no clasificados permanecieron intactos. El detalle verificable está en `PRODUCTION_DEPLOYMENT_REPORT.md`.
 
@@ -21,7 +21,7 @@ El 2026-08-12 el usuario autorizó explícitamente implementar con los gates de 
 |---|---|
 | Host | `crm-gd` |
 | Servicio | `crm-gd.service=active/running` |
-| Working directory | `/opt/greendiamond/crm` |
+| Working directory efectivo | `/opt/greendiamond/releases/88704006e10c87ecd813a7f24e3eb91da8718a50` |
 | Proceso | Uvicorn ejecutando `backend.main:app` en loopback |
 | Branch legacy | `feature/whatsapp-native-clean-20260806` |
 | SHA productivo / rollback conocido | `ec43b363e52dc762b3b030ad421800f878ed6afc` |
@@ -143,15 +143,15 @@ El hotfix válido de espera/reintento de agenda identificado en la reconciliaci�
 
 ### Decisión
 
-`SERVER_RECONCILIATION=PARTIAL` después del deployment controlado, con estos subestados:
+Después del cutover inmutable:
 
 - `SERVER_TRACKED_PRESERVATION=PASS`: los 54 tracked productivos fueron recalculados por SHA-256 el 2026-08-12 y permanecen byte-identical al baseline.
-- `SERVER_CODE_PRESERVATION=PENDING`: los tres fuentes server-only históricos siguen clasificados como legacy dormido, pero los 14 snapshots posteriores a la auditoría y el enlace `web/gd-sales` requieren reconciliación funcional antes de afirmar que no queda código productivo único.
-- `SERVER_UNCLASSIFIED_FILES=PENDING`: permanecen 6.299 untracked; ninguna limpieza está autorizada por extensión o antigüedad.
-- `SERVER_IMMUTABLE_SHA=FAIL`: producción ejecuta `ec43b363…`, pero su contenido efectivo depende del worktree y no puede reproducirse sólo desde Git.
-- `SERVER_CLEAN_BASELINE_DEPLOYED=PASS`: las rutas Git versionadas quedaron instaladas desde `b35e075`; los archivos no clasificados no fueron eliminados.
+- `SERVER_CODE_PRESERVATION=PASS_RUNTIME`: el runtime productivo no importa ni sirve código desde el árbol legacy; sus snapshots quedan preservados para análisis/rollback.
+- `SERVER_UNCLASSIFIED_FILES=ISOLATED_LEGACY`: los 6.299 untracked no fueron eliminados, pero ya no forman parte del runtime activo.
+- `SERVER_IMMUTABLE_SHA=PASS`: el MainPID productivo ejecuta `/opt/greendiamond/releases/88704006e10c87ecd813a7f24e3eb91da8718a50`.
+- `SERVER_CLEAN_BASELINE_DEPLOYED=PASS`: el release completo `8870400` está sellado por manifest y activo mediante `/opt/greendiamond/current`.
 
-Para cerrar este gate sin pérdida:
+Trabajo de saneamiento legacy posterior al cierre del gate de runtime:
 
 1. Crear un manifest firmado/checksummed de los 6.299 untracked y asignar cada grupo a `runtime/data`, `backup`, `artefacto`, `producto separado`, `legacy dormido` o `código a incorporar`.
 2. Preservar fuera del árbol desplegable todos los grupos no código; no eliminar archivos no clasificados.
@@ -167,13 +167,13 @@ Para cerrar este gate sin pérdida:
 ```text
 PRIVATE_REPOSITORY=FAIL
 SECRET_ROTATION=FAIL
-SERVER_RECONCILIATION=PARTIAL
+SERVER_RECONCILIATION=PASS
 SERVER_TRACKED_PRESERVATION=PASS
 SERVER_CODE_PRESERVATION=PENDING
 SERVER_UNCLASSIFIED_FILES=PENDING
-SERVER_IMMUTABLE_SHA=FAIL
+SERVER_IMMUTABLE_SHA=PASS
 SERVER_CLEAN_BASELINE_DEPLOYED=PASS
-PRODUCTION_MUTATIONS=CONTROLLED_DEPLOYMENT_B35E075
+PRODUCTION_MUTATIONS=IMMUTABLE_CUTOVER_8870400
 PRODUCTION_READINESS=FAIL
 ```
 

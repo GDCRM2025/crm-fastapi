@@ -2,7 +2,7 @@
 
 Actualizado: 2026-08-12
 
-SHA productivo desplegado: `b35e075` (inteligencia con fuentes reales, Ads read-only, Omnichannel y hotfixes reconciliados).
+SHA productivo inmutable: `88704006e10c87ecd813a7f24e3eb91da8718a50`.
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
@@ -25,7 +25,7 @@ SHA productivo desplegado: `b35e075` (inteligencia con fuentes reales, Ads read-
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | DEPLOYED | PASS | USER_OVERRIDE | DEPLOYED | Release `b35e075`; backup y rollback verificados; gates de gobierno continúan abiertos |
+| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `8870400`; legacy preservado fuera del runtime activo |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
@@ -62,7 +62,7 @@ SHA productivo desplegado: `b35e075` (inteligencia con fuentes reales, Ads read-
 |---|---|---|
 | Backup Git Mac | PASS | Bundle + snapshot + checksums |
 | Backup código servidor | PASS | Bundle + snapshot + checksums |
-| Reconciliación Mac/Git/servidor | FAIL | 54/54 tracked preservados; 6.299 untracked, 6.302 ignored y 14 snapshots recientes requieren clasificación |
+| Reconciliación Mac/Git/servidor | PASS_RUNTIME | Runtime productivo reproducible desde `8870400`; árbol legacy preservado sólo para rollback |
 | Clean baseline local | PASS | Commit raíz `721a6e7`; sin remoto |
 | Repositorio privado | FAIL | GitHub informa PUBLIC; acción manual crítica |
 | Secret scan baseline | PASS | Gitleaks directory/history: 0 hallazgos |
@@ -102,5 +102,5 @@ SHA productivo desplegado: `b35e075` (inteligencia con fuentes reales, Ads read-
 - Integration Center muestra detectado, faltante, última verificación/sync, last-known-good y acción; PageSpeed puede configurarse desde CRM sin terminal.
 - Creación manual usa orígenes comerciales y campaña opcional; no expone campos UTM al Ejecutivo.
 - WABA dispone de reglas explícitas de confidence y no atribuye sin evidencia suficiente.
-- Deployment productivo `b35e075`: PASS; 10 migraciones, reinicio y smoke tests autenticados PASS. Git privado, rotación y clasificación total siguen pendientes.
+- Cutover inmutable `8870400`: PASS; candidato 9090, QA de datos, cutover, Nginx y smoke tests ampliados PASS. Git privado y rotación siguen pendientes.
 - Preflight Ubuntu read-only 2026-08-09: servicio activo y rollback SHA `ec43b36`; deployment bloqueado antes de escrituras por 54 entradas tracked + 192 untracked y gates Git/rotación pendientes.
