@@ -62,12 +62,23 @@ def load_bootstrap_credential(name: str) -> BootstrapCredential | None:
             return found
 
     configured_file = str(os.getenv(file_env_name) or "").strip()
-    candidates = [Path(configured_file).expanduser()] if configured_file else [
-        Path("/etc/greendiamond/secrets") / name,
-        Path("/opt/greendiamond/shared/secrets/bootstrap") / name,
-    ]
-    for path in candidates:
-        found = _read_secret_file(path, source="SECURE_FILE", strict_permissions=True)
+    if configured_file:
+        candidates = [(Path(configured_file).expanduser(), True)]
+    else:
+        candidates = [
+            (Path("/etc/greendiamond/secrets") / name, False),
+            (Path("/opt/greendiamond/shared/secrets/bootstrap") / name, True),
+        ]
+    for path, required_if_present in candidates:
+        try:
+            found = _read_secret_file(path, source="SECURE_FILE", strict_permissions=True)
+        except BootstrapCredentialError:
+            # A root-only /etc parent may be intentionally non-traversable to
+            # the service user. In that case continue to the supported shared
+            # fallback. An explicitly configured or shared file still fails closed.
+            if required_if_present:
+                raise
+            continue
         if found:
             return found
 

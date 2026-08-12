@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.core.bootstrap_credentials import BootstrapCredentialError, load_bootstrap_credential
+from backend.core.bootstrap_credentials import BootstrapCredential, BootstrapCredentialError, load_bootstrap_credential
 from backend.gd_intelligence.permissions import is_superadmin
 
 
@@ -57,6 +57,18 @@ class BootstrapCredentialTests(unittest.TestCase):
         with patch.dict(os.environ, env, clear=False):
             item = load_bootstrap_credential("database_url")
         self.assertEqual(item.source, "LEGACY_ENV")
+
+    def test_inaccessible_default_candidate_does_not_block_secure_fallback(self):
+        env = self._base_env()
+        with patch.dict(os.environ, env, clear=False), patch(
+            "backend.core.bootstrap_credentials._read_secret_file",
+            side_effect=[
+                BootstrapCredentialError("root-only parent"),
+                BootstrapCredential("safe", "SECURE_FILE"),
+            ],
+        ):
+            item = load_bootstrap_credential("database_url")
+        self.assertEqual(item.value, "safe")
 
 
 class SuperadminVisibilityTests(unittest.TestCase):
