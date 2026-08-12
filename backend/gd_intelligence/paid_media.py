@@ -36,6 +36,10 @@ def parse_google_ads_row(row: dict[str, Any]) -> dict[str, Any]:
 
 def parse_meta_ads_row(row: dict[str, Any]) -> dict[str, Any]:
     actions = {str(x.get("action_type")): float(x.get("value") or 0) for x in (row.get("actions") or [])}
+    action_values = {str(x.get("action_type")): float(x.get("value") or 0) for x in (row.get("action_values") or [])}
+    conversion_value = next((action_values[key] for key in (
+        "omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase", "lead", "offsite_conversion.fb_pixel_lead"
+    ) if key in action_values), 0.0)
     return {
         "date": row.get("date_start"), "campaign_id": str(row.get("campaign_id") or ""),
         "campaign_name": row.get("campaign_name"), "ad_group_id": str(row.get("adset_id") or ""),
@@ -43,6 +47,7 @@ def parse_meta_ads_row(row: dict[str, Any]) -> dict[str, Any]:
         "impressions": int(row.get("impressions") or 0), "reach": int(row.get("reach") or 0),
         "frequency": float(row.get("frequency") or 0), "clicks": int(row.get("clicks") or 0),
         "conversions": actions.get("lead", actions.get("offsite_conversion.fb_pixel_lead", 0.0)),
+        "conversion_value": conversion_value,
     }
 
 

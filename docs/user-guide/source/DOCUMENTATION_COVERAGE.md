@@ -19,10 +19,10 @@ El botón global `?` envía el `screen_id` activo al motor. Esta tabla separa ac
 | gdi_health | Site Health | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
 | gdi_utm | Constructor UTM | PASS | CONTEXTUAL |
 | gdi_paid_media | Paid Media | PASS | CONTEXTUAL |
-| gdi_search_terms | Search Terms | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
-| gdi_seo | Oportunidades SEO | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
-| gdi_alerts | Alertas Intelligence | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
-| gdi_executive | Dashboard Ejecutivo | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
+| gdi_search_terms | Search Terms | PASS | CONTEXTUAL |
+| gdi_seo | Oportunidades SEO | PASS | CONTEXTUAL |
+| gdi_alerts | Alertas Intelligence | PASS | CONTEXTUAL |
+| gdi_executive | Dashboard Ejecutivo | PASS | CONTEXTUAL |
 | gdi_permissions | Permisos GD | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
 | emkt_email | Email marketing | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
 | op_rec | Recetas | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
@@ -59,7 +59,7 @@ El botón global `?` envía el `screen_id` activo al motor. Esta tabla separa ac
 | rrhh_hub | RRHH | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
 | rrhh_mark_plan | Turnos (planificador) | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
 | rrhh_turnos_visor | Mi turno (teórico vs real) | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
-| tool_inbox | Inbox omnicanal | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
+| tool_inbox | Inbox omnicanal | PASS | CONTEXTUAL |
 | tool_gmail | Correo | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
 | tool_ig | Instagram | PASS | PENDIENTE DE ARTÍCULO ESPECÍFICO |
 | tool_wapp | WhatsApp | PASS | CONTEXTUAL |

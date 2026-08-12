@@ -1,6 +1,6 @@
 # Inteligencia con datos reales
 
-Actualizado: 2026-08-09
+Actualizado: 2026-08-12
 
 ## Principio operativo
 
@@ -17,9 +17,9 @@ Los módulos distinguen explícitamente entre motor disponible, autorización ex
 
 ## Meta Ads
 
-- Adaptador Graph API exclusivamente GET.
+- Adaptador Graph API exclusivamente GET, con paginación por cursor sobre el host configurado.
 - Lista Business, Ad Account, Page e Instagram Business Account.
-- Sincroniza Campaign, Ad Set, Ad, Creative asociado e insights diarios.
+- Sincroniza Campaign, Ad Set, Ad, Creative asociado, insights diarios y `action_values` disponibles.
 - Estado local: `READY_FOR_CREDENTIAL`; no existe token Marketing API autorizado ni histórico importado.
 
 ## Paid Media Intelligence

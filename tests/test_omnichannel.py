@@ -25,6 +25,18 @@ class OmnichannelCapabilityTests(unittest.TestCase):
         self.assertFalse(payload["MESSENGER"]["reply"])
         self.assertEqual(payload["INSTAGRAM"]["state"], "RECEIVE_ONLY")
 
+    def test_action_routes_target_existing_tools_shell(self):
+        payload = {item["channel"]: item for item in capability_payload()}
+        for channel, fragment in {
+            "WHATSAPP": "#whatsapp",
+            "EMAIL": "#correo",
+            "INSTAGRAM": "#instagram",
+        }.items():
+            route = payload[channel]["action_route"]
+            self.assertTrue(route.startswith("/web/views/tools.html"))
+            self.assertTrue(route.endswith(fragment))
+        self.assertIsNone(payload["MESSENGER"]["action_route"])
+
     def test_brand_scope_is_fail_closed_for_non_admin(self):
         self.assertFalse(can_access_brand({"role": "EJECUTIVO"}, "CAM"))
         self.assertTrue(can_access_brand({"role": "ADMIN"}, "CAM"))
@@ -72,6 +84,17 @@ class OmnichannelAnalyticsTests(unittest.TestCase):
 
 
 class OmnichannelStorageContractTests(unittest.TestCase):
+    def test_contextual_help_uses_the_real_menu_screen_id(self):
+        migration = (ROOT / "migrations/2026_08_11_omnichannel_inbox.sql").read_text(encoding="utf-8")
+        self.assertIn("'tool_inbox'", migration)
+        self.assertNotIn("'tool_omnichannel'", migration)
+
+    def test_inbox_opens_channels_with_authorized_menu_ids(self):
+        source = (ROOT / "web/views/omnichannel_inbox.html").read_text(encoding="utf-8")
+        for menu_id in ("tool_wapp", "tool_gmail", "tool_ig"):
+            self.assertIn(menu_id, source)
+        self.assertNotIn("id:'omnichannel_action'", source)
+
     def test_migration_stores_references_not_message_content(self):
         sql = (ROOT / "migrations/2026_08_11_omnichannel_inbox.sql").read_text().lower()
         self.assertIn("source_ref text not null", sql)
@@ -93,4 +116,3 @@ class OmnichannelStorageContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

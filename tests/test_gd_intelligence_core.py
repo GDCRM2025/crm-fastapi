@@ -141,10 +141,11 @@ class ConnectorParserTests(unittest.TestCase):
 
     def test_paid_media_platform_parsers_normalize_without_credentials(self):
         google = parse_google_ads_row({"segments": {"date": "2026-08-09"}, "campaign": {"id": 12}, "metrics": {"costMicros": 2500000, "clicks": 4}})
-        meta = parse_meta_ads_row({"date_start": "2026-08-09", "campaign_id": "m1", "spend": "4.5", "actions": [{"action_type": "lead", "value": "2"}]})
+        meta = parse_meta_ads_row({"date_start": "2026-08-09", "campaign_id": "m1", "spend": "4.5", "actions": [{"action_type": "lead", "value": "2"}], "action_values": [{"action_type": "offsite_conversion.fb_pixel_purchase", "value": "125.50"}]})
         self.assertEqual(google["spend"], 2.5)
         self.assertEqual(google["campaign_id"], "12")
         self.assertEqual(meta["conversions"], 2.0)
+        self.assertEqual(meta["conversion_value"], 125.5)
 
 
 class PaidMediaTests(unittest.TestCase):

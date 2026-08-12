@@ -1,6 +1,6 @@
 # Estado de implementación
 
-Actualizado: 2026-08-09
+Actualizado: 2026-08-12
 
 SHA funcional local validado: `6c62b4b` (inteligencia con fuentes reales, Ads read-only y Omnichannel; sin deployment).
 
@@ -39,12 +39,12 @@ SHA funcional local validado: `6c62b4b` (inteligencia con fuentes reales, Ads re
 | 30 Help Engine | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Artículos persistentes, búsqueda por nivel/rol y ayuda por `screen_id` |
 | 31 CRM inventory | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | 77 accesos de menú y 501 endpoints extraídos desde código |
 | 32 Manual source package | DONE_LOCAL | PASS | GENERATED | NOT_DEPLOYED | Pantallas, acciones, permisos, procesos, cobertura, capturas y handoff |
-| 33 Omnichannel Inbox | AUDITED | N/A | REUSE_REQUIRED | NOT_DEPLOYED | Tools y webhooks existentes confirmados; no se creó una bandeja duplicada |
+| 33 Omnichannel Inbox | DONE_LOCAL | PASS | PARTIAL_REAL | NOT_DEPLOYED | Bandeja por referencia, navegación a Tools real y controles comerciales sin duplicar mensajes |
 | 34 CredentialVault | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Write-only, Fernet at-rest, replace/revoke/verify, key local 0600 y eventos sanitizados |
 | 35 Integration Center UX | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Navegación lateral, filtros, tarjetas legibles, estados humanizados, wizards y confirmaciones |
 | 36 Site Health UX | DONE_LOCAL | PASS | DONE_LOCAL | NOT_DEPLOYED | Hallazgos traducidos a Crítico/Importante/Mejora y last-known-good |
-| 37 Google Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | NOT_DEPLOYED | OAuth refresh/service credential, selección Customer ID/sitio y sync REST READ ONLY; credencial externa ausente |
-| 38 Meta Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | NOT_DEPLOYED | Business/Ad Account/Page/Instagram selector y sync Graph GET; token externo ausente |
+| 37 Google Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | NOT_DEPLOYED | OAuth refresh/service credential, selección Customer ID/sitio y sync REST READ ONLY; credencial externa ausente; API v25 vigente |
+| 38 Meta Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | NOT_DEPLOYED | Business/Ad Account/Page/Instagram selector, paginación por cursor y sync Graph GET; token externo ausente |
 | 39 Paid Media Attribution | DONE_LOCAL | PASS | READY_NO_AD_DATA | NOT_DEPLOYED | GCLID/FBCLID hash, UTM y CRM; EXACT/STRONG/INFERRED/UNKNOWN fail-closed |
 | 40 Search Terms Intelligence | DONE_LOCAL | PASS | READY_NO_AD_DATA | NOT_DEPLOYED | HIGH_VALUE/WASTE/NEGATIVE_CANDIDATE/INSUFFICIENT_DATA; cero publicaciones |
 | 41 Creative Intelligence | DONE_LOCAL | PASS | READY_NO_AD_DATA | NOT_DEPLOYED | Frequency, CTR, CPA CRM, conversión, edad y umbral de volumen |
@@ -62,7 +62,7 @@ SHA funcional local validado: `6c62b4b` (inteligencia con fuentes reales, Ads re
 |---|---|---|
 | Backup Git Mac | PASS | Bundle + snapshot + checksums |
 | Backup código servidor | PASS | Bundle + snapshot + checksums |
-| Reconciliación Mac/Git/servidor | FAIL | 54/54 tracked preservados; 5.965 untracked y 6.284 ignored impiden un SHA inmutable |
+| Reconciliación Mac/Git/servidor | FAIL | 54/54 tracked preservados; 6.299 untracked, 6.302 ignored y 14 snapshots recientes requieren clasificación |
 | Clean baseline local | PASS | Commit raíz `721a6e7`; sin remoto |
 | Repositorio privado | FAIL | GitHub informa PUBLIC; acción manual crítica |
 | Secret scan baseline | PASS | Gitleaks directory/history: 0 hallazgos |
@@ -73,9 +73,9 @@ SHA funcional local validado: `6c62b4b` (inteligencia con fuentes reales, Ads re
 
 ## Evidencia actual
 
-- 94 pruebas unitarias/contrato GD Intelligence y Omnichannel: PASS.
+- 100 pruebas unitarias/contrato GD Intelligence, Omnichannel y reconciliación: PASS.
 - OpenAPI local incorpora 16 rutas nuevas de inteligencia real y Omnichannel; `/healthz` PASS.
-- Google Ads y Meta Ads no se marcan conectados: los conectores, selectores y sync están listos, pero las credenciales externas autorizadas no existen en el entorno.
+- Google Ads y Meta Ads no se marcan conectados: los conectores, selectores y sync están listos, pero las credenciales externas autorizadas no existen en el entorno. Meta pagina por cursor sin seguir URLs absolutas que puedan contener token, sanea activos anidados e ingiere `action_values`.
 - Inbox local usa datos reales: WhatsApp 1 conversación/1 lead; Email 199 registros consultados/8 leads/31 cotizaciones; Instagram y Messenger 0 registros. No se inventaron ventas ni revenue.
 - CredentialVault no expone endpoint GET ni método frontend; ciphertext y master key permanecen fuera de respuestas, logs y auditoría.
 - Migración CredentialVault ejecutada dos veces en PostgreSQL aislada: PASS; no importa credenciales legacy.
@@ -86,6 +86,7 @@ SHA funcional local validado: `6c62b4b` (inteligencia con fuentes reales, Ads re
 - Paid Media local está visible como sección de GD Intelligence y Settings incluye acceso explícito a Integraciones.
 - Motor de ayuda conserva fallback estático y añade búsqueda autenticada por nivel/rol y contexto de pantalla.
 - Catálogo reproducible generado desde navegación y routers: 77 accesos de menú, 501 endpoints y 0 archivos faltantes. Las cinco pantallas nuevas tienen ayuda contextual; permanecen 66 lagunas legacy explícitas.
+- La Inbox abre WhatsApp, Email e Instagram en las rutas reales de Tools con IDs aceptados por el allowlist del panel; pruebas de regresión cubren rutas y `screen_id` contextual.
 - `LOCAL_API_CONNECTIVITY=PASS`: login, auth, overview, sitios, UTM, RBAC y Site Health responden por FastAPI contra PostgreSQL aislada.
 - QA visual autenticada: el menú **📡 GD Intelligence** y las vistas Resumen/Sitios/Site Health/UTM/Permisos cargan por HTTP; cuatro sitios visibles.
 - Compilación Python del módulo y router: PASS.

@@ -1,6 +1,6 @@
 # Production Deployment Report
 
-Fecha: 2026-08-09
+Fecha: 2026-08-12
 Resultado: **BLOCKED_PREDEPLOY — NO_PRODUCTION_CHANGES**
 
 ## Identidad del release
@@ -11,7 +11,7 @@ Resultado: **BLOCKED_PREDEPLOY — NO_PRODUCTION_CHANGES**
 | Servicio | `crm-gd.service` (`active`) |
 | SHA anterior / rollback conocido | `ec43b363e52dc762b3b030ad421800f878ed6afc` |
 | Branch remota observada | `feature/whatsapp-native-clean-20260806` |
-| SHA candidato funcional validado | `6c62b4b` |
+| SHA candidato funcional validado | `060ab9b` + correcciones locales pendientes de commit |
 | Alcance candidato | GD Intelligence core, RBAC, Sites, CredentialVault, Integration Center, UTM, Site Health, tracking, atribución Ads, Search Terms, Creative Intelligence, SEO, alertas, Dashboard Ejecutivo parcial, Omnichannel y Help Engine |
 | SHA nuevo desplegado | `NOT_DEPLOYED` |
 
@@ -22,9 +22,9 @@ Resultado: **BLOCKED_PREDEPLOY — NO_PRODUCTION_CHANGES**
 | Servicio productivo previo | PASS | `crm-gd.service=active` |
 | PostgreSQL compatible | PASS | PostgreSQL 16.14 |
 | SHA anterior conocido | PASS | `ec43b363…` |
-| Tests/build local | PASS | 94 tests, compile, frontend build y Gitleaks PASS |
+| Tests/build local | PASS | 100 tests, compile, frontend build y Gitleaks PASS |
 | Restore/migraciones aisladas | PASS | Migraciones GD/Site Health idempotentes; inventario ejecutado sólo en restore local |
-| Worktree servidor controlado | **FAIL CRÍTICO** | 54/54 tracked preservados; 5.965 untracked y 6.284 ignored aún impiden un SHA inmutable |
+| Worktree servidor controlado | **FAIL CRÍTICO** | 54/54 tracked preservados; 6.299 untracked, 6.302 ignored y 14 snapshots nuevos aún impiden un SHA inmutable |
 | Repositorio privado/off-host | **FAIL CRÍTICO** | repo limpio Mac sin remoto configurado |
 | Rotación credenciales históricas | **FAIL CRÍTICO** | credenciales históricamente compartidas marcadas para rotación; no confirmada |
 | Secret scan candidato | PASS local | Gitleaks sin hallazgos en historial limpio; debe repetirse sobre SHA final |

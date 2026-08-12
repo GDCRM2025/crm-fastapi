@@ -107,7 +107,19 @@ def main() -> None:
     (OUT / "CRM_FEATURE_INVENTORY.md").write_text(f"# Inventario funcional CRM\n\nCobertura descubierta: **{len(screens)} accesos de menú** y **{len(routes)} endpoints FastAPI**. Esto es inventario técnico, no afirmación de QA funcional.\n\n## Endpoints\n\n" + md_table(["Método","Ruta","Handler","Archivo"], route_rows), encoding="utf-8")
     permission_rows = [(x["id"], x["label"], x["gd_permission"] or "Controlado por PERMISSIONS del panel", "Backend y UI deben validarse conjuntamente") for x in screens]
     (OUT / "PERMISSION_MATRIX.md").write_text("# Matriz de permisos\n\nLa visibilidad del menú no sustituye autorización backend.\n\n" + md_table(["ID","Función","Permiso explícito","Gate"], permission_rows), encoding="utf-8")
-    coverage = [(x["id"], x["label"], "PASS" if x["exists"] else "FAIL", "CONTEXTUAL" if x["id"] in {"leads_ver","gdi_utm","gdi_integrations","gdi_paid_media","tool_wapp"} else "PENDIENTE DE ARTÍCULO ESPECÍFICO") for x in screens]
+    contextual_help = {
+        "leads_ver",
+        "gdi_utm",
+        "gdi_integrations",
+        "gdi_paid_media",
+        "gdi_search_terms",
+        "gdi_seo",
+        "gdi_alerts",
+        "gdi_executive",
+        "tool_inbox",
+        "tool_wapp",
+    }
+    coverage = [(x["id"], x["label"], "PASS" if x["exists"] else "FAIL", "CONTEXTUAL" if x["id"] in contextual_help else "PENDIENTE DE ARTÍCULO ESPECÍFICO") for x in screens]
     (OUT / "DOCUMENTATION_COVERAGE.md").write_text("# Cobertura documental\n\nEl botón global `?` envía el `screen_id` activo al motor. Esta tabla separa acceso descubierto de artículo contextual específico.\n\n" + md_table(["ID","Pantalla","Archivo","Ayuda específica"], coverage), encoding="utf-8")
     print(f"CATALOG_OK screens={len(screens)} routes={len(routes)} out={OUT}")
 

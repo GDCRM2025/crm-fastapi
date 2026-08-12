@@ -35,7 +35,7 @@ COMMENT ON COLUMN public.wi_omnichannel_work_items.source_ref IS
 INSERT INTO public.help_articles(
   slug, category_id, screen_id, title, summary, content, level, version, module_version
 )
-SELECT v.slug, c.id, 'tool_omnichannel', v.title, v.summary, v.content, v.level, '1.0', '2026.08.11'
+SELECT v.slug, c.id, 'tool_inbox', v.title, v.summary, v.content, v.level, '1.0', '2026.08.11'
 FROM (VALUES
   ('omnichannel-basic','Bandeja unificada','Atender todos los canales desde una cola ordenada.','La bandeja reúne referencias de WhatsApp, Instagram, Messenger y Email. Abre la conversación en su canal para responder; vincula el lead sólo cuando reconoces al contacto.','BASIC'),
   ('omnichannel-funnel','Embudo por canal','Leer conversaciones, leads, cotizaciones, ventas e ingresos.','Cada avance exige un vínculo real. Si una conversación no está asociada a un lead, no cuenta como lead ni como venta. NO_DATA significa que la fuente no entregó registros en el alcance consultado.','INTERMEDIATE'),
@@ -47,7 +47,7 @@ ON CONFLICT(slug) DO UPDATE SET
   level=excluded.level, module_version=excluded.module_version, updated_at=now();
 
 INSERT INTO public.help_context_links(screen_id,article_id)
-SELECT 'tool_omnichannel', id FROM public.help_articles WHERE slug='omnichannel-basic'
+SELECT 'tool_inbox', id FROM public.help_articles WHERE slug='omnichannel-basic'
 ON CONFLICT(screen_id) DO UPDATE SET article_id=excluded.article_id,updated_at=now();
 
 INSERT INTO public.help_keywords(article_id,keyword)

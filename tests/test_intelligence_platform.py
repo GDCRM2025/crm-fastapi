@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 from backend.gd_intelligence.ad_platforms import (
@@ -32,8 +32,17 @@ class RealSourceConnectorTests(unittest.TestCase):
                 MetaAdsReadOnly()
 
     def test_public_assets_never_return_tokens(self):
-        safe = public_assets([{"id": "1", "name": "Cuenta", "access_token": "secret", "client_secret": "secret"}])
-        self.assertEqual(safe, [{"id": "1", "name": "Cuenta"}])
+        safe = public_assets([{"id": "1", "name": "Cuenta", "access_token": "secret", "client_secret": "secret", "business": {"id": "2", "name": "GD", "access_token": "nested-secret"}}])
+        self.assertEqual(safe, [{"id": "1", "name": "Cuenta", "business": {"id": "2", "name": "GD"}}])
+
+    def test_meta_pagination_reuses_graph_path_and_opaque_cursor(self):
+        adapter = object.__new__(MetaAdsReadOnly)
+        adapter._get = MagicMock(side_effect=[
+            {"data": [{"id": "1"}], "paging": {"cursors": {"after": "cursor-2"}, "next": "https://unexpected.invalid/?access_token=secret"}},
+            {"data": [{"id": "2"}], "paging": {}},
+        ])
+        self.assertEqual(adapter._all("me/adaccounts", {"fields": "id", "limit": 200}), [{"id": "1"}, {"id": "2"}])
+        self.assertEqual(adapter._get.call_args_list[1].args, ("me/adaccounts", {"fields": "id", "limit": 200, "after": "cursor-2"}))
 
     def test_history_window_is_bounded(self):
         start, end = bounded_history(9999)

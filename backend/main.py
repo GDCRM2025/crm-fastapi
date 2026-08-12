@@ -99,11 +99,22 @@ def _apply_security_headers(request: Request, resp):
         # HSTS (solo HTTPS). No forzamos includeSubDomains para evitar sorpresas.
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
 
-        # Evita cachear JSON sensible en navegadores/proxies.
+        # El CRM sirve sus vistas dentro de iframes. Evitar HTML/JS obsoleto
+        # después de un despliegue, además de impedir cache de JSON sensible.
         try:
             p = str(request.url.path or "/")
             ct = str(resp.headers.get("content-type") or "").lower()
-            if ("/web/" not in p) and (
+            web_asset = p.startswith("/web/") or p.startswith("/crm/web/")
+            if web_asset and (
+                p.endswith(".html")
+                or p.endswith(".js")
+                or "text/html" in ct
+                or "javascript" in ct
+            ):
+                resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                resp.headers["Pragma"] = "no-cache"
+                resp.headers["Expires"] = "0"
+            elif ("/web/" not in p) and (
                 "application/json" in ct
                 or p.startswith(
                     (

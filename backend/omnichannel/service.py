@@ -29,17 +29,18 @@ class ChannelCapability:
 CAPABILITIES: dict[str, ChannelCapability] = {
     "WHATSAPP": ChannelCapability(
         "WHATSAPP", "whatsapp_conversations", True, True, True, True, True, True, True,
-        "AVAILABLE", "Recepción, respuesta y gestión comercial operativas.", "/web/views/gia_whatsapp.html",
+        "AVAILABLE", "Recepción, respuesta y gestión comercial operativas.",
+        "/web/views/tools.html?v=20260807-greenie-live-v1#whatsapp",
     ),
     "EMAIL": ChannelCapability(
         "EMAIL", "gia_email_messages", True, True, True, True, True, True, True,
         "AVAILABLE", "Recepción, respuesta y creación de lead operativas cuando la cuenta está configurada.",
-        "/web/views/gia_email.html",
+        "/web/views/tools.html?v=20260807-greenie-live-v1#correo",
     ),
     "INSTAGRAM": ChannelCapability(
         "INSTAGRAM", "gia_ig_events", True, False, False, True, True, True, False,
         "RECEIVE_ONLY", "El webhook conserva eventos reales; el envío Graph API aún no está habilitado.",
-        "/web/views/gia_instagram.html",
+        "/web/views/tools.html?v=20260807-greenie-live-v1#instagram",
     ),
     "MESSENGER": ChannelCapability(
         "MESSENGER", "gia_ig_events", True, False, False, True, True, True, False,

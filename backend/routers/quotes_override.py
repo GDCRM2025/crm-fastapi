@@ -70,10 +70,14 @@ def history(
     limit: int = Query(default=200, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     q: str = Query(default=""),
+    fecha_desde: Optional[str] = Query(default=None),
+    fecha_hasta: Optional[str] = Query(default=None),
+    tipo_cliente: str = Query(default=""),
+    orden: str = Query(default="fecha_desc"),
     user: dict = Depends(get_current_user),
 ):
     if not _table_exists("cotizaciones"):
-        return {"items": []}
+        return {"items": [], "total": 0}
 
     cols = _cols_for("cotizaciones")
 
@@ -83,6 +87,16 @@ def history(
     has_marcas = _table_exists("marcas") and has_leads
     leads_cols = _cols_for("leads") if has_leads else []
     marcas_cols = _cols_for("marcas") if has_marcas else []
+    tipos_table = None
+    tipos_cols: List[str] = []
+    if has_leads and ("id_tipo_cliente" in leads_cols):
+        for candidate in ("tipos_cliente", "tipocliente"):
+            if _table_exists(candidate):
+                candidate_cols = _cols_for(candidate)
+                if "id_tipo_cliente" in candidate_cols:
+                    tipos_table = candidate
+                    tipos_cols = candidate_cols
+                    break
 
     fecha_expr = "NULL"
     if _has(cols, "fecha") and _has(cols, "created_at"):
@@ -103,10 +117,35 @@ def history(
         join_sql += " LEFT JOIN leads l ON l.id_lead = c.id_lead "
     if has_marcas and ("id_marca" in leads_cols):
         join_sql += " LEFT JOIN marcas m ON m.id_marca = l.id_marca "
+    if tipos_table:
+        join_sql += f" LEFT JOIN {tipos_table} tc ON tc.id_tipo_cliente = l.id_tipo_cliente "
+
+    telefono_expr = "''"
+    if has_leads and ("telefono" in leads_cols):
+        telefono_expr = "COALESCE(l.telefono,'')"
+    email_expr = "''"
+    if has_leads and ("email" in leads_cols):
+        email_expr = "COALESCE(l.email,'')"
+
+    tipo_cliente_parts = []
+    if _has(cols, "tipo_cliente"):
+        tipo_cliente_parts.append("NULLIF(BTRIM(c.tipo_cliente),'')")
+    if has_leads and ("tipo_cliente" in leads_cols):
+        tipo_cliente_parts.append("NULLIF(BTRIM(l.tipo_cliente),'')")
+    if tipos_table:
+        tipo_name_col = "tipo" if "tipo" in tipos_cols else ("nombre" if "nombre" in tipos_cols else None)
+        if tipo_name_col:
+            tipo_cliente_parts.append(f"NULLIF(BTRIM(tc.{tipo_name_col}),'')")
+    tipo_fallback = "CASE WHEN COALESCE(c.iva,0) > 0 THEN 'EMPRESA' ELSE 'PARTICULAR' END" if _has(cols, "iva") else "''"
+    tipo_cliente_expr = "COALESCE(" + ", ".join(tipo_cliente_parts + [tipo_fallback]) + ")"
 
     nombre_expr = "''"
-    if _has(cols, "nombre_cliente"):
-        nombre_expr = "COALESCE(c.nombre_cliente, l.cliente)" if has_leads and ("cliente" in leads_cols) else "c.nombre_cliente"
+    if _has(cols, "nombre_cliente") and has_leads and ("cliente" in leads_cols):
+        nombre_expr = "COALESCE(NULLIF(BTRIM(c.nombre_cliente),''), l.cliente, '')"
+    elif _has(cols, "nombre_cliente"):
+        nombre_expr = "COALESCE(c.nombre_cliente,'')"
+    elif has_leads and ("cliente" in leads_cols):
+        nombre_expr = "COALESCE(l.cliente,'')"
 
     marca_expr = "''"
     if _has(cols, "marca"):
@@ -119,6 +158,10 @@ def history(
                 marca_expr = "c.marca"
         else:
             marca_expr = "c.marca"
+    elif has_marcas:
+        marca_col = "nombre" if "nombre" in marcas_cols else ("marca" if "marca" in marcas_cols else None)
+        if marca_col:
+            marca_expr = f"COALESCE(m.{marca_col},'')"
 
     subtotal_expr = "0"
     if _has(cols, "subtotal_productos"):
@@ -194,26 +237,62 @@ def history(
         where.append("c.id_lead = :id_lead")
         params["id_lead"] = id_lead
     elif id_lead and not has_id_lead:
-        return jsonable_encoder({"items": []})
+        return jsonable_encoder({"items": [], "total": 0})
     if q:
         q_parts = []
         if _has(cols, "nombre_cliente"):
             q_parts.append("COALESCE(c.nombre_cliente,'') ILIKE :q")
         if _has(cols, "marca"):
             q_parts.append("COALESCE(c.marca,'') ILIKE :q")
+        if _has(cols, "numero"):
+            q_parts.append("COALESCE(c.numero::text,'') ILIKE :q")
         if has_leads and ("cliente" in leads_cols):
             q_parts.append("COALESCE(l.cliente,'') ILIKE :q")
+        if has_leads and ("codigo_cliente" in leads_cols):
+            q_parts.append("COALESCE(l.codigo_cliente,'') ILIKE :q")
+        if has_leads and ("telefono" in leads_cols):
+            q_parts.append("COALESCE(l.telefono,'') ILIKE :q")
         if q_parts:
             where.append("(" + " OR ".join(q_parts) + ")")
             params["q"] = f"%{q}%"
+    try:
+        if fecha_desde:
+            params["fecha_desde"] = datetime.strptime(fecha_desde, "%Y-%m-%d").date()
+            where.append(f"CAST({fecha_expr} AS date) >= :fecha_desde")
+        if fecha_hasta:
+            params["fecha_hasta"] = datetime.strptime(fecha_hasta, "%Y-%m-%d").date()
+            where.append(f"CAST({fecha_expr} AS date) <= :fecha_hasta")
+    except ValueError:
+        raise HTTPException(400, "Las fechas deben usar el formato AAAA-MM-DD")
+
+    tipo_normalizado = str(tipo_cliente or "").strip().upper()
+    if tipo_normalizado:
+        if tipo_normalizado == "EMPRESA":
+            where.append(f"UPPER({tipo_cliente_expr}) LIKE '%EMP%'")
+        elif tipo_normalizado in ("PARTICULAR", "PERSONA"):
+            where.append(
+                f"(UPPER({tipo_cliente_expr}) LIKE '%PART%' OR "
+                f"UPPER({tipo_cliente_expr}) LIKE '%PERSON%')"
+            )
+        else:
+            raise HTTPException(400, "tipo_cliente debe ser EMPRESA o PARTICULAR")
     if only_own:
         if not marcas_ids:
-            return jsonable_encoder({"items": []})
+            return jsonable_encoder({"items": [], "total": 0})
         if has_leads:
             where.append("l.id_marca = ANY(:marcas)")
             params["marcas"] = marcas_ids
 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
+    order_sql = {
+        "fecha_desc": f"{fecha_expr} DESC NULLS LAST, c.id_cotizacion DESC",
+        "fecha_asc": f"{fecha_expr} ASC NULLS LAST, c.id_cotizacion ASC",
+        "total_desc": f"{total_expr} DESC NULLS LAST, c.id_cotizacion DESC",
+        "total_asc": f"{total_expr} ASC NULLS LAST, c.id_cotizacion ASC",
+    }.get(str(orden or "").strip().lower())
+    if not order_sql:
+        raise HTTPException(400, "Orden no válido")
 
     sql = f"""
         SELECT
@@ -223,6 +302,9 @@ def history(
           CAST({fecha_expr} AS text) AS fecha_emision,
           CAST({fecha_evento_expr} AS text) AS fecha_evento,
           {nombre_expr} AS nombre_cliente,
+          {telefono_expr} AS telefono,
+          {email_expr} AS email,
+          {tipo_cliente_expr} AS tipo_cliente,
           {marca_expr} AS marca,
           {subtotal_expr} AS subtotal,
           {subtotal_bruto_calc_expr} AS subtotal_bruto,
@@ -238,13 +320,17 @@ def history(
         FROM cotizaciones c
         {join_sql}
         {where_sql}
-        ORDER BY c.id_cotizacion DESC
+        ORDER BY {order_sql}
         LIMIT :limit OFFSET :offset
     """
     with get_connection() as cn:
         rows = cn.execute(text(sql), params).mappings().all()
+        total_rows = cn.execute(
+            text(f"SELECT COUNT(*) FROM cotizaciones c {join_sql} {where_sql}"),
+            {k: v for k, v in params.items() if k not in ("limit", "offset")},
+        ).scalar_one()
 
-    return jsonable_encoder({"items": list(rows)})
+    return jsonable_encoder({"items": list(rows), "total": int(total_rows)})
 
 
 @router.get("/_debug/drive")

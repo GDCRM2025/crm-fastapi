@@ -171,16 +171,18 @@ class MetaAdsReadOnly:
 
     def _all(self, path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
-        payload = self._get(path, params)
+        query = dict(params)
+        seen_cursors: set[str] = set()
         while True:
+            payload = self._get(path, query)
             items.extend(payload.get("data") or [])
-            next_url = ((payload.get("paging") or {}).get("next"))
-            if not next_url:
+            cursor = str((((payload.get("paging") or {}).get("cursors") or {}).get("after")) or "").strip()
+            if not cursor or cursor in seen_cursors:
                 break
-            response = requests.get(next_url, timeout=45)
-            if not response.ok:
-                raise PlatformRequestError(_safe_error(response))
-            payload = response.json()
+            # Keep every page on the configured Graph host and keep the token in
+            # the adapter; never follow an absolute provider URL containing it.
+            seen_cursors.add(cursor)
+            query = {**params, "after": cursor}
         return items
 
     def list_assets(self) -> dict[str, list[dict[str, Any]]]:
@@ -221,4 +223,15 @@ def bounded_history(days: int, *, maximum: int = 730) -> tuple[date, date]:
 def public_assets(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Allowlist public identifiers returned to Integration Center."""
     allowed = {"id", "external_id", "account_id", "name", "currency", "timezone", "timezone_name", "status", "account_status", "business", "page_id", "username"}
-    return [{key: value for key, value in item.items() if key in allowed} for item in items]
+    safe: list[dict[str, Any]] = []
+    for item in items:
+        public: dict[str, Any] = {}
+        for key, value in item.items():
+            if key not in allowed:
+                continue
+            if key == "business" and isinstance(value, dict):
+                public[key] = {nested: value[nested] for nested in ("id", "name") if nested in value}
+            elif isinstance(value, (str, int, float, bool)) or value is None:
+                public[key] = value
+        safe.append(public)
+    return safe
