@@ -64,6 +64,7 @@ from sqlalchemy import text
 
 from backend.core.database import engine
 from backend.core.activity_log import log_activity
+from backend.core.agenda_lock import agenda_lock_key
 
 try:
     from backend.routers.auth import get_current_user
@@ -2372,7 +2373,8 @@ def move_lead_and_maybe_agenda(
                         # Shared hosting safety: misma advisory lock que approve_agenda.
                         got_lock = False
                         try:
-                            got_lock = bool(DB.execute(text("SELECT pg_try_advisory_lock(26042401)")).scalar())
+                            agenda_lock = agenda_lock_key(id_lead)
+                            got_lock = bool(DB.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": agenda_lock}).scalar())
                         except Exception:
                             got_lock = False
 
@@ -2432,7 +2434,7 @@ def move_lead_and_maybe_agenda(
                         gcal_error = str(e)
                     finally:
                         try:
-                            DB.execute(text("SELECT pg_advisory_unlock(26042401)"))
+                            DB.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": agenda_lock})
                         except Exception:
                             pass
 

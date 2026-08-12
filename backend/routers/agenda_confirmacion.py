@@ -11,13 +11,14 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
+from backend.core.agenda_lock import agenda_lock_key
 from backend.routers.auth import get_current_user
 from backend.routers.leads_agenda import move_lead_and_maybe_agenda
 from backend.routers.tools import approve_agenda
 
 
 router = APIRouter(prefix="/leads", tags=["agenda-confirmacion"])
-_LOCK_BASE = 26073000
+_STALE_LOCK_SECONDS = 15 * 60
 
 
 def _json_body(response: JSONResponse) -> dict[str, Any]:
@@ -252,7 +253,8 @@ def _audit_finish(
 
 
 # GD-AGENDA-INTEGRITY-V16
-# Recupera únicamente locks de agenda que quedaron huérfanos o bloqueados por más de 90 segundos.
+# Recupera únicamente conexiones realmente inactivas que retuvieron un lock por 15 minutos.
+# Una sincronización lenta con Google puede superar 90 segundos; nunca se termina un backend activo.
 def _recover_stale_agenda_lock(db: Session, lock_key: int) -> bool:
     try:
         rows = db.execute(
@@ -285,7 +287,7 @@ def _recover_stale_agenda_lock(db: Session, lock_key: int) -> bool:
             pid = int(row.get("pid") or 0)
             state = str(row.get("state") or "").lower()
             age = int(row.get("age_seconds") or 0)
-            stale = age >= 90 or state.startswith("idle")
+            stale = age >= _STALE_LOCK_SECONDS and state.startswith("idle")
             if pid > 0 and stale:
                 killed = bool(db.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid}).scalar())
                 recovered = recovered or killed
@@ -314,7 +316,7 @@ def confirmar_agendamiento(
 ):
     confirmado_id = _confirmed_state_id(db)
     key = _stable_key(id_lead, payload, x_idempotency_key)
-    lock_key = _LOCK_BASE + (int(id_lead) % 999999)
+    lock_key = agenda_lock_key(id_lead)
     got_lock = False
     try:
         got_lock = bool(db.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": lock_key}).scalar())

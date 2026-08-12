@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
+from backend.core.agenda_lock import agenda_lock_key
 
 try:
     from backend.routers.auth import get_current_user  # type: ignore
@@ -36,6 +37,13 @@ except Exception:  # pragma: no cover
     Credentials = None
     Request = None
     build = None
+
+try:
+    import httplib2
+    from google_auth_httplib2 import AuthorizedHttp
+except Exception:  # pragma: no cover
+    httplib2 = None
+    AuthorizedHttp = None
 
 GCAL_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 GCAL_REDIRECT = "http://127.0.0.1:8000/tools/gcal/callback"
@@ -298,6 +306,13 @@ def _gcal_service(db: Session):
     creds = _load_gcal_creds(db)
     if not creds or not build:
         return None
+    if httplib2 is not None and AuthorizedHttp is not None:
+        try:
+            timeout = max(5, min(int(os.getenv("GCAL_HTTP_TIMEOUT_SECONDS", "20")), 60))
+        except (TypeError, ValueError):
+            timeout = 20
+        http = AuthorizedHttp(creds, http=httplib2.Http(timeout=timeout))
+        return build("calendar", "v3", http=http, cache_discovery=False)
     return build("calendar", "v3", credentials=creds)
 
 
@@ -6677,9 +6692,11 @@ def approve_agenda(
     got_lock: bool = False
     try:
         _ensure_lead_calendar_cols(db)
-        # Shared hosting safety: prevent concurrent Google Calendar sync from saturating Passenger.
+        # Aísla por lead: agendamientos distintos pueden avanzar en paralelo, mientras
+        # reintentos/clics duplicados del mismo lead siguen protegidos.
+        agenda_lock = agenda_lock_key(id_lead)
         try:
-            got_lock = bool(db.execute(text("SELECT pg_try_advisory_lock(26042401)")).scalar())
+            got_lock = bool(db.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": agenda_lock}).scalar())
         except Exception:
             got_lock = False
         if not got_lock:
@@ -6687,7 +6704,7 @@ def approve_agenda(
             _gd_deadline = _gd_time.monotonic() + 25
             while not got_lock and _gd_time.monotonic() < _gd_deadline:
                 _gd_time.sleep(0.5)
-                got_lock = db.execute(text("select pg_try_advisory_lock(26042401)")).scalar()
+                got_lock = db.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": agenda_lock}).scalar()
             if not got_lock:
                 raise HTTPException(status_code=503, detail="Agenda ocupada. El proceso anterior sigue activo; intenta nuevamente.")
 
@@ -7364,7 +7381,7 @@ def approve_agenda(
     finally:
         if got_lock:
             try:
-                db.execute(text("SELECT pg_advisory_unlock(26042401)"))
+                db.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": agenda_lock})
             except Exception:
                 pass
 
