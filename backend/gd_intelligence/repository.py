@@ -163,9 +163,7 @@ def store_integration_discovery(conn, site_id: int, item: dict[str, Any]) -> dic
               site_id,provider,status,enabled,external_id,last_verified_at,last_success_at,last_failure_at,last_error_safe,updated_at
             ) VALUES (
               :site_id,:provider,:status,:enabled,:external_id,:last_verified_at,
-              CASE WHEN :status<>'ERROR' THEN :last_verified_at END,
-              CASE WHEN :status='ERROR' THEN :last_verified_at END,
-              :last_error_safe,now()
+              :discovery_success_at,:discovery_failure_at,:last_error_safe,now()
             )
             ON CONFLICT(site_id,provider) DO UPDATE SET
               status=CASE WHEN excluded.status='ERROR' AND wi_integrations.last_success_at IS NOT NULL
@@ -181,7 +179,12 @@ def store_integration_discovery(conn, site_id: int, item: dict[str, Any]) -> dic
             RETURNING id,site_id,provider,status,enabled,external_id,last_verified_at,last_error_safe,updated_at
             """
         ),
-        {"site_id": site_id, **item},
+        {
+            "site_id": site_id,
+            **item,
+            "discovery_success_at": item.get("last_verified_at") if item.get("status") != "ERROR" else None,
+            "discovery_failure_at": item.get("last_verified_at") if item.get("status") == "ERROR" else None,
+        },
     ).mappings().one()
     return dict(row)
 
