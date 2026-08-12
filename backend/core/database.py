@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+from backend.core.bootstrap_credentials import load_bootstrap_credential
+
 
 # Carga .env desde la RAÍZ del proyecto, aunque ejecutes uvicorn desde otro lado
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # .../CRM 2025
@@ -88,7 +90,8 @@ def _normalize_sqlalchemy_url(url: str) -> str:
     return url
 
 
-DATABASE_URL = _normalize_sqlalchemy_url(os.getenv("DATABASE_URL", ""))
+_database_credential = load_bootstrap_credential("database_url")
+DATABASE_URL = _normalize_sqlalchemy_url(_database_credential.value if _database_credential else "")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL no está configurada. Defínela en el .env protegido del servidor.")
 DATABASE_URL = _normalize_sqlalchemy_url(DATABASE_URL)

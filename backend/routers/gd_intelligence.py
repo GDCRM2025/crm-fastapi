@@ -9,6 +9,7 @@ from backend.core.database import engine
 from backend.gd_intelligence.permissions import (
     PERMISSIONS,
     has_permission,
+    is_superadmin,
     resolve_permissions,
     role_key,
     user_id,
@@ -16,7 +17,7 @@ from backend.gd_intelligence.permissions import (
 from backend.gd_intelligence.rbac_admin import ROLE_KEYS, role_matrix, save_role_permissions
 from backend.gd_intelligence.integration_inventory import scan_public_integrations
 from backend.gd_intelligence.integration_center import actionable_integration, backend_capabilities, list_google_properties
-from backend.gd_intelligence.credential_vault import CredentialValidationError, CredentialVault, VaultUnavailable
+from backend.gd_intelligence.credential_vault import CredentialValidationError, CredentialVault, VaultUnavailable, vault_bootstrap_status
 from backend.gd_intelligence.tracking import record_event, upsert_session
 from backend.gd_intelligence.repository import (
     INTEGRATION_PROVIDERS,
@@ -43,7 +44,16 @@ from backend.gd_intelligence.site_health import latest_results, scan_site, store
 from backend.routers.auth import get_current_user
 
 
-router = APIRouter(prefix="/api/gd-intelligence", tags=["gd-intelligence"])
+def _superadmin_only(user: dict = Depends(get_current_user)) -> None:
+    if not is_superadmin(user):
+        raise HTTPException(status_code=403, detail="GD Intelligence está disponible temporalmente sólo para SUPERADMIN.")
+
+
+router = APIRouter(
+    prefix="/api/gd-intelligence",
+    tags=["gd-intelligence"],
+    dependencies=[Depends(_superadmin_only)],
+)
 
 
 def _actor(user: dict) -> str:
@@ -113,6 +123,22 @@ def overview(user: dict = Depends(get_current_user)):
             "sites": sites,
             "site_count": len(sites),
         }
+
+
+@router.get("/bootstrap/status")
+def bootstrap_status(user: dict = Depends(get_current_user)):
+    with engine.connect() as conn:
+        _require(conn, user, "system_super_admin")
+        try:
+            vault = vault_bootstrap_status(conn)
+        except VaultUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    from backend.core.bootstrap_credentials import bootstrap_source
+    return {
+        "ok": True,
+        "database_source": bootstrap_source("database_url"),
+        "vault": vault,
+    }
 
 
 @router.get("/permissions/me")

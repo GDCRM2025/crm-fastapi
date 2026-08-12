@@ -20,11 +20,20 @@ from backend.gd_intelligence.ad_platforms import (
 )
 from backend.gd_intelligence.intelligence import actionable_alerts, executive_readiness, safe_ai_context, seo_opportunity_score
 from backend.gd_intelligence.paid_media_intelligence import assess_change_risk, assess_creative_fatigue, attribute_paid_media, classify_search_term
-from backend.gd_intelligence.permissions import has_permission
+from backend.gd_intelligence.permissions import has_permission, is_superadmin
 from backend.routers.auth import get_current_user
 
 
-router = APIRouter(prefix="/api/gd-intelligence/intelligence", tags=["intelligence-platform"])
+def _superadmin_only(user: dict = Depends(get_current_user)) -> None:
+    if not is_superadmin(user):
+        raise HTTPException(403, "GD Intelligence está disponible temporalmente sólo para SUPERADMIN.")
+
+
+router = APIRouter(
+    prefix="/api/gd-intelligence/intelligence",
+    tags=["intelligence-platform"],
+    dependencies=[Depends(_superadmin_only)],
+)
 
 
 def _require(conn, user: dict, permission: str) -> None:

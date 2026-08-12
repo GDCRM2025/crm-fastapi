@@ -60,6 +60,10 @@ def role_key(user: dict[str, Any] | str | None) -> str:
     return " ".join(str(value).strip().upper().replace("_", " ").split())
 
 
+def is_superadmin(user: dict[str, Any] | str | None) -> bool:
+    return role_key(user).replace(" ", "") == "SUPERADMIN"
+
+
 def user_id(user: dict[str, Any]) -> int | None:
     value = user.get("id_usuario") or user.get("id") or user.get("user_id")
     try:

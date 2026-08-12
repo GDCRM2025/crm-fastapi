@@ -8,11 +8,20 @@ from sqlalchemy import text
 from backend.core.database import engine
 from backend.gd_intelligence.paid_media import business_metrics
 from backend.gd_intelligence.ad_platforms import google_ads_capabilities, meta_ads_capabilities
-from backend.gd_intelligence.permissions import has_permission
+from backend.gd_intelligence.permissions import has_permission, is_superadmin
 from backend.routers.auth import get_current_user
 
 
-router = APIRouter(prefix="/api/gd-intelligence/paid-media", tags=["paid-media"])
+def _superadmin_only(user: dict = Depends(get_current_user)) -> None:
+    if not is_superadmin(user):
+        raise HTTPException(403, "GD Intelligence está disponible temporalmente sólo para SUPERADMIN.")
+
+
+router = APIRouter(
+    prefix="/api/gd-intelligence/paid-media",
+    tags=["paid-media"],
+    dependencies=[Depends(_superadmin_only)],
+)
 
 
 def _require(conn, user: dict, permission: str = "paid_media_view") -> None:

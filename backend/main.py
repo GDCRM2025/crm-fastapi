@@ -476,6 +476,17 @@ include_router_safe(app, "backend.routers.help_center")
 include_router_safe(app, "backend.routers.gia_email")
 include_router_safe(app, "backend.routers.sgjo")
 
+
+@app.on_event("startup")
+def validate_credential_vault_bootstrap() -> None:
+    # A release must never start with encrypted records that its active key
+    # cannot decrypt. No secret value is logged by this check.
+    from backend.gd_intelligence.credential_vault import vault_bootstrap_status
+    from backend.core.database import engine
+
+    with engine.connect() as conn:
+        vault_bootstrap_status(conn)
+
 # =========================
 # Static /web (login, panel, views, assets)
 # =========================

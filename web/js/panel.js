@@ -1754,7 +1754,9 @@ async function loadUserMenuAccess() {
 }
 
 function isGdMenuAllowed(item) {
-  return Boolean(item && item.gdPermission && GD_INTELLIGENCE_PERMISSIONS && GD_INTELLIGENCE_PERMISSIONS[item.gdPermission]);
+  const role = normalizeRoleName(String((window.GD && window.GD.me && (window.GD.me.role || window.GD.me.rol)) || ""));
+  const superadmin = String(role || "").replace(/[ _-]/g, "") === "SUPERADMIN";
+  return Boolean(superadmin && item && item.gdPermission && GD_INTELLIGENCE_PERMISSIONS && GD_INTELLIGENCE_PERMISSIONS[item.gdPermission]);
 }
 
 function bootstrapFromToken() {

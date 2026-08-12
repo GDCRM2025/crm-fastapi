@@ -10,6 +10,8 @@ import requests
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import text
 
+from backend.core.bootstrap_credentials import bootstrap_source, load_bootstrap_credential
+
 
 SECRET_KEYS = re.compile(r"(?i)(secret|token|password|api[_ -]?key|credential|refresh)")
 
@@ -43,13 +45,10 @@ def _local_key_path() -> Path:
 
 
 def load_master_key() -> bytes:
-    raw = str(os.getenv("GD_CREDENTIAL_MASTER_KEY") or "").strip()
-    if raw:
-        return raw.encode("ascii")
-    configured = str(os.getenv("GD_CREDENTIAL_MASTER_KEY_FILE") or "").strip()
-    path = Path(configured).expanduser() if configured else _local_key_path()
-    if path.is_file():
-        return path.read_bytes().strip()
+    credential = load_bootstrap_credential("credential_vault_key")
+    if credential:
+        return credential.value.encode("ascii")
+    path = _local_key_path()
     if not _loopback_database():
         raise VaultUnavailable("El almacenamiento seguro de credenciales no está disponible.")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,3 +170,33 @@ class CredentialVault:
     @staticmethod
     def _event(conn, integration_id: int, credential_type: str, action: str, actor: str, success: bool, error_code: str | None = None) -> None:
         conn.execute(text("INSERT INTO wi_integration_credential_events(integration_id,credential_type,action,actor,success,error_code) VALUES(:id,:type,:action,:actor,:success,:code)"), {"id": integration_id, "type": credential_type, "action": action, "actor": actor, "success": success, "code": error_code})
+
+
+def vault_bootstrap_status(conn, *, verify_decryption: bool = True) -> dict[str, Any]:
+    """Return non-sensitive health metadata and fail closed for unreadable records."""
+    table_exists = bool(
+        conn.execute(text("SELECT to_regclass('public.wi_integration_credentials') IS NOT NULL")).scalar()
+    )
+    if not table_exists:
+        return {"table_ready": False, "configured_records": 0, "key_source": "NOT_REQUIRED", "decrypt_check": "NOT_REQUIRED"}
+    encrypted = list(
+        conn.execute(
+            text(
+                "SELECT encrypted_value FROM wi_integration_credentials "
+                "WHERE status='CONFIGURED' AND encrypted_value IS NOT NULL"
+            )
+        ).scalars()
+    )
+    configured = len(encrypted)
+    source = bootstrap_source("credential_vault_key")
+    if source == "NOT_CONFIGURED" and _local_key_path().is_file():
+        source = "LOCAL_DEV_FILE"
+    if not configured:
+        return {"table_ready": True, "configured_records": 0, "key_source": source, "decrypt_check": "NOT_REQUIRED"}
+    if source == "NOT_CONFIGURED":
+        raise VaultUnavailable("Existen credenciales cifradas, pero la llave maestra no está disponible.")
+    if verify_decryption:
+        vault = CredentialVault()
+        for value in encrypted:
+            vault._decrypt_internal(str(value))
+    return {"table_ready": True, "configured_records": configured, "key_source": source, "decrypt_check": "PASS"}
