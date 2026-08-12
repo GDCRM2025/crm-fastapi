@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy import text
 
 from backend.core.db import get_connection
+from backend.core.storage import persistent_data_root
 from backend.routers.auth import get_current_user
 from backend.core.quote_assets import PDF_ASSETS, DRIVE_ASSET_FOLDERS, logo_for, normalize_marca
 import base64
@@ -381,7 +382,7 @@ def debug_assets(
     # Mostrar qué hay en drive_cache local (sin tocar Drive)
     cache = []
     try:
-        base = Path(__file__).resolve().parents[2] / "data" / "quote_assets" / "drive_cache"
+        base = persistent_data_root() / "quote_assets" / "drive_cache"
         if mk and base.exists():
             for pat in (
                 f"{mk}_portada_*",
@@ -687,7 +688,7 @@ def pdf_placeholder(
         root = Path(__file__).resolve().parents[2]
         bases = [
             root / "web" / "images" / "quote_assets",
-            root / "data" / "quote_assets",
+            persistent_data_root(root) / "quote_assets",
             root / "quote_assets",
         ]
         for base in bases:
@@ -808,7 +809,7 @@ def pdf_placeholder(
         return s2[:60]
 
     # path por marca y mes
-    base_dir = Path(__file__).resolve().parents[2] / "data" / "quotes"
+    base_dir = persistent_data_root() / "quotes"
     yymm = (fecha_evento[:7] if fecha_evento else datetime.now().strftime("%Y-%m"))
     out_dir = base_dir / (marca_key or "GENERICA") / yymm
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -847,7 +848,7 @@ def pdf_placeholder(
         if not mkey:
             return 0.0
         try:
-            base = Path(__file__).resolve().parents[2] / "data" / "quote_assets" / "drive_cache"
+            base = persistent_data_root() / "quote_assets" / "drive_cache"
             if not base.exists():
                 return 0.0
             pats = [
@@ -950,7 +951,7 @@ def pdf_placeholder(
             if "drive.google.com" in url or "googleusercontent.com" in url:
                 from backend.core.quote_assets import _drive_id
                 fid = _drive_id(url)
-                cache_dir = Path(__file__).resolve().parents[2] / "data" / "quote_assets" / "cache"
+                cache_dir = persistent_data_root() / "quote_assets" / "cache"
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 cache_path = cache_dir / f"{fid}"
                 # Cache con TTL: si el asset cambió en Drive (mismo id), refrescamos automático.
@@ -1195,7 +1196,7 @@ def pdf_placeholder(
         root = Path(__file__).resolve().parents[2]
         bases = [
             root / "web" / "images" / "quote_assets" / marca_key,
-            root / "data" / "quote_assets" / marca_key,
+            persistent_data_root(root) / "quote_assets" / marca_key,
             root / "quote_assets" / marca_key,
         ]
         def _looks_supported_image(p: Path) -> bool:
@@ -1537,7 +1538,7 @@ def pdf_placeholder(
 
     base_url = str(Path(__file__).resolve().parents[2])
     # Debug info file
-    debug_dir = Path(__file__).resolve().parents[2] / "data" / "debug"
+    debug_dir = persistent_data_root() / "debug"
     try:
         debug_dir.mkdir(parents=True, exist_ok=True)
         debug_info = {

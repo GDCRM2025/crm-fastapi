@@ -12,6 +12,7 @@ from backend.core.rbac import role_key, user_id, username
 from backend.core.stale_leads import auto_decline_stale_leads
 from backend.core.pdf_parse import extract_text as _pdf_extract_text, parse_items_from_text as _pdf_parse_items, sample_lines as _pdf_sample_lines
 from backend.core.public_tokens import sign as sign_public
+from backend.core.storage import persistent_data_root
 from backend.routers.auth import get_current_user
 from backend.gd_intelligence.tracking import attach_lead_attribution
 
@@ -19,7 +20,7 @@ router = APIRouter()
 
 DECLINADO_ID = 5
 
-_LEAD_QUOTES_DIR = Path(__file__).resolve().parents[2] / "data" / "quotes"
+_LEAD_QUOTES_DIR = persistent_data_root() / "quotes"
 
 def _lead_quote_path(id_lead: int) -> Path:
     d = _LEAD_QUOTES_DIR / f"lead_{id_lead}"
