@@ -269,7 +269,7 @@ class DashboardContractTests(unittest.TestCase):
     def test_dashboard_exposes_public_integration_inventory(self):
         self.assertIn("Dominios administrados y sus identificadores públicos", self.html)
         self.assertIn("/api/gd-intelligence/web/integrations", self.html)
-        self.assertIn("nunca pueden volver a mostrarse", self.html)
+        self.assertIn("Los secretos nunca se muestran", self.html)
 
     def test_integration_center_has_actionable_statuses(self):
         self.assertIn('data-tab="integrations"', self.html)

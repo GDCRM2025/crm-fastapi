@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from backend.gd_intelligence.integration_state import canonical_integration_state
+
 
 PROVIDER_GUIDANCE = {
     "GTM": ("Contenedor publicado", "No detectamos un contenedor de Tag Manager.", "VERIFICAR"),
@@ -19,7 +21,7 @@ PROVIDER_GUIDANCE = {
 
 PROVIDER_NAMES = {"GTM":"Google Tag Manager","GA4":"Google Analytics 4","SEARCH_CONSOLE":"Google Search Console","CLARITY":"Microsoft Clarity","PAGESPEED":"Google PageSpeed","CRUX":"Chrome UX Report","TRACKING":"GD Tracker","META":"Meta"}
 PROVIDER_GROUPS = {"GTM":"Google","GA4":"Google","SEARCH_CONSOLE":"Google","PAGESPEED":"Google","CRUX":"Google","META":"Meta","CLARITY":"Microsoft","TRACKING":"Green Diamond"}
-STATUS_LABELS = {"CONNECTED":"Conectado","NOT_CONFIGURED":"Falta configurar","WARNING":"Requiere atención","ERROR":"Error de conexión","DISABLED":"Deshabilitado"}
+STATUS_LABELS = {"DETECTED":"Detectado","CONNECTED":"Conectado","READY_FOR_CREDENTIAL":"Falta autorizar","NO_DATA":"Conectado · sin datos","REQUIRES_ATTENTION":"Requiere atención","NOT_CONFIGURED":"Falta configurar","WARNING":"Requiere atención","ERROR":"Error de conexión","DISABLED":"Deshabilitado"}
 
 
 def backend_capabilities() -> dict[str, bool]:
@@ -28,11 +30,13 @@ def backend_capabilities() -> dict[str, bool]:
         "google_service_credentials": bool(credential_path and Path(credential_path).is_file()),
         "google_oauth_configured": bool(os.getenv("GOOGLE_OAUTH_CLIENT_ID") and os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")),
         "pagespeed_api": bool(os.getenv("PAGESPEED_API_KEY")),
+        "meta_oauth_configured": bool(os.getenv("META_ACCESS_TOKEN")),
     }
 
 
-def actionable_integration(item: dict[str, Any], capabilities: dict[str, bool] | None = None) -> dict[str, Any]:
+def actionable_integration(item: dict[str, Any], capabilities: dict[str, bool] | None = None, *, tracking_events: int = 0) -> dict[str, Any]:
     capabilities = capabilities or backend_capabilities()
+    item = canonical_integration_state(item, capabilities, tracking_events=tracking_events)
     provider = str(item.get("provider") or "").upper()
     status = str(item.get("status") or "NOT_CONFIGURED").upper()
     detected, missing, fallback_action = PROVIDER_GUIDANCE.get(provider, ("Configuración detectada", "Falta configurar", "CONFIGURAR"))
@@ -43,7 +47,16 @@ def actionable_integration(item: dict[str, Any], capabilities: dict[str, bool] |
     if status == "CONNECTED":
         missing = "La integración está operativa."
         action = "VERIFICAR CONEXIÓN"
-    elif status == "ERROR":
+    elif status == "DETECTED":
+        missing = "Instalación pública detectada. La API puede requerir autorización adicional." if provider in {"GA4", "SEARCH_CONSOLE", "META"} else "Instalación pública detectada y validada."
+        action = "CONECTAR GOOGLE" if provider in {"GA4", "SEARCH_CONSOLE"} and not item.get("api_verified") else "CONECTAR META" if provider == "META" and not item.get("api_verified") else "VERIFICAR"
+    elif status == "NO_DATA":
+        missing = "La capacidad está instalada, pero todavía no hay datos reales."
+        action = "VERIFICAR"
+    elif status == "READY_FOR_CREDENTIAL":
+        missing = "La implementación está lista; falta autorizar o ingresar la credencial externa."
+        action = "CONECTAR GOOGLE" if provider in {"GA4", "SEARCH_CONSOLE"} else "CONECTAR META" if provider == "META" else "CONFIGURAR"
+    elif status in {"ERROR", "REQUIRES_ATTENTION"}:
         missing = str(item.get("last_error_safe") or "La última verificación falló")
         action = "RECONECTAR"
     elif status == "DISABLED":
@@ -51,7 +64,7 @@ def actionable_integration(item: dict[str, Any], capabilities: dict[str, bool] |
         action = "CONFIGURAR"
     else:
         action = fallback_action
-    if provider in {"GA4", "SEARCH_CONSOLE"} and not item.get("credential_configured") and status != "CONNECTED":
+    if provider in {"GA4", "SEARCH_CONSOLE"} and not item.get("credential_available") and status not in {"CONNECTED", "NO_DATA"}:
         action = "CONECTAR GOOGLE"
     if provider in {"PAGESPEED", "CRUX"}:
         if item.get("credential_configured") or capabilities["pagespeed_api"]:

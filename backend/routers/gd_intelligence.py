@@ -17,6 +17,7 @@ from backend.gd_intelligence.permissions import (
 from backend.gd_intelligence.rbac_admin import ROLE_KEYS, role_matrix, save_role_permissions
 from backend.gd_intelligence.integration_inventory import scan_public_integrations
 from backend.gd_intelligence.integration_center import actionable_integration, backend_capabilities, list_google_properties
+from backend.gd_intelligence.integration_state import overview_summary, site_capability_state
 from backend.gd_intelligence.credential_vault import CredentialValidationError, CredentialVault, VaultUnavailable, vault_bootstrap_status
 from backend.gd_intelligence.tracking import record_event, upsert_session
 from backend.gd_intelligence.repository import (
@@ -110,18 +111,63 @@ def _require(conn, user: dict, permission: str) -> None:
         raise HTTPException(status_code=403, detail="Sin permiso para esta función.")
 
 
+def _tracking_events_by_site(conn) -> dict[int, int]:
+    if not conn.execute(text("SELECT to_regclass('public.wi_events') IS NOT NULL")).scalar():
+        return {}
+    return {int(row.site_id): int(row.total) for row in conn.execute(text("SELECT site_id,count(*) AS total FROM wi_events GROUP BY site_id"))}
+
+
+def _tracking_metrics(conn) -> dict[str, int | str]:
+    def count(table: str, where: str = "") -> int:
+        if not conn.execute(text("SELECT to_regclass(:name) IS NOT NULL"), {"name": f"public.{table}"}).scalar():
+            return 0
+        return int(conn.execute(text(f"SELECT count(*) FROM {table} {where}")).scalar())
+    sessions = count("wi_sessions")
+    events = count("wi_events")
+    return {
+        "status": "REAL" if sessions or events else "NO_DATA",
+        "sessions": sessions,
+        "events": events,
+        "click_whatsapp": count("wi_events", "WHERE event_type='click_whatsapp'"),
+        "attribution_records": count("wi_lead_attribution"),
+    }
+
+
+def _ad_platform_connected(conn, platform: str) -> bool:
+    if not conn.execute(text("SELECT to_regclass('public.wi_ad_accounts') IS NOT NULL")).scalar():
+        return False
+    return bool(conn.execute(text("SELECT 1 FROM wi_ad_accounts WHERE platform=:platform AND enabled LIMIT 1"), {"platform": platform}).scalar())
+
+
+def _integration_state_rows(conn, site_id: int | None = None) -> tuple[list[dict], dict]:
+    capabilities = backend_capabilities()
+    tracking = _tracking_events_by_site(conn)
+    items = [actionable_integration(item, capabilities, tracking_events=tracking.get(int(item["site_id"]), 0)) for item in list_integrations(conn, site_id)]
+    return items, capabilities
+
+
 @router.get("/overview")
 def overview(user: dict = Depends(get_current_user)):
     with engine.connect() as conn:
         _require(conn, user, "web_intelligence_view")
         ready = schema_ready(conn)
         sites = list_sites(conn) if ready else []
+        items, capabilities = _integration_state_rows(conn) if ready else ([], backend_capabilities())
+        health_items = latest_results(conn) if ready else []
+        health_by_site = {int(row["site_id"]): row for row in health_items}
+        google_ads_connected = _ad_platform_connected(conn, "GOOGLE_ADS") if ready else False
+        meta_ads_connected = _ad_platform_connected(conn, "META_ADS") if ready else False
+        site_states = [site_capability_state(site, items, health_by_site.get(int(site["id"])), google_ads_connected=google_ads_connected, meta_ads_connected=meta_ads_connected) for site in sites]
         return {
             "ok": True,
             "module": "GD Intelligence",
             "schema_ready": ready,
             "sites": sites,
             "site_count": len(sites),
+            "summary": overview_summary(items, sites, site_states),
+            "site_capabilities": site_states,
+            "backend": capabilities,
+            "tracking_data": _tracking_metrics(conn) if ready else {"status": "NO_DATA", "sessions": 0, "events": 0, "click_whatsapp": 0, "attribution_records": 0},
         }
 
 
@@ -240,8 +286,7 @@ def integrations_list(
         _require_schema(conn)
         _require_integration_inventory_schema(conn)
         _require_credential_vault_schema(conn)
-        capabilities = backend_capabilities()
-        items = [actionable_integration(item, capabilities) for item in list_integrations(conn, site_id)]
+        items, capabilities = _integration_state_rows(conn, site_id)
         return {"ok": True, "items": items, "backend": capabilities}
 
 

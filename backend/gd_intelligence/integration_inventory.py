@@ -68,7 +68,6 @@ def scan_public_integrations(domain: str) -> list[dict[str, Any]]:
     ga4_page = _ids(GA4_RE, page)
     clarity_ids = _ids(CLARITY_RE, combined)
     meta_ids = _ids(META_PIXEL_RE, combined)
-    meta_seen = bool(re.search(r"connect\.facebook\.net|fbq\s*\(|facebook|pixel", combined, re.I))
     tracker_seen = bool(re.search(r"gd[-_]tracker|first[ -]?party", container, re.I))
     gsc_seen = bool(re.search(r"google-site-verification", page, re.I))
     duplicate_ga4 = bool(gtm_ids and ga4_page and set(ga4_page) - set(ga4_container))
@@ -77,7 +76,7 @@ def scan_public_integrations(domain: str) -> list[dict[str, Any]]:
         return {
             "provider": provider,
             "status": status,
-            "enabled": status in {"CONNECTED", "WARNING"},
+            "enabled": status in {"DETECTED", "CONNECTED", "READY_FOR_CREDENTIAL", "REQUIRES_ATTENTION"},
             "external_id": external_id,
             "last_verified_at": verified_at,
             "last_error_safe": message,
@@ -90,14 +89,14 @@ def scan_public_integrations(domain: str) -> list[dict[str, Any]]:
     ga4_ids = ga4_container or ga4_page
     ga4_message = "Posible GA4 duplicado fuera de GTM; revisar antes de publicar." if duplicate_ga4 else None
     results = [
-        item("GTM", "CONNECTED" if gtm_ids else "NOT_CONFIGURED", gtm_ids[0] if gtm_ids else None),
-        item("GA4", "WARNING" if duplicate_ga4 else "CONNECTED" if ga4_ids else "NOT_CONFIGURED", ga4_ids[0] if ga4_ids else None, ga4_message),
-        item("SEARCH_CONSOLE", "WARNING" if gsc_seen else "NOT_CONFIGURED", f"sc-domain:{host}" if gsc_seen else None, "Verificación pública detectada; acceso API aún no validado." if gsc_seen else None),
-        item("CLARITY", "CONNECTED" if clarity_ids else "NOT_CONFIGURED", clarity_ids[0].lower() if clarity_ids else None),
-        item("PAGESPEED", "WARNING", f"https://{host}/", "Servicio disponible; API key aún no configurada."),
-        item("CRUX", "WARNING", f"https://{host}/", "Origen identificado; disponibilidad de datos aún no validada."),
-        item("TRACKING", "CONNECTED" if tracker_seen else "NOT_CONFIGURED", "gd-tracker.js" if tracker_seen else None),
-        item("META", "CONNECTED" if meta_seen else "NOT_CONFIGURED", meta_ids[0] if meta_ids else None),
+        item("GTM", "DETECTED" if gtm_ids else "NOT_CONFIGURED", gtm_ids[0] if gtm_ids else None),
+        item("GA4", "REQUIRES_ATTENTION" if duplicate_ga4 else "DETECTED" if ga4_ids else "READY_FOR_CREDENTIAL", ga4_ids[0] if ga4_ids else None, ga4_message),
+        item("SEARCH_CONSOLE", "DETECTED" if gsc_seen else "READY_FOR_CREDENTIAL", f"sc-domain:{host}" if gsc_seen else None, "Verificación pública detectada; acceso API aún no validado." if gsc_seen else None),
+        item("CLARITY", "DETECTED" if clarity_ids else "NOT_CONFIGURED", clarity_ids[0].lower() if clarity_ids else None),
+        item("PAGESPEED", "READY_FOR_CREDENTIAL", None, "Implementación lista; API key aún no configurada."),
+        item("CRUX", "READY_FOR_CREDENTIAL", None, "Implementación lista; credencial y disponibilidad de datos aún no validadas."),
+        item("TRACKING", "DETECTED" if tracker_seen else "NOT_CONFIGURED", "gd-tracker.js" if tracker_seen else None),
+        item("META", "DETECTED" if meta_ids else "READY_FOR_CREDENTIAL", meta_ids[0] if meta_ids else None),
     ]
     session.close()
     return results

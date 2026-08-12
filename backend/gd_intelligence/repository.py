@@ -160,13 +160,23 @@ def store_integration_discovery(conn, site_id: int, item: dict[str, Any]) -> dic
         text(
             """
             INSERT INTO public.wi_integrations(
-              site_id,provider,status,enabled,external_id,last_verified_at,last_error_safe,updated_at
+              site_id,provider,status,enabled,external_id,last_verified_at,last_success_at,last_failure_at,last_error_safe,updated_at
             ) VALUES (
-              :site_id,:provider,:status,:enabled,:external_id,:last_verified_at,:last_error_safe,now()
+              :site_id,:provider,:status,:enabled,:external_id,:last_verified_at,
+              CASE WHEN :status<>'ERROR' THEN :last_verified_at END,
+              CASE WHEN :status='ERROR' THEN :last_verified_at END,
+              :last_error_safe,now()
             )
             ON CONFLICT(site_id,provider) DO UPDATE SET
-              status=excluded.status,enabled=excluded.enabled,external_id=excluded.external_id,
+              status=CASE WHEN excluded.status='ERROR' AND wi_integrations.last_success_at IS NOT NULL
+                          THEN 'REQUIRES_ATTENTION' ELSE excluded.status END,
+              enabled=CASE WHEN excluded.status='ERROR' AND wi_integrations.last_success_at IS NOT NULL
+                           THEN wi_integrations.enabled ELSE excluded.enabled END,
+              external_id=CASE WHEN excluded.status='ERROR' AND wi_integrations.last_success_at IS NOT NULL
+                               THEN wi_integrations.external_id ELSE excluded.external_id END,
               last_verified_at=excluded.last_verified_at,last_error_safe=excluded.last_error_safe,
+              last_failure_at=CASE WHEN excluded.status='ERROR' THEN excluded.last_verified_at ELSE wi_integrations.last_failure_at END,
+              last_success_at=CASE WHEN excluded.status<>'ERROR' THEN excluded.last_verified_at ELSE wi_integrations.last_success_at END,
               last_error_code=NULL,updated_at=now()
             RETURNING id,site_id,provider,status,enabled,external_id,last_verified_at,last_error_safe,updated_at
             """
