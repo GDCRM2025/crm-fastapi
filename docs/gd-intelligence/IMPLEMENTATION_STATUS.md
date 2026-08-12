@@ -2,7 +2,7 @@
 
 Actualizado: 2026-08-12
 
-SHA productivo inmutable: `8600cc2c4e51f7abc52ba362670f43af0016c276`.
+SHA productivo inmutable: `babfea832fcbbcc182e7779fbd0fe359a239c050`.
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
@@ -25,7 +25,7 @@ SHA productivo inmutable: `8600cc2c4e51f7abc52ba362670f43af0016c276`.
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `8600cc2`; legacy y releases previos preservados para rollback |
+| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `babfea8`; rollback inmediato `8600cc2` y releases previos preservados |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
@@ -41,7 +41,7 @@ SHA productivo inmutable: `8600cc2c4e51f7abc52ba362670f43af0016c276`.
 | 32 Manual source package | DONE_LOCAL | PASS | GENERATED | DEPLOYED | Pantallas, acciones, permisos, procesos, cobertura, capturas y handoff |
 | 33 Omnichannel Inbox | DONE_LOCAL | PASS | PARTIAL_REAL | DEPLOYED | Bandeja por referencia, navegación a Tools real y controles comerciales sin duplicar mensajes |
 | 34 CredentialVault | DONE | PASS | DONE_PROD | DEPLOYED | Write-only, Fernet at-rest, bootstrap persistente 0600, replace/revoke/verify y arranque fail-closed |
-| 35 Integration Center UX | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Navegación lateral, filtros, tarjetas legibles, estados humanizados, wizards y confirmaciones |
+| 35 Integration Center UX | DONE | PASS | VERIFIED_PROD | DEPLOYED | Estado canónico y multidimensional: instalación, credencial, API, datos y salud; QA visual productiva PASS |
 | 36 Site Health UX | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Hallazgos traducidos a Crítico/Importante/Mejora y last-known-good |
 | 37 Google Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | DEPLOYED | OAuth/service credential y sync READ ONLY disponibles; credencial externa ausente |
 | 38 Meta Ads real | READY_FOR_CREDENTIAL | PASS | API_READY_NO_DATA | DEPLOYED | Selector de activos y sync Graph GET disponibles; token externo ausente |
@@ -75,7 +75,7 @@ SHA productivo inmutable: `8600cc2c4e51f7abc52ba362670f43af0016c276`.
 
 ## Evidencia actual
 
-- 108 pruebas unitarias/contrato GD Intelligence, Omnichannel, bootstrap y reconciliación: PASS.
+- 122 pruebas unitarias/contrato GD Intelligence, Omnichannel, bootstrap y reconciliación: PASS; 0 fallas.
 - OpenAPI local incorpora 16 rutas nuevas de inteligencia real y Omnichannel; `/healthz` PASS.
 - Google Ads y Meta Ads no se marcan conectados: los conectores, selectores y sync están listos, pero las credenciales externas autorizadas no existen en el entorno. Meta pagina por cursor sin seguir URLs absolutas que puedan contener token, sanea activos anidados e ingiere `action_values`.
 - Inbox local usa datos reales: WhatsApp 1 conversación/1 lead; Email 199 registros consultados/8 leads/31 cotizaciones; Instagram y Messenger 0 registros. No se inventaron ventas ni revenue.
@@ -104,5 +104,6 @@ SHA productivo inmutable: `8600cc2c4e51f7abc52ba362670f43af0016c276`.
 - Integration Center muestra detectado, faltante, última verificación/sync, last-known-good y acción; PageSpeed puede configurarse desde CRM sin terminal.
 - Creación manual usa orígenes comerciales y campaña opcional; no expone campos UTM al Ejecutivo.
 - WABA dispone de reglas explícitas de confidence y no atribuye sin evidencia suficiente.
-- Cutover inmutable `8600cc2`: PASS; candidato aislado, Vault persistente, todos los routers cargados, Nginx y smoke tests ampliados PASS. Git privado y rotación de credenciales históricas siguen pendientes.
+- Paridad P0 de Integration Center: PASS. Producción detecta 16 instalaciones públicas; 0 APIs conectadas; 20 capacidades listas para credencial; 4 requieren atención; 4 no configuradas; 0 errores. Tracking está instalado 4/4 y permanece `NO_DATA` porque no existen sesiones/eventos reales todavía.
+- Cutover inmutable `babfea8`: PASS; candidato aislado, migración idempotente, QA visual, Vault persistente, todos los routers cargados y smoke tests ampliados PASS. Rollback `8600cc2` listo y no ejecutado. Git privado y rotación de credenciales históricas siguen pendientes.
 - Preflight Ubuntu read-only 2026-08-09: servicio activo y rollback SHA `ec43b36`; deployment bloqueado antes de escrituras por 54 entradas tracked + 192 untracked y gates Git/rotación pendientes.

@@ -3,9 +3,26 @@
 Fecha: 2026-08-12
 Resultado: **IMMUTABLE_CUTOVER_PASS**
 
-## Actualización — bootstrap persistente y acceso SUPERADMIN
+## Actualización — paridad P0 de Integration Center
 
-El release productivo activo es `8600cc2c4e51f7abc52ba362670f43af0016c276` en `/opt/greendiamond/releases/8600cc2c4e51f7abc52ba362670f43af0016c276`. `/opt/greendiamond/current` y el proceso systemd resuelven a ese directorio.
+El release productivo activo es `babfea832fcbbcc182e7779fbd0fe359a239c050` en `/opt/greendiamond/releases/babfea832fcbbcc182e7779fbd0fe359a239c050`. Reemplaza a `8600cc2c4e51f7abc52ba362670f43af0016c276`, que queda disponible como rollback inmediato.
+
+- Backup previo: `/opt/greendiamond/backups/parity/20260812_124421`.
+- `release_before` SHA-256: `d2097753f5ca6b7e0107fcfa9ad11e2b5ade66dd27b2bc0fd821e05669537b81`.
+- `postgres_before.dump` SHA-256: `537c5832c5a985bf829705bada5e80e41210cd5316967e14e0fdc405a484515a`; catálogo `pg_restore` PASS.
+- Migración aditiva de estados aplicada dos veces: PASS/idempotente.
+- Candidato `127.0.0.1:9090`: discovery productivo, smoke, control ADMIN 403 y QA visual PASS; detenido después del cutover.
+- Suite: 122 PASS, 0 FAIL; compileall, frontend build, JavaScript parse y Gitleaks PASS.
+- Smoke post-cutover: health, UI, Leads, Cotizaciones, WABA, Omnichannel, Backups, Overview, Integration Center, Site Health y Paid Media HTTP 200.
+- Secret response scan: PASS. No se imprimieron ni persistieron secretos nuevos.
+- Resultado real: 16 instalaciones detectadas, 0 APIs conectadas, 20 capacidades listas para credencial, 4 con atención, 4 no configuradas y 0 errores; progreso 60%.
+- `ROLLBACK_EXECUTED=NO`; rollback inmediato `8600cc2` permanece listo.
+
+La UI ya no resume todas las filas como conectadas/no configuradas. Muestra por separado instalación pública, credencial, verificación API, disponibilidad de datos y salud. GTM y GA4 aparecen como **Detectado**; GD Tracker como **Instalado · sin datos**; Google/Meta API como **Falta autorizar** cuando corresponde.
+
+## Registro histórico — bootstrap persistente y acceso SUPERADMIN en `8600cc2` (reemplazado)
+
+Este bloque registra el release `8600cc2c4e51f7abc52ba362670f43af0016c276`, activo antes del P0. El runtime actual está identificado en la actualización superior como `babfea8`.
 
 - PostgreSQL y la llave maestra del Vault se cargan desde `/opt/greendiamond/shared/secrets/bootstrap`, fuera del release. Directorio `0700`, archivos `0600`.
 - El loader soporta `systemd LoadCredential=` con precedencia superior; la activación del binding systemd queda pendiente de autoridad administrativa sobre `/etc/systemd/system`. El fallback seguro está operativo.
@@ -25,6 +42,10 @@ Backup inmediatamente anterior al release final: `/opt/greendiamond/backups/boot
 | `postgres_before.dump` | `f29c2d205237d93585f20e86b14d2e3720d885be2147e2a2eb171ea4f76eb4f0` |
 
 Rollback inmediato: release anterior `eb65fc430faee3e80514d23cef3a1795a420456f`; release estable previo `88704006e10c87ecd813a7f24e3eb91da8718a50`. `ROLLBACK_EXECUTED=NO` para el cutover final. Dos intentos previos fueron revertidos automáticamente durante el gate (arranque de candidato y ruta de smoke incorrecta), sin dejar producción en estado fallido.
+
+## Registro histórico — cutover `8870400` (reemplazado)
+
+Los SHA `88704006e10c87ecd813a7f24e3eb91da8718a50` de las secciones siguientes son evidencia histórica del primer cutover inmutable, no el runtime productivo actual.
 
 ## Release y arquitectura
 
