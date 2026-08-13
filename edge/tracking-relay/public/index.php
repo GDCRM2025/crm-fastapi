@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
 
 /* Green Diamond first-party tracking relay. No CRM routes or upstream proxy. */
 
@@ -245,7 +247,7 @@ function internal_pull(array $cfg, PDO $pdo, array $body): never {
     }
     $ackedRetention = max(3600, (int)($cfg['acked_retention_seconds'] ?? 604800));
     $pdo->prepare('DELETE FROM queue WHERE edge_id IN (SELECT edge_id FROM queue WHERE acked_at IS NOT NULL AND acked_at<? ORDER BY edge_id LIMIT 1000)')->execute([$now - $ackedRetention]);
-    $pdo->commit();
+    $pdo->exec('COMMIT');
     foreach ($items as &$item) $item['payload'] = json_decode($item['payload_sanitized'], true, 64, JSON_THROW_ON_ERROR);
     unset($item);
     respond(200, ['ok' => true, 'lease_id' => $items ? $lease : null, 'items' => $items, 'metrics' => metrics($pdo)]);
