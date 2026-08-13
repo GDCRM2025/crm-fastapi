@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const BUILD = "GD-AGENDA-WIZARD-V6-20260731";
+  const BUILD = "GD-AGENDA-WIZARD-V6-20260813-PRO2";
   const qs = (selector, root = document) => root.querySelector(selector);
   const qsa = (selector, root = document) => [...root.querySelectorAll(selector)];
   const emit = (element, type = "change") => {
@@ -35,15 +35,23 @@
       .gdW6Status.error{border-color:rgba(239,68,68,.52);background:rgba(239,68,68,.10);color:#fca5a5}
       .gdW6ModeSummary{border:1px solid rgba(96,165,250,.36);background:rgba(96,165,250,.075);border-radius:13px;padding:10px 12px;font-size:12px;line-height:1.5}
       .gdW6DataCard{order:-3}.gdW6DataCard:before{content:"Datos de contacto, pago y ubicación";font-weight:950;font-size:14px}
+      .gdW6PaymentRow{display:grid!important;grid-template-columns:minmax(180px,.8fr) minmax(280px,1.25fr) minmax(240px,1fr)!important;gap:12px!important;align-items:start!important}
+      .gdW6PaymentRow>.agLabel{min-width:0!important;width:auto!important;margin:0!important}.gdW6PaymentRow #ag_abono_extra{min-width:0!important}
+      .gdW6PaymentRow #ag_abono_extra>.agRow{display:grid!important;grid-template-columns:1fr!important;gap:7px!important}.gdW6PaymentRow #ag_abono_mode,.gdW6PaymentRow #ag_abono_oc,.gdW6PaymentRow #ag_abono_fecha{min-width:0!important;width:100%!important}
+      .gdW6TimeRow{display:grid!important;grid-template-columns:110px 110px 100px minmax(210px,1fr)!important;gap:10px!important;align-items:stretch!important}
+      .gdW6TimeRow>label{margin:0!important;align-self:stretch}.gdW6TimeRow>label>div{margin-bottom:6px}
+      .gdAgendaWizardV4 #ag_duracion{margin:0!important;align-self:stretch!important;min-height:66px;display:flex;align-items:center;justify-content:center;padding:10px 16px;border-radius:14px;border:2px solid rgba(25,195,125,.65);background:linear-gradient(135deg,rgba(25,195,125,.19),rgba(59,130,246,.13));color:#75f0bd!important;font-size:21px!important;font-weight:1000!important;line-height:1.15;text-align:center;box-shadow:0 0 0 4px rgba(25,195,125,.06)}
+      .gdW6PriorMount{border:2px solid rgba(25,195,125,.48)!important;background:linear-gradient(180deg,rgba(25,195,125,.10),rgba(0,0,0,.045))!important;margin-top:0}.gdW6PriorMount>.muted:first-child{font-size:15px;color:#75f0bd!important}
       .gdW6Independent{border-color:rgba(96,165,250,.42)!important;background:linear-gradient(180deg,rgba(96,165,250,.065),rgba(0,0,0,.045))!important}
       .gdW6DayHeader{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;border-radius:11px;border:1px solid rgba(96,165,250,.30);background:rgba(96,165,250,.075);font-size:11px;font-weight:950;margin-bottom:4px}
       .gdW6DayHeader span:last-child{color:var(--muted,#a9bbd2);font-weight:800}
       .gdW6Hidden{display:none!important}
+      .gdW6ProductFlow.gdW6Simple #ag_products_allocator{display:none!important}.gdW6ProductFlow.gdW6Simple #ag_products_wrap{border:1px solid rgba(25,195,125,.30)!important;background:rgba(25,195,125,.06)!important;padding:12px!important;border-radius:13px!important}
       .gdW6StepReady{box-shadow:0 0 0 3px rgba(25,195,125,.08)}
       .gdW6LoadingNote{display:none}.gdW6LoadingNote.show{display:grid}
       .gdW4Panel[data-panel="1"] #gdW4Duration,.gdW4Panel[data-panel="1"] #gdW4ModeHint,.gdW4Panel[data-panel="1"] .gdW4Sync{display:none!important}
       .gdW4Panel[data-panel="2"]{align-content:start}
-      @media(max-width:820px){.gdW6ProductBlock>header{align-items:flex-start;flex-direction:column}.gdW6Tip{grid-template-columns:1fr}.gdW6Tip b{display:none}}
+      @media(max-width:900px){.gdW6PaymentRow,.gdW6TimeRow{grid-template-columns:1fr 1fr!important}.gdAgendaWizardV4 #ag_duracion{grid-column:span 2}.gdW6ProductBlock>header{align-items:flex-start;flex-direction:column}.gdW6Tip{grid-template-columns:1fr}.gdW6Tip b{display:none}}
     `;
     document.head.appendChild(style);
   }
@@ -116,6 +124,8 @@
 
     if (dataCard) {
       dataCard.classList.add("gdW6DataCard");
+      qs("#ag_abono", dataCard)?.closest(".agRow")?.classList.add("gdW6PaymentRow");
+      qs("#ag_hini", dataCard)?.closest(".agRow")?.classList.add("gdW6TimeRow");
       if (range) panelOperation.insertBefore(dataCard, range);
       else panelOperation.prepend(dataCard);
     }
@@ -174,7 +184,15 @@
 
   function updateModeCopy(popup) {
     const current = mode(popup);
+    const simple = current === "simple" && !qs("#ag_flag_multiloc", popup)?.checked;
     const tip = qs("#gdW6ModeTip", popup);
+    const flow = qs("#gdW6ProductFlow", popup);
+    const productBlock = qs("#ag_products_wrap", popup)?.closest(".gdW6ProductBlock");
+    const productHeader = qs("header strong", productBlock || popup);
+    const productBadge = qs("header span", productBlock || popup);
+    flow?.classList.toggle("gdW6Simple", simple);
+    if (productHeader) productHeader.textContent = simple ? "2. Productos incluidos en el evento" : "2. Revisa y distribuye los productos";
+    if (productBadge) productBadge.textContent = simple ? "ASIGNACIÓN AUTOMÁTICA" : "DEBE CUADRAR AL 100%";
     const locToggle = qs("#gdW4Locs", popup);
     const locCard = locToggle?.closest(".gdW4Switch");
     const legacyLoc = qs("#ag_flag_multiloc", popup);
@@ -199,6 +217,15 @@
         emit(legacyLoc, "change");
       }
     }
+  }
+
+  function movePriorMountingToFirstStep(popup) {
+    const panelType = qs('.gdW4Panel[data-panel="0"]', popup);
+    const switches = qs(".gdW4Switches", panelType || popup);
+    const mounting = qs("#ag_montaje_event_box", popup);
+    if (!panelType || !switches || !mounting) return;
+    mounting.classList.add("gdW6PriorMount");
+    switches.after(mounting);
   }
 
   function syncLeadFromFirstDay(popup) {
@@ -303,6 +330,7 @@
     injectStyle();
     updateLabels(popup);
     addStepTips(popup);
+    movePriorMountingToFirstStep(popup);
     moveProductsToStepTwo(popup);
     updateModeCopy(popup);
     decorateDayCards(popup);

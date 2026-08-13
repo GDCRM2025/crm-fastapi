@@ -240,6 +240,13 @@
       if (checked("#ag_flag_multiloc", popup) && Number(value("#ag_locs_n", popup) || 0) < 2) {
         add("#ag_locs_n", "Indica cuántas locaciones tendrá el evento. Deben ser al menos 2.");
       }
+      if (checked("#ag_flag_montaje_event", popup)) {
+        if (!value("#ag_mont_day", popup)) add("#ag_mont_day", "Montaje separado: selecciona la fecha.");
+        if (!value("#ag_mont_hini", popup)) add("#ag_mont_hini", "Montaje separado: indica la hora de inicio.");
+        if (!value("#ag_mont_hfin", popup)) add("#ag_mont_hfin", "Montaje separado: indica la hora de término.");
+        if (!value("#ag_mont_loc", popup)) add("#ag_mont_loc", "Montaje separado: indica la comuna.");
+        if (!value("#ag_mont_dir", popup)) add("#ag_mont_dir", "Montaje separado: indica la dirección.");
+      }
     }
 
     if (step === 1) {
@@ -343,6 +350,9 @@
     const title = value("#ag_title", popup) || "Evento confirmado";
     const products = String(qs("#ag_products_day", popup)?.textContent || "").trim() || "Sin productos";
     const montage = String(qs("#ag_montaje_day", popup)?.value || "").trim() || String(qs("#ag_mont_manual", popup)?.value || "").trim() || "Sin montaje calculado";
+    const priorMountingHtml = checked("#ag_flag_montaje_event", popup) ? `
+      <div class="gdW4Item wide"><small>Montaje operativo separado · sólo Calendar</small><div>${escapeHtml(value("#ag_mont_day", popup) || "Sin fecha")} · ${escapeHtml(value("#ag_mont_hini", popup) || "—")} – ${escapeHtml(value("#ag_mont_hfin", popup) || "—")}<br>${escapeHtml(value("#ag_mont_loc", popup) || "Sin comuna")} · ${escapeHtml(value("#ag_mont_dir", popup) || "Sin dirección")}<br>Mismos equipos del evento comercial; no crea otra venta ni otro lead.</div></div>
+    ` : "";
 
     let scheduleHtml = "";
     if (mode === "simple") {
@@ -373,6 +383,7 @@
       ${scheduleHtml}
       <div class="gdW4Item wide"><small>Productos de cotización</small><div style="white-space:pre-wrap">${escapeHtml(products)}</div></div>
       <div class="gdW4Item wide"><small>Montaje</small><div style="white-space:pre-wrap">${escapeHtml(montage)}</div></div>
+      ${priorMountingHtml}
     </div>`;
   }
 

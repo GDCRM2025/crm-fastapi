@@ -2522,7 +2522,7 @@ const MENU = [
     items: [
       // Un solo acceso: la vista Reportes maneja tabs internos.
       { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes_v2.html?v=20260813-report-fix1" },
-      { id: "gd_sales", label: "GD Sales Command Center", url: "/web/views/gd_sales.html?v=20260813-1", superadminOnly: true }
+      { id: "gd_sales", label: "GD Sales Command Center ↗", url: "/web/views/gd_sales.html?v=20260813-pro2", superadminOnly: true, external: true }
     ]
   },
   {
@@ -3451,7 +3451,8 @@ async function openItem(it) {
   } catch (_) {
   }
   if (it.external) {
-    window.open(it.url, "_blank", "noopener");
+    const externalWindow = window.open(viewURL(it.url), "_blank");
+    try { if (externalWindow) externalWindow.opener = null; } catch (_) {}
     return;
   }
   const frame = qs("#mainFrame");

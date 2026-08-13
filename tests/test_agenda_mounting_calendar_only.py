@@ -13,6 +13,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AgendaMountingCalendarOnlyTests(unittest.TestCase):
+    def test_incomplete_mounting_draft_is_allowed_only_for_preview_guidance(self):
+        item, missing = leads_agenda._mounting_event_draft({"day": "2026-08-14", "start_time": "09:00"})
+        self.assertIsNone(item)
+        self.assertEqual(missing, ["fin", "comuna", "dirección"])
+        source = (ROOT / "backend/routers/leads_agenda.py").read_text(encoding="utf-8")
+        self.assertIn("if montaje_pending and not dry_run", source)
+        self.assertIn('"montaje_pending": montaje_pending', source)
+
+    def test_complete_mounting_draft_preserves_independent_schedule(self):
+        item, missing = leads_agenda._mounting_event_draft({
+            "day": "2026-08-14", "start_time": "09:00", "end_time": "10:00",
+            "comuna": "Las Condes", "direccion": "Av. Apoquindo 2730",
+        })
+        self.assertEqual(missing, [])
+        self.assertEqual(str(item["day"]), "2026-08-14")
+        self.assertEqual(item["start_time"], "09:00")
+
     def test_mounting_is_calendar_only_and_keeps_commercial_event_as_crm_anchor(self):
         source = (ROOT / "backend/routers/leads_agenda.py").read_text(encoding="utf-8")
         self.assertIn('evm["calendar_only"] = True', source)

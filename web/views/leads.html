@@ -3955,7 +3955,12 @@ async function handleConfirmado(lead, newEstado, movementComment=""){
       if (selectedIdx >= previewEvents.length) selectedIdx = 0;
       renderDayTabs();
       renderPreviewForSelectedDay();
-      if (st) st.textContent = "Listo";
+      if (st) {
+        const mountingPending = Array.isArray(out?.montaje_pending) ? out.montaje_pending : [];
+        st.textContent = mountingPending.length
+          ? `Vista previa comercial lista · completa montaje: ${mountingPending.join(", ")}`
+          : "Listo";
+      }
 	    }catch(err){
 	      previewEvents = [];
 	      const allocationOk = /^OK:/i.test(String(qs("#ag_alloc_status")?.textContent || "").trim());
@@ -6685,8 +6690,8 @@ async function init(){
 init();
 </script>
 
-  <script src="../js/agenda_wizard_v4.js?v=20260813-1"></script>
-  <script src="../js/agenda_wizard_v6.js?v=20260813-1"></script>
+  <script src="../js/agenda_wizard_v4.js?v=20260813-pro2"></script>
+  <script src="../js/agenda_wizard_v6.js?v=20260813-pro2"></script>
   <script src="../js/agenda_multiday_v19.js?v=20260731-20"></script>
 </body>
 </html>

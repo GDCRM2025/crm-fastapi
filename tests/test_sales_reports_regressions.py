@@ -56,6 +56,8 @@ class GDSalesSecurityTests(unittest.TestCase):
         panel = (ROOT / "web/js/panel.js").read_text(encoding="utf-8")
         self.assertIn('id: "gd_sales"', panel)
         self.assertIn("superadminOnly: true", panel)
+        self.assertIn("external: true", panel)
+        self.assertIn('window.open(viewURL(it.url), "_blank")', panel)
         self.assertIn("if (it.superadminOnly && !isCurrentSuperAdmin()) return;", panel)
 
     def test_static_server_snapshot_is_not_reintroduced(self) -> None:
@@ -63,6 +65,27 @@ class GDSalesSecurityTests(unittest.TestCase):
         html = (ROOT / "web/views/gd_sales.html").read_text(encoding="utf-8")
         self.assertIn("/tools/gd-sales/command-center", html)
         self.assertIn("Datos reales", html)
+
+    def test_live_command_center_has_requested_contact_filters_and_actions(self) -> None:
+        html = (ROOT / "web/views/gd_sales.html").read_text(encoding="utf-8")
+        router = (ROOT / "backend/routers/gd_sales.py").read_text(encoding="utf-8")
+        for marker in ('id="brand"', 'id="state"', 'id="from"', 'id="to"', "Monto mayor", "Monto menor"):
+            self.assertIn(marker, html)
+        self.assertIn("telefono", router)
+        self.assertIn("id_cotizacion", router)
+        self.assertIn("openQuote", html)
+        self.assertIn('window.open(viewPath(`leads.html?open_lead=', html)
+        self.assertNotIn("ASIGNAR EJECUTIVO", router)
+
+    def test_wizard_single_event_and_layout_are_progressive(self) -> None:
+        wizard = (ROOT / "web/js/agenda_wizard_v6.js").read_text(encoding="utf-8")
+        leads = (ROOT / "web/views/leads.html").read_text(encoding="utf-8")
+        self.assertIn("gdW6Simple #ag_products_allocator{display:none!important}", wizard)
+        self.assertIn("ASIGNACIÓN AUTOMÁTICA", wizard)
+        self.assertIn("gdW6PaymentRow", wizard)
+        self.assertIn("font-size:21px!important", wizard)
+        self.assertIn("movePriorMountingToFirstStep", wizard)
+        self.assertIn("montaje_pending", leads)
 
 
 class SurveyUXTests(unittest.TestCase):

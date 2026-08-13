@@ -38,8 +38,9 @@ def command_center(
     """Live commercial pipeline, generated from CRM tables only.
 
     The former dashboard was a static, unauthenticated HTML snapshot. This
-    endpoint deliberately returns no notes, email or phone and is protected
-    server-side for SUPERADMIN.
+    endpoint deliberately returns no notes or email and is protected
+    server-side for SUPERADMIN. Phone is included because this is an explicit
+    commercial contact surface available only to that role.
     """
     _require_superadmin(user)
     now_cl = datetime.now(ZoneInfo("America/Santiago"))
@@ -50,6 +51,7 @@ def command_center(
                 SELECT
                   l.id_lead::bigint AS id_lead,
                   COALESCE(NULLIF(btrim(l.cliente),''),'Sin nombre') AS cliente,
+                  COALESCE(NULLIF(btrim(l.telefono),''),'') AS telefono,
                   COALESCE(NULLIF(btrim(COALESCE(m.nombre,m.marca,'')),''),'Sin marca') AS marca,
                   l.fecha_evento::date AS fecha_evento,
                   COALESCE(l.monto_cotizado,0)::float AS monto,
@@ -57,8 +59,8 @@ def command_center(
                   l.seguimiento_at,
                   l.created_at AS fecha_creacion,
                   l.updated_at,
-                  COALESCE(NULLIF(btrim(t.assigned_username),''),'SIN ASIGNAR') AS ejecutivo,
-                  COALESCE(l.num_cotizacion,'') AS num_cotizacion,
+                  COALESCE(l.id_cotizacion_vigente,q.id_cotizacion) AS id_cotizacion,
+                  COALESCE(NULLIF(btrim(l.num_cotizacion::text),''),q.numero::text,'') AS num_cotizacion,
                   t.id_task,
                   t.kind AS task_kind,
                   t.status AS task_status,
@@ -67,7 +69,7 @@ def command_center(
                 LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
                 LEFT JOIN public.estados_lead e ON e.id_estado=l.id_estado
                 LEFT JOIN LATERAL (
-                  SELECT t.id_task,t.kind,t.status,t.due_at,t.assigned_username
+                  SELECT t.id_task,t.kind,t.status,t.due_at
                   FROM public.tasks t
                   WHERE lower(COALESCE(t.entity_type,''))='lead'
                     AND t.entity_id::text=l.id_lead::text
@@ -75,6 +77,13 @@ def command_center(
                   ORDER BY t.due_at ASC NULLS LAST,t.id_task DESC
                   LIMIT 1
                 ) t ON TRUE
+                LEFT JOIN LATERAL (
+                  SELECT c.id_cotizacion,c.numero
+                  FROM public.cotizaciones c
+                  WHERE c.id_lead=l.id_lead
+                  ORDER BY c.id_cotizacion DESC
+                  LIMIT 1
+                ) q ON TRUE
                 WHERE COALESCE(l.is_deleted,false)=false
                   AND l.fecha_evento::date >= (now() AT TIME ZONE 'America/Santiago')::date
                   AND UPPER(COALESCE(e.nombre,'')) NOT LIKE '%CONFIRM%'
@@ -105,10 +114,7 @@ def command_center(
                 due_local = due_at
         overdue = bool(due_local and due_local < now_cl)
         no_followup = row.get("seguimiento_at") is None
-        unassigned = str(row.get("ejecutivo") or "").upper() == "SIN ASIGNAR"
-        if unassigned:
-            action = "ASIGNAR EJECUTIVO"
-        elif overdue:
+        if overdue:
             action = "CONTACTAR HOY"
         elif no_followup:
             action = "PROGRAMAR SEGUIMIENTO"
@@ -120,20 +126,22 @@ def command_center(
             {
                 "id_lead": int(row.get("id_lead") or 0),
                 "cliente": str(row.get("cliente") or ""),
+                "telefono": str(row.get("telefono") or ""),
                 "marca": str(row.get("marca") or "").upper(),
                 "fecha_evento": str(event_day) if event_day else None,
                 "monto": _money(row.get("monto")),
                 "estado": str(row.get("estado") or ""),
                 "seguimiento_at": str(row.get("seguimiento_at")) if row.get("seguimiento_at") else None,
-                "ejecutivo": str(row.get("ejecutivo") or "SIN ASIGNAR"),
+                "id_cotizacion": int(row.get("id_cotizacion")) if row.get("id_cotizacion") else None,
                 "num_cotizacion": str(row.get("num_cotizacion") or ""),
+                "fecha_creacion": str(row.get("fecha_creacion")) if row.get("fecha_creacion") else None,
+                "updated_at": str(row.get("updated_at")) if row.get("updated_at") else None,
                 "task_due_at": str(due_at) if due_at else None,
                 "days_to_event": days_to_event,
                 "no_followup": no_followup,
                 "overdue": overdue,
                 "within_7_days": bool(days_to_event is not None and 0 <= days_to_event <= 7),
                 "next_month": False,
-                "unassigned": unassigned,
                 "action": action,
             }
         )
@@ -156,22 +164,13 @@ def command_center(
         "overdue": summarize([item for item in items if item["overdue"]]),
         "within_7_days": summarize([item for item in items if item["within_7_days"]]),
         "next_month": summarize([item for item in items if item["next_month"]]),
-        "unassigned": summarize([item for item in items if item["unassigned"]]),
+        "high_value": summarize([item for item in items if _money(item.get("monto")) >= 1_000_000]),
     }
-    executives: dict[str, dict[str, Any]] = {}
-    for item in items:
-        name = str(item.get("ejecutivo") or "SIN ASIGNAR")
-        bucket = executives.setdefault(name, {"ejecutivo": name, "opportunities": 0, "pipeline": 0, "no_followup": 0, "overdue": 0})
-        bucket["opportunities"] += 1
-        bucket["pipeline"] += _money(item.get("monto"))
-        bucket["no_followup"] += int(bool(item.get("no_followup")))
-        bucket["overdue"] += int(bool(item.get("overdue")))
 
     return {
         "ok": True,
         "generated_at": now_cl.isoformat(),
         "summary": summary,
         "items": items,
-        "executives": sorted(executives.values(), key=lambda value: (-int(value["pipeline"]), value["ejecutivo"])),
         "data_source": "LIVE_CRM",
     }

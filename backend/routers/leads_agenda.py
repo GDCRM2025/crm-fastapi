@@ -75,6 +75,46 @@ except Exception:
 
 router = APIRouter(prefix="/leads", tags=["leads-agenda"])
 
+
+def _mounting_event_draft(value: Any) -> tuple[dict[str, Any] | None, list[str]]:
+    """Normalize an optional calendar-only mounting event.
+
+    Preview requests are allowed to carry an incomplete draft so the wizard
+    can guide the user field by field. The final scheduling request remains
+    fail-closed and rejects the same missing fields before any mutation.
+    """
+    if not isinstance(value, dict):
+        return None, []
+    raw_day = str(value.get("day") or value.get("fecha") or "").strip()[:10]
+    try:
+        mounting_day = date.fromisoformat(raw_day) if raw_day else None
+    except Exception:
+        mounting_day = None
+    comuna = str(value.get("comuna") or value.get("location") or "").strip()
+    direccion = str(value.get("direccion") or value.get("address") or "").strip()
+    start_time = _safe_time_hhmm(value.get("start_time") or value.get("inicio") or "")
+    end_time = _safe_time_hhmm(value.get("end_time") or value.get("fin") or "")
+    missing = [
+        label
+        for label, present in (
+            ("fecha", mounting_day),
+            ("inicio", start_time),
+            ("fin", end_time),
+            ("comuna", comuna),
+            ("dirección", direccion),
+        )
+        if not present
+    ]
+    if missing:
+        return None, missing
+    return {
+        "day": mounting_day,
+        "comuna": comuna,
+        "direccion": direccion,
+        "start_time": start_time,
+        "end_time": end_time,
+    }, []
+
 def _ensure_finanzas_tables():
     # Minimal ensure (idempotente).
     with engine.begin() as cn:
@@ -2851,25 +2891,10 @@ def move_lead_and_maybe_agenda(
         # día o después, según la necesidad real de operaciones.
         montaje_event = payload.get("montaje_event") or payload.get("montaje_previo") or None
         montaje_ev: dict | None = None
+        montaje_pending: list[str] = []
         if isinstance(montaje_event, dict):
-            d0 = str(montaje_event.get("day") or montaje_event.get("fecha") or "").strip()[:10]
-            try:
-                dd = date.fromisoformat(d0) if d0 else None
-            except Exception:
-                dd = None
-            comuna_m = str(montaje_event.get("comuna") or montaje_event.get("location") or "").strip()
-            dir_m = str(montaje_event.get("direccion") or montaje_event.get("address") or "").strip()
-            st_m = _safe_time_hhmm(montaje_event.get("start_time") or montaje_event.get("inicio") or "")
-            en_m = _safe_time_hhmm(montaje_event.get("end_time") or montaje_event.get("fin") or "")
-            if dd and comuna_m and dir_m and st_m and en_m:
-                montaje_ev = {
-                    "day": dd,
-                    "comuna": comuna_m,
-                    "direccion": dir_m,
-                    "start_time": st_m,
-                    "end_time": en_m,
-                }
-            else:
+            montaje_ev, montaje_pending = _mounting_event_draft(montaje_event)
+            if montaje_pending and not dry_run:
                 raise HTTPException(
                     status_code=422,
                     detail="Montaje operativo incompleto: fecha, inicio, fin, comuna y dirección son obligatorios.",
@@ -3214,6 +3239,7 @@ def move_lead_and_maybe_agenda(
                 "preview": True,
                 "quote_source": quote_source or ("cotizador" if id_cot else "manual"),
                 "id_cotizacion": int(id_cot) if id_cot else None,
+                "montaje_pending": montaje_pending,
                 "items": items,
                 "eventos": [
                     {
