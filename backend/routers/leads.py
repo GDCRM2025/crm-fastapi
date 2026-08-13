@@ -1828,7 +1828,10 @@ def update_lead(id_lead: int, request: Request, payload: dict = Body(...), user:
                 """
                 SELECT id_marca, id_estado, notas, cliente, email, telefono, direccion,
                        id_comuna, id_tipo_cliente, fecha_evento, monto_cotizado,
-                       plataforma, num_cotizacion
+                       plataforma, num_cotizacion,
+                       COALESCE(calendar_event_id,'') AS calendar_event_id,
+                       COALESCE(calendar_event_ids_json,'') AS calendar_event_ids_json,
+                       agenda_approved_at
                 FROM public.leads
                 WHERE id_lead=:id
                 """
@@ -1961,6 +1964,47 @@ def update_lead(id_lead: int, request: Request, payload: dict = Body(...), user:
                 actual_incoming[key] = val
         data_change_lines, actual_changed_fields = _lead_data_change_lines(conn, dict(row or {}), actual_incoming)
 
+        confirmed_and_calendarized = bool(
+            _is_confirmed_estado_conn(conn, old_estado)
+            and (
+                str(row.get("calendar_event_id") or "").strip()
+                or str(row.get("calendar_event_ids_json") or "").strip()
+                or row.get("agenda_approved_at") is not None
+            )
+        )
+        protected_when_confirmed = {"id_marca", "plataforma", "fecha_evento", "num_cotizacion", "monto_cotizado"}
+        protected_changes = sorted(protected_when_confirmed.intersection(actual_changed_fields))
+        notes_changed = bool(
+            notas_set
+            and _fmt_hist_value(old_notas) != _fmt_hist_value(notas_val)
+        )
+        if confirmed_and_calendarized and (protected_changes or notes_changed):
+            labels = {
+                "id_marca": "marca",
+                "plataforma": "plataforma",
+                "fecha_evento": "fecha del evento",
+                "num_cotizacion": "número de cotización",
+                "monto_cotizado": "monto confirmado",
+            }
+            fields = [labels.get(value, value) for value in protected_changes]
+            if notes_changed:
+                fields.append("historial")
+            raise HTTPException(
+                409,
+                "Evento confirmado: no se puede modificar " + ", ".join(fields) + ". Usa una nueva revisión comercial si corresponde.",
+            )
+
+        downgrading_confirmed = bool(
+            confirmed_and_calendarized
+            and id_estado is not None
+            and not _is_confirmed_estado_conn(conn, id_estado)
+        )
+        calendar_removal = None
+        if downgrading_confirmed:
+            from backend.routers.leads_agenda import delete_confirmed_calendar_events
+
+            calendar_removal = delete_confirmed_calendar_events(int(id_lead))
+
         conn.execute(text("""
           UPDATE public.leads SET
             cliente=COALESCE(:cliente,cliente),
@@ -1995,6 +2039,55 @@ def update_lead(id_lead: int, request: Request, payload: dict = Body(...), user:
             "notas": notas_val,
             "num_cotizacion": payload.get("num_cotizacion"),
         })
+
+        if calendar_removal is not None:
+            calendar_cols = _cols_for("leads")
+            clears = {
+                "calendar_start": None,
+                "calendar_end": None,
+                "calendar_html_link": None,
+                "calendar_html_links_json": None,
+                "calendar_event_id": None,
+                "calendar_event_ids_json": None,
+                "agenda_approved_by": None,
+                "agenda_approved_at": None,
+                "pendiente_agendar": False,
+            }
+            assignments = [f"{key}=:{key}" for key in clears if key in calendar_cols]
+            if assignments:
+                conn.execute(
+                    text("UPDATE public.leads SET " + ",".join(assignments) + ",updated_at=now() WHERE id_lead=:id"),
+                    {"id": int(id_lead), **{key: value for key, value in clears.items() if key in calendar_cols}},
+                )
+            _append_notas(
+                conn,
+                id_lead,
+                "[AGENDA %s] Retirado de Calendar: %s evento(s); montaje(s) asociado(s): %s."
+                % (
+                    datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    int(calendar_removal.get("deleted") or 0),
+                    int(calendar_removal.get("mounting_planned") or 0),
+                ),
+            )
+
+        calendar_synced = None
+        sync_fields = sorted({"telefono", "direccion", "id_comuna", "id_tipo_cliente"}.intersection(actual_changed_fields))
+        if confirmed_and_calendarized and not downgrading_confirmed and sync_fields:
+            from backend.routers.tools import sync_confirmed_calendar_metadata
+
+            calendar_synced = sync_confirmed_calendar_metadata(conn, int(id_lead), changed_fields=sync_fields)
+            _append_notas(
+                conn,
+                id_lead,
+                "[CALENDAR %s] Datos sincronizados: %s."
+                % (datetime.now().strftime("%Y-%m-%d %H:%M"), ", ".join(sync_fields)),
+            )
+            if "id_tipo_cliente" in sync_fields:
+                _append_notas(
+                    conn,
+                    id_lead,
+                    "[CONTROL COTIZACIÓN] Cambió el tipo de cliente. El monto y la cotización confirmados permanecen bloqueados; revisar documento/IVA antes de emitir.",
+                )
 
         _append_movement_comment(conn, id_lead, payload, user)
         if data_change_lines:
@@ -2140,7 +2233,12 @@ def update_lead(id_lead: int, request: Request, payload: dict = Body(...), user:
         except Exception:
             pass
         conn.commit()
-        return {"ok": True}
+        return {
+            "ok": True,
+            "calendar_synced": calendar_synced,
+            "calendar_removed": calendar_removal,
+            "quote_review_required": bool("id_tipo_cliente" in sync_fields),
+        }
 
 
 @router.post("/leads/{id_lead}/append_note")

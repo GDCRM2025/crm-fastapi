@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.db import get_db
+from backend.db import SessionLocal, get_db
 from backend.core.agenda_lock import agenda_lock_key
 
 try:
@@ -7149,6 +7149,21 @@ def approve_agenda(
                 hist = f"[ESTADO {stamp}] {who_hist}: Confirmado y agendado en Calendar"
                 if link_txt:
                     hist += f"\nCalendar: {link_txt}"
+                mounting_events = [
+                    item
+                    for item in to_create
+                    if bool(item.get("calendar_only")) or str(item.get("calendar_kind") or "").upper() == "MOUNTING"
+                ]
+                for mounting in mounting_events:
+                    hist += (
+                        "\n[MONTAJE CALENDAR] %s · %s–%s · %s · evento operativo separado."
+                        % (
+                            mounting.get("day") or "",
+                            str(mounting.get("start") or "")[11:16],
+                            str(mounting.get("end") or "")[11:16],
+                            mounting.get("location") or "",
+                        )
+                    )
                 db.execute(
                     text(
                         """
@@ -7397,6 +7412,183 @@ def approve_agenda(
                 pass
 
 
+def sync_confirmed_calendar_metadata(db, id_lead: int, *, changed_fields: list[str] | None = None) -> dict[str, Any]:
+    """Patch metadata for every existing Calendar child of a confirmed lead.
+
+    Commercial events receive the lead's current comuna/address.  A mounting
+    event keeps its independently selected operational location, while phone,
+    customer type and digital attribution remain synchronized in its notes.
+    No event is created here.
+    """
+    row = (
+        db.execute(
+            text(
+                """
+                SELECT l.id_lead, l.telefono, l.direccion, l.id_comuna, l.id_tipo_cliente,
+                       COALESCE(l.pre_events_json,'') AS pre_events_json,
+                       COALESCE(l.calendar_event_id,'') AS calendar_event_id,
+                       COALESCE(l.calendar_event_ids_json,'') AS calendar_event_ids_json,
+                       COALESCE(l.pre_description,'') AS pre_description,
+                       COALESCE(l.pre_location,'') AS pre_location
+                FROM public.leads l
+                WHERE l.id_lead=:id
+                LIMIT 1
+                """
+            ),
+            {"id": int(id_lead)},
+        )
+        .mappings()
+        .first()
+    )
+    if not row:
+        raise HTTPException(404, detail="Lead no existe")
+
+    try:
+        plan = json.loads(str(row.get("pre_events_json") or ""))
+    except Exception:
+        plan = None
+    if not isinstance(plan, list) or not plan:
+        raise HTTPException(409, detail="El evento confirmado no tiene un plan sincronizable.")
+
+    event_ids: list[str] = []
+    try:
+        parsed_ids = json.loads(str(row.get("calendar_event_ids_json") or ""))
+        if isinstance(parsed_ids, list):
+            event_ids = [str(value or "").strip() for value in parsed_ids if str(value or "").strip()]
+    except Exception:
+        event_ids = []
+    if not event_ids and str(row.get("calendar_event_id") or "").strip():
+        event_ids = [str(row.get("calendar_event_id") or "").strip()]
+    if len(event_ids) != len(plan):
+        raise HTTPException(
+            409,
+            detail=f"Calendar incompleto: el plan tiene {len(plan)} evento(s) y sólo {len(event_ids)} identificador(es). No se modificó el lead.",
+        )
+
+    comuna = ""
+    try:
+        comuna_cols = _cols_pg(db, "comunas")
+        comuna_col = "nombre" if "nombre" in comuna_cols else ("comuna" if "comuna" in comuna_cols else "")
+        if comuna_col:
+            comuna = str(
+                db.execute(
+                    text(f'SELECT COALESCE("{comuna_col}",\'\') FROM public.comunas WHERE id_comuna=:id'),
+                    {"id": row.get("id_comuna")},
+                ).scalar()
+                or ""
+            ).strip()
+    except Exception:
+        comuna = str(row.get("pre_location") or "").strip()
+
+    tipo_cliente = ""
+    try:
+        table_name = "tipos_cliente" if _table_exists_pg(db, "tipos_cliente") else ("tipocliente" if _table_exists_pg(db, "tipocliente") else "")
+        if table_name:
+            cols_tipo = _cols_pg(db, table_name)
+            label_col = "nombre" if "nombre" in cols_tipo else ("tipo" if "tipo" in cols_tipo else ("descripcion" if "descripcion" in cols_tipo else ""))
+            if label_col:
+                tipo_cliente = str(
+                    db.execute(
+                        text(f'SELECT COALESCE("{label_col}",\'\') FROM public."{table_name}" WHERE id_tipo_cliente=:id'),
+                        {"id": row.get("id_tipo_cliente")},
+                    ).scalar()
+                    or ""
+                ).strip()
+    except Exception:
+        tipo_cliente = ""
+
+    attribution = ""
+    try:
+        from backend.routers.leads_agenda import _digital_attribution_summary  # type: ignore
+
+        attribution = _digital_attribution_summary(int(id_lead))
+    except Exception:
+        attribution = ""
+
+    def replace_label(description: str, label: str, value: str) -> str:
+        line = f"{label}: {value or 'POR CONFIRMAR'}"
+        pattern = re.compile(rf"^{re.escape(label)}:.*$", flags=re.MULTILINE)
+        if pattern.search(description):
+            return pattern.sub(line, description, count=1)
+        return description.rstrip() + ("\n" if description.strip() else "") + line
+
+    updated_plan: list[dict[str, Any]] = []
+    bodies: list[dict[str, Any]] = []
+    for index, original in enumerate(plan):
+        if not isinstance(original, dict):
+            raise HTTPException(409, detail="Plan de Calendar inválido; no se modificó el lead.")
+        item = dict(original)
+        calendar_only = bool(item.get("calendar_only")) or str(item.get("calendar_kind") or "").upper() == "MOUNTING"
+        description = str(item.get("description") or "")
+        # Replace the generated attribution section instead of duplicating it.
+        description = re.split(r"\n\n📈 ATRIBUCIÓN DIGITAL:\n", description, maxsplit=1)[0].rstrip()
+        description = replace_label(description, "📞 TELEFONO", str(row.get("telefono") or "").strip())
+        if not calendar_only:
+            description = replace_label(description, "📍 DIRECCION", str(row.get("direccion") or "").strip())
+            if comuna:
+                item["location"] = comuna
+        if tipo_cliente:
+            description = replace_label(description, "👤 TIPO CLIENTE", tipo_cliente)
+        if attribution:
+            description += "\n\n📈 ATRIBUCIÓN DIGITAL:\n" + attribution
+        item["description"] = description
+        updated_plan.append(item)
+        bodies.append(
+            {
+                "summary": str(item.get("title") or f"Evento Lead {id_lead}"),
+                "location": str(item.get("location") or ""),
+                "description": description,
+                "start": {"dateTime": str(item.get("start_at") or ""), "timeZone": "America/Santiago"},
+                "end": {"dateTime": str(item.get("end_at") or ""), "timeZone": "America/Santiago"},
+                "extendedProperties": {
+                    "private": {
+                        "lead_id": str(id_lead),
+                        "lead_key": f"{id_lead}:{item.get('calendar_key') or item.get('day') or index}",
+                    }
+                },
+            }
+        )
+
+    with SessionLocal() as auth_db:
+        svc = _gcal_service(auth_db)
+        if not svc:
+            raise HTTPException(503, detail="Google Calendar no está conectado; no se modificó el lead.")
+        cal_id = _gcal_default_calendar_id(auth_db, None)
+        for event_id, body in zip(event_ids, bodies):
+            try:
+                svc.events().patch(calendarId=cal_id, eventId=event_id, body=body).execute()
+            except Exception as exc:
+                raise HTTPException(502, detail=f"No se pudo sincronizar Calendar ({event_id}): {exc}")
+
+    commercial = next(
+        (
+            item
+            for item in updated_plan
+            if not (bool(item.get("calendar_only")) or str(item.get("calendar_kind") or "").upper() == "MOUNTING")
+        ),
+        updated_plan[0],
+    )
+    db.execute(
+        text(
+            """
+            UPDATE public.leads
+            SET pre_events_json=:plan,
+                pre_description=:description,
+                pre_location=:location,
+                updated_at=now()
+            WHERE id_lead=:id
+            """
+        ),
+        {
+            "plan": json.dumps(updated_plan, ensure_ascii=False),
+            "description": str(commercial.get("description") or ""),
+            "location": str(commercial.get("location") or ""),
+            "id": int(id_lead),
+        },
+    )
+    return {"ok": True, "updated": len(event_ids), "changed_fields": list(changed_fields or [])}
+
+
 @router.put("/agenda/{id_lead}/edit_confirmed")
 def edit_confirmed_event(
     id_lead: int,
@@ -7600,17 +7792,20 @@ def edit_confirmed_event(
                 en = _as_dt(e.get("end_at"))
                 if not st or not en:
                     continue
+                calendar_only = bool(e.get("calendar_only")) or str(e.get("calendar_kind") or "").upper() == "MOUNTING"
                 to_update.append(
                     {
                         "day": str(e.get("day") or st.date().isoformat()),
-                        # Al editar un confirmado, el "título" debe reflejar el lead (pre_title),
-                        # aunque `pre_events_json` tenga títulos legacy.
-                        "title": title,
-                        # También forzamos location/description del lead para que el cambio se refleje.
-                        "location": loc,
-                        "description": details or "",
+                        # El montaje es un hijo operativo independiente: conserva
+                        # título, ubicación y detalle propios al editar el comercial.
+                        "title": str(e.get("title") or title) if calendar_only else title,
+                        "location": str(e.get("location") or "") if calendar_only else loc,
+                        "description": str(e.get("description") or "") if calendar_only else (details or ""),
                         "start": st,
                         "end": en,
+                        "calendar_only": calendar_only,
+                        "calendar_kind": str(e.get("calendar_kind") or ("MOUNTING" if calendar_only else "COMMERCIAL")),
+                        "calendar_key": str(e.get("calendar_key") or ("mounting" if calendar_only else f"commercial:{st.date().isoformat()}")),
                     }
                 )
         else:
@@ -7691,7 +7886,7 @@ def edit_confirmed_event(
                     "description": ev2.get("description") or "",
                     "start": {"dateTime": ev2["start"].isoformat(), "timeZone": "America/Santiago"},
                     "end": {"dateTime": ev2["end"].isoformat(), "timeZone": "America/Santiago"},
-                    "extendedProperties": {"private": {"lead_id": str(id_lead), "lead_key": f"{id_lead}:{ev2.get('day')}"}},
+                    "extendedProperties": {"private": {"lead_id": str(id_lead), "lead_key": f"{id_lead}:{ev2.get('calendar_key') or ev2.get('day')}"}},
                 }
                 patched = svc.events().patch(calendarId=cal_id, eventId=eid, body=body).execute()
                 event_ids.append(eid)

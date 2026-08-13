@@ -62,7 +62,7 @@ def _safe_int(value, default=0):
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from sqlalchemy import text
 
-from backend.core.database import engine
+from backend.core.database import SessionLocal, engine
 from backend.core.activity_log import log_activity
 from backend.core.agenda_lock import agenda_lock_key
 
@@ -1002,6 +1002,184 @@ def _append_lead_notas(id_lead: int, note: str) -> None:
             )
     except Exception:
         return
+
+
+def delete_confirmed_calendar_events(id_lead: int) -> dict[str, Any]:
+    """Delete every Google Calendar event owned by a confirmed lead.
+
+    The persisted JSON is the fast path.  The private ``lead_id`` property is
+    also queried so calendar-only mounting events and older partially-persisted
+    agendas cannot be left behind.  This operation is deliberately fail-closed:
+    callers must not downgrade the commercial state while Calendar is stale.
+    """
+    try:
+        from backend.routers.tools import _gcal_default_calendar_id, _gcal_service  # type: ignore
+    except Exception as exc:  # pragma: no cover - import failure is operational
+        raise HTTPException(503, detail=f"No se pudo cargar Google Calendar: {exc}")
+
+    lock_key = agenda_lock_key(id_lead)
+    with SessionLocal() as cn:
+        got_lock = bool(cn.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": lock_key}).scalar())
+        if not got_lock:
+            raise HTTPException(503, detail="Agenda ocupada para este lead; intenta nuevamente.")
+        try:
+            svc = _gcal_service(cn)
+            if not svc:
+                raise HTTPException(503, detail="Google Calendar no está conectado; no se cambió el estado.")
+            cal_id = _gcal_default_calendar_id(cn, None)
+            row = (
+                cn.execute(
+                    text(
+                        """
+                        SELECT calendar_event_id, calendar_event_ids_json,
+                               COALESCE(pre_events_json, '') AS pre_events_json
+                        FROM public.leads
+                        WHERE id_lead=:id
+                        LIMIT 1
+                        """
+                    ),
+                    {"id": int(id_lead)},
+                )
+                .mappings()
+                .first()
+                or {}
+            )
+
+            event_ids: list[str] = []
+            one = str(row.get("calendar_event_id") or "").strip()
+            if one:
+                event_ids.append(one)
+            try:
+                raw_ids = str(row.get("calendar_event_ids_json") or "").strip()
+                parsed_ids = json.loads(raw_ids) if raw_ids else []
+                if isinstance(parsed_ids, list):
+                    event_ids.extend(str(value or "").strip() for value in parsed_ids)
+            except Exception:
+                pass
+
+            # Recovery path for legacy/incomplete JSON: discover all children,
+            # including MOUNTING calendar-only events, by their private owner.
+            try:
+                page_token = None
+                while True:
+                    result = (
+                        svc.events()
+                        .list(
+                            calendarId=cal_id,
+                            privateExtendedProperty=f"lead_id={int(id_lead)}",
+                            maxResults=250,
+                            singleEvents=True,
+                            pageToken=page_token,
+                        )
+                        .execute()
+                    )
+                    event_ids.extend(str(item.get("id") or "").strip() for item in (result.get("items") or []))
+                    page_token = result.get("nextPageToken")
+                    if not page_token:
+                        break
+            except Exception as exc:
+                raise HTTPException(502, detail=f"No se pudo verificar todos los eventos del lead en Calendar: {exc}")
+
+            event_ids = [value for value in dict.fromkeys(event_ids) if value]
+            failures: list[str] = []
+            deleted = 0
+            for event_id in event_ids:
+                try:
+                    svc.events().delete(calendarId=cal_id, eventId=event_id).execute()
+                    deleted += 1
+                except Exception as exc:
+                    message = str(exc)
+                    low = message.lower()
+                    if "404" in low or "notfound" in low or "not found" in low:
+                        deleted += 1
+                        continue
+                    failures.append(f"{event_id}: {message}")
+            if failures:
+                raise HTTPException(
+                    502,
+                    detail="No se pudo retirar completamente el evento y su montaje de Calendar: " + " | ".join(failures[:3]),
+                )
+
+            mounting_planned = 0
+            try:
+                plan = json.loads(str(row.get("pre_events_json") or ""))
+                if isinstance(plan, list):
+                    mounting_planned = sum(
+                        1
+                        for item in plan
+                        if isinstance(item, dict)
+                        and (bool(item.get("calendar_only")) or str(item.get("calendar_kind") or "").upper() == "MOUNTING")
+                    )
+            except Exception:
+                pass
+            return {"ok": True, "deleted": deleted, "mounting_planned": mounting_planned, "calendar_id": cal_id}
+        finally:
+            try:
+                cn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": lock_key})
+            except Exception:
+                pass
+
+
+def clear_lead_calendar_tracking(id_lead: int) -> None:
+    cols = set(_cols_for("leads"))
+    values = {
+        "calendar_start": None,
+        "calendar_end": None,
+        "calendar_html_link": None,
+        "calendar_html_links_json": None,
+        "calendar_event_id": None,
+        "calendar_event_ids_json": None,
+        "agenda_approved_by": None,
+        "agenda_approved_at": None,
+        "pendiente_agendar": False,
+    }
+    _update_row("leads", "id_lead", int(id_lead), {key: value for key, value in values.items() if key in cols})
+
+
+def _digital_attribution_summary(id_lead: int) -> str:
+    """Human-readable, evidence-only attribution for Calendar and history."""
+    try:
+        with engine.connect() as cn:
+            ready = bool(cn.execute(text("SELECT to_regclass('public.wi_lead_attribution') IS NOT NULL")).scalar())
+            if not ready:
+                return ""
+            row = (
+                cn.execute(
+                    text(
+                        """
+                        SELECT source, medium, campaign, attribution_method, confidence
+                        FROM public.wi_lead_attribution
+                        WHERE lead_id=:id
+                        LIMIT 1
+                        """
+                    ),
+                    {"id": int(id_lead)},
+                )
+                .mappings()
+                .first()
+            )
+        if not row:
+            return ""
+        source = str(row.get("source") or "").strip()
+        medium = str(row.get("medium") or "").strip()
+        campaign = str(row.get("campaign") or "").strip()
+        method = str(row.get("attribution_method") or "").strip()
+        if not any((source, medium, campaign)):
+            return ""
+        paid_search_media = {"cpc", "ppc", "paid", "paid_search", "paidsearch", "sem"}
+        channel = "SEM" if medium.casefold() in paid_search_media else (source or "Digital")
+        parts = [f"Canal: {channel}"]
+        if source:
+            parts.append(f"Fuente: {source}")
+        if medium:
+            parts.append(f"Medio: {medium}")
+        if campaign:
+            parts.append(f"Campaña: {campaign}")
+        if method:
+            parts.append(f"Método: {method}")
+        return " · ".join(parts)
+    except Exception:
+        return ""
 
 
 def _get_lead(id_lead):
@@ -2333,8 +2511,21 @@ def move_lead_and_maybe_agenda(
             if agendar is not True:
                 raise HTTPException(400, detail="dry_run requiere agendar=true")
 
+        calendar_removal: dict[str, Any] | None = None
+        if (
+            should_update_now
+            and confirmado_id
+            and old_estado_id
+            and int(old_estado_id) == int(confirmado_id)
+        ):
+            # Calendar es parte de la transición: si no se puede retirar el
+            # evento comercial y sus montajes, NO se cambia el estado.
+            calendar_removal = delete_confirmed_calendar_events(id_lead)
+
         if should_update_now:
             _update_row("leads", "id_lead", id_lead, {"id_estado": int(id_estado)})
+            if calendar_removal is not None:
+                clear_lead_calendar_tracking(id_lead)
             # Auditoría: registrar cambio de estado inmediato en historial (notas).
             if not dry_run:
                 try:
@@ -2354,118 +2545,19 @@ def move_lead_and_maybe_agenda(
                 except Exception:
                     pass
 
+            if calendar_removal is not None:
+                try:
+                    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    deleted = int(calendar_removal.get("deleted") or 0)
+                    mounting = int(calendar_removal.get("mounting_planned") or 0)
+                    _append_lead_notas(
+                        id_lead,
+                        f"[AGENDA {stamp}] Retirado de Calendar: {deleted} evento(s); montaje(s) asociado(s): {mounting}.",
+                    )
+                except Exception:
+                    pass
+
         if int(id_estado) != confirmado_id:
-            # Si el lead estaba CONFIRMADO y ahora se mueve a otro estado:
-            # - Debe eliminarse del Google Calendar (comportamiento histórico)
-            # - Y se limpian campos calendar_* del lead para que no aparezca agendado.
-            try:
-                if confirmado_id and old_estado_id and int(old_estado_id) == int(confirmado_id):
-                    # 1) Eliminar eventos en Google Calendar (best-effort).
-                    try:
-                        from backend.routers.tools import _gcal_service, _gcal_default_calendar_id  # type: ignore
-                    except Exception:
-                        _gcal_service = None  # type: ignore
-                        _gcal_default_calendar_id = None  # type: ignore
-
-                    gcal_error = None
-                    deleted_any = False
-                    try:
-                        # Shared hosting safety: misma advisory lock que approve_agenda.
-                        got_lock = False
-                        try:
-                            agenda_lock = agenda_lock_key(id_lead)
-                            got_lock = bool(DB.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": agenda_lock}).scalar())
-                        except Exception:
-                            got_lock = False
-
-                        if got_lock and _gcal_service and _gcal_default_calendar_id:
-                            svc = _gcal_service(DB)
-                            if svc:
-                                cal_id = _gcal_default_calendar_id(DB, None)
-                                # event ids guardados en lead
-                                row_cal = (
-                                    DB.execute(
-                                        text(
-                                            """
-                                            SELECT calendar_event_id, calendar_event_ids_json
-                                            FROM public.leads
-                                            WHERE id_lead=:id
-                                            LIMIT 1
-                                            """
-                                        ),
-                                        {"id": int(id_lead)},
-                                    )
-                                    .mappings()
-                                    .first()
-                                    or {}
-                                )
-                                eids: list[str] = []
-                                try:
-                                    if row_cal.get("calendar_event_id"):
-                                        eids.append(str(row_cal["calendar_event_id"]).strip())
-                                except Exception:
-                                    pass
-                                try:
-                                    raw = str(row_cal.get("calendar_event_ids_json") or "").strip()
-                                    if raw:
-                                        arr = json.loads(raw)
-                                        if isinstance(arr, list):
-                                            for x in arr:
-                                                s = str(x or "").strip()
-                                                if s:
-                                                    eids.append(s)
-                                except Exception:
-                                    pass
-                                eids = [x for x in dict.fromkeys(eids).keys() if x]
-                                for eid in eids:
-                                    try:
-                                        svc.events().delete(calendarId=cal_id, eventId=eid).execute()
-                                        deleted_any = True
-                                    except Exception as e_del:
-                                        msg = str(e_del)
-                                        # 404/notFound: ya no existe, lo damos por eliminado.
-                                        low = msg.lower()
-                                        if "404" in low or "notfound" in low or "not found" in low:
-                                            deleted_any = True
-                                            continue
-                                        gcal_error = msg
-                                        # no cortamos: intentamos el resto
-                    except Exception as e:
-                        gcal_error = str(e)
-                    finally:
-                        try:
-                            DB.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": agenda_lock})
-                        except Exception:
-                            pass
-
-                    # 2) Limpiar tracking calendar_* (siempre).
-                    cols = _cols_pg(DB, "leads")
-                    upd = {}
-                    for k, v in (
-                        ("calendar_start", None),
-                        ("calendar_end", None),
-                        ("calendar_html_link", None),
-                        ("calendar_html_links_json", None),
-                        ("calendar_event_id", None),
-                        ("calendar_event_ids_json", None),
-                        ("agenda_approved_by", None),
-                        ("agenda_approved_at", None),
-                        ("pendiente_agendar", False),
-                    ):
-                        if k in cols:
-                            upd[k] = v
-                    if upd:
-                        _update_row("leads", "id_lead", id_lead, upd)
-
-                    # Auditoría mínima si falló la eliminación.
-                    try:
-                        if gcal_error:
-                            stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-                            _append_lead_notas(id_lead, f"[AGENDA {stamp}] No pude eliminar evento en Calendar: {gcal_error}")
-                    except Exception:
-                        pass
-            except Exception:
-                pass
             return {"ok": True, "ask_agendar": False}
 
         # Importante negocio: CONFIRMADO se consolida solo cuando el approve de Agenda logra
@@ -2777,6 +2869,11 @@ def move_lead_and_maybe_agenda(
                     "start_time": st_m,
                     "end_time": en_m,
                 }
+            else:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Montaje operativo incompleto: fecha, inicio, fin, comuna y dirección son obligatorios.",
+                )
 
         items = []
         if not segments_used:
@@ -3089,8 +3186,21 @@ def move_lead_and_maybe_agenda(
                     montaje_ev["end_time"],
                 )
                 eventos.append(evm)
-            except Exception:
-                pass
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(422, detail=f"No se pudo construir el montaje operativo: {exc}")
+
+        attribution_summary = _digital_attribution_summary(id_lead)
+        if attribution_summary:
+            for event_item in eventos:
+                current_description = str(event_item.get("description") or "").rstrip()
+                event_item["description"] = (
+                    current_description
+                    + ("\n\n" if current_description else "")
+                    + "📈 ATRIBUCIÓN DIGITAL:\n"
+                    + attribution_summary
+                )
 
         commercial_events = [item for item in eventos if not bool(item.get("calendar_only"))]
         ev = commercial_events[0] if commercial_events else None
@@ -3249,6 +3359,19 @@ def move_lead_and_maybe_agenda(
                 note = "[AGENDA %s] Pre-agenda preparada: MANUAL · por %s" % (stamp, who)
             else:
                 note = "[AGENDA %s] Pre-agenda preparada: %s · por %s" % (stamp, id_cot, who)
+            if montaje_ev:
+                note += (
+                    "\n[MONTAJE CALENDAR] %s · %s–%s · %s · %s · evento operativo separado; no crea venta CRM."
+                    % (
+                        montaje_ev["day"].isoformat(),
+                        montaje_ev["start_time"],
+                        montaje_ev["end_time"],
+                        montaje_ev["comuna"],
+                        montaje_ev["direccion"],
+                    )
+                )
+            if attribution_summary:
+                note += "\n[ATRIBUCIÓN DIGITAL] " + attribution_summary
             _append_lead_notas(id_lead, note)
         except Exception:
             pass

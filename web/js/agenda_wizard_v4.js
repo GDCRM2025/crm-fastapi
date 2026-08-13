@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const BUILD = "GD-AGENDA-WIZARD-V4-20260730";
+  const BUILD = "GD-AGENDA-WIZARD-V4-20260813";
   const qs = (selector, root = document) => root.querySelector(selector);
   const qsa = (selector, root = document) => [...root.querySelectorAll(selector)];
   const value = (selector, root = document) => String(qs(selector, root)?.value || "").trim();
@@ -40,7 +40,7 @@
       .gdW4Mode i{font-style:normal;font-size:22px}.gdW4Mode strong{font-size:14px}.gdW4Mode small{color:var(--muted,#a9bbd2);font-size:11px;line-height:1.42}
       .gdW4Switches{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
       .gdW4Switch{border:1px solid var(--border,#22384f);border-radius:14px;background:rgba(0,0,0,.07);padding:12px 13px;display:flex;align-items:center;justify-content:space-between;gap:10px}
-      .gdW4Switch strong{font-size:13px}.gdW4Switch small{display:block;color:var(--muted,#a9bbd2);font-size:11px;margin-top:2px}.gdW4Switch input{width:20px;height:20px}
+      .gdW4Switch strong{font-size:13px}.gdW4Switch small{display:block;color:var(--muted,#a9bbd2);font-size:11px;margin-top:2px}.gdW4Switch input{width:20px;height:20px}.gdW4Switch select{min-width:220px;max-width:46%;border:1px solid var(--border,#22384f);border-radius:10px;padding:9px 10px;background:var(--surface2,#102235);color:var(--text,#eaf2ff);font-weight:850}
       .gdW4Alert{display:none;border:1px solid rgba(245,158,11,.50);background:rgba(245,158,11,.11);border-radius:14px;padding:11px 13px;font-size:12px;line-height:1.5}
       .gdW4Alert.show{display:block}.gdW4Alert button{display:block;width:100%;margin-top:7px;border:0;background:transparent;color:inherit;text-align:left;padding:0;font-weight:850;cursor:pointer}
       .gdW4Card{border:1px solid var(--border,#22384f)!important;background:rgba(0,0,0,.055)!important;border-radius:16px!important;padding:14px!important;display:grid!important;gap:12px!important}
@@ -497,7 +497,7 @@
           <button type="button" class="gdW4Mode" data-mode="blocks"><i>▤</i><strong>Por bloques</strong><small>Un solo evento con varios tramos horarios.</small></button>
         </div>
         <div class="gdW4Switches">
-          <label class="gdW4Switch"><span><strong>Montaje previo</strong><small>Crear un evento separado antes del evento principal.</small></span><input type="checkbox" id="gdW4Prior"></label>
+          <label class="gdW4Switch"><span><strong>¿Requiere montaje operativo separado?</strong><small>El montaje será otro evento en Calendar y no una segunda venta en CRM.</small></span><select id="gdW4Prior"><option value="no">No, sólo evento comercial</option><option value="yes">Sí, crear montaje separado</option></select></label>
           <label class="gdW4Switch"><span><strong>Varias locaciones</strong><small>Usar direcciones diferentes por día o bloque.</small></span><input type="checkbox" id="gdW4Locs"></label>
         </div>
       </section>
@@ -554,9 +554,9 @@
     const prior = qs("#gdW4Prior", popup);
     const priorLegacy = qs("#ag_flag_montaje_event", popup);
     if (prior && priorLegacy) {
-      prior.checked = priorLegacy.checked;
+      prior.value = priorLegacy.checked ? "yes" : "no";
       prior.addEventListener("change", () => {
-        priorLegacy.checked = prior.checked;
+        priorLegacy.checked = prior.value === "yes";
         emit(priorLegacy, "change");
       });
     }

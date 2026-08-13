@@ -46,3 +46,29 @@ Release `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117` separa formalmente el montaje
 - El evento CRM, el estado del lead y los campos `calendar_start`/`calendar_event_id` conservan como ancla el evento comercial; nunca el montaje.
 - Cada evento Calendar usa una llave idempotente distinta, por lo que montaje y evento principal no se sobrescriben incluso si ocurren el mismo día.
 - Rollback inmediato: `b14d547ca2f92fe6bcb2c9b87e22364fa24c51b7`.
+
+## Cierre funcional del wizard — 2026-08-13
+
+La prueba operacional posterior reveló dos fallas adicionales y ambas quedaron corregidas antes del siguiente release:
+
+- El contenedor de montaje tenía `display:none` y `display:grid` en el mismo atributo. Los campos se veían aunque la opción interna seguía desmarcada; por eso el payload podía omitir `montaje_event` sin avisar.
+- La transición Confirmado → otro estado usaba una referencia `DB` inexistente dentro de un bloque que ocultaba la excepción. El estado cambiaba, pero Calendar podía conservar el evento.
+
+Contrato definitivo:
+
+- El paso 1 pregunta explícitamente **¿Requiere montaje operativo separado?** con respuesta No/Sí.
+- Sí activa fecha, hora inicial, hora final, comuna y dirección independientes. Un montaje incompleto devuelve HTTP 422; nunca se ignora.
+- El preview simple produce `COMMERCIAL + MOUNTING`; multi-día conserva un evento comercial por día y añade un único `MOUNTING`. Multi-locación no fue reescrito.
+- Al retirar un confirmado, se unen los IDs persistidos con una búsqueda de Google Calendar por propiedad privada `lead_id`; se eliminan evento comercial y montajes. La transición es fail-closed si Calendar no puede verificarse o limpiarse.
+- En un confirmado quedan bloqueados por UI y API: marca, plataforma, fecha del evento, número y monto de cotización e historial. Teléfono, comuna, dirección y tipo de cliente sincronizan todos los hijos de Calendar sin convertir el montaje en evento comercial.
+- Cambiar tipo de cliente no reescribe una cotización confirmada: deja alerta y nota de revisión de documento/IVA.
+- La atribución digital existente se incorpora a Calendar y notas; medios `cpc`, `ppc`, `paid_search`, `paidsearch` o `sem` se identifican como SEM sin inferir datos ausentes.
+
+Evidencia local aislada:
+
+- 152 tests PASS, 0 FAIL; Python compile, JavaScript parse, diff-check y Gitleaks PASS.
+- FastAPI/PostgreSQL levantados desde `MAC_SETUP.md`; health y login autenticado PASS.
+- QA visual del wizard: decisión `yes`, checkbox interno `true`, bloque de montaje `grid`, fecha independiente y horario 09:00–10:00.
+- QA visual multi-día: modo `multiday=true` y montaje conservado `true`.
+- Preview API simple: 2 eventos (`COMMERCIAL`, `MOUNTING`). Preview multi-día: 3 eventos (`COMMERCIAL`, `COMMERCIAL`, `MOUNTING`).
+- Ningún evento fue creado durante QA: todas las llamadas fueron `dry_run` y el wizard se canceló antes de confirmar.

@@ -2819,7 +2819,7 @@ async function handleConfirmado(lead, newEstado, movementComment=""){
           <textarea id="ag_mont_manual" class="swTa" rows="4" placeholder="Ej: 2 x Carro Clásico&#10;1 x Máquina café"></textarea>
         </div>
 
-        <div id="ag_montaje_event_box" style="display:none;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.08);display:grid;gap:10px">
+        <div id="ag_montaje_event_box" style="display:none;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(0,0,0,.08);gap:10px">
           <div class="muted" style="font-weight:1100">Montaje operativo · sólo Calendar</div>
           <div class="muted agSmall">Es independiente del evento comercial: puede ser el día anterior, el mismo día o después. Usa automáticamente los mismos equipos de la cotización. No crea un segundo evento CRM ni financiero.</div>
           <div class="agRow" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
@@ -4199,10 +4199,12 @@ async function handleConfirmado(lead, newEstado, movementComment=""){
           const chkM = qs("#ag_flag_montaje_event");
           const boxM = qs("#ag_montaje_event_box");
           if (chkM && boxM){
-            chkM.addEventListener("change", ()=>{
+            const applyMountingDecision = ()=>{
               boxM.style.display = chkM.checked ? "grid" : "none";
-            });
-            boxM.style.display = chkM.checked ? "grid" : "none";
+              if (chkM.checked) runPreview().catch(_=>{});
+            };
+            chkM.addEventListener("change", applyMountingDecision);
+            applyMountingDecision();
           }
 
           // quote change: recarga pool + reasigna si 1 grupo
@@ -5341,6 +5343,12 @@ async function openEditModal(lead){
   let isAdmin = false;
   const attributionResponse = await apiJSON(`/leads/${lead.id_lead}/attribution`).catch(()=>({item:null,editable:false}));
   const attribution = attributionResponse.item;
+  const confirmedLocked = Boolean(
+    isConfirmEstadoName(String(lead.estado_nombre || ""))
+    && (lead.calendar_event_id || lead.calendar_html_link || lead.agenda_approved_at)
+  );
+  const lockedAttr = confirmedLocked ? "disabled" : "";
+  const historyAttr = confirmedLocked ? "readonly" : "";
 
   try{
     const GD = window.parent && window.parent.GD;
@@ -5352,6 +5360,7 @@ async function openEditModal(lead){
 
   const html =
     '<div class="swForm"><div class="grid2">' +
+    (confirmedLocked ? '<div class="span2" style="padding:10px 12px;border:1px solid rgba(245,158,11,.45);border-radius:12px;background:rgba(245,158,11,.10)"><b>Evento confirmado</b>: marca, plataforma, fecha, N°/monto de cotización e historial están bloqueados. Teléfono, comuna, dirección y tipo de cliente se sincronizan con Calendar.</div>' : '') +
     `<label>Nombre cliente<input id="e_cliente" class="swInp" value="${escapeHtml(lead.cliente || "")}" /></label>` +
     `<label>Email
       <div class="gdInline">
@@ -5359,7 +5368,7 @@ async function openEditModal(lead){
         <button type="button" class="gdIcoBtn" id="qa_email" title="Enviar email">✉️</button>
       </div>
     </label>` +
-    '<label>Marca<select id="e_marca" class="swSel">' +
+    `<label>Marca<select id="e_marca" class="swSel" ${lockedAttr}>` +
       marcas.map(m=>`<option value="${m.id_marca}" ${Number(m.id_marca)===Number(lead.id_marca)?"selected":""}>${escapeHtml(m.nombre)}</option>`).join("") +
     '</select></label>' +
     '<label>Comuna<select id="e_comuna" class="swSel">' +
@@ -5369,7 +5378,7 @@ async function openEditModal(lead){
       '<option value="">- Seleccionar -</option>' +
       tipos.map(t=>`<option value="${t.id_tipo_cliente}" ${Number(t.id_tipo_cliente)===Number(lead.id_tipo_cliente)?"selected":""}>${escapeHtml(t.nombre)}</option>`).join("") +
     '</select></label>' +
-    '<label>Plataforma<select id="e_plataforma" class="swSel">' +
+    `<label>Plataforma<select id="e_plataforma" class="swSel" ${lockedAttr}>` +
       '<option value="">- Seleccionar -</option>' +
       platforms.map(p=>`<option value="${escapeHtml(p)}" ${String(p)===String(curPlat)?"selected":""}>${escapeHtml(p)}</option>`).join("") +
     '</select></label>' +
@@ -5384,14 +5393,14 @@ async function openEditModal(lead){
         <button type="button" class="gdIcoBtn" id="qa_vcard" title="vCard">👤</button>
       </div>
     </label>` +
-    `<label>Fecha evento<input id="e_fecha" class="swInp" type="date" value="${escapeHtml(String(lead.fecha_evento||"").slice(0,10))}" /></label>` +
+    `<label>Fecha evento<input id="e_fecha" class="swInp" type="date" value="${escapeHtml(String(lead.fecha_evento||"").slice(0,10))}" ${lockedAttr} /></label>` +
     `<label>N° Cotización
       <div class="gdInline">
-        <input id="e_numcot" class="swInp" value="${escapeHtml(String(lead.num_cotizacion ?? ""))}" />
+        <input id="e_numcot" class="swInp" value="${escapeHtml(String(lead.num_cotizacion ?? ""))}" ${lockedAttr} />
         <button type="button" class="gdIcoBtn" id="qa_quote" title="Abrir cotización">🧾</button>
       </div>
     </label>` +
-    `<label>Monto cotizado<input id="e_monto" class="swInp" type="number" step="0.01" value="${escapeHtml(String(lead.monto_cotizado ?? 0))}" /></label>` +
+    `<label>Monto cotizado<input id="e_monto" class="swInp" type="number" step="0.01" value="${escapeHtml(String(lead.monto_cotizado ?? 0))}" ${lockedAttr} /></label>` +
     `<label class="span2">Dirección<input id="e_dir" class="swInp" value="${escapeHtml(lead.direccion || "")}" /></label>` +
     `<label class="span2">
       <details class="gdDetails" id="manualDetails" ${(!lead.id_cotizacion_vigente || lead.cotizacion_pdf_url) ? "open" : ""}>
@@ -5407,7 +5416,7 @@ async function openEditModal(lead){
       </details>
      </label>` +
     `<label>Creado<input id="e_created" class="swInp" value="${escapeHtml(String(lead.created_at||lead.fecha_ingreso||"").replace("T"," ").slice(0,16))}" disabled /></label>` +
-    `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa" spellcheck="false">${escapeHtml(lead.notas || "")}</textarea></label>` +
+    `<label class="span2">Notas / Historial<textarea id="e_notas" class="swTa" spellcheck="false" ${historyAttr}>${escapeHtml(lead.notas || "")}</textarea></label>` +
     `<section class="span2" style="padding:12px;border:1px solid rgba(59,130,246,.35);border-radius:12px">
       <strong>Atribución Digital</strong>
       ${attribution ? `<div class="grid2" style="margin-top:8px;font-size:12px">
@@ -6337,17 +6346,19 @@ async function openEditModal(lead){
         cliente,
         email: (qs("#e_email").value || "").trim() || null,
         telefono: (qs("#e_tel").value || "").trim() || null,
-        id_marca: Number(qs("#e_marca").value),
+        ...(!confirmedLocked ? { id_marca: Number(qs("#e_marca").value) } : {}),
         id_comuna: Number(qs("#e_comuna").value),
         id_tipo_cliente: qs("#e_tipo").value ? Number(qs("#e_tipo").value) : null,
-        plataforma: (qs("#e_plataforma")?.value || "").trim() || null,
+        ...(!confirmedLocked ? { plataforma: (qs("#e_plataforma")?.value || "").trim() || null } : {}),
         id_estado: Number(qs("#e_estado").value),
-        fecha_evento: (qs("#e_fecha").value || null),
+        ...(!confirmedLocked ? { fecha_evento: (qs("#e_fecha").value || null) } : {}),
         direccion: (qs("#e_dir").value || "").trim() || null,
-        notas: prevNotes || null,
+        ...(!confirmedLocked ? { notas: prevNotes || null } : {}),
         movement_comment: comment || null,
-        num_cotizacion: (qs("#e_numcot").value || "").trim() || null,
-        monto_cotizado: qs("#e_monto").value ? Number(qs("#e_monto").value) : 0
+        ...(!confirmedLocked ? {
+          num_cotizacion: (qs("#e_numcot").value || "").trim() || null,
+          monto_cotizado: qs("#e_monto").value ? Number(qs("#e_monto").value) : 0
+        } : {})
       };
     }
   });
@@ -6401,14 +6412,14 @@ async function openEditModal(lead){
       const hit = estados.find(s => String(s?.nombre || "").toUpperCase().includes("CONFIRM"));
       return hit ? Number(hit.id_estado) : null;
     })();
-    const wantsConfirmFlow = (confirmadoId != null) && (Number(res.value.id_estado) === Number(confirmadoId));
     const statusChanged = Number(res.value.id_estado) !== Number(lead.id_estado || 0);
+    const wantsConfirmFlow = statusChanged && (confirmadoId != null) && (Number(res.value.id_estado) === Number(confirmadoId));
 
     // 1) Guardar cambios del lead (sin tocar el estado) para no saltarnos el flujo de confirmación/agendamiento.
     const payloadNoEstado = { ...res.value };
     delete payloadNoEstado.id_estado;
     if (statusChanged) delete payloadNoEstado.movement_comment;
-    await apiJSON("/leads/" + lead.id_lead, {
+    const updateResult = await apiJSON("/leads/" + lead.id_lead, {
       method:"PUT",
       headers: { "Content-Type":"application/json" },
       body: JSON.stringify(payloadNoEstado)
@@ -6438,7 +6449,7 @@ async function openEditModal(lead){
       if (!ok){
         toast("Confirmación cancelada", "warning");
       }
-    }else{
+    }else if (statusChanged){
       // Si NO es confirmado, actualizamos el estado normalmente.
       await apiJSON("/leads/" + lead.id_lead, {
         method:"PUT",
@@ -6446,6 +6457,17 @@ async function openEditModal(lead){
         body: JSON.stringify({ id_estado: res.value.id_estado, movement_comment: res.value.movement_comment || null })
       });
       toast("Lead actualizado", "success");
+    }else{
+      toast(updateResult?.calendar_synced ? "Lead y Calendar sincronizados" : "Lead actualizado", "success");
+    }
+
+    if (updateResult?.quote_review_required){
+      await Swal.fire({
+        icon: "warning",
+        title: "Revisión tributaria pendiente",
+        text: "El tipo de cliente cambió. La cotización y el monto confirmados siguen bloqueados; revisa documento e IVA antes de emitir.",
+        confirmButtonText: "Entendido"
+      });
     }
 
     await loadLeads();
@@ -6663,8 +6685,8 @@ async function init(){
 init();
 </script>
 
-  <script src="../js/agenda_wizard_v4.js?v=20260731-17"></script>
-  <script src="../js/agenda_wizard_v6.js?v=20260731-17"></script>
+  <script src="../js/agenda_wizard_v4.js?v=20260813-1"></script>
+  <script src="../js/agenda_wizard_v6.js?v=20260813-1"></script>
   <script src="../js/agenda_multiday_v19.js?v=20260731-20"></script>
 </body>
 </html>
