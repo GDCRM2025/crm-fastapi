@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 
 from backend.gd_intelligence.tracking import safe_public_url
+from backend.jobs.tracking_edge_pull import canonical_signature
 from backend.routers import tracking_collector as collector
 
 
@@ -83,9 +84,11 @@ class TrackingCollectorSecurityTests(unittest.TestCase):
 
     def test_tracker_uses_public_collector_and_session_start(self):
         source = (ROOT / "web/js/gd-tracker.js").read_text(encoding="utf-8")
-        self.assertIn('send("/collect/v1/session"', source)
+        self.assertIn('send("/v1/session"', source)
         self.assertIn('event_type: "session_start"', source)
+        self.assertNotIn('/collect/v1/session', source)
         self.assertNotIn('/api/gd-intelligence/tracking/session', source)
+        self.assertIn("window.__GD_TRACKER_LOADED__", source)
 
     def test_discovery_requires_actual_tracker_script(self):
         source = (ROOT / "backend/gd_intelligence/integration_inventory.py").read_text(encoding="utf-8")
@@ -96,6 +99,60 @@ class TrackingCollectorSecurityTests(unittest.TestCase):
         sql = (ROOT / "migrations/2026_08_12_tracking_collector.sql").read_text(encoding="utf-8").upper()
         self.assertIn("CREATE TABLE IF NOT EXISTS", sql)
         self.assertIn("WI_TRACKING_COLLECTOR_METRICS", sql)
+        self.assertNotIn("DROP TABLE", sql)
+        self.assertNotIn("ALTER TABLE PUBLIC.LEADS", sql)
+
+    def test_edge_exposes_only_tracking_and_signed_delivery_routes(self):
+        source = (ROOT / "edge/tracking-relay/public/index.php").read_text(encoding="utf-8")
+        htaccess = (ROOT / "edge/tracking-relay/public/.htaccess").read_text(encoding="utf-8")
+        for route in ("/v1/session", "/v1/event", "/internal/v1/pull", "/internal/v1/ack"):
+            self.assertIn(route, source)
+        for forbidden in ("/crm", "/admin", "/docs", "/openapi.json", "postgresql://", "192.168.100.51", "127.0.0.1:8000"):
+            self.assertNotIn(forbidden, source)
+        self.assertIn("Options -Indexes", htaccess)
+        self.assertIn("RewriteRule ^ - [R=404,L]", htaccess)
+
+    def test_edge_queue_is_durable_leased_and_never_deleted_before_ack(self):
+        source = (ROOT / "edge/tracking-relay/public/index.php").read_text(encoding="utf-8")
+        self.assertIn("PRAGMA journal_mode=WAL", source)
+        self.assertIn("BEGIN IMMEDIATE", source)
+        self.assertIn("lease_until", source)
+        self.assertIn("acked_at IS NULL", source)
+        self.assertIn("SET acked_at=?", source)
+        self.assertIn("UNIQUE(event_type,event_id)", source)
+
+    def test_edge_hmac_canonical_vector_is_stable(self):
+        result = canonical_signature(
+            "a" * 32,
+            "1700000000",
+            "b" * 32,
+            "POST",
+            "/internal/v1/pull",
+            b'{"limit":500}',
+        )
+        self.assertEqual(result, "6070d36f0ce5220e739da701efa1a520641ce14becdd8190deb12795682361fb")
+
+    def test_edge_rejects_recursive_pii_and_has_replay_protection(self):
+        source = (ROOT / "edge/tracking-relay/public/index.php").read_text(encoding="utf-8")
+        self.assertIn("reject_sensitive($item, $depth + 1)", source)
+        self.assertIn("hash_equals($expected, $signature)", source)
+        self.assertIn("INSERT INTO nonces", source)
+        self.assertIn("replayed_request", source)
+        for name in ("pass", "authorization", "cookie", "email", "telefono", "message"):
+            self.assertRegex(source.lower(), name)
+
+    def test_worker_is_one_shot_locked_and_revalidates_payloads(self):
+        source = (ROOT / "backend/jobs/tracking_edge_pull.py").read_text(encoding="utf-8")
+        self.assertIn("pg_try_advisory_xact_lock", source)
+        self.assertIn("validation._allowlist", source)
+        self.assertIn("SESSION_SITE_MISMATCH", source)
+        self.assertNotIn("while True", source)
+        self.assertIn("ACK parcial", source)
+
+    def test_edge_migration_is_additive(self):
+        sql = (ROOT / "migrations/2026_08_13_tracking_edge.sql").read_text(encoding="utf-8").upper()
+        self.assertIn("WI_TRACKING_EDGE_PULL_RUNS", sql)
+        self.assertIn("WI_TRACKING_EDGE_REJECTIONS", sql)
         self.assertNotIn("DROP TABLE", sql)
         self.assertNotIn("ALTER TABLE PUBLIC.LEADS", sql)
 

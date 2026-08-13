@@ -1,9 +1,11 @@
 (function () {
   "use strict";
+  if (window.__GD_TRACKER_LOADED__) return;
   var script = document.currentScript;
   var siteCode = (script && script.dataset.siteCode) || window.GD_SITE_CODE || "";
   var apiBase = ((script && script.dataset.apiBase) || "").replace(/\/$/, "");
   if (!siteCode) return;
+  window.__GD_TRACKER_LOADED__ = true;
 
   function uuid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -29,15 +31,15 @@
   function send(path, body) {
     return fetch(apiBase + path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body), keepalive: true}).catch(function () {});
   }
-  send("/collect/v1/session", {
+  send("/v1/session", {
     site_code: siteCode, visitor_id: visitorId, session_id: sessionId,
     landing_url: location.href, referrer: document.referrer || null, utm: utm
   }).then(function () {
-    return send("/collect/v1/event", {
+    return send("/v1/event", {
       site_code: siteCode, session_id: sessionId, event_id: uuid(), event_type: "session_start", page_url: location.href
     });
   }).then(function () {
-    return send("/collect/v1/event", {
+    return send("/v1/event", {
       site_code: siteCode, session_id: sessionId, event_id: uuid(), event_type: "page_view", page_url: location.href
     });
   });
@@ -54,7 +56,7 @@
         link.href = target.toString();
       }
     } catch (_) {}
-    send("/collect/v1/event", {
+    send("/v1/event", {
       site_code: siteCode, session_id: sessionId, event_id: clickId,
       event_type: "click_whatsapp", page_url: location.href, metadata: {click_id: clickId}
     });

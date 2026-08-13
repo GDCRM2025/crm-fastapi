@@ -1,0 +1,23 @@
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule (^|/)\. - [R=404,L]
+  RewriteRule ^gd-tracker\.js$ - [L]
+  RewriteRule ^(?:v1/(?:session|event)|internal/v1/(?:pull|ack))$ index.php [L,QSA]
+  RewriteRule ^ - [R=404,L]
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set X-Frame-Options "DENY"
+  Header always set Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+  Header always unset Server
+  Header always unset X-Powered-By
+</IfModule>
+
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
