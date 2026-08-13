@@ -1,5 +1,6 @@
 Options -Indexes +MultiViews
 DirectoryIndex index.php
+AddHandler application/x-httpd-ea-php83 .php
 
 <IfModule mod_headers.c>
   Header always set X-Content-Type-Options "nosniff"
