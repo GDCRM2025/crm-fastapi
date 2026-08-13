@@ -1,8 +1,8 @@
 # Estado de implementación
 
-Actualizado: 2026-08-12
+Actualizado: 2026-08-13
 
-SHA productivo inmutable: `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117`.
+SHA productivo inmutable: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`.
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
@@ -25,7 +25,7 @@ SHA productivo inmutable: `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117`.
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `aa9d24a`; rollback inmediato `b14d547` y releases previos preservados |
+| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `f1e2739`; rollback inmediato `aa9d24a` y releases previos preservados |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
@@ -109,7 +109,7 @@ SHA productivo inmutable: `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117`.
 - Cutover P1 `4cd4321`: PASS. Backup PostgreSQL + código con checksum y catálogo validado; migración collector aplicada dos veces; candidato y post-cutover PASS; rollback `ba89090` listo y no ejecutado. QA visual sobre una conversación real confirmó el menú contextual completo, incluido “Eliminar” deshabilitado.
 - Hotfix Agenda `b14d547`: PASS. Se eliminó el lock global de Calendar en favor de locks por lead, se acotó Google HTTP a 20 segundos y se impidió terminar operaciones activas a los 90 segundos. 146 tests PASS; rollback `4cd4321` listo y no ejecutado.
 - Montaje operativo `aa9d24a`: PASS. Evento exclusivo de Calendar con fecha/hora independiente, mismos equipos del evento comercial y claves idempotentes separadas. No crea evento CRM/financiero ni reemplaza el ancla comercial del lead. 149 tests PASS; rollback `b14d547` listo y no ejecutado.
-- Cierre funcional Agenda 2026-08-13: PASS_LOCAL. El paso 1 usa una decisión explícita No/Sí; el backend ya no ignora montajes incompletos; preview simple y multi-día validan eventos `MOUNTING` separados. La baja de Confirmado es fail-closed y elimina todos los hijos Calendar por IDs + `lead_id`. Edición confirmada bloquea campos comerciales inmutables y sincroniza teléfono/comuna/dirección/tipo; atribución SEM se agrega sólo con evidencia real. 152 tests PASS, 0 FAIL. Deployment pendiente de candidato Ubuntu.
+- Cierre funcional Agenda 2026-08-13: PASS_PROD. El paso 1 usa una decisión explícita No/Sí; el backend ya no ignora montajes incompletos; preview simple y multi-día validan eventos `MOUNTING` separados. La baja de Confirmado es fail-closed y elimina todos los hijos Calendar por IDs + `lead_id`. Edición confirmada bloquea campos comerciales inmutables y sincroniza teléfono/comuna/dirección/tipo; atribución SEM se agrega sólo con evidencia real. 152 tests PASS, 0 FAIL. Release productivo `f1e2739`; candidato y post-cutover con health/login/Leads/Agenda/Cotizador/WABA 200; smoke Google real dejó 0 eventos QA activos; rollback `aa9d24a` listo y no ejecutado.
 - Smoke productivo P1: health, login, Leads, Cotizador, WABA, GD Intelligence, Site Health y métricas HTTP 200; collector interno preflight 204; ADMIN 403; 0 Router SKIP y 0 tracebacks. Candidato 9090 detenido y sesión QA temporal eliminada.
 - Cutover inmutable `babfea8`: PASS; candidato aislado, migración idempotente, QA visual, Vault persistente, todos los routers cargados y smoke tests ampliados PASS. Rollback `8600cc2` listo y no ejecutado. Git privado y rotación de credenciales históricas siguen pendientes.
 - Hotfix crítico PDF `ba89090`: PASS. El generador de cotizaciones usa `/opt/greendiamond/shared/persistent-data/data/quotes`, no escribe dentro del release inmutable. PDF real verificado HTTP 200, `application/pdf`, `%PDF`, descarga attachment y archivo persistente; rollback `babfea8` listo y no ejecutado.

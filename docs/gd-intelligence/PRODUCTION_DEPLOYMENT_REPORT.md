@@ -1,7 +1,28 @@
 # Production Deployment Report — Immutable Cutover
 
-Fecha: 2026-08-12
+Fecha: 2026-08-13
 Resultado: **IMMUTABLE_CUTOVER_PASS**
+
+## Cierre funcional Agenda — montaje, consistencia y sincronización
+
+Release activo: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`. Rollback inmediato: `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117`.
+
+- El paso inicial del wizard exige decidir si existe montaje separado; el montaje admite otra fecha y horario, incluso el mismo día.
+- El montaje se registra sólo como hijo operativo en Google Calendar. No crea un segundo lead, venta ni evento financiero.
+- Confirmado → estado no confirmado elimina de forma fail-closed el evento comercial y todos los hijos encontrados por IDs persistidos y `lead_id`.
+- Teléfono, comuna, dirección y tipo de cliente sincronizan Calendar. Marca, plataforma, fecha, cotización, monto, creación e historial quedan inmutables una vez confirmado.
+- Un cambio de tipo de cliente conserva la cotización confirmada y genera una advertencia auditable para revisar documento e IVA.
+- La atribución digital real se incorpora a Calendar/notas; SEM sólo se identifica cuando la evidencia contiene CPC/PPC/paid search/SEM.
+- Backup previo: `/opt/greendiamond/backups/agenda_consistency/20260813_100842`.
+- Release previo SHA-256: `ca833ce885c640800ffbd0e5cabb06a34775a9b8c3e395299f41f8b8538284fe`.
+- PostgreSQL previo SHA-256: `589251eeaeded184c76ec52fdc8980ee0a87d1c7efa24401eff8ba02284710f8`; `pg_restore --list` PASS.
+- Artefacto release SHA-256: `6d44619ab583ebe6882c6635b19b1f90338f2c42f2022b755ad80115e3e8a7da`.
+- 152 tests PASS, 0 FAIL; Python compile, JavaScript parse, diff-check y Gitleaks PASS.
+- Candidato 9090 y post-cutover: health, login, Leads, Agenda, Cotizador y WABA HTTP 200 autenticado.
+- Servicio `crm-gd` activo con cuatro workers; cero `Router SKIP`, errores o tracebacks del candidato. Candidato detenido y cuentas QA eliminadas.
+- Google Calendar real: familia QA `COMMERCIAL + MOUNTING` creada sin asistentes y eliminada por `lead_id`; 0 eventos activos, 2 tombstones `cancelled` y 0 residuos visibles.
+- Release sellado: 0 archivos/directorios escribibles, manifest SHA-256 PASS y health posterior PASS.
+- `ROLLBACK_EXECUTED=NO`.
 
 ## Agenda — montaje operativo separado
 

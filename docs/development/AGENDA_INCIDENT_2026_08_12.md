@@ -72,3 +72,15 @@ Evidencia local aislada:
 - QA visual multi-día: modo `multiday=true` y montaje conservado `true`.
 - Preview API simple: 2 eventos (`COMMERCIAL`, `MOUNTING`). Preview multi-día: 3 eventos (`COMMERCIAL`, `COMMERCIAL`, `MOUNTING`).
 - Ningún evento fue creado durante QA: todas las llamadas fueron `dry_run` y el wizard se canceló antes de confirmar.
+
+Evidencia Ubuntu productiva:
+
+- Release activo: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`; rollback inmediato: `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117`.
+- Backup previo: `/opt/greendiamond/backups/agenda_consistency/20260813_100842`.
+- PostgreSQL previo SHA-256: `589251eeaeded184c76ec52fdc8980ee0a87d1c7efa24401eff8ba02284710f8`; catálogo `pg_restore --list` PASS.
+- Release previo SHA-256: `ca833ce885c640800ffbd0e5cabb06a34775a9b8c3e395299f41f8b8538284fe`.
+- Artefacto candidato SHA-256: `6d44619ab583ebe6882c6635b19b1f90338f2c42f2022b755ad80115e3e8a7da`.
+- Candidato y post-cutover: health, login, Leads, Agenda, Cotizador y WABA HTTP 200 autenticado.
+- Servicio activo con cuatro workers; cero routers omitidos y cero errores/tracebacks de aplicación posteriores al corte.
+- Smoke real de Google Calendar: se crearon dos eventos QA sin asistentes (`COMMERCIAL` + `MOUNTING`) bajo un `lead_id` aislado; la eliminación familiar dejó 0 activos y ambos tombstones en estado `cancelled`.
+- El candidato fue detenido y las cuentas temporales de QA fueron eliminadas. `ROLLBACK_EXECUTED=NO`.
