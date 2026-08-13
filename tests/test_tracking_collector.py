@@ -110,7 +110,9 @@ class TrackingCollectorSecurityTests(unittest.TestCase):
         for forbidden in ("/crm", "/admin", "/docs", "/openapi.json", "postgresql://", "192.168.100.51", "127.0.0.1:8000"):
             self.assertNotIn(forbidden, source)
         self.assertIn("Options -Indexes", htaccess)
-        self.assertIn("RewriteRule ^ - [R=404,L]", htaccess)
+        self.assertIn("+MultiViews", htaccess)
+        for relative in ("v1/session.php", "v1/event.php", "internal/v1/pull.php", "internal/v1/ack.php"):
+            self.assertTrue((ROOT / "edge/tracking-relay/public" / relative).is_file())
 
     def test_edge_queue_is_durable_leased_and_never_deleted_before_ack(self):
         source = (ROOT / "edge/tracking-relay/public/index.php").read_text(encoding="utf-8")
