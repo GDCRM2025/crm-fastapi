@@ -2,7 +2,7 @@
 
 Actualizado: 2026-08-13
 
-SHA productivo inmutable: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`.
+SHA productivo inmutable: `5276a4b8f200c53a52ea5195b5227f8cf891a950`.
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
@@ -25,7 +25,7 @@ SHA productivo inmutable: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`.
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `f1e2739`; rollback inmediato `aa9d24a` y releases previos preservados |
+| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `5276a4b`; rollback inmediato `f1e2739` y releases previos preservados |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
@@ -55,6 +55,9 @@ SHA productivo inmutable: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`.
 | 46 Alert Engine | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | Deduplicación, cooldown, evidencia, acción y próxima revisión |
 | 47 Executive Dashboard | DONE_LOCAL | PASS | PARTIAL_REAL | DEPLOYED | CRM sales, tracking y Site Health habilitan el tablero; Paid Spend/CPA/ROAS muestran Sin datos hasta sincronizar Ads |
 | 48 GD AI base | DONE_LOCAL | PASS | CONTEXT_READY | DEPLOYED | Context builder allowlisted por rol; read/analyze/suggest; sin SQL ni writes |
+| 49 Reportes CRM | DONE | PASS | REAL_PROD | DEPLOYED | Visión General, Tipo de Cliente, Productos y series por marca reparadas; assets gráficos locales |
+| 50 GD Sales Command Center | DONE | PASS | LIVE_CRM | DEPLOYED | Pipeline vivo y accionable; frontend + backend exclusivos para SUPERADMIN; sin snapshot PII |
+| 51 Encuestas post-evento UX | DONE | PASS | REAL_PROD | DEPLOYED | Ventana de 7 días, envío manual explícito y enlaces inválidos fail-closed |
 
 ## Gates transversales
 
@@ -74,6 +77,11 @@ SHA productivo inmutable: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`.
 | Visibilidad temporal GD Intelligence | PASS | Backend global y menú limitados a SUPERADMIN; SUPERADMIN 200 / ADMIN 403 verificados en producción |
 
 ## Evidencia actual
+
+- Corrección P0 2026-08-13: release `5276a4b` activo, rollback `f1e2739` listo y no ejecutado. Dashboard del día devuelve sólo el lead CAMALEON `3903`; el lead Del Sabor `3837` conserva su registro comercial del 12 de agosto y ya no aparece falsamente el día 13.
+- Reportes productivos: Funnel 4, Tipo de Cliente 3, Productos 20, Venta por Marca 4 y Comparativo 7 series/filas en el smoke autenticado.
+- GD Sales usa exclusivamente datos vivos del CRM: SUPERADMIN 200 y ADMIN 403. Encuestas, Leads, Cotizaciones y WABA permanecen 200.
+- Suite consolidada: 162 PASS, 0 FAIL; compile, JS parse, Gitleaks, candidato y post-cutover PASS.
 
 - 142 pruebas unitarias/contrato CRM, GD Intelligence, almacenamiento persistente, Omnichannel, WABA contextual, collector, bootstrap y reconciliación: PASS; 0 fallas.
 - OpenAPI local incorpora 16 rutas nuevas de inteligencia real y Omnichannel; `/healthz` PASS.

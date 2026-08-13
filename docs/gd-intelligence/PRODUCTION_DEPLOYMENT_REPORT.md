@@ -3,6 +3,26 @@
 Fecha: 2026-08-13
 Resultado: **IMMUTABLE_CUTOVER_PASS**
 
+## Corrección P0 — ventas diarias, Reportes, Encuestas y GD Sales
+
+Release activo: `5276a4b8f200c53a52ea5195b5227f8cf891a950`. Rollback inmediato: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`.
+
+- La fecha de venta basada en `agenda_approved_at` ahora interpreta correctamente el timestamp UTC sin zona y lo convierte a `America/Santiago`. Dashboard y drill-down comparten exactamente la misma expresión.
+- Verificación productiva del 2026-08-13: un solo lead vendido (`3903`, CAMALEON); el lead `3837` ya no se desplaza falsamente desde el 12 al 13 de agosto.
+- El registro `3837` no fue mutado: la base lo conserva como confirmado el 2026-08-12. Corregir su estado comercial requiere confirmación humana y el flujo normal de desagendamiento.
+- Reportes vuelve a aceptar el esquema productivo `tipos_cliente.tipo`; una consulta incompatible ya no aborta las series posteriores. Funnel, Tipo de Cliente, Productos, Venta por Marca y Comparativo devolvieron datos reales.
+- Charting, alertas y exportación de Reportes usan assets locales versionados; se eliminó la dependencia de CDN en esa vista.
+- Encuestas muestra siete días de eventos terminados, explica que el envío es manual y oculta la acción de inicio ante tokens ausentes o inválidos.
+- GD Sales Command Center reemplaza el snapshot estático no autenticado por una API viva del CRM, sin notas, teléfono ni email. Backend y menú quedan restringidos a `SUPERADMIN`; `ADMIN` devuelve 403.
+- Backup previo: `/opt/greendiamond/backups/release_20260813_103857_pre_5276a4b`.
+- Código previo SHA-256: `ce93cc010b689129446ea21a8cc779be93987aa903bd696597983d194a01c563`.
+- PostgreSQL previo SHA-256: `2c3c5f9dd017b2c9831df49db511cf2e69d93878a974b8c6f9543b93c63f77b8`.
+- Artefacto release SHA-256: `583c65008c7d2ea66d3bb8330c31c55d7ae66f18a5a6f82c4c1d1ae33ea80d70`.
+- 162 tests PASS, 0 FAIL; Python compile, JavaScript parse, diff-check y Gitleaks PASS.
+- Candidato 9090: health, venta diaria, Reportes, GD Sales/RBAC, Leads, Cotizaciones, WABA y Encuestas PASS.
+- Post-cutover: `/healthz` interno y Nginx 200; mismos smokes autenticados PASS; servicio `crm-gd` activo con cuatro workers; estáticos GD Sales y Reportes 200.
+- Sin migraciones ni cambios de esquema. `ROLLBACK_EXECUTED=NO`.
+
 ## Cierre funcional Agenda — montaje, consistencia y sincronización
 
 Release activo: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`. Rollback inmediato: `aa9d24af24f506182fa5ae8d9ea7bc2721ff3117`.
