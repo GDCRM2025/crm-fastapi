@@ -3,6 +3,33 @@
 Fecha: 2026-08-13
 Resultado: **IMMUTABLE_CUTOVER_PASS**
 
+## Current production state
+
+`CURRENT_PRODUCTION_SHA=414fc9a57339109178faa7f1e4dc84b1aa89a3b6`
+
+Rollback inmediato: `cb72fb926d0facf52f5f7af06855221e67b63e2b`. El runtime, `MainPID` y `/opt/greendiamond/current` apuntan al release exacto. Esta cabecera es la única fuente del estado actual; los SHA posteriores son historial.
+
+### First-party tracking edge y worker
+
+- Borde independiente: `https://collect.greendiamond.cl`; artefacto edge actual `0c65ce1150a43cb781d5530c53b94f8f4b85ff0e`.
+- Host público aislado en cPanel, PHP 8.3, SQLite WAL persistente fuera del release, TLS Cloudflare y sin proxy hacia Ubuntu.
+- Rutas públicas: `GET /gd-tracker.js`, `POST/OPTIONS /v1/session`, `POST/OPTIONS /v1/event`. Pull/ACK internos exigen HMAC SHA-256, timestamp y nonce.
+- HMAC válido, firma inválida, timestamp viejo/futuro, cuerpo modificado, secreto incorrecto y replay: PASS. Cola, lease, ACK, duplicado edge y profundidad final 0: PASS.
+- Gate externo: CRM/admin/API/docs/OpenAPI/métricas no disponibles; archivos ocultos rechazados. CRM 8000 y PostgreSQL no fueron publicados.
+- Migración `2026_08_13_tracking_edge.sql` aplicada dos veces: PASS. Backup previo: `/opt/greendiamond/backups/release_20260813_112953_pre_414fc9a`; PostgreSQL SHA-256 `1f3afcb6426a0215413acbfd1fcaae484699f1946d80486ece9ec0939910e260`.
+- Worker reproducible y cron único cada minuto: PASS. Último pull PASS; queue depth 0, errores 0.
+- CAM GTM versiones 19/20 publicadas. El tag aparece en el contenedor publicado, pero el navegador real no produjo requests; CAM permanece en `NO_DATA` y se detuvo el rollout. EXP/GOU/DEL no fueron modificados.
+- 172 tests PASS, 0 FAIL; compile/build/lint/diff/Gitleaks PASS. `ROLLBACK_EXECUTED=NO` para el cutover final; un primer intento del hotfix Agenda/GD Sales revirtió automáticamente por una ruta Nginx de smoke incorrecta y producción permaneció estable.
+
+### Agenda y GD Sales profesional
+
+Release histórico del arreglo: `cb72fb926d0facf52f5f7af06855221e67b63e2b`; incluido en el release actual.
+
+- La preview permite un montaje aún incompleto sólo para guiar al usuario y enumera qué falta. La confirmación real continúa fallando cerrado si falta fecha, inicio, fin, comuna o dirección.
+- Evento único asigna automáticamente todos los productos y no muestra controles multi-día innecesarios. Pago queda alineado; duración es grande, visible y resaltada.
+- GD Sales abre como página independiente sólo SUPERADMIN, con datos vivos, teléfono/WhatsApp, apertura de lead, cotización/PDF y filtros profesionales. Se retiró la asignación de ejecutivo.
+- PDF productivo verificado HTTP 200 y magic `%PDF`; Agenda/Leads/Cotizador/Tools y GD Sales smokes PASS.
+
 ## Corrección P0 — ventas diarias, Reportes, Encuestas y GD Sales
 
 Release activo: `5276a4b8f200c53a52ea5195b5227f8cf891a950`. Rollback inmediato: `f1e27392fac72f247c6cfd6003753aa6a05c9a88`.

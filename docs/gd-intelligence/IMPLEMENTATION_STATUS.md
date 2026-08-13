@@ -2,7 +2,7 @@
 
 Actualizado: 2026-08-13
 
-SHA productivo inmutable: `5276a4b8f200c53a52ea5195b5227f8cf891a950`.
+SHA productivo inmutable: `414fc9a57339109178faa7f1e4dc84b1aa89a3b6`.
 
 | Fase / módulo | Código | Tests | Integración | Producción | Notas |
 |---|---|---|---|---|---|
@@ -13,7 +13,7 @@ SHA productivo inmutable: `5276a4b8f200c53a52ea5195b5227f8cf891a950`.
 | 4 GA4 | READY_FOR_CREDENTIAL | PASS | DISCOVERED_LOCAL | DEPLOYED | Measurement IDs 4/4; selector Property ID mediante credencial backend; credencial externa pendiente |
 | 5 Search Console | READY_FOR_CREDENTIAL | PASS | PARTIAL_LOCAL | DEPLOYED | Selector de propiedades backend listo; acceso externo pendiente |
 | 6 Dashboard web | DONE | PASS | DONE_LOCAL | DEPLOYED | Nueva sección lateral Resumen/Sitios/Site Health/UTM/Permisos; cuatro sitios reales del restore aislado |
-| 7 Tracking first-party | COLLECTOR_READY | PASS | BLOCKED_NETWORK | NOT_INSTALLED_PUBLIC | collector mínimo validado; scripts ausentes 4/4 y borde público seguro pendiente |
+| 7 Tracking first-party | EDGE_DEPLOYED | PASS | CANARY_NO_DATA | CAM_GTM_PUBLISHED | Borde HTTPS, cola durable, HMAC, worker saliente y cron operativos. CAM GTM v20 publicado; primer navegador dejó 0 eventos, por lo que el rollout EXP/GOU/DEL se detuvo correctamente. |
 | 8 Atribución | DONE_LOCAL | PASS | DONE_LOCAL | DEPLOYED | sesión→lead automática, first/last touch, método/confidence y RBAC |
 | 9 PageSpeed | PARTIAL | PASS | ORIGINS_DISCOVERED | DEPLOYED | Parser lab/field y orígenes listos; API key pendiente |
 | 10 CrUX | PARTIAL | PASS | ORIGINS_DISCOVERED | DEPLOYED | Orígenes listos; disponibilidad/API pendiente, datos ausentes no se fabrican |
@@ -25,7 +25,7 @@ SHA productivo inmutable: `5276a4b8f200c53a52ea5195b5227f8cf891a950`.
 | 16 AI por rol | PENDING | PENDING | PENDING | N/A | — |
 | 17 WABA AI assistant | PENDING | PENDING | PENDING | N/A | Reutilizar WABA actual |
 | 18 Change Requests | PENDING | PENDING | PENDING | N/A | — |
-| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `5276a4b`; rollback inmediato `f1e2739` y releases previos preservados |
+| 19 Git deployment | DEPLOYED | PASS | IMMUTABLE_RELEASE | DEPLOYED | `/opt/greendiamond/current` apunta a `414fc9a`; rollback inmediato `cb72fb9` y releases previos preservados |
 | 20 Rollback | PENDING | PENDING | PENDING | N/A | — |
 | 21 Experiments | PENDING | PENDING | PENDING | N/A | — |
 | 22 Change impact | PENDING | PENDING | PENDING | N/A | — |
@@ -77,6 +77,12 @@ SHA productivo inmutable: `5276a4b8f200c53a52ea5195b5227f8cf891a950`.
 | Visibilidad temporal GD Intelligence | PASS | Backend global y menú limitados a SUPERADMIN; SUPERADMIN 200 / ADMIN 403 verificados en producción |
 
 ## Evidencia actual
+
+- Urgencia Agenda/GD Sales 2026-08-13: `cb72fb9` corrigió la previsualización de montaje incompleto sin debilitar la confirmación final; en evento único oculta la asignación manual de productos, alinea pago y destaca duración. GD Sales vuelve a ser página independiente SUPERADMIN con teléfono, WhatsApp, cotización/PDF y filtros por fecha, monto, estado, marca y búsqueda. Candidato y post-cutover PASS; PDF productivo `%PDF`.
+- First-party edge 2026-08-13: `collect.greendiamond.cl` usa TLS Cloudflare sobre subdominio cPanel aislado, PHP 8.3, SQLite WAL fuera del release, leases/ACK at-least-once y HMAC SHA-256 con protección de replay. `/crm`, `/admin`, `/api`, `/docs`, `/openapi.json` y `/metrics` devuelven 404; `/.env` y `/.git`, 406. La credencial dedicada existe sólo en archivos 0600 del edge y Ubuntu.
+- Worker productivo `python -m backend.jobs.tracking_edge_pull`: one-shot, advisory lock, revalidación, ingest transaccional, ACK posterior y cron único cada minuto. Último pull PASS, cola 0, errores 0. Release `414fc9a`; backup `/opt/greendiamond/backups/release_20260813_112953_pre_414fc9a` con checksum y catálogo `pg_restore` PASS.
+- Canary CAM: tag **GD Tracker · CAM · First-party** publicado por GTM como versión 19 y bootstrap público como versión 20, sin secretos. El contenedor publicado contiene ambos tags, pero dos navegaciones reales QA dejaron 0 requests/eventos; `CAM_EVENTS=0`. Conforme al gate, no se amplió a EXP/GOU/DEL ni se declaró `TRACKING_DATA=REAL`. Siguiente corrección: cerrar la ejecución del loader externo en GTM y repetir navegador → edge → pull → PostgreSQL.
+- Suite consolidada posterior al edge: 172 PASS, 0 FAIL; Python compile, frontend build, PHP lint, JS parse, migración local/productiva idempotente y Gitleaks PASS.
 
 - Corrección P0 2026-08-13: release `5276a4b` activo, rollback `f1e2739` listo y no ejecutado. Dashboard del día devuelve sólo el lead CAMALEON `3903`; el lead Del Sabor `3837` conserva su registro comercial del 12 de agosto y ya no aparece falsamente el día 13.
 - Reportes productivos: Funnel 4, Tipo de Cliente 3, Productos 20, Venta por Marca 4 y Comparativo 7 series/filas en el smoke autenticado.
