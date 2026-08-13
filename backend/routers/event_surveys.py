@@ -286,7 +286,7 @@ def _ensure_for_lead(db: Session, row: dict) -> dict:
 
 
 def _public_link(token: str) -> str:
-    return f"{_base_url()}/web/views/satisfaccion.html?token={token}&v=20260728-brand-themes1"
+    return f"{_base_url()}/web/views/satisfaccion.html?token={token}&v=20260813-surveys6"
 
 
 def _wsp_url(phone: str, text_msg: str) -> str:
@@ -301,6 +301,7 @@ def _wsp_url(phone: str, text_msg: str) -> str:
 @router.get("/surveys/pending")
 def surveys_pending(
     day: str = Query(""),
+    window_days: int = Query(7, ge=1, le=31),
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -342,7 +343,8 @@ def surveys_pending(
     joins = (" LEFT JOIN public.marcas m ON m.id_marca=l.id_marca " if join_m else "") + (
         " LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna " if join_c else ""
     )
-    params: Dict[str, Any] = {"conf": int(conf), "d": d.isoformat()}
+    start_day = d - timedelta(days=int(window_days) - 1)
+    params: Dict[str, Any] = {"conf": int(conf), "d1": start_day.isoformat(), "d2": d.isoformat()}
     scope = _scope_where(db, user, params)
     email_expr = "COALESCE(l.email,'')" if _col_exists(db, "leads", "email") else "''"
     tel_expr = "COALESCE(l.telefono,'')" if _col_exists(db, "leads", "telefono") else "''"
@@ -355,8 +357,10 @@ def surveys_pending(
                    {marca_sel} AS marca, {comuna_sel} AS comuna
             FROM public.leads l
             {joins}
-            WHERE l.id_estado=:conf AND DATE(l.fecha_evento)=:d AND {scope}
-            ORDER BY l.id_lead ASC
+            WHERE l.id_estado=:conf
+              AND DATE(l.fecha_evento) BETWEEN :d1 AND :d2
+              AND {scope}
+            ORDER BY DATE(l.fecha_evento) DESC, l.id_lead ASC
             """
         ),
         params,
@@ -383,7 +387,13 @@ def surveys_pending(
         db.commit()
     except Exception:
         db.rollback()
-    return {"ok": True, "day": d.isoformat(), "items": items}
+    return {
+        "ok": True,
+        "day": d.isoformat(),
+        "range": {"from": start_day.isoformat(), "to": d.isoformat()},
+        "window_days": int(window_days),
+        "items": items,
+    }
 
 
 @router.post("/surveys/{token}/mark_sent")

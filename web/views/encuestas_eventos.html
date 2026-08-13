@@ -31,10 +31,10 @@
       <div class="row">
         <div>
           <h2 style="margin:0 0 4px 0;">Encuestas post-evento</h2>
-          <div class="muted">Eventos confirmados que ya pasaron. Envía la encuesta por WhatsApp y revisa respuestas.</div>
+          <div class="muted">Eventos confirmados ya finalizados. El CRM prepara un enlace único; tú decides cuándo enviarlo por WhatsApp.</div>
         </div>
         <div class="row">
-          <label class="muted">Día evento <input id="day" type="date" /></label>
+          <label class="muted">Revisar hasta <input id="day" type="date" /></label>
           <button class="btn" id="reload">Actualizar</button>
         </div>
       </div>
@@ -58,7 +58,7 @@
       </div>
     </section>
     <section class="card">
-      <h3 style="margin:0 0 10px 0;">Últimas respuestas</h3>
+      <div class="row"><h3 style="margin:0 0 10px 0;">Últimas respuestas</h3><span class="pill">No hay envío automático</span></div>
       <div class="tableWrap">
         <table>
           <thead><tr><th>Evento</th><th>Cliente</th><th>Marca</th><th>Promedio</th><th>Google</th><th>Comentario</th></tr></thead>
@@ -93,9 +93,10 @@
     }
     async function loadPending(){
       const d=qs("#day").value;
-      const j=await api(`/surveys/pending?day=${encodeURIComponent(d)}`);
+      const j=await api(`/surveys/pending?day=${encodeURIComponent(d)}&window_days=7`);
       const items=j.items||[];
-      qs("#pendingMeta").textContent=`${items.length} evento(s)`;
+      const range=j.range||{};
+      qs("#pendingMeta").textContent=`${items.length} evento(s) · ${range.from||d} → ${range.to||d}`;
       qs("#pendingRows").innerHTML=items.map(x=>`
         <tr>
           <td><b>${esc(x.cliente||"")}</b><div class="muted">Lead #${esc(x.id_lead)}</div></td>
@@ -110,7 +111,7 @@
             </div>
           </td>
         </tr>
-      `).join("")||`<tr><td colspan="5" class="muted">Sin eventos de ese día.</td></tr>`;
+      `).join("")||`<tr><td colspan="5"><b>No hay encuestas pendientes en los últimos 7 días.</b><div class="muted" style="margin-top:5px">Sólo aparecen eventos confirmados cuya fecha ya terminó. Puedes mover “Revisar hasta” para consultar otra semana.</div></td></tr>`;
       qs("#pendingRows").querySelectorAll("[data-mark-sent]").forEach(button=>{
         button.onclick=async()=>{
           button.disabled=true;

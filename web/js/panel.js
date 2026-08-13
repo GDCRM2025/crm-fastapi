@@ -2504,7 +2504,7 @@ const MENU = [
     title: "Checklist",
     items: [
       { id: "chk_hoy", label: "Eventos (día)", url: "/web/views/checklist_eventos.html?v=20260728-ops2" },
-      { id: "encuestas_eventos", label: "Encuestas post-evento", url: "/web/views/encuestas_eventos.html?v=20260728-surveys5" }
+      { id: "encuestas_eventos", label: "Encuestas post-evento", url: "/web/views/encuestas_eventos.html?v=20260813-surveys6" }
     ]
   },
   {
@@ -2521,7 +2521,8 @@ const MENU = [
     title: "Reportes",
     items: [
       // Un solo acceso: la vista Reportes maneja tabs internos.
-      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes_v2.html?v=20260723-rep-layout2" }
+      { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes_v2.html?v=20260813-report-fix1" },
+      { id: "gd_sales", label: "GD Sales Command Center", url: "/web/views/gd_sales.html?v=20260813-1", superadminOnly: true }
     ]
   },
   {
@@ -2716,8 +2717,9 @@ function listVisibleMenuItems() {
   for (const g of MENU) {
     for (const it of g.items) {
       if (it.sep || it.noSidebar || it.disabled || !it.url || !isItemFeatureEnabled(it.id)) continue;
+      if (it.superadminOnly && !isCurrentSuperAdmin()) continue;
       if (allowed && !allowed.has(it.id)) continue;
-      if (USER_MENU_ACCESS && !USER_MENU_ACCESS.has(String(it.id)) && !isGdMenuAllowed(it)) continue;
+      if (USER_MENU_ACCESS && !USER_MENU_ACCESS.has(String(it.id)) && !isGdMenuAllowed(it) && !(it.superadminOnly && isCurrentSuperAdmin())) continue;
       if (it.driverOnly && !isDriver && !isAdmin) continue;
       out.push({ ...it, groupId: g.id, groupTitle: g.title, groupIco: g.ico });
     }
@@ -2784,6 +2786,16 @@ function normalizeRoleName(roleName) {
   return r;
 }
 
+function isCurrentSuperAdmin() {
+  try {
+    const me = (window.GD && window.GD.me) || {};
+    const role = normalizeRoleName(me.role || me.rol || "").replace(/[ _-]/g, "");
+    return role === "SUPERADMIN" || CURRENT_ROLE_ID === 12;
+  } catch (_) {
+    return CURRENT_ROLE_ID === 12;
+  }
+}
+
 async function loadSystemFeatures() {
   SYSTEM_FEATURES = null;
   try {
@@ -2845,6 +2857,7 @@ const PERMISSIONS = {
     "rep_cierre",
     "rep_tipo",
     "rep_total",
+    "gd_sales",
     "rep_cxc",
     "rep_cxp",
     "emkt_email",
@@ -2906,7 +2919,8 @@ const PERMISSIONS = {
     "set_notify_email",
     "set_metas",
 	    "set_bak",
-		    "chk_hoy"
+		    "chk_hoy",
+        "encuestas_eventos"
 		    ,"tasks_my"
 		    ,"system_notifs"
 		    ,"events_calendar"
@@ -2973,7 +2987,8 @@ const PERMISSIONS = {
     "set_prod",
     "set_com",
 	    "set_el",
-		    "chk_hoy"
+		    "chk_hoy",
+        "encuestas_eventos"
 		    ,"tasks_my"
 		    ,"system_notifs"
 		    ,"events_calendar"
@@ -3218,8 +3233,8 @@ function buildMenu() {
   }
   for (const g of MENU) {
     const visibleItems = allowed
-      ? g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && allowed.has(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id)) || isGdMenuAllowed(it)) && (!it.driverOnly || isDriver))
-      : g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id)) || isGdMenuAllowed(it)) && (!it.driverOnly || isDriver));
+      ? g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && allowed.has(it.id) && (!it.superadminOnly || isCurrentSuperAdmin()) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id)) || isGdMenuAllowed(it) || (it.superadminOnly && isCurrentSuperAdmin())) && (!it.driverOnly || isDriver))
+      : g.items.filter((it) => !it.sep && !it.noSidebar && !it.disabled && isItemFeatureEnabled(it.id) && (!it.superadminOnly || isCurrentSuperAdmin()) && (!USER_MENU_ACCESS || USER_MENU_ACCESS.has(String(it.id)) || isGdMenuAllowed(it) || (it.superadminOnly && isCurrentSuperAdmin())) && (!it.driverOnly || isDriver));
     if (!visibleItems.length) continue;
     if (lastGroupId === "operadores" && (g.id === "rrhh" || g.id === "tools" || g.id === "settings")) {
       const divider = document.createElement("div");
@@ -3249,6 +3264,7 @@ function buildMenu() {
       }
       if (it.noSidebar) continue;
       if (it.disabled) continue;
+      if (it.superadminOnly && !isCurrentSuperAdmin()) continue;
       if (allowed && !allowed.has(it.id)) continue;
       if (it.driverOnly && !isDriver && !isAdmin) continue;
       const b = document.createElement("button");
@@ -3404,6 +3420,7 @@ function closeAllGroups() {
 async function openItem(it) {
   var _a;
   if (!(it == null ? void 0 : it.url)) return;
+  if (it.superadminOnly && !isCurrentSuperAdmin()) return;
   if (CURRENT_ALLOWED && !CURRENT_ALLOWED.has(it.id) && !isGdMenuAllowed(it)) return;
   if (!isItemFeatureEnabled(it.id)) {
     try { toast("Este módulo está temporalmente deshabilitado por administración.", "warning"); } catch (_) {}

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GD Sales Command Center</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    body{margin:0;padding:18px;background:linear-gradient(180deg,#071421,#0a1d2e);color:#e8eef5;font-family:Inter,system-ui,sans-serif}
+    *{box-sizing:border-box}.wrap{max-width:1700px;margin:auto;display:grid;gap:14px}.panel{background:rgba(12,35,55,.88);border:1px solid rgba(95,166,219,.28);border-radius:18px;padding:16px;box-shadow:0 18px 60px rgba(0,0,0,.18)}
+    .head,.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}h1,h2{margin:0}.sub,.muted{color:#9fb0c1;font-size:13px;font-weight:700}.status{display:inline-flex;gap:7px;align-items:center;border:1px solid rgba(52,211,153,.35);background:rgba(52,211,153,.1);border-radius:999px;padding:7px 10px;font-size:12px;font-weight:900}.status:before{content:"";width:8px;height:8px;background:#34d399;border-radius:50%}
+    .cards{display:grid;grid-template-columns:repeat(6,minmax(140px,1fr));gap:10px}.card{background:#0a2033;border:1px solid rgba(148,163,184,.2);border-radius:15px;padding:13px;cursor:pointer;color:inherit;text-align:left}.card:hover,.card.active{border-color:#5ba6db;background:#102d46}.label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#9fb0c1;font-weight:900}.value{font-size:24px;font-weight:1000;margin-top:7px}.amount{font-size:12px;color:#a9bbca;margin-top:4px;font-weight:800}
+    input,select,button{height:38px;border-radius:11px;border:1px solid rgba(148,163,184,.25);background:#081a2a;color:#e8eef5;padding:0 12px;font-weight:800}input{min-width:290px}.btn{cursor:pointer}.count{margin-left:auto}.tableWrap{overflow:auto;max-height:58vh;border:1px solid rgba(148,163,184,.18);border-radius:14px}table{border-collapse:collapse;width:100%;min-width:1080px;font-size:13px}th,td{padding:10px;border-bottom:1px solid rgba(148,163,184,.13);text-align:left;white-space:nowrap}th{position:sticky;top:0;background:#0d263c;color:#aebdca;text-transform:uppercase;font-size:10px;letter-spacing:.08em;z-index:1}tr[data-lead]{cursor:pointer}tr[data-lead]:hover{background:rgba(91,166,219,.09)}.right{text-align:right}.pill{display:inline-flex;border:1px solid rgba(148,163,184,.25);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}.pill.warn{border-color:rgba(245,158,11,.45);color:#fbbf24}.pill.danger{border-color:rgba(248,113,113,.45);color:#fca5a5}.empty{padding:32px;text-align:center;color:#b5c2cd}.ranking{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.rank{background:#0a2033;border:1px solid rgba(148,163,184,.17);border-radius:13px;padding:11px}.rank b{display:block}.rank small{color:#9fb0c1}
+    @media(max-width:1100px){.cards{grid-template-columns:repeat(3,1fr)}.ranking{grid-template-columns:1fr 1fr}}@media(max-width:650px){body{padding:10px}.cards{grid-template-columns:1fr 1fr}.ranking{grid-template-columns:1fr}input{min-width:100%}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="panel head">
+      <div><h1>GD Sales Command Center</h1><div class="sub" style="margin-top:5px">Pipeline vivo del CRM · oportunidades futuras · seguimiento y asignación</div></div>
+      <span class="status" id="freshness">Cargando datos reales</span>
+    </section>
+    <section class="cards" id="cards"></section>
+    <section class="panel">
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Buscar cliente, marca, ejecutivo o cotización…" />
+        <select id="sort"><option value="date">Evento más próximo</option><option value="amount">Mayor monto</option><option value="risk">Mayor urgencia</option></select>
+        <button class="btn" id="reload" type="button">Actualizar</button>
+        <span class="muted count" id="count">—</span>
+      </div>
+      <div class="tableWrap" style="margin-top:12px"><table><thead><tr><th>Cliente</th><th>Marca</th><th>Ejecutivo</th><th>Evento</th><th class="right">Monto</th><th>Estado</th><th>Seguimiento</th><th>Acción sugerida</th><th>Cotización</th></tr></thead><tbody id="rows"><tr><td colspan="9" class="empty">Cargando oportunidades…</td></tr></tbody></table></div>
+    </section>
+    <section class="panel"><h2>Responsabilidad comercial</h2><div class="sub" style="margin-top:5px">Pipeline vigente por ejecutivo o asignación pendiente.</div><div class="ranking" id="ranking" style="margin-top:12px"></div></section>
+  </main>
+  <script>
+    const API_BASE=(()=>{const h=String(location.hostname||"").toLowerCase();return (h==="localhost"||h==="127.0.0.1")?"":"/crm"})();
+    const token=()=>localStorage.getItem("token")||sessionStorage.getItem("token")||"";
+    const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+    const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(Number(n||0));
+    const date=s=>s?String(s).slice(8,10)+"/"+String(s).slice(5,7)+"/"+String(s).slice(0,4):"—";
+    let DATA={items:[],summary:{},executives:[]},filter="pipeline";
+    function auth(){const t=token();return t?{Authorization:"Bearer "+t}:{}}
+    function openLead(id){window.parent?.postMessage({type:"openItem",id:"leads_ver",url:`/web/views/leads.html?open_lead=${encodeURIComponent(id)}`},"*")}
+    function selected(){let rows=[...(DATA.items||[])];if(filter!=="pipeline")rows=rows.filter(x=>Boolean(x[filter]));const q=document.querySelector("#search").value.trim().toLowerCase();if(q)rows=rows.filter(x=>[x.cliente,x.marca,x.ejecutivo,x.num_cotizacion].join(" ").toLowerCase().includes(q));const sort=document.querySelector("#sort").value;if(sort==="amount")rows.sort((a,b)=>Number(b.monto)-Number(a.monto));else if(sort==="risk")rows.sort((a,b)=>Number(b.overdue)-Number(a.overdue)||Number(b.unassigned)-Number(a.unassigned)||Number(a.days_to_event??9999)-Number(b.days_to_event??9999));else rows.sort((a,b)=>String(a.fecha_evento||"9999").localeCompare(String(b.fecha_evento||"9999"))||Number(b.monto)-Number(a.monto));return rows}
+    function renderCards(){const defs=[["pipeline","Pipeline real"],["no_followup","Sin seguimiento"],["overdue","Seguimiento vencido"],["within_7_days","Próximos 7 días"],["next_month","Próximo mes"],["unassigned","Sin ejecutivo"]];document.querySelector("#cards").innerHTML=defs.map(([key,label])=>{const s=DATA.summary?.[key]||{};return `<button class="card ${filter===key?"active":""}" data-filter="${key}"><span class="label">${label}</span><span class="value">${Number(s.count||0)}</span><span class="amount">${money(s.amount||0)}</span></button>`}).join("");document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filter=b.dataset.filter;render()})}
+    function renderRows(){const rows=selected();document.querySelector("#count").textContent=`${rows.length} oportunidades`;document.querySelector("#rows").innerHTML=rows.length?rows.map(x=>`<tr data-lead="${x.id_lead}"><td><b>${esc(x.cliente)}</b><div class="muted">Lead #${x.id_lead}</div></td><td>${esc(x.marca)}</td><td>${esc(x.ejecutivo)}</td><td>${date(x.fecha_evento)}<div class="muted">${Number(x.days_to_event||0)} días</div></td><td class="right"><b>${money(x.monto)}</b></td><td><span class="pill">${esc(x.estado)}</span></td><td>${x.overdue?'<span class="pill danger">Vencido</span>':x.no_followup?'<span class="pill warn">Pendiente</span>':'<span class="pill">Vigente</span>'}</td><td><b>${esc(x.action)}</b></td><td>${esc(x.num_cotizacion||"—")}</td></tr>`).join(""):`<tr><td colspan="9" class="empty"><b>No hay oportunidades con este filtro.</b><div class="muted" style="margin-top:6px">Cambia el filtro o limpia la búsqueda.</div></td></tr>`;document.querySelectorAll("tr[data-lead]").forEach(tr=>tr.onclick=()=>openLead(tr.dataset.lead))}
+    function renderRanking(){document.querySelector("#ranking").innerHTML=(DATA.executives||[]).map(x=>`<div class="rank"><b>${esc(x.ejecutivo)}</b><small>${x.opportunities} oportunidades · ${money(x.pipeline)}<br>${x.no_followup} sin seguimiento · ${x.overdue} vencidas</small></div>`).join("")||'<div class="empty">Sin datos de responsabilidad comercial.</div>'}
+    function render(){renderCards();renderRows();renderRanking()}
+    async function load(){document.querySelector("#freshness").textContent="Actualizando…";const r=await fetch(API_BASE+"/tools/gd-sales/command-center",{headers:auth()});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||`HTTP ${r.status}`);DATA=j;document.querySelector("#freshness").textContent="Datos reales · "+new Date(j.generated_at).toLocaleString("es-CL");render()}
+    document.querySelector("#search").oninput=renderRows;document.querySelector("#sort").onchange=renderRows;document.querySelector("#reload").onclick=()=>load().catch(showError);
+    function showError(error){document.querySelector("#freshness").textContent="No disponible";document.querySelector("#rows").innerHTML=`<tr><td colspan="9" class="empty"><b>No pudimos cargar GD Sales.</b><div class="muted">${esc(error.message||error)}</div></td></tr>`}
+    load().catch(showError);
+  </script>
+</body>
+</html>

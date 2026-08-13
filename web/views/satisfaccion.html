@@ -101,7 +101,17 @@
     qs("#backBtn").onclick=()=>{if(page>0){page--;updatePage();}};
     qs("#nextBtn").onclick=async()=>{if(!validatePage())return;if(page<2){page++;updatePage();return;}const r=ratings();qs("#nextBtn").disabled=true;try{await api(`/public/surveys/${encodeURIComponent(token)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ratings:r,comment:qs("#comment").value||""})});showDone(true,r);}catch(e){alert(e.message||e);qs("#nextBtn").disabled=false;}};
     async function load(){if(!token)throw new Error("Falta token");render(await api(`/public/surveys/${encodeURIComponent(token)}`));}
-    load().catch(e=>{qs("#title").textContent="No pudimos cargar la encuesta";qs("#introText").textContent=e.message||String(e);});
+    function showLoadError(error){
+      qs("#title").textContent="Este enlace de encuesta no está disponible";
+      qs("#introText").textContent=(error&&error.message)==="Falta token"
+        ? "Abre el enlace completo que recibiste por WhatsApp."
+        : "El enlace es inválido o ya no corresponde a una encuesta activa. Solicita uno nuevo a nuestro equipo.";
+      qs("#clientPill").style.display="none";
+      qs("#datePill").style.display="none";
+      qs("#secureText").textContent="Por seguridad no es posible comenzar sin un enlace único válido.";
+      qs("#startBtn").style.display="none";
+    }
+    load().catch(showLoadError);
   </script>
 </body>
 </html>

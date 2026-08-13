@@ -743,6 +743,7 @@ def _metas_autofill_month_if_empty(db: Session, y: int, m: int, by: str = "auto"
     except Exception:
         return False
 
+
     try:
         cnt = int(
             db.execute(
@@ -834,6 +835,18 @@ def _metas_autofill_month_if_empty(db: Session, y: int, m: int, by: str = "auto"
         except Exception:
             pass
         return False
+
+
+def _agenda_sale_date_expr(db: Session, alias: str = "l") -> str:
+    """Return the Chile-local confirmation date for dashboard sales.
+
+    ``agenda_approved_at`` is stored as a UTC timestamp without timezone.
+    Interpreting it directly as Chile time moves evening confirmations into
+    the following day and makes totals disagree with their drill-down.
+    """
+    if _col_exists(db, "leads", "agenda_approved_at"):
+        return f"(({alias}.agenda_approved_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/Santiago')::date"
+    return f"{alias}.fecha_evento::date"
 
 
 def _metas_sync_from_baseline(db: Session, y: int, m: int, by: str = "sync", default_crec: float = 12.0) -> dict[str, Any]:
@@ -2616,9 +2629,7 @@ def dashboard(
         use_fin_eventos = str(venta_source or "").lower() in ("eventos", "fin_eventos")
 
         # Regla negocio: venta día/semana se mide por agenda_approved_at (fecha de agendamiento/aprobación).
-        sale_date_expr = "l.updated_at::date"
-        if _col_exists(db, "leads", "agenda_approved_at"):
-            sale_date_expr = "l.agenda_approved_at::date"
+        sale_date_expr = _agenda_sale_date_expr(db)
 
         if use_fin_eventos and _table_exists_pg(db, "fin_eventos"):
             try:
@@ -2943,9 +2954,7 @@ def dashboard(
         conf_params2["confname"] = "%CONFIRM%"
 
     # Venta hoy/semana por agenda_approved_at (si existe)
-    sale_date_expr = "l.updated_at::date"
-    if _col_exists(db, "leads", "agenda_approved_at"):
-        sale_date_expr = "l.agenda_approved_at::date"
+    sale_date_expr = _agenda_sale_date_expr(db)
 
     venta_hoy = 0
     venta_semana = 0
@@ -3536,8 +3545,11 @@ def _dashboard_reportes_v2(
     tipo_expr = None
     tipo_join = ""
     if _col_exists(db, "leads", "id_tipo_cliente") and _table_exists_pg(db, "tipos_cliente"):
-        tipo_expr = "COALESCE(tc.nombre,'—')"
-        tipo_join = "LEFT JOIN tipos_cliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente"
+        tipos_cliente_cols = _cols_pg(db, "tipos_cliente")
+        tipo_label_col = "nombre" if "nombre" in tipos_cliente_cols else ("tipo" if "tipo" in tipos_cliente_cols else None)
+        if tipo_label_col:
+            tipo_expr = f"COALESCE(tc.{tipo_label_col},'—')"
+            tipo_join = "LEFT JOIN tipos_cliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente"
     elif _col_exists(db, "leads", "id_tipo_cliente") and _table_exists_pg(db, "tipocliente"):
         tipo_expr = "COALESCE(tc.nombre,'—')"
         tipo_join = "LEFT JOIN tipocliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente"
@@ -3548,7 +3560,7 @@ def _dashboard_reportes_v2(
             tipos_rows = db.execute(
                 text(
                     f"""
-                    SELECT {tipo_expr} AS tipo,
+                    SELECT {tipo_expr} AS tipo_cliente,
                            COUNT(*)::int AS cantidad,
                            COALESCE(SUM(l.monto_cotizado),0)::float AS monto
                     FROM leads l
@@ -3564,7 +3576,7 @@ def _dashboard_reportes_v2(
             tipos_rows_conf = db.execute(
                 text(
                     f"""
-                    SELECT {tipo_expr} AS tipo,
+                    SELECT {tipo_expr} AS tipo_cliente,
                            COUNT(*)::int AS cantidad,
                            COALESCE(SUM(l.monto_cotizado),0)::float AS monto
                     FROM leads l
@@ -5063,7 +5075,7 @@ def dashboard_v2_sales_ids(
     b = str(basis or "").strip().lower()
     if b in ("agenda", "approved", "agendado", "agendamiento"):
         if _col_exists(db, "leads", "agenda_approved_at"):
-            date_expr = "l.agenda_approved_at::date"
+            date_expr = _agenda_sale_date_expr(db)
             basis_used = "agenda_approved_at"
         else:
             date_expr = "l.fecha_evento::date"
@@ -5200,7 +5212,7 @@ def dashboard_v2(
             marca_params["id_marca"] = mid
 
     has_agenda = _col_exists(db, "leads", "agenda_approved_at")
-    agenda_expr = "(l.agenda_approved_at AT TIME ZONE 'America/Santiago')::date" if has_agenda else "l.fecha_evento::date"
+    agenda_expr = _agenda_sale_date_expr(db)
     source_col = "plataforma" if _col_exists(db, "leads", "plataforma") else None
     # tipo_cliente existe (agregado en migración hotfix); fallback por IVA de cotización
     has_tipo = _col_exists(db, "leads", "tipo_cliente")
