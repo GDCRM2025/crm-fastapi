@@ -3,7 +3,7 @@
   if (window.__GD_TRACKER_LOADED__) return;
   var script = document.currentScript;
   var siteCode = (script && script.dataset.siteCode) || window.GD_SITE_CODE || "";
-  var apiBase = ((script && script.dataset.apiBase) || "").replace(/\/$/, "");
+  var apiBase = ((script && script.dataset.apiBase) || window.GD_TRACKER_API_BASE || "").replace(/\/$/, "");
   if (!siteCode) return;
   window.__GD_TRACKER_LOADED__ = true;
 

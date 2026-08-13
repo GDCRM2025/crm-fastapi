@@ -89,6 +89,7 @@ class TrackingCollectorSecurityTests(unittest.TestCase):
         self.assertNotIn('/collect/v1/session', source)
         self.assertNotIn('/api/gd-intelligence/tracking/session', source)
         self.assertIn("window.__GD_TRACKER_LOADED__", source)
+        self.assertIn("window.GD_TRACKER_API_BASE", source)
 
     def test_discovery_requires_actual_tracker_script(self):
         source = (ROOT / "backend/gd_intelligence/integration_inventory.py").read_text(encoding="utf-8")
