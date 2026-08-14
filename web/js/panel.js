@@ -2494,7 +2494,7 @@ const MENU = [
     title: "Leads",
     items: [
       { id: "leads_ver", label: "Ver Leads", url: "/web/views/leads.html?v=20260809-attribution-v1" },
-      { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html?v=20260326-fil1" },
+      { id: "leads_fil", label: "Filtrar Leads", url: "/web/views/filtro_leads.html?v=20260814-filtros1" },
       { id: "crm360", label: "Comercial 360", url: "/web/views/crm360.html?v=20260723-fin-task1" }
     ]
   },
@@ -2512,7 +2512,7 @@ const MENU = [
     ico: "\u{1F9FE}",
     title: "Cotizador",
     items: [
-      { id: "historial", label: "Historial", url: "/web/views/historial_cotizaciones.html" }
+      { id: "historial", label: "Historial", url: "/web/views/historial_cotizaciones.html?v=20260814-filtros1" }
     ]
   },
   {
@@ -2522,7 +2522,7 @@ const MENU = [
     items: [
       // Un solo acceso: la vista Reportes maneja tabs internos.
       { id: "rep_total", label: "Ir a Reportes", url: "/web/views/reportes_v2.html?v=20260813-report-fix1" },
-      { id: "gd_sales", label: "GD Sales Command Center ↗", url: "/web/views/gd_sales.html?v=20260813-pro2", superadminOnly: true, external: true }
+      { id: "gd_sales", label: "GD Sales Command Center V14.2 ↗", url: "/gd-sales/?v=20260814-live1", superadminOnly: true, external: true }
     ]
   },
   {
