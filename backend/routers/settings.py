@@ -36,6 +36,11 @@ def _is_admin(role: str) -> bool:
     return ("admin" in rk) or ("superadmin" in rk)
 
 
+def _require_legacy_admin(user: dict) -> None:
+    if not _is_admin(str(user.get("role") or user.get("rol") or "")):
+        raise HTTPException(status_code=403, detail="Solo Admin")
+
+
 def _ensure_system_notifs(conn) -> None:
     try:
         conn.execute(
@@ -162,7 +167,8 @@ def list_marcas(solo_activas: bool = Query(False)):
 
 
 @router.post("/marcas", response_model=MarcaOut)
-def upsert_marca(payload: MarcaIn):
+def upsert_marca(payload: MarcaIn, user: dict = Depends(get_current_user)):
+    _require_legacy_admin(user)
     with get_connection() as conn:
         row = conn.execute(
             text(
@@ -183,7 +189,8 @@ def upsert_marca(payload: MarcaIn):
 
 
 @router.put("/marcas/{id_marca}", response_model=MarcaOut)
-def update_marca(id_marca: int, payload: MarcaIn):
+def update_marca(id_marca: int, payload: MarcaIn, user: dict = Depends(get_current_user)):
+    _require_legacy_admin(user)
     with get_connection() as conn:
         row = conn.execute(
             text(
@@ -406,7 +413,21 @@ def create_producto(payload: ProductoIn, user: dict = Depends(get_current_user))
                 )
             conn.commit()
 
-            to = _emails_for_roles(conn, roles)
+            to = []
+            cc = []
+            bcc = []
+            try:
+                from backend.core.notify_routes import resolve_email_to, resolve_email_cc, resolve_email_bcc
+
+                to = resolve_email_to("AGENDA_EVENTOS", [])
+                cc = resolve_email_cc("AGENDA_EVENTOS", [])
+                bcc = resolve_email_bcc("AGENDA_EVENTOS", [])
+            except Exception:
+                to = []
+                cc = []
+                bcc = []
+            if not to:
+                to = _emails_for_roles(conn, roles)
             if to:
                 subj = f"CRM · Nuevo producto ({marca_canon})"
                 txt = f"Producto: {row.get('producto')}\nMarca: {marca_canon}\nCreado por: {who}\nLink: {url}\n"
@@ -431,7 +452,7 @@ def create_producto(payload: ProductoIn, user: dict = Depends(get_current_user))
                   </div>
                 </div>
                 """
-                send_email_group(to, subj, txt, html=html)
+                send_email_group(to, subj, txt, html=html, cc_addrs=cc, bcc_addrs=bcc)
         except Exception:
             pass
 
@@ -439,7 +460,8 @@ def create_producto(payload: ProductoIn, user: dict = Depends(get_current_user))
 
 
 @router.put("/productos/{id_producto}", response_model=ProductoOut)
-def update_producto(id_producto: int, payload: ProductoIn):
+def update_producto(id_producto: int, payload: ProductoIn, user: dict = Depends(get_current_user)):
+    _require_legacy_admin(user)
     with get_connection() as conn:
         row = conn.execute(
             text(
@@ -465,7 +487,8 @@ def update_producto(id_producto: int, payload: ProductoIn):
 
 
 @router.patch("/productos/{id_producto}/estado", response_model=ProductoOut)
-def toggle_producto(id_producto: int, is_active: bool = Query(...)):
+def toggle_producto(id_producto: int, is_active: bool = Query(...), user: dict = Depends(get_current_user)):
+    _require_legacy_admin(user)
     with get_connection() as conn:
         row = conn.execute(
             text(

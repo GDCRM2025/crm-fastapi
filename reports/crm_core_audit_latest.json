@@ -1,0 +1,165 @@
+{
+  "database": "BDGD",
+  "results": [
+    {
+      "name": "auth.leads.reject_anonymous",
+      "ok": true,
+      "detail": "HTTP 401"
+    },
+    {
+      "name": "health.openapi",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "catalog.leads",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "settings.platforms",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "lead.create",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "lead.read",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "lead.read.identity",
+      "ok": true,
+      "detail": "12"
+    },
+    {
+      "name": "lead.update",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "lead.followup_whatsapp",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "lead.followup_moves_status",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "lead.vcard",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "quote.create",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "quote.read",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "quote.items",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "quote.items.snapshot",
+      "ok": true,
+      "detail": "Agua"
+    },
+    {
+      "name": "quote.history",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "quote.pdf_template",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "quote.revise",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "quote.revision_created",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "rbac.executive_foreign_brand",
+      "ok": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "name": "rbac.executive_delete_denied",
+      "ok": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "name": "survey.lead_create",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "survey.pending",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "survey.generated",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "survey.public_read",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "survey.public_submit",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "survey.mark_sent",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "survey.review_click",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "survey.summary",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "lead.soft_delete",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "lead.deleted_hidden",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "lead.deleted_not_listed",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

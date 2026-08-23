@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from backend.db import get_db
 from backend.routers.auth import get_current_user
+from backend.core.activity_log import log_activity
+from backend.core.rbac import role_key, user_id, username
 from backend.core.qr_local import make_qr_png_target, make_qr_svg
 from backend.core.sgjo import (
     ensure_sgjo_tables,
@@ -32,6 +34,27 @@ _SGJO_ENSURE_LOCK = threading.Lock()
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _sgjo_operational_day_expr(column: str = "created_at") -> str:
+    """
+    Jornada operacional SGJO en Chile.
+    Entre 00:00 y 05:59, una marcacion pertenece al dia anterior para permitir
+    salidas de turnos que cruzan medianoche.
+    """
+    return (
+        f"CASE WHEN (({column} AT TIME ZONE 'America/Santiago')::time < time '06:00') "
+        f"THEN (({column} AT TIME ZONE 'America/Santiago')::date - 1) "
+        f"ELSE ({column} AT TIME ZONE 'America/Santiago')::date END"
+    )
+
+
+def _sgjo_current_operational_day_expr() -> str:
+    return (
+        "CASE WHEN ((now() AT TIME ZONE 'America/Santiago')::time < time '06:00') "
+        "THEN ((now() AT TIME ZONE 'America/Santiago')::date - 1) "
+        "ELSE (now() AT TIME ZONE 'America/Santiago')::date END"
+    )
 
 
 def _ensure(db: Session) -> None:
@@ -512,11 +535,19 @@ def today_status(db: Session = Depends(get_db), user: dict = Depends(get_current
         raise HTTPException(status_code=401, detail="Usuario inválido")
     uid_int = int(uid)
 
-    # RUT y policy RRHH
+    # RUT y policy RRHH. Si no existe ficha RRHH pero el rol es comercial/admin,
+    # igual exigimos marcación de entrada al login.
     rut = get_user_rut(db, uid_int)
     pol = _rrhh_marking_policy(db, rut or "") if rut else None
-    puede = None if pol is None else bool(pol.get("puede_marcar"))
-    method_allowed = None if pol is None else str(pol.get("marcacion_method") or "BOTH").upper()
+    role_norm = role_key(user).replace("_", " ").upper()
+    role_compact = "".join(ch for ch in role_norm if ch.isalnum())
+    role_requires_mark = (
+        "ADMIN" in role_compact
+        or "SUPERADMIN" in role_compact
+        or ("EJECUTIVO" in role_compact and "VENTA" in role_compact)
+    )
+    puede = bool(pol.get("puede_marcar")) if pol is not None else bool(role_requires_mark)
+    method_allowed = (str(pol.get("marcacion_method") or "BOTH").upper() if pol is not None else ("BOTH" if role_requires_mark else None))
 
     # Default punto por centro de costo (match nombre sede)
     default_punto = None
@@ -570,12 +601,12 @@ def today_status(db: Session = Depends(get_db), user: dict = Depends(get_current
     try:
         rows = db.execute(
             text(
-                """
+                f"""
                 SELECT tipo, method, created_at
                 FROM public.sgjo_marcaciones
                 WHERE id_usuario=:u
                   AND ok IS TRUE
-                  AND ((created_at AT TIME ZONE 'America/Santiago')::date = (now() AT TIME ZONE 'America/Santiago')::date)
+                  AND ({_sgjo_operational_day_expr("created_at")} = {_sgjo_current_operational_day_expr()})
                 ORDER BY created_at ASC
                 """
             ),
@@ -592,7 +623,7 @@ def today_status(db: Session = Depends(get_db), user: dict = Depends(get_current
     has_out = "OUT" in tipos
     last = rows[-1] if rows else None
     try:
-        today = db.execute(text("SELECT (now() AT TIME ZONE 'America/Santiago')::date")).scalar()
+        today = db.execute(text(f"SELECT {_sgjo_current_operational_day_expr()}")).scalar()
         today_s = str(today)
     except Exception:
         today_s = ""
@@ -600,6 +631,8 @@ def today_status(db: Session = Depends(get_db), user: dict = Depends(get_current
     return {
         "ok": True,
         "today": today_s,
+        "day": today_s,
+        "operational_day": today_s,
         "has_in": bool(has_in),
         "has_out": bool(has_out),
         "last_tipo": (str(last.get("tipo") or "").upper() if last else None),
@@ -1136,18 +1169,19 @@ def admin_hours_summary(
 
     where = ["m.id_usuario=:u", "m.ok IS TRUE"]
     params: dict[str, Any] = {"u": uid}
+    day_expr = _sgjo_operational_day_expr("m.created_at")
     if fd:
-        where.append("(m.created_at AT TIME ZONE 'America/Santiago')::date >= :fd::date")
+        where.append(f"({day_expr}) >= :fd::date")
         params["fd"] = fd
     if td:
-        where.append("(m.created_at AT TIME ZONE 'America/Santiago')::date <= :td::date")
+        where.append(f"({day_expr}) <= :td::date")
         params["td"] = td
 
     rows = db.execute(
         text(
             f"""
             WITH d AS (
-              SELECT (created_at AT TIME ZONE 'America/Santiago')::date AS day,
+              SELECT {day_expr} AS day,
                      MIN(created_at) FILTER (WHERE tipo='IN') AS in_at,
                      MAX(created_at) FILTER (WHERE tipo='OUT') AS out_at
               FROM public.sgjo_marcaciones m
@@ -1985,12 +2019,12 @@ def marcar(
     try:
         rows_hoy = db.execute(
             text(
-                """
+                f"""
                 SELECT tipo
                 FROM public.sgjo_marcaciones
                 WHERE id_usuario=:u
                   AND ok IS TRUE
-                  AND ((created_at AT TIME ZONE 'America/Santiago')::date = (now() AT TIME ZONE 'America/Santiago')::date)
+                  AND ({_sgjo_operational_day_expr("created_at")} = {_sgjo_current_operational_day_expr()})
                 ORDER BY created_at ASC
                 """
             ),
@@ -2105,6 +2139,34 @@ def marcar(
 
     if not ok:
         raise HTTPException(status_code=400, detail=err or "Marca inválida")
+
+    try:
+        log_activity(
+            db,
+            username=username(user),
+            user_id=user_id(user) or uid_int,
+            role=role_key(user),
+            action="attendance.mark",
+            entity_type="usuario",
+            entity_id=uid_int,
+            meta={
+                "tipo": tipo,
+                "method": method,
+                "sede": point["sede"],
+                "punto_code": punto_code,
+                "within_radius": bool(within),
+                "used_fallback": bool(used_fb),
+                "distance_m": distance_m,
+                "modality": modality,
+            },
+            request=request,
+        )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
     return {
         "ok": True,

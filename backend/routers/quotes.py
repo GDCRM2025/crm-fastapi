@@ -6,7 +6,7 @@ from backend.routers.auth import get_current_user
 router = APIRouter(prefix="/quotes")
 
 @router.get("/history")
-def historial(id_lead: int = Query(..., ge=1)):
+def historial(id_lead: int = Query(..., ge=1), me: dict = Depends(get_current_user)):
     with get_connection() as conn:
         rows = conn.execute(text("""
           SELECT

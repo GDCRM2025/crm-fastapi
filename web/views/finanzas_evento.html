@@ -5,140 +5,149 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="/web/styles.css" />
   <link rel="stylesheet" href="/web/ui_overrides.css" />
-  <title>Finanzas • Registrar evento</title>
+  <title>Finanzas • Cobranza Evento</title>
   <style>
     body{padding:18px;}
-    .wrap{max-width:none; margin:0 auto;}
-    .grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
-    .grid .full{grid-column:1 / -1;}
+    .wrap{max-width:none;margin:0 auto;}
     .card{margin-bottom:14px;}
-    .label{font-size:12px; opacity:.7; font-weight:800; text-transform:uppercase; letter-spacing:.04em;}
-    input,select{width:100%; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); color:inherit; padding:8px 10px; border-radius:10px;}
-    .btn{background:#22c55e; color:#062315; border:none; padding:8px 12px; border-radius:10px; font-weight:900; cursor:pointer;}
-    .btn.secondary{background:transparent; color:inherit; border:1px solid rgba(255,255,255,.15);}    
-    table{width:100%; border-collapse:collapse; font-size:13px;}
-    th,td{padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left;}
-    .pill{display:inline-flex; gap:6px; align-items:center; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.12); font-size:11px; font-weight:900;}
-    .modal{position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); z-index:50;}
+    .head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+    .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+    .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    .full{grid-column:1 / -1;}
+    .label{font-size:12px;opacity:.72;font-weight:900;text-transform:uppercase;letter-spacing:.04em;}
+    input,select,textarea{width:100%;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.12);color:inherit;padding:8px 10px;border-radius:10px;}
+    textarea{min-height:70px;resize:vertical;}
+    input[readonly],input:disabled,select:disabled,textarea:disabled{opacity:.82;background:rgba(255,255,255,.045);cursor:not-allowed;}
+    .btn{background:#22c55e;color:#062315;border:none;padding:9px 12px;border-radius:10px;font-weight:900;cursor:pointer;}
+    .btn.secondary{background:transparent;color:inherit;border:1px solid rgba(255,255,255,.16);}
+    .btn.warn{background:#f59e0b;color:#241200;}
+    .btn.danger{background:#ef4444;color:#fff;}
+    .summary{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:10px;margin-top:12px;}
+    .metric{border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px;background:rgba(0,0,0,.12);}
+    .metric b{display:block;font-size:22px;margin-top:4px;}
+    .mini-list{margin-top:8px;display:grid;gap:6px;max-height:150px;overflow:auto;}
+    .mini-row{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(255,255,255,.07);padding-bottom:5px;}
+    .table-wrap{margin-top:10px;max-height:58vh;overflow:auto;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(0,0,0,.08);}
+    table{width:100%;min-width:1500px;border-collapse:separate;border-spacing:0;font-size:13px;}
+    th,td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;white-space:nowrap;vertical-align:middle;}
+    th{position:sticky;top:0;z-index:2;background:#10243a;box-shadow:0 1px 0 rgba(255,255,255,.10);}
+    tbody tr:hover{background:rgba(255,255,255,.045);}
+    .pill{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.13);font-size:11px;font-weight:900;}
+    .pill.ok{border-color:rgba(34,197,94,.45);color:#86efac;}
+    .pill.warn{border-color:rgba(245,158,11,.55);color:#fcd34d;}
+    .pill.bad{border-color:rgba(239,68,68,.55);color:#fca5a5;}
+    .actions{display:flex;gap:6px;align-items:center;}
+    .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.58);z-index:60;padding:14px;}
     .modal.open{display:flex;}
-    .modal-card{width:min(760px, 94vw); max-height:85vh; overflow:auto; border-radius:18px; padding:14px; border:1px solid rgba(255,255,255,.16); background:rgba(8,14,20,.98);}
-    .modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;}
+    .modal-card{width:min(980px,96vw);max-height:88vh;overflow:auto;border-radius:18px;padding:14px;border:1px solid rgba(255,255,255,.16);background:rgba(8,14,20,.98);}
+    .modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}
+    .tabs{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+    .tab{background:transparent;color:inherit;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:7px 10px;font-weight:900;cursor:pointer;}
+    .tab.active{background:rgba(96,165,250,.18);border-color:rgba(96,165,250,.65);}
+    .hidden{display:none!important;}
+    @media(max-width:1000px){.grid,.summary{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
   <div class="wrap">
     <section class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+      <div class="head">
         <div>
-          <h2 style="margin:0 0 4px 0">Registrar evento</h2>
-          <div class="muted">Basado en lead confirmado o ingreso manual.</div>
+          <h2 style="margin:0 0 4px 0">Cobranza Evento</h2>
+          <div class="muted">Eventos confirmados del mes, abonos, saldos y datos para facturación.</div>
         </div>
-        <button class="btn" id="btnSave">Guardar evento</button>
+        <div class="toolbar">
+          <input id="fMes" type="month" style="width:160px" />
+          <button class="btn" id="btnSync">Sincronizar mes</button>
+          <button class="btn secondary" id="btnPrev">Pendientes anteriores</button>
+          <button class="btn secondary" id="btnReload">Actualizar</button>
+        </div>
       </div>
+      <div id="summary" class="summary"></div>
+    </section>
 
-      <div class="grid" style="margin-top:12px;">
-        <div class="full">
-          <div class="label">Lead confirmado</div>
-          <select id="leadSelect"></select>
-        </div>
-
+    <section class="card">
+      <div class="head">
         <div>
-          <div class="label">Cliente</div>
-          <input id="fCliente" />
+          <h3 style="margin:0">Lead/evento confirmado del mes</h3>
+          <div class="muted">Al seleccionar, los datos quedan solo lectura. Lo editable vive en abonos o facturación.</div>
         </div>
-        <div>
-          <div class="label">Comuna</div>
-          <input id="fComuna" />
-        </div>
-        <div>
-          <div class="label">Marca</div>
-          <input id="fMarca" />
-        </div>
-        <div>
-          <div class="label">Tipo cliente</div>
-          <select id="fTipo">
-            <option value="PARTICULAR">Particular</option>
-            <option value="EMPRESA">Empresa</option>
-          </select>
-        </div>
-
-        <div>
-          <div class="label">Fecha evento</div>
-          <input id="fFecha" type="date" />
-        </div>
-        <div>
-          <div class="label">Nro cotización</div>
-          <input id="fCot" />
-        </div>
-        <div>
-          <div class="label">Monto bruto (con IVA si aplica)</div>
-          <input id="fBruto" />
-        </div>
-        <div>
-          <div class="label">Traslado</div>
-          <input id="fTraslado" value="0" />
-        </div>
-
-        <div>
-          <div class="label">Abono</div>
-          <input id="fAbono" value="0" />
-        </div>
-        <div>
-          <div class="label">Comisión %</div>
-          <input id="fComPct" value="3" />
-        </div>
-        <div>
-          <div class="label">Neto (productos + traslado)</div>
-          <input id="fNeto" disabled />
-        </div>
-
-        <div>
-          <div class="label">IVA (auto)</div>
-          <input id="fIva" disabled />
-        </div>
-        <div>
-          <div class="label">Saldo (auto)</div>
-          <input id="fSaldo" disabled />
-        </div>
-        <div>
-          <div class="label">Comisión (auto)</div>
-          <input id="fComMonto" disabled />
+        <select id="leadSelect" style="max-width:520px"></select>
+      </div>
+      <div class="grid" style="margin-top:12px">
+        <div><div class="label">Cliente</div><input id="fCliente" readonly /></div>
+        <div><div class="label">Marca</div><input id="fMarca" readonly /></div>
+        <div><div class="label">Comuna</div><input id="fComuna" readonly /></div>
+        <div><div class="label">Ejecutivo</div><input id="fEjecutivo" readonly /></div>
+        <div><div class="label">Fecha evento</div><input id="fFecha" readonly /></div>
+        <div><div class="label">Cotización</div><input id="fCot" readonly /></div>
+        <div><div class="label">Tipo cliente</div><input id="fTipo" readonly /></div>
+        <div><div class="label">Condición</div><input id="fCondicion" readonly /></div>
+        <div><div class="label">Bruto</div><input id="fBruto" readonly /></div>
+        <div><div class="label">IVA</div><input id="fIva" readonly /></div>
+        <div><div class="label">Neto</div><input id="fNeto" readonly /></div>
+        <div><div class="label">Traslado</div><input id="fTraslado" readonly /></div>
+        <div><div class="label">Abonado</div><input id="fAbono" readonly /></div>
+        <div><div class="label">Saldo</div><input id="fSaldo" readonly /></div>
+        <div><div class="label">Factura / boleta</div><input id="fFactura" readonly /></div>
+        <div class="toolbar" style="align-items:end">
+          <button class="btn" id="btnAbono" disabled>Registrar abono</button>
+          <button class="btn secondary" id="btnFactura" disabled>Datos facturación</button>
         </div>
       </div>
     </section>
 
     <section class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-        <h3 style="margin:0">Eventos registrados (últimos 50)</h3>
-        <button class="btn secondary" id="btnReload">Actualizar</button>
+      <div class="head">
+        <div>
+          <h3 style="margin:0">Eventos registrados del mes</h3>
+          <div class="muted">Cada línea permite registrar abono y completar factura/boleta.</div>
+        </div>
+        <div class="toolbar">
+          <button class="btn secondary" id="btnTogglePagados">Mostrar pagados</button>
+        </div>
       </div>
-      <div class="table-wrap" style="margin-top:10px">
+      <div class="tabs">
+        <button class="tab active" data-tab="eventos">Cobranza</button>
+        <button class="tab" data-tab="facturacion">Facturación pendiente</button>
+      </div>
+      <div id="tabEventos" class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>ID</th><th>Cotización</th><th>Cliente</th><th>Comuna</th><th>Marca</th><th>Fecha</th><th>Neto</th><th>Bruto</th><th>Traslado</th><th>Saldo</th>
+              <th>ID</th><th>Cotización</th><th>Fecha evento</th><th>Marca</th><th>Comuna</th><th>Cliente</th><th>Ejecutivo</th>
+              <th>Bruto</th><th>IVA</th><th>Neto</th><th>Traslado</th><th>Abono 1</th><th>Abonos</th><th>Saldo</th><th>Condición</th><th>Factura</th><th>Acciones</th>
             </tr>
           </thead>
-          <tbody id="rows"><tr><td class="muted" colspan="10">Cargando...</td></tr></tbody>
+          <tbody id="rows"><tr><td class="muted" colspan="17">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+      <div id="tabFacturacion" class="table-wrap hidden">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha Evento</th><th>Mes</th><th>Marca</th><th>Cliente</th><th>Monto Neto</th><th>IVA</th><th>Monto Bruto</th>
+              <th>RUT</th><th>Razón Social</th><th>N° OC</th><th>Fecha OC</th><th>HES</th><th>Fecha HES</th><th>Tipo doc</th><th>Fecha Elab</th><th>N° Doc</th><th>Dirección</th><th>Giro</th><th>Glosa</th><th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="factRows"><tr><td class="muted" colspan="20">Cargando...</td></tr></tbody>
         </table>
       </div>
     </section>
 
-    <div id="modal" class="modal">
+    <div id="modalPago" class="modal">
       <div class="modal-card">
         <div class="modal-head">
-          <strong id="mTitle">Pagos</strong>
-          <button class="btn secondary" id="mClose">Cerrar</button>
+          <div>
+            <strong id="pTitle">Registrar abono</strong>
+            <div class="muted" id="pSub"></div>
+          </div>
+          <button class="btn secondary" data-close="modalPago">Cerrar</button>
         </div>
         <div class="grid">
-          <div>
-            <div class="label">Fecha</div>
-            <input id="pFecha" type="date" />
-          </div>
-          <div>
-            <div class="label">Monto</div>
-            <input id="pMonto" />
-          </div>
+          <div><div class="label">Fecha</div><input id="pFecha" type="date" /></div>
+          <div><div class="label">Monto</div><input id="pMonto" inputmode="numeric" /></div>
           <div>
             <div class="label">Método</div>
             <select id="pMetodo">
@@ -147,27 +156,58 @@
               <option value="CHEQUE">Cheque</option>
               <option value="EFECTIVO">Efectivo</option>
               <option value="TRANSBANK">Transbank</option>
-              <option value="BANCHILE">Banchile</option>
+              <option value="CREDITO">Crédito</option>
               <option value="OTRO">Otro</option>
             </select>
           </div>
-          <div>
-            <div class="label">Documento</div>
-            <input id="pDoc" placeholder="N° transacción / OC" />
-          </div>
-          <div class="full">
-            <div class="label">Referencia</div>
-            <input id="pRef" />
-          </div>
+          <div><div class="label">Documento / transacción</div><input id="pDoc" /></div>
+          <div class="full"><div class="label">Referencia</div><input id="pRef" /></div>
         </div>
-        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
+        <div class="toolbar" style="justify-content:flex-end;margin-top:10px">
           <button class="btn" id="pAdd">Agregar abono</button>
         </div>
-        <div class="table-wrap" style="margin-top:10px">
+        <div class="table-wrap" style="max-height:240px">
           <table>
-            <thead><tr><th>Fecha</th><th>Monto</th><th>Método</th><th>Documento</th><th>Ref</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Monto</th><th>Método</th><th>Documento</th><th>Referencia</th></tr></thead>
             <tbody id="pRows"><tr><td class="muted" colspan="5">Sin pagos.</td></tr></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="modalFactura" class="modal">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <strong id="facTitle">Datos para facturación</strong>
+            <div class="muted">Basado en la planilla de facturación: el ejecutivo completa lo que falta.</div>
+          </div>
+          <button class="btn secondary" data-close="modalFactura">Cerrar</button>
+        </div>
+        <div class="grid2">
+          <label class="pill" style="justify-content:flex-start"><input id="facReq" type="checkbox" style="width:auto"> Requiere documento</label>
+          <div>
+            <div class="label">Tipo documento</div>
+            <select id="facTipo">
+              <option value="">—</option>
+              <option value="FACTURA">Factura</option>
+              <option value="BOLETA">Boleta</option>
+            </select>
+          </div>
+          <div><div class="label">RUT</div><input id="facRut" placeholder="76.000.000-0" /></div>
+          <div><div class="label">Razón social</div><input id="facRazon" /></div>
+          <div><div class="label">Dirección</div><input id="facDireccion" /></div>
+          <div><div class="label">Giro</div><input id="facGiro" /></div>
+          <div><div class="label">N° OC</div><input id="facOc" /></div>
+          <div><div class="label">Fecha OC</div><input id="facFechaOc" type="date" /></div>
+          <div><div class="label">HES y fecha</div><input id="facHes" /></div>
+          <div><div class="label">Fecha HES</div><input id="facFechaHes" type="date" /></div>
+          <div><div class="label">Fecha elaboración</div><input id="facFecha" type="date" /></div>
+          <div><div class="label">Boleta / Factura N°</div><input id="facNum" /></div>
+          <div class="full"><div class="label">Glosa</div><textarea id="facGlosa"></textarea></div>
+        </div>
+        <div class="toolbar" style="justify-content:flex-end;margin-top:10px">
+          <button class="btn" id="facSave">Guardar facturación</button>
         </div>
       </div>
     </div>
@@ -175,321 +215,300 @@
 
   <script>
     const $ = (s, el=document) => el.querySelector(s);
+    const $$ = (s, el=document) => Array.from(el.querySelectorAll(s));
     const fmt = new Intl.NumberFormat("es-CL", { style:"currency", currency:"CLP", maximumFractionDigits:0 });
-
+    const numFmt = new Intl.NumberFormat("es-CL", { maximumFractionDigits:0 });
     const API_BASE = (() => {
-      try{
-        const h = String(location.hostname || "").toLowerCase();
-        const isLocal = (h === "localhost" || h === "127.0.0.1");
-        return isLocal ? "" : "/crm";
-      }catch(_){ return ""; }
+      const h = String(location.hostname || "").toLowerCase();
+      return (h === "localhost" || h === "127.0.0.1") ? "" : "/crm";
     })();
-    const apiURL = (p) => {
-      const s = String(p || "");
-      if (!s) return s;
-      if (!API_BASE) return s.startsWith("/crm/") ? s.slice(4) : s;
-      if (s.startsWith("/crm/")) return s;
-      return s.startsWith("/") ? (API_BASE + s) : (API_BASE + "/" + s);
-    };
-
+    const apiURL = (p) => API_BASE ? (String(p).startsWith("/crm/") ? p : API_BASE + p) : String(p).replace(/^\/crm/, "");
     function authHeaders(extra={}){
       const GD = window.parent && window.parent.GD;
       if (GD && GD.authHeaders) return GD.authHeaders(extra);
-      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
-      return t ? { ...extra, Authorization: "Bearer " + t } : extra;
+      const token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return token ? { ...extra, Authorization:"Bearer " + token } : extra;
     }
-
     async function api(url, opts={}){
       const r = await fetch(apiURL(url), { ...opts, headers: authHeaders({ "Content-Type":"application/json", ...(opts.headers||{}) }) });
       const data = await r.json().catch(()=>null);
-      if (!r.ok) throw new Error((data && (data.detail||data.message)) || "Error");
+      if (!r.ok) throw new Error((data && (data.detail || data.message)) || "Error");
       return data;
     }
-
-    function parseCL(v){
-      const s = String(v||"").replace(/[^\d.,-]/g,"").replace(/\\./g,"").replace(/,/g,".").trim();
-      const n = Number(s);
+    function esc(v){ return String(v ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
+    function money(v){ return fmt.format(Math.round(Number(v || 0))); }
+    function plainMoney(v){ return numFmt.format(Math.round(Number(v || 0))); }
+    function dateOnly(v){ return String(v || "").slice(0,10); }
+    function monthParts(){
+      const raw = $("#fMes").value || new Date().toISOString().slice(0,7);
+      const [year, month] = raw.split("-").map(Number);
+      return { year, month, label: raw };
+    }
+    function parseMoney(v){
+      const n = Number(String(v||"").replace(/[^\d,-]/g,"").replace(/\./g,"").replace(",","."));
       return Number.isFinite(n) ? n : 0;
     }
-    function round(n){ return Math.round(Number(n||0)); }
+    function todayISO(){ return new Date().toISOString().slice(0,10); }
 
-    function calc(){
-      const bruto = round(parseCL($("#fBruto").value || 0));
-      const traslado = round(parseCL($("#fTraslado").value || 0));
-      const abono = round(parseCL($("#fAbono").value || 0));
-      const pct = Number($("#fComPct").value || 0);
-      const tipo = $("#fTipo").value;
+    let eventos = [];
+    let facturacion = [];
+    let selected = null;
+    let currentPago = null;
+    let currentFactura = null;
+    let showPagados = false;
 
-      let iva = 0;
-      let neto = Math.max(bruto, 0);
-      if (tipo === "EMPRESA"){
-        // bruto = neto + iva => neto = bruto/1.19
-        neto = bruto / 1.19;
-        iva = bruto - neto;
-      }
-      // neto mostrado es productos + traslado
-      const netoSinIva = round(neto);
-      const productos = Math.max(netoSinIva - traslado, 0);
-      const baseComision = Math.max(productos, 0);
-      const comision = baseComision * (pct / 100);
-      const saldo = bruto - abono;
-
-      $("#fBruto").value = round(bruto);
-      $("#fTraslado").value = round(traslado);
-      $("#fAbono").value = round(abono);
-      $("#fNeto").value = fmt.format(round(netoSinIva || 0));
-      $("#fIva").value = fmt.format(round(iva || 0));
-      $("#fSaldo").value = fmt.format(round(saldo || 0));
-      $("#fComMonto").value = fmt.format(round(comision || 0));
-      return { neto: round(netoSinIva), iva: round(iva), saldo: round(saldo), comision: round(comision), bruto, traslado, abono };
+    function renderSummary(res){
+      const total = res.total || {};
+      const marca = res.by_marca || [];
+      const ejecutivo = res.by_ejecutivo || [];
+      const list = (items) => items.slice(0,8).map(i => `
+        <div class="mini-row"><span>${esc(i.label)} <small class="muted">(${i.n||0})</small></span><b>${money(i.bruto)}</b></div>
+      `).join("") || `<div class="muted">Sin datos.</div>`;
+      $("#summary").innerHTML = `
+        <div class="metric"><span class="muted">Venta total del mes</span><b>${money(total.bruto)}</b><div class="muted">Neto ${money(total.neto)} · IVA ${money(total.iva)} · Traslado ${money(total.traslado)}</div><div class="muted">Abonado ${money(total.abono)} · Saldo ${money(total.saldo)}</div></div>
+        <div class="metric"><span class="muted">Por marca</span><div class="mini-list">${list(marca)}</div></div>
+        <div class="metric"><span class="muted">Por ejecutivo</span><div class="mini-list">${list(ejecutivo)}</div></div>
+      `;
     }
 
-    let eventosByLead = new Map(); // id_lead -> evento
-    async function loadLeads(){
-      // 1) Eventos (para filtrar los completamente pagados)
-      try{
-        const ev = await api("/finanzas/eventos");
-        const itemsEv = ev.items || [];
-        eventosByLead = new Map();
-        for (const e of itemsEv){
-          const idl = Number(e.id_lead || 0) || 0;
-          if (!idl) continue;
-          if (!eventosByLead.has(idl)) eventosByLead.set(idl, e);
-        }
-      }catch(_){ eventosByLead = new Map(); }
-
-      // 2) Leads confirmados (solo mes actual por defecto)
-      const now = new Date();
-      const y = now.getFullYear();
-      const m = now.getMonth(); // 0-11
-      const monthStart = new Date(y, m, 1);
-      const monthEnd = new Date(y, m + 1, 1);
-
-      const res = await api("/leads?limit=2000");
-      const items = res.items || [];
-      const conf = items.filter(l => (l.estado_nombre||"" ).toUpperCase().includes("CONFIRM"));
-      const confMonth = conf.filter(l => {
-        const fe = String(l.fecha_evento || "").slice(0,10);
-        if (!fe || fe.length !== 10) return false;
-        const d = new Date(fe + "T00:00:00");
-        return (d >= monthStart) && (d < monthEnd);
-      });
-      // por defecto, no mostrar leads ya completamente pagados (saldo <= 0)
-      const usable = confMonth.filter(l => {
-        const e = eventosByLead.get(Number(l.id_lead || 0));
-        if (!e) return true;
-        return Number(e.saldo || 0) > 0;
-      });
-      $("#leadSelect").innerHTML = `<option value="">— Selecciona lead confirmado —</option>` +
-        usable.map(l => {
-          const e = eventosByLead.get(Number(l.id_lead || 0));
-          const saldoTxt = e ? ` · Saldo ${fmt.format(Number(e.saldo||0))}` : "";
-          return `<option value="${l.id_lead}" data-cliente="${l.cliente||""}" data-marca="${l.marca||""}" data-comuna="${l.comuna||""}" data-fecha="${l.fecha_evento||""}" data-tipo="${l.tipo_cliente||""}" data-monto="${l.monto_cotizado||0}" data-cot="${l.num_cotizacion||""}">${l.id_lead} · ${l.cliente||""} · ${l.marca||""}${saldoTxt}</option>`;
-        }).join("");
+    function conditionLabel(e){
+      const c = String(e.condicion_pago || e.abono_mode || "").trim();
+      if (c) return c.toUpperCase();
+      if (Number(e.saldo||0) <= 0) return "PAGADO";
+      if (Number(e.abono||0) > 0) return "ABONO";
+      return "PENDIENTE";
     }
-
-    let comisiones = [];
-    async function loadComisiones(){
-      try{
-        const res = await api("/settings/comisiones?limit=200");
-        comisiones = res.items || [];
-      }catch(_){ comisiones = []; }
+    function facturaLabel(e){
+      const tipo = e.factura_tipo_doc || "";
+      const num = e.factura_num || "";
+      if (tipo || num) return `${tipo}${num ? " " + num : ""}`.trim();
+      return e.requiere_documento ? "REQ. DOC" : "—";
     }
-    function pickComision(marca){
-      const m = (marca || "").toUpperCase();
-      const direct = comisiones.find(c => (c.marca || "").toUpperCase() === m && (c.is_active !== false));
-      if (direct) return Number(direct.porcentaje || 0);
-      const any = comisiones.find(c => ["*", "TODAS"].includes((c.marca||"").toUpperCase()) && (c.is_active !== false));
-      return any ? Number(any.porcentaje || 0) : 3;
+    function pillForSaldo(e){
+      const saldo = Number(e.saldo || 0);
+      if (saldo <= 0) return `<span class="pill ok">Pagado</span>`;
+      if (Number(e.abono || 0) > 0) return `<span class="pill warn">Saldo ${money(saldo)}</span>`;
+      return `<span class="pill bad">Sin pago</span>`;
     }
-
-    let SHOW_PAGADOS = false;
-    async function loadEventos(){
-      const res = await api("/finanzas/eventos");
-      let items = res.items || [];
-      if (!SHOW_PAGADOS){
-        items = items.filter(i => Number(i.saldo || 0) > 0);
-      }
-      // “últimos 50”
-      items = items.slice(0, 50);
-      $("#rows").innerHTML = items.map(i => `
-        <tr>
-          <td>${i.id_evento}</td>
-          <td>${i.num_cotizacion || ""}</td>
-          <td>${i.cliente||""}</td>
-          <td>${i.comuna||""}</td>
-          <td>${i.marca||""}</td>
-          <td>${(i.fecha_evento||"").slice(0,10)}</td>
-          <td>${fmt.format(Number(i.monto_neto||0))}</td>
-          <td>${fmt.format(Number(i.monto_bruto||0))}</td>
-          <td>${fmt.format(Number(i.traslado||0))}</td>
-          <td>${fmt.format(Number(i.saldo||0))}</td>
+    function renderLeadSelect(){
+      const items = showPagados ? eventos : eventos.filter(e => Number(e.saldo || 0) > 0 || Number(e.monto_bruto || 0) === 0);
+      $("#leadSelect").innerHTML = `<option value="">— Selecciona evento confirmado —</option>` + items.map(e => `
+        <option value="${e.id_evento}">#${e.id_lead || e.id_evento} · ${esc(e.cliente)} · ${esc(e.marca)} · ${money(e.saldo)} saldo</option>
+      `).join("");
+    }
+    function setSelected(e){
+      selected = e || null;
+      $("#btnAbono").disabled = !selected;
+      $("#btnFactura").disabled = !selected;
+      const put = (id, value) => { $(id).value = value || ""; };
+      put("#fCliente", selected?.cliente);
+      put("#fMarca", selected?.marca);
+      put("#fComuna", selected?.comuna);
+      put("#fEjecutivo", selected?.ejecutivo);
+      put("#fFecha", dateOnly(selected?.fecha_evento));
+      put("#fCot", selected?.num_cotizacion);
+      put("#fTipo", selected?.tipo_cliente);
+      put("#fCondicion", selected ? conditionLabel(selected) : "");
+      put("#fBruto", selected ? money(selected.monto_bruto) : "");
+      put("#fIva", selected ? money(selected.iva) : "");
+      put("#fNeto", selected ? money(selected.monto_neto) : "");
+      put("#fTraslado", selected ? money(selected.traslado) : "");
+      put("#fAbono", selected ? money(selected.abono) : "");
+      put("#fSaldo", selected ? money(selected.saldo) : "");
+      put("#fFactura", selected ? facturaLabel(selected) : "");
+    }
+    function renderEventos(){
+      let items = [...eventos];
+      if (!showPagados) items = items.filter(e => Number(e.saldo || 0) > 0);
+      $("#rows").innerHTML = items.map(e => `
+        <tr data-id="${e.id_evento}">
+          <td>${esc(e.id_evento)}</td>
+          <td>${esc(e.num_cotizacion || "—")}</td>
+          <td>${esc(dateOnly(e.fecha_evento))}</td>
+          <td>${esc(e.marca || "—")}</td>
+          <td>${esc(e.comuna || "—")}</td>
+          <td>${esc(e.cliente || "—")}</td>
+          <td>${esc(e.ejecutivo || "—")}</td>
+          <td>${money(e.monto_bruto)}</td>
+          <td>${money(e.iva)}</td>
+          <td>${money(e.monto_neto)}</td>
+          <td>${money(e.traslado)}</td>
+          <td>${money(e.abono_1)}</td>
+          <td>${money(e.abono)} <span class="muted">(${Number(e.pago_count||0)})</span></td>
+          <td>${pillForSaldo(e)}</td>
+          <td>${esc(conditionLabel(e))}</td>
+          <td>${esc(facturaLabel(e))}</td>
+          <td><div class="actions"><button class="btn secondary" data-action="abono" data-id="${e.id_evento}">Abono</button><button class="btn secondary" data-action="fac" data-id="${e.id_evento}">Factura</button></div></td>
         </tr>
-      `).join("") || `<tr><td class="muted" colspan="10">Sin registros.</td></tr>`;
-
-      document.querySelectorAll("#rows tr").forEach((tr, idx) => {
-        const it = items[idx];
-        if (!it) return;
-        tr.style.cursor = "pointer";
-        tr.addEventListener("click", () => openPagos(it));
-      });
+      `).join("") || `<tr><td class="muted" colspan="17">Sin eventos registrados para el mes.</td></tr>`;
+      renderLeadSelect();
+    }
+    function renderFacturacion(){
+      $("#factRows").innerHTML = facturacion.map(e => `
+        <tr>
+          <td>${esc(dateOnly(e.fecha_evento))}</td>
+          <td>${esc(dateOnly(e.fecha_evento).slice(0,7))}</td>
+          <td>${esc(e.marca || "")}</td>
+          <td>${esc(e.cliente || "")}</td>
+          <td>${plainMoney(e.monto_neto)}</td>
+          <td>${plainMoney(e.iva)}</td>
+          <td>${plainMoney(e.monto_bruto)}</td>
+          <td>${esc(e.factura_rut || "")}</td>
+          <td>${esc(e.factura_razon_social || "")}</td>
+          <td>${esc(e.factura_oc || "")}</td>
+          <td>${esc(dateOnly(e.factura_fecha_oc))}</td>
+          <td>${esc(e.factura_hes || "")}</td>
+          <td>${esc(dateOnly(e.factura_fecha_hes))}</td>
+          <td>${esc(e.factura_tipo_doc || "")}</td>
+          <td>${esc(dateOnly(e.factura_fecha))}</td>
+          <td>${esc(e.factura_num || "")}</td>
+          <td>${esc(e.factura_direccion || "")}</td>
+          <td>${esc(e.factura_giro || "")}</td>
+          <td>${esc(e.factura_glosa || "")}</td>
+          <td><button class="btn secondary" data-action="fac" data-id="${e.id_evento}">Editar</button></td>
+        </tr>
+      `).join("") || `<tr><td class="muted" colspan="20">No hay eventos con documento solicitado para este mes.</td></tr>`;
     }
 
-    $("#leadSelect").addEventListener("change", async (e) => {
-      const id = Number(e.target.value || 0);
-      if (!id) return;
-      try{
-        const lead = await api(`/leads/${id}`);
-        $("#fCliente").value = lead.cliente || lead.nombre_cliente || "";
-        $("#fMarca").value = lead.marca_nombre || lead.marca || "";
-        $("#fComuna").value = lead.comuna || lead.comuna_nombre || "";
-        $("#fFecha").value = (lead.fecha_evento || "").slice(0,10);
-        const tipo = (lead.tipo_cliente_nombre || "").toUpperCase().includes("EMPRESA") ? "EMPRESA" : "PARTICULAR";
-        $("#fTipo").value = tipo;
-        $("#fBruto").value = lead.monto_cotizado || 0;
-        $("#fCot").value = lead.num_cotizacion || "";
-        $("#fComPct").value = pickComision(lead.marca || "");
-        let finItem = null;
-        // Traer evento finanzas existente (si ya fue registrado) para que saldo/abonos sean reales.
-        try{
-          const ev = await api(`/finanzas/eventos/by_lead?id_lead=${id}`);
-          const it = ev.item;
-          finItem = it || null;
-          if (it && it.id_evento){
-            $("#fCot").value = it.num_cotizacion || $("#fCot").value || "";
-            $("#fBruto").value = Number(it.monto_bruto || 0);
-            $("#fTraslado").value = Number(it.traslado || 0);
-            $("#fComPct").value = Number(it.comision_pct || $("#fComPct").value || 0);
-            $("#fAbono").value = Number(it.abono || 0);
-            // En eventos ya existentes, el abono se gestiona en "Pagos"
-            $("#fAbono").disabled = true;
-          }else{
-            $("#fAbono").disabled = false;
-          }
-        }catch(_){
-          $("#fAbono").disabled = false;
-        }
-
-        // Traslado: si no viene en finanzas (o está en 0), intenta leerlo desde la cotización del sistema.
-        try{
-          const curTras = Number($("#fTraslado").value || 0) || 0;
-          if (curTras <= 0){
-            const idCot = Number(lead.id_cotizacion_vigente || lead.id_cotizacion || lead.id_cotizacion_id || 0) || 0;
-            if (idCot > 0){
-              const q = await api(`/quotes/${idCot}`);
-              const c = (q && (q.cotizacion || q.item)) || {};
-              const t = Number(c.traslado || 0) || 0;
-              if (t > 0){
-                $("#fTraslado").value = t;
-              }
-            }
-          }
-        }catch(_){}
-      }catch(_){
-        const opt = e.target.selectedOptions?.[0];
-        if (!opt) return;
-        $("#fCliente").value = opt.dataset.cliente || "";
-        $("#fMarca").value = opt.dataset.marca || "";
-        $("#fComuna").value = opt.dataset.comuna || "";
-        $("#fFecha").value = (opt.dataset.fecha || "").slice(0,10);
-        const tipo = (opt.dataset.tipo || "").toUpperCase().includes("EMPRESA") ? "EMPRESA" : "PARTICULAR";
-        $("#fTipo").value = tipo;
-        $("#fBruto").value = opt.dataset.monto || "0";
-        $("#fCot").value = opt.dataset.cot || "";
-        $("#fComPct").value = pickComision(opt.dataset.marca || "");
-        $("#fAbono").disabled = false;
+    async function loadAll({sync=false}={}){
+      const {month, year} = monthParts();
+      if (sync) await api(`/finanzas/eventos/sync_confirmados?month=${month}&year=${year}`, { method:"POST" });
+      const [resumen, evs, fac] = await Promise.all([
+        api(`/finanzas/eventos/resumen?month=${month}&year=${year}`),
+        api(`/finanzas/eventos?month=${month}&year=${year}&all=1`),
+        api(`/finanzas/eventos/facturacion?month=${month}&year=${year}`)
+      ]);
+      eventos = evs.items || [];
+      facturacion = fac.items || [];
+      renderSummary(resumen);
+      renderEventos();
+      renderFacturacion();
+      if (selected) {
+        const fresh = eventos.find(e => Number(e.id_evento) === Number(selected.id_evento));
+        setSelected(fresh || null);
       }
-      calc();
-    });
+    }
 
-    ["#fBruto","#fTraslado","#fAbono","#fComPct","#fTipo"].forEach(sel => {
-      $(sel).addEventListener("input", calc);
-      $(sel).addEventListener("change", calc);
-    });
+    async function showPrev(){
+      const {month, year} = monthParts();
+      const res = await api(`/finanzas/eventos/pendientes_anteriores?month=${month}&year=${year}`);
+      const html = (res.items || []).map(i => `${i.mes}: ${money(i.saldo)} (${i.n} eventos)`).join("\n") || "No hay saldos pendientes de meses anteriores.";
+      alert(html);
+    }
 
-    $("#btnSave").addEventListener("click", async () => {
-      const { neto, iva, saldo, comision, bruto, traslado, abono } = calc();
-      const payload = {
-        id_lead: Number($("#leadSelect").value || 0) || null,
-        num_cotizacion: $("#fCot").value || null,
-        cliente: $("#fCliente").value,
-        comuna: $("#fComuna").value,
-        marca: $("#fMarca").value,
-        tipo_cliente: $("#fTipo").value,
-        fecha_evento: $("#fFecha").value || null,
-        monto_bruto: bruto,
-        monto_neto: neto,
-        iva,
-        traslado,
-        abono,
-        saldo,
-        comision_pct: Number($("#fComPct").value || 0),
-        comision_monto: comision,
-      };
-      await api("/finanzas/eventos", { method:"POST", body: JSON.stringify(payload) });
-      alert("Evento registrado");
-      await loadEventos();
-    });
-
-    $("#btnReload").addEventListener("click", loadEventos);
-
-    let currentEvento = null;
-    async function openPagos(evento){
-      currentEvento = evento;
-      $("#mTitle").textContent = `Pagos · Evento #${evento.id_evento}`;
-      $("#pFecha").value = new Date().toISOString().slice(0,10);
-      // Por defecto, sugerir el monto pendiente (saldo actual).
-      $("#pMonto").value = String(Math.max(0, Number(evento.saldo || 0) || 0));
+    async function openPago(e){
+      currentPago = e;
+      $("#pTitle").textContent = `Registrar abono · Evento #${e.id_evento}`;
+      $("#pSub").textContent = `${e.cliente || ""} · saldo ${money(e.saldo)}`;
+      $("#pFecha").value = todayISO();
+      $("#pMonto").value = Math.max(0, Math.round(Number(e.saldo || 0)));
       $("#pMetodo").value = "TRANSFERENCIA";
       $("#pDoc").value = "";
       $("#pRef").value = "";
-      $("#modal").classList.add("open");
-      await loadPagos();
-    }
-    async function loadPagos(){
-      if (!currentEvento) return;
-      const res = await api(`/finanzas/eventos/${currentEvento.id_evento}/pagos`);
-      const items = res.items || [];
-      $("#pRows").innerHTML = items.map(p => `
-        <tr>
-          <td>${(p.fecha||"").slice(0,10)}</td>
-          <td>${fmt.format(Number(p.monto||0))}</td>
-          <td>${p.metodo||""}</td>
-          <td>${p.doc_num||""}</td>
-          <td>${p.referencia||""}</td>
-        </tr>
+      $("#modalPago").classList.add("open");
+      const res = await api(`/finanzas/eventos/${e.id_evento}/pagos`);
+      $("#pRows").innerHTML = (res.items || []).map(p => `
+        <tr><td>${esc(dateOnly(p.fecha))}</td><td>${money(p.monto)}</td><td>${esc(p.metodo||"")}</td><td>${esc(p.doc_num||"")}</td><td>${esc(p.referencia||"")}</td></tr>
       `).join("") || `<tr><td class="muted" colspan="5">Sin pagos.</td></tr>`;
     }
-    $("#pAdd").addEventListener("click", async () => {
-      if (!currentEvento) return;
-      const payload = {
-        monto: round(parseCL($("#pMonto").value || 0)),
-        metodo: $("#pMetodo").value || null,
-        referencia: $("#pRef").value || null,
-        doc_num: $("#pDoc").value || null,
-        fecha: $("#pFecha").value || null
-      };
-      await api(`/finanzas/eventos/${currentEvento.id_evento}/pagos`, { method:"POST", body: JSON.stringify(payload) });
-      await loadEventos();
-      await loadPagos();
-    });
-    $("#mClose").addEventListener("click", () => $("#modal").classList.remove("open"));
+    function openFactura(e){
+      currentFactura = e;
+      $("#facTitle").textContent = `Datos para facturación · Evento #${e.id_evento}`;
+      $("#facReq").checked = !!e.requiere_documento;
+      $("#facTipo").value = e.factura_tipo_doc || "";
+      $("#facRut").value = e.factura_rut || "";
+      $("#facRazon").value = e.factura_razon_social || "";
+      $("#facDireccion").value = e.factura_direccion || "";
+      $("#facGiro").value = e.factura_giro || "";
+      $("#facOc").value = e.factura_oc || "";
+      $("#facFechaOc").value = dateOnly(e.factura_fecha_oc);
+      $("#facHes").value = e.factura_hes || "";
+      $("#facFechaHes").value = dateOnly(e.factura_fecha_hes);
+      $("#facFecha").value = dateOnly(e.factura_fecha);
+      $("#facNum").value = e.factura_num || "";
+      $("#facGlosa").value = e.factura_glosa || `Evento ${e.marca || ""} · ${e.cliente || ""} · ${dateOnly(e.fecha_evento)}`.trim();
+      $("#modalFactura").classList.add("open");
+    }
 
-    (async () => {
-      await loadComisiones();
-      await loadLeads();
-      // Deep-link from Tareas: /finanzas_evento.html?lead=<id_lead>
-      try{
-        const sp = new URLSearchParams(location.search || "");
-        const idLead = Number(sp.get("lead") || 0) || 0;
-        if (idLead && $("#leadSelect")){
-          $("#leadSelect").value = String(idLead);
-          $("#leadSelect").dispatchEvent(new Event("change"));
-        }
-      }catch(_){}
-      await loadEventos();
-    })();
-    try{ $("#fFecha").value = new Date().toISOString().slice(0,10); }catch(_){}
+    $("#btnSync").addEventListener("click", () => loadAll({sync:true}).catch(err => alert(err.message)));
+    $("#btnReload").addEventListener("click", () => loadAll().catch(err => alert(err.message)));
+    $("#btnPrev").addEventListener("click", () => showPrev().catch(err => alert(err.message)));
+    $("#btnTogglePagados").addEventListener("click", () => {
+      showPagados = !showPagados;
+      $("#btnTogglePagados").textContent = showPagados ? "Ocultar pagados" : "Mostrar pagados";
+      renderEventos();
+    });
+    $("#leadSelect").addEventListener("change", ev => {
+      const id = Number(ev.target.value || 0);
+      setSelected(eventos.find(e => Number(e.id_evento) === id) || null);
+    });
+    $("#btnAbono").addEventListener("click", () => selected && openPago(selected));
+    $("#btnFactura").addEventListener("click", () => selected && openFactura(selected));
+    document.addEventListener("click", ev => {
+      const close = ev.target.closest("[data-close]");
+      if (close) $("#" + close.dataset.close).classList.remove("open");
+      const btn = ev.target.closest("[data-action]");
+      if (!btn) return;
+      const item = eventos.find(e => Number(e.id_evento) === Number(btn.dataset.id)) || facturacion.find(e => Number(e.id_evento) === Number(btn.dataset.id));
+      if (!item) return;
+      if (btn.dataset.action === "abono") openPago(item).catch(err => alert(err.message));
+      if (btn.dataset.action === "fac") openFactura(item);
+    });
+    $$(".tab").forEach(btn => btn.addEventListener("click", () => {
+      $$(".tab").forEach(b => b.classList.toggle("active", b === btn));
+      $("#tabEventos").classList.toggle("hidden", btn.dataset.tab !== "eventos");
+      $("#tabFacturacion").classList.toggle("hidden", btn.dataset.tab !== "facturacion");
+    }));
+    $("#pAdd").addEventListener("click", async () => {
+      if (!currentPago) return;
+      const monto = parseMoney($("#pMonto").value);
+      if (!(monto > 0)) return alert("El abono debe ser mayor a 0.");
+      await api(`/finanzas/eventos/${currentPago.id_evento}/pagos`, {
+        method:"POST",
+        body: JSON.stringify({
+          fecha: $("#pFecha").value || null,
+          monto,
+          metodo: $("#pMetodo").value || null,
+          doc_num: $("#pDoc").value || null,
+          referencia: $("#pRef").value || null
+        })
+      });
+      await loadAll();
+      const fresh = eventos.find(e => Number(e.id_evento) === Number(currentPago.id_evento));
+      await openPago(fresh || currentPago);
+      setSelected(fresh || selected);
+    });
+    $("#facSave").addEventListener("click", async () => {
+      if (!currentFactura) return;
+      await api(`/finanzas/eventos/${currentFactura.id_evento}/facturacion`, {
+        method:"PUT",
+        body: JSON.stringify({
+          requiere_documento: $("#facReq").checked,
+          factura_tipo_doc: $("#facTipo").value || null,
+          factura_num: $("#facNum").value || null,
+          factura_fecha: $("#facFecha").value || null,
+          factura_rut: $("#facRut").value || null,
+          factura_razon_social: $("#facRazon").value || null,
+          factura_direccion: $("#facDireccion").value || null,
+          factura_giro: $("#facGiro").value || null,
+          factura_oc: $("#facOc").value || null,
+          factura_fecha_oc: $("#facFechaOc").value || null,
+          factura_hes: $("#facHes").value || null,
+          factura_fecha_hes: $("#facFechaHes").value || null,
+          factura_glosa: $("#facGlosa").value || null
+        })
+      });
+      $("#modalFactura").classList.remove("open");
+      await loadAll();
+    });
+
+    (async function init(){
+      $("#fMes").value = new Date().toISOString().slice(0,7);
+      await loadAll({sync:true});
+    })().catch(err => {
+      $("#rows").innerHTML = `<tr><td class="muted" colspan="17">Error: ${esc(err.message)}</td></tr>`;
+      alert("Cobranza Evento: " + err.message);
+    });
   </script>
 </body>
 </html>

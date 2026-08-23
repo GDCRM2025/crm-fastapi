@@ -1191,10 +1191,10 @@
       await loadMessages().catch(()=>{});
     }
 
-    setInterval(() => { if (!document.hidden) loadMessagesWithAlert().catch(() => {}); }, 5000);
+    setInterval(() => { if (!document.hidden) loadMessagesWithAlert().catch(() => {}); }, 30000);
     setInterval(() => { if (!document.hidden) heartbeat().catch(() => {}); }, 30000);
-    setInterval(() => { if (!document.hidden) loadPresence().then(() => { if (!EMBED) renderLeft(); }).catch(() => {}); }, 15000);
-    setInterval(() => { if (!document.hidden) loadThreads().then(() => { if (!EMBED) renderLeft(); }).catch(() => {}); }, 12000);
+    setInterval(() => { if (!document.hidden) loadPresence().then(() => { if (!EMBED) renderLeft(); }).catch(() => {}); }, 30000);
+    setInterval(() => { if (!document.hidden) loadThreads().then(() => { if (!EMBED) renderLeft(); }).catch(() => {}); }, 30000);
   </script>
 </body>
 </html>

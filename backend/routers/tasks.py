@@ -698,7 +698,8 @@ def mark_done(
                 ),
                 {"tid": int(id_task), "a": tag, "b": block[:2000], "by": who},
             )
-            # Cierra cualquier otra tarea abierta del mismo lead para este usuario (evita que vuelva a aparecer).
+            # Cierra cualquier otra tarea comercial abierta del mismo lead para este usuario.
+            # Así un seguimiento real saca al lead del ciclo operativo al instante.
             cn.execute(
                 text(
                     """
@@ -708,6 +709,16 @@ def mark_done(
                       AND entity_type='lead'
                       AND entity_id=:lid
                       AND assigned_user_id=:uid
+                      AND kind IN (
+                        'LEAD_NUEVO_SEGUIMIENTO',
+                        'LEAD_CONTACTADO_SEGUIMIENTO',
+                        'LEAD_COTIZADO_SEGUIMIENTO',
+                        'CONTACTAR_LEAD',
+                        'RIESGO_AUTO_DECLINE_NUEVO',
+                        'RIESGO_AUTO_DECLINE_CONTACTADO_SIN_FECHA',
+                        'RIESGO_AUTO_DECLINE_CONTACTADO_CON_FECHA',
+                        'RIESGO_COTIZADO_EVENTO_CERCA'
+                      )
                     """
                 ),
                 {"by": who, "lid": int(lead_id), "uid": int(uid)},
@@ -893,7 +904,7 @@ def summary(
                 month_end = f"(date_trunc('month', {today}) + INTERVAL '1 month')::date"
                 in_scope_with_date = f"(({ev_date}) IS NOT NULL AND ({ev_date}) >= {today} AND ({ev_date}) >= {month_start} AND ({ev_date}) < {month_end})"
                 in_scope_no_date = f"(({ev_date}) IS NULL)"
-                ev_in_scope = f"({in_scope_with_date} OR {in_scope_no_date})"
+                ev_in_scope = in_scope_with_date
 
                 # ADMIN (no super) es acotado por marcas.
                 where_brand = ""
@@ -917,20 +928,13 @@ def summary(
                   l.id_estado = :nuevo
                   AND ({has_contact_sql}) IS NOT TRUE
                   AND {ev_in_scope}
-                  AND (
-                    (({ev_date}) IS NOT NULL AND {last_expr} <= (now() - INTERVAL '3 days'))
-                    OR
-                    (({ev_date}) IS NULL AND {last_expr} <= (now() - INTERVAL '5 days'))
-                  )
+                  AND {last_expr} <= (now() - INTERVAL '3 days')
                 """
                 cond_contact = f"""
                   l.id_estado = :contactado
                   AND {last_expr} <= (now() - INTERVAL '3 days')
-                  AND (
-                    {in_scope_no_date}
-                    OR
-                    (({ev_date}) IS NOT NULL AND ({ev_date}) >= {today} AND ({ev_date}) < {month_end} AND ({ev_date}) <= ({today} + INTERVAL '7 days'))
-                  )
+                  AND {ev_in_scope}
+                  AND ({ev_date}) <= ({today} + INTERVAL '7 days')
                 """
                 cond_cot = f"""
                   l.id_estado = :cotizado

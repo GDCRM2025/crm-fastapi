@@ -983,8 +983,12 @@
 
   async function load(reset=true){
     state.meta = await api(`/settings/meta/${entity}`);
-    qs("#title").textContent = `Settings · ${entity}`;
-    qs("#subtitle").textContent = `Tabla: ${state.meta.table}`;
+    qs("#title").textContent = entity === "plataformas"
+      ? "Settings · Plataformas / origen de leads"
+      : `Settings · ${entity}`;
+    qs("#subtitle").textContent = entity === "plataformas"
+      ? "Catálogo dinámico: agrega Carta Web, botones de WhatsApp o cualquier plataforma futura. Desactiva registros antiguos sin perder el historial."
+      : `Tabla: ${state.meta.table}`;
 
     // Setup sort UI
     try{

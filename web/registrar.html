@@ -27,9 +27,9 @@
       <div class="neumo w-full max-w-md p-6 lg:p-7">
         <h1 class="text-white/90 text-xl font-semibold mb-6">Operadores / CHOP — <span class="text-white/70 font-normal">Registro</span></h1>
         <div class="text-xs text-white/65 mb-4 leading-relaxed">
-          <div class="mb-1"><b>Importante:</b> aquí <b>no</b> se crea una contraseña manual.</div>
+          <div class="mb-1"><b>Acceso seguro:</b> tu cuenta debe estar previamente autorizada.</div>
           <div>- <b>Usuario</b>: tu <b>Email</b>.</div>
-          <div>- <b>Contraseña</b>: tu <b>RUT</b> (sin puntos y con guion).</div>
+          <div>- <b>Contraseña</b>: mínimo 12 caracteres; nunca uses tu RUT.</div>
         </div>
         <form id="frm" class="space-y-4">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -39,6 +39,7 @@
           <div><label class="text-sm text-white/70">Email</label><input id="email" class="input mt-1" inputmode="email" autocomplete="email" /></div>
           <div><label class="text-sm text-white/70">RUT <span class="text-white/45">(sin puntos, con guion)</span></label><input id="rut" class="input mt-1" placeholder="Ej: 12345678-9" autocapitalize="none" /></div>
           <div><label class="text-sm text-white/70">Teléfono <span class="text-white/45">(obligatorio)</span></label><input id="telefono" class="input mt-1" inputmode="tel" autocomplete="tel" placeholder="Ej: +56912345678" /></div>
+          <div><label class="text-sm text-white/70">Contraseña <span class="text-white/45">(mínimo 12 caracteres)</span></label><input id="password" type="password" class="input mt-1" minlength="12" autocomplete="new-password" /></div>
           <button class="w-full bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-semibold rounded-lg py-2.5">Crear cuenta</button>
           <div class="text-center text-xs mt-3 text-white/60">¿Ya tienes cuenta? <a href="./login.html" class="text-emerald-400 hover:text-emerald-300">Volver al login</a></div>
         </form>
@@ -67,13 +68,17 @@
         nombre: [$('#nombre').value.trim(), $('#apellido').value.trim()].filter(Boolean).join(' ').trim(),
         email: $('#email').value.trim(),
         rut,
-        telefono: tel
+        telefono: tel,
+        password: $('#password').value
       };
-      if (!payload.nombre || !payload.email || !payload.rut || !payload.telefono){
+      if (!payload.nombre || !payload.email || !payload.rut || !payload.telefono || !payload.password){
         Swal.fire('Error','Completa todos los campos','error'); return;
       }
       if (!/^\d{6,9}-[\dkK]$/.test(payload.rut)){
         Swal.fire('Error','RUT inválido. Debe ir sin puntos y con guion (ej: 12345678-9)','error'); return;
+      }
+      if (payload.password.length < 12 || payload.password.toLowerCase() === payload.rut.toLowerCase() || payload.password.toLowerCase() === payload.email.toLowerCase()){
+        Swal.fire('Error','Usa una contraseña de al menos 12 caracteres que no sea tu RUT ni tu email','error'); return;
       }
       try{
         const r = await fetch(`${API_BASE}/register`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });

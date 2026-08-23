@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Settings · Comisiones</title>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    :root{--panel:#0d2236;--panel2:#102b43;--line:rgba(148,163,184,.22);--text:#eaf2ff;--muted:#9fb0c6;--accent:#19c37d;--bad:#ef4444;--shadow:0 18px 60px rgba(0,0,0,.22)}
+    :root.light{--panel:#fff;--panel2:#f8fafc;--line:rgba(15,23,42,.14);--text:#0f172a;--muted:#64748b;--shadow:0 14px 38px rgba(15,23,42,.08)}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:transparent;color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif}body{padding:18px;overflow:auto}.wrap{max-width:1450px;margin:0 auto;display:grid;gap:14px}.hero,.card{background:linear-gradient(180deg,color-mix(in srgb,var(--panel) 96%,transparent),color-mix(in srgb,var(--panel2) 82%,transparent));border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}.hero{padding:16px}.title{font-size:20px;font-weight:1000}.sub{font-size:12px;color:var(--muted);font-weight:800;margin-top:5px}.card{padding:14px}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}.h{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:1000;margin:0 0 4px}.hint{font-size:12px;color:var(--muted);font-weight:800}.btn,.inp{height:36px;border-radius:10px;border:1px solid var(--line);background:color-mix(in srgb,var(--panel2) 88%,transparent);color:var(--text);font-weight:900;outline:none}.btn{padding:0 12px;cursor:pointer}.btn.primary{background:color-mix(in srgb,var(--accent) 24%,var(--panel2));border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}.btn.danger{background:color-mix(in srgb,var(--bad) 14%,var(--panel2));border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}.inp{padding:0 10px;width:100%;min-width:0}.rows{display:grid;gap:9px;margin-top:12px}.form{display:grid;gap:8px;align-items:center}.rules{grid-template-columns:1.1fr 2fr .65fr .65fr .7fr auto}.channels{grid-template-columns:1fr 2fr .65fr .9fr .7fr auto}.groups{grid-template-columns:1fr .8fr .9fr .6fr .7fr auto}@media(max-width:1050px){.rules,.channels,.groups{grid-template-columns:1fr 1fr}.actions{grid-column:1/-1}}.check{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;font-weight:900}.actions{display:flex;gap:7px;flex-wrap:wrap}.msg{font-size:12px;font-weight:900;color:var(--muted)}.ok{color:var(--accent)}.err{color:var(--bad)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="title">Configuración de comisiones</div>
+      <div class="sub">Una sola vista de Settings, separada por reglas de cliente, canales/RRSS y bonos grupales. Esto alimenta el reporte mensual de comisiones.</div>
+    </section>
+    <section class="card">
+      <div class="top"><div><h2 class="h">Comisión por cliente nuevo / antiguo</h2><div class="hint">Define porcentaje base y meses de historial para clasificar al cliente.</div></div><button class="btn" data-add="rules">Agregar regla</button></div>
+      <div id="rulesList" class="rows"></div>
+    </section>
+    <section class="card">
+      <div class="top"><div><h2 class="h">RRSS / canales con comisión extra</h2><div class="hint">Instagram, mail u otros canales que suman porcentaje adicional si fueron gestionados por ejecutivo.</div></div><button class="btn" data-add="channels">Agregar canal</button></div>
+      <div id="channelsList" class="rows"></div>
+    </section>
+    <section class="card">
+      <div class="top"><div><h2 class="h">Bonos grupales</h2><div class="hint">Categorías Bronce, Plata, Oro o las que definas, según cumplimiento de meta grupal.</div></div><button class="btn" data-add="groups">Agregar bono</button></div>
+      <div id="groupsList" class="rows"></div>
+    </section>
+    <div id="msg" class="msg"></div>
+  </div>
+  <script>
+    const API_BASE=location.pathname.startsWith("/crm/")?"/crm":"";
+    const token=()=>localStorage.getItem("token")||sessionStorage.getItem("token")||"";
+    const headers=(extra={})=>token()?{...extra,Authorization:`Bearer ${token()}`}:extra;
+    const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+    const ENT={rules:{entity:"commission_rules",pk:"id_rule"},channels:{entity:"commission_channel_bonus",pk:"id_bonus"},groups:{entity:"commission_group_bonus",pk:"id_group_bonus"}};
+    const state={rules:[],channels:[],groups:[]};
+    async function api(url,init={}){const r=await fetch(API_BASE+url,{...init,headers:headers(init.headers||{})});const txt=await r.text();let j={};try{j=txt?JSON.parse(txt):{};}catch(_){j={raw:txt};}if(!r.ok)throw new Error(j.detail||j.error||txt||`HTTP ${r.status}`);return j;}
+    function input(v,c,t="text"){return `<input class="inp ${c}" type="${t}" value="${esc(v??"")}">`;}
+    function active(v){return `<label class="check"><input class="is_active" type="checkbox" ${v?"checked":""}> Activo</label>`;}
+    function render(){
+      rulesList.innerHTML=state.rules.map(r=>`<div class="form rules" data-kind="rules" data-id="${esc(r.id_rule||"")}">${input(r.tipo_cliente,"tipo_cliente")}${input(r.definicion,"definicion")}${input(r.porcentaje_base,"porcentaje_base","number")}${input(r.meses_antiguedad,"meses_antiguedad","number")}${active(r.is_active)}<div class="actions"><button class="btn primary" data-save="rules">Guardar</button><button class="btn danger" data-del="rules">Eliminar</button></div></div>`).join("");
+      channelsList.innerHTML=state.channels.map(r=>`<div class="form channels" data-kind="channels" data-id="${esc(r.id_bonus||"")}">${input(r.canal,"canal")}${input(r.descripcion,"descripcion")}${input(r.porcentaje_extra,"porcentaje_extra","number")}<label class="check"><input class="requiere_gestion_ejecutivo" type="checkbox" ${r.requiere_gestion_ejecutivo?"checked":""}> Gestionado</label>${active(r.is_active)}<div class="actions"><button class="btn primary" data-save="channels">Guardar</button><button class="btn danger" data-del="channels">Eliminar</button></div></div>`).join("");
+      groupsList.innerHTML=state.groups.map(r=>`<div class="form groups" data-kind="groups" data-id="${esc(r.id_group_bonus||"")}">${input(r.nivel,"nivel")}${input(r.cumplimiento_min_pct,"cumplimiento_min_pct","number")}${input(r.bono_sobre_comision_pct,"bono_sobre_comision_pct","number")}${input(r.orden,"orden","number")}${active(r.is_active)}<div class="actions"><button class="btn primary" data-save="groups">Guardar</button><button class="btn danger" data-del="groups">Eliminar</button></div></div>`).join("");
+    }
+    function read(el){const kind=el.dataset.kind,out={};const id=el.dataset.id;if(id)out[ENT[kind].pk]=id;el.querySelectorAll("input").forEach(i=>{const key=[...i.classList].find(c=>c!=="inp");if(!key)return;out[key]=i.type==="checkbox"?i.checked:(i.type==="number"?Number(i.value||0):i.value.trim());});if(kind==="rules")out.prioridad=String(out.tipo_cliente||"").toUpperCase().includes("NUEVO")?10:20;return out;}
+    async function save(kind,row){const e=ENT[kind],id=row[e.pk],body={...row};delete body[e.pk];return id?api(`/settings/${e.entity}/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}):api(`/settings/${e.entity}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}
+    async function del(kind,id){return api(`/settings/${ENT[kind].entity}/${encodeURIComponent(id)}`,{method:"DELETE"});}
+    function toast(t,ok=true){msg.textContent=t;msg.className=`msg ${ok?"ok":"err"}`;setTimeout(()=>{msg.textContent="";msg.className="msg";},3500);}
+    async function load(){await api("/commissions/ensure",{method:"POST"});const [r,c,g]=await Promise.all([api("/settings/commission_rules?limit=500"),api("/settings/commission_channel_bonus?limit=500"),api("/settings/commission_group_bonus?limit=500")]);state.rules=r.items||[];state.channels=c.items||[];state.groups=g.items||[];render();}
+    document.body.onclick=async ev=>{const add=ev.target.closest("[data-add]");if(add){const k=add.dataset.add;if(k==="rules")state.rules.push({tipo_cliente:"",definicion:"",porcentaje_base:0,meses_antiguedad:12,is_active:true});if(k==="channels")state.channels.push({canal:"",descripcion:"",porcentaje_extra:0,requiere_gestion_ejecutivo:true,is_active:true});if(k==="groups")state.groups.push({nivel:"",cumplimiento_min_pct:100,bono_sobre_comision_pct:0,orden:50,is_active:true});return render();}const s=ev.target.closest("[data-save]");if(s){try{await save(s.dataset.save,read(s.closest("[data-kind]")));toast("Guardado.");await load();}catch(e){toast(e.message,false);}}const d=ev.target.closest("[data-del]");if(d){const row=d.closest("[data-kind]"),id=row.dataset.id;if(!id){row.remove();return;}if(!confirm("Eliminar configuración?"))return;try{await del(d.dataset.del,id);toast("Eliminado.");await load();}catch(e){toast(e.message,false);}}};
+    load().catch(e=>toast(e.message,false));
+  </script>
+</body>
+</html>

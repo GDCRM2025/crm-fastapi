@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException, Body, Depends
+from fastapi import APIRouter, HTTPException, Body, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 from pathlib import Path
 import traceback
 import secrets
 from backend.core.db import get_connection
+from backend.core.activity_log import log_activity
+from backend.core.rbac import role_key, user_id, username
 from backend.core.quote_assets import logo_for, normalize_marca
 
 try:
@@ -32,6 +34,24 @@ def _estado_id(conn, like_upper: str) -> int | None:
             {"n": like_upper},
         ).scalar()
         return int(r) if r is not None else None
+    except Exception:
+        return None
+
+
+def _tipo_cliente_id(conn, tipo_cliente: str) -> int | None:
+    tipo = "EMPRESA" if "EMP" in str(tipo_cliente or "").upper() or "FACT" in str(tipo_cliente or "").upper() else "PARTICULAR"
+    try:
+        if not table_exists(conn, "tipos_cliente"):
+            return None
+        cols = cols_for(conn, "tipos_cliente")
+        name_col = "tipo" if "tipo" in cols else ("nombre" if "nombre" in cols else None)
+        if not name_col:
+            return None
+        val = conn.execute(
+            text(f"SELECT id_tipo_cliente FROM public.tipos_cliente WHERE UPPER({name_col}) LIKE :p ORDER BY id_tipo_cliente LIMIT 1"),
+            {"p": f"%{tipo}%"},
+        ).scalar()
+        return int(val) if val is not None else None
     except Exception:
         return None
 
@@ -71,15 +91,35 @@ def next_num_for_marca(conn, marca: str) -> int:
     if not key:
         key = "GENERICA"
     base = BASE_SERIES.get(key, 1)
-    row = conn.execute(text("SELECT next_num FROM cotizacion_series WHERE marca=:m"), {"m": key}).fetchone()
-    if not row:
-        # inicia en base
-        conn.execute(text("INSERT INTO cotizacion_series(marca, next_num) VALUES (:m, :n)"), {"m": key, "n": base})
-        num = base
-    else:
-        num = int(row[0])
-    # incrementa
-    conn.execute(text("UPDATE cotizacion_series SET next_num=:n WHERE marca=:m"), {"n": num + 1, "m": key})
+    # `cotizaciones.numero` es UNIQUE global en las bases históricas. Bloquear
+    # solo la fila de una marca permite que dos marcas reserven el mismo folio.
+    # Este advisory lock transaccional serializa únicamente la asignación del
+    # número, no la creación completa de la cotización.
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('crm.cotizaciones.numero'))"))
+    conn.execute(
+        text(
+            """
+            INSERT INTO cotizacion_series(marca,next_num)
+            VALUES (:m,:n)
+            ON CONFLICT (marca) DO NOTHING
+            """
+        ),
+        {"m": key, "n": base},
+    )
+    row = conn.execute(
+        text("SELECT next_num FROM cotizacion_series WHERE marca=:m FOR UPDATE"),
+        {"m": key},
+    ).fetchone()
+    num = max(base, int(row[0] if row else base))
+    while conn.execute(
+        text("SELECT 1 FROM public.cotizaciones WHERE numero=:n LIMIT 1"),
+        {"n": num},
+    ).first():
+        num += 1
+    conn.execute(
+        text("UPDATE cotizacion_series SET next_num=:n WHERE marca=:m"),
+        {"n": num + 1, "m": key},
+    )
     return num
 
 
@@ -152,19 +192,30 @@ def _product_snapshot(conn, id_producto: int) -> dict | None:
 
     # Preferimos productos_vw si existe (es más estable y suele traer descripcion).
     if table_exists(conn, "productos_vw"):
+        view_cols = cols_for(conn, "productos_vw")
+        view_desc_parts = []
+        if "descripcion" in view_cols:
+            view_desc_parts.append("NULLIF(descripcion,'')")
+        if "ingredientes" in view_cols:
+            view_desc_parts.append("NULLIF(ingredientes,'')")
+        view_desc = "COALESCE(" + ", ".join(view_desc_parts + ["''"]) + ")" if view_desc_parts else "''"
+        view_brand = "COALESCE(marca,'')" if "marca" in view_cols else "''"
         try:
-            row = conn.execute(
-                text(
-                    """
-                    SELECT producto,
-                           COALESCE(NULLIF(descripcion,''), NULLIF(ingredientes,''), '') AS descripcion,
-                           COALESCE(marca,'') AS marca
-                    FROM public.productos_vw
-                    WHERE id_producto=:p
-                    """
-                ),
-                {"p": pid},
-            ).mappings().first()
+            # Un error SQL capturado sin SAVEPOINT invalida toda la transacción
+            # PostgreSQL. La compatibilidad con vistas antiguas queda aislada.
+            with conn.begin_nested():
+                row = conn.execute(
+                    text(
+                        f"""
+                        SELECT producto,
+                               {view_desc} AS descripcion,
+                               {view_brand} AS marca
+                        FROM public.productos_vw
+                        WHERE id_producto=:p
+                        """
+                    ),
+                    {"p": pid},
+                ).mappings().first()
             if row:
                 return dict(row)
         except Exception:
@@ -186,18 +237,19 @@ def _product_snapshot(conn, id_producto: int) -> dict | None:
     marca_expr = "COALESCE(marca,'')" if "marca" in cols else "''"
 
     try:
-        row = conn.execute(
-            text(
-                f"""
-                SELECT {prod_expr} AS producto,
-                       {desc_expr} AS descripcion,
-                       {marca_expr} AS marca
-                FROM public.productos
-                WHERE id_producto=:p
-                """
-            ),
-            {"p": pid},
-        ).mappings().first()
+        with conn.begin_nested():
+            row = conn.execute(
+                text(
+                    f"""
+                    SELECT {prod_expr} AS producto,
+                           {desc_expr} AS descripcion,
+                           {marca_expr} AS marca
+                    FROM public.productos
+                    WHERE id_producto=:p
+                    """
+                ),
+                {"p": pid},
+            ).mappings().first()
         return dict(row) if row else None
     except Exception:
         return None
@@ -327,7 +379,7 @@ def catalogos(user: dict = Depends(get_current_user)):
 
 
 @router.post("/cotizar")
-def cotizar(payload: dict = Body(...)):
+def cotizar(request: Request, payload: dict = Body(...), user: dict = Depends(get_current_user)):
     """
     Payload esperado (mínimo):
     {
@@ -474,6 +526,11 @@ def cotizar(payload: dict = Body(...)):
             if "tipo_cliente" in lead_cols:
                 set_parts.append("tipo_cliente=:tc")
                 params["tc"] = ("EMPRESA" if iva > 0 else "PARTICULAR")
+            if "id_tipo_cliente" in lead_cols:
+                tcid = _tipo_cliente_id(conn, payload.get("tipo_cliente") or "")
+                if tcid:
+                    set_parts.append("id_tipo_cliente=:tcid")
+                    params["tcid"] = int(tcid)
             # Nota negocio: al cotizar debemos mantener el `monto_cotizado` correcto incluso si el lead ya está CONFIRMADO.
             # Solo evitamos tocar leads DECLINADOS.
             conn.execute(
@@ -513,6 +570,26 @@ def cotizar(payload: dict = Body(...)):
             except Exception:
                 pass
 
+            log_activity(
+                conn,
+                username=username(user),
+                user_id=user_id(user),
+                role=role_key(user),
+                action="quote.create",
+                entity_type="cotizacion",
+                entity_id=int(id_cot),
+                meta={
+                    "id_lead": int(id_lead),
+                    "numero": int(numero),
+                    "cliente": payload.get("cliente") or payload.get("nombre_cliente"),
+                    "marca": payload.get("marca") or marca_key,
+                    "items_count": len(items),
+                    "neto": neto,
+                    "iva": iva,
+                    "total": total,
+                },
+                request=request,
+            )
             conn.commit()
             return {"ok": True, "id_cotizacion": int(id_cot), "numero": int(numero), "neto": neto, "iva": iva, "total": total}
     except HTTPException:
@@ -523,7 +600,7 @@ def cotizar(payload: dict = Body(...)):
 
 
 @router.put("/cotizaciones/{id_cotizacion}")
-def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
+def actualizar_cotizacion(id_cotizacion: int, request: Request, payload: dict = Body(...), user: dict = Depends(get_current_user)):
     try:
         id_lead = int(payload.get("id_lead") or 0)
         items = payload.get("items") or []
@@ -666,20 +743,26 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
                         {"fe": fe, "id_lead": id_lead, "decl": declinado_id},
                     )
                 if "tipo_cliente" in lead_cols:
+                    tc_text = ("EMPRESA" if iva > 0 else "PARTICULAR")
+                    tcid = _tipo_cliente_id(conn, tc_text)
+                    extra_set = ", id_tipo_cliente=:tcid" if ("id_tipo_cliente" in lead_cols and tcid) else ""
+                    params_tc = {
+                        "tc": tc_text,
+                        "id_lead": id_lead,
+                        "decl": declinado_id,
+                    }
+                    if tcid:
+                        params_tc["tcid"] = int(tcid)
                     conn.execute(
                         text(
-                            """
+                            f"""
                             UPDATE public.leads
-                            SET tipo_cliente=:tc, updated_at=now()
+                            SET tipo_cliente=:tc{extra_set}, updated_at=now()
                             WHERE id_lead=:id_lead
                               AND COALESCE(id_estado, -1) <> COALESCE(:decl, -3)
                             """
                         ),
-                        {
-                            "tc": ("EMPRESA" if iva > 0 else "PARTICULAR"),
-                            "id_lead": id_lead,
-                            "decl": declinado_id,
-                        },
+                        params_tc,
                     )
             except Exception:
                 pass
@@ -714,6 +797,26 @@ def actualizar_cotizacion(id_cotizacion: int, payload: dict = Body(...)):
             except Exception:
                 pass
 
+            log_activity(
+                conn,
+                username=username(user),
+                user_id=user_id(user),
+                role=role_key(user),
+                action="quote.update",
+                entity_type="cotizacion",
+                entity_id=int(new_id),
+                meta={
+                    "previous_id_cotizacion": int(id_cotizacion),
+                    "id_lead": int(id_lead),
+                    "numero": row.get("numero"),
+                    "version": int(new_version),
+                    "items_count": len(items),
+                    "neto": neto,
+                    "iva": iva,
+                    "total": total,
+                },
+                request=request,
+            )
             conn.commit()
             return {"ok": True, "id_cotizacion": int(new_id), "neto": neto, "iva": iva, "total": total, "version": new_version}
     except HTTPException:

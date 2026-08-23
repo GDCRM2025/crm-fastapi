@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Funcionamiento de módulos</title>
+  <style>
+    :root{color-scheme:dark;--bg:#07110d;--card:#102019;--line:#284236;--text:#eef8f2;--muted:#9db4a7;--green:#36d17c;--red:#fb7185}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;padding:22px}
+    .wrap{max-width:1050px;margin:auto}.head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+    h1{font-size:24px;margin:0 0 7px}.muted{color:var(--muted);line-height:1.45}.grid{display:grid;gap:12px;margin-top:20px}
+    .feature{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:17px}
+    .feature h2{font-size:16px;margin:0 0 5px}.status{font-size:12px;font-weight:900;margin-top:8px}.status.on{color:var(--green)}.status.off{color:var(--red)}
+    .switch{position:relative;width:58px;height:32px}.switch input{opacity:0;width:0;height:0}.slider{position:absolute;inset:0;background:#475569;border-radius:999px;cursor:pointer;transition:.2s}
+    .slider:before{content:"";position:absolute;width:24px;height:24px;left:4px;top:4px;border-radius:50%;background:white;transition:.2s}
+    input:checked+.slider{background:#159455}input:checked+.slider:before{transform:translateX(26px)}
+    input:disabled+.slider{opacity:.55;cursor:wait}.notice{margin-top:18px;padding:13px 15px;border-radius:13px;background:#10261b;border:1px solid #28583c;color:#c7f9d9}
+    .error{background:#30151b;border-color:#71303e;color:#fecdd3}.btn{border:1px solid var(--line);background:#173126;color:var(--text);border-radius:11px;padding:9px 13px;font-weight:800;cursor:pointer}
+    @media(max-width:620px){body{padding:14px}.feature{grid-template-columns:1fr auto;padding:14px}}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <div class="head">
+    <div>
+      <h1>Funcionamiento de módulos</h1>
+      <div class="muted">Interruptores globales. Los permisos deciden quién puede entrar; estos controles deciden si la función opera para todos.</div>
+    </div>
+    <button class="btn" id="reload" type="button">Actualizar</button>
+  </div>
+  <div class="notice">Desactivar WhatsApp no elimina mensajes ni desconecta Meta: detiene la bandeja y los envíos del CRM, mientras el webhook conserva la recepción para evitar pérdida de información.</div>
+  <section class="grid" id="list"><div class="muted">Cargando módulos…</div></section>
+</main>
+<script>
+  const API_BASE=(location.hostname==="localhost"||location.hostname==="127.0.0.1")?"":"/crm";
+  const authToken=()=>localStorage.getItem("token")||sessionStorage.getItem("token")||"";
+  const esc=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
+  async function api(path,init={}){
+    const response=await fetch(API_BASE+path,{...init,headers:{"Content-Type":"application/json",Authorization:`Bearer ${authToken()}`,...(init.headers||{})}});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok) throw new Error(data?.detail||data?.error||`HTTP ${response.status}`);
+    return data;
+  }
+  async function toggle(input){
+    const key=input.dataset.key;
+    const enabled=input.checked;
+    const action=enabled?"habilitar":"deshabilitar";
+    const label=input.dataset.label||key;
+    if(!confirm(`¿Confirmas ${action} “${label}” para todos los usuarios?`)){
+      input.checked=!enabled;
+      return;
+    }
+    input.disabled=true;
+    try{
+      await api(`/settings/features/${encodeURIComponent(key)}`,{method:"PUT",body:JSON.stringify({enabled,reason:`Cambio manual desde panel: ${action}`})});
+      await load();
+    }catch(error){
+      input.checked=!enabled;
+      input.disabled=false;
+      alert(error.message||error);
+    }
+  }
+  async function load(){
+    const list=document.querySelector("#list");
+    try{
+      const data=await api("/settings/features");
+      list.innerHTML=(data.items||[]).map(item=>`
+        <article class="feature">
+          <div>
+            <h2>${esc(item.label)}</h2>
+            <div class="muted">${esc(item.description)}</div>
+            <div class="status ${item.enabled?"on":"off"}">${item.enabled?"HABILITADO":"DESHABILITADO"}</div>
+          </div>
+          <label class="switch" title="${item.enabled?"Deshabilitar":"Habilitar"} ${esc(item.label)}">
+            <input type="checkbox" data-key="${esc(item.key)}" data-label="${esc(item.label)}" ${item.enabled?"checked":""}>
+            <span class="slider"></span>
+          </label>
+        </article>
+      `).join("");
+      list.querySelectorAll("[data-key]").forEach(input=>input.addEventListener("change",()=>toggle(input)));
+    }catch(error){
+      list.innerHTML=`<div class="notice error">No se pudo cargar: ${esc(error.message||error)}</div>`;
+    }
+  }
+  document.querySelector("#reload").addEventListener("click",load);
+  load();
+</script>
+</body>
+</html>

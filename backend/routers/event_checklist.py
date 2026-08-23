@@ -80,6 +80,22 @@ def _is_admin(role: str) -> bool:
     return role in ("ADMIN", "SUPERADMIN")
 
 
+def _user_keys(user: dict) -> list[str]:
+    vals = [
+        user.get("id"),
+        user.get("username"),
+        user.get("email"),
+        user.get("name"),
+        user.get("nombre"),
+    ]
+    out: list[str] = []
+    for v in vals:
+        s = str(v or "").strip().lower()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
 def _col_exists(db: Session, table: str, col: str) -> bool:
     try:
         return bool(
@@ -156,7 +172,7 @@ def events_for_day(
         role = _role(user)
         uid = _resolve_uid(db, user)
 
-        # Scope: Admin ve todo; no-admin respeta marcas si el token trae marcas[].
+        # Scope: Admin ve todo; no-admin solo ve eventos de sus marcas o asignados a su usuario.
         marcas = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
         only_own = not _is_admin(role)
 
@@ -169,6 +185,9 @@ def events_for_day(
         has_pre_prod = _col_exists(db, "leads", "pre_products_text")
         has_tel = _col_exists(db, "leads", "telefono")
         has_dir = _col_exists(db, "leads", "direccion")
+        has_email = _col_exists(db, "leads", "email")
+        has_user = _col_exists(db, "leads", "id_usuario")
+        has_pre_events = _col_exists(db, "leads", "pre_events_json")
 
         if has_fecha:
             date_expr = "DATE(l.fecha_evento)"
@@ -184,6 +203,8 @@ def events_for_day(
         prod_expr = "COALESCE(l.pre_products_text,'')" if has_pre_prod else "''"
         tel_expr = "COALESCE(l.telefono,'')" if has_tel else "''"
         dir_expr = "COALESCE(l.direccion,'')" if has_dir else "''"
+        email_expr = "COALESCE(l.email,'')" if has_email else "''"
+        pre_events_expr = "COALESCE(l.pre_events_json,'')" if has_pre_events else "''"
 
         has_id_marca = _col_exists(db, "leads", "id_marca")
         has_id_comuna = _col_exists(db, "leads", "id_comuna")
@@ -200,9 +221,16 @@ def events_for_day(
 
         where = [f"l.id_estado = :conf", f"{date_expr} = :d"]
         params: Dict[str, Any] = {"conf": int(confirmado_id), "d": str(d)}
-        if only_own and marcas and has_id_marca:
-            where.append("l.id_marca = ANY(:marcas)")
-            params["marcas"] = marcas
+        if only_own:
+            scope_parts: list[str] = []
+            if marcas and has_id_marca:
+                scope_parts.append("l.id_marca = ANY(:marcas)")
+                params["marcas"] = marcas
+            keys = _user_keys(user)
+            if has_user and keys:
+                scope_parts.append("lower(NULLIF(btrim(COALESCE(l.id_usuario::text,'')) ,'')) = ANY(:user_keys)")
+                params["user_keys"] = keys
+            where.append("(" + " OR ".join(scope_parts) + ")" if scope_parts else "FALSE")
 
         where_sql = " AND ".join(where)
         name_expr = _lead_name_expr(db)
@@ -219,7 +247,9 @@ def events_for_day(
             {montaje_expr} AS montaje_text,
             {prod_expr} AS productos_text,
             {tel_expr} AS telefono,
-            {dir_expr} AS direccion
+            {dir_expr} AS direccion,
+            {email_expr} AS email,
+            {pre_events_expr} AS pre_events_json
           FROM public.leads l
           {join_sql}
           WHERE {where_sql}
@@ -250,22 +280,48 @@ def events_for_day(
                     "productos_text": r.get("productos_text") or "",
                     "telefono": r.get("telefono") or "",
                     "direccion": r.get("direccion") or "",
+                    "email": r.get("email") or "",
+                    "pre_events_json": r.get("pre_events_json") or "",
+                    "equipos": " · ".join([x for x in [r.get("montaje_text") or "", r.get("productos_text") or ""] if str(x).strip()]),
+                    "despacha": "",
+                    "retira": "",
+                    "operadores": "",
                     "missing": {
                         "cliente": not bool((r.get("cliente") or "").strip()),
+                        "contacto": not bool((r.get("telefono") or "").strip())
+                        and not bool((r.get("email") or "").strip()),
+                        "direccion": not bool((r.get("direccion") or "").strip()),
                         "comuna": not bool((r.get("comuna") or "").strip()),
                         "marca": not bool((r.get("marca") or "").strip()),
+                        # Estos dos son controles manuales: no deben aparecer
+                        # aprobados automáticamente cuando aún nadie los revisó.
+                        "salida": True,
                         "equipos": not bool((r.get("montaje_text") or "").strip())
                         and not bool((r.get("productos_text") or "").strip()),
                         "inicio": not bool(start_at),
                         "fin": not bool(end_at),
                         "ops": int(r.get("ops") or 0) <= 0,
+                        "operadores": True,
                     },
                     "checklist": (saved.get(lid) if isinstance(saved, dict) else None)
                     or {"items": {}, "notes": "", "updated_at": ""},
                 }
             )
 
-        return {"ok": True, "day": d.isoformat(), "items": items}
+        return {
+            "ok": True,
+            "day": d.isoformat(),
+            "items": items,
+            "summary": {
+                "total": len(items),
+                "with_saved_checklist": sum(
+                    1 for item in items if bool((item.get("checklist") or {}).get("updated_at"))
+                ),
+                "data_incomplete": sum(
+                    1 for item in items if any(bool(v) for v in (item.get("missing") or {}).values())
+                ),
+            },
+        }
     except Exception as e:
         try:
             db.rollback()
@@ -364,7 +420,19 @@ def confirm_event(
     # Notificación interna a Operaciones (solo cuando queda completo).
     # Se muestra en Campana > "Eventos agendados / Operaciones" para roles target.
     try:
-        keys = ["cliente", "comuna", "marca", "equipos", "inicio", "fin", "ops"]
+        keys = [
+            "cliente",
+            "contacto",
+            "direccion",
+            "comuna",
+            "marca",
+            "equipos",
+            "salida",
+            "inicio",
+            "fin",
+            "ops",
+            "operadores",
+        ]
         all_ok = True
         for k in keys:
             if not bool((items or {}).get(k)):

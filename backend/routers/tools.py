@@ -3515,15 +3515,29 @@ def _dashboard_reportes_v2(
     # Tipo cliente
     tipos_rows = []
     tipos_rows_conf = []
-    if _col_exists(db, "leads", "tipo_cliente"):
+    tipo_cliente_resumen = []
+    cliente_recencia = []
+    tipo_cliente_mix = []
+    tipo_expr = None
+    tipo_join = ""
+    if _col_exists(db, "leads", "id_tipo_cliente") and _table_exists_pg(db, "tipos_cliente"):
+        tipo_expr = "COALESCE(tc.nombre,'—')"
+        tipo_join = "LEFT JOIN tipos_cliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente"
+    elif _col_exists(db, "leads", "id_tipo_cliente") and _table_exists_pg(db, "tipocliente"):
+        tipo_expr = "COALESCE(tc.nombre,'—')"
+        tipo_join = "LEFT JOIN tipocliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente"
+    elif _col_exists(db, "leads", "tipo_cliente"):
+        tipo_expr = "COALESCE(l.tipo_cliente,'—')"
+    if tipo_expr:
         try:
             tipos_rows = db.execute(
                 text(
                     f"""
-                    SELECT COALESCE(l.tipo_cliente,'—') AS tipo,
+                    SELECT {tipo_expr} AS tipo,
                            COUNT(*)::int AS cantidad,
                            COALESCE(SUM(l.monto_cotizado),0)::float AS monto
                     FROM leads l
+                    {tipo_join}
                     WHERE {where_sql}
                     GROUP BY 1
                     ORDER BY monto DESC
@@ -3535,10 +3549,11 @@ def _dashboard_reportes_v2(
             tipos_rows_conf = db.execute(
                 text(
                     f"""
-                    SELECT COALESCE(l.tipo_cliente,'—') AS tipo,
+                    SELECT {tipo_expr} AS tipo,
                            COUNT(*)::int AS cantidad,
                            COALESCE(SUM(l.monto_cotizado),0)::float AS monto
                     FROM leads l
+                    {tipo_join}
                     WHERE {where_sql} AND {conf_where}
                     GROUP BY 1
                     ORDER BY monto DESC
@@ -3547,9 +3562,95 @@ def _dashboard_reportes_v2(
                 ),
                 params,
             ).mappings().all()
+            tipo_cliente_resumen = db.execute(
+                text(
+                    f"""
+                    SELECT CASE
+                             WHEN UPPER({tipo_expr}) LIKE '%EMPRESA%' THEN 'EMPRESA'
+                             WHEN UPPER({tipo_expr}) LIKE '%PARTIC%' THEN 'PARTICULAR'
+                             ELSE COALESCE(NULLIF({tipo_expr}, ''), 'SIN TIPO')
+                           END AS segmento,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(l.monto_cotizado),0)::float AS monto,
+                           (COALESCE(SUM(l.monto_cotizado),0) / GREATEST(COUNT(*),1))::float AS ticket_promedio
+                    FROM leads l
+                    {tipo_join}
+                    WHERE {where_sql} AND {conf_where}
+                    GROUP BY 1
+                    ORDER BY monto DESC
+                    """
+                ),
+                params,
+            ).mappings().all()
+            if confirmado_id:
+                rec_sql = f"""
+                    WITH ventas AS (
+                      SELECT l.id_lead,
+                             COALESCE(l.monto_cotizado,0)::float AS monto,
+                             CASE WHEN EXISTS (
+                               SELECT 1 FROM leads l2
+                               WHERE l2.id_lead<>l.id_lead
+                                 AND l2.id_estado=:conf
+                                 AND l2.{date_col}::date < l.{date_col}::date
+                                 AND l2.{date_col}::date >= (l.{date_col}::date - INTERVAL '12 months')
+                                 AND (
+                                   (COALESCE(NULLIF(btrim(l.email),''),'') <> '' AND lower(btrim(COALESCE(l2.email,''))) = lower(btrim(COALESCE(l.email,''))))
+                                   OR (regexp_replace(COALESCE(l.telefono,''), '[^0-9]', '', 'g') <> '' AND regexp_replace(COALESCE(l2.telefono,''), '[^0-9]', '', 'g') = regexp_replace(COALESCE(l.telefono,''), '[^0-9]', '', 'g'))
+                                   OR (COALESCE(NULLIF(btrim(l.cliente),''),'') <> '' AND lower(btrim(COALESCE(l2.cliente,''))) = lower(btrim(COALESCE(l.cliente,''))))
+                                 )
+                             ) THEN 'CLIENTE ANTIGUO' ELSE 'CLIENTE NUEVO' END AS recencia
+                      FROM leads l
+                      WHERE {where_sql} AND {conf_where}
+                    )
+                    SELECT recencia,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(monto),0)::float AS monto,
+                           (COALESCE(SUM(monto),0) / GREATEST(COUNT(*),1))::float AS ticket_promedio
+                    FROM ventas
+                    GROUP BY recencia
+                    ORDER BY monto DESC
+                """
+                cliente_recencia = db.execute(text(rec_sql), params).mappings().all()
+                mix_sql = f"""
+                    WITH ventas AS (
+                      SELECT l.id_lead,
+                             COALESCE(l.monto_cotizado,0)::float AS monto,
+                             CASE
+                               WHEN UPPER({tipo_expr}) LIKE '%EMPRESA%' THEN 'EMPRESA'
+                               WHEN UPPER({tipo_expr}) LIKE '%PARTIC%' THEN 'PARTICULAR'
+                               ELSE COALESCE(NULLIF({tipo_expr}, ''), 'SIN TIPO')
+                             END AS segmento,
+                             CASE WHEN EXISTS (
+                               SELECT 1 FROM leads l2
+                               WHERE l2.id_lead<>l.id_lead
+                                 AND l2.id_estado=:conf
+                                 AND l2.{date_col}::date < l.{date_col}::date
+                                 AND l2.{date_col}::date >= (l.{date_col}::date - INTERVAL '12 months')
+                                 AND (
+                                   (COALESCE(NULLIF(btrim(l.email),''),'') <> '' AND lower(btrim(COALESCE(l2.email,''))) = lower(btrim(COALESCE(l.email,''))))
+                                   OR (regexp_replace(COALESCE(l.telefono,''), '[^0-9]', '', 'g') <> '' AND regexp_replace(COALESCE(l2.telefono,''), '[^0-9]', '', 'g') = regexp_replace(COALESCE(l.telefono,''), '[^0-9]', '', 'g'))
+                                   OR (COALESCE(NULLIF(btrim(l.cliente),''),'') <> '' AND lower(btrim(COALESCE(l2.cliente,''))) = lower(btrim(COALESCE(l.cliente,''))))
+                                 )
+                             ) THEN 'CLIENTE ANTIGUO' ELSE 'CLIENTE NUEVO' END AS recencia
+                      FROM leads l
+                      {tipo_join}
+                      WHERE {where_sql} AND {conf_where}
+                    )
+                    SELECT segmento, recencia,
+                           COUNT(*)::int AS cantidad,
+                           COALESCE(SUM(monto),0)::float AS monto,
+                           (COALESCE(SUM(monto),0) / GREATEST(COUNT(*),1))::float AS ticket_promedio
+                    FROM ventas
+                    GROUP BY segmento, recencia
+                    ORDER BY segmento ASC, monto DESC
+                """
+                tipo_cliente_mix = db.execute(text(mix_sql), params).mappings().all()
         except Exception:
             tipos_rows = []
             tipos_rows_conf = []
+            tipo_cliente_resumen = []
+            cliente_recencia = []
+            tipo_cliente_mix = []
 
     # Venta por marca (torta)
     try:
@@ -3897,6 +3998,9 @@ def _dashboard_reportes_v2(
         "comunas": list(comunas),
         "tipo_cliente": list(tipos_rows),
         "tipo_cliente_confirmados": list(tipos_rows_conf),
+        "tipo_cliente_resumen": list(tipo_cliente_resumen),
+        "cliente_recencia": list(cliente_recencia),
+        "tipo_cliente_mix": list(tipo_cliente_mix),
         "ventas_por_marca": list(ventas_por_marca),
         "params": {"top_n": top_n_i, "productos_order": prod_order, "comunas_order": com_order, "clientes_order": cli_order},
     }
@@ -4145,12 +4249,18 @@ def dashboard_reportes(
         # Tipo de cliente (empresa/particular u otros)
         tipos_rows: list[dict] = []
         tipos_rows_conf: list[dict] = []
+        tipo_cliente_resumen: list[dict] = []
+        cliente_recencia: list[dict] = []
+        tipo_cliente_mix: list[dict] = []
         try:
             tipo_expr = None
             join_sql = ""
             if _col_exists(db, "leads", "id_tipo_cliente") and _table_exists_pg(db, "tipos_cliente"):
                 tipo_expr = "COALESCE(tc.nombre,'—')"
                 join_sql = "LEFT JOIN tipos_cliente tc ON tc.id_tipo_cliente = l.id_tipo_cliente"
+            elif _col_exists(db, "leads", "id_tipo_cliente") and _table_exists_pg(db, "tipocliente"):
+                tipo_expr = "COALESCE(tc.nombre,'—')"
+                join_sql = "LEFT JOIN tipocliente tc ON tc.id_tipo_cliente = l.id_tipo_cliente"
             elif _col_exists(db, "leads", "tipo_cliente"):
                 tipo_expr = "COALESCE(l.tipo_cliente,'—')"
             if tipo_expr:
@@ -4168,9 +4278,110 @@ def dashboard_reportes(
 
                 q_tipo_conf = q_tipo.replace(f"WHERE {where_sql}", f"WHERE {where_sql} AND {conf_where}")
                 tipos_rows_conf = db.execute(text(q_tipo_conf), params).mappings().all()
+
+                q_tipo_resumen = f"""
+                    SELECT
+                      CASE
+                        WHEN UPPER({tipo_expr}) LIKE '%EMPRESA%' THEN 'EMPRESA'
+                        WHEN UPPER({tipo_expr}) LIKE '%PARTIC%' THEN 'PARTICULAR'
+                        ELSE COALESCE(NULLIF({tipo_expr}, ''), 'SIN TIPO')
+                      END AS segmento,
+                      COUNT(*)::int AS cantidad,
+                      COALESCE(SUM(l.monto_cotizado),0)::float AS monto,
+                      (COALESCE(SUM(l.monto_cotizado),0) / GREATEST(COUNT(*),1))::float AS ticket_promedio
+                    FROM leads l
+                    {join_sql}
+                    WHERE {where_sql} AND {conf_where}
+                    GROUP BY 1
+                    ORDER BY monto DESC
+                """
+                tipo_cliente_resumen = db.execute(text(q_tipo_resumen), params).mappings().all()
+
+                if confirmado_id:
+                    q_mix = f"""
+                        WITH ventas AS (
+                          SELECT
+                            l.id_lead,
+                            l.{date_col}::date AS fecha_base,
+                            COALESCE(l.monto_cotizado,0)::float AS monto,
+                            CASE
+                              WHEN UPPER({tipo_expr}) LIKE '%EMPRESA%' THEN 'EMPRESA'
+                              WHEN UPPER({tipo_expr}) LIKE '%PARTIC%' THEN 'PARTICULAR'
+                              ELSE COALESCE(NULLIF({tipo_expr}, ''), 'SIN TIPO')
+                            END AS segmento,
+                            CASE
+                              WHEN EXISTS (
+                                SELECT 1
+                                FROM leads l2
+                                WHERE l2.id_lead <> l.id_lead
+                                  AND l2.id_estado = :conf
+                                  AND l2.{date_col}::date < l.{date_col}::date
+                                  AND l2.{date_col}::date >= (l.{date_col}::date - INTERVAL '12 months')
+                                  AND (
+                                    (COALESCE(NULLIF(btrim(l.email),''),'') <> '' AND lower(btrim(COALESCE(l2.email,''))) = lower(btrim(COALESCE(l.email,''))))
+                                    OR (regexp_replace(COALESCE(l.telefono,''), '[^0-9]', '', 'g') <> '' AND regexp_replace(COALESCE(l2.telefono,''), '[^0-9]', '', 'g') = regexp_replace(COALESCE(l.telefono,''), '[^0-9]', '', 'g'))
+                                    OR (COALESCE(NULLIF(btrim(l.cliente),''),'') <> '' AND lower(btrim(COALESCE(l2.cliente,''))) = lower(btrim(COALESCE(l.cliente,''))))
+                                  )
+                              ) THEN 'CLIENTE ANTIGUO'
+                              ELSE 'CLIENTE NUEVO'
+                            END AS recencia
+                          FROM leads l
+                          {join_sql}
+                          WHERE {where_sql} AND {conf_where}
+                        )
+                        SELECT segmento, recencia,
+                               COUNT(*)::int AS cantidad,
+                               COALESCE(SUM(monto),0)::float AS monto,
+                               (COALESCE(SUM(monto),0) / GREATEST(COUNT(*),1))::float AS ticket_promedio
+                        FROM ventas
+                        GROUP BY segmento, recencia
+                        ORDER BY segmento ASC, monto DESC
+                    """
+                    tipo_cliente_mix = db.execute(text(q_mix), params).mappings().all()
+                    cliente_recencia = db.execute(
+                        text(
+                            f"""
+                            WITH ventas AS (
+                              SELECT
+                                l.id_lead,
+                                l.{date_col}::date AS fecha_base,
+                                COALESCE(l.monto_cotizado,0)::float AS monto,
+                                CASE
+                                  WHEN EXISTS (
+                                    SELECT 1
+                                    FROM leads l2
+                                    WHERE l2.id_lead <> l.id_lead
+                                      AND l2.id_estado = :conf
+                                      AND l2.{date_col}::date < l.{date_col}::date
+                                      AND l2.{date_col}::date >= (l.{date_col}::date - INTERVAL '12 months')
+                                      AND (
+                                        (COALESCE(NULLIF(btrim(l.email),''),'') <> '' AND lower(btrim(COALESCE(l2.email,''))) = lower(btrim(COALESCE(l.email,''))))
+                                        OR (regexp_replace(COALESCE(l.telefono,''), '[^0-9]', '', 'g') <> '' AND regexp_replace(COALESCE(l2.telefono,''), '[^0-9]', '', 'g') = regexp_replace(COALESCE(l.telefono,''), '[^0-9]', '', 'g'))
+                                        OR (COALESCE(NULLIF(btrim(l.cliente),''),'') <> '' AND lower(btrim(COALESCE(l2.cliente,''))) = lower(btrim(COALESCE(l.cliente,''))))
+                                      )
+                                  ) THEN 'CLIENTE ANTIGUO'
+                                  ELSE 'CLIENTE NUEVO'
+                                END AS recencia
+                              FROM leads l
+                              WHERE {where_sql} AND {conf_where}
+                            )
+                            SELECT recencia,
+                                   COUNT(*)::int AS cantidad,
+                                   COALESCE(SUM(monto),0)::float AS monto,
+                                   (COALESCE(SUM(monto),0) / GREATEST(COUNT(*),1))::float AS ticket_promedio
+                            FROM ventas
+                            GROUP BY recencia
+                            ORDER BY monto DESC
+                            """
+                        ),
+                        params,
+                    ).mappings().all()
         except Exception:
             tipos_rows = []
             tipos_rows_conf = []
+            tipo_cliente_resumen = []
+            cliente_recencia = []
+            tipo_cliente_mix = []
 
         # Venta por marca (torta) para el rango/confirmados
         ventas_por_marca: list[dict] = []
@@ -4618,6 +4829,9 @@ def dashboard_reportes(
             "comunas": list(comunas),
             "tipo_cliente": list(tipos_rows),
             "tipo_cliente_confirmados": list(tipos_rows_conf),
+            "tipo_cliente_resumen": list(tipo_cliente_resumen),
+            "cliente_recencia": list(cliente_recencia),
+            "tipo_cliente_mix": list(tipo_cliente_mix),
             "ventas_por_marca": list(ventas_por_marca),
             "params": {
                 "top_n": top_n_i,
@@ -6894,6 +7108,30 @@ def approve_agenda(
         )
 
         try:
+            if ok_calendar and confirmado_id and (old_estado is None or int(old_estado) != int(confirmado_id)):
+                who_hist = str(x_user or me.get("username") or me.get("email") or me.get("name") or me.get("nombre") or "usuario").strip()
+                stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                link_txt = first_link or ""
+                hist = f"[ESTADO {stamp}] {who_hist}: Confirmado y agendado en Calendar"
+                if link_txt:
+                    hist += f"\nCalendar: {link_txt}"
+                db.execute(
+                    text(
+                        """
+                        UPDATE leads
+                        SET notas = CASE
+                          WHEN COALESCE(notas,'') = '' THEN :b
+                          ELSE notas || E'\n\n' || :b
+                        END
+                        WHERE id_lead=:id
+                        """
+                    ),
+                    {"id": int(id_lead), "b": hist},
+                )
+        except Exception:
+            pass
+
+        try:
             if _table_exists_pg(db, "eventos_calendario"):
                 cols_ev = _cols_pg(db, "eventos_calendario")
                 if "id_evento" in cols_ev and "id_lead" in cols_ev and "estado" in cols_ev:
@@ -7513,6 +7751,8 @@ def edit_confirmed_event(
             who = (x_user or me.get("username") or me.get("email") or me.get("name") or "usuario")
             cal_link = str(gcal.get("calendar_html_link") or "") or str(lead.get("calendar_html_link") or "")
             change_list = ", ".join(list(changes.keys())[:25]) if changes else "(sin campos)"
+            lead_latest = locals().get("lead2") or lead or {}
+            notes_current = str(lead_latest.get("pre_description") or "").strip()
             subj = f"Evento modificado · Lead #{int(id_lead)}"
             txt = "\n".join(
                 [
@@ -7522,6 +7762,7 @@ def edit_confirmed_event(
                     f"Por: {who}",
                     f"Cambios: {change_list}",
                     *( [f"Calendar: {cal_link}"] if cal_link else [] ),
+                    *( ["", "Notas actuales para Operaciones:", notes_current] if notes_current else [] ),
                     "",
                     "--",
                     "CRM Green Diamond",

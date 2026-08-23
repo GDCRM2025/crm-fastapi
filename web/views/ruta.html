@@ -1,7 +1,107 @@
-<!doctype html><html lang="es"><head>
-<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Ruta</title>
-<link rel="stylesheet" href="../styles.css"/><script src="../js/iframe-theme.js"></script>
-</head><body style="padding:18px">
-<section class="card"><h2>Ruta</h2><p style="opacity:.85">Placeholder. Planificación de ruta + tracking (cuando conectemos GPS de conductores).</p></section>
-</body></html>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ruta diaria</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+  <style>
+    body{padding:16px;}
+    .wrap{display:grid;gap:12px;max-width:none;}
+    .card{border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:14px;}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .muted{color:var(--muted);font-weight:800;}
+    .btn{border:1px solid var(--border);background:var(--surface-2);color:var(--text);padding:9px 12px;border-radius:8px;font-weight:1000;cursor:pointer;text-decoration:none;display:inline-flex;}
+    .btn.ok{background:rgba(25,195,125,.14);border-color:rgba(25,195,125,.32);}
+    input{background:var(--surface-2);border:1px solid var(--border);color:var(--text);padding:9px 10px;border-radius:8px;font-weight:900;}
+    .tableWrap{overflow:auto;border:1px solid var(--border);border-radius:8px;}
+    table{width:100%;border-collapse:collapse;min-width:920px;}
+    th,td{padding:9px 10px;border-bottom:1px solid var(--border);text-align:left;font-size:13px;vertical-align:top;}
+    th{background:#0f172a;color:#fff;text-transform:uppercase;font-size:12px;}
+    .pill{display:inline-flex;border:1px solid var(--border);border-radius:999px;padding:3px 8px;font-size:12px;font-weight:1000;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div class="row">
+        <div>
+          <h2 style="margin:0 0 4px 0;">Ruta diaria</h2>
+          <div class="muted">Genera ruta con eventos confirmados del día. Usa dirección si existe; si falta, usa comuna como respaldo.</div>
+        </div>
+        <div class="row">
+          <label class="muted">Día <input id="day" type="date"></label>
+          <button class="btn" id="reload">Actualizar</button>
+          <a class="btn ok" id="maps" target="_blank" rel="noopener">Abrir ruta</a>
+        </div>
+      </div>
+    </section>
+    <section class="card">
+      <div class="row">
+        <h3 style="margin:0;">Paradas</h3>
+        <span class="pill" id="meta">Cargando...</span>
+      </div>
+      <div class="tableWrap" style="margin-top:10px;">
+        <table>
+          <thead><tr><th>#</th><th>Hora</th><th>Cliente</th><th>Marca</th><th>Dirección / comuna</th><th>OPS</th></tr></thead>
+          <tbody id="rows"><tr><td colspan="6">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <script>
+    const qs=(s,el=document)=>el.querySelector(s);
+    const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+    const API_BASE=(()=>{const h=location.hostname;return (h==="localhost"||h==="127.0.0.1")?"":"/crm";})();
+    const token=()=>localStorage.getItem("token")||sessionStorage.getItem("token")||"";
+    async function api(url){
+      const r=await fetch(API_BASE+url,{headers:{Authorization:`Bearer ${token()}`}});
+      const j=await r.json().catch(()=>null);
+      if(!r.ok) throw new Error((j&&(j.detail||j.error))||`HTTP ${r.status}`);
+      return j;
+    }
+    function today(){
+      const d=new Date(), off=d.getTimezoneOffset();
+      return new Date(d.getTime()-off*60000).toISOString().slice(0,10);
+    }
+    function time(v){const m=String(v||"").match(/(\d{2}:\d{2})/);return m?m[1]:"";}
+    function stopText(x){
+      const dir=String(x.direccion||"").trim();
+      const comuna=String(x.comuna||"").trim();
+      return [dir, comuna, "Chile"].filter(Boolean).join(", ");
+    }
+    function mapsUrl(items){
+      const stops=items.map(stopText).filter(Boolean);
+      if(!stops.length) return "";
+      const base="https://www.google.com/maps/dir/?api=1&travelmode=driving";
+      if(stops.length===1) return `${base}&destination=${encodeURIComponent(stops[0])}`;
+      const origin=stops[0], destination=stops[stops.length-1], waypoints=stops.slice(1,-1).join("|");
+      return `${base}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}${waypoints?`&waypoints=${encodeURIComponent(waypoints)}`:""}`;
+    }
+    async function load(){
+      const day=qs("#day").value;
+      const j=await api(`/checklist/events?day=${encodeURIComponent(day)}`);
+      const items=(j.items||[]).slice().sort((a,b)=>String(a.start_at||"").localeCompare(String(b.start_at||"")));
+      qs("#meta").textContent=`${items.length} parada(s)`;
+      qs("#rows").innerHTML=items.map((x,i)=>`
+        <tr>
+          <td>${i+1}</td>
+          <td><b>${esc(time(x.start_at)||"—")}</b></td>
+          <td><b>${esc(x.cliente||"")}</b><div class="muted">Lead #${esc(x.id_lead)}</div></td>
+          <td>${esc(x.marca||"")}</td>
+          <td>${esc(stopText(x)||"Sin dirección/comuna")}</td>
+          <td>${esc(x.ops||0)}</td>
+        </tr>
+      `).join("")||`<tr><td colspan="6" class="muted">Sin eventos para rutear.</td></tr>`;
+      const url=mapsUrl(items);
+      qs("#maps").href=url||"#";
+      qs("#maps").style.pointerEvents=url?"auto":"none";
+      qs("#maps").style.opacity=url?"1":".55";
+    }
+    qs("#day").value=today();
+    qs("#reload").onclick=()=>load().catch(e=>alert(e.message||e));
+    qs("#day").onchange=()=>load().catch(e=>alert(e.message||e));
+    load().catch(e=>alert(e.message||e));
+  </script>
+</body>
+</html>

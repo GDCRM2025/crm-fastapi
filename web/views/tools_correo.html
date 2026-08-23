@@ -1049,7 +1049,7 @@
       try{ if (autoSyncTimer) clearInterval(autoSyncTimer); }catch(_){}
       autoSyncTimer = setInterval(()=>{
         if (!document.hidden) loadInbox({ sync:true, forceRecent:false });
-      }, 75_000);
+      }, 180_000);
     }
 
     async function openMessage(id){
@@ -1176,21 +1176,8 @@
 	        renderViewerEmpty();
 	      }
 
-	      // Auto-sync suave (evita que el ejecutivo dependa del botón "Sincronizar").
-	      // Importante: IMAP puede ser lento, así que lo hacemos con intervalo conservador y solo si la pestaña está visible.
-      let inflight = false;
-      setInterval(async ()=>{
-        try{
-          if (document.visibilityState !== "visible") return;
-          if (inflight) return;
-          inflight = true;
-          await loadInbox({sync:true, forceRecent:false});
-        }catch(_){
-          // silencioso: el usuario siempre puede usar "Sincronizar"
-        }finally{
-          inflight = false;
-        }
-      }, 180000); // 3 min
+      // startAutoSync() mantiene una única sincronización conservadora y solo
+      // cuando la pestaña está visible. Evitamos un segundo timer duplicado.
     })();
   </script>
 </body>

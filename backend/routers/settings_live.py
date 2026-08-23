@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List
+import json
 import os
 import secrets
 import threading
 import time
 from datetime import datetime
+from html import escape as _html_escape
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from sqlalchemy import text
@@ -13,7 +15,7 @@ from sqlalchemy.exc import DBAPIError
 
 from backend.core.database import engine
 from backend.core.password import hash_password
-from backend.core.email import send_email, EmailConfigError
+from backend.core.email import send_email, send_email_group, EmailConfigError
 
 # Intento importar auth (si existe). Si no existe, NO rompe el server.
 try:
@@ -251,6 +253,154 @@ def _as_text(v: Any) -> str:
     return str(v)
 
 
+def _emails_for_roles(conn, roles: list[str]) -> list[str]:
+    role_names = [str(r).upper().strip() for r in (roles or []) if str(r).strip()]
+    if not role_names:
+        return []
+    try:
+        rows = conn.execute(
+            text(
+                """
+                SELECT DISTINCT u.email
+                FROM public.usuarios u
+                LEFT JOIN public.roles r ON r.id_rol=u.id_rol
+                WHERE COALESCE(u.is_active, TRUE) = TRUE
+                  AND u.email IS NOT NULL AND btrim(u.email) <> ''
+                  AND (
+                    regexp_replace(upper(COALESCE(u.rol,'')), '[^A-Z0-9]+', '', 'g')
+                      = ANY(CAST(:roles AS text[]))
+                    OR regexp_replace(upper(COALESCE(r.nombre,'')), '[^A-Z0-9]+', '', 'g')
+                      = ANY(CAST(:roles AS text[]))
+                  )
+                """
+            ),
+            {"roles": ["".join(ch for ch in r if ch.isalnum()) for r in role_names]},
+        ).fetchall()
+        out = []
+        for r in rows:
+            e = str(r[0] or "").strip()
+            if "@" in e and "." in e:
+                out.append(e)
+        return sorted(set(out))
+    except Exception:
+        return []
+
+
+def _notify_new_product_for_ops(conn, row_id: Any, data: dict[str, Any], user: dict) -> None:
+    try:
+        id_producto = int(row_id)
+    except Exception:
+        return
+    try:
+        roles = ["OPERACIONES", "JEFE DE OPERACIONES", "MICE", "ADMIN", "SUPERADMIN"]
+        who = (
+            user.get("nombre")
+            or user.get("name")
+            or user.get("username")
+            or user.get("email")
+            or str(user.get("id") or "")
+        )
+        who = str(who or "CRM").strip() or "CRM"
+        producto = str(data.get("producto") or data.get("nombre") or "").strip()
+        marca = str(data.get("marca") or "").strip().upper()
+        url = f"/crm/web/views/operaciones_recetas.html?open_producto_id={id_producto}"
+        payload = {
+            "id_producto": id_producto,
+            "producto": producto,
+            "marca": marca,
+            "created_by": who,
+            "url": url,
+        }
+        pjson = json.dumps(payload, ensure_ascii=False)
+        fake_lead_id = -id_producto
+
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS public.system_notifs (
+                      id BIGSERIAL PRIMARY KEY,
+                      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                      kind TEXT NOT NULL,
+                      role_target TEXT NOT NULL,
+                      id_lead BIGINT,
+                      title TEXT NOT NULL,
+                      body TEXT NOT NULL,
+                      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                      read_at TIMESTAMPTZ,
+                      read_by TEXT,
+                      UNIQUE(kind, role_target, id_lead)
+                    )
+                    """
+                )
+            )
+            title = f"Nuevo producto ({marca or 'SIN MARCA'})"
+            body = f"{producto or 'Producto nuevo'} · creado por {who}"
+            for rt in roles:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO public.system_notifs(kind, role_target, id_lead, title, body, payload)
+                        VALUES ('PRODUCTO_NUEVO', :rt, :id, :t, :b, CAST(:p AS JSONB))
+                        ON CONFLICT (kind, role_target, id_lead) DO NOTHING
+                        """
+                    ),
+                    {"rt": rt, "id": fake_lead_id, "t": title, "b": body, "p": pjson},
+                )
+        except Exception:
+            pass
+
+        to = []
+        cc: list[str] = []
+        bcc: list[str] = []
+        try:
+            from backend.core.notify_routes import resolve_email_to, resolve_email_cc, resolve_email_bcc
+
+            to = resolve_email_to("AGENDA_EVENTOS", [])
+            cc = resolve_email_cc("AGENDA_EVENTOS", [])
+            bcc = resolve_email_bcc("AGENDA_EVENTOS", [])
+        except Exception:
+            to = []
+            cc = []
+            bcc = []
+        if not to:
+            to = _emails_for_roles(conn, roles)
+        if not to:
+            return
+        subj = f"CRM · Nuevo producto ({marca or 'SIN MARCA'})"
+        txt = (
+            "Se creó un producto de venta y necesita revisión/receta en Operaciones.\n\n"
+            f"Producto: {producto or '-'}\n"
+            f"Marca: {marca or '-'}\n"
+            f"Creado por: {who}\n"
+            f"Link: {url}\n"
+        )
+        html = f"""
+        <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.4">
+          <h2 style="margin:0 0 8px">Nuevo producto para receta</h2>
+          <div style="margin:0 0 14px;color:#334155">
+            Se creó un producto de venta y necesita revisión/receta en Operaciones.
+          </div>
+          <table style="border-collapse:collapse">
+            <tr><td style="padding:4px 10px 4px 0;font-weight:700">Marca</td><td style="padding:4px 0">{_html_escape(marca or '-')}</td></tr>
+            <tr><td style="padding:4px 10px 4px 0;font-weight:700">Producto</td><td style="padding:4px 0">{_html_escape(producto or '-')}</td></tr>
+            <tr><td style="padding:4px 10px 4px 0;font-weight:700">Creado por</td><td style="padding:4px 0">{_html_escape(who)}</td></tr>
+          </table>
+          <div style="margin-top:14px">
+            <a href="{_html_escape(url)}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:10px 14px;border-radius:12px;font-weight:700">
+              Crear receta / sub-receta
+            </a>
+          </div>
+          <div style="margin-top:16px;color:#64748b;font-size:12px;border-top:1px solid #e2e8f0;padding-top:10px">
+            CRM Green Diamond · Notificación automática
+          </div>
+        </div>
+        """
+        send_email_group(to, subj, txt, html=html, cc_addrs=cc, bcc_addrs=bcc)
+    except Exception:
+        return
+
+
 # -----------------------------
 # CONFIG
 # -----------------------------
@@ -264,6 +414,11 @@ ENTITY_MAP: Dict[str, str] = {
     "estados": "estados_lead",
     "estados_lead": "estados_lead",
     "comisiones": "comisiones",
+    "commission_rules": "commission_rules",
+    "commission_channel_bonus": "commission_channel_bonus",
+    "commission_group_bonus": "commission_group_bonus",
+    "plataformas": "plataformas",
+    "plataforma": "plataformas",
 
     # Alias frecuentes (tu tabla real es tipocliente)
     "tipo_cliente": "tipocliente",
@@ -320,6 +475,9 @@ LABELS: Dict[str, Dict[str, str]] = {
         "marca": "Marca (alias)",
         "logo_path": "Logo (URL o ruta)",
         "logo_url": "Logo URL",
+        "color_primary": "Color principal",
+        "color_secondary": "Color secundario",
+        "google_review_url": "Google Review URL",
         "pdf_portada_url": "PDF Portada URL",
         "pdf_cotizacion_url": "PDF Cotización URL",
         "pdf_terminos_url": "PDF Términos URL",
@@ -341,6 +499,38 @@ LABELS: Dict[str, Dict[str, str]] = {
         "marca": "Marca",
         "rol": "Rol",
         "porcentaje": "Porcentaje",
+        "is_active": "Activo",
+    },
+    "commission_rules": {
+        "id_rule": "ID",
+        "tipo_cliente": "Tipo Cliente",
+        "definicion": "Definición",
+        "porcentaje_base": "% Base",
+        "meses_antiguedad": "Meses historial",
+        "prioridad": "Prioridad",
+        "is_active": "Activo",
+    },
+    "commission_channel_bonus": {
+        "id_bonus": "ID",
+        "canal": "Canal",
+        "descripcion": "Descripción",
+        "porcentaje_extra": "% Extra",
+        "requiere_gestion_ejecutivo": "Requiere gestión ejecutivo",
+        "is_active": "Activo",
+    },
+    "commission_group_bonus": {
+        "id_group_bonus": "ID",
+        "nivel": "Nivel",
+        "cumplimiento_min_pct": "% Cumplimiento meta grupal",
+        "bono_sobre_comision_pct": "% Bono sobre comisión mes",
+        "orden": "Orden",
+        "is_active": "Activo",
+    },
+    "plataformas": {
+        "id_plataforma": "ID",
+        "nombre": "Plataforma",
+        "descripcion": "Descripción",
+        "orden": "Orden",
         "is_active": "Activo",
     },
 }
@@ -366,6 +556,151 @@ def _ensure_comisiones() -> None:
         cn.commit()
 
 
+def _ensure_commission_rules() -> None:
+    with engine.connect() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS commission_rules (
+                    id_rule SERIAL PRIMARY KEY,
+                    tipo_cliente TEXT NOT NULL,
+                    definicion TEXT,
+                    porcentaje_base NUMERIC(6,2) NOT NULL DEFAULT 0,
+                    meses_antiguedad INT NOT NULL DEFAULT 12,
+                    prioridad INT NOT NULL DEFAULT 10,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        cn.execute(
+            text(
+                """
+                INSERT INTO commission_rules(tipo_cliente, definicion, porcentaje_base, meses_antiguedad, prioridad)
+                SELECT 'CLIENTE NUEVO', 'Primera compra o sin compras en los últimos 12 meses', 3.00, 12, 10
+                WHERE NOT EXISTS (SELECT 1 FROM commission_rules WHERE upper(tipo_cliente)='CLIENTE NUEVO')
+                """
+            )
+        )
+        cn.execute(
+            text(
+                """
+                INSERT INTO commission_rules(tipo_cliente, definicion, porcentaje_base, meses_antiguedad, prioridad)
+                SELECT 'CLIENTE ANTIGUO', 'Compra confirmada en los últimos 12 meses', 1.50, 12, 20
+                WHERE NOT EXISTS (SELECT 1 FROM commission_rules WHERE upper(tipo_cliente)='CLIENTE ANTIGUO')
+                """
+            )
+        )
+        cn.commit()
+
+
+def _ensure_commission_channel_bonus() -> None:
+    with engine.connect() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS commission_channel_bonus (
+                    id_bonus SERIAL PRIMARY KEY,
+                    canal TEXT NOT NULL,
+                    descripcion TEXT,
+                    porcentaje_extra NUMERIC(6,2) NOT NULL DEFAULT 0,
+                    requiere_gestion_ejecutivo BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        for canal in ("INSTAGRAM", "MAIL"):
+            cn.execute(
+                text(
+                    """
+                    INSERT INTO commission_channel_bonus(canal, descripcion, porcentaje_extra, requiere_gestion_ejecutivo)
+                    SELECT :canal, 'Captación digital gestionada por ejecutivo', 1.00, TRUE
+                    WHERE NOT EXISTS (SELECT 1 FROM commission_channel_bonus WHERE upper(canal)=:canal)
+                    """
+                ),
+                {"canal": canal},
+            )
+        cn.commit()
+
+
+def _ensure_commission_group_bonus() -> None:
+    with engine.connect() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS commission_group_bonus (
+                    id_group_bonus SERIAL PRIMARY KEY,
+                    nivel TEXT NOT NULL,
+                    cumplimiento_min_pct NUMERIC(6,2) NOT NULL DEFAULT 100,
+                    bono_sobre_comision_pct NUMERIC(6,2) NOT NULL DEFAULT 0,
+                    orden INT NOT NULL DEFAULT 10,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        for nivel, cumplimiento, bono, orden in (("BRONCE", 100, 2, 10), ("PLATA", 115, 3, 20), ("ORO", 125, 5, 30)):
+            cn.execute(
+                text(
+                    """
+                    INSERT INTO commission_group_bonus(nivel, cumplimiento_min_pct, bono_sobre_comision_pct, orden)
+                    SELECT :nivel, :cumplimiento, :bono, :orden
+                    WHERE NOT EXISTS (SELECT 1 FROM commission_group_bonus WHERE upper(nivel)=:nivel)
+                    """
+                ),
+                {"nivel": nivel, "cumplimiento": cumplimiento, "bono": bono, "orden": orden},
+            )
+        cn.commit()
+
+
+def _ensure_plataformas() -> None:
+    with engine.connect() as cn:
+        cn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS plataformas (
+                    id_plataforma SERIAL PRIMARY KEY,
+                    nombre TEXT NOT NULL UNIQUE,
+                    descripcion TEXT,
+                    orden INT NOT NULL DEFAULT 10,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    updated_at TIMESTAMP DEFAULT now()
+                )
+                """
+            )
+        )
+        defaults = (
+            ("FORMULARIO WEB", "Formulario publicado en un sitio o landing page"),
+            ("CARTA WEB", "Carta o catálogo digital desde donde ingresa el cliente"),
+            ("BOTÓN WHATSAPP WEB", "Botón de WhatsApp instalado en un sitio web"),
+            ("WHATSAPP", "Contacto directo recibido por WhatsApp"),
+            ("EMAIL", "Contacto recibido por correo electrónico"),
+            ("INSTAGRAM", "Contacto o campaña originada en Instagram"),
+            ("LLAMADA", "Contacto originado mediante una llamada"),
+            ("OTRO", "Origen no clasificado o plataforma futura"),
+        )
+        for orden, (nombre, descripcion) in enumerate(defaults, start=1):
+            cn.execute(
+                text(
+                    """
+                    INSERT INTO plataformas(nombre, descripcion, orden)
+                    SELECT :nombre, :descripcion, :orden
+                    WHERE NOT EXISTS (SELECT 1 FROM plataformas WHERE UPPER(nombre)=:nombre)
+                    """
+                ),
+                {"nombre": nombre, "descripcion": descripcion, "orden": orden * 10},
+            )
+        cn.commit()
+
+
 def _ensure_users_extra_cols() -> None:
     try:
         with engine.connect() as cn:
@@ -383,6 +718,9 @@ def _ensure_marcas_assets_cols() -> None:
     try:
         with engine.begin() as cn:
             cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS logo_url TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS color_primary TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS color_secondary TEXT"))
+            cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS google_review_url TEXT"))
             cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS pdf_portada_url TEXT"))
             cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS pdf_cotizacion_url TEXT"))
             cn.execute(text("ALTER TABLE public.marcas ADD COLUMN IF NOT EXISTS pdf_terminos_url TEXT"))
@@ -766,7 +1104,7 @@ def _enforce_admin_entity_scope(user: dict, entity: str) -> None:
     if _is_superadmin(user):
         return
     # ADMIN: solo productos (venta), comunas y estados del lead.
-    allowed = {"productos", "comunas", "estados", "estados_lead"}
+    allowed = {"productos", "comunas", "estados", "estados_lead", "commission_rules", "commission_channel_bonus", "commission_group_bonus"}
     if (entity or "").strip().lower() not in allowed:
         raise HTTPException(status_code=403, detail="Acceso denegado para este módulo de Settings.")
 
@@ -878,8 +1216,18 @@ def _user_marcas_ids(user: dict) -> List[int]:
 
 def _resolve_table(entity: str) -> str:
     e = (entity or "").strip().lower()
+    if e == "marcas":
+        _ensure_marcas_assets_cols()
     if e == "comisiones":
         _ensure_comisiones()
+    if e == "commission_rules":
+        _ensure_commission_rules()
+    if e == "commission_channel_bonus":
+        _ensure_commission_channel_bonus()
+    if e == "commission_group_bonus":
+        _ensure_commission_group_bonus()
+    if e in ("plataformas", "plataforma"):
+        _ensure_plataformas()
     if e in ENTITY_MAP:
         return ENTITY_MAP[e]
     raise HTTPException(status_code=404, detail="Entidad no soportada")
@@ -1894,7 +2242,23 @@ def create_row(
         except Exception as e:
             email_error = f"SMTP error: {e}"
 
-    return {"ok": True, "id": new_id, "email_sent": email_sent, "email_error": email_error}
+    # productos: avisar a Operaciones para que creen/revisen receta.
+    product_ops_notified = False
+    if table == "productos":
+        try:
+            with engine.begin() as cn:
+                _notify_new_product_for_ops(cn, new_id, data, user)
+            product_ops_notified = True
+        except Exception:
+            product_ops_notified = False
+
+    return {
+        "ok": True,
+        "id": new_id,
+        "email_sent": email_sent,
+        "email_error": email_error,
+        "product_ops_notified": product_ops_notified,
+    }
 
 
 @router.put("/{entity}/{row_id}")

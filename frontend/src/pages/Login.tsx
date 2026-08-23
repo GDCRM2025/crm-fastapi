@@ -1,4 +1,5 @@
 import { useState } from "react"
+import axios from "axios"
 import { useAuthStore } from "@/store/auth"
 
 export default function Login() {
@@ -15,8 +16,11 @@ export default function Login() {
     try {
       await login(email, password)
       location.href = "/dashboard"
-    } catch (e: any) {
-      setErr(e?.response?.data?.detail ?? "Credenciales inválidas")
+    } catch (error: unknown) {
+      const detail = axios.isAxiosError<{ detail?: string }>(error)
+        ? error.response?.data?.detail
+        : null
+      setErr(detail ?? "Credenciales inválidas")
     } finally { setLoading(false) }
   }
 

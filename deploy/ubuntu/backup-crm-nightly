@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+APP_ROOT="/opt/greendiamond/crm"
+PYTHON="/opt/greendiamond/venv/bin/python"
+BACKUP_ROOT="/opt/greendiamond/backups/nightly"
+RETENTION_DAYS="7"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+FINAL_DIR="${BACKUP_ROOT}/${STAMP}"
+mkdir -p "${BACKUP_ROOT}"
+
+AVAILABLE_KB="$(df --output=avail "${BACKUP_ROOT}" | tail -1 | tr -d ' ')"
+if [[ "${AVAILABLE_KB}" -lt 10485760 ]]; then
+  echo "BACKUP_ABORTED=menos_de_10GB_disponibles" >&2
+  exit 1
+fi
+
+WORK_DIR="$(mktemp -d "${BACKUP_ROOT}/.${STAMP}.tmp.XXXXXX")"
+
+cleanup() {
+  if [[ -n "${WORK_DIR:-}" && -d "${WORK_DIR}" ]]; then
+    rm -rf -- "${WORK_DIR}"
+  fi
+}
+trap cleanup EXIT
+
+echo "BACKUP_START=${STAMP}"
+
+cd "${APP_ROOT}"
+"${PYTHON}" - "${WORK_DIR}/database.dump" <<'PY'
+import os
+import subprocess
+import sys
+from urllib.parse import unquote, urlparse
+
+from backend.core.db import _get_dsn
+
+target = sys.argv[1]
+dsn = _get_dsn()
+for prefix in ("postgresql+psycopg://", "postgresql+psycopg2://"):
+    if dsn.startswith(prefix):
+        dsn = "postgresql://" + dsn[len(prefix):]
+        break
+
+parsed = urlparse(dsn)
+env = os.environ.copy()
+env.update(
+    {
+        "PGHOST": parsed.hostname or "127.0.0.1",
+        "PGPORT": str(parsed.port or 5432),
+        "PGUSER": unquote(parsed.username or ""),
+        "PGPASSWORD": unquote(parsed.password or ""),
+        "PGDATABASE": unquote((parsed.path or "").lstrip("/")),
+    }
+)
+subprocess.run(
+    [
+        "pg_dump",
+        "--format=custom",
+        "--compress=6",
+        "--no-owner",
+        "--no-privileges",
+        f"--file={target}",
+    ],
+    env=env,
+    check=True,
+)
+PY
+
+pg_restore --list "${WORK_DIR}/database.dump" > "${WORK_DIR}/database.contents"
+
+tar \
+  --zstd \
+  --create \
+  --file "${WORK_DIR}/crm-files.tar.zst" \
+  --directory "/opt/greendiamond" \
+  --exclude='crm/.git' \
+  --exclude='crm/.venv' \
+  --exclude='crm/venv' \
+  --exclude='crm/node_modules' \
+  --exclude='crm/frontend/node_modules' \
+  --exclude='crm/**/__pycache__' \
+  --exclude='crm/logs/*.log' \
+  crm
+
+{
+  echo "created_at=$(date --iso-8601=seconds)"
+  echo "host=$(hostname)"
+  echo "app_root=${APP_ROOT}"
+  echo "database_format=postgresql_custom"
+  echo "files_format=tar_zstd"
+  echo "retention_days=${RETENTION_DAYS}"
+} > "${WORK_DIR}/manifest.txt"
+
+(
+  cd "${WORK_DIR}"
+  sha256sum database.dump database.contents crm-files.tar.zst manifest.txt > SHA256SUMS
+)
+
+mv -- "${WORK_DIR}" "${FINAL_DIR}"
+WORK_DIR=""
+
+echo "BACKUP_DIR=${FINAL_DIR}"
+du -sh "${FINAL_DIR}"
+
+find "${BACKUP_ROOT}" \
+  -mindepth 1 \
+  -maxdepth 1 \
+  -type d \
+  -mtime "+${RETENTION_DAYS}" \
+  -print \
+  -exec rm -rf -- {} +
+
+echo "BACKUP_OK"

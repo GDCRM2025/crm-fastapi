@@ -120,6 +120,26 @@ def _ensure_finanzas_tables():
             cn.execute(text("ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT now()"))
         except Exception:
             pass
+        for col_sql in (
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS ejecutivo TEXT",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS requiere_documento BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_tipo_doc TEXT",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_num TEXT",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_fecha DATE",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_rut TEXT",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_razon_social TEXT",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_direccion TEXT",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_giro TEXT",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_oc TEXT",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_fecha_oc DATE",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_hes TEXT",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_fecha_hes DATE",
+            "ALTER TABLE fin_eventos ADD COLUMN IF NOT EXISTS factura_glosa TEXT",
+        ):
+            try:
+                cn.execute(text(col_sql))
+            except Exception:
+                pass
         cn.execute(
             text(
                 """
@@ -229,6 +249,7 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
     if abono_due_date:
         abono_due_date = str(abono_due_date)[:10]
     tipo_cliente = "EMPRESA" if is_empresa else "PARTICULAR"
+    ejecutivo_txt = str(lead.get("ejecutivo") or lead.get("usuario_nombre") or lead.get("vendedor") or "").strip() or None
 
     # Totales desde cotización si existe.
     try:
@@ -337,6 +358,8 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                         abono_mode=:am,
                         abono_ref=:ar,
                         abono_due_date=:ad,
+                        ejecutivo=COALESCE(:ej, ejecutivo),
+                        requiere_documento=:rd,
                         updated_at=now()
                     WHERE id_evento=:ev
                     """
@@ -359,6 +382,8 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     "am": abono_mode or None,
                     "ar": abono_ref,
                     "ad": abono_due_date,
+                    "ej": ejecutivo_txt,
+                    "rd": bool(is_empresa),
                 },
             )
             id_evento = int(existing)
@@ -370,12 +395,12 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                       id_lead, num_cotizacion, id_cotizacion,
                       cliente, comuna, marca, tipo_cliente, fecha_evento,
                       monto_bruto, monto_neto, iva, traslado, abono, saldo,
-                      abono_mode, abono_ref, abono_due_date, updated_at
+                      abono_mode, abono_ref, abono_due_date, ejecutivo, requiere_documento, updated_at
                     ) VALUES (
                       :id, :num, :idc,
                       :cli, :com, :mar, :tc, :fe,
                       :br, :ne, :iv, :tr, :ab, :sa,
-                      :am, :ar, :ad, now()
+                      :am, :ar, :ad, :ej, :rd, now()
                     )
                     RETURNING id_evento
                     """
@@ -398,6 +423,8 @@ def _upsert_fin_evento_for_lead_confirm(*, lead: dict, payload: dict, comuna: di
                     "am": abono_mode or None,
                     "ar": abono_ref,
                     "ad": abono_due_date,
+                    "ej": ejecutivo_txt,
+                    "rd": bool(is_empresa),
                 },
             ).scalar()
             id_evento = int(id_evento or 0)
@@ -712,7 +739,6 @@ def _lead_mice_items_resumen_by_day(id_lead):
 
 
 @router.get("/{id_lead}/mice_items")
-@router.get("/{id_lead}/mice_items")
 def get_lead_mice_items(id_lead: int = Path(..., ge=1), user=Depends(get_current_user)):
 
     return {
@@ -722,7 +748,6 @@ def get_lead_mice_items(id_lead: int = Path(..., ge=1), user=Depends(get_current
     }
 
 
-@router.put("/{id_lead}/mice_items")
 @router.put("/{id_lead}/mice_items")
 def put_lead_mice_items(id_lead: int = Path(..., ge=1), payload=Body(default_factory=dict), user=Depends(get_current_user)):
 
@@ -2043,6 +2068,49 @@ def _build_event_for_blocks_single(
     }
 
 
+
+# GD-AGENDA-SEGMENT-MONTAJE-V14
+# Los segmentos reciben products_text ya distribuido por el frontend. Antes se
+# enviaba montaje_text vacío y _build_event_from_segment devolvía "• —" sin
+# calcular la sugerencia. Estas funciones convierten el texto a items y validan
+# si existe un montaje real.
+def _items_from_products_text(text_value: str) -> list[dict]:
+    raw = _as_text(text_value or "").replace("\r", "\n")
+    out: list[dict] = []
+    for raw_line in raw.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        line = re.sub(r"^[•\-*–—]+\s*", "", line).strip()
+        if not line:
+            continue
+        upper = line.upper().rstrip(":")
+        if upper in ("PRODUCTO", "PRODUCTOS", "MONTAJE", "MONTAJE SUGERIDO"):
+            continue
+
+        match = re.match(r"^(\d+(?:[.,]\d+)?)\s*(?:X|×)?\s+(.+?)\s*$", line, flags=re.I)
+        if match:
+            try:
+                qty = float(match.group(1).replace(",", "."))
+            except Exception:
+                qty = 0.0
+            product = match.group(2).strip()
+        else:
+            qty = 1.0
+            product = line
+
+        if qty > 0 and product and product not in ("—", "-"):
+            out.append({"producto": product, "cantidad": qty})
+    return out
+
+
+def _has_real_montage(text_value: str) -> bool:
+    for line in _bullets(text_value or ""):
+        clean = line.lstrip("•").strip()
+        if clean and clean not in ("—", "-"):
+            return True
+    return False
+
 def _build_event_from_segment(
     *,
     lead: dict,
@@ -2089,6 +2157,33 @@ def _build_event_from_segment(
     loc = _as_text(comuna).strip() or "COMUNA TBD"
     dir_label = _as_text(direccion).strip() or "POR CONFIRMAR"
     phone_label = _as_text(telefono).strip() or "POR CONFIRMAR"
+
+    # En segmentos/multi-locación el frontend distribuye productos como texto.
+    # Si el montaje viene vacío, se calcula aquí usando SOLO los productos de
+    # este segmento. Así cada locación recibe su propio montaje sugerido.
+    segment_items = _items_from_products_text(products_text)
+    suggested_ops = 0
+    suggested_montage = ""
+    if segment_items:
+        try:
+            _, suggested_ops, suggested_montage, _ = _calcular_montaje(segment_items)
+        except Exception:
+            suggested_ops = 0
+            suggested_montage = ""
+
+    if not _has_real_montage(montaje_text):
+        montaje_text = suggested_montage
+
+    # Último resguardo: con productos nunca mostrar "• —" como montaje.
+    if segment_items and not _has_real_montage(montaje_text):
+        montaje_text = "Montaje sugerido\n1 x Carro Clásico"
+
+    try:
+        ops = int(ops or 0)
+    except Exception:
+        ops = 0
+    if ops < 1:
+        ops = int(suggested_ops or 1)
 
     prod_lines = _bullets(products_text) or ["• —"]
     mont_lines = _bullets(montaje_text) or ["• —"]
@@ -2632,8 +2727,15 @@ def move_lead_and_maybe_agenda(
                     ops_s = 0
                 products_s = str(s.get("products_text") or s.get("productos") or "").strip()
                 montaje_s = str(s.get("montaje_text") or s.get("montaje") or "").strip()
-                if not comuna_s or not direccion_s or not st_s or not en_s or ops_s < 1 or not products_s:
+                # La comuna, OPS y productos son obligatorios. Dirección y horario aceptan TBD.
+                if not comuna_s or ops_s < 1 or not products_s:
                     continue
+                hr_tbd_s = bool(s.get("hr_tbd", False)) or not st_s or not en_s
+                if not direccion_s:
+                    direccion_s = "DIR TBD"
+                if hr_tbd_s:
+                    st_s = None
+                    en_s = None
                 segments.append(
                     {
                         "day": dd,
@@ -2641,6 +2743,7 @@ def move_lead_and_maybe_agenda(
                         "direccion": direccion_s,
                         "start_time": st_s,
                         "end_time": en_s,
+                        "hr_tbd": hr_tbd_s,
                         "ops": int(ops_s),
                         "products_text": products_s,
                         "montaje_text": montaje_s,
@@ -2836,7 +2939,7 @@ def move_lead_and_maybe_agenda(
                         direccion=str(s.get("direccion") or ""),
                         start_time=str(s.get("start_time") or ""),
                         end_time=str(s.get("end_time") or ""),
-                        hr_tbd=bool(hr_tbd),
+                        hr_tbd=bool(s.get("hr_tbd", hr_tbd)),
                         ops=int(s.get("ops") or 1),
                         products_text=str(s.get("products_text") or ""),
                         montaje_text=str(s.get("montaje_text") or ""),
@@ -3167,8 +3270,28 @@ def move_lead_and_maybe_agenda(
                         lines = lines[1:]
                 return "\n".join([ln for ln in lines if ln.strip()]).strip()
 
+            def _clean_notes(s: str) -> str:
+                s = (s or "").strip()
+                if not s:
+                    return ""
+                lines = [ln.rstrip() for ln in s.splitlines()]
+                out: list[str] = []
+                taking = False
+                for ln in lines:
+                    clean = ln.strip()
+                    up = clean.upper()
+                    if "NOTAS" in up and "IMPORTANTE" in up:
+                        taking = True
+                        continue
+                    if taking and (up.startswith("🛒") or up.startswith("PRODUCTOS") or up.startswith("🧰") or up.startswith("MONTAJE") or up.startswith("👥") or up.startswith("📞") or up.startswith("📍")):
+                        break
+                    if taking and clean:
+                        out.append(clean)
+                return "\n".join(out).strip()
+
             products_clean = _clean_products((ev.get("products_text") or "").strip())
             montaje_clean = _clean_montaje((ev.get("montaje_text") or "").strip())
+            notes_clean = _as_text(agenda_notes).strip() or _clean_notes(_as_text(ev.get("description") or ""))
 
             segmentos_txt = ""
             if segments_used and len(eventos) > 1:
@@ -3188,6 +3311,7 @@ def move_lead_and_maybe_agenda(
                         seg_dir = ""
                     seg_prod = _clean_products(_as_text(e2.get("products_text") or "").strip()) or "—"
                     seg_mon = _clean_montaje(_as_text(e2.get("montaje_text") or "").strip()) or "—"
+                    seg_notes = _clean_notes(_as_text(e2.get("description") or ""))
                     hr = ""
                     try:
                         st = _as_text(e2.get("start_at") or "")
@@ -3204,6 +3328,7 @@ def move_lead_and_maybe_agenda(
                         f"OPS: {seg_ops}",
                         f"Dirección: {seg_dir or '—'}",
                         "",
+                        *(["Notas:", seg_notes, ""] if seg_notes else []),
                         "Productos:",
                         seg_prod,
                         "",
@@ -3224,6 +3349,7 @@ def move_lead_and_maybe_agenda(
                     f"Fecha evento: {fecha_txt}",
                     f"OPS: {ops}",
                     "",
+                    *(["NOTAS PARA OPERACIONES:", notes_clean, ""] if notes_clean else []),
                     *(["Segmentos:", segmentos_txt, ""] if segmentos_txt else []),
                     "Productos:",
                     products_clean or "—",

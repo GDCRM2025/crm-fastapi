@@ -272,6 +272,7 @@ async function changeEstado(lead, estadoNewObj, estM){
   const confirm = isConfirmStateName(newName);
   let pre_ops = lead.pre_ops ?? 0;
   let pre_montaje_text = lead.pre_montaje_text ?? "";
+  let movement_comment = "";
 
   if (confirm){
     const hint = await tryCotizacionHint(lead.id_lead);
@@ -292,6 +293,11 @@ async function changeEstado(lead, estadoNewObj, estM){
             <input id="pm" type="text" value="${(pre_montaje_text||"").toString().replaceAll('"',"&quot;")}" style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid rgba(0,0,0,.12)" />
           </label>
 
+          <label style="display:block; margin:8px 0">
+            <div style="font-weight:900; margin-bottom:4px">Comentario obligatorio</div>
+            <textarea id="mv_comment" style="width:100%; min-height:90px; padding:10px 12px; border-radius:12px; border:1px solid rgba(0,0,0,.12)" placeholder="Qué hizo el ejecutivo, respuesta del cliente o próximo paso"></textarea>
+          </label>
+
           <div style="opacity:.75; margin-top:10px">
             Queda pendiente de validación (SIMON / OSCAR) para subir a Google Calendar.
           </div>
@@ -301,39 +307,60 @@ async function changeEstado(lead, estadoNewObj, estM){
       confirmButtonText:"Guardar y mover",
       confirmButtonColor:"#22c55e",
       cancelButtonText:"Cancelar",
-      preConfirm: () => ({
-        pre_ops: Number(document.getElementById("ops").value || 0),
-        pre_montaje_text: document.getElementById("pm").value || ""
-      })
+      preConfirm: () => {
+        const txt = String(document.getElementById("mv_comment")?.value || "").trim();
+        if (txt.length < 8){
+          Swal.showValidationMessage("Escribe un comentario claro. Mínimo 8 caracteres.");
+          return false;
+        }
+        return {
+          pre_ops: Number(document.getElementById("ops").value || 0),
+          pre_montaje_text: document.getElementById("pm").value || "",
+          movement_comment: txt,
+        };
+      }
     });
     if (!r.isConfirmed) return;
     pre_ops = r.value.pre_ops;
     pre_montaje_text = r.value.pre_montaje_text;
+    movement_comment = r.value.movement_comment;
   }else{
     const r = await Swal.fire({
       title:"Mover lead",
-      text:`${oldName} → ${newName}`,
+      html: `
+        <div style="font-weight:900;margin-bottom:8px">${oldName} → ${newName}</div>
+        <textarea id="mv_comment" style="width:100%; min-height:100px; padding:10px 12px; border-radius:12px; border:1px solid rgba(0,0,0,.12)" placeholder="Qué se hizo, respuesta del cliente o próximo paso"></textarea>
+      `,
       icon:"question",
       showCancelButton:true,
       confirmButtonText:"Mover",
       confirmButtonColor:"#22c55e",
-      cancelButtonText:"Cancelar"
+      cancelButtonText:"Cancelar",
+      preConfirm: () => {
+        const txt = String(document.getElementById("mv_comment")?.value || "").trim();
+        if (txt.length < 8){
+          Swal.showValidationMessage("Escribe un comentario claro. Mínimo 8 caracteres.");
+          return false;
+        }
+        return txt;
+      }
     });
     if (!r.isConfirmed) return;
+    movement_comment = String(r.value || "").trim();
   }
 
   // intenta estado_ex, fallback estado
   try{
     await jfetch(`/leads/${lead.id_lead}/estado_ex`, {
       method:"POST",
-      body: JSON.stringify({ id_estado: estadoNewObj.id_estado, pre_ops, pre_montaje_text })
+      body: JSON.stringify({ id_estado: estadoNewObj.id_estado, pre_ops, pre_montaje_text, movement_comment })
     });
     await reloadAndToast(`${lead.nombre_cliente}: ${oldName} → ${newName}`);
   }catch(e1){
     try{
       await jfetch(`/leads/${lead.id_lead}/estado`, {
         method:"PUT",
-        body: JSON.stringify({ id_estado: estadoNewObj.id_estado, pre_ops, pre_montaje_text })
+        body: JSON.stringify({ id_estado: estadoNewObj.id_estado, pre_ops, pre_montaje_text, movement_comment })
       });
       await reloadAndToast(`${lead.nombre_cliente}: ${oldName} → ${newName}`);
     }catch(e2){
@@ -451,6 +478,11 @@ async function openLeadModal(lead){
         </select>
       </label>
 
+      <label style="display:block; margin:8px 0">
+        <div style="font-weight:900; margin-bottom:4px">Comentario cambio de estado</div>
+        <textarea id="mv_comment" style="width:100%; min-height:78px; padding:10px 12px; border-radius:12px; border:1px solid rgba(0,0,0,.12)" placeholder="Solo obligatorio si cambias el estado"></textarea>
+      </label>
+
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
         <label style="display:block; margin:8px 0">
           <div style="font-weight:900; margin-bottom:4px">Operadores (pre)</div>
@@ -494,6 +526,12 @@ async function openLeadModal(lead){
       pop.querySelector("#bEdit").onclick = () => Swal.fire({ toast:true, position:"top-end", timer:1300, showConfirmButton:false, icon:"info", title:"Edita aquí mismo y guarda" });
     },
     preConfirm: async () => {
+      const statusChanged = Number(document.getElementById("estado").value) !== Number(lead.id_estado || 0);
+      const movement_comment = String(document.getElementById("mv_comment")?.value || "").trim();
+      if (statusChanged && movement_comment.length < 8){
+        Swal.showValidationMessage("Para cambiar el estado debes escribir un comentario claro. Mínimo 8 caracteres.");
+        return false;
+      }
       const payload = {
         nombre_cliente: document.getElementById("nombre").value,
         telefono: document.getElementById("tel").value,
@@ -508,6 +546,7 @@ async function openLeadModal(lead){
         codigo_cliente: document.getElementById("cod").value || "",
         direccion: document.getElementById("dir").value || "",
         notas: document.getElementById("notas").value || "",
+        movement_comment: movement_comment || null,
       };
 
       // 1) update full si existe
@@ -518,7 +557,7 @@ async function openLeadModal(lead){
         // 2) al menos estado_ex + preagenda
         await jfetch(`/leads/${lead.id_lead}/estado_ex`, {
           method:"POST",
-          body: JSON.stringify({ id_estado: payload.id_estado, pre_ops: payload.pre_ops, pre_montaje_text: payload.pre_montaje_text })
+          body: JSON.stringify({ id_estado: payload.id_estado, pre_ops: payload.pre_ops, pre_montaje_text: payload.pre_montaje_text, movement_comment: payload.movement_comment })
         });
         return payload;
       }

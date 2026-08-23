@@ -77,6 +77,25 @@
     .pill.bad{border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.14);}
     .pill.warn{border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.14);}
     .pill.good{border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.14);}
+    .dayGrid{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(150px,1fr));
+      gap:10px;
+    }
+    .dayCard{
+      border:1px solid rgba(148,163,184,.16);
+      background:rgba(2,6,23,.20);
+      border-radius:16px;
+      padding:12px;
+      min-height:76px;
+    }
+    :root.light .dayCard{background:rgba(255,255,255,.72);border-color:rgba(0,0,0,.10);}
+    .dayCard .k{font-size:11px;text-transform:uppercase;letter-spacing:.10em;opacity:.72;font-weight:1000;}
+    .dayCard .v{font-size:24px;line-height:1;margin-top:8px;font-weight:1100;}
+    .dayCard .h{font-size:12px;margin-top:6px;opacity:.74;font-weight:850;}
+    .dayCard.hot{border-color:rgba(239,68,68,.38);box-shadow:inset 0 0 0 1px rgba(239,68,68,.10);}
+    .dayCard.next{border-color:rgba(245,158,11,.38);box-shadow:inset 0 0 0 1px rgba(245,158,11,.10);}
+    .dayCard.ok{border-color:rgba(34,197,94,.36);box-shadow:inset 0 0 0 1px rgba(34,197,94,.10);}
 
     .tabs{
       display:flex;
@@ -191,14 +210,16 @@
     details.grp summary::-webkit-details-marker{ display:none; }
     .sumL{ display:flex; align-items:center; gap:10px; }
     .sumR{ display:flex; align-items:center; gap:10px; }
+    @media(max-width:900px){.dayGrid{grid-template-columns:1fr 1fr;}}
+    @media(max-width:560px){.dayGrid{grid-template-columns:1fr;}}
   </style>
 </head>
 <body>
   <div class="wrap">
     <section class="head">
       <div>
-        <div class="ttl">Tareas</div>
-        <div class="sub">Tareas de seguimiento comercial (solo leads vivos del mes actual). “Seguimiento” abre el lead. Para cerrar, registra evidencia o confirma cerrar sin seguimiento.</div>
+        <div class="ttl">Tu día comercial</div>
+        <div class="sub">Aquí se trabaja la cola diaria: primero vencidas y eventos cercanos, luego nuevos/contactados/cotizados del mes. Cada cierre útil queda con evidencia en el historial del lead.</div>
       </div>
       <div class="row">
         <select id="status" class="sel" title="Estado">
@@ -235,12 +256,19 @@
       <div class="pill warn" id="pNew">Nuevos: —</div>
       <div class="pill warn" id="pContacted">Contactados: —</div>
       <div class="pill warn" id="pQuoted">Cotizados: —</div>
-      <div class="pill" id="pCobros">Cobros: —</div>
+      <div class="pill" id="pCobros" style="display:none;">Cobros: —</div>
     </div>
+
+    <section class="dayGrid" aria-label="Resumen de trabajo diario">
+      <div class="dayCard hot"><div class="k">Atacar ahora</div><div class="v" id="dNow">—</div><div class="h" id="dNowHint">Vencidas + eventos urgentes</div></div>
+      <div class="dayCard next"><div class="k">Leads nuevos</div><div class="v" id="dNew">—</div><div class="h">No pueden dormir en Nuevo</div></div>
+      <div class="dayCard next"><div class="k">Cotizados</div><div class="v" id="dQuoted">—</div><div class="h">Seguimiento hasta cierre o descarte</div></div>
+      <div class="dayCard ok" style="display:none;"><div class="k">Cobros</div><div class="v" id="dCobros">—</div><div class="h">Confirmados con saldo pendiente</div></div>
+    </section>
 
     <div class="tabs" style="margin-top:2px">
       <button class="tab active" id="tabLeads" type="button">Leads <span class="b" id="bLeads">—</span></button>
-      <button class="tab" id="tabCobros" type="button">Cobros <span class="b" id="bCobros">—</span></button>
+      <button class="tab" id="tabCobros" type="button" style="display:none;">Cobros <span class="b" id="bCobros">—</span></button>
     </div>
 
     <section class="card section show" id="secLeads">
@@ -296,7 +324,7 @@
       </div>
     </section>
 
-    <section class="card section" id="secCobros">
+    <section class="card section" id="secCobros" style="display:none;">
       <div class="secHead">
         <div>
           <div class="secTitle"><span class="mark" style="background:#a855f7; box-shadow:0 0 0 4px rgba(168,85,247,.18)"></span>Cobros pendientes</div>
@@ -538,6 +566,10 @@
       return (pr <= 10) ? "Alta" : (pr <= 30) ? "Media" : "Baja";
     }
 
+    function setDayCard(id, value){
+      try{ qs(id).textContent = String(value ?? "—"); }catch(_){}
+    }
+
     function trLead(t){
       const over = (t.status==="open" && isOverdue(t.due_at));
       const kind = String(t.kind||"").toUpperCase();
@@ -651,18 +683,35 @@
       const gQuote = leads.filter(t => !isNew(t) && !isContact(t) && isQuote(t)).sort(sortBest);
       const gOther = leads.filter(t => !isNew(t) && !isContact(t) && !isQuote(t)).sort(sortBest);
       cobros.sort(sortBest);
+      const urgentNow = leads.filter(t => {
+        if (isOverdue(t.due_at)) return true;
+        const d = parseDue(t.lead_fecha_evento);
+        if (!d) return false;
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const days = Math.ceil((dd.getTime() - today.getTime()) / 86400000);
+        return days >= 0 && days <= 3;
+      }).length;
 
       qs("#bLeadNew").textContent = String(gNew.length);
       qs("#bLeadContact").textContent = String(gContact.length);
       qs("#bLeadQuote").textContent = String(gQuote.length + gOther.length);
       try{ qs("#bCobrosInner").textContent = String(cobros.length); }catch(_){}
+      setDayCard("#dNow", urgentNow);
+      setDayCard("#dNew", gNew.length);
+      setDayCard("#dQuoted", gQuote.length + gOther.length);
+      setDayCard("#dCobros", cobros.length);
+      try{
+        qs("#dNowHint").textContent = urgentNow ? "Abrir y registrar seguimiento primero" : "Sin urgencias fuertes en esta vista";
+      }catch(_){}
 
       // Asistente (solo en "Abiertas"): top 5 por score.
       try{
         const ml = qs("#mlBox");
         const mlNext = qs("#mlNext");
         if (ml && mlNext && st === "open"){
-          const best = [...items].sort(sortBest).slice(0,5);
+          const best = [...leads].sort(sortBest).slice(0,5);
           if (best.length){
             ml.style.display = "";
             mlNext.innerHTML = best.map(t => {

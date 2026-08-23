@@ -266,6 +266,8 @@
 
         <div class="filters">
           <input id="q" class="input span2" placeholder="Buscar: cliente, teléfono, comuna, marca, N° cotización…" />
+          <input id="fMonth" class="input" type="month" title="Mes de los eventos que quieres revisar" />
+          <button class="btn" id="btnAllMonths" type="button">Todos los meses</button>
           <select id="fEstado"></select>
           <select id="fMarca"></select>
         </div>
@@ -401,6 +403,7 @@
       limit: 200,
       offset: 0,
       open: null,
+      allMonths: localStorage.getItem("gd_leads_month_filter") === "0",
     };
 
     function money(n){
@@ -447,16 +450,25 @@
       const q = norm(qs("#q").value || "");
       const idEstado = qs("#fEstado").value ? Number(qs("#fEstado").value) : null;
       const idMarca = qs("#fMarca").value ? Number(qs("#fMarca").value) : null;
+      let focusId = "";
+      try{
+        const params = new URLSearchParams(location.search);
+        focusId = params.get("audit_focus") === "1"
+          ? String(params.get("open_lead") || params.get("id_lead") || params.get("lead_id") || "")
+          : "";
+      }catch(_){}
       return ST.leads.filter(l=>{
+        if (focusId && String(l.id_lead) !== focusId) return false;
         if (idEstado && Number(l.id_estado) !== idEstado) return false;
         if (idMarca && Number(l.id_marca) !== idMarca) return false;
         if (!q) return true;
         const bag = [
+          l.id_lead, l.codigo_cliente,
           l.cliente, l.nombre_cliente,
           l.telefono, l.email,
           l.comuna, l.comuna_nombre,
           l.marca, l.marca_nombre,
-          l.num_cotizacion,
+          l.num_cotizacion, l.estado, l.estado_nombre,
         ].map(norm).join(" | ");
         return bag.includes(q);
       });
@@ -574,15 +586,13 @@
       if (!l) return;
       const id = Number(l.id_lead);
       const newNotesLine = String(qs("#mAdd").value||"").trim();
-
-      // Append comment as new line (preserve history)
       let notas = String(qs("#mNotas").value || l.notas || "").trim();
-      if (newNotesLine){
-        const stamp = new Date();
-        const pad = (n)=>String(n).padStart(2,"0");
-        const ts = `${stamp.getFullYear()}-${pad(stamp.getMonth()+1)}-${pad(stamp.getDate())} ${pad(stamp.getHours())}:${pad(stamp.getMinutes())}`;
-        const line = `[${ts}] ${newNotesLine}`;
-        notas = notas ? (notas + "\n" + line) : line;
+
+      const statusChanged = Number(qs("#mEstado").value||0) !== Number(l.id_estado || 0);
+      if (statusChanged && newNotesLine.length < 8){
+        toast("Comentario obligatorio solo para cambio de estado.", "err");
+        qs("#mAdd").focus();
+        return;
       }
 
       const payload = {
@@ -594,6 +604,7 @@
         direccion: String(qs("#mDir").value||"").trim() || null,
         num_cotizacion: String(qs("#mNum").value||"").trim() || null,
         notas: notas || null,
+        movement_comment: newNotesLine || null,
       };
 
       try{
@@ -601,7 +612,9 @@
         await jput(`${API_BASE}/leads/${id}`, payload);
         // update local
         Object.assign(l, payload);
-        l.notas = notas;
+        if (newNotesLine){
+          l.notas = notas ? (notas + "\n\n" + newNotesLine) : newNotesLine;
+        }
         toast("Lead actualizado", "ok");
         openModal(false);
         renderList();
@@ -629,8 +642,19 @@
         ST.offset = 0;
       }
       setPill("Cargando…");
-      const data = await jget(`${API_BASE}/leads?limit=${encodeURIComponent(ST.limit)}&offset=${encodeURIComponent(ST.offset)}`);
-      const items = data?.items || [];
+      const ym = String(qs("#fMonth").value || "");
+      const match = /^(\d{4})-(\d{2})$/.exec(ym);
+      const period = (!ST.allMonths && match)
+        ? `&month=${encodeURIComponent(Number(match[2]))}&year=${encodeURIComponent(Number(match[1]))}&include_no_date=0`
+        : "&all=1";
+      const data = await jget(`${API_BASE}/leads?limit=${encodeURIComponent(ST.limit)}&offset=${encodeURIComponent(ST.offset)}${period}`);
+      let items = data?.items || [];
+      if (reset && ST.openLeadId && !items.some(x=>String(x.id_lead)===String(ST.openLeadId))){
+        try{
+          const direct = await jget(`${API_BASE}/leads/by_ids?ids=${encodeURIComponent(String(ST.openLeadId))}`);
+          items = items.concat((direct?.items || []).filter(x=>!items.some(y=>String(y.id_lead)===String(x.id_lead))));
+        }catch(_){}
+      }
       ST.leads = ST.leads.concat(items);
       ST.offset += items.length;
       renderList();
@@ -640,6 +664,19 @@
     // Events
     qs("#btnReload").onclick = async ()=>{ try{ await loadCatalogos(); await loadMore(true); }catch(e){ toast(String(e?.message||e),"err"); } };
     qs("#btnMore").onclick = async ()=>{ try{ await loadMore(false); }catch(e){ toast(String(e?.message||e),"err"); } };
+    qs("#fMonth").onchange = async ()=>{
+      ST.allMonths = false;
+      localStorage.setItem("gd_leads_month_filter","1");
+      localStorage.setItem("gd_leads_selected_month",qs("#fMonth").value);
+      qs("#btnAllMonths").textContent = "Todos los meses";
+      try{ await loadMore(true); }catch(e){ toast(String(e?.message||e),"err"); }
+    };
+    qs("#btnAllMonths").onclick = async ()=>{
+      ST.allMonths = !ST.allMonths;
+      localStorage.setItem("gd_leads_month_filter",ST.allMonths?"0":"1");
+      qs("#btnAllMonths").textContent = ST.allMonths ? "Usar mes elegido" : "Todos los meses";
+      try{ await loadMore(true); }catch(e){ toast(String(e?.message||e),"err"); }
+    };
     ["q","fEstado","fMarca"].forEach(id=>{
       qs("#"+id).addEventListener("input", ()=>renderList());
       qs("#"+id).addEventListener("change", ()=>renderList());
@@ -653,6 +690,10 @@
     // Init
     (async ()=>{
       applyThemeBootstrap();
+      const now = new Date();
+      const savedMonth = localStorage.getItem("gd_leads_selected_month") || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+      qs("#fMonth").value = savedMonth;
+      qs("#btnAllMonths").textContent = ST.allMonths ? "Usar mes elegido" : "Todos los meses";
       if (!token()){
         setPill("Sin sesión. Abre desde el panel e inicia sesión.");
         qs("#btnMore").disabled = true;

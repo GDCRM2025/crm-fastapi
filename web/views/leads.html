@@ -7,7 +7,7 @@
   <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Leads</title>
-  <!-- build: GD-LEADS-2026-02-25-13 -->
+  <!-- build: GD-LEADS-AGENDA-UNIFICADA-V1 -->
 
   <!-- SweetAlert2 -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -32,9 +32,7 @@
       overflow-x:hidden; /* NO scroll lateral */
     }
     body.embed .page{ padding:0; }
-    body.embed .toolbar,
-    body.embed #kanbanView,
-    body.embed #tableView{ display:none !important; }
+    body.embed .toolbar{ display:none !important; }
     .page{ padding:14px; overflow-x:hidden; }
 
     .toolbar{
@@ -65,6 +63,11 @@
     .search:focus-within{
       border-color: rgba(25,195,125,.55);
       box-shadow: 0 0 0 3px rgba(25,195,125,.12);
+    }
+    .monthPicker{
+      min-height:38px; border:1px solid var(--border); border-radius:12px;
+      background:var(--surface2); color:var(--text); padding:7px 10px;
+      font:inherit; font-size:13px; font-weight:900;
     }
 
     .badge{
@@ -177,6 +180,10 @@
     .card:hover{ border-color: rgba(234,242,255,.28); }
     .card.dragging{ opacity:.65; }
     .card.placeholder{ border-style:dashed; background:transparent; height:58px; }
+    .card.overdue{
+      border-color: rgba(239,68,68,.62);
+      box-shadow: inset 3px 0 0 rgba(239,68,68,.95);
+    }
 
     /* FICHA CHICA (lo que pediste) */
     .cardRow{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
@@ -192,29 +199,39 @@
     }
     .cardDate{
       flex:0 0 auto;
-      font-size:11px; font-weight:950; color:var(--muted);
+      font-size:12px; font-weight:1000; color:var(--text);
       border:1px solid var(--border);
       background: rgba(0,0,0,.10);
       border-radius:999px;
-      padding:4px 8px;
+      padding:5px 9px;
       white-space:nowrap;
+      text-shadow:none;
     }
-    :root.light .cardDate{ background: rgba(0,0,0,.04); }
+    :root.light .cardDate{ background:#ffffff; color:#0f172a; border-color:#94a3b8; }
     .cardDate.noDate{
-      border-color: rgba(245,158,11,.35);
-      color: color-mix(in srgb, var(--text) 70%, var(--muted));
+      border-color:#d97706;
+      background:#fff7ed;
+      color:#7c2d12;
     }
     .cardDate svg{ width:14px; height:14px; vertical-align:-2px; margin-right:6px; opacity:.9; }
-    .cardDate svg{ color: rgba(148,163,184,.85); }
-    .cardDate.noDate svg{ color: rgba(245,158,11,.92); }
-    .cardDate.cal-red{ border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.10); }
-    .cardDate.cal-red svg{ color: rgba(239,68,68,.92); }
-    .cardDate.cal-yellow{ border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.10); }
-    .cardDate.cal-yellow svg{ color: rgba(245,158,11,.92); }
-    .cardDate.cal-green{ border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.10); }
-    .cardDate.cal-green svg{ color: rgba(34,197,94,.90); }
-    .cardDate.cal-gray{ border-color: rgba(100,116,139,.35); background: rgba(100,116,139,.10); }
-    .cardDate.cal-gray svg{ color: rgba(100,116,139,.92); }
+    .cardDate svg{ color: currentColor; opacity:.95; }
+    .cardDate.cal-red{ border-color:#fca5a5; background:#7f1d1d; color:#ffffff; }
+    .cardDate.cal-yellow{ border-color:#facc15; background:#78350f; color:#ffffff; }
+    .cardDate.cal-green{ border-color:#86efac; background:#14532d; color:#ffffff; }
+    .cardDate.cal-gray{ border-color:#94a3b8; background:#334155; color:#ffffff; }
+    :root.light .cardDate.cal-red{ border-color:#991b1b; background:#fee2e2; color:#7f1d1d; }
+    :root.light .cardDate.cal-yellow{ border-color:#92400e; background:#fef3c7; color:#78350f; }
+    :root.light .cardDate.cal-green{ border-color:#166534; background:#dcfce7; color:#14532d; }
+    :root.light .cardDate.cal-gray{ border-color:#475569; background:#e2e8f0; color:#1e293b; }
+    .dateWarn{
+      display:inline-block;
+      margin-right:6px;
+      font-size:10px;
+      font-weight:1000;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      vertical-align:1px;
+    }
 
     .flag{
       position:relative;
@@ -491,7 +508,6 @@
       /* en móvil usamos Tabla por defecto (más rápido y usable) */
       #btnKanban{ display:none; }
       .search{ min-width: 0; width:100%; }
-      #btnMonth{ display:none; }
       #monthBadge{ display:none; }
       #status{ display:none; }
       .badge{ padding:6px 10px; font-size:12px; }
@@ -529,12 +545,11 @@
         <input id="q" placeholder="Buscar cliente, email, comuna, marca..." autocomplete="off" />
       </div>
 
-      <button class="btn toggle" id="btnMonth" type="button" title="Mostrar solo eventos del mes actual">
-        Mes actual
-      </button>
+      <input class="monthPicker" id="monthPicker" type="month" title="Mes de los eventos que quieres revisar" />
+      <button class="btn toggle" id="btnAllMonths" type="button" title="Mostrar leads de todos los meses">Todos</button>
 
       <div class="badge" id="status">Init…</div>
-      <div class="badge" id="monthBadge">Mes actual: 0</div>
+      <div class="badge" id="monthBadge">Mes seleccionado: 0</div>
       <div class="badge" id="leadCount">0 leads</div>
       <button class="btn" id="btnTrash" type="button" title="Declinados (basurero). También puedes arrastrar un lead aquí para declinar.">
         🗑️ Declinados <span class="miniCount" id="trashCount">0</span>
@@ -1126,8 +1141,7 @@ function followupFlagInfo(lead, estadoUpper=""){
   const now = new Date();
   const d = Math.max(0, daysBetween(now, last));
   if (d >= 4) return { cls:"red", title:`Seguimiento: ${d} días` };
-  if (d === 2) return { cls:"blue", title:"Seguimiento: 2 días" };
-  if (d === 1) return { cls:"yellow", title:"Seguimiento: 1 día" };
+  if (d >= 1) return { cls:"yellow", title:`Seguimiento: ${d} día(s)` };
   return { cls:"green", title:"Seguimiento: al día" };
 }
 
@@ -1154,16 +1168,17 @@ function calendarioInfo(lead, estadoUpper=""){
   const dEv = parseAnyDate(lead?.fecha_evento);
   if (isClosedEstadoName(estadoUpper)){
     // Mantener fecha visible, pero sin colores/alertas.
-    return dEv ? { cls:"", title:"", daysTo: null } : { cls:"", title:"", daysTo: null };
+    return dEv ? { cls:"", title:"", daysTo: null, label:"" } : { cls:"", title:"", daysTo: null, label:"" };
   }
-  if (!dEv) return { cls:"noDate", title:"Sin fecha de evento", daysTo:null };
+  if (!dEv) return { cls:"yellow", title:"Sin fecha de evento", daysTo:null, label:"SIN FECHA" };
   const now = new Date();
   const daysTo = Math.ceil((dEv.getTime() - now.getTime()) / 86400000);
-  if (!isFinite(daysTo)) return { cls:"", title:"", daysTo:null };
-  if (daysTo < 0) return { cls:"gray", title:"Evento vencido", daysTo };
-  if (daysTo < 3) return { cls:"red", title:`Vence en ${daysTo} día(s)`, daysTo };
-  if (daysTo <= 5) return { cls:"green", title:`Vence en ${daysTo} día(s)`, daysTo };
-  return { cls:"yellow", title:`Vence en ${daysTo} día(s)`, daysTo };
+  if (!isFinite(daysTo)) return { cls:"", title:"", daysTo:null, label:"" };
+  if (daysTo < 0) return { cls:"red", title:`Evento vencido hace ${Math.abs(daysTo)} día(s)`, daysTo, label:"VENCIDO" };
+  if (daysTo === 0) return { cls:"red", title:"Evento es hoy", daysTo, label:"HOY" };
+  if (daysTo <= 3) return { cls:"yellow", title:`Vence en ${daysTo} día(s)`, daysTo, label:"PRONTO" };
+  if (daysTo <= 7) return { cls:"green", title:`Vence en ${daysTo} día(s)`, daysTo, label:"OK" };
+  return { cls:"gray", title:`Vence en ${daysTo} día(s)`, daysTo, label:"" };
 }
 function mapBy(arr, key){
   const m = new Map();
@@ -1171,19 +1186,21 @@ function mapBy(arr, key){
   return m;
 }
 
-function isInCurrentMonth(lead){
+function isInSelectedMonth(lead){
   const raw = lead?.fecha_evento;
-  if (!raw) return true; // sin fecha: mantener visible (formularios)
+  if (!raw) return false;
   const d = parseAnyDate(raw);
-  if (!d) return true;
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  if (!d) return false;
+  return d.getFullYear() === FILTER_YEAR && (d.getMonth() + 1) === FILTER_MONTH_NUMBER;
 }
 
 function computeMonthTotal(){
-  MONTH_TOTAL = LEADS.filter(isInCurrentMonth).length;
+  MONTH_TOTAL = LEADS.filter(isInSelectedMonth).length;
   const mb = qs("#monthBadge");
-  if (mb) mb.textContent = `Mes actual: ${MONTH_TOTAL}`;
+  if (mb){
+    const label = new Date(FILTER_YEAR, FILTER_MONTH_NUMBER - 1, 1).toLocaleString("es-CL",{month:"long",year:"numeric"});
+    mb.textContent = `${label}: ${MONTH_TOTAL}`;
+  }
 }
 
 function computeHighlightIds(){
@@ -1284,24 +1301,37 @@ function normLead(l){
 
 /* ========= App state ========= */
 let VIEW = "kanban";
-let CATS = { marcas:[], comunas:[], estados:[], tipos:[] };
+let CATS = { marcas:[], comunas:[], estados:[], tipos:[], plataformas:[] };
 let LEADS = [];
 let FILTER_MONTH = true;
+let FILTER_YEAR = new Date().getFullYear();
+let FILTER_MONTH_NUMBER = new Date().getMonth() + 1;
 let MONTH_TOTAL = 0;
 let HIGHLIGHT_IDS = new Set();
 let STALE_IDS = null;
 let PENDING_OPEN_ID = null;
+let QUERY_LEAD_OPENED = false;
 
 const MONTH_FILTER_KEY = "gd_leads_month_filter";
+const MONTH_VALUE_KEY = "gd_leads_selected_month";
 const LAST_LEAD_KEY = "gd_last_lead_id";
 
 function loadPrefs(){
-  const v = localStorage.getItem(MONTH_FILTER_KEY);
-  FILTER_MONTH = (v === null) ? true : (v !== "0");
+  const params = new URLSearchParams(location.search);
+  const forceAll = params.get("all") === "1" || params.get("todos") === "1";
+  FILTER_MONTH = forceAll ? false : localStorage.getItem(MONTH_FILTER_KEY) !== "0";
+  const now = new Date();
+  const requested = params.get("month") || localStorage.getItem(MONTH_VALUE_KEY) || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const match = /^(\d{4})-(\d{2})$/.exec(requested);
+  if (match && Number(match[2]) >= 1 && Number(match[2]) <= 12){
+    FILTER_YEAR = Number(match[1]);
+    FILTER_MONTH_NUMBER = Number(match[2]);
+  }
   if (IS_MOBILE) VIEW = "table";
 }
 function savePrefs(){
   localStorage.setItem(MONTH_FILTER_KEY, FILTER_MONTH ? "1" : "0");
+  localStorage.setItem(MONTH_VALUE_KEY, `${FILTER_YEAR}-${String(FILTER_MONTH_NUMBER).padStart(2,"0")}`);
 }
 
 /* ========= Endpoints reales (con fallback) ========= */
@@ -1321,6 +1351,7 @@ async function loadCatalogos(){
   const marcasRaw = (cat.marcas || cat.items?.marcas || []);
   const comunasRaw = (cat.comunas || cat.items?.comunas || []);
   const tiposRaw  = (cat.tipos_cliente || cat.tipos || []);
+  const plataformasRaw = (cat.plataformas || cat.platforms || cat.items?.plataformas || []);
 
   let marcas = (marcasRaw||[]).map(normMarca).filter(x=>x.is_active);
 	  // extra: filtra marcas por usuario (SUPERADMIN es el único global)
@@ -1367,11 +1398,36 @@ async function loadCatalogos(){
 
   // 3) tipos: opcional
   const tipos = (tiposRaw||[]).map(normTipo).filter(x=>x.is_active);
+  const plataformas = (plataformasRaw||[])
+    .map((p,i)=>({
+      id_plataforma: Number(p.id_plataforma || p.id || i + 1),
+      nombre: String(p.nombre || p.plataforma || p.canal || "").trim().toUpperCase(),
+      is_active: p.is_active !== false,
+      orden: Number(p.orden || i + 1)
+    }))
+    .filter(x=>x.nombre && x.is_active)
+    .sort((a,b)=>a.orden-b.orden || a.nombre.localeCompare(b.nombre, "es"));
 
-  CATS = { marcas, comunas, estados, tipos };
+  CATS = { marcas, comunas, estados, tipos, plataformas };
 }
 
 async function loadLeads(){
+  // Auditoría abre un lead puntual en modal: cargar por ID aunque esté fuera del mes actual.
+  try{
+    const params = new URLSearchParams(location.search);
+    const focusId = params.get("audit_focus") === "1"
+      ? (params.get("open_lead") || params.get("id_lead") || params.get("lead_id"))
+      : "";
+    if (focusId){
+      const r = await tryGetFirstJSON([`/leads/by_ids?ids=${encodeURIComponent(String(focusId))}`]);
+      const items = Array.isArray(r) ? r : (r.items || []);
+      LEADS = (items||[]).map(normLead);
+      computeMonthTotal();
+      computeHighlightIds();
+      return;
+    }
+  }catch(_){}
+
   // Optimización: cuando venimos de drilldown (stale_ids), traemos solo esos leads.
   try{
     const params = new URLSearchParams(location.search);
@@ -1387,7 +1443,11 @@ async function loadLeads(){
     }
   }catch(_){}
 
-  const raw = await tryGetFirstJSON(["/leads?limit=5000", "/leads?limit=1000", "/leads"]);
+  const monthQS = `month=${FILTER_MONTH_NUMBER}&year=${FILTER_YEAR}&include_no_date=0`;
+  const urls = FILTER_MONTH
+    ? [`/leads?limit=5000&${monthQS}`, `/leads?limit=1000&${monthQS}`, `/leads?limit=300&${monthQS}`, `/leads?limit=50&${monthQS}`]
+    : ["/leads?limit=5000&all=1", "/leads?limit=1000&all=1", "/leads?limit=300&all=1", "/leads?limit=50&all=1"];
+  const raw = await tryGetFirstJSON(urls);
   const items = Array.isArray(raw) ? raw : (raw.items || raw.leads || []);
   LEADS = (items||[]).map(normLead);
   computeMonthTotal();
@@ -1397,15 +1457,18 @@ async function loadLeads(){
 function openLeadFromQuery(){
   const params = new URLSearchParams(location.search);
   const id = params.get("open_lead") || params.get("id_lead") || params.get("lead_id");
-  if (!id) return;
+  if (!id || QUERY_LEAD_OPENED) return;
   const lead = LEADS.find(x => String(x.id_lead) === String(id));
   if (lead){
+    QUERY_LEAD_OPENED = true;
     const editConfirmed = params.get("edit_confirmed") === "1";
     if (editConfirmed){
       setTimeout(() => openConfirmedEventEditor(lead), 120);
     }else{
       setTimeout(() => openEditModal(lead), 120);
     }
+  }else if (params.get("audit_focus") === "1"){
+    setTimeout(openLeadFromQuery, 350);
   }
 }
 function loadStaleFilterFromQuery(){
@@ -1416,6 +1479,14 @@ function loadStaleFilterFromQuery(){
   if (ids.length){
     STALE_IDS = new Set(ids);
     FILTER_MONTH = false;
+  }
+}
+
+function isAuditFocusMode(){
+  try{
+    return new URLSearchParams(location.search).get("audit_focus") === "1";
+  }catch(_){
+    return false;
   }
 }
 
@@ -1432,10 +1503,19 @@ function setView(v){
 
 function getFilteredLeads(){
 	  const t = (qs("#q").value || "").trim().toLowerCase();
-	  let base = FILTER_MONTH ? LEADS.filter(isInCurrentMonth) : LEADS.slice();
+	  let base = FILTER_MONTH ? LEADS.filter(isInSelectedMonth) : LEADS.slice();
+    try{
+      const params = new URLSearchParams(location.search);
+      const focusId = params.get("audit_focus") === "1"
+        ? (params.get("open_lead") || params.get("id_lead") || params.get("lead_id"))
+        : "";
+      if (focusId){
+        base = base.filter(l => String(l.id_lead) === String(focusId));
+      }
+    }catch(_){}
 	  if (STALE_IDS && STALE_IDS.size){
-	    base = base.filter(l => STALE_IDS.has(String(l.id_lead)));
-	  }
+    base = base.filter(l => STALE_IDS.has(String(l.id_lead)));
+  }
 	  if (!t) return base;
 
   const mMarca = mapBy(CATS.marcas,"id_marca");
@@ -1445,9 +1525,9 @@ function getFilteredLeads(){
     const marca = l.marca_nombre || (mMarca.get(l.id_marca)||{}).nombre || "";
     const comuna = l.comuna_nombre || (mComuna.get(l.id_comuna)||{}).nombre || "";
     const blob = [
-      l.cliente, l.codigo_cliente, l.email, l.telefono,
+      l.id_lead, l.cliente, l.codigo_cliente, l.email, l.telefono,
       l.direccion, l.plataforma, l.notas,
-      marca, comuna
+      marca, comuna, l.estado_nombre, l.estado
     ].filter(Boolean).join(" ").toLowerCase();
     return blob.includes(t);
   });
@@ -1474,7 +1554,7 @@ function getDeclinados(all=false){
 	  const total = LEADS.length;
 	  const baseTotal = FILTER_MONTH ? MONTH_TOTAL : total;
 	  qs("#leadCount").textContent = `Mostrando ${list.length} / ${baseTotal}`;
-	  qs("#btnMonth").classList.toggle("active", FILTER_MONTH);
+	  qs("#btnAllMonths").classList.toggle("active", !FILTER_MONTH);
     try{
       const d = getDeclinados(true).length;
       qs("#trashCount").textContent = String(d || 0);
@@ -1682,8 +1762,9 @@ function iconButton(title, iconName, handler){
       const flagHtml = flagIconHTML(flag);
       const cal = calendarioInfo(l, estUpper);
       const calClass = (!isClosed && cal?.cls && cal.cls !== "noDate") ? `cal-${cal.cls}` : "";
-      const dateClass = isClosed ? "" : (l.fecha_evento ? calClass : "noDate");
+      const dateClass = isClosed ? "" : (calClass || (l.fecha_evento ? "" : "noDate"));
       const dateTitle = isClosed ? "" : (cal?.title || "");
+      if (!isClosed && cal?.daysTo < 0) card.classList.add("overdue");
       row1.innerHTML = `
         <div class="cardName">
           ${flagHtml}
@@ -1691,8 +1772,8 @@ function iconButton(title, iconName, handler){
         </div>
         <div class="cardDate ${escapeHtml(dateClass)}" title="${escapeHtml(dateTitle)}">${
           l.fecha_evento
-            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>${escapeHtml(fmtDate(l.fecha_evento))}`
-            : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><path d="M9 14l6 6M15 14l-6 6"/></svg>Sin fecha`
+            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>${cal?.label ? `<span class="dateWarn">${escapeHtml(cal.label)}</span>` : ``}${escapeHtml(fmtDate(l.fecha_evento))}`
+            : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><path d="M9 14l6 6M15 14l-6 6"/></svg><span class="dateWarn">SIN FECHA</span>`
         }</div>
       `;
 
@@ -1755,7 +1836,7 @@ function renderTable(list){
     const flagHtml = flagIconHTML(flag);
     const cal = calendarioInfo(l, estUpper);
     const calClass = (!isClosed && cal?.cls && cal.cls !== "noDate") ? `cal-${cal.cls}` : "";
-    const dateClass = isClosed ? "" : (l.fecha_evento ? calClass : "noDate");
+    const dateClass = isClosed ? "" : (calClass || (l.fecha_evento ? "" : "noDate"));
     const dateTitle = isClosed ? "" : (cal?.title || "");
     const dotMonto = isClosed ? null : montoDotInfo(l);
 
@@ -1777,8 +1858,8 @@ function renderTable(list){
       `<td>` +
         `<span class="cardDate ${escapeHtml(dateClass)}" title="${escapeHtml(dateTitle)}">` +
           (l.fecha_evento
-            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>${escapeHtml(fmtDate(l.fecha_evento))}`
-            : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><path d="M9 14l6 6M15 14l-6 6"/></svg>Sin fecha`) +
+            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>${cal?.label ? `<span class="dateWarn">${escapeHtml(cal.label)}</span>` : ``}${escapeHtml(fmtDate(l.fecha_evento))}`
+            : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><path d="M9 14l6 6M15 14l-6 6"/></svg><span class="dateWarn">SIN FECHA</span>`) +
         `</span>` +
       `</td>` +
       `<td>` +
@@ -1821,15 +1902,30 @@ function renderTable(list){
     }catch(_){}
   }
 
-  async function logLeadActionNote(lead, { kind, title, text, followup }){
+  async function logLeadActionNote(lead, { kind, title, text, followup, contact_outcome }){
     try{
       const out = await apiJSON(`/leads/${lead.id_lead}/append_note`, {
         method: "POST",
         headers: { "Content-Type":"application/json" },
-        body: JSON.stringify({ kind, title, text, followup: !!followup }),
+        body: JSON.stringify({
+          kind,
+          title,
+          text,
+          followup: !!followup,
+          contact_outcome: String(contact_outcome || ""),
+        }),
       });
       if (out && typeof out === "object" && out.block){
         applyNoteToLeadLocal(lead, out.block);
+      }
+      if (out?.estado?.id_estado){
+        lead.id_estado = Number(out.estado.id_estado);
+        lead.estado_nombre = String(out.estado.nombre || "CONTACTADO");
+        try{
+          const estadoSelect = document.getElementById("e_estado");
+          if (estadoSelect) estadoSelect.value = String(out.estado.id_estado);
+        }catch(_){}
+        render();
       }
       return out;
     }catch(_){
@@ -2028,6 +2124,31 @@ function onDragOver(e, listEl){
 }
 
 async function setLeadEstado(leadId, newEstado, extra = {}){
+  if (!String(extra.movement_comment || extra.motivo || "").trim()){
+    const res = await Swal.fire({
+      title: "Comentario obligatorio",
+      html: `<div style="text-align:left">
+        <div style="font-weight:900;margin-bottom:8px">Para mover un lead hay que dejar evidencia.</div>
+        <div class="muted">Escribe qué hiciste, qué respondió el cliente o cuál es el próximo paso.</div>
+      </div>`,
+      input: "textarea",
+      inputPlaceholder: "Ej: Se llamó al cliente, pidió reenviar cotización y volver a contactar mañana.",
+      inputAttributes: { maxlength: 1000 },
+      showCancelButton: true,
+      confirmButtonText: "Guardar movimiento",
+      cancelButtonText: "Cancelar",
+      preConfirm: (value)=>{
+        const txt = String(value || "").trim();
+        if (txt.length < 8){
+          Swal.showValidationMessage("Escribe un comentario claro. Mínimo 8 caracteres.");
+          return false;
+        }
+        return txt;
+      }
+    });
+    if (!res.isConfirmed) throw new Error("Movimiento cancelado: falta comentario.");
+    extra = { ...extra, movement_comment: String(res.value || "").trim() };
+  }
   const payloads = [
     // Prefer nuevo endpoint unificado (incluye auditoría y evita desalineación de routers).
     { url: `/leads/${leadId}/move`,      method:"POST", body: { id_estado: Number(newEstado), ...extra } },
@@ -2226,8 +2347,9 @@ async function handleDeclinado(lead, newEstado){
   return true;
 }
 
-async function handleConfirmado(lead, newEstado){
+async function handleConfirmado(lead, newEstado, movementComment=""){
   try{ unlockCashRegisterSound(); }catch(_){ }
+  let statusComment = String(movementComment || "").trim() || "Confirmado desde flujo de agenda/cotización.";
   // Refrescamos el lead desde API para evitar usar data stale (p.ej. id_cotizacion_vigente).
   try{
     const fresh = await apiJSON(`/leads/${lead.id_lead}`);
@@ -3123,7 +3245,7 @@ async function handleConfirmado(lead, newEstado){
 	    if (f.blocks){
       // Bloques: 1 solo evento en Calendar; si es multi-día, el usuario define días y bloques por día.
       // Si además es multi-locación, cada bloque puede tener su propia dirección.
-	      const days = f.multiday ? Array.from({length:daysN}, (_,i)=>_datePlusDays(d0,i)) : [d0];
+	      const days = f.multiday ? Array.from({length:daysN}, ()=>"") : [d0];
 	      for (let di=0; di<days.length; di++){
 	        const day = days[di];
 	        for (let bi=0; bi<blkN; bi++){
@@ -3148,7 +3270,7 @@ async function handleConfirmado(lead, newEstado){
         }
       }
     }else{
-      const days = f.multiday ? Array.from({length:daysN}, (_,i)=>_datePlusDays(d0,i)) : [d0];
+      const days = f.multiday ? Array.from({length:daysN}, ()=>"") : [d0];
       for (let di=0;di<days.length;di++){
         const day = days[di];
         const locCount = f.multiloc ? locN : 1;
@@ -3328,14 +3450,18 @@ async function handleConfirmado(lead, newEstado){
     dayEdits[day] = { ops: opsV, montaje: mtV };
   };
 
-	  const setMontajeLocked = (locked)=>{
+	  // GD-AGENDA-RUNTIME-V17
+
+	  window.__gdAgendaMontageEditing = false;
+
+	  const setMontajeLocked = (locked, force=false)=>{
 	    const ta = qs("#ag_montaje_day");
+	    if (locked && window.__gdAgendaMontageEditing && !force) return;
 	    if (ta) ta.readOnly = !!locked;
 	    const ops = qs("#ag_ops_day");
 	    if (ops) ops.readOnly = !!locked;
 	    const btnC = qs("#ag_montaje_confirm");
 	    const btnE = qs("#ag_montaje_edit");
-	    // Confirmar debe estar disponible incluso si no editas (confirmar sugerido)
 	    if (btnC) btnC.disabled = false;
 	    if (btnE) btnE.disabled = !locked;
 	  };
@@ -3715,10 +3841,10 @@ async function handleConfirmado(lead, newEstado){
     const qSel = (qs("#ag_quote")?.value || "manual").toString().trim() || "manual";
     const quoteSource = (qSel === "manual") ? "manual" : "cotizador";
     const idCot = (quoteSource === "cotizador") ? qSel : null;
-			      const hrTbd = !!qs("#ag_hrtbd")?.checked;
             const daysN = Math.max(1, Number(qs("#ag_days_n")?.value || 1) || 1);
 			      const hIni = (qs("#ag_hini")?.value || "").trim();
 			      const hFin = (qs("#ag_hfin")?.value || "").trim();
+			      const hrTbd = !!qs("#ag_hrtbd")?.checked || !hIni || !hFin;
     const tel = (qs("#ag_tel")?.value || "").trim();
     const dir = (qs("#ag_dir")?.value || "").trim();
     const notes = (qs("#ag_notes")?.value || "").trim();
@@ -3730,6 +3856,13 @@ async function handleConfirmado(lead, newEstado){
     const isMultiLoc = !!fNow.multiloc;
     const isMultiDay = !!fNow.multiday;
     _applyMultiLocUI();
+
+    // En varios días las fechas nunca se inventan: cada una debe elegirla el ejecutivo.
+    if (isMultiDay && (setupGroups || []).some((g) => !String(g.day || "").trim())) {
+      previewEvents = [];
+      if (st) st.textContent = "Selecciona la fecha de cada día para calcular montaje.";
+      return;
+    }
 
     // Si hay más de 1 grupo, exige asignación completa antes de previsualizar (evita eventos incorrectos).
     try{
@@ -3773,6 +3906,7 @@ async function handleConfirmado(lead, newEstado){
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
           id_estado: Number(newEstado),
+          movement_comment: statusComment,
           agendar: true,
           dry_run: true,
           quote_source: quoteSource,
@@ -3808,7 +3942,15 @@ async function handleConfirmado(lead, newEstado){
       if (st) st.textContent = "Listo";
 	    }catch(err){
 	      previewEvents = [];
-	      if (qs("#ag_products_day")) qs("#ag_products_day").textContent = "(sin productos)";
+	      const allocationOk = /^OK:/i.test(String(qs("#ag_alloc_status")?.textContent || "").trim());
+	      const assignedText = (setupGroups || []).length === 1
+	        ? _mapToLines((setupGroups[0] || {}).products_map || {})
+	        : "";
+	      const productEl = qs("#ag_products_day");
+	      if (productEl) {
+	        if (assignedText) productEl.textContent = assignedText;
+	        else if (!allocationOk) productEl.textContent = "(sin productos)";
+	      }
 	      if (qs("#ag_preview_day")) qs("#ag_preview_day").textContent = "";
 	      const msg = String(err?.message || err);
 	      if (st) st.textContent = msg;
@@ -3983,6 +4125,11 @@ async function handleConfirmado(lead, newEstado){
               if (!p || !(q>0)) continue;
               g.products_map[p] = q;
             }
+            const assignedText = _mapToLines(g.products_map || {});
+            const productEl = qs("#ag_products_day");
+            if (productEl) productEl.textContent = assignedText || "(sin productos)";
+            const allocStatus = qs("#ag_alloc_status");
+            if (allocStatus && assignedText) allocStatus.textContent = "OK: todos los productos están asignados.";
           };
 
 	          const rebuild = async (why="")=>{
@@ -4135,6 +4282,7 @@ async function handleConfirmado(lead, newEstado){
       });
 
 	      qs("#ag_montaje_edit") && (qs("#ag_montaje_edit").onclick = ()=>{
+	        window.__gdAgendaMontageEditing = true;
 	        setMontajeLocked(false);
 	        const ta = qs("#ag_montaje_day");
 	        ta && ta.focus && ta.focus();
@@ -4165,9 +4313,9 @@ async function handleConfirmado(lead, newEstado){
       const updDur = ()=>{
         const el = qs("#ag_duracion");
         if (!el) return;
-        const hrTbd = !!qs("#ag_hrtbd")?.checked;
         const hIni = (qs("#ag_hini")?.value || "").trim();
         const hFin = (qs("#ag_hfin")?.value || "").trim();
+        const hrTbd = !!qs("#ag_hrtbd")?.checked || !hIni || !hFin;
         if (hrTbd || !hIni || !hFin){
           el.textContent = "Duración: —";
           return;
@@ -4322,9 +4470,9 @@ async function handleConfirmado(lead, newEstado){
               return false;
             }
           }catch(_){}
-		      const hrTbd = !!qs("#ag_hrtbd")?.checked;
 		      const hIni = (qs("#ag_hini")?.value || "").trim();
 		      const hFin = (qs("#ag_hfin")?.value || "").trim();
+		      const hrTbd = !!qs("#ag_hrtbd")?.checked || !hIni || !hFin;
 			      if (!setupApplied){
 			        Swal.showValidationMessage("Primero debes armar el set up.");
 			        return false;
@@ -4344,7 +4492,7 @@ async function handleConfirmado(lead, newEstado){
 	          // NO usamos modelador/grupos ni asignación por producto.
 	          // Solo se usan los campos globales (tel/dir/location/horas) y el backend construye el/los evento(s).
 	          // Multi-día se resuelve por `multi_day_mode=1` + agrupación por día en backend.
-	          const isSimple = (!multiLoc && !blocks);
+	          const isSimple = (!multiLoc && !blocks && !multiDay);
 	          if (!isSimple){
 			        _readGroupsFromDOM();
 			        _updateAllocStatus();
@@ -4374,6 +4522,26 @@ async function handleConfirmado(lead, newEstado){
 		      let segsOut = (!isSimple && model.segments) ? model.segments : null;
 		      let blksOut = (!isSimple && model.blocks) ? model.blocks : null;
 
+      // Datos opcionales: nunca bloquean el agendamiento.
+      // La comuna sí es obligatoria y se valida por separado.
+      const telInputTbd = qs("#ag_tel");
+      const dirInputTbd = qs("#ag_dir");
+      if (telInputTbd && !String(telInputTbd.value || "").trim()) telInputTbd.value = "TBD";
+      if (dirInputTbd && !String(dirInputTbd.value || "").trim()) dirInputTbd.value = "DIR TBD";
+
+      const applyTbd = (row) => {
+        const out = { ...(row || {}) };
+        if (!String(out.direccion || "").trim()) out.direccion = "DIR TBD";
+        if (!String(out.start_time || "").trim() || !String(out.end_time || "").trim()) {
+          out.start_time = "";
+          out.end_time = "";
+          out.hr_tbd = true;
+        }
+        return out;
+      };
+      if (blksOut) blksOut = blksOut.map(applyTbd);
+      if (segsOut) segsOut = segsOut.map(applyTbd);
+
           // Defaults: si el usuario llenó Location/Dirección global, pero el grupo/bloque quedó vacío
           // (por ejemplo en evento simple donde el editor está oculto), completamos antes de validar.
           const comunaDef = String(qs("#ag_loc")?.value || "").trim() || String(lead?.comuna_nombre || lead?.comuna || "").trim();
@@ -4402,8 +4570,7 @@ async function handleConfirmado(lead, newEstado){
 		          const b = blksOut[i] || {};
 		          if (!String(b.day||"").trim()) return Swal.showValidationMessage(`Falta día en Bloque ${i+1}.`);
 		          if (!String(b.comuna||"").trim()) return Swal.showValidationMessage(`Falta comuna en Bloque ${i+1}.`);
-		          if (!String(b.direccion||"").trim()) return Swal.showValidationMessage(`Falta dirección en Bloque ${i+1}.`);
-		          if (!String(b.start_time||"").trim() || !String(b.end_time||"").trim()) return Swal.showValidationMessage(`Faltan horas en Bloque ${i+1}.`);
+
 		          if (!String(b.products_text||"").trim()) return Swal.showValidationMessage(`Faltan productos en Bloque ${i+1}.`);
 		        }
 		      }
@@ -4412,8 +4579,7 @@ async function handleConfirmado(lead, newEstado){
 		          const s = segsOut[i] || {};
 		          if (!String(s.day||"").trim()) return Swal.showValidationMessage(`Falta día en Grupo ${i+1}.`);
 		          if (!String(s.comuna||"").trim()) return Swal.showValidationMessage(`Falta comuna en Grupo ${i+1}.`);
-		          if (!String(s.direccion||"").trim()) return Swal.showValidationMessage(`Falta dirección en Grupo ${i+1}.`);
-		          if (!String(s.start_time||"").trim() || !String(s.end_time||"").trim()) return Swal.showValidationMessage(`Faltan horas en Grupo ${i+1}.`);
+
 		          if (!String(s.products_text||"").trim()) return Swal.showValidationMessage(`Faltan productos en Grupo ${i+1}.`);
 		        }
 		      }
@@ -4485,11 +4651,7 @@ async function handleConfirmado(lead, newEstado){
 				          Swal.showValidationMessage("Abono=0: debes indicar OC, fecha de abono o pago a crédito.");
 				          return false;
 				        }
-				        if (abMode === "oc" && !abOC){
-				          Swal.showValidationMessage("Abono=0: falta OC / referencia.");
-				          return false;
-				        }
-				        if (abMode === "fecha" && !abFe){
+if (abMode === "fecha" && !abFe){
 				          Swal.showValidationMessage("Abono=0: falta fecha de abono.");
 				          return false;
 				        }
@@ -4614,8 +4776,7 @@ async function handleConfirmado(lead, newEstado){
 	      const oc = String(v.abono_oc || "").trim();
 	      const fe = String(v.abono_fecha || "").trim();
 	      if (!mode) throw new Error("Debes indicar OC, fecha de abono o pago a crédito (abono=0).");
-	      if (mode === "oc" && !oc) throw new Error("Falta OC / referencia (abono=0).");
-	      if (mode === "fecha" && !fe) throw new Error("Falta fecha de abono (abono=0).");
+		      if (mode === "fecha" && !fe) throw new Error("Falta fecha de abono (abono=0).");
 	    }
 	  }catch(err){
 	    await Swal.fire({ icon:"warning", title:"Abono", text: String(err?.message || err) });
@@ -4624,6 +4785,7 @@ async function handleConfirmado(lead, newEstado){
 
 					  const payload = {
 					    id_estado: Number(newEstado),
+              movement_comment: statusComment,
 					    agendar: true,
 				    quote_source: v.quote_source,
 			    ...(v.id_cotizacion ? { id_cotizacion: v.id_cotizacion } : {}),
@@ -4649,24 +4811,37 @@ async function handleConfirmado(lead, newEstado){
 		    ...(v.days_n ? { days_n: v.days_n } : {}),
 		  };
 
-  const out = await apiJSON(`/leads/${lead.id_lead}/move`, {
-    method:"POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(payload),
+  const idempotencyKey = `agenda-${lead.id_lead}-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
+  await Swal.fire({
+    title:"Agendando…",
+    text:"No cierre esta ventana. Estamos confirmando el lead y creando el calendario.",
+    allowOutsideClick:false,
+    allowEscapeKey:false,
+    showConfirmButton:false,
+    didOpen:()=>Swal.showLoading(),
+    timer:350,
   });
-  const ev = out?.evento || {};
 
-  let gcal = null;
+  let out = null;
   try{
-    gcal = await approveAgendaWithRetry();
+    out = await apiJSON(`/leads/${lead.id_lead}/confirmar_agendamiento`, {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "X-Idempotency-Key":idempotencyKey,
+      },
+      body:JSON.stringify(payload),
+    });
   }catch(err){
     await Swal.fire({
       icon:"error",
-      title:"No se pudo agendar",
-      text: String(err?.message || err),
+      title:"No se pudo confirmar y agendar",
+      text:String(err?.message || err),
     });
     return false;
   }
+  const ev = out?.evento || {};
+  const gcal = out;
   const gcalLink = String(gcal?.calendar_html_link || "");
   const gcalEid = String(gcal?.calendar_event_id || "");
   const gcalErr = String(gcal?.gcal_error || "");
@@ -4965,7 +5140,6 @@ ${EMO.pin} DIRECCION: ${dirLine || "POR CONFIRMAR"}
   return true;
 }
 
-
 async function onDrop(e, newEstado){
   e.preventDefault();
   const id = Number((e.dataTransfer && e.dataTransfer.getData("text/plain")) || DRAG_ID || 0);
@@ -5020,6 +5194,7 @@ async function openCreateModal(){
   const comunas = CATS.comunas || [];
   const tipos  = CATS.tipos  || [];
   const estados = CATS.estados || [];
+  const plataformas = CATS.plataformas?.length ? CATS.plataformas : ["FORMULARIO","WHATSAPP","EMAIL","INSTAGRAM","LLAMADO","OTRO"].map((nombre,i)=>({nombre, orden:i+1}));
 
   const defaultEstado = estados[0]?.id_estado ?? null;
 
@@ -5043,12 +5218,7 @@ async function openCreateModal(){
       tipos.map(t=>`<option value="${t.id_tipo_cliente}">${escapeHtml(t.nombre || t.tipo || t.id_tipo_cliente)}</option>`).join("") +
     '</select></label>' +
     '<label>Plataforma<select id="c_plataforma" class="swSel">' +
-      '<option value="FORMULARIO">FORMULARIO</option>' +
-      '<option value="WHATSAPP">WHATSAPP</option>' +
-      '<option value="INSTAGRAM">INSTAGRAM</option>' +
-      '<option value="CORREO">CORREO</option>' +
-      '<option value="LLAMADO">LLAMADO</option>' +
-      '<option value="OTRO">OTRO</option>' +
+      plataformas.map(p=>`<option value="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</option>`).join("") +
     '</select></label>' +
     '<label>Teléfono<input id="c_tel" class="swInp" placeholder="+569..." /></label>' +
     '<label>Fecha evento<input id="c_fecha" class="swInp" type="date" /></label>' +
@@ -5068,6 +5238,14 @@ async function openCreateModal(){
       const cliente = (qs("#c_cliente").value || "").trim();
       if (!cliente){
         Swal.showValidationMessage("Nombre cliente es obligatorio.");
+        return false;
+      }
+      if (!Number(qs("#c_marca").value || 0)){
+        Swal.showValidationMessage("Marca es obligatoria.");
+        return false;
+      }
+      if (!(qs("#c_fecha").value || "").trim()){
+        Swal.showValidationMessage("Fecha evento es obligatoria.");
         return false;
       }
       const payload = {
@@ -5110,7 +5288,7 @@ async function openEditModal(lead){
   const comunas = CATS.comunas || [];
   const tipos  = CATS.tipos  || [];
   const estados = CATS.estados || [];
-  const platformsBase = ["FORMULARIO","WHATSAPP","INSTAGRAM","EMAIL","TEL","REFERIDO","OTRO"];
+  const platformsBase = (CATS.plataformas?.length ? CATS.plataformas.map(p=>p.nombre) : ["FORMULARIO","WHATSAPP","EMAIL","INSTAGRAM","LLAMADO","OTRO"]);
   const curPlat = String(lead.plataforma || "").trim();
   const platforms = Array.from(new Set([curPlat, ...platformsBase].filter(Boolean)));
   let pdfFile = null;
@@ -5269,8 +5447,14 @@ async function openEditModal(lead){
 	      let localPdfFile = null;
 	      let isUploadingPdf = false;
 	      let metaSaveT = null;
-		      const logAction = async (kind, title, text, followup=false)=>{
-		        await logLeadActionNote(lead, { kind, title, text, followup: !!followup });
+		      const logAction = async (kind, title, text, followup=false, contact_outcome="")=>{
+		        await logLeadActionNote(lead, {
+		          kind,
+		          title,
+		          text,
+		          followup: !!followup,
+		          contact_outcome,
+		        });
 		      };
 
 	      async function quickFollow(kind, title, defaultText){
@@ -5302,8 +5486,8 @@ async function openEditModal(lead){
 			      qs("#qf_call")?.addEventListener("click", ()=>quickFollow("CALL", "Cliente contactado por llamada", "Cliente contactado por llamada."));
 			      qs("#qf_email")?.addEventListener("click", ()=>quickFollow("EMAIL", "Cliente contactado por correo", "Cliente contactado por correo."));
 			      qs("#qf_no")?.addEventListener("click", async ()=>{
-		        // "No contesta" igual cuenta como intento de contacto: lo registramos como WSP/CALL/EMAIL
-		        // para que las tareas de contacto puedan cerrarse con evidencia.
+		        // "No contesta" queda como intento en el historial, pero no cambia
+		        // el estado comercial del lead.
 		        const res = await Swal.fire({
 		          title: "Cliente no contesta",
 		          html: `
@@ -5335,7 +5519,7 @@ async function openEditModal(lead){
 		        const text = tx ? (base + "\n" + tx) : base;
 		        const title = (ch === "WSP") ? "Cliente no responde WhatsApp" : (ch === "EMAIL") ? "Cliente no responde correo" : "Cliente no contesta llamada";
 			        try{
-			          await logAction(ch, title, text, true);
+			          await logAction(ch, title, text, true, "NO_ANSWER");
 			          toast("Seguimiento registrado", "success");
 			        }catch(_){
 			          toast("No pude registrar seguimiento", "error");
@@ -5371,9 +5555,9 @@ async function openEditModal(lead){
 			            { label:"Cliente responde contacto", kind:"NOTE", title:"Cliente responde contacto", text:"Cliente responde gestión inicial y se establece comunicación.", followup:true },
 			            { label:"Cliente solicita información", kind:"NOTE", title:"Cliente solicita información", text:"Cliente solicita antecedentes adicionales para evaluar la propuesta comercial.", followup:true },
 			            { label:"Cliente solicita llamada posterior", kind:"NOTE", title:"Cliente solicita llamada posterior", text:"Cliente indica disponibilidad para contacto posterior en otra fecha u horario.", followup:true },
-			            { label:"Cliente no contesta llamada", kind:"CALL", title:"Cliente no contesta llamada", text:"Se intenta contacto telefónico sin obtener respuesta del cliente.", followup:true },
-			            { label:"Cliente no responde WhatsApp", kind:"WSP", title:"Cliente no responde WhatsApp", text:"Se envía mensaje por WhatsApp sin respuesta del cliente.", followup:true },
-			            { label:"Cliente no responde correo", kind:"EMAIL", title:"Cliente no responde correo", text:"Se envía correo sin respuesta del cliente.", followup:true },
+			            { label:"Cliente no contesta llamada", kind:"CALL", title:"Cliente no contesta llamada", text:"Se intenta contacto telefónico sin obtener respuesta del cliente.", followup:true, contact_outcome:"NO_ANSWER" },
+			            { label:"Cliente no responde WhatsApp", kind:"WSP", title:"Cliente no responde WhatsApp", text:"Se envía mensaje por WhatsApp sin respuesta del cliente.", followup:true, contact_outcome:"NO_ANSWER" },
+			            { label:"Cliente no responde correo", kind:"EMAIL", title:"Cliente no responde correo", text:"Se envía correo sin respuesta del cliente.", followup:true, contact_outcome:"NO_ANSWER" },
 			            { label:"Seguimiento activo", kind:"NOTE", title:"Seguimiento activo", text:"Se mantiene gestión comercial activa a la espera de interacción o definición del cliente.", followup:true },
 			          ],
 			          COTIZADO: [
@@ -5477,7 +5661,13 @@ async function openEditModal(lead){
 			        const o = options[Math.max(0, Math.min(options.length-1, idx))] || options[0];
 			        const text = extra ? (String(o.text || "") + "\n" + extra) : String(o.text || "");
 			        try{
-			          await logAction(o.kind || "NOTE", o.title || o.label || "Seguimiento", text, !!o.followup);
+			          await logAction(
+			            o.kind || "NOTE",
+			            o.title || o.label || "Seguimiento",
+			            text,
+			            !!o.followup,
+			            o.contact_outcome || ""
+			          );
 			          toast("Seguimiento registrado", "success");
 			        }catch(_){
 			          toast("No pude registrar seguimiento", "error");
@@ -6075,11 +6265,12 @@ async function openEditModal(lead){
       }
       const comment = (qs("#e_comment").value || "").trim();
       const prevNotes = (qs("#e_notas").value || "").trim();
-      let notes = prevNotes;
-      if (comment){
-        const stamp = new Date();
-        const ts = stamp.toISOString().slice(0,16).replace("T"," ");
-        notes = (notes ? (notes + "\n") : "") + `[${ts}] ${comment}`;
+      const statusChanged = Number(qs("#e_estado").value) !== Number(lead.id_estado || 0);
+      const selectedEstadoName = estadoNombre(Number(qs("#e_estado").value || 0));
+      const isConfirmingEstado = isConfirmEstadoName(selectedEstadoName);
+      if (statusChanged && !isConfirmingEstado && comment.length < 8){
+        Swal.showValidationMessage("Para cambiar el estado debes escribir un comentario claro. Mínimo 8 caracteres.");
+        return false;
       }
       const fileEl = qs("#e_pdf");
       pdfFile = fileEl?.files?.[0] || null;
@@ -6094,7 +6285,8 @@ async function openEditModal(lead){
         id_estado: Number(qs("#e_estado").value),
         fecha_evento: (qs("#e_fecha").value || null),
         direccion: (qs("#e_dir").value || "").trim() || null,
-        notas: notes || null,
+        notas: prevNotes || null,
+        movement_comment: comment || null,
         num_cotizacion: (qs("#e_numcot").value || "").trim() || null,
         monto_cotizado: qs("#e_monto").value ? Number(qs("#e_monto").value) : 0
       };
@@ -6107,17 +6299,31 @@ async function openEditModal(lead){
       html: `<div style="text-align:left">
         <div>Esta acción <b>no elimina</b> definitivamente: lo marca como borrado para no ensuciar métricas.</div>
         <div class="muted" style="margin-top:8px">Solo Admin puede hacerlo.</div>
+        <textarea id="del_motivo" class="swTa" style="margin-top:12px;min-height:96px" placeholder="Motivo obligatorio: duplicado, error de carga, cliente pidió eliminar, etc."></textarea>
       </div>`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Sí, borrar",
       cancelButtonText: "Cancelar",
       confirmButtonColor: "#ef4444",
+      focusConfirm: false,
+      preConfirm: ()=>{
+        const txt = String(document.getElementById("del_motivo")?.value || "").trim();
+        if (txt.length < 8){
+          Swal.showValidationMessage("Escribe un motivo claro. Mínimo 8 caracteres.");
+          return false;
+        }
+        return txt;
+      }
     });
     if (!ok.isConfirmed) return;
 
     try{
-      await apiJSON("/leads/" + lead.id_lead, { method:"DELETE" });
+      await apiJSON("/leads/" + lead.id_lead, {
+        method:"DELETE",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ motivo: ok.value })
+      });
       toast("Lead borrado", "success");
       await loadLeads();
       render();
@@ -6137,10 +6343,12 @@ async function openEditModal(lead){
       return hit ? Number(hit.id_estado) : null;
     })();
     const wantsConfirmFlow = (confirmadoId != null) && (Number(res.value.id_estado) === Number(confirmadoId));
+    const statusChanged = Number(res.value.id_estado) !== Number(lead.id_estado || 0);
 
     // 1) Guardar cambios del lead (sin tocar el estado) para no saltarnos el flujo de confirmación/agendamiento.
     const payloadNoEstado = { ...res.value };
     delete payloadNoEstado.id_estado;
+    if (statusChanged) delete payloadNoEstado.movement_comment;
     await apiJSON("/leads/" + lead.id_lead, {
       method:"PUT",
       headers: { "Content-Type":"application/json" },
@@ -6167,7 +6375,7 @@ async function openEditModal(lead){
 
     // 3) Si el usuario dejó "Confirmado", ejecutamos el flujo correcto (elige cotización, calcula OPS/montaje y agenda).
     if (wantsConfirmFlow){
-      const ok = await handleConfirmado(lead, Number(confirmadoId));
+      const ok = await handleConfirmado(lead, Number(confirmadoId), res.value.movement_comment || "");
       if (!ok){
         toast("Confirmación cancelada", "warning");
       }
@@ -6176,7 +6384,7 @@ async function openEditModal(lead){
       await apiJSON("/leads/" + lead.id_lead, {
         method:"PUT",
         headers: { "Content-Type":"application/json" },
-        body: JSON.stringify({ id_estado: res.value.id_estado })
+        body: JSON.stringify({ id_estado: res.value.id_estado, movement_comment: res.value.movement_comment || null })
       });
       toast("Lead actualizado", "success");
     }
@@ -6337,9 +6545,13 @@ async function init(){
   try{
     await loadLeads();
     setStatus("Leads: " + LEADS.length);
+    if (isAuditFocusMode()) VIEW = "table";
     if (PENDING_OPEN_ID){
       const lead = LEADS.find(x => String(x.id_lead) === String(PENDING_OPEN_ID));
-      if (lead) setTimeout(() => openEditModal(lead), 80);
+      if (lead && !QUERY_LEAD_OPENED){
+        QUERY_LEAD_OPENED = true;
+        setTimeout(() => openEditModal(lead), 80);
+      }
       PENDING_OPEN_ID = null;
     }
   }catch(err){
@@ -6365,9 +6577,22 @@ async function init(){
       await onDrop(e, did);
     });
   }catch(_){}
-  qs("#btnMonth").onclick = ()=>{
+  const monthPicker = qs("#monthPicker");
+  monthPicker.value = `${FILTER_YEAR}-${String(FILTER_MONTH_NUMBER).padStart(2,"0")}`;
+  monthPicker.onchange = async ()=>{
+    const match = /^(\d{4})-(\d{2})$/.exec(monthPicker.value || "");
+    if (!match) return;
+    FILTER_YEAR = Number(match[1]);
+    FILTER_MONTH_NUMBER = Number(match[2]);
+    FILTER_MONTH = true;
+    savePrefs();
+    await loadLeads();
+    render();
+  };
+  qs("#btnAllMonths").onclick = async ()=>{
     FILTER_MONTH = !FILTER_MONTH;
     savePrefs();
+    await loadLeads();
     render();
   };
 
@@ -6378,5 +6603,9 @@ async function init(){
 
 init();
 </script>
+
+  <script src="../js/agenda_wizard_v4.js?v=20260731-17"></script>
+  <script src="../js/agenda_wizard_v6.js?v=20260731-17"></script>
+  <script src="../js/agenda_multiday_v19.js?v=20260731-20"></script>
 </body>
 </html>

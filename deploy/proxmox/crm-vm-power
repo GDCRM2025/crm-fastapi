@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+VMID="100"
+VM_NAME="crm-gd"
+CRM_URL="http://192.168.10.51/crm/"
+ACTION="${1:-}"
+
+log() {
+  logger -t crm-vm-power -- "$*"
+  echo "$(date --iso-8601=seconds) $*"
+}
+
+status() {
+  qm status "${VMID}" | awk '{print $2}'
+}
+
+case "${ACTION}" in
+  stop)
+    if [[ "$(status)" != "running" ]]; then
+      log "${VM_NAME} ya está apagada; no se realiza ninguna acción."
+      exit 0
+    fi
+
+    if qm config "${VMID}" | grep -q '^lock: backup'; then
+      log "${VM_NAME} tiene un backup activo; se omite el apagado para proteger la copia."
+      exit 0
+    fi
+
+    log "Solicitando apagado ordenado de ${VM_NAME}."
+    qm shutdown "${VMID}" --timeout 300
+
+    if [[ "$(status)" == "stopped" ]]; then
+      log "${VM_NAME} apagada correctamente."
+      exit 0
+    fi
+
+    log "ALERTA: ${VM_NAME} no se apagó dentro del plazo; no se fuerza el apagado."
+    exit 1
+    ;;
+
+  start)
+    if [[ "$(status)" != "running" ]]; then
+      log "Encendiendo ${VM_NAME}."
+      qm start "${VMID}"
+    else
+      log "${VM_NAME} ya estaba encendida."
+    fi
+
+    agent_ok=0
+    for _ in $(seq 1 60); do
+      if qm agent "${VMID}" ping >/dev/null 2>&1; then
+        agent_ok=1
+        break
+      fi
+      sleep 2
+    done
+
+    if [[ "${agent_ok}" -ne 1 ]]; then
+      log "ALERTA: QEMU Guest Agent no respondió después del encendido."
+      exit 1
+    fi
+
+    crm_ok=0
+    for _ in $(seq 1 60); do
+      if curl -fsSL --max-time 5 -o /dev/null "${CRM_URL}"; then
+        crm_ok=1
+        break
+      fi
+      sleep 2
+    done
+
+    if [[ "${crm_ok}" -ne 1 ]]; then
+      log "ALERTA: la VM inició, pero el CRM no respondió en ${CRM_URL}."
+      exit 1
+    fi
+
+    log "${VM_NAME} encendida y CRM verificado."
+    ;;
+
+  status)
+    log "${VM_NAME}: $(status)"
+    ;;
+
+  *)
+    echo "Uso: $0 {start|stop|status}" >&2
+    exit 2
+    ;;
+esac

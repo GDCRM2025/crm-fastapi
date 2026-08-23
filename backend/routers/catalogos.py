@@ -137,10 +137,28 @@ def catalogos():
                 """,
             )
 
+        plataformas = []
+        if table_exists(conn, "plataformas"):
+            plataformas = safe_query(
+                conn,
+                """
+                SELECT id_plataforma, nombre, nombre AS plataforma, descripcion, orden, is_active
+                FROM public.plataformas
+                WHERE is_active=true
+                ORDER BY orden ASC, nombre ASC
+                """,
+            )
+        else:
+            plataformas = [
+                {"id_plataforma": i + 1, "nombre": n, "plataforma": n, "descripcion": "", "orden": (i + 1) * 10, "is_active": True}
+                for i, n in enumerate(("FORMULARIO", "WHATSAPP", "EMAIL", "INSTAGRAM", "LLAMADO", "OTRO"))
+            ]
+
     return {
         "marcas": list(marcas or []),
         "comunas": list(comunas or []),
         "tipos_cliente": list(tipos_cliente or []),
+        "plataformas": list(plataformas or []),
         "estados_lead": list(estados_lead or []),
         "estados": list(estados_lead or []),
         "tipocliente": list(tipos_cliente or []),

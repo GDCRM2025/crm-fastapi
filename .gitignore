@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
+.env.backup.*
 .venv/
 .../
 node_modules/
@@ -22,3 +23,6 @@ web/_bak/
 web/downloads/
 backend/credentials/
 backend/cotizaciones/
+# Migraciones heredadas con DSN incrustado; se conservan solo localmente.
+backend/scripts/migrate_crm_v3.py
+backend/routers/scripts/migrate_crm_v3.py

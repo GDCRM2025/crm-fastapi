@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "Ejecuta este comando con sudo." >&2
+  exit 1
+fi
+
+VPN_MANAGER="/usr/local/sbin/crm-vpn-peer"
+PROFILES=(
+  "GOURMET-PC"
+  "GOURMET-TELEFONO"
+  "CAMALEON-PC"
+  "CAMALEON-TELEFONO"
+  "EXPRESS-PC"
+  "EXPRESS-TELEFONO"
+  "DEL-SABOR-PC"
+  "DEL-SABOR-TELEFONO"
+  "OSCAR-PC"
+  "OSCAR-TELEFONO"
+)
+
+if [[ ! -x "${VPN_MANAGER}" ]]; then
+  echo "No existe ${VPN_MANAGER} o no es ejecutable." >&2
+  exit 1
+fi
+
+echo "Regenerando los perfiles Gourmet cuyos archivos privados ya fueron eliminados..."
+"${VPN_MANAGER}" revoke "GOURMET-PC" >/dev/null 2>&1 || true
+"${VPN_MANAGER}" revoke "GOURMET-TELEFONO" >/dev/null 2>&1 || true
+
+for profile in "${PROFILES[@]}"; do
+  if "${VPN_MANAGER}" list | awk 'NR > 1 {print $1}' | grep -Fxq "${profile}"; then
+    echo "YA_EXISTE=${profile}"
+    continue
+  fi
+
+  "${VPN_MANAGER}" add "${profile}"
+done
+
+echo
+echo "Perfiles registrados:"
+"${VPN_MANAGER}" list
+echo
+echo "IMPORTANTE: no ejecutes 'delivered' todavía."
+echo "Primero copia/importa cada .conf y comprueba el túnel desde fuera de la red."

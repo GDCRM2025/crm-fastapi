@@ -22,7 +22,9 @@ GREENI_INTERNAL_KEY = os.getenv("GREENI_INTERNAL_KEY", "")
 
 def verify_signature(raw_body, signature_header):
     if not META_APP_SECRET:
-        return True
+        # Nunca aceptar webhooks sin poder verificar su origen.
+        log.error("[GIA][IG] META_APP_SECRET no configurado")
+        return False
 
     if not signature_header or not signature_header.startswith("sha256="):
         return False
@@ -140,9 +142,10 @@ def gia_instagram_events(
     x_greeni_key = Header(default=None, alias="X-Greeni-Key"),
     db: Session = Depends(get_db),
 ):
-    if GREENI_INTERNAL_KEY:
-        if x_greeni_key != GREENI_INTERNAL_KEY:
-            return JSONResponse(status_code=403, content={"ok": False, "error": "forbidden"})
+    if not GREENI_INTERNAL_KEY or not hmac.compare_digest(
+        str(x_greeni_key or ""), str(GREENI_INTERNAL_KEY)
+    ):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "forbidden"})
 
     try:
         ensure_table(db)

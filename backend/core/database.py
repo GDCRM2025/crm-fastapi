@@ -88,7 +88,9 @@ def _normalize_sqlalchemy_url(url: str) -> str:
     return url
 
 
-DATABASE_URL = _normalize_sqlalchemy_url(os.getenv("DATABASE_URL", "")) or "postgresql://BDGD:SpC18302020@127.0.0.1:5432/BDGD"
+DATABASE_URL = _normalize_sqlalchemy_url(os.getenv("DATABASE_URL", ""))
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL no está configurada. Defínela en el .env protegido del servidor.")
 DATABASE_URL = _normalize_sqlalchemy_url(DATABASE_URL)
 
 _patch_sqlalchemy_pg_version_bytes()

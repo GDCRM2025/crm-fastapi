@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Reporte de comisiones</title>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="../js/iframe-theme.js"></script>
+  <style>
+    :root{--panel:#0d2236;--panel2:#102b43;--line:rgba(148,163,184,.22);--text:#eaf2ff;--muted:#9fb0c6;--accent:#19c37d;--warn:#f59e0b;--blue:#38bdf8;--shadow:0 18px 60px rgba(0,0,0,.22)}
+    :root.light{--panel:#fff;--panel2:#f8fafc;--line:rgba(15,23,42,.14);--text:#0f172a;--muted:#64748b;--shadow:0 14px 38px rgba(15,23,42,.08)}
+    *{box-sizing:border-box} html,body{margin:0;min-height:100%;background:transparent;color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif} body{padding:18px;overflow:auto}
+    .wrap{max-width:1680px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+    .hero,.card{background:linear-gradient(180deg,color-mix(in srgb,var(--panel) 96%,transparent),color-mix(in srgb,var(--panel2) 82%,transparent));border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+    .hero{padding:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+    .title{font-weight:1000;font-size:20px}.sub{font-size:12px;color:var(--muted);font-weight:800;margin-top:4px;max-width:900px;line-height:1.45}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.btn,.inp,.sel{height:36px;border-radius:10px;border:1px solid var(--line);background:color-mix(in srgb,var(--panel2) 88%,transparent);color:var(--text);font-weight:900;outline:none}.btn{padding:0 12px;cursor:pointer}.btn.primary{background:color-mix(in srgb,var(--accent) 24%,var(--panel2));border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}.inp,.sel{padding:0 10px}
+    .kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}@media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}}@media(max-width:640px){.kpis{grid-template-columns:1fr}}
+    .kpi{border:1px solid var(--line);background:color-mix(in srgb,var(--panel2) 72%,transparent);border-radius:12px;padding:12px;min-height:86px;cursor:pointer}.kpi.active{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent)}.kpi .l{font-size:11px;color:var(--muted);font-weight:1000;letter-spacing:.08em;text-transform:uppercase}.kpi .v{font-size:22px;font-weight:1000;margin-top:8px}.kpi .s{font-size:12px;color:var(--muted);font-weight:850;margin-top:5px}
+    .grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}.span4{grid-column:span 4}.span8{grid-column:span 8}@media(max-width:1100px){.grid{grid-template-columns:1fr}.span4,.span8{grid-column:1}}
+    .card{padding:14px;min-width:0}.h{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:1000;color:color-mix(in srgb,var(--text) 84%,var(--muted));margin:0 0 10px}.hint{font-size:12px;color:var(--muted);font-weight:800}
+    .tableWrap{overflow:auto;border:1px solid var(--line);border-radius:12px;max-height:560px;background:color-mix(in srgb,var(--panel2) 45%,transparent)}table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:980px}th,td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle;text-align:left}th{position:sticky;top:0;z-index:2;background:color-mix(in srgb,var(--panel) 96%,#000 4%);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:color-mix(in srgb,var(--text) 76%,var(--muted));font-weight:1000}:root.light th{background:#f8fafc}.right{text-align:right}.center{text-align:center}
+    .pill{display:inline-flex;border:1px solid var(--line);background:color-mix(in srgb,var(--panel2) 74%,transparent);border-radius:999px;padding:5px 9px;font-size:12px;font-weight:950;white-space:nowrap}.good{border-color:color-mix(in srgb,var(--accent) 52%,var(--line));color:color-mix(in srgb,var(--accent) 82%,var(--text))}.warn{border-color:color-mix(in srgb,var(--warn) 52%,var(--line));color:color-mix(in srgb,var(--warn) 86%,var(--text))}
+    .bar{height:9px;border-radius:999px;background:rgba(148,163,184,.18);overflow:hidden;margin-top:7px}.bar i{display:block;height:100%;width:var(--w);background:linear-gradient(90deg,var(--accent),var(--blue))}
+    .chart{display:flex;flex-direction:column;gap:10px}.chartRow{display:grid;grid-template-columns:minmax(120px,180px) 1fr auto;gap:10px;align-items:center;font-size:12px;font-weight:900}.link{color:inherit;text-decoration:underline;text-underline-offset:2px}
+    @media print{body{padding:0}.btn,.hero .row,.inp,.sel{display:none!important}.wrap{max-width:none}.card,.hero{box-shadow:none}.tableWrap{max-height:none;overflow:visible}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div>
+        <div class="title">Reporte de comisiones</div>
+        <div class="sub">Admin/Super Admin ve el general. Cada ejecutivo ve solo sus ventas asignadas por marca. Las tarjetas filtran el detalle.</div>
+      </div>
+      <div class="row">
+        <select id="month" class="sel"></select>
+        <input id="year" class="inp" type="number" min="2020" max="2100" />
+        <button id="reload" class="btn primary" type="button">Actualizar</button>
+        <button id="exportPdf" class="btn" type="button">PDF</button>
+        <button id="exportXlsx" class="btn" type="button">XLSX</button>
+        <button id="exportHtml" class="btn" type="button">HTML</button>
+      </div>
+    </section>
+    <section class="kpis">
+      <div class="kpi active" data-filter="all"><div class="l">Ventas confirmadas</div><div class="v" id="kSales">-</div><div class="s">Todas</div></div>
+      <div class="kpi" data-filter="commission"><div class="l">Comisión preliminar</div><div class="v" id="kCommission">-</div><div class="s">Base + canal</div></div>
+      <div class="kpi" data-filter="new"><div class="l">Clientes nuevos</div><div class="v" id="kNew">-</div><div class="s">Primera compra o 12 meses sin compra</div></div>
+      <div class="kpi" data-filter="old"><div class="l">Clientes antiguos</div><div class="v" id="kOld">-</div><div class="s">Compraron en últimos 12 meses</div></div>
+      <div class="kpi" data-filter="digital"><div class="l">Captación digital</div><div class="v" id="kDigital">-</div><div class="s">Canal con extra</div></div>
+    </section>
+    <section class="grid">
+      <div class="card span4"><h2 class="h">Comparativo ejecutivo</h2><div id="chart" class="chart"></div></div>
+      <div class="card span8">
+        <div class="row" style="justify-content:space-between;margin-bottom:10px">
+          <h2 class="h" style="margin:0">Detalle</h2>
+          <input id="search" class="inp" placeholder="Buscar cliente, marca o ejecutivo" style="min-width:280px" />
+        </div>
+        <div class="tableWrap"><table><thead><tr><th>Lead</th><th>Fecha evento</th><th>Cliente</th><th>Marca</th><th>Ejecutivo</th><th>Tipo</th><th class="right">Venta</th><th class="right">%</th><th class="right">Comisión</th><th>Calendario</th></tr></thead><tbody id="detailRows"></tbody></table></div>
+      </div>
+    </section>
+  </div>
+  <script>
+    const API_BASE=location.pathname.startsWith("/crm/")?"/crm":"";
+    const token=()=>localStorage.getItem("token")||sessionStorage.getItem("token")||"";
+    const headers=(extra={})=>token()?{...extra,Authorization:`Bearer ${token()}`}:extra;
+    const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(Number(n||0));
+    const pct=n=>`${Number(n||0).toLocaleString("es-CL",{maximumFractionDigits:2})}%`;
+    const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+    const state={items:[],filter:"all"};
+    async function api(url){const r=await fetch(API_BASE+url,{headers:headers()});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||`HTTP ${r.status}`);return j;}
+    function filtered(){
+      const q=document.getElementById("search").value.trim().toLowerCase();
+      return state.items.filter(x=>{
+        if(state.filter==="new" && !String(x.tipo_cliente_calc||"").includes("NUEVO")) return false;
+        if(state.filter==="old" && !String(x.tipo_cliente_calc||"").includes("ANTIGUO")) return false;
+        if(state.filter==="digital" && Number(x.pct_canal||0)<=0) return false;
+        if(q && ![x.id_lead,x.cliente,x.marca,x.ejecutivo,x.tipo_cliente_calc].some(v=>String(v||"").toLowerCase().includes(q))) return false;
+        return true;
+      });
+    }
+    function execSummary(items=state.items){
+      const out={}; for(const x of items){const k=x.ejecutivo||"Sin ejecutivo";out[k] ||= {total:0,count:0};out[k].total+=Number(x.comision_preliminar||0);out[k].count++;} return out;
+    }
+    function render(){
+      const all=state.items, rows=filtered();
+      const total=all.reduce((a,x)=>a+Number(x.comision_preliminar||0),0);
+      document.getElementById("kSales").textContent=all.length;
+      document.getElementById("kCommission").textContent=money(total);
+      document.getElementById("kNew").textContent=all.filter(x=>String(x.tipo_cliente_calc||"").includes("NUEVO")).length;
+      document.getElementById("kOld").textContent=all.filter(x=>String(x.tipo_cliente_calc||"").includes("ANTIGUO")).length;
+      document.getElementById("kDigital").textContent=all.filter(x=>Number(x.pct_canal||0)>0).length;
+      const summary=execSummary(all); const max=Math.max(...Object.values(summary).map(x=>x.total),1);
+      document.getElementById("chart").innerHTML=Object.entries(summary).sort((a,b)=>b[1].total-a[1].total).map(([name,x])=>`
+        <div class="chartRow" title="${esc(name)} · ${money(x.total)} · ${x.count} venta(s)">
+          <div>${esc(name)}</div><div><div class="bar"><i style="--w:${Math.max(4,Math.round(x.total/max*100))}%"></i></div></div><div>${money(x.total)}</div>
+        </div>`).join("")||`<div class="hint">Sin ventas.</div>`;
+      document.getElementById("detailRows").innerHTML=rows.map(x=>`
+        <tr><td>#${esc(x.id_lead)}</td><td><strong>${esc(x.fecha_evento||"")}</strong></td><td><strong>${esc(x.cliente||"Sin nombre")}</strong></td><td>${esc(x.marca||"-")}</td><td>${esc(x.ejecutivo||"Sin ejecutivo")}</td><td><span class="pill ${String(x.tipo_cliente_calc||"").includes("NUEVO")?"good":"warn"}">${esc(x.tipo_cliente_calc||"-")}</span></td><td class="right">${money(x.venta_neta)}</td><td class="right">${pct(x.pct_total)}</td><td class="right"><strong>${money(x.comision_preliminar)}</strong></td><td>${x.calendar_html_link?`<a class="link" href="${esc(x.calendar_html_link)}" target="_blank">Abrir evento</a>`:"-"}</td></tr>
+      `).join("")||`<tr><td colspan="10" class="center hint">Sin resultados.</td></tr>`;
+    }
+    async function load(){
+      const y=document.getElementById("year").value, m=document.getElementById("month").value;
+      const j=await api(`/commissions/preview?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}`);
+      state.items=j.items||[]; render();
+    }
+    function rowsForExport(){return filtered().map(x=>({lead:x.id_lead,fecha:x.fecha_evento,cliente:x.cliente,marca:x.marca,ejecutivo:x.ejecutivo,tipo:x.tipo_cliente_calc,venta:x.venta_neta,porcentaje:x.pct_total,comision:x.comision_preliminar,calendario:x.calendar_html_link||""}));}
+    async function exportXlsx(){const wb=new ExcelJS.Workbook();const ws=wb.addWorksheet("Comisiones");ws.columns=Object.keys(rowsForExport()[0]||{lead:"",fecha:"",cliente:"",marca:"",ejecutivo:"",tipo:"",venta:"",porcentaje:"",comision:"",calendario:""}).map(k=>({header:k,key:k,width:18}));rowsForExport().forEach(r=>ws.addRow(r));const buf=await wb.xlsx.writeBuffer();download(new Blob([buf]),"comisiones.xlsx");}
+    function exportHtml(){download(new Blob([document.documentElement.outerHTML],{type:"text/html"}),"comisiones.html");}
+    function download(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
+    function init(){
+      const now=new Date(), names=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+      document.getElementById("month").innerHTML=names.map((n,i)=>`<option value="${i+1}">${n}</option>`).join("");document.getElementById("month").value=now.getMonth()+1;document.getElementById("year").value=now.getFullYear();
+      document.getElementById("reload").onclick=()=>load().catch(e=>alert(e.message||e));document.getElementById("search").oninput=render;document.getElementById("exportPdf").onclick=()=>window.print();document.getElementById("exportXlsx").onclick=()=>exportXlsx().catch(e=>alert(e.message||e));document.getElementById("exportHtml").onclick=exportHtml;
+      document.querySelectorAll(".kpi").forEach(k=>k.onclick=()=>{document.querySelectorAll(".kpi").forEach(x=>x.classList.remove("active"));k.classList.add("active");state.filter=k.dataset.filter;render();});
+      load().catch(e=>alert(e.message||e));
+    }
+    init();
+  </script>
+</body>
+</html>

@@ -528,7 +528,6 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     # RIESGO (ventas): leads que están a punto de caer en reglas de estancamiento/auto-declinación.
     # Consecuencia real: si no se registra seguimiento, los jobs/reglas pueden declinar automáticamente.
     # - NUEVO: a partir de 5 días sin contacto => warning (declina al día 7).
-    # - CONTACTADO sin fecha_evento: a partir de 3 días sin movimiento => warning (declina al día 5).
     # - CONTACTADO con fecha_evento del mes: con comentarios, a partir de 5 días sin movimiento => warning (declina al día 7).
     # - COTIZADO con evento cercano (<= 4 días): warning inmediato.
     try:
@@ -592,6 +591,10 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 FROM public.leads l
                 WHERE l.id_estado NOT IN (:decl, :conf)
                   AND (:is_admin OR {scope_sql})
+                  AND l.fecha_evento IS NOT NULL
+                  AND EXTRACT(YEAR FROM l.fecha_evento) = EXTRACT(YEAR FROM (now() AT TIME ZONE 'America/Santiago')::date)
+                  AND EXTRACT(MONTH FROM l.fecha_evento) = EXTRACT(MONTH FROM (now() AT TIME ZONE 'America/Santiago')::date)
+                  AND l.fecha_evento >= (now() AT TIME ZONE 'America/Santiago')::date
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '3 days')
                   AND :enable_lead_tasks
                 ON CONFLICT DO NOTHING
@@ -634,6 +637,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   jsonb_build_object('rule','risk_contactado_sin_fecha','estado_id',l.id_estado)
                 FROM public.leads l
                 WHERE l.id_estado = :contactado
+                  AND FALSE
                   AND l.fecha_evento IS NULL
                   AND (:is_admin OR {scope_sql})
                   AND COALESCE(l.updated_at, l.created_at, now()) <= (now() - INTERVAL '3 days')
@@ -930,16 +934,15 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     Reglas (2026-03):
     - SOLO 3 estados generan tareas: NUEVO / CONTACTADO / COTIZADO.
     - CONFIRMADO/DECLINADO nunca generan tareas.
+    - Solo leads con fecha_evento dentro del mes actual entran al circuito de tareas.
     - Si `fecha_evento` ya pasó (en esos estados), se auto-declina el lead y NO se generan tareas.
 
     NUEVO:
-      - Con fecha_evento: si no hay seguimiento en 3 días desde creación.
-      - Sin fecha_evento: si no hay seguimiento en 5 días desde creación.
+      - Con fecha_evento del mes: si no hay seguimiento en 3 días desde creación.
     CONTACTADO:
       - Con fecha_evento: si vence <= 7 días y último seguimiento > 3 días.
-      - Sin fecha_evento: si último seguimiento > 3 días (seguimiento inmediato).
     COTIZADO:
-      - Si último seguimiento > 3 días (con o sin fecha_evento).
+      - Si último seguimiento > 3 días y fecha_evento es del mes.
       - Si vence <= 2 días, prioridad alta.
       - Si fecha_evento ya pasó, se auto-declina.
     """
@@ -1117,13 +1120,11 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     today = "(now() AT TIME ZONE 'America/Santiago')::date"
     month_start = f"date_trunc('month', {today})::date"
     month_end = f"(date_trunc('month', {today}) + INTERVAL '1 month')::date"
-    # Regla negocio (tareas SOLO para leads "del mes"):
-    # - con fecha_evento: solo mes actual (y no vencidos)
-    # - sin fecha_evento: siempre aplica (las tareas se rigen por seguimiento/antigüedad)
-    #   (la noción de "mes actual" se define por fecha_evento; created_at queda para reportes/estadísticas).
+    # Regla negocio: tareas SOLO para leads con fecha_evento dentro del mes actual.
+    # Sin fecha o fuera del mes no entra al circuito automático de tareas/bloqueo.
     in_scope_with_date = f"({ev_date} IS NOT NULL AND {ev_date} >= {today} AND {ev_date} >= {month_start} AND {ev_date} < {month_end})"
     in_scope_no_date = f"({ev_date} IS NULL)"
-    ev_in_scope = f"({in_scope_with_date} OR {in_scope_no_date})"
+    ev_in_scope = in_scope_with_date
 
     # 1) Auto-declinar vencidos (fecha_evento < hoy) en estados que generan tareas
     try:
@@ -1286,7 +1287,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
-    # 2) Insert NUEVO (sin seguimiento) según umbral 3/5 días
+    # 2) Insert NUEVO (sin seguimiento): solo mes actual, con fecha.
     try:
         db.execute(
             text(
@@ -1295,18 +1296,12 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                 SELECT
                   'LEAD_NUEVO_SEGUIMIENTO',
                   'Lead nuevo: seguimiento',
-                  CASE WHEN l.fecha_evento IS NULL
-                    THEN 'NUEVO sin fecha. Seguimiento (5 días).'
-                    ELSE 'NUEVO con fecha. Seguimiento (3 días).'
-                  END,
+                  'NUEVO con fecha del mes. Seguimiento (3 dias).',
                   'lead',
                   l.id_lead,
                   :uid,
                   :uname,
-                  CASE WHEN l.fecha_evento IS NULL
-                    THEN ({last_follow_expr} + INTERVAL '5 days')
-                    ELSE ({last_follow_expr} + INTERVAL '3 days')
-                  END,
+                  ({last_follow_expr} + INTERVAL '3 days'),
                   12,
                   jsonb_build_object('rule','nuevo','created_at',{created_expr},'fecha_evento',l.fecha_evento)
                 FROM public.leads l
@@ -1315,11 +1310,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND (:is_admin OR {scope_sql})
                   AND ({has_contact_sql}) IS NOT TRUE
                   AND {ev_in_scope}
-                  AND (
-                    (l.fecha_evento IS NOT NULL AND {last_follow_expr} <= (now() - INTERVAL '3 days'))
-                    OR
-                    (l.fecha_evento IS NULL AND {last_follow_expr} <= (now() - INTERVAL '5 days'))
-                  )
+                  AND {last_follow_expr} <= (now() - INTERVAL '3 days')
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -1338,7 +1329,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
     except Exception:
         pass
 
-    # 3) Insert CONTACTADO (>3 días sin seguimiento). Con fecha: solo si vence <= 7 días.
+    # 3) Insert CONTACTADO (>3 días sin seguimiento): solo mes actual y si vence <= 7 días.
     try:
         db.execute(
             text(
@@ -1348,7 +1339,6 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   'LEAD_CONTACTADO_SEGUIMIENTO',
                   'Lead contactado: seguimiento',
                   CASE
-                    WHEN ({ev_date}) IS NULL THEN 'CONTACTADO sin fecha. Seguimiento inmediato.'
                     WHEN ({ev_date}) < {today} THEN 'Evento vencido (auto-decline).'
                     ELSE 'Vence en ' || GREATEST(0, (({ev_date}) - {today}))::int || ' día(s).'
                   END,
@@ -1364,11 +1354,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   AND l.id_estado NOT IN (:decl, :conf)
                   AND (:is_admin OR {scope_sql})
                   AND {last_follow_expr} <= (now() - INTERVAL '3 days')
-                  AND (
-                    {in_scope_no_date}
-                    OR
-                    (({ev_date}) IS NOT NULL AND ({ev_date}) >= {today} AND ({ev_date}) < {month_end} AND ({ev_date}) <= ({today} + INTERVAL '7 days'))
-                  )
+                  AND {ev_in_scope}
+                  AND ({ev_date}) <= ({today} + INTERVAL '7 days')
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -1397,7 +1384,6 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
                   'LEAD_COTIZADO_SEGUIMIENTO',
                   'Lead cotizado: seguimiento',
                   CASE
-                    WHEN ({ev_date}) IS NULL THEN 'COTIZADO sin fecha. Seguimiento pendiente.'
                     WHEN ({ev_date}) < {today} THEN 'Evento vencido (auto-decline).'
                     ELSE 'Vence en ' || GREATEST(0, (({ev_date}) - {today}))::int || ' día(s).'
                   END,
@@ -1543,11 +1529,7 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
           AND (:is_admin OR {scope_sql})
           AND ({has_contact_sql}) IS NOT TRUE
           AND {ev_in_scope}
-          AND (
-            (l.fecha_evento IS NOT NULL AND {last_follow_expr} <= (now() - INTERVAL '3 days'))
-            OR
-            (l.fecha_evento IS NULL AND {last_follow_expr} <= (now() - INTERVAL '5 days'))
-          )
+          AND {last_follow_expr} <= (now() - INTERVAL '3 days')
         """,
     )
     _auto_close(
@@ -1557,11 +1539,8 @@ def upsert_mvp_tasks_for_user(db: Session, *, user_id: int, username: str, role:
           AND l.id_estado NOT IN (:decl, :conf)
           AND (:is_admin OR {scope_sql})
           AND {last_follow_expr} <= (now() - INTERVAL '3 days')
-          AND (
-            {in_scope_no_date}
-            OR
-            (({ev_date}) IS NOT NULL AND ({ev_date}) >= {today} AND ({ev_date}) < {month_end} AND ({ev_date}) <= ({today} + INTERVAL '7 days'))
-          )
+          AND {ev_in_scope}
+          AND ({ev_date}) <= ({today} + INTERVAL '7 days')
         """,
     )
     _auto_close(
@@ -1711,7 +1690,7 @@ def list_tasks(
     # - Leads inexistentes o borrados (evita "Lead no existe" al abrir seguimiento)
     # - Leads con fecha_evento vencida
     # - Leads con fecha_evento fuera del mes actual
-    # - Leads sin fecha_evento, pero creados fuera del mes actual (evita tareas eternas)
+    # - Leads sin fecha_evento (no entran al circuito automatico)
     try:
         if _table_exists(db, "leads") and _col_exists(db, "leads", "id_estado"):
             confirmado_id = _estado_id_like(db, "CONFIRM%", 4)
@@ -1818,6 +1797,18 @@ def list_tasks(
                 t.entity_type='lead'
                 AND EXISTS (
                   SELECT 1
+                  FROM public.leads l5
+                  WHERE l5.id_lead = t.entity_id
+                    AND (%(ev)s) IS NULL
+                )
+              )
+            """ % {"ev": _lead_event_date_expr_db(db, alias="l5")}
+
+            where += """
+              AND NOT (
+                t.entity_type='lead'
+                AND EXISTS (
+                  SELECT 1
                   FROM public.leads l4
                   WHERE l4.id_lead = t.entity_id
                     AND (%(ev)s) IS NOT NULL
@@ -1840,7 +1831,6 @@ def list_tasks(
               )
             """ % {"ev": _lead_event_date_expr_db(db, alias="l6"), "month_start": month_start}
 
-            # Leads sin fecha_evento: se mantienen visibles si cumplen regla (no aplicamos filtro por mes aquí).
     except Exception:
         pass
 
@@ -1983,6 +1973,7 @@ def list_tasks(
         lead_estado_base = "''"
         lead_tel_base = "''"
         lead_fecha_base = "NULL::date"
+        lead_monto_base = "0::numeric"
 
         if has_leads:
             joins += " LEFT JOIN public.leads l ON (t.entity_type='lead' AND t.entity_id=l.id_lead) "
@@ -1991,6 +1982,10 @@ def list_tasks(
                 lead_tel_base = "COALESCE(l.telefono,'')"
             if _col_exists(db, "leads", "fecha_evento"):
                 lead_fecha_base = _lead_event_date_expr_db(db, alias="l")
+            for _monto_col in ("monto_cotizado", "monto", "valor", "total"):
+                if _col_exists(db, "leads", _monto_col):
+                    lead_monto_base = f"COALESCE(l.{_monto_col},0)"
+                    break
 
             # Marca (por ID o texto)
             if has_marcas and _col_exists(db, "leads", "id_marca") and _col_exists(db, "marcas", "id_marca"):
@@ -2016,12 +2011,14 @@ def list_tasks(
             lead_marca_base = f"COALESCE(NULLIF(btrim({lead_marca_base}),''), NULLIF(btrim(COALESCE(fe.marca,'')),''), '')"
             lead_fecha_base = f"COALESCE({lead_fecha_base}, fe.fecha_evento)"
             lead_estado_base = f"(CASE WHEN t.entity_type='fin_evento' THEN 'CONFIRMADO' ELSE {lead_estado_base} END)"
+            lead_monto_base = f"COALESCE({lead_monto_base}, fe.monto_bruto, 0)"
 
         lead_cliente_expr = f"{lead_cliente_base} AS lead_cliente"
         lead_marca_expr = f"{lead_marca_base} AS lead_marca"
         lead_estado_expr = f"{lead_estado_base} AS lead_estado"
         lead_tel_expr = f"{lead_tel_base} AS lead_telefono"
         lead_fecha_expr = f"{lead_fecha_base} AS lead_fecha_evento"
+        lead_monto_expr = f"{lead_monto_base} AS lead_monto_cotizado"
 
         q = f"""
           SELECT t.id_task, t.created_at, t.updated_at, t.status, t.priority,
@@ -2032,7 +2029,8 @@ def list_tasks(
                  {lead_marca_expr},
                  {lead_estado_expr},
                  {lead_tel_expr},
-                 {lead_fecha_expr}
+                 {lead_fecha_expr},
+                 {lead_monto_expr}
           FROM public.tasks t
           {joins}
           WHERE {where}

@@ -111,18 +111,20 @@ def list_event_checklists(
         except Exception:
             pass
         return {}
-    # Evita AmbiguousParameter cuando uid es NULL: user_id=0 (ver upsert)
-    uid = int(user_id) if user_id is not None else 0
+    # El checklist es un relevo entre Comercial y Operaciones. Se conserva quién
+    # lo guardó, pero todos los usuarios autorizados para ver el lead deben recibir
+    # la última versión del día.
     rows = db.execute(
         text(
             """
-            SELECT id_lead, items, notes, updated_at
+            SELECT DISTINCT ON (id_lead)
+                   id_lead, items, notes, username, user_id, updated_at
             FROM public.event_checklists
             WHERE event_day=:d
-              AND user_id=:uid
+            ORDER BY id_lead, updated_at DESC, id_check DESC
             """
         ),
-        {"d": event_day, "uid": uid},
+        {"d": event_day},
     ).mappings().all()
     out: Dict[int, Dict[str, Any]] = {}
     for r in rows:
@@ -130,6 +132,8 @@ def list_event_checklists(
             out[int(r["id_lead"])] = {
                 "items": r["items"] or {},
                 "notes": r["notes"] or "",
+                "username": r.get("username") or "",
+                "user_id": r.get("user_id"),
                 "updated_at": str(r["updated_at"]) if r.get("updated_at") else "",
             }
         except Exception:

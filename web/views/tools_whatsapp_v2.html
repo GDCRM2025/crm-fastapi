@@ -15,8 +15,45 @@
     .btn{border:1px solid var(--bd);background:#fff;border-radius:10px;padding:8px 11px;cursor:pointer;font-weight:700}.btn.primary{background:var(--green);color:#fff;border-color:var(--green)}.btn.danger{color:#b91c1c}.btn.active{background:#e2e8f0}.btn:disabled{opacity:.55;cursor:not-allowed}
     .list{overflow:auto;min-height:0}.item{padding:13px 14px;border-bottom:1px solid #edf2f7;cursor:pointer}.item:hover,.item.active{background:#f8fafc}.itemTop{display:flex;justify-content:space-between;gap:8px}.name{font-weight:800}.time{font-size:11px;color:var(--muted)}.meta,.preview{font-size:12px;color:var(--muted);margin-top:4px}.badge{background:var(--green);color:#fff;border-radius:999px;padding:2px 7px;font-size:11px;font-weight:800}
     .chatHead{padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}.chatTitle{font-weight:900}.chatSub{font-size:12px;color:var(--muted);margin-top:2px}.messages{flex:1;overflow:auto;padding:18px;background:#efeae2;display:flex;flex-direction:column;gap:8px}.bubble{max-width:76%;padding:9px 11px;border-radius:12px;box-shadow:0 1px 1px rgba(0,0,0,.08)}.in{align-self:flex-start;background:#fff}.out{align-self:flex-end;background:#d9fdd3}.msgMeta{font-size:10px;color:var(--muted);text-align:right;margin-top:4px}
-    .composer{border-top:1px solid var(--bd);padding:10px;display:grid;grid-template-columns:1fr auto;gap:8px}.composer textarea{resize:none;border:1px solid var(--bd);border-radius:12px;padding:10px;min-height:44px;max-height:110px}.rightBody{padding:14px;overflow:auto}.card{border:1px solid var(--bd);border-radius:14px;padding:12px;margin-bottom:12px}.label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:800}.value{margin-top:4px;font-weight:800;word-break:break-word}.stack{display:grid;gap:8px}.empty{height:100%;display:grid;place-items:center;color:var(--muted);text-align:center;padding:24px}.hint{font-size:12px;color:var(--muted);line-height:1.45}.ok{padding:10px;border-radius:10px;background:var(--green2);color:#166534;font-weight:700;font-size:12px}.leadRow{padding:8px 0;border-top:1px solid #edf2f7;font-size:12px}.leadRow:first-child{border-top:0}.leadId{font-weight:900;color:var(--blue)}
+    .composer{border-top:1px solid var(--bd);padding:10px;display:grid;grid-template-columns:auto auto auto auto 1fr auto;gap:8px}.iconBtn{min-width:44px;font-size:18px}.iconBtn.recording{background:#fee2e2;color:#b91c1c;border-color:#ef4444}.composer textarea{resize:none;border:1px solid var(--bd);border-radius:12px;padding:10px;min-height:44px;max-height:110px}.rightBody{padding:14px;overflow:auto}.card{border:1px solid var(--bd);border-radius:14px;padding:12px;margin-bottom:12px}.label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:800}.value{margin-top:4px;font-weight:800;word-break:break-word}.stack{display:grid;gap:8px}.empty{height:100%;display:grid;place-items:center;color:var(--muted);text-align:center;padding:24px}.hint{font-size:12px;color:var(--muted);line-height:1.45}.ok{padding:10px;border-radius:10px;background:var(--green2);color:#166534;font-weight:700;font-size:12px}.leadRow{padding:8px 0;border-top:1px solid #edf2f7;font-size:12px}.leadRow:first-child{border-top:0}.leadId{font-weight:900;color:var(--blue)}.chatMedia{display:block;max-width:320px;max-height:320px;border-radius:10px;object-fit:contain;background:#f8fafc}.chatAudio{max-width:320px}.fileCard{display:flex;align-items:center;gap:8px;text-decoration:none;color:#0f172a;font-weight:800;padding:10px;border:1px solid var(--bd);border-radius:10px;background:#f8fafc}.sticker{display:block;max-width:160px;max-height:160px}.mediaError{font-size:12px;color:#b91c1c}.mapLink{display:inline-block;margin-top:6px;font-weight:800;color:var(--blue)}
     @media(max-width:1100px){.app{grid-template-columns:300px minmax(0,1fr) 300px}}@media(max-width:900px){.app{grid-template-columns:300px minmax(0,1fr)}.right{display:none}}@media(max-width:720px){.app{grid-template-columns:1fr}.left{display:flex}.chat{display:none}.app.chat-open .left{display:none}.app.chat-open .chat{display:flex}}
+
+    /* GREENIE_REALTIME_V1 */
+    .stickerMedia{display:block;max-width:180px;max-height:180px;object-fit:contain;border-radius:10px;background:transparent}
+    .reactionEmoji{font-size:28px;line-height:1.15;display:inline-block;min-width:34px;text-align:center}
+    .reactionLabel{font-size:10px;color:var(--muted);margin-left:6px;vertical-align:middle}
+
+
+    /* GREENIE_EMOJI_STICKER_TRAY_V1 */
+    #chatWrap{position:relative}
+    .chatTray{position:absolute;left:10px;bottom:72px;width:min(390px,calc(100% - 20px));height:360px;background:#fff;border:1px solid var(--bd);border-radius:16px;box-shadow:0 14px 40px rgba(15,23,42,.22);z-index:40;display:none;overflow:hidden}
+    .chatTray.open{display:flex;flex-direction:column}
+    .trayHead{display:flex;align-items:center;gap:6px;padding:8px;border-bottom:1px solid var(--bd);background:#f8fafc}
+    .trayTab{border:0;background:transparent;border-radius:9px;padding:8px 12px;font-weight:800;cursor:pointer;color:var(--muted)}
+    .trayTab.active{background:#e2e8f0;color:#0f172a}
+    .trayClose{margin-left:auto;border:0;background:transparent;font-size:18px;cursor:pointer;padding:6px}
+    .trayPane{display:none;min-height:0;flex:1;overflow:hidden}.trayPane.active{display:flex;flex-direction:column}
+    .emojiCats{display:flex;gap:4px;overflow-x:auto;padding:7px;border-bottom:1px solid #edf2f7}
+    .emojiCat{border:0;background:#f1f5f9;border-radius:8px;padding:6px 8px;cursor:pointer;font-size:17px}.emojiCat.active{background:#dbeafe}
+    .emojiGrid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:8px;overflow:auto;align-content:start}
+    .emojiCell{border:0;background:transparent;border-radius:8px;min-height:38px;font-size:23px;cursor:pointer}.emojiCell:hover{background:#eef2f7;transform:scale(1.08)}
+    .stickerTools{display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #edf2f7}
+    .stickerHint{font-size:11px;color:var(--muted);line-height:1.25}
+    .stickerGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px;overflow:auto;align-content:start}
+    .stickerCell{border:1px solid transparent;background:#f8fafc;border-radius:12px;aspect-ratio:1;display:grid;place-items:center;cursor:pointer;padding:5px}.stickerCell:hover{border-color:#93c5fd;background:#eff6ff}
+    .stickerCell img{max-width:100%;max-height:100%;object-fit:contain}
+    .stickerEmpty{grid-column:1/-1;color:var(--muted);text-align:center;padding:30px 12px;font-size:12px}
+    .trayLoading{opacity:.55;pointer-events:none}
+
+
+    /* GREENIE_NATIVE_FLOW_V1 */
+    .replyComposer{display:none;align-items:center;gap:10px;padding:8px 12px;background:#eef6ff;border-top:1px solid #bfdbfe;border-left:4px solid #2563eb;font-size:12px}
+    .replyComposer.open{display:flex}.replyComposerText{min-width:0;flex:1}.replyComposerTitle{font-weight:900;color:#1d4ed8}.replyComposerBody{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#475569}.replyComposerClose{border:0;background:transparent;font-size:20px;cursor:pointer}
+    .messageQuote{border-left:4px solid #3b82f6;background:rgba(255,255,255,.58);border-radius:7px;padding:6px 8px;margin-bottom:6px;font-size:11px;color:#475569;max-width:100%;overflow:hidden}.messageQuote strong{display:block;color:#1e3a8a}.messageQuote span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .messageActions{display:flex;gap:3px;align-items:center;margin-top:5px;opacity:0;transition:opacity .12s}.bubble:hover .messageActions,.bubble.actionOpen .messageActions{opacity:1}.messageAction{border:0;background:rgba(255,255,255,.8);border-radius:999px;padding:3px 7px;cursor:pointer;font-size:13px}.messageAction:hover{background:#fff;transform:scale(1.08)}
+    .messageReactions{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}.reactionChip{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:2px 7px;font-size:14px;line-height:1.2}
+    .leadDateHint{font-size:11px;color:var(--muted);margin-top:-4px}.leadSimpleTitle{font-weight:900;margin-bottom:4px}
+
   </style>
 </head>
 <body>
@@ -31,7 +68,29 @@
     <div id="chatWrap" style="display:none;height:100%;min-height:0;flex-direction:column">
       <div class="chatHead"><div><button class="btn" id="back" style="display:none">←</button><span class="chatTitle" id="chatName"></span><div class="chatSub" id="chatSub"></div></div><button class="btn danger" id="closeBtn">Cerrar</button></div>
       <div class="messages" id="messages"></div>
-      <form class="composer" id="sendForm"><textarea id="message" placeholder="Escribe un mensaje"></textarea><button class="btn primary" type="submit">Enviar</button></form>
+      <div class="replyComposer" id="replyComposer">
+        <div class="replyComposerText"><div class="replyComposerTitle">Responder mensaje</div><div class="replyComposerBody" id="replyComposerBody"></div></div>
+        <button class="replyComposerClose" id="replyComposerClose" type="button" title="Cancelar respuesta">×</button>
+      </div>
+      <form class="composer" id="sendForm"><input id="mediaFile" type="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx" hidden><button class="btn iconBtn" id="attachBtn" type="button" title="Adjuntar archivo">📎</button><button class="btn iconBtn" id="micBtn" type="button" title="Grabar audio">🎙️</button><button class="btn iconBtn" id="emojiBtn" type="button" title="Emojis">😀</button><button class="btn iconBtn" id="stickerBtn" type="button" title="Stickers">▣</button><textarea id="message" placeholder="Escribe un mensaje o agrega un comentario al archivo"></textarea><button class="btn primary" type="submit">Enviar</button></form><div class="chatTray" id="chatTray">
+        <div class="trayHead">
+          <button class="trayTab active" type="button" data-tray-tab="emoji">😀 Emojis</button>
+          <button class="trayTab" type="button" data-tray-tab="sticker">▣ Stickers</button>
+          <button class="trayClose" id="trayClose" type="button" title="Cerrar">×</button>
+        </div>
+        <section class="trayPane active" id="emojiPane">
+          <div class="emojiCats" id="emojiCats"></div>
+          <div class="emojiGrid" id="emojiGrid"></div>
+        </section>
+        <section class="trayPane" id="stickerPane">
+          <div class="stickerTools">
+            <button class="btn" id="uploadStickerBtn" type="button">Subir WebP</button>
+            <input id="stickerUpload" type="file" accept="image/webp,.webp" hidden>
+            <div class="stickerHint">Recientes recibidos o usados. Máximo 100 KB.</div>
+          </div>
+          <div class="stickerGrid" id="stickerGrid"><div class="stickerEmpty">Abre una conversación para ver stickers.</div></div>
+        </section>
+      </div>
     </div>
   </main>
   <aside class="pane right"><div class="head"><h2>Ficha y nuevo requerimiento</h2></div><div class="rightBody" id="side"><div class="empty">Sin conversación seleccionada</div></div></aside>
@@ -43,11 +102,15 @@
   const GD=(()=>{try{return window.parent?.GD||null}catch(_){return null}})();const authHeaders=extra=>GD?.authHeaders?GD.authHeaders(extra||{}):(()=>{const t=localStorage.getItem('token')||sessionStorage.getItem('token');return t?{...(extra||{}),Authorization:'Bearer '+t}:{...(extra||{})}})();
   const api=async(path,opt={})=>{const r=await fetch(API_BASE+path,{...opt,headers:authHeaders({'Content-Type':'application/json',...(opt.headers||{})})});let j={};try{j=await r.json()}catch(_){}if(!r.ok)throw new Error(j.detail||j.error||('HTTP '+r.status));return j};
   const fmt=v=>{if(!v)return'';try{return new Intl.DateTimeFormat('es-CL',{dateStyle:'short',timeStyle:'short',timeZone:'America/Santiago'}).format(new Date(v))}catch(_){return v}};const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  let items=[],current=null,currentData=null,status='open',timer=null;
+  let items=[],current=null,currentData=null,status='open',timer=null,recorder=null,recordChunks=[],recordStream=null;
   async function load(){const q=$('#q').value.trim();const j=await api('/gia/whatsapp/conversations?status='+encodeURIComponent(status)+(q?'&q='+encodeURIComponent(q):''));items=j.items||[];renderList();if(current){const found=items.find(x=>x.id===current.id);if(found)current={...current,...found}}}
   function renderList(){const el=$('#list');if(!items.length){el.innerHTML='<div class="empty">No hay conversaciones</div>';return}el.innerHTML=items.map(x=>`<div class="item ${current?.id===x.id?'active':''}" data-id="${x.id}"><div class="itemTop"><span class="name">${esc(x.profile_name||x.wa_id)}</span><span class="time">${esc(fmt(x.last_message_at))}</span></div><div class="meta">${esc(x.brand_code||'SIN ASIGNAR')} · ${esc(x.executive_name||'Sin ejecutivo')}</div><div class="itemTop"><div class="preview">${x.last_direction==='outbound'?'Tú: ':''}${esc(x.last_message||'')}</div>${x.unread_count?`<span class="badge">${x.unread_count}</span>`:''}</div></div>`).join('');el.querySelectorAll('.item').forEach(n=>n.onclick=()=>openConversation(Number(n.dataset.id)))}
-  async function openConversation(id){const j=await api('/gia/whatsapp/conversations/'+id+'/messages');current=j.conversation;currentData=j;$('#app').classList.add('chat-open');$('#chatEmpty').style.display='none';$('#chatWrap').style.display='flex';$('#chatName').textContent=current.profile_name||current.wa_id;$('#chatSub').textContent='+'+current.wa_id+' · '+(current.brand_code||'SIN ASIGNAR')+' · '+(current.executive_name||'Sin ejecutivo');renderMessages(j.items||[]);renderSide();await load()}
-  function renderMessages(rows){const el=$('#messages');el.innerHTML=rows.map(m=>`<div class="bubble ${m.direction==='outbound'?'out':'in'}"><div>${esc(m.body||'')}</div><div class="msgMeta">${esc(fmt(m.sent_at))}${m.direction==='outbound'?' · '+esc(m.status||''):''}</div></div>`).join('');el.scrollTop=el.scrollHeight}
+  async function openConversation(id){const j=await api('/gia/whatsapp/conversations/'+id+'/messages-v2');current=j.conversation;currentData=j;$('#app').classList.add('chat-open');$('#chatEmpty').style.display='none';$('#chatWrap').style.display='flex';$('#chatName').textContent=current.profile_name||current.wa_id;$('#chatSub').textContent='+'+current.wa_id+' · '+(current.brand_code||'SIN ASIGNAR')+' · '+(current.executive_name||'Sin ejecutivo');renderMessages(j.items||[]);renderSide();await load()}
+  function mediaPlaceholder(m){const id=`media-${m.id}`;if(m.message_type==='image'||m.message_type==='sticker')return `<div id="${id}" class="hint">Cargando ${m.message_type==='sticker'?'sticker':'imagen'}...</div>`;if(m.message_type==='audio')return `<div id="${id}" class="hint">Cargando audio...</div>`;if(m.message_type==='video')return `<div id="${id}" class="hint">Cargando video...</div>`;if(m.message_type==='document')return `<button class="fileCard" type="button" data-media-open="${m.id}">📄 ${esc(m.filename||'Abrir documento')}</button>`;if(m.message_type==='location'&&m.latitude!=null&&m.longitude!=null){const map=`https://www.google.com/maps?q=${encodeURIComponent(m.latitude+','+m.longitude)}`;return `<div><strong>${esc(m.location_name||'Ubicacion')}</strong><div>${esc(m.location_address||'')}</div><a class="mapLink" href="${map}" target="_blank" rel="noopener">Abrir en Google Maps</a></div>`}return `<div>${esc(m.body||'')}</div>`}
+  function renderMessages(rows){const el=$('#messages');el.innerHTML=rows.map(m=>`<div class="bubble ${m.direction==='outbound'?'out':'in'}">${m.media_id||m.message_type==='location'?mediaPlaceholder(m):`<div>${esc(m.body||'')}</div>`}${m.caption?`<div style="margin-top:6px">${esc(m.caption)}</div>`:''}<div class="msgMeta">${esc(fmt(m.sent_at))}${m.direction==='outbound'?' · '+esc(m.status||''):''}</div></div>`).join('');el.querySelectorAll('[data-media-open]').forEach(b=>b.onclick=()=>openMedia(Number(b.dataset.mediaOpen),b.textContent.trim()));rows.filter(m=>m.media_id&&['image','sticker','audio','video'].includes(m.message_type)).forEach(loadInlineMedia);el.scrollTop=el.scrollHeight}
+  async function fetchMediaBlob(id){const r=await fetch(API_BASE+'/gia/whatsapp/messages/'+id+'/media',{headers:authHeaders({})});if(!r.ok){let detail='HTTP '+r.status;try{const j=await r.json();detail=j.detail||detail}catch(_){}throw new Error(detail)}return await r.blob()}
+  async function loadInlineMedia(m){const host=document.getElementById('media-'+m.id);if(!host)return;try{const blob=await fetchMediaBlob(m.id),url=URL.createObjectURL(blob);if(m.message_type==='image'||m.message_type==='sticker'){host.outerHTML=`<img class="${m.message_type==='sticker'?'sticker':'chatMedia'}" src="${url}" alt="${m.message_type==='sticker'?'Sticker':'Imagen recibida'}">`}else if(m.message_type==='audio'){host.outerHTML=`<audio class="chatAudio" controls preload="metadata" src="${url}"></audio>`}else if(m.message_type==='video'){host.outerHTML=`<video class="chatMedia" controls preload="metadata" src="${url}"></video>`}}catch(err){host.className='mediaError';host.textContent=err.message}}
+  async function openMedia(id,name){try{const blob=await fetchMediaBlob(id),url=URL.createObjectURL(blob),w=window.open(url,'_blank','noopener');if(!w)throw new Error('El navegador bloqueo la apertura del archivo');setTimeout(()=>URL.revokeObjectURL(url),60000)}catch(err){alert('No se pudo abrir '+name+': '+err.message)}}
   function renderExisting(rows){if(!rows?.length)return'<div class="hint">No existen requerimientos anteriores con este teléfono.</div>';return rows.map(x=>`<div class="leadRow"><div><span class="leadId">Lead #${esc(x.id_lead)}</span> · ${esc(x.marca||'Sin marca')}</div><div>${esc(x.fecha_evento||'Sin fecha')} · ${esc(x.estado||'')}</div></div>`).join('')}
   function renderSide(){if(!current)return;const existing=currentData?.existing_leads||[];$('#side').innerHTML=`
     <div class="card stack"><div><div class="label">Cliente WhatsApp</div><div class="value">${esc(current.profile_name||'Sin nombre')}</div></div><div><div class="label">Teléfono</div><div class="value">+${esc(current.wa_id)}</div></div><div><div class="label">Marca automática</div><div class="value">${esc(current.brand_code||'Sin asignar')}</div></div><div><div class="label">Ejecutivo</div><div class="value">${esc(current.executive_name||'Sin asignar')}</div></div></div>
@@ -56,10 +119,433 @@
     $('#leadForm').onsubmit=createLead;
   }
   async function createLead(e){e.preventDefault();if(!current)return;const btn=$('#leadSubmit'),result=$('#leadResult');btn.disabled=true;result.innerHTML='';try{const payload={nombre:$('#leadName').value.trim(),fecha_evento:$('#leadDate').value,comuna:$('#leadComuna').value.trim()||null};const j=await api('/gia/whatsapp/conversations/'+current.id+'/create-lead',{method:'POST',body:JSON.stringify(payload)});result.innerHTML=`<div class="ok">Lead #${esc(j.id_lead)} creado correctamente para ${esc(j.brand_name)}.</div>`;await openConversation(current.id)}catch(err){result.innerHTML=`<div class="hint" style="color:#b91c1c">${esc(err.message)}</div>`}finally{btn.disabled=false}}
+  function blobToBase64(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||'').split(',',2)[1]||'');r.onerror=()=>reject(r.error||new Error('No se pudo leer el archivo'));r.readAsDataURL(blob)})}
+  async function sendMediaBlob(blob,filename,mimeType){if(!current)return;if(blob.size>16*1024*1024)throw new Error('El archivo supera 16 MB');const data_base64=await blobToBase64(blob),caption=$('#message').value.trim()||null;await api('/gia/whatsapp/conversations/'+current.id+'/send-media',{method:'POST',body:JSON.stringify({filename,mime_type:mimeType||'application/octet-stream',data_base64,caption})});$('#message').value='';await openConversation(current.id)}
+  $('#attachBtn').onclick=()=>$('#mediaFile').click();
+  $('#mediaFile').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;$('#attachBtn').disabled=true;try{await sendMediaBlob(file,file.name,file.type||'application/octet-stream')}catch(err){alert(err.message)}finally{$('#attachBtn').disabled=false;e.target.value=''}};
+  $('#micBtn').onclick=async()=>{const btn=$('#micBtn');if(recorder&&recorder.state==='recording'){recorder.stop();return}if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){alert('Este navegador no permite grabar audio');return}try{recordStream=await navigator.mediaDevices.getUserMedia({audio:true});const choices=['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mp4','audio/webm'];const mime=choices.find(x=>MediaRecorder.isTypeSupported(x))||'';recorder=new MediaRecorder(recordStream,mime?{mimeType:mime}:undefined);recordChunks=[];recorder.ondataavailable=e=>{if(e.data?.size)recordChunks.push(e.data)};recorder.onstop=async()=>{btn.classList.remove('recording');btn.textContent='🎙️';recordStream?.getTracks().forEach(t=>t.stop());const type=recorder.mimeType||recordChunks[0]?.type||'audio/mp4';const ext=type.includes('mp4')?'m4a':type.includes('ogg')?'ogg':type.includes('mpeg')?'mp3':'webm';const blob=new Blob(recordChunks,{type});btn.disabled=true;try{await sendMediaBlob(blob,'voice_'+Date.now()+'.'+ext,type)}catch(err){alert(err.message)}finally{btn.disabled=false;recorder=null;recordStream=null}};recorder.start();btn.classList.add('recording');btn.textContent='⏹️'}catch(err){recordStream?.getTracks().forEach(t=>t.stop());alert('No se pudo usar el microfono: '+err.message)}};
   $('#sendForm').onsubmit=async e=>{e.preventDefault();const text=$('#message').value.trim();if(!text||!current)return;$('#message').value='';try{await api('/gia/whatsapp/conversations/'+current.id+'/send',{method:'POST',body:JSON.stringify({text})});await openConversation(current.id)}catch(err){alert(err.message)}};
   $('#closeBtn').onclick=async()=>{if(!current)return;await api('/gia/whatsapp/conversations/'+current.id+'/close',{method:'POST',body:'{}'});current=null;currentData=null;$('#chatWrap').style.display='none';$('#chatEmpty').style.display='grid';$('#side').innerHTML='<div class="empty">Sin conversación seleccionada</div>';$('#app').classList.remove('chat-open');await load()};
   $('#back').onclick=()=>$('#app').classList.remove('chat-open');if(innerWidth<=720)$('#back').style.display='inline-block';$('#refresh').onclick=load;$('#q').oninput=()=>{clearTimeout(timer);timer=setTimeout(load,350)};document.querySelectorAll('[data-status]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-status]').forEach(x=>x.classList.remove('active'));b.classList.add('active');status=b.dataset.status;load()});
-  load().catch(e=>$('#list').innerHTML='<div class="empty">'+esc(e.message)+'</div>');setInterval(()=>load().catch(()=>{}),15000);
+  load().catch(e=>$('#list').innerHTML='<div class="empty">'+esc(e.message)+'</div>');
+
+  /* GREENIE_REALTIME_V1 */
+  let __greeniePollBusy=false;
+  let __greenieLiveSignature='';
+  let __greenieLiveConversationId=null;
+
+  async function __greenieLoadSticker(messageId,img){
+    try{
+      const response=await fetch(
+        API_BASE+'/gia/whatsapp/messages/'+messageId+'/media',
+        {headers:authHeaders({})}
+      );
+      if(!response.ok)throw new Error('HTTP '+response.status);
+      const blob=await response.blob();
+      const url=URL.createObjectURL(blob);
+      img.onload=()=>setTimeout(()=>URL.revokeObjectURL(url),1500);
+      img.src=url;
+    }catch(error){
+      img.alt='No se pudo cargar el sticker';
+      console.warn('[GREENIE] sticker',error);
+    }
+  }
+
+  const __greenieBaseRenderMessages=renderMessages;
+  renderMessages=function(rows){
+    __greenieBaseRenderMessages(rows);
+    const bubbles=[...document.querySelectorAll('#messages .bubble')];
+    rows.forEach((message,index)=>{
+      const bubble=bubbles[index];
+      if(!bubble)return;
+      const content=bubble.firstElementChild;
+      if(!content)return;
+
+      if(message.message_type==='reaction'){
+        content.innerHTML='';
+        const emoji=document.createElement('span');
+        emoji.className='reactionEmoji';
+        emoji.textContent=message.body||'Reacción eliminada';
+        const label=document.createElement('span');
+        label.className='reactionLabel';
+        label.textContent='reacción';
+        content.append(emoji,label);
+      }
+
+      if(message.message_type==='sticker'&&message.media_id){
+        content.innerHTML='';
+        const img=document.createElement('img');
+        img.className='stickerMedia';
+        img.alt='Sticker';
+        content.appendChild(img);
+        __greenieLoadSticker(message.id,img);
+      }
+    });
+  };
+
+  function __greenieRowsSignature(rows){
+    return JSON.stringify((rows||[]).map(message=>[
+      message.id,
+      message.whatsapp_message_id,
+      message.message_type,
+      message.body,
+      message.status,
+      message.media_id,
+      message.mime_type,
+      message.caption,
+      message.sent_at
+    ]));
+  }
+
+  async function __greenieRefreshLive(){
+    if(__greeniePollBusy||document.hidden)return;
+    __greeniePollBusy=true;
+    try{
+      await load();
+      if(!current)return;
+
+      const conversationId=current.id;
+      const data=await api('/gia/whatsapp/conversations/'+conversationId+'/messages-v2');
+      if(!current||current.id!==conversationId)return;
+
+      const rows=data.items||[];
+      const signature=__greenieRowsSignature(rows);
+      if(
+        __greenieLiveConversationId!==conversationId||
+        __greenieLiveSignature!==signature
+      ){
+        const messagesEl=$('#messages');
+        const oldHeight=messagesEl.scrollHeight;
+        const oldBottom=oldHeight-messagesEl.scrollTop;
+        const wasNearBottom=oldBottom<=messagesEl.clientHeight+140;
+
+        current=data.conversation;
+        currentData=data;
+        $('#chatName').textContent=current.profile_name||current.wa_id;
+        $('#chatSub').textContent='+'+current.wa_id+' · '+(current.brand_code||'SIN ASIGNAR')+' · '+(current.executive_name||'Sin ejecutivo');
+        renderMessages(rows);
+
+        if(!wasNearBottom){
+          messagesEl.scrollTop=Math.max(0,messagesEl.scrollHeight-oldBottom);
+        }
+        __greenieLiveConversationId=conversationId;
+        __greenieLiveSignature=signature;
+      }
+    }catch(error){
+      console.warn('[GREENIE] actualización en vivo',error);
+    }finally{
+      __greeniePollBusy=false;
+    }
+  }
+
+  const __greenieLiveTimer=setInterval(()=>{if(!document.hidden)__greenieRefreshLive()},45000);
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden)__greenieRefreshLive();
+  });
+  window.addEventListener('focus',__greenieRefreshLive);
+  window.addEventListener('online',__greenieRefreshLive);
+
+
+  /* GREENIE_EMOJI_STICKER_TRAY_V1 */
+  const __greenieEmojiGroups={
+    'Recientes':'😀 😂 🥰 😍 😎 😭 😡 👍 👎 👌 🙏 👏 🎉 ❤️ 💚 💎 ✅ ❌ 🔥',
+    'Caras':'😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🤭 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🤢 🤮 🤧 😷 🤒 🤕',
+    'Gestos':'👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🖕',
+    'Corazones':'❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ♥️ 🫶',
+    'Personas':'👶 🧒 👦 👧 🧑 👱 👨 🧔 👩 🧓 👴 👵 🙍 🙎 🙅 🙆 💁 🙋 🧏 🙇 🤦 🤷 👮 👷 💂 🕵️ 👩‍⚕️ 👨‍🍳 👩‍🏫 👨‍💻 👩‍💼',
+    'Comida':'🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🍆 🥔 🥕 🌽 🌶️ 🥒 🥬 🥦 🧄 🧅 🍄 🥜 🌰 🍞 🥐 🥖 🥨 🧀 🥚 🍳 🥞 🧇 🥓 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🥗 🍝 🍣 🍤 🍦 🍰 🎂 ☕ 🍺 🍷',
+    'Objetos':'🎉 🎊 🎈 🎁 🏆 🥇 ⚽ 🏀 🎵 🎶 📞 📱 💻 ⌚ 📷 💡 🔑 🔒 🔔 📌 📍 ✏️ 📝 📅 📦 💰 💳 🚗 ✈️ 🏠 🏢 🛒 🧾 💎',
+    'Símbolos':'✅ ☑️ ✔️ ❌ ✖️ ⚠️ ❗ ❓ ‼️ 💯 🔥 ⭐ 🌟 ✨ 💫 ♻️ ➕ ➖ ➡️ ⬅️ ⬆️ ⬇️ 🔴 🟠 🟡 🟢 🔵 🟣 ⚫ ⚪'
+  };
+  let __greenieEmojiCategory='Recientes';
+  let __greenieStickerUrls=[];
+
+  function __greenieOpenTray(tab){
+    const tray=$('#chatTray');
+    tray.classList.add('open');
+    document.querySelectorAll('[data-tray-tab]').forEach(button=>button.classList.toggle('active',button.dataset.trayTab===tab));
+    $('#emojiPane').classList.toggle('active',tab==='emoji');
+    $('#stickerPane').classList.toggle('active',tab==='sticker');
+    if(tab==='sticker')__greenieLoadStickerTray();
+  }
+
+  function __greenieCloseTray(){
+    $('#chatTray').classList.remove('open');
+  }
+
+  function __greenieInsertEmoji(emoji){
+    const input=$('#message');
+    const start=input.selectionStart??input.value.length;
+    const end=input.selectionEnd??start;
+    input.value=input.value.slice(0,start)+emoji+input.value.slice(end);
+    const next=start+emoji.length;
+    input.focus();
+    input.setSelectionRange(next,next);
+
+    const recent=(localStorage.getItem('greenieEmojiRecent')||'').split(' ').filter(Boolean);
+    const updated=[emoji,...recent.filter(value=>value!==emoji)].slice(0,24);
+    localStorage.setItem('greenieEmojiRecent',updated.join(' '));
+    __greenieEmojiGroups.Recientes=updated.join(' ');
+    if(__greenieEmojiCategory==='Recientes')__greenieRenderEmojis();
+  }
+
+  function __greenieRenderEmojiCategories(){
+    const icons={'Recientes':'🕘','Caras':'😀','Gestos':'👋','Corazones':'❤️','Personas':'🧑','Comida':'🍔','Objetos':'🎁','Símbolos':'✅'};
+    $('#emojiCats').innerHTML=Object.keys(__greenieEmojiGroups).map(name=>`<button type="button" class="emojiCat ${name===__greenieEmojiCategory?'active':''}" data-emoji-cat="${name}" title="${name}">${icons[name]||'•'}</button>`).join('');
+    document.querySelectorAll('[data-emoji-cat]').forEach(button=>button.onclick=()=>{
+      __greenieEmojiCategory=button.dataset.emojiCat;
+      __greenieRenderEmojiCategories();
+      __greenieRenderEmojis();
+    });
+  }
+
+  function __greenieRenderEmojis(){
+    const values=(__greenieEmojiGroups[__greenieEmojiCategory]||'').split(' ').filter(Boolean);
+    $('#emojiGrid').innerHTML=values.map(emoji=>`<button type="button" class="emojiCell">${emoji}</button>`).join('');
+    document.querySelectorAll('#emojiGrid .emojiCell').forEach((button,index)=>button.onclick=()=>__greenieInsertEmoji(values[index]));
+  }
+
+  function __greenieClearStickerUrls(){
+    __greenieStickerUrls.forEach(url=>URL.revokeObjectURL(url));
+    __greenieStickerUrls=[];
+  }
+
+  async function __greenieLoadStickerImage(item,img){
+    try{
+      const response=await fetch(API_BASE+'/gia/whatsapp/messages/'+item.source_message_id+'/media',{headers:authHeaders({})});
+      if(!response.ok)throw new Error('HTTP '+response.status);
+      const blob=await response.blob();
+      const url=URL.createObjectURL(blob);
+      __greenieStickerUrls.push(url);
+      img.src=url;
+    }catch(error){
+      img.alt='Sticker no disponible';
+      console.warn('[GREENIE] sticker tray',error);
+    }
+  }
+
+  async function __greenieLoadStickerTray(){
+    const grid=$('#stickerGrid');
+    if(!current){grid.innerHTML='<div class="stickerEmpty">Selecciona una conversación.</div>';return}
+    grid.classList.add('trayLoading');
+    grid.innerHTML='<div class="stickerEmpty">Cargando stickers…</div>';
+    __greenieClearStickerUrls();
+    try{
+      const data=await api('/gia/whatsapp/conversations/'+current.id+'/stickers');
+      const stickers=data.items||[];
+      if(!stickers.length){
+        grid.innerHTML='<div class="stickerEmpty">Todavía no hay stickers recientes.<br>Recibe uno por WhatsApp o sube un archivo WebP.</div>';
+        return;
+      }
+      grid.innerHTML=stickers.map((item,index)=>`<button type="button" class="stickerCell" data-sticker-index="${index}" title="Enviar sticker"><img alt="Sticker"></button>`).join('');
+      stickers.forEach((item,index)=>{
+        const button=grid.querySelector(`[data-sticker-index="${index}"]`);
+        const img=button.querySelector('img');
+        __greenieLoadStickerImage(item,img);
+        button.onclick=async()=>{
+          button.disabled=true;
+          try{
+            await api('/gia/whatsapp/conversations/'+current.id+'/send-sticker',{method:'POST',body:JSON.stringify({media_id:item.media_id,source_message_id:item.source_message_id})});
+            __greenieCloseTray();
+            await openConversation(current.id);
+          }catch(error){alert(error.message)}finally{button.disabled=false}
+        };
+      });
+    }catch(error){
+      grid.innerHTML='<div class="stickerEmpty" style="color:#b91c1c">'+esc(error.message)+'</div>';
+    }finally{
+      grid.classList.remove('trayLoading');
+    }
+  }
+
+  const __greenieRecent=localStorage.getItem('greenieEmojiRecent');
+  if(__greenieRecent)__greenieEmojiGroups.Recientes=__greenieRecent;
+  __greenieRenderEmojiCategories();
+  __greenieRenderEmojis();
+
+  $('#emojiBtn').onclick=event=>{event.stopPropagation();__greenieOpenTray('emoji')};
+  $('#stickerBtn').onclick=event=>{event.stopPropagation();__greenieOpenTray('sticker')};
+  $('#trayClose').onclick=__greenieCloseTray;
+  document.querySelectorAll('[data-tray-tab]').forEach(button=>button.onclick=()=>__greenieOpenTray(button.dataset.trayTab));
+  $('#uploadStickerBtn').onclick=()=>$('#stickerUpload').click();
+  $('#stickerUpload').onchange=async event=>{
+    const file=event.target.files?.[0];
+    if(!file)return;
+    try{
+      if(file.type!=='image/webp'&&!file.name.toLowerCase().endsWith('.webp'))throw new Error('El sticker debe ser un archivo WebP');
+      if(file.size>100*1024)throw new Error('El sticker supera 100 KB');
+      await sendMediaBlob(file,file.name,'image/webp');
+      __greenieCloseTray();
+      await __greenieLoadStickerTray();
+    }catch(error){alert(error.message)}finally{event.target.value=''}
+  };
+  document.addEventListener('keydown',event=>{if(event.key==='Escape')__greenieCloseTray()});
+  document.addEventListener('click',event=>{
+    const tray=$('#chatTray');
+    if(tray.classList.contains('open')&&!tray.contains(event.target)&&!event.target.closest('#emojiBtn,#stickerBtn'))__greenieCloseTray();
+  });
+
+
+  /* GREENIE_NATIVE_FLOW_V1 */
+  let __greenieReplyTarget=null;
+  let __greenieComunasCache=null;
+
+  function __greenieTodayChile(){
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    const data=Object.fromEntries(parts.map(part=>[part.type,part.value]));
+    return `${data.year}-${data.month}-${data.day}`;
+  }
+
+  function __greenieSetReply(message){
+    if(!message?.id)return;
+    __greenieReplyTarget=message;
+    $('#replyComposerBody').textContent=message.body||message.caption||'Archivo';
+    $('#replyComposer').classList.add('open');
+    $('#message').focus();
+  }
+
+  function __greenieClearReply(){
+    __greenieReplyTarget=null;
+    $('#replyComposer').classList.remove('open');
+    $('#replyComposerBody').textContent='';
+  }
+
+  $('#replyComposerClose').onclick=__greenieClearReply;
+
+  async function __greenieSendReaction(message,emoji){
+    if(!current||!message?.id)return;
+    try{
+      await api('/gia/whatsapp/conversations/'+current.id+'/send-reaction',{method:'POST',body:JSON.stringify({target_message_id:message.id,emoji})});
+      await __greenieRefreshLive();
+    }catch(error){alert(error.message)}
+  }
+
+  const __greenieNativeRender=renderMessages;
+  renderMessages=function(rows){
+    __greenieNativeRender(rows);
+    const bubbles=[...document.querySelectorAll('#messages .bubble')];
+    rows.forEach((message,index)=>{
+      const bubble=bubbles[index];
+      if(!bubble)return;
+      bubble.dataset.messageId=message.id;
+      const content=bubble.firstElementChild;
+      if(!content)return;
+
+      if(message.reply_to){
+        const quote=document.createElement('div');
+        quote.className='messageQuote';
+        const title=document.createElement('strong');
+        title.textContent=message.reply_to.direction==='outbound'?'Tú':'Cliente';
+        const body=document.createElement('span');
+        body.textContent=message.reply_to.body||'Mensaje no disponible';
+        quote.append(title,body);
+        content.prepend(quote);
+      }
+
+      const reactions=Array.isArray(message.reactions)?message.reactions:[];
+      if(reactions.length){
+        const row=document.createElement('div');
+        row.className='messageReactions';
+        reactions.forEach(reaction=>{
+          const chip=document.createElement('span');
+          chip.className='reactionChip';
+          chip.textContent=reaction.emoji||'';
+          chip.title=reaction.direction==='outbound'?'Tu reacción':'Reacción del cliente';
+          row.appendChild(chip);
+        });
+        bubble.appendChild(row);
+      }
+
+      const actions=document.createElement('div');
+      actions.className='messageActions';
+      const reply=document.createElement('button');
+      reply.type='button';reply.className='messageAction';reply.textContent='↩ Responder';
+      reply.onclick=()=>__greenieSetReply(message);
+      actions.appendChild(reply);
+      ['👍','❤️','😂','😮','😢','🙏'].forEach(emoji=>{
+        const button=document.createElement('button');
+        button.type='button';button.className='messageAction';button.textContent=emoji;
+        button.onclick=()=>__greenieSendReaction(message,emoji);
+        actions.appendChild(button);
+      });
+      bubble.appendChild(actions);
+      bubble.onclick=event=>{if(!event.target.closest('button,a,audio,video'))bubble.classList.toggle('actionOpen')};
+    });
+  };
+
+  async function __greenieLoadComunas(){
+    if(__greenieComunasCache)return __greenieComunasCache;
+    const data=await api('/gia/whatsapp/metadata/comunas');
+    __greenieComunasCache=data.items||[];
+    return __greenieComunasCache;
+  }
+
+  renderSide=async function(){
+    if(!current)return;
+    $('#side').innerHTML=`
+      <div class="card stack">
+        <div><div class="label">Cliente WhatsApp</div><div class="value">${esc(current.profile_name||'Sin nombre')}</div></div>
+        <div><div class="label">Teléfono</div><div class="value">+${esc(current.wa_id)}</div></div>
+      </div>
+      <form class="card stack" id="leadForm">
+        <div class="leadSimpleTitle">Crear lead</div>
+        <input class="field" id="leadName" placeholder="Nombre del cliente" maxlength="180" value="${esc(current.profile_name||'')}" required>
+        <input class="field" id="leadDate" type="date" lang="es-CL" required>
+        <div class="leadDateHint">Fecha del evento: DD/MM/AAAA. No admite fechas anteriores.</div>
+        <select class="field" id="leadComuna"><option value="">Selecciona comuna</option></select>
+        <button class="btn primary" id="leadSubmit" type="submit">Crear lead</button>
+        <div id="leadResult"></div>
+      </form>`;
+    const date=$('#leadDate');
+    date.min=__greenieTodayChile();
+    date.value=date.min;
+    $('#leadForm').onsubmit=createLead;
+    try{
+      const comunas=await __greenieLoadComunas();
+      $('#leadComuna').innerHTML='<option value="">Selecciona comuna</option>'+comunas.map(item=>`<option value="${esc(item.nombre)}">${esc(item.nombre)}</option>`).join('');
+    }catch(error){
+      $('#leadComuna').innerHTML='<option value="">No se pudieron cargar las comunas</option>';
+      console.warn('[GREENIE] comunas',error);
+    }
+  };
+
+  createLead=async function(event){
+    event.preventDefault();
+    if(!current)return;
+    const button=$('#leadSubmit'),result=$('#leadResult');
+    const fecha=$('#leadDate').value;
+    const today=__greenieTodayChile();
+    if(!fecha||fecha<today){result.innerHTML='<div class="hint" style="color:#b91c1c">Selecciona una fecha igual o posterior a hoy.</div>';return}
+    button.disabled=true;result.innerHTML='';
+    try{
+      const payload={nombre:$('#leadName').value.trim(),fecha_evento:fecha,comuna:$('#leadComuna').value||null};
+      const response=await api('/gia/whatsapp/conversations/'+current.id+'/create-lead',{method:'POST',body:JSON.stringify(payload)});
+      result.innerHTML=`<div class="ok">Lead #${esc(response.id_lead)} creado correctamente.</div>`;
+    }catch(error){result.innerHTML=`<div class="hint" style="color:#b91c1c">${esc(error.message)}</div>`}finally{button.disabled=false}
+  };
+
+  $('#sendForm').onsubmit=async event=>{
+    event.preventDefault();
+    const text=$('#message').value.trim();
+    if(!text||!current)return;
+    $('#message').value='';
+    try{
+      await api('/gia/whatsapp/conversations/'+current.id+'/send-v2',{method:'POST',body:JSON.stringify({text,reply_to_message_id:__greenieReplyTarget?.id||null})});
+      __greenieClearReply();
+      await openConversation(current.id);
+    }catch(error){alert(error.message)}
+  };
+
+  sendMediaBlob=async function(blob,filename,mimeType){
+    if(!current)return;
+    if(blob.size>16*1024*1024)throw new Error('El archivo supera 16 MB');
+    const data_base64=await blobToBase64(blob),caption=$('#message').value.trim()||null;
+    await api('/gia/whatsapp/conversations/'+current.id+'/send-media-v2',{method:'POST',body:JSON.stringify({filename,mime_type:mimeType||'application/octet-stream',data_base64,caption,reply_to_message_id:__greenieReplyTarget?.id||null})});
+    $('#message').value='';
+    __greenieClearReply();
+    await openConversation(current.id);
+  };
+
 })();
 </script>
 </body>

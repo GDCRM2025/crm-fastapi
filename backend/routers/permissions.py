@@ -1,23 +1,27 @@
-from __future__ import annotations
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy import text
 
+from backend.core.activity_log import log_activity
 from backend.core.db import get_connection
+from backend.core.rbac import ensure_permission_tables, role_key, username
 from backend.routers.auth import get_current_user
 
 router = APIRouter(tags=["permissions"])
 
 EXCLUDED_ROLE_PARTS = ("OPERADOR", "CONDUCTOR", "CHOFER", "CHOP", "PATIO")
 
-PERMISSION_CATALOG: list[dict] = [
+PERMISSION_CATALOG = [
     {"id": "dash_home", "group": "Dashboard", "label": "Inicio / dashboard"},
     {"id": "leads_ver", "group": "Ventas", "label": "Leads"},
     {"id": "leads_fil", "group": "Ventas", "label": "Filtros / embudos de leads"},
+    {"id": "crm360", "group": "Ventas", "label": "Comercial 360"},
     {"id": "historial", "group": "Ventas", "label": "Historial"},
     {"id": "events_calendar", "group": "Agenda", "label": "Agenda / eventos"},
     {"id": "evt", "group": "Agenda", "label": "Registrar evento"},
     {"id": "chk_hoy", "group": "Agenda", "label": "Checklist eventos"},
+    {"id": "encuestas_eventos", "group": "Agenda", "label": "Encuestas post-evento"},
     {"id": "rep_funnel", "group": "Reportes", "label": "Funnel"},
     {"id": "rep_cierre", "group": "Reportes", "label": "Cierre"},
     {"id": "rep_tipo", "group": "Reportes", "label": "Tipos de cliente"},
@@ -25,6 +29,7 @@ PERMISSION_CATALOG: list[dict] = [
     {"id": "rep_cxc", "group": "Reportes", "label": "Cuentas por cobrar"},
     {"id": "rep_cxp", "group": "Reportes", "label": "Cuentas por pagar"},
     {"id": "rep_com", "group": "Reportes", "label": "Comisiones"},
+    {"id": "rep_surveys", "group": "Reportes", "label": "Encuestas / satisfacción"},
     {"id": "rep_prod", "group": "Reportes", "label": "Productos"},
     {"id": "rep_cli", "group": "Reportes", "label": "Clientes"},
     {"id": "rep_hoy", "group": "Reportes", "label": "Venta diaria"},
@@ -56,7 +61,6 @@ PERMISSION_CATALOG: list[dict] = [
     {"id": "rrhh_staff", "group": "RRHH", "label": "Colaboradores"},
     {"id": "rrhh_sgjo", "group": "RRHH", "label": "Marcaciones SGJO"},
     {"id": "rrhh_solicitudes", "group": "RRHH", "label": "Solicitudes RRHH"},
-    {"id": "tasks_my", "group": "Tareas", "label": "Mis tareas"},
     {"id": "system_notifs", "group": "Tareas", "label": "Notificaciones internas"},
     {"id": "tool_gmail", "group": "Tools", "label": "Correo GIA"},
     {"id": "tool_ig", "group": "Tools", "label": "Instagram GIA"},
@@ -66,11 +70,15 @@ PERMISSION_CATALOG: list[dict] = [
     {"id": "tools_hub", "group": "Tools", "label": "Tools hub"},
     {"id": "set_users", "group": "Settings", "label": "Usuarios"},
     {"id": "set_permissions", "group": "Settings", "label": "Permisos"},
+    {"id": "set_features", "group": "Settings", "label": "Funcionamiento de módulos"},
+    {"id": "set_whatsapp_coexistence", "group": "Settings", "label": "Coexistencia WhatsApp"},
+    {"id": "set_audit", "group": "Settings", "label": "Auditoria"},
     {"id": "set_marcas", "group": "Settings", "label": "Marcas"},
     {"id": "set_prod", "group": "Settings", "label": "Productos venta"},
-    {"id": "set_comi", "group": "Settings", "label": "Comisiones"},
+    {"id": "set_commissions_config", "group": "Settings", "label": "Configuracion comisiones"},
     {"id": "set_com", "group": "Settings", "label": "Comunas"},
     {"id": "set_tc", "group": "Settings", "label": "Tipos cliente"},
+    {"id": "set_platforms", "group": "Settings", "label": "Plataformas"},
     {"id": "set_el", "group": "Settings", "label": "Estados lead"},
     {"id": "set_roles", "group": "Settings", "label": "Roles"},
     {"id": "set_notify_email", "group": "Settings", "label": "Notificaciones correo"},
@@ -94,34 +102,7 @@ def _require_admin(me: dict) -> None:
 
 
 def _ensure_tables(conn) -> None:
-    conn.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS public.user_menu_permissions (
-              id_usuario INTEGER NOT NULL,
-              menu_id TEXT NOT NULL,
-              access TEXT NOT NULL DEFAULT 'none',
-              updated_by INTEGER,
-              updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-              PRIMARY KEY (id_usuario, menu_id)
-            )
-            """
-        )
-    )
-    conn.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS public.role_menu_permissions (
-              rol TEXT NOT NULL,
-              menu_id TEXT NOT NULL,
-              access TEXT NOT NULL DEFAULT 'none',
-              updated_by INTEGER,
-              updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-              PRIMARY KEY (rol, menu_id)
-            )
-            """
-        )
-    )
+    ensure_permission_tables(conn)
     try:
         conn.commit()
     except Exception:
@@ -135,7 +116,7 @@ def _norm_access(value) -> str:
     return v
 
 
-def _uid(me: dict) -> int | None:
+def _uid(me: dict) -> Optional[int]:
     raw = me.get("id_usuario") or me.get("id") or me.get("user_id")
     try:
         return int(raw) if str(raw or "").isdigit() else None
@@ -148,7 +129,7 @@ def _is_excluded_role(role: str) -> bool:
     return any(part in r for part in EXCLUDED_ROLE_PARTS)
 
 
-def _all_full() -> dict[str, str]:
+def _all_full() -> Dict[str, str]:
     return {str(item["id"]): "full" for item in PERMISSION_CATALOG}
 
 
@@ -170,7 +151,7 @@ def _ensure_usuarios_marcas(conn) -> None:
         pass
 
 
-def _brands_for_users(conn, user_ids: list[int]) -> dict[int, list[dict]]:
+def _brands_for_users(conn, user_ids: List[int]) -> Dict[int, List[dict]]:
     ids = []
     for raw in user_ids or []:
         try:
@@ -197,14 +178,14 @@ def _brands_for_users(conn, user_ids: list[int]) -> dict[int, list[dict]]:
         ),
         {"ids": ids},
     ).mappings().all()
-    out: dict[int, list[dict]] = {}
+    out = {}
     for r in rows or []:
         uid = int(r["id_usuario"])
         out.setdefault(uid, []).append({"id_marca": int(r["id_marca"]), "marca": str(r["marca"] or "")})
     return out
 
 
-def _attach_brands(conn, users: list[dict]) -> list[dict]:
+def _attach_brands(conn, users: List[dict]) -> List[dict]:
     by_user = _brands_for_users(conn, [int(u.get("id_usuario") or 0) for u in users or []])
     out = []
     for u in users or []:
@@ -262,6 +243,105 @@ def permissions_users(include_ops: bool = Query(False), me=Depends(get_current_u
     return {"ok": True, "items": items}
 
 
+@router.get("/admin/permissions/roles")
+def permissions_roles(me=Depends(get_current_user)):
+    _require_admin(me)
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        rows = conn.execute(
+            text(
+                """
+                SELECT DISTINCT COALESCE(NULLIF(btrim(rol),''), 'SIN ROL') AS rol
+                FROM public.usuarios
+                WHERE COALESCE(is_active, TRUE) IS TRUE
+                  AND COALESCE(NULLIF(btrim(rol),''), '') <> ''
+                ORDER BY 1
+                """
+            )
+        ).mappings().all()
+    return {"ok": True, "items": [dict(r) for r in rows if not _is_excluded_role(str(r.get("rol") or ""))]}
+
+
+@router.get("/admin/permissions/roles/{rol}")
+def permissions_get_role(rol: str, me=Depends(get_current_user)):
+    _require_admin(me)
+    rk = role_key(rol)
+    if not rk:
+        raise HTTPException(status_code=400, detail="Rol requerido.")
+    if _is_excluded_role(rk):
+        raise HTTPException(status_code=403, detail="Operadores/conductores no usan esta matriz.")
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        rows = conn.execute(
+            text(
+                """
+                SELECT menu_id, access
+                FROM public.role_menu_permissions
+                WHERE upper(rol)=upper(:rol)
+                """
+            ),
+            {"rol": rk},
+        ).mappings().all()
+    return {"ok": True, "rol": rk, "permissions": {str(r["menu_id"]): str(r["access"]) for r in rows}}
+
+
+@router.put("/admin/permissions/roles/{rol}")
+def permissions_set_role(
+    rol: str,
+    request: Request,
+    body: dict = Body(default_factory=dict),
+    me=Depends(get_current_user),
+):
+    _require_admin(me)
+    rk = role_key(rol)
+    if not rk:
+        raise HTTPException(status_code=400, detail="Rol requerido.")
+    if _is_excluded_role(rk):
+        raise HTTPException(status_code=403, detail="Operadores/conductores no usan esta matriz.")
+    perms = body.get("permissions") or {}
+    if not isinstance(perms, dict):
+        raise HTTPException(status_code=400, detail="permissions debe ser objeto.")
+    catalog_ids = {str(item["id"]) for item in PERMISSION_CATALOG}
+    by = _uid(me)
+    saved = 0
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        before_rows = conn.execute(
+            text("SELECT menu_id, access FROM public.role_menu_permissions WHERE upper(rol)=upper(:rol)"),
+            {"rol": rk},
+        ).mappings().all()
+        before = {str(r["menu_id"]): str(r["access"]) for r in before_rows}
+        conn.execute(text("DELETE FROM public.role_menu_permissions WHERE upper(rol)=upper(:rol)"), {"rol": rk})
+        for menu_id, access in perms.items():
+            mid = str(menu_id or "").strip()
+            acc = _norm_access(access)
+            if mid not in catalog_ids or acc == "none":
+                continue
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.role_menu_permissions(rol, menu_id, access, updated_by, updated_at)
+                    VALUES(:rol, :menu, :access, :by, now())
+                    """
+                ),
+                {"rol": rk, "menu": mid, "access": acc, "by": by},
+            )
+            saved += 1
+        log_activity(
+            conn,
+            username=username(me),
+            user_id=by,
+            role=role_key(me),
+            action="permissions.role.update",
+            entity_type="role",
+            entity_id=None,
+            meta={"rol": rk, "before": before, "after_count": saved},
+            request=request,
+        )
+        conn.commit()
+    return permissions_get_role(rk, me)
+
+
 @router.get("/admin/permissions/users/{id_usuario}")
 def permissions_get_user(id_usuario: int, me=Depends(get_current_user)):
     _require_admin(me)
@@ -298,7 +378,12 @@ def permissions_get_user(id_usuario: int, me=Depends(get_current_user)):
 
 
 @router.put("/admin/permissions/users/{id_usuario}")
-def permissions_set_user(id_usuario: int, body: dict = Body(default_factory=dict), me=Depends(get_current_user)):
+def permissions_set_user(
+    id_usuario: int,
+    request: Request,
+    body: dict = Body(default_factory=dict),
+    me=Depends(get_current_user),
+):
     _require_admin(me)
     perms = body.get("permissions") or {}
     if not isinstance(perms, dict):
@@ -315,7 +400,13 @@ def permissions_set_user(id_usuario: int, body: dict = Body(default_factory=dict
             raise HTTPException(status_code=404, detail="Usuario no encontrado.")
         if _is_excluded_role(str(user.get("rol") or "")):
             raise HTTPException(status_code=403, detail="Operadores/conductores no usan esta matriz.")
+        before_rows = conn.execute(
+            text("SELECT menu_id, access FROM public.user_menu_permissions WHERE id_usuario=:id"),
+            {"id": int(id_usuario)},
+        ).mappings().all()
+        before = {str(r["menu_id"]): str(r["access"]) for r in before_rows}
         conn.execute(text("DELETE FROM public.user_menu_permissions WHERE id_usuario=:id"), {"id": int(id_usuario)})
+        saved = 0
         for menu_id, access in perms.items():
             mid = str(menu_id or "").strip()
             acc = _norm_access(access)
@@ -330,6 +421,18 @@ def permissions_set_user(id_usuario: int, body: dict = Body(default_factory=dict
                 ),
                 {"id": int(id_usuario), "menu": mid, "access": acc, "by": by},
             )
+            saved += 1
+        log_activity(
+            conn,
+            username=username(me),
+            user_id=by,
+            role=role_key(me),
+            action="permissions.user.update",
+            entity_type="usuario",
+            entity_id=int(id_usuario),
+            meta={"target_role": str(user.get("rol") or ""), "before": before, "after_count": saved},
+            request=request,
+        )
         conn.commit()
     return permissions_get_user(id_usuario, me)
 
@@ -347,7 +450,17 @@ def me_permissions(me=Depends(get_current_user)):
     with get_connection() as conn:
         _ensure_tables(conn)
         marcas = _brands_for_users(conn, [int(uid)]).get(int(uid), [])
-        rows = conn.execute(
+        role_rows = conn.execute(
+            text(
+                """
+                SELECT menu_id, access
+                FROM public.role_menu_permissions
+                WHERE upper(rol)=upper(:rol)
+                """
+            ),
+            {"rol": role},
+        ).mappings().all()
+        user_rows = conn.execute(
             text(
                 """
                 SELECT menu_id, access
@@ -357,10 +470,15 @@ def me_permissions(me=Depends(get_current_user)):
             ),
             {"id": int(uid)},
         ).mappings().all()
+    role_perms = {str(r["menu_id"]): str(r["access"]) for r in role_rows}
+    user_perms = {str(r["menu_id"]): str(r["access"]) for r in user_rows}
+    permissions = {**role_perms, **user_perms}
     return {
         "ok": True,
-        "source": "user",
-        "permissions": {str(r["menu_id"]): str(r["access"]) for r in rows},
+        "source": "user" if user_perms else ("role" if role_perms else "none"),
+        "permissions": permissions,
+        "role_permissions": role_perms,
+        "user_permissions": user_perms,
         "marcas": marcas,
         "marcas_ids": [int(m["id_marca"]) for m in marcas],
         "brand_scope": "assigned" if marcas else "all_or_unassigned",

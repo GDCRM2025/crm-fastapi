@@ -131,6 +131,20 @@ def _ensure_tables(conn):
     _add_column_if_missing(conn, "fin_eventos", "abono_ref", "TEXT")
     _add_column_if_missing(conn, "fin_eventos", "abono_due_date", "DATE")
     _add_column_if_missing(conn, "fin_eventos", "updated_at", "TIMESTAMP DEFAULT now()")
+    _add_column_if_missing(conn, "fin_eventos", "ejecutivo", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "requiere_documento", "BOOLEAN NOT NULL DEFAULT FALSE")
+    _add_column_if_missing(conn, "fin_eventos", "factura_tipo_doc", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "factura_num", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "factura_fecha", "DATE")
+    _add_column_if_missing(conn, "fin_eventos", "factura_rut", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "factura_razon_social", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "factura_direccion", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "factura_giro", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "factura_oc", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "factura_fecha_oc", "DATE")
+    _add_column_if_missing(conn, "fin_eventos", "factura_hes", "TEXT")
+    _add_column_if_missing(conn, "fin_eventos", "factura_fecha_hes", "DATE")
+    _add_column_if_missing(conn, "fin_eventos", "factura_glosa", "TEXT")
     # 1 evento financiero por lead (si existe id_lead). Permite upsert estable desde "sync confirmados".
     try:
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_fin_eventos_id_lead ON fin_eventos(id_lead) WHERE id_lead IS NOT NULL"))
@@ -285,6 +299,9 @@ def _ensure_roles(me, allowed):
     return role
 
 
+FIN_EVENT_ROLES = {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES", "EJECUTIVO", "EJECUTIVO DE VENTAS", "VENTAS"}
+
+
 class CuentaIn(BaseModel):
     code: str
     name: str
@@ -315,6 +332,24 @@ class EventoIn(BaseModel):
     saldo: Optional[float] = 0
     comision_pct: Optional[float] = 0
     comision_monto: Optional[float] = 0
+    ejecutivo: Optional[str] = None
+    requiere_documento: Optional[bool] = None
+
+
+class FacturacionEventoIn(BaseModel):
+    requiere_documento: Optional[bool] = None
+    factura_tipo_doc: Optional[str] = None
+    factura_num: Optional[str] = None
+    factura_fecha: Optional[date] = None
+    factura_rut: Optional[str] = None
+    factura_razon_social: Optional[str] = None
+    factura_direccion: Optional[str] = None
+    factura_giro: Optional[str] = None
+    factura_oc: Optional[str] = None
+    factura_fecha_oc: Optional[date] = None
+    factura_hes: Optional[str] = None
+    factura_fecha_hes: Optional[date] = None
+    factura_glosa: Optional[str] = None
 
 
 class GastoIn(BaseModel):
@@ -576,10 +611,12 @@ def delete_plan_cuenta(code: str, me=Depends(get_current_user)):
 
 @router.post("/eventos")
 def create_evento(body: EventoIn, me=Depends(get_current_user)):
-    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
+    _ensure_roles(me, FIN_EVENT_ROLES)
     with get_connection() as conn:
         _ensure_tables(conn)
         payload = body.dict()
+        if payload.get("requiere_documento") is None:
+            payload["requiere_documento"] = bool("EMP" in str(payload.get("tipo_cliente") or "").upper() or "FACT" in str(payload.get("tipo_cliente") or "").upper())
 
         # Upsert por id_lead (si ya está registrado, actualiza el último evento del lead).
         id_evento = None
@@ -616,7 +653,10 @@ def create_evento(body: EventoIn, me=Depends(get_current_user)):
                         iva=:iva,
                         traslado=:traslado,
                         comision_pct=:comision_pct,
-                        comision_monto=:comision_monto
+                        comision_monto=:comision_monto,
+                        ejecutivo=:ejecutivo,
+                        requiere_documento=:requiere_documento,
+                        updated_at=now()
                     WHERE id_evento=:id_evento
                     """
                 ),
@@ -632,10 +672,10 @@ def create_evento(body: EventoIn, me=Depends(get_current_user)):
                     """
                     INSERT INTO fin_eventos
                     (id_lead, num_cotizacion, id_cotizacion, cliente, comuna, marca, tipo_cliente, fecha_evento, monto_bruto, monto_neto, iva,
-                     traslado, abono, saldo, comision_pct, comision_monto)
+                     traslado, abono, saldo, comision_pct, comision_monto, ejecutivo, requiere_documento, updated_at)
                     VALUES
                     (:id_lead, :num_cotizacion, :id_cotizacion, :cliente, :comuna, :marca, :tipo_cliente, :fecha_evento, :monto_bruto, :monto_neto, :iva,
-                     :traslado, :abono, :saldo, :comision_pct, :comision_monto)
+                     :traslado, :abono, :saldo, :comision_pct, :comision_monto, :ejecutivo, :requiere_documento, now())
                     RETURNING id_evento
                     """
                 ),
@@ -706,7 +746,7 @@ def get_evento_by_lead(
     id_lead: int = Query(..., ge=1),
     me=Depends(get_current_user),
 ):
-    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
+    _ensure_roles(me, FIN_EVENT_ROLES)
     with get_connection() as conn:
         _ensure_tables(conn)
         row = conn.execute(
@@ -714,7 +754,10 @@ def get_evento_by_lead(
                 """
                 SELECT id_evento, id_lead, num_cotizacion, id_cotizacion, cliente, comuna, marca, tipo_cliente, fecha_evento,
                        monto_bruto, monto_neto, iva, traslado, abono, saldo, comision_pct, comision_monto,
-                       abono_mode, abono_ref, abono_due_date, created_at, updated_at
+                       abono_mode, abono_ref, abono_due_date, ejecutivo, requiere_documento,
+                       factura_tipo_doc, factura_num, factura_fecha, factura_rut, factura_razon_social, factura_direccion,
+                       factura_giro, factura_oc, factura_fecha_oc, factura_hes, factura_fecha_hes, factura_glosa,
+                       created_at, updated_at
                 FROM fin_eventos
                 WHERE id_lead=:id
                 ORDER BY id_evento DESC
@@ -723,7 +766,7 @@ def get_evento_by_lead(
             ),
             {"id": int(id_lead)},
         ).mappings().first()
-    return {"ok": True, "item": dict(row) if row else None}
+    return {"ok": True, "item": _row_json(dict(row)) if row else None}
 
 
 @router.get("/eventos")
@@ -734,7 +777,7 @@ def list_eventos(
     only_pending: bool = Query(False),
     me=Depends(get_current_user),
 ):
-    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
+    _ensure_roles(me, FIN_EVENT_ROLES)
     with get_connection() as conn:
         _ensure_tables(conn)
         where = ""
@@ -756,7 +799,20 @@ def list_eventos(
             text(
                 f"""
                 SELECT id_evento, id_lead, num_cotizacion, id_cotizacion, cliente, comuna, marca, tipo_cliente, fecha_evento,
-                       monto_bruto, monto_neto, iva, traslado, abono, saldo, comision_pct, comision_monto, created_at
+                       monto_bruto, monto_neto, iva, traslado, abono, saldo, comision_pct, comision_monto,
+                       abono_mode, abono_ref, abono_due_date, ejecutivo, requiere_documento,
+                       factura_tipo_doc, factura_num, factura_fecha, factura_rut, factura_razon_social, factura_direccion,
+                       factura_giro, factura_oc, factura_fecha_oc, factura_hes, factura_fecha_hes, factura_glosa,
+                       (SELECT COUNT(*) FROM fin_pagos p WHERE p.id_evento=fin_eventos.id_evento) AS pago_count,
+                       (SELECT p.monto FROM fin_pagos p WHERE p.id_evento=fin_eventos.id_evento ORDER BY p.fecha ASC, p.id_pago ASC LIMIT 1) AS abono_1,
+                       (SELECT p.fecha FROM fin_pagos p WHERE p.id_evento=fin_eventos.id_evento ORDER BY p.fecha DESC, p.id_pago DESC LIMIT 1) AS ultimo_pago_fecha,
+                       CASE
+                         WHEN COALESCE(abono_mode,'')<>'' THEN abono_mode
+                         WHEN COALESCE(saldo,0)<=0 THEN 'pagado'
+                         WHEN COALESCE(abono,0)>0 THEN 'abono'
+                         ELSE ''
+                       END AS condicion_pago,
+                       created_at
                 FROM fin_eventos
                 {where}
                 ORDER BY fecha_evento DESC NULLS LAST, id_evento DESC
@@ -765,7 +821,264 @@ def list_eventos(
             ),
             params,
         ).mappings().all()
-    return {"ok": True, "items": list(rows)}
+    return {"ok": True, "items": [_row_json(dict(r)) for r in rows]}
+
+
+@router.get("/eventos/resumen")
+def eventos_resumen(
+    month: int = Query(0, ge=0, le=12),
+    year: int = Query(0, ge=0, le=2100),
+    me=Depends(get_current_user),
+):
+    _ensure_roles(me, FIN_EVENT_ROLES)
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        if not (month and year):
+            today = date.today()
+            month, year = today.month, today.year
+        params = {"m": int(month), "y": int(year)}
+        where = "WHERE EXTRACT(MONTH FROM fecha_evento)=:m AND EXTRACT(YEAR FROM fecha_evento)=:y"
+        total = conn.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS n,
+                       SUM(COALESCE(monto_bruto,0)) AS bruto,
+                       SUM(COALESCE(monto_neto,0)) AS neto,
+                       SUM(COALESCE(iva,0)) AS iva,
+                       SUM(COALESCE(traslado,0)) AS traslado,
+                       SUM(COALESCE(abono,0)) AS abono,
+                       SUM(COALESCE(saldo,0)) AS saldo
+                FROM fin_eventos
+                {where}
+                """
+            ),
+            params,
+        ).mappings().first()
+        by_marca = conn.execute(
+            text(
+                f"""
+                SELECT COALESCE(NULLIF(btrim(marca),''),'(SIN MARCA)') AS label,
+                       COUNT(*) AS n,
+                       SUM(COALESCE(monto_bruto,0)) AS bruto,
+                       SUM(COALESCE(monto_neto,0)) AS neto,
+                       SUM(COALESCE(iva,0)) AS iva,
+                       SUM(COALESCE(traslado,0)) AS traslado,
+                       SUM(COALESCE(abono,0)) AS abono,
+                       SUM(COALESCE(saldo,0)) AS saldo
+                FROM fin_eventos
+                {where}
+                GROUP BY 1
+                ORDER BY bruto DESC NULLS LAST, label ASC
+                """
+            ),
+            params,
+        ).mappings().all()
+        by_ejecutivo = conn.execute(
+            text(
+                f"""
+                SELECT COALESCE(NULLIF(btrim(ejecutivo),''),'(SIN EJECUTIVO)') AS label,
+                       COUNT(*) AS n,
+                       SUM(COALESCE(monto_bruto,0)) AS bruto,
+                       SUM(COALESCE(monto_neto,0)) AS neto,
+                       SUM(COALESCE(iva,0)) AS iva,
+                       SUM(COALESCE(traslado,0)) AS traslado,
+                       SUM(COALESCE(abono,0)) AS abono,
+                       SUM(COALESCE(saldo,0)) AS saldo
+                FROM fin_eventos
+                {where}
+                GROUP BY 1
+                ORDER BY bruto DESC NULLS LAST, label ASC
+                """
+            ),
+            params,
+        ).mappings().all()
+    return {
+        "ok": True,
+        "month": int(month),
+        "year": int(year),
+        "total": _row_json(dict(total or {})),
+        "by_marca": [_row_json(dict(r)) for r in by_marca],
+        "by_ejecutivo": [_row_json(dict(r)) for r in by_ejecutivo],
+    }
+
+
+@router.get("/eventos/pendientes_anteriores")
+def eventos_pendientes_anteriores(
+    month: int = Query(0, ge=0, le=12),
+    year: int = Query(0, ge=0, le=2100),
+    me=Depends(get_current_user),
+):
+    _ensure_roles(me, FIN_EVENT_ROLES)
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        if not (month and year):
+            today = date.today()
+            month, year = today.month, today.year
+        params = {"m": int(month), "y": int(year)}
+        rows = conn.execute(
+            text(
+                """
+                SELECT to_char(date_trunc('month', fecha_evento), 'YYYY-MM') AS mes,
+                       COUNT(*) AS n,
+                       SUM(COALESCE(monto_bruto,0)) AS bruto,
+                       SUM(COALESCE(abono,0)) AS abono,
+                       SUM(COALESCE(saldo,0)) AS saldo
+                FROM fin_eventos
+                WHERE COALESCE(saldo,0) > 0
+                  AND fecha_evento < make_date(:y, :m, 1)
+                GROUP BY 1
+                ORDER BY mes DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+    return {"ok": True, "items": [_row_json(dict(r)) for r in rows]}
+
+
+@router.get("/eventos/facturacion")
+def eventos_facturacion(
+    month: int = Query(0, ge=0, le=12),
+    year: int = Query(0, ge=0, le=2100),
+    me=Depends(get_current_user),
+):
+    _ensure_roles(me, FIN_EVENT_ROLES)
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        if not (month and year):
+            today = date.today()
+            month, year = today.month, today.year
+        rows = conn.execute(
+            text(
+                """
+                SELECT
+                    id_evento,
+                    id_lead,
+                    num_cotizacion,
+                    id_cotizacion,
+                    fecha_evento,
+                    marca,
+                    cliente,
+                    comuna,
+                    ejecutivo,
+                    monto_neto,
+                    iva,
+                    monto_bruto,
+                    traslado,
+                    abono,
+                    saldo,
+                    tipo_cliente,
+                    requiere_documento,
+                    factura_rut,
+                    factura_razon_social,
+                    factura_oc,
+                    factura_fecha_oc,
+                    factura_hes,
+                    factura_fecha_hes,
+                    factura_tipo_doc,
+                    factura_fecha,
+                    factura_num,
+                    factura_direccion,
+                    factura_giro,
+                    factura_glosa,
+                    created_at,
+                    updated_at
+                FROM fin_eventos
+                WHERE EXTRACT(MONTH FROM fecha_evento)=:m
+                  AND EXTRACT(YEAR FROM fecha_evento)=:y
+                  AND (
+                    COALESCE(requiere_documento,FALSE) IS TRUE
+                    OR COALESCE(tipo_cliente,'') ILIKE '%EMP%'
+                    OR COALESCE(tipo_cliente,'') ILIKE '%FACT%'
+                    OR COALESCE(factura_tipo_doc,'') <> ''
+                    OR COALESCE(factura_num,'') <> ''
+                  )
+                ORDER BY fecha_evento ASC NULLS LAST, marca ASC NULLS LAST, cliente ASC NULLS LAST, id_evento ASC
+                """
+            ),
+            {"m": int(month), "y": int(year)},
+        ).mappings().all()
+    return {"ok": True, "month": int(month), "year": int(year), "items": [_row_json(dict(r)) for r in rows]}
+
+
+@router.put("/eventos/{id_evento}/facturacion")
+def update_facturacion_evento(
+    id_evento: int,
+    body: FacturacionEventoIn,
+    me=Depends(get_current_user),
+):
+    _ensure_roles(me, FIN_EVENT_ROLES)
+    payload = {
+        "id": int(id_evento),
+        "requiere_documento": bool(body.requiere_documento) if body.requiere_documento is not None else None,
+        "factura_tipo_doc": _norm_text(body.factura_tipo_doc, max_len=40, upper=True),
+        "factura_num": _norm_text(body.factura_num, max_len=80),
+        "factura_fecha": body.factura_fecha,
+        "factura_rut": _norm_text(body.factura_rut, max_len=40, upper=True),
+        "factura_razon_social": _norm_text(body.factura_razon_social, max_len=200, upper=True),
+        "factura_direccion": _norm_text(body.factura_direccion, max_len=250),
+        "factura_giro": _norm_text(body.factura_giro, max_len=250, upper=True),
+        "factura_oc": _norm_text(body.factura_oc, max_len=120, upper=True),
+        "factura_fecha_oc": body.factura_fecha_oc,
+        "factura_hes": _norm_text(body.factura_hes, max_len=120, upper=True),
+        "factura_fecha_hes": body.factura_fecha_hes,
+        "factura_glosa": _norm_text(body.factura_glosa, max_len=500),
+    }
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        current = conn.execute(
+            text("SELECT id_evento, requiere_documento FROM fin_eventos WHERE id_evento=:id LIMIT 1"),
+            {"id": int(id_evento)},
+        ).mappings().first()
+        if not current:
+            raise HTTPException(status_code=404, detail="Evento no encontrado")
+        if payload["requiere_documento"] is None:
+            payload["requiere_documento"] = bool(current.get("requiere_documento"))
+
+        if payload["requiere_documento"]:
+            missing = []
+            if not payload["factura_tipo_doc"]:
+                missing.append("tipo documento")
+            if not payload["factura_rut"]:
+                missing.append("RUT")
+            if not payload["factura_razon_social"]:
+                missing.append("razón social")
+            if not payload["factura_direccion"]:
+                missing.append("dirección")
+            if not payload["factura_giro"]:
+                missing.append("giro")
+            if missing:
+                raise HTTPException(status_code=400, detail="Faltan datos de facturación: " + ", ".join(missing))
+
+        row = conn.execute(
+            text(
+                """
+                UPDATE fin_eventos
+                SET requiere_documento=:requiere_documento,
+                    factura_tipo_doc=:factura_tipo_doc,
+                    factura_num=:factura_num,
+                    factura_fecha=:factura_fecha,
+                    factura_rut=:factura_rut,
+                    factura_razon_social=:factura_razon_social,
+                    factura_direccion=:factura_direccion,
+                    factura_giro=:factura_giro,
+                    factura_oc=:factura_oc,
+                    factura_fecha_oc=:factura_fecha_oc,
+                    factura_hes=:factura_hes,
+                    factura_fecha_hes=:factura_fecha_hes,
+                    factura_glosa=:factura_glosa,
+                    updated_at=now()
+                WHERE id_evento=:id
+                RETURNING id_evento, id_lead, num_cotizacion, fecha_evento, marca, cliente, comuna, ejecutivo,
+                          monto_neto, iva, monto_bruto, traslado, abono, saldo, tipo_cliente, requiere_documento,
+                          factura_rut, factura_razon_social, factura_oc, factura_fecha_oc, factura_hes, factura_fecha_hes,
+                          factura_tipo_doc, factura_fecha, factura_num, factura_direccion, factura_giro, factura_glosa,
+                          created_at, updated_at
+                """
+            ),
+            payload,
+        ).mappings().first()
+        conn.commit()
+    return {"ok": True, "item": _row_json(dict(row or {}))}
 
 
 @router.post("/eventos/sync_confirmados")
@@ -779,7 +1092,7 @@ def sync_confirmados_a_fin_eventos(
     Fuente de venta: leads.monto_cotizado (monto_bruto).
     NO toca abonos/saldo existentes (si el evento ya fue gestionado en finanzas).
     """
-    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
+    _ensure_roles(me, FIN_EVENT_ROLES)
     with get_connection() as conn:
         _ensure_tables(conn)
         conf_id = _estado_confirm_id(conn)
@@ -790,11 +1103,37 @@ def sync_confirmados_a_fin_eventos(
         has_num_cot = _has_column(conn, "leads", "num_cotizacion")
         has_id_cot = _has_column(conn, "leads", "id_cotizacion")
         has_id_cot_vig = _has_column(conn, "leads", "id_cotizacion_vigente")
+        has_nombre_cliente = _has_column(conn, "leads", "nombre_cliente")
+        has_cliente = _has_column(conn, "leads", "cliente")
+        has_nombre = _has_column(conn, "leads", "nombre")
+        has_id_comuna = _has_column(conn, "leads", "id_comuna")
+        has_id_marca = _has_column(conn, "leads", "id_marca")
         has_tipo_cli = _has_column(conn, "leads", "tipo_cliente")
         has_id_tipo_cli = _has_column(conn, "leads", "id_tipo_cliente")
+        has_tipos_cliente = bool(conn.execute(text("SELECT to_regclass('public.tipos_cliente')")).scalar())
+        has_tipos_cliente_id = has_tipos_cliente and _has_column(conn, "tipos_cliente", "id_tipo_cliente")
+        has_tipos_cliente_nombre = has_tipos_cliente and _has_column(conn, "tipos_cliente", "nombre")
+        has_tipos_cliente_tipo = has_tipos_cliente and _has_column(conn, "tipos_cliente", "tipo")
         has_com_pct = _has_column(conn, "leads", "comision_pct")
+        has_monto_cotizado = _has_column(conn, "leads", "monto_cotizado")
+        has_lead_user = _has_column(conn, "leads", "id_usuario")
+        has_usuarios = bool(conn.execute(text("SELECT to_regclass('public.usuarios')")).scalar())
+        has_usuarios_id = has_usuarios and _has_column(conn, "usuarios", "id_usuario")
+        has_usuario_nombre = has_usuarios and _has_column(conn, "usuarios", "nombre")
+        has_usuario_display = has_usuarios and _has_column(conn, "usuarios", "display")
+        has_usuario_username = has_usuarios and _has_column(conn, "usuarios", "username")
+        has_usuario_email = has_usuarios and _has_column(conn, "usuarios", "email")
         has_cot = bool(conn.execute(text("SELECT to_regclass('public.cotizaciones')")).scalar())
+        has_marcas = bool(conn.execute(text("SELECT to_regclass('public.marcas')")).scalar())
+        has_comunas = bool(conn.execute(text("SELECT to_regclass('public.comunas')")).scalar())
+        has_marca_nombre = has_marcas and _has_column(conn, "marcas", "nombre")
+        has_marca_marca = has_marcas and _has_column(conn, "marcas", "marca")
+        has_comuna_nombre = has_comunas and _has_column(conn, "comunas", "nombre")
+        has_cot_id = has_cot and _has_column(conn, "cotizaciones", "id_cotizacion")
+        has_cot = bool(has_cot and has_cot_id)
         has_cot_numero = has_cot and _has_column(conn, "cotizaciones", "numero")
+        has_cot_id_lead = has_cot and _has_column(conn, "cotizaciones", "id_lead")
+        has_cot_created_at = has_cot and _has_column(conn, "cotizaciones", "created_at")
         has_cot_subtotal_prod = has_cot and _has_column(conn, "cotizaciones", "subtotal_productos")
         has_cot_subtotal = has_cot and _has_column(conn, "cotizaciones", "subtotal")
         has_cot_traslado = has_cot and _has_column(conn, "cotizaciones", "traslado")
@@ -802,19 +1141,54 @@ def sync_confirmados_a_fin_eventos(
         has_cot_total = has_cot and _has_column(conn, "cotizaciones", "total")
         has_cot_tipo = has_cot and _has_column(conn, "cotizaciones", "tipo_cliente")
 
-        # Cliente: preferimos nombre_cliente si existe.
-        name_expr = "COALESCE(NULLIF(btrim(l.nombre_cliente),''), NULLIF(btrim(l.cliente),''), NULLIF(btrim(l.nombre),''), '—')"
-        if not _has_column(conn, "leads", "nombre_cliente"):
-            name_expr = "COALESCE(NULLIF(btrim(l.cliente),''), NULLIF(btrim(l.nombre),''), '—')"
+        # Cliente: construir solo con columnas existentes. Si SQL referencia una columna inexistente,
+        # PostgreSQL falla al parsear todo el sync.
+        name_parts = []
+        if has_nombre_cliente:
+            name_parts.append("NULLIF(btrim(l.nombre_cliente::text),'')")
+        if has_cliente:
+            name_parts.append("NULLIF(btrim(l.cliente::text),'')")
+        if has_nombre:
+            name_parts.append("NULLIF(btrim(l.nombre::text),'')")
+        name_expr = "COALESCE(" + ", ".join(name_parts + ["'—'"]) + ")"
+        join_comuna = "LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna" if (has_id_comuna and has_comunas) else ""
+        comuna_expr = "COALESCE(NULLIF(btrim(c.nombre),''), '—')" if (has_id_comuna and has_comuna_nombre) else "'—'"
+        join_marca = "LEFT JOIN public.marcas m ON m.id_marca=l.id_marca" if (has_id_marca and has_marcas) else ""
+        marca_parts = []
+        if has_id_marca and has_marca_nombre:
+            marca_parts.append("NULLIF(btrim(m.nombre::text),'')")
+        if has_id_marca and has_marca_marca:
+            marca_parts.append("NULLIF(btrim(m.marca::text),'')")
+        marca_expr = "COALESCE(" + ", ".join(marca_parts + ["'—'"]) + ")" if marca_parts else "'—'"
 
         tipo_expr = "'—'"
         join_tipo = ""
         # Tabla: public.tipos_cliente (ojo: plural). En algunos despliegues el join estaba mal escrito y rompe el sync.
-        if has_id_tipo_cli and _has_column(conn, "tipos_cliente", "id_tipo_cliente"):
+        if has_id_tipo_cli and has_tipos_cliente_id:
             join_tipo = "LEFT JOIN public.tipos_cliente tc ON tc.id_tipo_cliente=l.id_tipo_cliente"
-            tipo_expr = "COALESCE(NULLIF(btrim(tc.nombre),''), '—')"
+            tipo_parts = []
+            if has_tipos_cliente_nombre:
+                tipo_parts.append("NULLIF(btrim(tc.nombre::text),'')")
+            if has_tipos_cliente_tipo:
+                tipo_parts.append("NULLIF(btrim(tc.tipo::text),'')")
+            tipo_expr = "COALESCE(" + ", ".join(tipo_parts + ["'—'"]) + ")"
         elif has_tipo_cli:
             tipo_expr = "COALESCE(NULLIF(btrim(l.tipo_cliente),''), '—')"
+
+        join_user = ""
+        ejecutivo_expr = "'—'"
+        if has_lead_user and has_usuarios and has_usuarios_id:
+            join_user = "LEFT JOIN public.usuarios u ON u.id_usuario::text = l.id_usuario::text"
+            ejecutivo_parts = []
+            if has_usuario_nombre:
+                ejecutivo_parts.append("NULLIF(btrim(u.nombre::text),'')")
+            if has_usuario_display:
+                ejecutivo_parts.append("NULLIF(btrim(u.display::text),'')")
+            if has_usuario_username:
+                ejecutivo_parts.append("NULLIF(btrim(u.username::text),'')")
+            if has_usuario_email:
+                ejecutivo_parts.append("NULLIF(btrim(u.email::text),'')")
+            ejecutivo_expr = "COALESCE(" + ", ".join(ejecutivo_parts + ["'—'"]) + ")"
 
         num_cot_expr = "NULL"
         if has_num_cot:
@@ -834,24 +1208,64 @@ def sync_confirmados_a_fin_eventos(
         # - monto_neto = productos + traslado (SIN IVA)
         # - monto_bruto = monto_neto + IVA (si aplica EMPRESA)
         # - saldo = monto_bruto - abono
-        join_cot = "LEFT JOIN public.cotizaciones q ON q.id_cotizacion = %s" % id_cot_expr if has_cot else ""
+        join_cot = ""
+        quote_exists_expr = "FALSE"
+        if has_cot and has_cot_id:
+            cot_where = []
+            cot_order = []
+            if id_cot_expr != "NULL":
+                cot_where.append(f"q0.id_cotizacion = {id_cot_expr}")
+                cot_order.append(f"CASE WHEN q0.id_cotizacion = {id_cot_expr} THEN 0 ELSE 1 END")
+            if has_cot_id_lead:
+                cot_where.append("q0.id_lead = l.id_lead")
+                cot_order.append("CASE WHEN q0.id_lead = l.id_lead THEN 1 ELSE 2 END")
+            if has_cot_numero and num_cot_expr != "NULL":
+                cot_where.append(f"NULLIF(btrim(q0.numero::text),'') = {num_cot_expr}")
+                cot_order.append(f"CASE WHEN NULLIF(btrim(q0.numero::text),'') = {num_cot_expr} THEN 1 ELSE 2 END")
+            if cot_where:
+                order_sql = ", ".join(cot_order + (["q0.created_at DESC NULLS LAST"] if has_cot_created_at else []) + ["q0.id_cotizacion DESC"])
+                join_cot = f"""
+              LEFT JOIN LATERAL (
+                SELECT q0.*
+                FROM public.cotizaciones q0
+                WHERE {" OR ".join(cot_where)}
+                ORDER BY {order_sql}
+                LIMIT 1
+              ) q ON TRUE
+                """
+                quote_exists_expr = "q.id_cotizacion IS NOT NULL"
+        if not join_cot:
+            has_cot = False
+            has_cot_numero = False
+            has_cot_subtotal_prod = False
+            has_cot_subtotal = False
+            has_cot_traslado = False
+            has_cot_iva = False
+            has_cot_total = False
+            has_cot_tipo = False
         if has_cot_subtotal_prod and has_cot_subtotal:
-            prod_expr = "COALESCE(q.subtotal_productos, q.subtotal, 0)"
+            prod_expr = "COALESCE(q.subtotal_productos::numeric, q.subtotal::numeric, 0::numeric)"
         elif has_cot_subtotal_prod:
-            prod_expr = "COALESCE(q.subtotal_productos, 0)"
+            prod_expr = "COALESCE(q.subtotal_productos::numeric, 0::numeric)"
         elif has_cot_subtotal:
-            prod_expr = "COALESCE(q.subtotal, 0)"
+            prod_expr = "COALESCE(q.subtotal::numeric, 0::numeric)"
         else:
-            prod_expr = "0"
-        traslado_expr = "COALESCE(q.traslado, 0)" if has_cot_traslado else "0"
+            prod_expr = "0::numeric"
+        traslado_q_expr = "COALESCE(q.traslado::numeric, 0::numeric)" if has_cot_traslado else "0::numeric"
         tipo_expr2 = "COALESCE(NULLIF(btrim(UPPER(q.tipo_cliente)),''), %s)" % tipo_expr if has_cot_tipo else tipo_expr
         is_emp_expr = "(%s ILIKE '%%EMP%%' OR %s ILIKE '%%FACT%%')" % (tipo_expr2, tipo_expr2)
-        neto_expr = f"({prod_expr} + {traslado_expr})::numeric(14,2)"
+        lead_monto_expr = "COALESCE(l.monto_cotizado::numeric,0::numeric)" if has_monto_cotizado else "0::numeric"
+        quote_neto_expr = f"({prod_expr} + {traslado_q_expr})"
         if has_cot_iva:
-            iva_expr = f"CASE WHEN {is_emp_expr} THEN COALESCE(q.iva, ROUND(({neto_expr}) * 0.19, 2)) ELSE 0 END::numeric(14,2)"
+            quote_iva_expr = f"CASE WHEN {is_emp_expr} THEN COALESCE(q.iva::numeric, ROUND(({quote_neto_expr}) * 0.19, 2)) ELSE 0::numeric END"
         else:
-            iva_expr = f"CASE WHEN {is_emp_expr} THEN ROUND(({neto_expr}) * 0.19, 2) ELSE 0 END::numeric(14,2)"
-        bruto_expr = f"({neto_expr} + ({iva_expr}))::numeric(14,2)"
+            quote_iva_expr = f"CASE WHEN {is_emp_expr} THEN ROUND(({quote_neto_expr}) * 0.19, 2) ELSE 0::numeric END"
+        fallback_neto_expr = f"CASE WHEN {is_emp_expr} THEN ROUND(({lead_monto_expr}) / 1.19, 2) ELSE ({lead_monto_expr}) END"
+        fallback_iva_expr = f"CASE WHEN {is_emp_expr} THEN (({lead_monto_expr}) - ({fallback_neto_expr})) ELSE 0 END"
+        neto_expr = f"(CASE WHEN {quote_exists_expr} THEN ({quote_neto_expr}) ELSE ({fallback_neto_expr}) END)::numeric(14,2)"
+        iva_expr = f"(CASE WHEN {quote_exists_expr} THEN ({quote_iva_expr}) ELSE ({fallback_iva_expr}) END)::numeric(14,2)"
+        traslado_expr = f"(CASE WHEN {quote_exists_expr} THEN ({traslado_q_expr}) ELSE 0 END)::numeric(14,2)"
+        bruto_expr = f"(CASE WHEN {quote_exists_expr} THEN (({quote_neto_expr}) + ({quote_iva_expr})) ELSE ({lead_monto_expr}) END)::numeric(14,2)"
         numero_expr = "NULLIF(btrim(q.numero::text),'')" if has_cot_numero else "NULL"
 
         q = f"""
@@ -861,8 +1275,8 @@ def sync_confirmados_a_fin_eventos(
                 COALESCE({numero_expr}, {num_cot_expr}) AS num_cotizacion,
                 {id_cot_expr} AS id_cotizacion,
                 {name_expr} AS cliente,
-                COALESCE(NULLIF(btrim(c.nombre),''), '—') AS comuna,
-                COALESCE(NULLIF(btrim(m.nombre),''), NULLIF(btrim(m.marca),''), '—') AS marca,
+                {comuna_expr} AS comuna,
+                {marca_expr} AS marca,
                 {tipo_expr2} AS tipo_cliente,
                 l.fecha_evento::date AS fecha_evento,
                 {bruto_expr} AS monto_bruto,
@@ -871,12 +1285,15 @@ def sync_confirmados_a_fin_eventos(
                 {traslado_expr}::numeric(14,2) AS traslado,
                 {com_pct_expr}::numeric(6,2) AS comision_pct,
                 (({neto_expr}) * COALESCE({com_pct_expr},0) / 100.0)::numeric(14,2) AS comision_monto,
-                ({bruto_expr})::numeric(14,2) AS saldo_init
+                ({bruto_expr})::numeric(14,2) AS saldo_init,
+                {ejecutivo_expr} AS ejecutivo,
+                CASE WHEN {is_emp_expr} THEN TRUE ELSE FALSE END AS requiere_documento
               FROM public.leads l
-              LEFT JOIN public.comunas c ON c.id_comuna=l.id_comuna
-              LEFT JOIN public.marcas m ON m.id_marca=l.id_marca
+              {join_comuna}
+              {join_marca}
               {join_cot}
               {join_tipo}
+              {join_user}
               WHERE l.id_estado=:conf
                 AND l.fecha_evento IS NOT NULL
                 AND EXTRACT(MONTH FROM l.fecha_evento)=:m
@@ -897,7 +1314,10 @@ def sync_confirmados_a_fin_eventos(
                   traslado       = s.traslado,
                   comision_pct   = s.comision_pct,
                   comision_monto = s.comision_monto,
-                  saldo          = GREATEST(0, s.monto_bruto - COALESCE(f.abono,0))
+                  saldo          = GREATEST(0, s.monto_bruto - COALESCE(f.abono,0)),
+                  ejecutivo      = s.ejecutivo,
+                  requiere_documento = s.requiere_documento,
+                  updated_at     = now()
               FROM src s
               WHERE f.id_lead = s.id_lead
               RETURNING f.id_lead
@@ -905,11 +1325,11 @@ def sync_confirmados_a_fin_eventos(
             ins AS (
               INSERT INTO fin_eventos(
                 id_lead,num_cotizacion,id_cotizacion,cliente,comuna,marca,tipo_cliente,fecha_evento,
-                monto_bruto,monto_neto,iva,traslado,comision_pct,comision_monto,saldo
+                monto_bruto,monto_neto,iva,traslado,comision_pct,comision_monto,saldo,ejecutivo,requiere_documento,updated_at
               )
               SELECT
                 s.id_lead,s.num_cotizacion,s.id_cotizacion,s.cliente,s.comuna,s.marca,s.tipo_cliente,s.fecha_evento,
-                s.monto_bruto,s.monto_neto,s.iva,s.traslado,s.comision_pct,s.comision_monto,s.saldo_init
+                s.monto_bruto,s.monto_neto,s.iva,s.traslado,s.comision_pct,s.comision_monto,s.saldo_init,s.ejecutivo,s.requiere_documento,now()
               FROM src s
               WHERE NOT EXISTS (SELECT 1 FROM fin_eventos f WHERE f.id_lead = s.id_lead)
               RETURNING id_lead
@@ -1149,7 +1569,7 @@ def delete_gasto(id_gasto: int, me=Depends(get_current_user)):
 
 @router.get("/centros_costo")
 def list_centros_costo(me=Depends(get_current_user)):
-    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
+    _ensure_roles(me, FIN_EVENT_ROLES)
     with get_connection() as conn:
         _ensure_tables(conn)
         rows = conn.execute(
@@ -1281,7 +1701,7 @@ def cxc_resumen(
 
 @router.get("/eventos/{id_evento}/pagos")
 def list_pagos(id_evento: int, me=Depends(get_current_user)):
-    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
+    _ensure_roles(me, FIN_EVENT_ROLES)
     with get_connection() as conn:
         _ensure_tables(conn)
         rows = conn.execute(
@@ -1300,7 +1720,7 @@ def list_pagos(id_evento: int, me=Depends(get_current_user)):
 
 @router.post("/eventos/{id_evento}/pagos")
 def add_pago(id_evento: int, body: PagoIn, me=Depends(get_current_user)):
-    _ensure_roles(me, {"ADMIN", "SUPERADMIN", "COMPRAS", "JEFE DE OPERACIONES"})
+    _ensure_roles(me, FIN_EVENT_ROLES)
     with get_connection() as conn:
         _ensure_tables(conn)
         conn.execute(

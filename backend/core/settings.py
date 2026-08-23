@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
     # In production, always set DATABASE_URL via env (no cleartext default).
-    DATABASE_URL: str = "postgresql+psycopg://BDGD:SpC18302020@127.0.0.1:5432/BDGD"
+    DATABASE_URL: str = ""
 
     CORS_ORIGINS: list[str] = [
         "http://127.0.0.1:8000",

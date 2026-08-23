@@ -4,8 +4,15 @@ from typing import List
 from backend.core.database import get_db
 from backend.models.usuario import Usuario, Marca, UsuarioMarca
 from backend.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioOut
+from backend.routers.auth import get_current_user, hash_password
 
 router = APIRouter(prefix="/usuarios", tags=["usuarios"])
+
+
+def _require_admin(me) -> None:
+    role = str((me or {}).get("role") or (me or {}).get("rol") or "").upper().replace(" ", "").replace("_", "")
+    if role not in ("ADMIN", "SUPERADMIN"):
+        raise HTTPException(status_code=403, detail="Solo Admin")
 
 def set_marcas(db: Session, user: Usuario, marcas_ids: List[int] | None):
     if marcas_ids is None:
@@ -21,11 +28,13 @@ def set_marcas(db: Session, user: Usuario, marcas_ids: List[int] | None):
             db.execute(UsuarioMarca.insert().values(id_usuario=user.id_usuario, id_marca=mid))
 
 @router.get("/", response_model=List[UsuarioOut])
-def list_usuarios(db: Session = Depends(get_db)):
+def list_usuarios(db: Session = Depends(get_db), me=Depends(get_current_user)):
+    _require_admin(me)
     return db.query(Usuario).all()
 
 @router.post("/", response_model=UsuarioOut, status_code=201)
-def create_usuario(payload: UsuarioCreate, db: Session = Depends(get_db)):
+def create_usuario(payload: UsuarioCreate, db: Session = Depends(get_db), me=Depends(get_current_user)):
+    _require_admin(me)
     # OJO: aquí asumo que ya guardas password_hash (bcrypt) en tu flujo; para avanzar lo dejamos en claro.
     if db.query(Usuario).filter(Usuario.email == payload.email).first():
         raise HTTPException(400, "Email ya existe")
@@ -34,7 +43,7 @@ def create_usuario(payload: UsuarioCreate, db: Session = Depends(get_db)):
         email=payload.email,
         nivel=payload.nivel,
         status=payload.status,
-        password_hash=payload.password,  # <-- pon aquí tu hash real si tienes helper
+        password_hash=hash_password(payload.password),
     )
     db.add(u)
     db.commit()
@@ -45,14 +54,16 @@ def create_usuario(payload: UsuarioCreate, db: Session = Depends(get_db)):
     return u
 
 @router.get("/{id_usuario}", response_model=UsuarioOut)
-def get_usuario(id_usuario: int, db: Session = Depends(get_db)):
+def get_usuario(id_usuario: int, db: Session = Depends(get_db), me=Depends(get_current_user)):
+    _require_admin(me)
     u = db.get(Usuario, id_usuario)
     if not u:
         raise HTTPException(404, "Usuario no encontrado")
     return u
 
 @router.put("/{id_usuario}", response_model=UsuarioOut)
-def update_usuario(id_usuario: int, payload: UsuarioUpdate, db: Session = Depends(get_db)):
+def update_usuario(id_usuario: int, payload: UsuarioUpdate, db: Session = Depends(get_db), me=Depends(get_current_user)):
+    _require_admin(me)
     u = db.get(Usuario, id_usuario)
     if not u:
         raise HTTPException(404, "Usuario no encontrado")
@@ -63,7 +74,7 @@ def update_usuario(id_usuario: int, payload: UsuarioUpdate, db: Session = Depend
     for k, v in data.items():
         setattr(u, k, v)
     if password is not None:
-        u.password_hash = password  # <-- usa tu hash real
+        u.password_hash = hash_password(password)
 
     db.commit()
     db.refresh(u)
@@ -73,7 +84,8 @@ def update_usuario(id_usuario: int, payload: UsuarioUpdate, db: Session = Depend
     return u
 
 @router.delete("/{id_usuario}", status_code=204)
-def delete_usuario(id_usuario: int, db: Session = Depends(get_db)):
+def delete_usuario(id_usuario: int, db: Session = Depends(get_db), me=Depends(get_current_user)):
+    _require_admin(me)
     u = db.get(Usuario, id_usuario)
     if not u:
         raise HTTPException(404, "Usuario no encontrado")

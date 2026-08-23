@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from backend.core.db import get_connection
+from backend.routers.auth import get_current_user
 
 
 router = APIRouter(tags=["marcas"])
+
+
+def _require_admin(user: dict) -> None:
+    role = str(user.get("role") or user.get("rol") or "").upper().replace(" ", "").replace("_", "")
+    if role not in ("ADMIN", "SUPERADMIN"):
+        raise HTTPException(status_code=403, detail="Solo Admin")
 
 
 class MarcaUpsert(BaseModel):
@@ -47,7 +54,8 @@ def list_marcas(only_active: bool = False):
 
 @router.post("/marcas")
 @router.post("/web/marcas")
-def upsert_marca(payload: MarcaUpsert):
+def upsert_marca(payload: MarcaUpsert, user: dict = Depends(get_current_user)):
+    _require_admin(user)
     with get_connection() as conn:
         conn.execute(
             text(

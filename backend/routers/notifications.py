@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import os
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import text
 
+from backend.core.activity_log import log_activity
 from backend.core.db import get_connection
 from backend.core.stale_leads import auto_decline_stale_leads
 try:
@@ -91,6 +92,216 @@ def _role_targets(role: str) -> list[str]:
     return res
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+_lead_lock_bypass_ddl_done = False
+
+
+def _user_id(user: dict) -> int | None:
+    for k in ("id", "id_usuario", "user_id"):
+        v = user.get(k)
+        if str(v or "").isdigit():
+            return int(v)
+    return None
+
+
+def _username(user: dict) -> str:
+    return str(user.get("username") or user.get("email") or user.get("name") or user.get("nombre") or user.get("id") or "").strip()
+
+
+def _ensure_lead_lock_bypass(conn) -> None:
+    global _lead_lock_bypass_ddl_done
+    if _lead_lock_bypass_ddl_done:
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS public.lead_lock_bypass (
+              id BIGSERIAL PRIMARY KEY,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              user_id BIGINT,
+              username TEXT,
+              role TEXT,
+              reason TEXT NOT NULL,
+              minutes INTEGER NOT NULL DEFAULT 60,
+              expires_at TIMESTAMPTZ NOT NULL,
+              stale_count INTEGER NOT NULL DEFAULT 0,
+              stale_ids TEXT,
+              ip TEXT,
+              user_agent TEXT
+            )
+            """
+        )
+    )
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lead_lock_bypass_user_expires ON public.lead_lock_bypass(user_id, expires_at DESC)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lead_lock_bypass_created_at ON public.lead_lock_bypass(created_at DESC)"))
+    _lead_lock_bypass_ddl_done = True
+
+
+def _lead_lock_policy() -> tuple[int, int]:
+    try:
+        minutes = int(os.getenv("CRM_LEAD_LOCK_BYPASS_MINUTES") or "60")
+    except Exception:
+        minutes = 60
+    try:
+        max_daily = int(os.getenv("CRM_LEAD_LOCK_BYPASS_MAX_DAILY") or "3")
+    except Exception:
+        max_daily = 3
+    return max(15, min(minutes, 180)), max(0, min(max_daily, 10))
+
+
+def _active_bypass(conn, user: dict) -> dict:
+    _ensure_lead_lock_bypass(conn)
+    uid = _user_id(user)
+    uname = _username(user)
+    params = {"uid": uid or -1, "uname": uname}
+    row = conn.execute(
+        text(
+            """
+            SELECT id, reason, expires_at,
+                   GREATEST(0, CEIL(EXTRACT(EPOCH FROM (expires_at - now())) / 60.0))::int AS minutes_left
+            FROM public.lead_lock_bypass
+            WHERE expires_at > now()
+              AND (
+                (:uid > 0 AND user_id=:uid)
+                OR (:uname <> '' AND lower(COALESCE(username,'')) = lower(:uname))
+              )
+            ORDER BY expires_at DESC
+            LIMIT 1
+            """
+        ),
+        params,
+    ).mappings().first()
+    if not row:
+        return {"active": False}
+    return {
+        "active": True,
+        "id": int(row.get("id") or 0),
+        "reason": row.get("reason") or "",
+        "expires_at": row.get("expires_at").isoformat() if hasattr(row.get("expires_at"), "isoformat") else str(row.get("expires_at") or ""),
+        "minutes_left": int(row.get("minutes_left") or 0),
+    }
+
+
+def _daily_bypass_count(conn, user: dict) -> int:
+    _ensure_lead_lock_bypass(conn)
+    uid = _user_id(user)
+    uname = _username(user)
+    return int(
+        conn.execute(
+            text(
+                """
+                SELECT COUNT(*)::int
+                FROM public.lead_lock_bypass
+                WHERE (created_at AT TIME ZONE 'America/Santiago')::date = (now() AT TIME ZONE 'America/Santiago')::date
+                  AND (
+                    (:uid > 0 AND user_id=:uid)
+                    OR (:uname <> '' AND lower(COALESCE(username,'')) = lower(:uname))
+                  )
+                """
+            ),
+            {"uid": uid or -1, "uname": uname},
+        ).scalar()
+        or 0
+    )
+
+
+def _build_lead_lock(conn, user: dict, *, limit_per_status: int = 12) -> dict:
+    role = (user.get("role") or user.get("rol") or "").upper()
+    marcas = [int(x) for x in (user.get("marcas") or []) if str(x).isdigit()]
+    only_own = not _is_admin(role)
+    stale_ids: list[int] = []
+    stale_by_status: dict[str, list] = {"NUEVO": [], "CONTACTADO": [], "COTIZADO": []}
+
+    try:
+        dry = auto_decline_stale_leads(dry_run=True, triggered_by="LEAD_LOCK", conn=conn)
+        raw_items = dry.get("items") or []
+    except Exception:
+        raw_items = []
+
+    ids = [int(x.get("id_lead")) for x in raw_items if str(x.get("id_lead", "")).isdigit()]
+    lead_meta = {}
+    if ids:
+        try:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT l.id_lead, l.id_marca, l.cliente, l.created_at, l.updated_at,
+                           l.fecha_evento, COALESCE(e.nombre,'') AS estado
+                    FROM leads l
+                    LEFT JOIN estados_lead e ON e.id_estado = l.id_estado
+                    WHERE l.id_lead = ANY(:ids)
+                      AND l.fecha_evento IS NOT NULL
+                      AND l.fecha_evento >= (now() AT TIME ZONE 'America/Santiago')::date
+                      AND l.fecha_evento >= date_trunc('month', (now() AT TIME ZONE 'America/Santiago')::date)::date
+                      AND l.fecha_evento < (date_trunc('month', (now() AT TIME ZONE 'America/Santiago')::date) + INTERVAL '1 month')::date
+                    """
+                ),
+                {"ids": ids[:500]},
+            ).fetchall()
+            lead_meta = {
+                int(r[0]): {
+                    "id_marca": int(r[1] or 0),
+                    "cliente": r[2],
+                    "created_at": r[3],
+                    "updated_at": r[4],
+                    "fecha_evento": r[5],
+                    "estado": str(r[6] or "").upper(),
+                }
+                for r in rows
+            }
+        except Exception:
+            lead_meta = {}
+
+    for it in raw_items:
+        try:
+            lid = int(it.get("id_lead"))
+        except Exception:
+            continue
+        if only_own and marcas:
+            mid = (lead_meta.get(lid) or {}).get("id_marca")
+            if not mid or mid not in marcas:
+                continue
+        if lid not in lead_meta:
+            continue
+        motivo = str(it.get("motivo") or "")
+        stale_ids.append(lid)
+        meta = lead_meta.get(lid) or {}
+        last_dt = meta.get("updated_at") or meta.get("created_at")
+        last_txt = last_dt.isoformat() if hasattr(last_dt, "isoformat") else (str(last_dt) if last_dt else "")
+        payload = {"id_lead": lid, "motivo": motivo, "cliente": meta.get("cliente") or "", "created_at": last_txt}
+        estado = str(meta.get("estado") or "").upper()
+        if "NUEVO" in estado:
+            stale_by_status["NUEVO"].append(payload)
+        elif "CONTACT" in estado:
+            stale_by_status["CONTACTADO"].append(payload)
+        elif "COTIZ" in estado:
+            stale_by_status["COTIZADO"].append(payload)
+
+    for k in list(stale_by_status.keys()):
+        stale_by_status[k] = stale_by_status[k][: max(1, int(limit_per_status))]
+
+    bypass = _active_bypass(conn, user)
+    minutes, max_daily = _lead_lock_policy()
+    used_today = _daily_bypass_count(conn, user)
+    hard_count = len(stale_by_status.get("NUEVO", [])) + len(stale_by_status.get("CONTACTADO", []))
+    lock = (not _is_admin(role)) and hard_count > 0 and not bool(bypass.get("active"))
+    return {
+        "ok": True,
+        "total": int(len(stale_ids)),
+        "counts": {
+            "NUEVO": len(stale_by_status.get("NUEVO", [])),
+            "CONTACTADO": len(stale_by_status.get("CONTACTADO", [])),
+            "COTIZADO": len(stale_by_status.get("COTIZADO", [])),
+        },
+        "stale_leads": stale_by_status,
+        "lock": bool(lock),
+        "bypass": {
+            **bypass,
+            "used_today": int(used_today),
+            "max_daily": int(max_daily),
+            "minutes": int(minutes),
+            "remaining_today": max(0, int(max_daily) - int(used_today)),
+        },
+    }
 
 def _ensure_system_notifs(conn) -> None:
     try:
@@ -399,6 +610,101 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0, light
         except Exception:
             pass
 
+
+@router.get("/lead_lock")
+def lead_lock_status(user=Depends(get_current_user)):
+    try:
+        with get_connection() as conn:
+            return _build_lead_lock(conn, user)
+    except Exception:
+        return {
+            "ok": True,
+            "total": 0,
+            "counts": {"NUEVO": 0, "CONTACTADO": 0, "COTIZADO": 0},
+            "stale_leads": {"NUEVO": [], "CONTACTADO": [], "COTIZADO": []},
+            "lock": False,
+            "bypass": {"active": False, "used_today": 0, "max_daily": 3, "minutes": 60, "remaining_today": 3},
+        }
+
+
+@router.post("/lead_lock/bypass")
+def lead_lock_bypass(payload: dict = Body(...), user=Depends(get_current_user)):
+    reason = str((payload or {}).get("reason") or (payload or {}).get("motivo") or "").strip()
+    if len(reason) < 12:
+        raise HTTPException(400, "Motivo obligatorio: explica la urgencia o por qué necesitas aplazar.")
+
+    role = (user.get("role") or user.get("rol") or "").upper()
+    minutes, max_daily = _lead_lock_policy()
+    if _is_admin(role):
+        raise HTTPException(400, "Admin no necesita bypass de bloqueo comercial.")
+
+    with get_connection() as conn:
+        state = _build_lead_lock(conn, user)
+        if not state.get("lock") and not (state.get("total") or 0):
+            return {"ok": True, "bypass": state.get("bypass") or {}, "message": "No tienes bloqueo activo."}
+        used = _daily_bypass_count(conn, user)
+        if used >= max_daily:
+            raise HTTPException(429, f"Límite diario de aplazamientos alcanzado ({max_daily}). Debes trabajar los leads pendientes.")
+
+        uid = _user_id(user)
+        uname = _username(user)
+        stale = state.get("stale_leads") or {}
+        stale_ids = []
+        for arr in (stale.get("NUEVO") or [], stale.get("CONTACTADO") or [], stale.get("COTIZADO") or []):
+            try:
+                stale_ids.append(str(arr.get("id_lead")))
+            except Exception:
+                pass
+        conn.execute(
+            text(
+                """
+                INSERT INTO public.lead_lock_bypass(user_id, username, role, reason, minutes, expires_at, stale_count, stale_ids)
+                VALUES (:uid, :uname, :role, :reason, :minutes, now() + (:minutes || ' minutes')::interval, :stale_count, :stale_ids)
+                """
+            ),
+            {
+                "uid": uid,
+                "uname": uname,
+                "role": role,
+                "reason": reason[:1000],
+                "minutes": int(minutes),
+                "stale_count": int(state.get("total") or 0),
+                "stale_ids": ",".join([x for x in stale_ids if x and x != "None"])[:2000],
+            },
+        )
+        try:
+            log_activity(
+                conn,
+                username=uname,
+                user_id=uid,
+                role=role,
+                action="lead_lock.bypass",
+                entity_type="usuario",
+                entity_id=uid,
+                meta={
+                    "reason": reason[:500],
+                    "minutes": int(minutes),
+                    "used_today": int(used) + 1,
+                    "max_daily": int(max_daily),
+                    "stale_count": int(state.get("total") or 0),
+                    "stale_ids": [x for x in stale_ids if x and x != "None"][:80],
+                },
+            )
+        except Exception:
+            pass
+        conn.commit()
+        bypass = _active_bypass(conn, user)
+        return {
+            "ok": True,
+            "bypass": {
+                **bypass,
+                "used_today": int(used) + 1,
+                "max_daily": int(max_daily),
+                "minutes": int(minutes),
+                "remaining_today": max(0, int(max_daily) - int(used) - 1),
+            },
+        }
+
         # Normalize: si hay cotización, el lead no debería quedar en NUEVO/CONTACTADO.
         # Throttle to once per 15 minutes.
         try:
@@ -643,7 +949,18 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0, light
             pass
 
     total = sum([it["count"] for it in items])
-    lock = (not _is_admin(role)) and (len(stale_by_status.get("NUEVO", [])) + len(stale_by_status.get("CONTACTADO", [])) > 0)
+    try:
+        bypass = _active_bypass(conn, user)
+        minutes, max_daily = _lead_lock_policy()
+        used_today = _daily_bypass_count(conn, user)
+    except Exception:
+        minutes, max_daily, used_today = _lead_lock_policy()[0], _lead_lock_policy()[1], 0
+        bypass = {"active": False}
+    lock = (
+        (not _is_admin(role))
+        and (len(stale_by_status.get("NUEVO", [])) + len(stale_by_status.get("CONTACTADO", [])) > 0)
+        and not bool(bypass.get("active"))
+    )
     return {
         "ok": True,
         "total": total,
@@ -653,7 +970,14 @@ def get_notifications(user=Depends(get_current_user), force_jobs: int = 0, light
         "jobs": jobs,
         "job_errors": job_errors,
         "stale_leads": stale_by_status,
-        "lock": lock
+        "lock": lock,
+        "bypass": {
+            **bypass,
+            "used_today": int(used_today),
+            "max_daily": int(max_daily),
+            "minutes": int(minutes),
+            "remaining_today": max(0, int(max_daily) - int(used_today)),
+        },
     }
 
 

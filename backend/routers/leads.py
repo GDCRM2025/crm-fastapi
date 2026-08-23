@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 import json
 from typing import Any
@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text
 from backend.core.db import get_connection
+from backend.core.activity_log import log_activity
+from backend.core.rbac import role_key, user_id, username
 from backend.core.stale_leads import auto_decline_stale_leads
 from backend.core.pdf_parse import extract_text as _pdf_extract_text, parse_items_from_text as _pdf_parse_items, sample_lines as _pdf_sample_lines
 from backend.core.public_tokens import sign as sign_public
@@ -25,6 +27,32 @@ def _lead_quote_path(id_lead: int) -> Path:
 
 def now():
     return datetime.now(timezone.utc)
+
+def _valid_fecha_evento(value: Any, field: str = "fecha_evento") -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        d = value.date()
+    elif isinstance(value, date):
+        d = value
+    else:
+        raw = str(value).strip()
+        if not raw or raw.lower() in ("null", "none", "undefined"):
+            return None
+        raw = raw[:10]
+        parsed = None
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y"):
+            try:
+                parsed = datetime.strptime(raw, fmt).date()
+                break
+            except Exception:
+                pass
+        if parsed is None:
+            raise HTTPException(400, f"{field} inválida. Usa formato YYYY-MM-DD.")
+        d = parsed
+    if d < date(2000, 1, 1) or d >= date(2100, 1, 1):
+        raise HTTPException(400, f"{field} fuera de rango permitido (2000-01-01 a 2099-12-31).")
+    return d
 
 def _append_notas(conn, id_lead: int, text_block: str) -> None:
     """
@@ -54,6 +82,82 @@ def _append_notas(conn, id_lead: int, text_block: str) -> None:
     except Exception:
         return
 
+_LEAD_MOVEMENT_FIELDS = {
+    "cliente",
+    "nombre_cliente",
+    "nombre",
+    "email",
+    "telefono",
+    "direccion",
+    "id_marca",
+    "id_estado",
+    "id_comuna",
+    "id_tipo_cliente",
+    "fecha_evento",
+    "monto_cotizado",
+    "plataforma",
+    "num_cotizacion",
+}
+
+
+def _is_lead_operator(user: dict) -> bool:
+    role = (role_key(user) or user.get("role") or user.get("rol") or "").strip().upper()
+    compact = "".join(ch for ch in role if ch.isalnum())
+    return (
+        "ADMIN" in compact
+        or "SUPERADMIN" in compact
+        or ("EJECUTIV" in compact and "VENTA" in compact)
+        or "VENTAS" in compact
+    )
+
+
+def _movement_comment(payload: dict) -> str:
+    for key in ("movement_comment", "comentario", "comment", "nota_movimiento", "detalle", "motivo"):
+        val = payload.get(key)
+        if val is None:
+            continue
+        txt = str(val).strip()
+        if txt:
+            return txt[:4000]
+    return ""
+
+
+def _has_new_note_text(old_notas: Any, payload: dict) -> bool:
+    if "notas" not in payload:
+        return False
+    old = str(old_notas or "").strip()
+    new = str(payload.get("notas") or "").strip()
+    return bool(new and new != old and len(new) > len(old))
+
+
+def _lead_change_needs_comment(payload: dict, *, old_estado: Any = None, old_marca: Any = None, old_row: dict | None = None) -> bool:
+    """
+    Regla operativa:
+    - Cambiar ESTADO del lead exige comentario.
+    - Editar datos (nombre, comuna, telefono, fecha, marca, monto, etc.) queda auditado,
+      pero no bloquea al ejecutivo.
+    """
+    if not payload:
+        return False
+    if _movement_comment(payload):
+        return False
+    if "id_estado" in payload and str(payload.get("id_estado") or "").strip():
+        try:
+            if int(payload.get("id_estado")) != int(old_estado or 0):
+                return True
+        except Exception:
+            return True
+    return False
+
+
+def _append_movement_comment(conn, id_lead: int, payload: dict, user: dict) -> None:
+    comment = _movement_comment(payload)
+    if not comment:
+        return
+    who = (user.get("name") or user.get("nombre") or user.get("username") or user.get("id") or "Usuario")
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    _append_notas(conn, id_lead, f"[MOVIMIENTO {ts}] {who}\n{comment}")
+
 def _cols_for(table: str) -> set[str]:
     with get_connection() as conn:
         rows = conn.execute(text("""
@@ -66,6 +170,205 @@ def _cols_for(table: str) -> set[str]:
 def _table_exists(table: str) -> bool:
     with get_connection() as conn:
         return bool(conn.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}).scalar())
+
+
+def _run_auto_decline_before_leads_list(conn, user: dict) -> None:
+    """
+    Limpieza liviana antes de mostrar Kanban/listado.
+    Corre con advisory lock y throttle para no castigar Passenger ni la BD.
+    """
+    try:
+        got_lock = bool(conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": 25022027}).scalar())
+        if not got_lock:
+            return
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS public.system_kv (
+                      key TEXT PRIMARY KEY,
+                      value TEXT NOT NULL,
+                      updated_at TIMESTAMP DEFAULT now()
+                    )
+                    """
+                )
+            )
+            should_run = bool(
+                conn.execute(
+                    text(
+                        """
+                        SELECT NOT EXISTS (
+                          SELECT 1
+                          FROM public.system_kv
+                          WHERE key='auto_decline_leads_list_last_run'
+                            AND updated_at > (now() - INTERVAL '15 minutes')
+                        )
+                        """
+                    )
+                ).scalar()
+            )
+            if not should_run:
+                return
+            triggered_by = (
+                user.get("nombre")
+                or user.get("name")
+                or user.get("email")
+                or user.get("username")
+                or "LEADS_LIST"
+            )
+            auto_decline_stale_leads(dry_run=False, triggered_by=str(triggered_by), conn=conn)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.system_kv(key, value, updated_at)
+                    VALUES ('auto_decline_leads_list_last_run', 'ok', now())
+                    ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()
+                    """
+                )
+            )
+            conn.commit()
+        finally:
+            try:
+                conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": 25022027})
+            except Exception:
+                pass
+    except Exception:
+        return
+
+def _estado_nombre_conn(conn, id_estado: Any) -> str | None:
+    try:
+        if id_estado is None or str(id_estado).strip() == "":
+            return None
+        return conn.execute(
+            text("SELECT nombre FROM public.estados_lead WHERE id_estado=:i LIMIT 1"),
+            {"i": int(id_estado)},
+        ).scalar()
+    except Exception:
+        return None
+
+def _marca_nombre_conn(conn, id_marca: Any) -> str | None:
+    try:
+        if id_marca is None or str(id_marca).strip() == "":
+            return None
+        cols = {
+            str(r[0])
+            for r in conn.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='marcas'
+                    """
+                )
+            ).fetchall()
+        }
+        if "marca" in cols and "nombre" in cols:
+            expr = "COALESCE(NULLIF(marca,''), NULLIF(nombre,''), 'Marca ' || id_marca::text)"
+        elif "marca" in cols:
+            expr = "COALESCE(NULLIF(marca,''), 'Marca ' || id_marca::text)"
+        elif "nombre" in cols:
+            expr = "COALESCE(NULLIF(nombre,''), 'Marca ' || id_marca::text)"
+        else:
+            return f"Marca {id_marca}"
+        return conn.execute(
+            text(f"SELECT {expr} FROM public.marcas WHERE id_marca=:i LIMIT 1"),
+            {"i": int(id_marca)},
+        ).scalar()
+    except Exception:
+        return None
+
+def _comuna_nombre_conn(conn, id_comuna: Any) -> str | None:
+    try:
+        if id_comuna is None or str(id_comuna).strip() == "":
+            return None
+        cols = {
+            str(r[0])
+            for r in conn.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='comunas'
+                    """
+                )
+            ).fetchall()
+        }
+        if "nombre" in cols and "comuna" in cols:
+            expr = "COALESCE(NULLIF(nombre,''), NULLIF(comuna,''), 'Comuna ' || id_comuna::text)"
+        elif "nombre" in cols:
+            expr = "COALESCE(NULLIF(nombre,''), 'Comuna ' || id_comuna::text)"
+        elif "comuna" in cols:
+            expr = "COALESCE(NULLIF(comuna,''), 'Comuna ' || id_comuna::text)"
+        else:
+            return f"Comuna {id_comuna}"
+        return conn.execute(
+            text(f"SELECT {expr} FROM public.comunas WHERE id_comuna=:i LIMIT 1"),
+            {"i": int(id_comuna)},
+        ).scalar()
+    except Exception:
+        return None
+
+
+def _is_confirmed_estado_conn(conn, id_estado: Any) -> bool:
+    try:
+        name = _estado_nombre_conn(conn, id_estado) or ""
+        return "CONFIRM" in str(name).upper()
+    except Exception:
+        return False
+
+
+def _actor_name(user: dict) -> str:
+    return str(user.get("name") or user.get("nombre") or user.get("username") or user.get("email") or user.get("id") or "Usuario").strip()
+
+
+def _fmt_hist_value(v: Any) -> str:
+    if v is None:
+        return "vacío"
+    s = str(v).strip()
+    return s if s else "vacío"
+
+
+def _lead_data_change_lines(conn, old_row: dict, incoming: dict) -> tuple[list[str], list[str]]:
+    lines: list[str] = []
+    fields: list[str] = []
+
+    def add(field: str, label: str, old_v: Any, new_v: Any):
+        old_s = _fmt_hist_value(old_v)
+        new_s = _fmt_hist_value(new_v)
+        if old_s == new_s:
+            return
+        fields.append(field)
+        lines.append(f"{label}: {old_s} → {new_s}")
+
+    if "cliente" in incoming or "nombre_cliente" in incoming or "nombre" in incoming:
+        add("cliente", "Nombre cliente", old_row.get("cliente"), incoming.get("cliente"))
+    if "email" in incoming:
+        add("email", "Email", old_row.get("email"), incoming.get("email"))
+    if "telefono" in incoming:
+        add("telefono", "Teléfono", old_row.get("telefono"), incoming.get("telefono"))
+    if "direccion" in incoming:
+        add("direccion", "Dirección", old_row.get("direccion"), incoming.get("direccion"))
+    if "id_marca" in incoming:
+        old_name = _marca_nombre_conn(conn, old_row.get("id_marca")) or old_row.get("id_marca")
+        new_name = _marca_nombre_conn(conn, incoming.get("id_marca")) or incoming.get("id_marca")
+        add("id_marca", "Marca", old_name, new_name)
+    if "id_comuna" in incoming:
+        old_name = _comuna_nombre_conn(conn, old_row.get("id_comuna")) or old_row.get("id_comuna")
+        new_name = _comuna_nombre_conn(conn, incoming.get("id_comuna")) or incoming.get("id_comuna")
+        add("id_comuna", "Comuna", old_name, new_name)
+    if "fecha_evento" in incoming:
+        old_d = str(old_row.get("fecha_evento") or "")[:10]
+        new_d = str(incoming.get("fecha_evento") or "")[:10]
+        add("fecha_evento", "Fecha evento", old_d, new_d)
+    if "monto_cotizado" in incoming:
+        add("monto_cotizado", "Monto cotizado", old_row.get("monto_cotizado"), incoming.get("monto_cotizado"))
+    if "plataforma" in incoming:
+        add("plataforma", "Plataforma", old_row.get("plataforma"), incoming.get("plataforma"))
+    if "num_cotizacion" in incoming:
+        add("num_cotizacion", "N° cotización", old_row.get("num_cotizacion"), incoming.get("num_cotizacion"))
+    if "id_tipo_cliente" in incoming:
+        add("id_tipo_cliente", "Tipo cliente", old_row.get("id_tipo_cliente"), incoming.get("id_tipo_cliente"))
+    return lines, fields
 
 def _role(user: dict) -> str:
     return (user.get("role") or user.get("rol") or "").upper()
@@ -165,11 +468,36 @@ def _user_marcas(user: dict) -> list[int]:
         return []
     try:
         with get_connection() as conn:
-            rows = conn.execute(
-                text("SELECT id_marca FROM usuarios_marcas WHERE id_usuario=:u"),
-                {"u": int(uid)},
-            ).fetchall()
-            return [int(r[0]) for r in rows]
+            for table in ("usuarios_marcas", "usuario_marcas"):
+                exists = bool(conn.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{table}"}).scalar())
+                if not exists:
+                    continue
+                rows = conn.execute(
+                    text(f"SELECT id_marca FROM public.{table} WHERE id_usuario=:u ORDER BY id_marca"),
+                    {"u": int(uid)},
+                ).fetchall()
+                found = [int(r[0]) for r in rows if r[0] is not None]
+                if found:
+                    return found
+            has_legacy = bool(
+                conn.execute(
+                    text(
+                        """
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema='public' AND table_name='usuarios' AND column_name='id_marca'
+                        LIMIT 1
+                        """
+                    )
+                ).scalar()
+            )
+            if has_legacy:
+                mid = conn.execute(
+                    text("SELECT id_marca FROM public.usuarios WHERE id_usuario=:u LIMIT 1"),
+                    {"u": int(uid)},
+                ).scalar()
+                if mid is not None:
+                    return [int(mid)]
+            return []
     except Exception:
         return []
 
@@ -453,6 +781,10 @@ def leads_catalogs():
 def list_leads(
     limit: int = Query(50, ge=1, le=5000),
     offset: int = Query(0, ge=0),
+    month: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    include_no_date: bool = Query(True),
+    all: bool = Query(False),
     user: dict = Depends(get_current_user),
 ):
     _ensure_leads_delete_cols()
@@ -463,7 +795,6 @@ def list_leads(
     marcas = _user_marcas(user)
     only_own = _restrict_leads_to_user_marcas(role)
     user_keys = _user_match_keys_for_leads(user)
-    user_keys = _user_match_keys_for_leads(user)
 
     lead_cols = _cols_for("leads")
     marca_cols = _cols_for("marcas") if _table_exists("marcas") else set()
@@ -471,6 +802,7 @@ def list_leads(
 
     marca_name_expr = "m.marca" if "marca" in marca_cols else ("m.nombre" if "nombre" in marca_cols else "NULL")
     comuna_name_expr = "c.nombre" if "nombre" in comuna_cols else ("c.comuna" if "comuna" in comuna_cols else "NULL")
+    quote_pdf_expr = "l.cotizacion_pdf_url" if "cotizacion_pdf_url" in lead_cols else "NULL::text AS cotizacion_pdf_url"
 
     extra_cols = []
     if "fecha_ingreso" in lead_cols:
@@ -486,8 +818,28 @@ def list_leads(
     extra_sql = (", " + ", ".join(extra_cols)) if extra_cols else ""
 
     with get_connection() as conn:
-        where_parts = ["COALESCE(l.is_deleted,false)=false"]
+        _run_auto_decline_before_leads_list(conn, user)
+        where_parts = [
+            "COALESCE(l.is_deleted,false)=false",
+            "(l.fecha_evento IS NULL OR (l.fecha_evento >= DATE '2000-01-01' AND l.fecha_evento < DATE '2100-01-01'))",
+        ]
         params = {"limit": limit, "offset": offset}
+        if not all and month is None and year is None:
+            today = datetime.now().date()
+            month = today.month
+            year = today.year
+        if month is not None or year is not None:
+            if month is None or year is None:
+                raise HTTPException(400, "month y year deben enviarse juntos")
+            d0 = date(year, month, 1)
+            d1 = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+            month_filter = "l.fecha_evento >= :d0 AND l.fecha_evento < :d1"
+            if include_no_date:
+                where_parts.append(f"(l.fecha_evento IS NULL OR ({month_filter}))")
+            else:
+                where_parts.append(f"({month_filter})")
+            params["d0"] = d0
+            params["d1"] = d1
         if only_own:
             clauses: list[str] = []
             if "id_usuario" in lead_cols and user_keys:
@@ -513,7 +865,7 @@ def list_leads(
             SELECT
               l.id_lead, l.cliente, l.cliente AS nombre_cliente, l.email, l.telefono, l.direccion,
               l.id_marca, l.id_estado, l.id_comuna, l.id_tipo_cliente,
-              l.fecha_evento, l.monto_cotizado, l.plataforma, l.notas, l.num_cotizacion, l.cotizacion_pdf_url,
+              l.fecha_evento, l.monto_cotizado, l.plataforma, l.notas, l.num_cotizacion, {quote_pdf_expr},
               {created_expr} AS created_at,
               {updated_expr} AS updated_at{extra_sql},
               COALESCE({marca_name_expr},'Sin Marca') AS marca,
@@ -528,11 +880,14 @@ def list_leads(
             LEFT JOIN public.estados_lead e ON e.id_estado = l.id_estado
             LEFT JOIN public.comunas c ON c.id_comuna = l.id_comuna
             {where_sql}
-            ORDER BY (l.fecha_evento IS NULL) ASC, l.fecha_evento ASC, {created_expr} DESC, l.id_lead DESC
+            ORDER BY
+              COALESCE({updated_expr}, {created_expr}) DESC NULLS LAST,
+              {created_expr} DESC NULLS LAST,
+              l.id_lead DESC
             LIMIT :limit OFFSET :offset
         """
         rows = conn.execute(text(q), params).mappings().all()
-        return {"total": int(total), "items": list(rows)}
+        return {"total": int(total), "items": jsonable_encoder(list(rows))}
 
 
 @router.get("/leads/by_ids")
@@ -564,6 +919,7 @@ def leads_by_ids(
 
     marcas = _user_marcas(user)
     only_own = _restrict_leads_to_user_marcas(role)
+    user_keys = _user_match_keys_for_leads(user)
 
     lead_cols = _cols_for("leads")
     marca_cols = _cols_for("marcas") if _table_exists("marcas") else set()
@@ -571,6 +927,7 @@ def leads_by_ids(
 
     marca_name_expr = "m.marca" if "marca" in marca_cols else ("m.nombre" if "nombre" in marca_cols else "NULL")
     comuna_name_expr = "c.nombre" if "nombre" in comuna_cols else ("c.comuna" if "comuna" in comuna_cols else "NULL")
+    quote_pdf_expr = "l.cotizacion_pdf_url" if "cotizacion_pdf_url" in lead_cols else "NULL::text AS cotizacion_pdf_url"
 
     extra_cols = []
     if "fecha_ingreso" in lead_cols:
@@ -611,7 +968,7 @@ def leads_by_ids(
             SELECT
               l.id_lead, l.cliente, l.cliente AS nombre_cliente, l.email, l.telefono, l.direccion,
               l.id_marca, l.id_estado, l.id_comuna, l.id_tipo_cliente,
-              l.fecha_evento, l.monto_cotizado, l.plataforma, l.notas, l.num_cotizacion, l.cotizacion_pdf_url,
+              l.fecha_evento, l.monto_cotizado, l.plataforma, l.notas, l.num_cotizacion, {quote_pdf_expr},
               {created_expr} AS created_at,
               {updated_expr} AS updated_at{extra_sql},
               COALESCE({marca_name_expr},'Sin Marca') AS marca,
@@ -772,7 +1129,7 @@ def lead_vcard_link(id_lead: int, user: dict = Depends(get_current_user)):
     return {"ok": True, "url": f"/public/vcard/{token}", "ttl_days": 30}
 
 @router.delete("/leads/{id_lead}")
-def delete_lead(id_lead: int, user: dict = Depends(get_current_user)):
+def delete_lead(id_lead: int, request: Request, payload: dict | None = Body(None), user: dict = Depends(get_current_user)):
     """
     Solo Admin/SuperAdmin puede "borrar" un lead.
     Implementado como borrado lógico para no romper integridad ni auditoría.
@@ -782,9 +1139,23 @@ def delete_lead(id_lead: int, user: dict = Depends(get_current_user)):
     if role not in ("ADMIN", "SUPERADMIN"):
         raise HTTPException(403, "Solo Admin puede borrar leads")
     who = (user.get("name") or user.get("username") or str(user.get("id") or "")).strip() or "ADMIN"
+    motivo = _movement_comment(payload or {})
+    if len(motivo) < 8:
+        raise HTTPException(400, "Motivo obligatorio: para enviar un lead a eliminados debes explicar por qué.")
     with get_connection() as conn:
-        ok = conn.execute(text("SELECT 1 FROM public.leads WHERE id_lead=:id"), {"id": id_lead}).scalar()
-        if not ok:
+        lead_row = conn.execute(
+            text(
+                """
+                SELECT l.id_lead, COALESCE(l.cliente,'') AS cliente, l.id_estado,
+                       COALESCE(e.nombre,'') AS estado
+                FROM public.leads l
+                LEFT JOIN public.estados_lead e ON e.id_estado=l.id_estado
+                WHERE l.id_lead=:id
+                """
+            ),
+            {"id": id_lead},
+        ).mappings().first()
+        if not lead_row:
             raise HTTPException(404, "Lead no existe")
         conn.execute(
             text(
@@ -796,6 +1167,24 @@ def delete_lead(id_lead: int, user: dict = Depends(get_current_user)):
             ),
             {"id": id_lead, "who": who},
         )
+        _append_notas(conn, id_lead, f"[ELIMINADO {datetime.now().strftime('%Y-%m-%d %H:%M')}] {who}\n{motivo}")
+        log_activity(
+            conn,
+            username=username(user),
+            user_id=user_id(user),
+            role=role_key(user),
+            action="lead.delete",
+            entity_type="lead",
+            entity_id=int(id_lead),
+            meta={
+                "cliente": lead_row.get("cliente"),
+                "old_estado_id": lead_row.get("id_estado"),
+                "old_estado": lead_row.get("estado"),
+                "deleted_by": who,
+                "motivo": motivo,
+            },
+            request=request,
+        )
         conn.commit()
     return {"ok": True, "id_lead": id_lead}
 
@@ -804,7 +1193,7 @@ def create_lead(payload: dict = Body(...), user: dict = Depends(get_current_user
     # mínimos razonables
     cliente = (payload.get("cliente") or payload.get("nombre_cliente") or payload.get("nombre") or "").strip()
     if not cliente:
-        raise HTTPException(400, "cliente es requerido")
+        raise HTTPException(400, "Nombre cliente es obligatorio")
 
     id_estado = int(payload.get("id_estado") or 1)
 
@@ -931,12 +1320,18 @@ def create_lead(payload: dict = Body(...), user: dict = Depends(get_current_user
             except Exception:
                 pass
 
+        if id_marca <= 0:
+            raise HTTPException(400, "Marca es obligatoria")
+
         # validar estado existe
         ok_estado = conn.execute(text("SELECT 1 FROM public.estados_lead WHERE id_estado=:i"), {"i": id_estado}).first()
         if not ok_estado:
             raise HTTPException(400, "id_estado inválido")
+        fecha_evento = _valid_fecha_evento(payload.get("fecha_evento"))
+        if not fecha_evento:
+            raise HTTPException(400, "Fecha evento es obligatoria")
 
-        # marca/comuna pueden ser 0 (Sin Marca/Sin Comuna) – no bloqueamos
+        # comuna puede quedar en 0 si el lead viene incompleto; nombre/fecha/marca no.
         # Mensaje proveniente de formularios/extensión:
         # - A veces llega como `mensaje` además de `notas`. En ese caso NO queremos perderlo.
         # - Mantenemos todo en `leads.notas` por compatibilidad (luego migraremos a notas en líneas).
@@ -986,7 +1381,7 @@ def create_lead(payload: dict = Body(...), user: dict = Depends(get_current_user
             "id_estado": id_estado,
             "id_comuna": id_comuna,
             "id_tipo_cliente": id_tipo_cliente,
-            "fecha_evento": payload.get("fecha_evento"),
+            "fecha_evento": fecha_evento,
             "monto_cotizado": payload.get("monto_cotizado") or 0,
             "plataforma": payload.get("plataforma"),
             "notas": notas_in,
@@ -1277,6 +1672,7 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
         telefono = (payload.get("telefono") or payload.get("Telefono") or payload.get("phone") or "").strip()
         email = (payload.get("email") or payload.get("correo") or payload.get("Correo") or payload.get("mail") or "").strip()
         fecha = (payload.get("fecha_evento") or payload.get("fechaEvento") or payload.get("Fecha") or payload.get("fecha") or payload.get("FechaEvento") or "").strip()
+        fecha_evento = _valid_fecha_evento(fecha)
         comuna = (payload.get("comuna") or payload.get("comuna_nombre") or "").strip()
         # Canal: este endpoint es el FORMULARIO, por requerimiento de funnel.
         plataforma = "FORMULARIO"
@@ -1326,7 +1722,7 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
             "id_estado": int(estado_nuevo),
             "id_comuna": id_comuna,
             "id_tipo_cliente": id_tipo_cliente,
-            "fecha_evento": payload.get("fecha_evento") or fecha or None,
+            "fecha_evento": fecha_evento,
             "monto_cotizado": payload.get("monto_cotizado") or 0,
             "plataforma": plataforma,
             "notas": notas,
@@ -1336,19 +1732,38 @@ def create_lead_from_form(payload: dict = Body(...), request: Request = None):
         return {"ok": True, "id_lead": int(new_id)}
 
 @router.put("/leads/{id_lead}")
-def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+def update_lead(id_lead: int, request: Request, payload: dict = Body(...), user: dict = Depends(get_current_user)):
     _ensure_leads_followup_cols()
     with get_connection() as conn:
         row = conn.execute(
-            text("SELECT id_marca, id_estado, notas FROM public.leads WHERE id_lead=:id"),
+            text(
+                """
+                SELECT id_marca, id_estado, notas, cliente, email, telefono, direccion,
+                       id_comuna, id_tipo_cliente, fecha_evento, monto_cotizado,
+                       plataforma, num_cotizacion
+                FROM public.leads
+                WHERE id_lead=:id
+                """
+            ),
             {"id": id_lead},
-        ).first()
+        ).mappings().first()
         exists = bool(row)
         if not exists:
             raise HTTPException(404, "Lead no existe")
-        old_id_marca = row[0] if row else None
-        old_estado = row[1] if row else None
-        old_notas = row[2] if row else None
+        old_id_marca = row.get("id_marca") if row else None
+        old_estado = row.get("id_estado") if row else None
+        old_notas = row.get("notas") if row else None
+
+        if (
+            _is_lead_operator(user)
+            and _lead_change_needs_comment(payload, old_estado=old_estado, old_marca=old_id_marca, old_row=dict(row or {}))
+            and not _is_confirmed_estado_conn(conn, payload.get("id_estado"))
+            and not _has_new_note_text(old_notas, payload)
+        ):
+            raise HTTPException(
+                400,
+                "Comentario obligatorio: para cambiar el estado del lead debes escribir qué hiciste, qué respondió el cliente o cuál es el próximo paso.",
+            )
 
         cliente = payload.get("cliente")
         if cliente is None:
@@ -1436,6 +1851,27 @@ def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             new_id_marca = int(new_id_marca) if new_id_marca is not None else None
         except Exception:
             pass
+        fecha_evento = _valid_fecha_evento(payload.get("fecha_evento")) if "fecha_evento" in payload else None
+        telefono_norm = _phone_cl_e164(payload.get("telefono"))
+
+        actual_incoming: dict[str, Any] = {}
+        if "cliente" in payload or "nombre_cliente" in payload or "nombre" in payload:
+            actual_incoming["cliente"] = cliente
+        for key, val in (
+            ("email", payload.get("email")),
+            ("telefono", telefono_norm),
+            ("direccion", payload.get("direccion")),
+            ("id_marca", new_id_marca),
+            ("id_comuna", payload.get("id_comuna")),
+            ("id_tipo_cliente", payload.get("id_tipo_cliente")),
+            ("fecha_evento", fecha_evento),
+            ("monto_cotizado", payload.get("monto_cotizado")),
+            ("plataforma", payload.get("plataforma")),
+            ("num_cotizacion", payload.get("num_cotizacion")),
+        ):
+            if key in payload:
+                actual_incoming[key] = val
+        data_change_lines, actual_changed_fields = _lead_data_change_lines(conn, dict(row or {}), actual_incoming)
 
         conn.execute(text("""
           UPDATE public.leads SET
@@ -1458,19 +1894,28 @@ def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
             "id": id_lead,
             "cliente": cliente,
             "email": payload.get("email"),
-            "telefono": _phone_cl_e164(payload.get("telefono")),
+            "telefono": telefono_norm,
             "direccion": payload.get("direccion"),
             "id_marca": new_id_marca,
             "id_estado": payload.get("id_estado"),
             "id_comuna": payload.get("id_comuna"),
             "id_tipo_cliente": payload.get("id_tipo_cliente"),
-            "fecha_evento": payload.get("fecha_evento"),
+            "fecha_evento": fecha_evento,
             "monto_cotizado": payload.get("monto_cotizado"),
             "plataforma": payload.get("plataforma"),
             "notas_set": bool(notas_set),
             "notas": notas_val,
             "num_cotizacion": payload.get("num_cotizacion"),
         })
+
+        _append_movement_comment(conn, id_lead, payload, user)
+        if data_change_lines:
+            try:
+                actor = _actor_name(user)
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+                _append_notas(conn, id_lead, "[DATOS %s] %s\n%s" % (ts, actor, "\n".join(data_change_lines[:20])))
+            except Exception:
+                pass
 
         # Trazabilidad: si cambió estado desde este endpoint, agregar nota (timestamp + actor).
         try:
@@ -1555,12 +2000,63 @@ def update_lead(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                     text("UPDATE public.cotizaciones SET marca=:m WHERE id_lead=:id"),
                     {"m": mname, "id": id_lead},
                 )
+        try:
+            changed_fields = list(actual_changed_fields)
+            if id_estado is not None and str(id_estado).strip() and str(old_estado or "") != str(id_estado):
+                changed_fields.append("id_estado")
+            old_estado_name = _estado_nombre_conn(conn, old_estado)
+            new_estado_name = _estado_nombre_conn(conn, payload.get("id_estado"))
+            old_marca_name = _marca_nombre_conn(conn, old_id_marca)
+            new_marca_name = _marca_nombre_conn(conn, new_id_marca)
+            log_activity(
+                conn,
+                username=username(user),
+                user_id=user_id(user),
+                role=role_key(user),
+                action="lead.update",
+                entity_type="lead",
+                entity_id=int(id_lead),
+                meta={
+                    "cliente": cliente,
+                    "changed_fields": changed_fields[:40],
+                    "changes": data_change_lines[:40],
+                    "old_estado_id": old_estado,
+                    "old_estado": old_estado_name,
+                    "new_estado_id": payload.get("id_estado"),
+                    "new_estado": new_estado_name,
+                    "old_id_marca": old_id_marca,
+                    "old_marca": old_marca_name,
+                    "new_id_marca": new_id_marca,
+                    "new_marca": new_marca_name,
+                },
+                request=request,
+            )
+            if id_estado is not None and str(id_estado).strip() and str(old_estado or "") != str(id_estado):
+                log_activity(
+                    conn,
+                    username=username(user),
+                    user_id=user_id(user),
+                    role=role_key(user),
+                    action="lead.status.change",
+                    entity_type="lead",
+                    entity_id=int(id_lead),
+                    meta={
+                        "old_estado_id": old_estado,
+                        "old_estado": old_estado_name,
+                        "new_estado_id": int(id_estado),
+                        "new_estado": new_estado_name,
+                        "source": "lead.update",
+                    },
+                    request=request,
+                )
+        except Exception:
+            pass
         conn.commit()
         return {"ok": True}
 
 
 @router.post("/leads/{id_lead}/append_note")
-def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+def append_note(id_lead: int, request: Request, payload: dict = Body(...), user: dict = Depends(get_current_user)):
     """
     Agrega una entrada al historial/notas del lead (sin pisar el texto existente).
     Útil para registrar seguimientos WhatsApp, llamadas, etc, con timestamp.
@@ -1574,6 +2070,7 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
     kind = str(payload.get("kind") or payload.get("tipo") or "NOTE").strip().upper()[:24]
     title = str(payload.get("title") or payload.get("titulo") or "").strip()[:120]
     followup = bool(payload.get("followup") or payload.get("is_followup") or payload.get("seguimiento") or False)
+    contact_outcome = str(payload.get("contact_outcome") or "").strip().upper()[:24]
 
     try:
         from datetime import datetime
@@ -1592,11 +2089,24 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
 
     with get_connection() as conn:
         _ensure_leads_followup_cols()
-        row = conn.execute(text("SELECT 1 FROM public.leads WHERE id_lead=:id"), {"id": int(id_lead)}).first()
+        row = conn.execute(
+            text(
+                """
+                SELECT l.id_estado, COALESCE(e.nombre,'') AS estado_nombre
+                FROM public.leads l
+                LEFT JOIN public.estados_lead e ON e.id_estado=l.id_estado
+                WHERE l.id_lead=:id
+                """
+            ),
+            {"id": int(id_lead)},
+        ).mappings().first()
         if not row:
             raise HTTPException(404, "Lead no existe")
 
         is_contact = kind in ("WSP", "CALL", "EMAIL")
+        is_no_answer = contact_outcome == "NO_ANSWER"
+        should_mark_contacted = (is_contact or followup) and not is_no_answer
+        moved_to_estado = None
         conn.execute(
             text(
                 """
@@ -1617,6 +2127,41 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                 conn.execute(text("UPDATE public.leads SET seguimiento_at=now() WHERE id_lead=:id"), {"id": int(id_lead)})
         except Exception:
             pass
+        # Regla comercial:
+        # - WhatsApp, llamada, email o seguimiento explícito sacan al lead de NUEVO.
+        # - Un intento marcado explícitamente como NO_ANSWER queda en historial,
+        #   pero conserva el estado actual.
+        try:
+            current_name = str(row.get("estado_nombre") or "").strip().upper()
+            if should_mark_contacted and "NUEVO" in current_name:
+                target = conn.execute(
+                    text(
+                        """
+                        SELECT id_estado, nombre
+                        FROM public.estados_lead
+                        WHERE UPPER(nombre) LIKE 'CONTACT%'
+                        ORDER BY id_estado
+                        LIMIT 1
+                        """
+                    )
+                ).mappings().first()
+                if target and int(target["id_estado"]) != int(row.get("id_estado") or 0):
+                    conn.execute(
+                        text(
+                            """
+                            UPDATE public.leads
+                            SET id_estado=:estado, updated_at=now()
+                            WHERE id_lead=:id
+                            """
+                        ),
+                        {"estado": int(target["id_estado"]), "id": int(id_lead)},
+                    )
+                    moved_to_estado = {
+                        "id_estado": int(target["id_estado"]),
+                        "nombre": str(target["nombre"]),
+                    }
+        except Exception:
+            moved_to_estado = None
         # Si el usuario registró contacto/seguimiento, cerrar tareas relacionadas (si existe).
         # Importante: NO cerrar por notas genéricas del sistema; solo por evidencia (WSP/CALL/EMAIL)
         # o cuando el frontend indique explícitamente que es seguimiento (followup=true).
@@ -1668,13 +2213,42 @@ def append_note(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
                     )
         except Exception:
             pass
+        try:
+            log_activity(
+                conn,
+                username=username(user),
+                user_id=user_id(user),
+                role=role_key(user),
+                action="lead.followup" if (is_contact or followup) else "lead.note",
+                entity_type="lead",
+                entity_id=int(id_lead),
+                meta={
+                    "kind": kind,
+                    "title": title,
+                    "is_contact": bool(is_contact),
+                    "followup": bool(followup),
+                    "text_preview": text_in[:240],
+                },
+                request=request,
+            )
+        except Exception:
+            pass
         conn.commit()
         # Importante para UX: devolvemos el bloque generado para que el frontend lo agregue
         # inmediatamente al historial local (sin esperar recargar/buscar de nuevo).
-        return {"ok": True, "id_lead": int(id_lead), "block": block, "kind": kind, "title": title, "ts": ts, "who": who}
+        return {
+            "ok": True,
+            "id_lead": int(id_lead),
+            "block": block,
+            "kind": kind,
+            "title": title,
+            "ts": ts,
+            "who": who,
+            "estado": moved_to_estado,
+        }
 
 @router.patch("/leads/{id_lead}/estado")
-def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+def move_estado(id_lead: int, request: Request, payload: dict = Body(...), user: dict = Depends(get_current_user)):
     """
     Payload:
       { "id_estado": 3 }
@@ -1705,6 +2279,18 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
         if not lead:
             raise HTTPException(404, "Lead no existe")
         old_estado = lead.get("id_estado")
+        if (
+            _is_lead_operator(user)
+            and old_estado is not None
+            and int(old_estado) != int(id_estado)
+            and not _is_confirmed_estado_conn(conn, id_estado)
+            and not _movement_comment(payload)
+            and not motivo
+        ):
+            raise HTTPException(
+                400,
+                "Comentario obligatorio: antes de cambiar el estado del lead debes indicar qué gestión se hizo o por qué se mueve.",
+            )
 
         estado_row = conn.execute(
             text("SELECT id_estado, nombre FROM public.estados_lead WHERE id_estado=:i"),
@@ -1898,6 +2484,8 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
               WHERE id_lead=:id
             """), {"e": id_estado, "id": id_lead})
 
+        _append_movement_comment(conn, id_lead, payload, user)
+
         # Si el ejecutivo mueve a CONTACTADO sin registrar nada, dejamos evidencia automática (WSP).
         # Esto evita que "se mueva estado" sin trazabilidad, y además ayuda a la lógica de tareas.
         try:
@@ -1947,6 +2535,32 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
         except Exception:
             pass
 
+        try:
+            old_estado_i = int(old_estado) if str(old_estado or "").isdigit() else None
+            new_estado_i = int(id_estado)
+            old_name = conn.execute(text("SELECT nombre FROM public.estados_lead WHERE id_estado=:i"), {"i": old_estado_i}).scalar() if old_estado_i else None
+            new_name = conn.execute(text("SELECT nombre FROM public.estados_lead WHERE id_estado=:i"), {"i": new_estado_i}).scalar()
+            if old_estado_i != new_estado_i:
+                log_activity(
+                    conn,
+                    username=username(user),
+                    user_id=user_id(user),
+                    role=role_key(user),
+                    action="lead.status.change",
+                    entity_type="lead",
+                    entity_id=int(id_lead),
+                    meta={
+                        "old_estado_id": old_estado_i,
+                        "old_estado": old_name,
+                        "new_estado_id": new_estado_i,
+                        "new_estado": new_name,
+                        "motivo": motivo or None,
+                        "undo_preagenda": bool(undo_preagenda),
+                    },
+                    request=request,
+                )
+        except Exception:
+            pass
         conn.commit()
 
         # Notificación inmediata a SUPERADMIN al confirmar venta (para SweetAlert).
@@ -2094,15 +2708,15 @@ def move_estado(id_lead: int, payload: dict = Body(...), user: dict = Depends(ge
     return {"ok": True, "id_lead": id_lead, "id_estado": id_estado}
 
 @router.post("/leads/{id_lead}/estado")
-def move_estado_post(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+def move_estado_post(id_lead: int, request: Request, payload: dict = Body(...), user: dict = Depends(get_current_user)):
     # compat con frontends legacy (POST), pero SIEMPRE autenticado
-    return move_estado(id_lead=id_lead, payload=payload, user=user)
+    return move_estado(id_lead=id_lead, request=request, payload=payload, user=user)
 
 
 @router.post("/leads/{id_lead}/estado_ex")
-def move_estado_ex(id_lead: int, payload: dict = Body(...), user: dict = Depends(get_current_user)):
+def move_estado_ex(id_lead: int, request: Request, payload: dict = Body(...), user: dict = Depends(get_current_user)):
     # compat con frontend legacy (POST) — mismo comportamiento que PATCH
-    return move_estado(id_lead=id_lead, payload=payload, user=user)
+    return move_estado(id_lead=id_lead, request=request, payload=payload, user=user)
 
 
 @router.post("/leads/{id_lead}/cotizacion_pdf")
@@ -2112,6 +2726,7 @@ def upload_cotizacion_pdf(id_lead: int, file: UploadFile = File(...), user: dict
     if not (file.content_type or "").lower().endswith("pdf"):
         if not str(file.filename).lower().endswith(".pdf"):
             raise HTTPException(400, "Solo PDF")
+    max_pdf_bytes = 20 * 1024 * 1024
     with get_connection() as conn:
         lead = conn.execute(
             text("SELECT id_lead, COALESCE(num_cotizacion,'') AS num FROM public.leads WHERE id_lead=:id"),
@@ -2121,7 +2736,27 @@ def upload_cotizacion_pdf(id_lead: int, file: UploadFile = File(...), user: dict
             raise HTTPException(404, "Lead no existe")
     out_dir = _lead_quote_path(id_lead)
     out_path = out_dir / "cotizacion.pdf"
-    out_path.write_bytes(file.file.read())
+    total_bytes = 0
+    try:
+        with out_path.open("wb") as fh:
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > max_pdf_bytes:
+                    try:
+                        fh.close()
+                    except Exception:
+                        pass
+                    try:
+                        out_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    raise HTTPException(400, "PDF supera 20 MB")
+                fh.write(chunk)
+    except HTTPException:
+        raise
     rel = str(out_path.relative_to(Path(__file__).resolve().parents[2]))
     with get_connection() as conn:
         _ensure_cotizaciones_pdf_col()

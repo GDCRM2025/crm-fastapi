@@ -16,19 +16,16 @@
     .btn.ok{ background: rgba(25,195,125,.14); border-color: rgba(25,195,125,.28); }
     .btn:hover{ background: var(--hover-surface); }
     .pill{ display:inline-flex; align-items:center; gap:8px; border:1px solid var(--border); background: var(--surface); padding: 6px 10px; border-radius: 999px; font-weight: 1000; }
-    .tbl{ width:100%; border-collapse: separate; border-spacing:0 10px; }
-    .row{
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      overflow:hidden;
-      box-shadow: var(--shadow);
-    }
-    .row td{ padding: 10px 10px; vertical-align:top; }
+    .sheetWrap{overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);}
+    .tbl{ width:100%; min-width:1260px; border-collapse: collapse; }
+    .tbl th{position:sticky;top:0;background:#0b7f43;color:#fff;padding:10px 8px;text-align:center;font-size:12px;letter-spacing:.03em;z-index:1;}
+    .tbl td{ padding: 9px 8px; vertical-align:middle; border-bottom:1px solid var(--border); text-align:center; font-weight:900; }
+    .tbl tr.okRow{background:rgba(25,195,125,.08);}
+    .tbl tr.warnRow{background:rgba(245,158,11,.08);}
     .muted{ color: var(--muted); font-weight: 900; }
     .name{ font-weight: 1100; }
     .mini{ font-size: 12px; }
-    .checks{ display:grid; grid-template-columns: repeat(7, minmax(86px, 1fr)); gap: 10px; }
+    .checks{ display:grid; grid-template-columns: repeat(3, minmax(86px, 1fr)); gap: 6px; }
     .chk{
       display:flex; align-items:center; gap:8px;
       padding: 10px 10px;
@@ -43,10 +40,17 @@
     .actions{ display:flex; gap:10px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
     .actions .btn{ padding: 9px 11px; }
     .grid2{ display:grid; grid-template-columns: 1fr; gap: 10px; }
-    .notes{ width:100%; min-height: 42px; resize: vertical; }
+    .notes{ width:100%; min-height: 42px; resize: vertical; min-width:220px; }
+    .equiposCell{max-width:260px;text-align:left!important;white-space:pre-wrap;}
+    .dayBand{margin:0 0 8px 0;padding:10px 12px;background:rgba(11,127,67,.14);border:1px solid rgba(11,127,67,.28);border-radius:8px;font-weight:1100;}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-bottom:12px;}
+    .metric{border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:12px;}
+    .metric .n{font-size:25px;font-weight:1100;}
+    .metric.warn .n{color:#d97706}.metric.ok .n{color:#0b7f43}
     @media (max-width: 980px){
       .checks{ grid-template-columns: repeat(2, minmax(140px, 1fr)); }
       .actions{ justify-content:flex-start; }
+      .metrics{grid-template-columns:1fr 1fr;}
     }
   </style>
 </head>
@@ -64,12 +68,38 @@
       </div>
     </div>
 
-    <div id="meta" class="muted mini"></div>
-    <div style="height:10px"></div>
+    <div class="dayBand" id="meta"></div>
+    <section class="metrics">
+      <div class="metric"><div class="n" id="mTotal">0</div><div class="muted">Eventos confirmados</div></div>
+      <div class="metric ok"><div class="n" id="mReady">0</div><div class="muted">Checklist 100%</div></div>
+      <div class="metric warn"><div class="n" id="mPending">0</div><div class="muted">Pendientes de revisión</div></div>
+      <div class="metric warn"><div class="n" id="mData">0</div><div class="muted">Con datos faltantes</div></div>
+    </section>
 
-    <table class="tbl">
-      <tbody id="tb"></tbody>
-    </table>
+    <div class="sheetWrap">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Nombre cliente</th>
+            <th>Comuna</th>
+            <th>Marca</th>
+            <th>Equipos</th>
+            <th>Salida</th>
+            <th>Comienzo</th>
+            <th>Término</th>
+            <th>Duración</th>
+            <th>OPS #</th>
+            <th>Despacha</th>
+            <th>Retira</th>
+            <th>Operadores</th>
+            <th>Check</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
   </div>
 
   <script type="module">
@@ -102,12 +132,16 @@
 
     const KEYS = [
       ["cliente","Cliente"],
+      ["contacto","Contacto"],
+      ["direccion","Dirección"],
       ["comuna","Comuna"],
       ["marca","Marca"],
       ["equipos","Equipos"],
+      ["salida","Salida"],
       ["inicio","Inicio"],
       ["fin","Término"],
       ["ops","OPS"],
+      ["operadores","Operadores"],
     ];
 
     function fmtTime(iso){
@@ -116,6 +150,14 @@
       // "2026-03-20T11:00:00" o "2026-03-20 11:00:00"
       const m = s.match(/(\d{2}:\d{2})/);
       return m ? m[1] : s.slice(11,16);
+    }
+    function duration(start,end){
+      const a=fmtTime(start), b=fmtTime(end);
+      if(!a||!b) return "";
+      const [ah,am]=a.split(":").map(Number), [bh,bm]=b.split(":").map(Number);
+      let m=(bh*60+bm)-(ah*60+am);
+      if(m<0) m+=24*60;
+      return `${Math.floor(m/60)}:${String(m%60).padStart(2,"0")}`;
     }
 
     function progress(items){
@@ -161,13 +203,20 @@
       const pr = progress(initial);
 
       return `
-        <tr class="row" data-lead="${lid}">
-          <td style="width:300px">
-            <div class="name">${esc(it.cliente||"—")}</div>
-            <div class="muted mini">${esc(it.marca||"")} · ${esc(it.comuna||"")}</div>
-            <div class="muted mini" style="margin-top:6px">🕒 ${esc(fmtTime(it.start_at)||"—")} → ${esc(fmtTime(it.end_at)||"—")} · 👥 OPS: ${esc(it.ops||0)}</div>
-            <div class="muted mini" style="margin-top:6px">Lead #${esc(lid)} · ${pr.pct}% (${pr.a}/${pr.b})</div>
-          </td>
+        <tr class="row ${pr.pct===100 ? "okRow" : "warnRow"}" data-lead="${lid}">
+          <td>${esc(it._n||"")}</td>
+          <td style="text-align:left"><div class="name">${esc(it.cliente||"—")}</div><div class="muted mini">Lead #${esc(lid)}</div></td>
+          <td>${esc(it.comuna||"—")}</td>
+          <td>${esc(it.marca||"—")}</td>
+          <td class="equiposCell">${esc(it.equipos||it.productos_text||it.montaje_text||"—")}</td>
+          <td>${esc(it.salida||"")}</td>
+          <td>${esc(fmtTime(it.start_at)||"—")}</td>
+          <td>${esc(fmtTime(it.end_at)||"—")}</td>
+          <td>${esc(duration(it.start_at,it.end_at)||"—")}</td>
+          <td>${esc(it.ops||0)}</td>
+          <td>${esc(it.despacha||"")}</td>
+          <td>${esc(it.retira||"")}</td>
+          <td>${esc(it.operadores||"")}</td>
           <td>
             <div class="checks">
               ${KEYS.map(([k,label])=>`
@@ -177,13 +226,15 @@
                 </label>
               `).join("")}
             </div>
-            <div class="grid2" style="margin-top:10px">
+            <div class="grid2" style="margin-top:8px">
               <textarea class="inp notes" data-notes placeholder="Notas (opcional, queda en historial)">${esc(saved.notes||"")}</textarea>
-              <div class="actions">
-                <button class="btn" data-open>Ver lead</button>
-                <button class="btn ok" data-save>Guardar checklist</button>
-                <span class="muted mini" data-stamp>${saved.updated_at ? ("Último guardado: " + esc(String(saved.updated_at).replace("T"," ").slice(0,16))) : ""}</span>
-              </div>
+            </div>
+          </td>
+          <td>
+            <div class="actions">
+              <button class="btn" data-open>Ver lead</button>
+              <button class="btn ok" data-save>Guardar</button>
+              <span class="muted mini" data-stamp>${saved.updated_at ? (`Guardado por ${esc(saved.username||"usuario")}: ` + esc(String(saved.updated_at).replace("T"," ").slice(0,16))) : `${pr.pct}%`}</span>
             </div>
           </td>
         </tr>
@@ -196,12 +247,25 @@
       try{
         const out = await apiJSON(`/checklist/events?day=${encodeURIComponent(day)}`);
         const items = Array.isArray(out?.items) ? out.items : [];
+        const calculated = items.map(it=>{
+          const saved=it.checklist?.items||{};
+          const values={};
+          for(const [k] of KEYS){
+            values[k]=Object.prototype.hasOwnProperty.call(saved,k)?!!saved[k]:!it.missing?.[k];
+          }
+          return progress(values).pct;
+        });
+        const ready=calculated.filter(x=>x===100).length;
+        qs("#mTotal").textContent=String(items.length);
+        qs("#mReady").textContent=String(ready);
+        qs("#mPending").textContent=String(Math.max(0,items.length-ready));
+        qs("#mData").textContent=String(out?.summary?.data_incomplete||0);
         const err = String(out?.error || "").trim();
         qs("#meta").textContent = err
           ? `Sin datos (backend): ${err}`
           : (items.length ? `Eventos confirmados del día: ${items.length}` : "Sin eventos confirmados para este día.");
         const tb = qs("#tb");
-        tb.innerHTML = items.map(rowHTML).join("");
+        tb.innerHTML = items.map((it,i)=>({...it,_n:i+1})).map(rowHTML).join("") || `<tr><td colspan="15" class="muted">Sin eventos para revisar.</td></tr>`;
 
         tb.querySelectorAll("tr.row").forEach(tr=>{
           const lid = Number(tr.getAttribute("data-lead")||0);
@@ -215,9 +279,14 @@
             try{
               await saveRow(lid, day, items, notes);
               const pr = progress(items);
-              tr.querySelector(".name")?.insertAdjacentHTML("beforeend", pr.pct===100 ? ` <span class="muted mini">✅</span>` : "");
+              tr.classList.toggle("okRow", pr.pct===100);
+              tr.classList.toggle("warnRow", pr.pct!==100);
               const stamp = tr.querySelector("[data-stamp]");
               if (stamp) stamp.textContent = "Guardado.";
+              const rows=[...tb.querySelectorAll("tr.row")];
+              const readyNow=rows.filter(row=>row.classList.contains("okRow")).length;
+              qs("#mReady").textContent=String(readyNow);
+              qs("#mPending").textContent=String(Math.max(0,rows.length-readyNow));
               Swal.fire({ toast:true, position:"top-end", timer:1800, showConfirmButton:false, icon:"success", title:"Checklist guardado" });
             }catch(e){
               Swal.fire({ icon:"error", title:"No pude guardar", text:String(e.message||e).slice(0,200) });

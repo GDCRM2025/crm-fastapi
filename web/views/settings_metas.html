@@ -192,8 +192,16 @@
         meta: Number(it.meta||0),
         updated_by: String(it.updated_by||""),
       }));
+      const totalVenta = rows.reduce((a,r)=>a+Number(r.venta||0),0);
+      const totalMeta = rows.reduce((a,r)=>a+Number(r.meta||0),0);
+      const avgCrec = rows.length ? rows.reduce((a,r)=>a+Number(r.crec||0),0)/rows.length : 0;
 
       box.innerHTML = `
+        <div class="row" style="margin-bottom:10px">
+          <span class="btn" style="cursor:default">Venta base total: $${esc(formatNum(totalVenta))}</span>
+          <span class="btn" style="cursor:default">Meta total: $${esc(formatNum(totalMeta))}</span>
+          <span class="btn" style="cursor:default">Promedio crecimiento: ${esc(avgCrec.toFixed(2))}%</span>
+        </div>
         <div style="overflow:auto; max-height:70vh;">
           <table class="tbl">
             <thead>
@@ -216,6 +224,15 @@
                 </tr>
               `).join("")}
             </tbody>
+            <tfoot>
+              <tr>
+                <th>Total</th>
+                <th class="right">$${esc(formatNum(totalVenta))}</th>
+                <th class="right">${esc(avgCrec.toFixed(2))}%</th>
+                <th class="right">$${esc(formatNum(totalMeta))}</th>
+                <th></th>
+              </tr>
+            </tfoot>
           </table>
         </div>
         <div class="muted" style="margin-top:10px;">Tip: al cambiar un valor, se guarda automáticamente.</div>

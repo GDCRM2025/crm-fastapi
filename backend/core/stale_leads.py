@@ -82,10 +82,10 @@ def auto_decline_stale_leads(
     Aplica reglas de "leads sin movimiento" (declinacion automatica).
 
     Reglas (segun definicion del negocio):
-    - Solo aplica si el evento es del mes actual; si NO hay fecha_evento, se considera elegible.
+    - Para tareas/bloqueo solo aplica si el evento es del mes actual.
+    - Sin fecha_evento no entra al circuito automatico.
     - NUEVO: +7 dias desde created_at, sin comentarios y sin movimiento (updated_at ~ created_at).
     - CONTACTADO:
-      - sin fecha_evento y sin movimiento 5 dias => DECLINADO.
       - con fecha_evento del mes, con comentarios y sin movimiento 7 dias => DECLINADO.
     - COTIZADO: con fecha_evento del mes, con comentarios y con cotizacion => DECLINADO si fecha_evento <= hoy + 4 dias.
     """
@@ -104,51 +104,58 @@ def auto_decline_stale_leads(
     has_comments_sql = _build_has_comments_sql(leads_cols, has_lead_notas)
     has_quote_sql = _build_has_quote_sql(leads_cols, has_cotizaciones)
 
-    # Estados estandar (seed): 1 NUEVO, 2 CONTACTADO, 3 COTIZADO, 5 DECLINADO
-    # (Si en algun deploy cambia, esto se ajusta en la tabla estados_lead)
-    nuevo_id = 1
-    contactado_id = 2
-    cotizado_id = 3
-    declinado_id = 5
+    # Estados estandar (seed) con fallback por si un deploy conserva los IDs historicos.
+    def _estado_id_like(pattern: str, fallback: int) -> int:
+        try:
+            val = conn.execute(
+                text("SELECT id_estado FROM public.estados_lead WHERE UPPER(nombre) LIKE :p ORDER BY id_estado LIMIT 1"),
+                {"p": pattern},
+            ).scalar()
+            return int(val) if val is not None else int(fallback)
+        except Exception:
+            return int(fallback)
+
+    nuevo_id = _estado_id_like("%NUEV%", 1)
+    contactado_id = _estado_id_like("%CONTACT%", 2)
+    cotizado_id = _estado_id_like("%COTIZ%", 3)
+    confirmado_id = _estado_id_like("CONFIRM%", 4)
+    declinado_id = _estado_id_like("%DECLIN%", 5)
 
     # "del mes": fecha_evento en el mismo ano/mes que hoy
+    today_sql = "(now() AT TIME ZONE 'America/Santiago')::date"
     is_this_month_sql = (
-        "EXTRACT(YEAR FROM l.fecha_evento) = EXTRACT(YEAR FROM CURRENT_DATE) "
-        "AND EXTRACT(MONTH FROM l.fecha_evento) = EXTRACT(MONTH FROM CURRENT_DATE)"
+        f"EXTRACT(YEAR FROM l.fecha_evento) = EXTRACT(YEAR FROM {today_sql}) "
+        f"AND EXTRACT(MONTH FROM l.fecha_evento) = EXTRACT(MONTH FROM {today_sql})"
     )
-    eligible_month_sql = f"(l.fecha_evento IS NULL OR ({is_this_month_sql}))"
+    eligible_month_sql = f"(l.fecha_evento IS NOT NULL AND ({is_this_month_sql}))"
 
     # Para "sin movimiento" usamos updated_at; si no existe, caemos a created_at
     last_move_sql = "COALESCE(l.updated_at, l.created_at)"
 
     # Motivos
     # IMPORTANT: mantenemos estos textos en ASCII para compatibilidad con BDs con encoding SQL_ASCII.
-    motivo_evento_pasado_nuevo = "AUTO: Evento pasado (sin seguimiento ejecutivo)"
-    motivo_evento_pasado_cliente = "AUTO: Evento pasado (cliente no contesto)"
-    motivo_nuevo = "AUTO: NUEVO sin movimiento +7 dias (sin comentarios)"
-    motivo_contacto_sin_fecha = "AUTO: CONTACTADO sin fecha de evento +5 dias (sin movimiento)"
-    motivo_contacto_stale = "AUTO: CONTACTADO con fecha y comentarios +7 dias (sin movimiento)"
-    motivo_cotizado_evento_cerca = "AUTO: COTIZADO sin confirmar (evento <= 4 dias)"
+    motivo_evento_pasado = "Declinado por no movimiento de la marca"
+    motivo_nuevo = motivo_evento_pasado
+    motivo_contacto_sin_fecha = motivo_evento_pasado
+    motivo_contacto_stale = motivo_evento_pasado
+    motivo_cotizado_evento_cerca = motivo_evento_pasado
 
     # CTE base (candidatos + dedup)
     ctes_sql = f"""
         WITH candidates AS (
-          -- 0) Evento ya paso -> declinar segun estado (prioridad maxima)
-          SELECT l.id_lead, 1 AS prio, :motivo_evento_pasado_nuevo AS motivo
+          -- 0) Evento ya paso -> declinar cualquier estado activo (prioridad maxima).
+          -- Confirmado se conserva porque representa venta/evento realizado.
+          SELECT l.id_lead, 1 AS prio, :motivo_evento_pasado AS motivo
           FROM public.leads l
-          WHERE l.id_estado = :nuevo_id
+          WHERE l.id_estado <> :declinado_id
+            AND l.id_estado <> :confirmado_id
+            AND COALESCE(l.is_deleted,false)=false
             AND l.fecha_evento IS NOT NULL
-            AND l.fecha_evento < CURRENT_DATE
+            AND l.fecha_evento < {today_sql}
 
           UNION ALL
 
-          SELECT l.id_lead, 1 AS prio, :motivo_evento_pasado_cliente AS motivo
-          FROM public.leads l
-          WHERE l.id_estado IN (:contactado_id, :cotizado_id)
-            AND l.fecha_evento IS NOT NULL
-            AND l.fecha_evento < CURRENT_DATE
-
-          -- 1) NUEVO +7d, sin comentarios, sin movimiento, (mes actual o sin fecha)
+          -- 1) NUEVO +7d, sin comentarios, sin movimiento, solo mes actual
           SELECT l.id_lead, 2 AS prio, :motivo_nuevo AS motivo
           FROM public.leads l
           WHERE l.id_estado = :nuevo_id
@@ -159,16 +166,7 @@ def auto_decline_stale_leads(
 
           UNION ALL
 
-          -- 2a) CONTACTADO sin fecha_evento, sin movimiento 5 dias (no importa comentarios)
-          SELECT l.id_lead, 3 AS prio, :motivo_contacto_sin_fecha AS motivo
-          FROM public.leads l
-          WHERE l.id_estado = :contactado_id
-            AND l.fecha_evento IS NULL
-            AND {last_move_sql} <= (now() - INTERVAL '5 days')
-
-          UNION ALL
-
-          -- 2b) CONTACTADO con fecha del mes, con comentarios, sin movimiento 7 dias
+          -- 2) CONTACTADO con fecha del mes, con comentarios, sin movimiento 7 dias
           SELECT l.id_lead, 4 AS prio, :motivo_contacto_stale AS motivo
           FROM public.leads l
           WHERE l.id_estado = :contactado_id
@@ -189,7 +187,7 @@ def auto_decline_stale_leads(
             AND ({is_this_month_sql})
             AND ({has_comments_sql}) IS TRUE
             AND ({has_quote_sql}) IS TRUE
-            AND l.fecha_evento <= (CURRENT_DATE + 4)
+            AND l.fecha_evento <= ({today_sql} + 4)
             AND {last_move_sql} <= (now() - INTERVAL '3 days')
         ),
         dedup AS (
@@ -226,8 +224,9 @@ def auto_decline_stale_leads(
             "nuevo_id": nuevo_id,
             "contactado_id": contactado_id,
             "cotizado_id": cotizado_id,
-            "motivo_evento_pasado_nuevo": motivo_evento_pasado_nuevo,
-            "motivo_evento_pasado_cliente": motivo_evento_pasado_cliente,
+            "confirmado_id": confirmado_id,
+            "declinado_id": declinado_id,
+            "motivo_evento_pasado": motivo_evento_pasado,
             "motivo_nuevo": motivo_nuevo,
             "motivo_contacto_sin_fecha": motivo_contacto_sin_fecha,
             "motivo_contacto_stale": motivo_contacto_stale,
@@ -294,6 +293,8 @@ def auto_decline_stale_leads(
             "nuevo_id": nuevo_id,
             "contactado_id": contactado_id,
             "cotizado_id": cotizado_id,
+            "confirmado_id": confirmado_id,
+            "motivo_evento_pasado": motivo_evento_pasado,
             "motivo_nuevo": motivo_nuevo,
             "motivo_contacto_sin_fecha": motivo_contacto_sin_fecha,
             "motivo_contacto_stale": motivo_contacto_stale,

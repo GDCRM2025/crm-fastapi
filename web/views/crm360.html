@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <title>Comercial 360</title>
+  <style>
+    body{padding:16px;}
+    .wrap{max-width:none;margin:0 auto;display:grid;gap:12px;}
+    .card{border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.10);border-radius:8px;padding:14px;}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .muted{opacity:.72;}
+    .btn{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:inherit;padding:8px 11px;border-radius:8px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
+    .btn.primary{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.45);}
+    .btn.warn{background:rgba(59,130,246,.14);border-color:rgba(59,130,246,.45);}
+    .btn.mini{padding:6px 8px;font-size:12px;}
+    .actionbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    input,select,textarea{width:100%;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.13);color:inherit;padding:9px 10px;border-radius:8px;}
+    textarea{min-height:70px;resize:vertical;}
+    .grid{display:grid;grid-template-columns:1.1fr 1fr;gap:12px;}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;}
+    .workGrid{display:grid;grid-template-columns:1.35fr .9fr;gap:12px;align-items:start;}
+    .dayGrid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin-top:10px;}
+    .taskToolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;}
+    .taskToolbar select{width:auto;min-width:210px;}
+    .dayCard{border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.04);padding:10px;}
+    .dayCard{cursor:pointer;transition:filter .15s ease,border-color .15s ease,box-shadow .15s ease;}
+    .dayCard:hover{filter:brightness(1.08);}
+    .dayCard.active{box-shadow:0 0 0 2px rgba(96,165,250,.45) inset;border-color:rgba(96,165,250,.75);}
+    .dayCard.hot{border-color:rgba(239,68,68,.42);background:rgba(239,68,68,.08);}
+    .dayCard.next{border-color:rgba(245,158,11,.38);background:rgba(245,158,11,.08);}
+    .dayCard.ok{border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.07);}
+    .dayCard .k{font-size:11px;letter-spacing:.05em;text-transform:uppercase;opacity:.74;font-weight:1000;}
+    .dayCard .v{font-size:24px;line-height:1;margin-top:7px;font-weight:1100;}
+    .dayCard .h{font-size:12px;opacity:.76;margin-top:5px;font-weight:800;}
+    .metric{border:1px solid rgba(255,255,255,.10);border-radius:8px;background:rgba(255,255,255,.04);padding:10px;}
+    .metric .n{font-size:22px;font-weight:1000;line-height:1;}
+    .metric .l{font-size:12px;opacity:.75;margin-top:5px;font-weight:800;}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;}
+    .tab{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:inherit;border-radius:999px;padding:8px 10px;font-weight:900;cursor:pointer;}
+    .tab.active{border-color:rgba(96,165,250,.65);background:rgba(96,165,250,.16);}
+    .tableWrap{overflow:auto;border:1px solid rgba(255,255,255,.10);border-radius:8px;max-height:360px;}
+    table{width:100%;border-collapse:collapse;min-width:780px;}
+    th,td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;vertical-align:top;font-size:13px;}
+    th{position:sticky;top:0;background:#111827;z-index:1;font-size:12px;text-transform:uppercase;letter-spacing:.03em;}
+    .pill{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 8px;font-size:12px;font-weight:900;opacity:.88;}
+    .risk{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:12px;font-weight:1000;border:1px solid transparent;white-space:nowrap;}
+    .risk.high{background:#fee2e2;color:#7f1d1d;border-color:#991b1b;}
+    .risk.med{background:#fef3c7;color:#78350f;border-color:#92400e;}
+    .risk.ok{background:#dcfce7;color:#14532d;border-color:#166534;}
+    .subline{font-size:12px;opacity:.78;margin-top:3px;font-weight:800;}
+    .hidden{display:none!important;}
+    .detailGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
+    .field{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:8px;background:rgba(255,255,255,.035);}
+    .field b{display:block;font-size:12px;opacity:.7;margin-bottom:4px;}
+    .field span{font-weight:900;}
+    .fieldActions{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;}
+    .contactLink{color:inherit;text-decoration:underline;text-underline-offset:2px;}
+    @media(max-width:1000px){.grid,.metrics,.detailGrid,.workGrid{grid-template-columns:1fr}.tableWrap{max-height:70vh}.dayGrid{grid-template-columns:1fr 1fr}}
+    @media(max-width:560px){.dayGrid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div class="row">
+        <div>
+          <h2 style="margin:0 0 4px 0;">Comercial 360</h2>
+          <div class="muted">Una sola pantalla para responder nuevos, dar seguimiento, cotizar y consultar la ficha completa del cliente.</div>
+        </div>
+        <div class="row">
+          <input id="q" placeholder="Buscar cliente, telefono, correo o #lead" style="width:320px" />
+          <button class="btn primary" id="btnSearch">Buscar</button>
+          <button class="btn" id="btnRefresh">Actualizar todo</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="metrics">
+      <div class="metric"><div class="n" id="mVentaHoy">$0</div><div class="l">Venta hoy</div></div>
+      <div class="metric"><div class="n" id="mVentasCount">0</div><div class="l">Leads vendidos hoy</div></div>
+      <div class="metric"><div class="n" id="mPendientes">0</div><div class="l">Tareas comerciales abiertas</div></div>
+      <div class="metric"><div class="n" id="mQuoteToday">0</div><div class="l">Cotizaciones por revisar</div></div>
+    </section>
+
+    <section class="card">
+        <div class="row">
+          <div>
+            <h3 style="margin:0;">Tu día comercial</h3>
+            <div class="muted">Trabaja de arriba hacia abajo: vencidas/eventos cercanos, nuevos, contactados y cotizados. Todo seguimiento queda con timestamp en el lead.</div>
+          </div>
+          <div class="actionbar">
+            <select id="taskUser" style="display:none;min-width:220px;width:auto;"></select>
+            <button class="btn primary" id="btnSyncTasks" type="button">Sincronizar</button>
+            <button class="btn" id="btnReloadTasks" type="button">Actualizar</button>
+          </div>
+        </div>
+        <div class="dayGrid">
+          <div class="dayCard hot active" data-task-filter="urgent"><div class="k">Atacar ahora</div><div class="v" id="dNow">0</div><div class="h">Vencidas o evento cercano</div></div>
+          <div class="dayCard next" data-task-filter="new"><div class="k">Nuevos</div><div class="v" id="dNew">0</div><div class="h">Responder primero</div></div>
+          <div class="dayCard next" data-task-filter="contact"><div class="k">Contactados</div><div class="v" id="dContact">0</div><div class="h">No perder ritmo</div></div>
+          <div class="dayCard ok" data-task-filter="quote"><div class="k">Cotizados</div><div class="v" id="dQuote">0</div><div class="h">Cerrar o descartar</div></div>
+        </div>
+    </section>
+
+    <section class="workGrid">
+      <div class="card">
+        <div class="taskToolbar">
+          <div>
+            <h3 style="margin:0;">Seguimiento automático vencido</h3>
+            <div class="muted">Ordenado para atacar primero lo que más riesgo tiene.</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-weight:900;">
+            Orden
+            <select id="taskSort">
+              <option value="priority" selected>Prioridad</option>
+              <option value="event_date">Fecha evento</option>
+              <option value="amount_desc">Mayor monto</option>
+              <option value="idle_desc">Más días sin seguimiento</option>
+            </select>
+          </label>
+        </div>
+        <div class="tableWrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Prioridad</th><th>Cliente</th><th>Estado</th><th>Evento</th><th>Acción</th></tr></thead>
+            <tbody id="taskRows"><tr><td colspan="5" class="muted">Cargando tu día...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row">
+          <div>
+            <h3 style="margin:0;">Resultados de busqueda</h3>
+            <div class="muted">Busca, abre ficha 360 o entra directo al lead. Doble click abre el lead.</div>
+          </div>
+        </div>
+        <div class="tableWrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Lead</th><th>Cliente</th><th>Marca</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="searchRows"><tr><td colspan="5" class="muted">Busca un cliente.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="detailCard">
+      <div class="row">
+        <div>
+          <h3 style="margin:0;" id="detailTitle">Ficha 360</h3>
+          <div class="muted" id="detailSub">Selecciona un lead.</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+          <div class="actionbar" id="detailActions" style="display:none;">
+            <button class="btn primary" id="btnOpenLeadDetail" type="button">Abrir lead</button>
+            <a class="btn" id="btnQuoteDetail" href="#" target="_blank" rel="noopener">Cotizar</a>
+            <a class="btn" id="btnWhatsDetail" href="#" target="_blank" rel="noopener">WhatsApp</a>
+            <a class="btn" id="btnMailDetail" href="#" target="_blank" rel="noopener">Email</a>
+          </div>
+          <div class="tabs">
+            <button class="tab active" data-tab="resumen">Resumen</button>
+            <button class="tab" data-tab="cotizaciones">Cotizaciones</button>
+            <button class="tab" data-tab="finanzas">Finanzas</button>
+            <button class="tab" data-tab="timeline">Timeline</button>
+            <button class="tab" data-tab="operaciones">Operaciones</button>
+          </div>
+        </div>
+      </div>
+      <div id="tabResumen" style="margin-top:12px;">
+        <div class="detailGrid" id="leadFields"></div>
+        <h4>Duplicados posibles</h4>
+        <div class="tableWrap"><table><thead><tr><th>Lead</th><th>Cliente</th><th>Email</th><th>Telefono</th><th>Monto</th></tr></thead><tbody id="dupRows"></tbody></table></div>
+      </div>
+      <div id="tabCotizaciones" class="hidden" style="margin-top:12px;">
+        <div class="tableWrap"><table><thead><tr><th>ID</th><th>N</th><th>Total</th><th>Estado</th><th>Aprobacion</th><th>Tracking</th><th>Acciones</th></tr></thead><tbody id="quoteRows"></tbody></table></div>
+      </div>
+      <div id="tabFinanzas" class="hidden" style="margin-top:12px;">
+        <div class="row" style="justify-content:space-between;margin-bottom:10px;">
+          <div>
+            <h4 style="margin:0;">Cuentas por cobrar</h4>
+            <div class="muted">Total evento menos abonos registrados. Factura/OC editable desde Finanzas.</div>
+          </div>
+          <a class="btn primary" id="btnFinanceModule" href="#" target="_blank" rel="noopener">Abrir Finanzas</a>
+        </div>
+        <div class="detailGrid" id="financeSummary"></div>
+        <div class="tableWrap" style="margin-top:10px;"><table><thead><tr><th>Evento</th><th>Fecha</th><th>Total</th><th>Abono</th><th>Saldo</th><th>Documento</th><th>Factura</th><th>OC / HES</th></tr></thead><tbody id="financeRows"></tbody></table></div>
+      </div>
+      <div id="tabTimeline" class="hidden" style="margin-top:12px;">
+        <div class="tableWrap"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Accion</th><th>Detalle</th></tr></thead><tbody id="activityRows"></tbody></table></div>
+      </div>
+      <div id="tabOperaciones" class="hidden" style="margin-top:12px;">
+        <div class="detailGrid">
+          <div><div class="muted">Estado cierre</div><select id="opStatus"><option>PENDIENTE</option><option>CERRADO</option><option>CON INCIDENCIA</option></select></div>
+          <div><div class="muted">Costo real</div><input id="opCosto" type="number" min="0" step="1" /></div>
+          <div class="field"><b>Margen estimado</b><span id="opMargen">$0</span></div>
+          <div class="row" style="align-items:end;"><button class="btn primary" id="btnSaveClosure">Guardar cierre operativo</button></div>
+          <div style="grid-column:1/-1"><div class="muted">Cierre operativo</div><textarea id="opCierre"></textarea></div>
+          <div style="grid-column:1/-1"><div class="muted">Incidencias</div><textarea id="opInc"></textarea></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="card" style="width:100%;">
+        <h3 style="margin:0;">Seguimiento automatico vencido</h3>
+        <div class="muted">Leads vivos que superaron la regla por etapa.</div>
+        <div class="tableWrap" style="margin-top:10px;"><table><thead><tr><th>Lead</th><th>Cliente</th><th>Estado</th><th>Sin mover</th><th>Evento</th><th>Prioridad</th><th></th></tr></thead><tbody id="followRows"></tbody></table></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const qs=(s,el=document)=>el.querySelector(s);
+    const money=(v)=>"$"+Number(v||0).toLocaleString("es-CL",{maximumFractionDigits:0});
+    const esc=(s)=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+    const API_BASE=(()=>{const h=String(location.hostname||"").toLowerCase();return (h==="localhost"||h==="127.0.0.1")?"":"/crm";})();
+    const apiURL=(p)=>API_BASE?API_BASE+p:p;
+    function authHeaders(extra={}){const GD=window.parent&&window.parent.GD;if(GD&&GD.authHeaders)return GD.authHeaders(extra);const t=localStorage.getItem("access_token")||localStorage.getItem("accessToken")||localStorage.getItem("token")||localStorage.getItem("gd_token")||sessionStorage.getItem("access_token")||sessionStorage.getItem("accessToken")||sessionStorage.getItem("token")||sessionStorage.getItem("gd_token")||"";return t?{...extra,Authorization:"Bearer "+t}:extra;}
+    async function api(path, init={}){const r=await fetch(apiURL(path),{...init,headers:authHeaders(init.headers||{})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error((j&&(j.detail||j.message))||"HTTP "+r.status);return j;}
+    async function apiPost(path, body={}){return api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});}
+    let current=null;
+    let taskUser="";
+    let adminUsers=[];
+    let taskFilter="urgent";
+    let taskSort="priority";
+    let lastTasks=[];
+
+    function leadUrl(id){return apiURL(`/web/views/leads.html?v=20260717-crm360&open_lead=${encodeURIComponent(id)}`);}
+    function cotizadorUrl(id){return apiURL(`/web/views/cotizador.html?id_lead=${encodeURIComponent(id)}`);}
+    function quoteUrl(id){return apiURL(`/quotes/${encodeURIComponent(id)}/pdf`);}
+    function finUrl(){return apiURL(`/web/views/finanzas_evento.html`);}
+    function btnOpenLead(id,label="Abrir lead"){return `<button class="btn mini" type="button" data-open-direct="${esc(id)}">${esc(label)}</button>`;}
+    function digits(s){return String(s||"").replace(/[^0-9]+/g,"");}
+    function phoneUrl(phone){const d=digits(phone);return d?`https://wa.me/${d.startsWith("56")?d:"56"+d}`:"#";}
+    function mailUrl(email){const e=String(email||"").trim();return e?`mailto:${encodeURIComponent(e)}`:"#";}
+    function telUrl(phone){const d=digits(phone);return d?`tel:+${d.startsWith("56")?d:"56"+d}`:"#";}
+    function openLead(id){
+      const lid=Number(id||0);
+      if(!lid) return;
+      try{
+        if(window.parent && window.parent!==window){
+          window.parent.postMessage({type:"openLead", id:lid, audit_focus:1}, "*");
+          return;
+        }
+      }catch(_){}
+      window.open(leadUrl(lid), "_blank", "noopener,noreferrer");
+    }
+    function actionLabel(action){
+      const a=String(action||"").toLowerCase();
+      const map={
+        "quote.create":"Cotización creada",
+        "quote.update":"Cotización actualizada",
+        "quote.version":"Cotización versionada",
+        "quote.sent":"Cotización enviada",
+        "quote.approval.request":"Aprobación solicitada",
+        "quote.approval.approve":"Cotización aprobada",
+        "lead.update":"Lead actualizado",
+        "lead.estado.update":"Estado cambiado",
+        "lead.move":"Lead movido",
+        "lead.create":"Lead creado",
+        "lead.delete":"Lead eliminado",
+        "task.done":"Tarea cerrada",
+        "task.skip":"Tarea omitida",
+        "login":"Ingresó al CRM",
+        "logout":"Salió del CRM",
+      };
+      return map[a] || String(action||"").replace(/[._-]+/g," ").replace(/\b\w/g,m=>m.toUpperCase());
+    }
+    function daysText(days){
+      if(days===null||days===undefined||Number.isNaN(Number(days))) return "Sin fecha";
+      const d=Number(days);
+      if(d<0) return `Vencido hace ${Math.abs(d)} dia(s)`;
+      if(d===0) return "Evento hoy";
+      return `Faltan ${d} dia(s)`;
+    }
+    function idleText(hours){
+      const h=Number(hours||0);
+      if(h>=48) return `${Math.floor(h/24)} dia(s)`;
+      return `${h} hora(s)`;
+    }
+    function riskInfo(x){
+      const days = x.days_to_event===null || x.days_to_event===undefined ? null : Number(x.days_to_event);
+      const idle = Number(x.hours_idle||0);
+      if(days!==null && days<=3) return {cls:"high", label:"Urgente"};
+      if(idle>=72) return {cls:"high", label:"Sin seguimiento"};
+      if(days!==null && days<=7) return {cls:"med", label:"Esta semana"};
+      return {cls:"ok", label:"Seguimiento"};
+    }
+    function taskLeadId(t){return t?.entity_id || t?.meta?.id_lead || t?.meta?.lead_id || "";}
+    function taskKindLabel(kind){
+      const k=String(kind||"").toUpperCase();
+      if(k.includes("NUEVO")) return "Nuevo";
+      if(k.includes("CONTACT")) return "Contactado";
+      if(k.includes("COTIZ")) return "Cotizado";
+      return "Seguimiento";
+    }
+    function taskPriority(t){
+      const due=new Date(String(t?.due_at||""));
+      const over=!Number.isNaN(due.getTime()) && due.getTime()<Date.now();
+      if(over) return {cls:"high", label:"Vencida"};
+      const ev=new Date(String(t?.lead_fecha_evento||""));
+      if(!Number.isNaN(ev.getTime())){
+        const today=new Date(); today.setHours(0,0,0,0);
+        const dd=new Date(ev.getFullYear(),ev.getMonth(),ev.getDate());
+        const days=Math.ceil((dd-today)/86400000);
+        if(days>=0 && days<=3) return {cls:"high", label:"Evento cerca"};
+      }
+      const p=Number(t?.priority||99);
+      return p<=10?{cls:"med",label:"Alta"}:{cls:"ok",label:"Normal"};
+    }
+    function isCobroTask(t){return String(t?.kind||"").toUpperCase()==="COBRO_PENDIENTE";}
+    function isDeclinedText(s){return String(s||"").toUpperCase().includes("DECLIN");}
+    function taskUrlSuffix(){return taskUser && taskUser!=="__ME__" ? `&for_user_id=${encodeURIComponent(taskUser)}` : "";}
+    async function syncTasks(){
+      try{ await apiPost(`/tasks/sync?x=1${taskUrlSuffix()}`,{}); }catch(_){}
+      await loadTasks();
+    }
+    async function loadTaskUsers(){
+      try{
+        const ctx=await api("/tasks/context");
+        if(!ctx?.is_admin) return;
+        const j=await api("/tasks/admin/users");
+        adminUsers=Array.isArray(j.items)?j.items:[];
+        const sel=qs("#taskUser");
+        if(!sel || !adminUsers.length) return;
+        sel.style.display="";
+        sel.innerHTML=`<option value="__ME__">Mi cola comercial</option>`+adminUsers.map(u=>`<option value="${esc(u.id)}">${esc(u.name||u.username||("Usuario "+u.id))} (${Number(u.open||0)})</option>`).join("");
+        sel.onchange=()=>{taskUser=sel.value; syncTasks().catch(e=>alert(e.message||e));};
+      }catch(_){}
+    }
+    function taskMatchesFilter(t){
+      const k=String(t?.kind||"").toUpperCase();
+      if(taskFilter==="urgent") return taskPriority(t).cls==="high";
+      if(taskFilter==="new") return k==="LEAD_NUEVO_SEGUIMIENTO";
+      if(taskFilter==="contact") return k==="LEAD_CONTACTADO_SEGUIMIENTO";
+      if(taskFilter==="quote") return k==="LEAD_COTIZADO_SEGUIMIENTO";
+      return true;
+    }
+    function renderTaskRows(items){
+      const filtered=sortTasks(items.filter(taskMatchesFilter));
+      qs("#taskRows").innerHTML=filtered.slice(0,40).map(t=>{
+        const id=taskLeadId(t);
+        const p=taskPriority(t);
+        const amount=taskAmount(t);
+        const isQuote=String(t?.kind||"").toUpperCase()==="LEAD_COTIZADO_SEGUIMIENTO";
+        const moneyLine=(isQuote && amount>0) ? `<div class="subline">Cotizado: ${money(amount)}</div>` : "";
+        return `<tr>
+          <td><span class="risk ${esc(p.cls)}">${esc(p.label)}</span></td>
+          <td><b>${esc(t.lead_cliente||"Lead #"+id)}</b><div class="subline">#${esc(id)} · ${esc(t.lead_marca||"")}</div></td>
+          <td>${esc(taskKindLabel(t.kind))}<div class="subline">${esc(t.lead_estado||"")}</div>${moneyLine}</td>
+          <td><b>${esc(String(t.lead_fecha_evento||"").slice(0,10)||"-")}</b><div class="subline">${esc(t.due_at?("vence "+String(t.due_at).replace("T"," ").slice(0,16)):"")}</div></td>
+          <td><div class="actionbar"><button class="btn primary mini" data-task-follow="${esc(t.id_task)}" data-lead="${esc(id)}">Seguimiento</button><button class="btn warn mini" data-load360="${esc(id)}">360</button>${btnOpenLead(id,"Abrir")}</div></td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="5" class="muted">Sin resultados en este filtro.</td></tr>`;
+    }
+    function taskAmount(t){
+      const m=t?.meta&&typeof t.meta==="object"?t.meta:{};
+      return Number(t.lead_monto_cotizado ?? t.monto_cotizado ?? m.total ?? m.monto_bruto ?? m.monto ?? 0) || 0;
+    }
+    function idleHours(t){
+      const m=t?.meta&&typeof t.meta==="object"?t.meta:{};
+      const last=m.last_at || m.last_followup || m.last_movement || "";
+      if(!last) return 0;
+      const d=new Date(last);
+      return isNaN(d.getTime()) ? 0 : Math.max(0,(Date.now()-d.getTime())/36e5);
+    }
+    function priorityRank(t){
+      const p=taskPriority(t).cls;
+      return p==="high"?0:p==="med"?1:2;
+    }
+    function sortTasks(items){
+      const arr=[...items];
+      arr.sort((a,b)=>{
+        if(taskSort==="amount_desc"){
+          return taskAmount(b)-taskAmount(a) || priorityRank(a)-priorityRank(b) || String(a.lead_fecha_evento||"9999").localeCompare(String(b.lead_fecha_evento||"9999"));
+        }
+        if(taskSort==="event_date"){
+          return String(a.lead_fecha_evento||"9999").localeCompare(String(b.lead_fecha_evento||"9999")) || priorityRank(a)-priorityRank(b) || taskAmount(b)-taskAmount(a);
+        }
+        if(taskSort==="idle_desc"){
+          return idleHours(b)-idleHours(a) || priorityRank(a)-priorityRank(b) || taskAmount(b)-taskAmount(a);
+        }
+        return priorityRank(a)-priorityRank(b) || String(a.lead_fecha_evento||"9999").localeCompare(String(b.lead_fecha_evento||"9999")) || taskAmount(b)-taskAmount(a) || Number(a.priority||99)-Number(b.priority||99);
+      });
+      return arr;
+    }
+    async function loadTasks(){
+      const j=await api(`/tasks?status=open&limit=80&offset=0${taskUrlSuffix()}`);
+      const items=(j.items||[]).filter(t=>!isCobroTask(t) && !isDeclinedText(t.lead_estado));
+      const norm=s=>String(s||"").toUpperCase();
+      const isNew=t=>norm(t.kind)==="LEAD_NUEVO_SEGUIMIENTO";
+      const isContact=t=>norm(t.kind)==="LEAD_CONTACTADO_SEGUIMIENTO";
+      const isQuote=t=>norm(t.kind)==="LEAD_COTIZADO_SEGUIMIENTO";
+      const urgent=items.filter(t=>taskPriority(t).cls==="high").length;
+      qs("#dNow").textContent=String(urgent);
+      qs("#dNew").textContent=String(items.filter(isNew).length);
+      qs("#dContact").textContent=String(items.filter(isContact).length);
+      qs("#dQuote").textContent=String(items.filter(isQuote).length);
+      qs("#mPendientes").textContent=String(items.length);
+      qs("#mQuoteToday").textContent=String(items.filter(isQuote).length);
+      lastTasks=items;
+      renderTaskRows(lastTasks);
+    }
+    async function followTask(idTask,idLead){
+      const lead=await api(`/tasks/${encodeURIComponent(idTask)}/lead`);
+      const res=await Swal.fire({
+        title:"Registrar seguimiento",
+        html:`<div style="text-align:left;display:flex;flex-direction:column;gap:10px">
+          <div><b>${esc(lead.cliente||"Lead")}</b> <span class="muted">#${esc(idLead)}</span></div>
+          <div class="muted">${esc([lead.marca,lead.comuna,String(lead.fecha_evento||"").slice(0,10)].filter(Boolean).join(" · "))}</div>
+          <label style="font-weight:900;font-size:12px">Vía</label>
+          <select id="sw_via" class="swal2-input" style="height:42px"><option value="WSP">WhatsApp</option><option value="CALL">Llamada</option><option value="EMAIL">Email</option><option value="NOTE">Nota</option></select>
+          <label style="font-weight:900;font-size:12px">Detalle obligatorio</label>
+          <textarea id="sw_text" class="swal2-textarea" placeholder="Qué hiciste, qué respondió el cliente y próximo paso..." style="min-height:120px"></textarea>
+        </div>`,
+        showCancelButton:true,
+        confirmButtonText:"Guardar seguimiento",
+        cancelButtonText:"Cancelar",
+        preConfirm:()=>{
+          const via=document.getElementById("sw_via")?.value||"NOTE";
+          const text=(document.getElementById("sw_text")?.value||"").trim();
+          if(!text){Swal.showValidationMessage("Escribe el detalle del seguimiento.");return null;}
+          return {via,text};
+        }
+      });
+      if(!res.isConfirmed||!res.value) return;
+      await apiPost(`/tasks/${encodeURIComponent(idTask)}/done`,{action:res.value.via,text:res.value.text});
+      lastTasks=(lastTasks||[]).filter(t=>String(t.id_task)!==String(idTask) && String(t.entity_id||t.id_lead||"")!==String(idLead||""));
+      renderTaskRows(lastTasks);
+      await Promise.all([loadTasks(), idLead ? load360(idLead).catch(()=>{}) : Promise.resolve()]);
+    }
+
+    function renderSales(j){
+      const items=j.items||[];
+      qs("#mVentaHoy").textContent=money(j.total||0);
+      qs("#mVentasCount").textContent=String(items.length);
+    }
+    async function loadSales(){renderSales(await api("/crm360/ventas/hoy"));}
+    async function search(){
+      const q=qs("#q").value.trim();
+      const j=await api(`/crm360/clientes?q=${encodeURIComponent(q)}&limit=40`);
+      qs("#searchRows").innerHTML=(j.items||[]).filter(x=>!isDeclinedText(x.estado)).map(x=>`<tr data-open-lead="${x.id_lead}" title="Doble click: abrir lead"><td>#${x.id_lead}</td><td><b>${esc(x.cliente||"")}</b><div class="muted">${esc(x.email||x.telefono||"")}</div></td><td>${esc(x.marca||"")}</td><td>${esc(x.estado||"")}</td><td><div class="actionbar"><button class="btn warn mini" data-lead="${x.id_lead}">Ver 360</button>${btnOpenLead(x.id_lead,"Abrir")}</div></td></tr>`).join("")||`<tr><td colspan="5" class="muted">Sin resultados vivos.</td></tr>`;
+      qs("#searchRows").querySelectorAll("[data-lead]").forEach(b=>b.onclick=()=>load360(b.dataset.lead));
+      qs("#searchRows").querySelectorAll("[data-open-lead]").forEach(tr=>tr.ondblclick=()=>openLead(tr.dataset.openLead));
+    }
+    function metaText(m){try{return Object.entries(m||{}).slice(0,6).map(([k,v])=>`${k}: ${typeof v==="object"?JSON.stringify(v):v}`).join(" · ");}catch(_){return "";}}
+    async function load360(id){
+      current=await api(`/crm360/clientes/${encodeURIComponent(id)}/360`);
+      const l=current.lead||{};
+      qs("#detailTitle").textContent=`Ficha 360 · ${l.cliente_360||l.cliente||("Lead #"+id)}`;
+      qs("#detailSub").textContent=`Lead #${id} · ${l.marca_nombre||""} · ${l.estado_nombre||""}`;
+      qs("#detailActions").style.display="";
+      qs("#btnOpenLeadDetail").onclick=()=>openLead(id);
+      qs("#btnQuoteDetail").href=cotizadorUrl(id);
+      qs("#btnWhatsDetail").href=phoneUrl(l.telefono);
+      qs("#btnMailDetail").href=mailUrl(l.email);
+      qs("#btnFinanceModule").href=finUrl();
+      const fields=[
+        ["Cliente",l.cliente_360||l.cliente,null],["Marca",l.marca_nombre,null],["Estado",l.estado_nombre,null],["Comuna",l.comuna_nombre,null],
+        ["Email",l.email,"email"],["Telefono",l.telefono,"phone"],["Fecha evento",String(l.fecha_evento||"").slice(0,10),null],["Monto",money(l.monto_cotizado),null]
+      ];
+      qs("#leadFields").innerHTML=fields.map(([a,b,type])=>{
+        const val=String(b||"").trim();
+        let body=`<span>${esc(val||"-")}</span>`;
+        if(type==="email" && val){
+          body=`<a class="contactLink" href="${esc(mailUrl(val))}">${esc(val)}</a><div class="fieldActions"><a class="btn mini" href="${esc(mailUrl(val))}">Crear correo</a></div>`;
+        }else if(type==="phone" && val){
+          body=`<span>${esc(val)}</span><div class="fieldActions"><a class="btn mini" href="${esc(telUrl(val))}">Llamar</a><a class="btn mini" href="${esc(phoneUrl(val))}" target="_blank" rel="noopener">WhatsApp</a></div>`;
+        }
+        return `<div class="field"><b>${esc(a)}</b>${body}</div>`;
+      }).join("");
+      qs("#dupRows").innerHTML=(current.duplicates||[]).map(x=>`<tr><td>#${x.id_lead}</td><td>${esc(x.cliente||"")}</td><td>${esc(x.email||"")}</td><td>${esc(x.telefono||"")}</td><td>${money(x.monto_cotizado)}</td></tr>`).join("")||`<tr><td colspan="5" class="muted">Sin duplicados evidentes.</td></tr>`;
+      qs("#quoteRows").innerHTML=(current.quotes||[]).map(q=>`<tr><td>#${q.id_cotizacion}</td><td>${esc(q.numero||"")}</td><td>${money(q.total)}</td><td>${esc(q.estado||"")}</td><td>${esc(q.approval_status||"")}</td><td>${q.sent_at?"Enviada ":""}${q.viewed_at?"Vista ":""}${q.accepted_at?"Aceptada":""}</td><td><a class="btn" target="_blank" href="${esc(quoteUrl(q.id_cotizacion))}">PDF</a> <button class="btn" data-approve="${q.id_cotizacion}">Aprobar</button> <button class="btn" data-sent="${q.id_cotizacion}">Marcar enviada</button></td></tr>`).join("")||`<tr><td colspan="7" class="muted">Sin cotizaciones.</td></tr>`;
+      renderFinance(current.finance||[]);
+      qs("#activityRows").innerHTML=(current.activity||[]).map(a=>`<tr><td>${String(a.created_at||"").replace("T"," ").slice(0,16)}</td><td>${esc(a.username||"Sistema")}</td><td><b>${esc(actionLabel(a.action))}</b></td><td>${esc(metaText(a.meta))}</td></tr>`).join("")||`<tr><td colspan="4" class="muted">Sin actividad.</td></tr>`;
+      const cl=current.operation_closure||{};
+      qs("#opStatus").value=cl.status||"PENDIENTE";
+      qs("#opCosto").value=cl.costo_real||0;
+      qs("#opCierre").value=cl.cierre_operativo||"";
+      qs("#opInc").value=cl.incidencias||"";
+      updateMargen();
+      qs("#quoteRows").querySelectorAll("[data-approve]").forEach(b=>b.onclick=()=>approveQuote(b.dataset.approve));
+      qs("#quoteRows").querySelectorAll("[data-sent]").forEach(b=>b.onclick=()=>markSent(b.dataset.sent));
+    }
+    function renderFinance(items){
+      const total=items.reduce((a,x)=>a+Number(x.monto_bruto||0),0);
+      const abono=items.reduce((a,x)=>a+Number(x.abono||0),0);
+      const saldo=items.reduce((a,x)=>a+Number(x.saldo||0),0);
+      const docPend=items.filter(x=>String(x.factura_num||"").trim()==="" && Number(x.saldo||0)>0).length;
+      qs("#financeSummary").innerHTML=[
+        ["Total evento",money(total)],["Abonado",money(abono)],["Saldo pendiente",money(saldo)],["Facturas/OC pendientes",String(docPend)]
+      ].map(([a,b])=>`<div class="field"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join("");
+      qs("#financeRows").innerHTML=items.map(x=>`<tr>
+        <td>#${esc(x.id_evento||"-")}</td>
+        <td>${esc(String(x.fecha_evento||"").slice(0,10))}</td>
+        <td>${money(x.monto_bruto)}</td>
+        <td>${money(x.abono)}</td>
+        <td><b>${money(x.saldo)}</b></td>
+        <td>${esc(x.factura_tipo_doc||"")}</td>
+        <td>${esc(x.factura_num||"Pendiente")}</td>
+        <td>${esc([x.factura_oc?("OC "+x.factura_oc):"",x.factura_hes?("HES "+x.factura_hes):""].filter(Boolean).join(" · ")||"-")}</td>
+      </tr>`).join("")||`<tr><td colspan="8" class="muted">Aún no hay evento financiero sincronizado. Abre Finanzas y sincroniza confirmados del mes.</td></tr>`;
+    }
+    async function approveQuote(id){await api(`/crm360/quotes/${id}/approval/approve`,{method:"POST"}); if(current) load360(current.lead.id_lead);}
+    async function markSent(id){const sent_to=prompt("Correo enviado a:", current?.lead?.email||"")||""; await api(`/crm360/quotes/${id}/mark_sent`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sent_to})}); if(current) load360(current.lead.id_lead);}
+    function updateMargen(){const monto=Number(current?.lead?.monto_cotizado||0);const costo=Number(qs("#opCosto").value||0);qs("#opMargen").textContent=money(monto-costo);}
+    async function saveClosure(){if(!current)return;await api(`/crm360/operaciones/${current.lead.id_lead}/closure`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:qs("#opStatus").value,costo_real:Number(qs("#opCosto").value||0),cierre_operativo:qs("#opCierre").value,incidencias:qs("#opInc").value})});alert("Cierre operativo guardado.");load360(current.lead.id_lead);}
+    async function loadFollow(){const j=await api("/crm360/seguimiento/pendientes");const items=(j.items||[]).filter(x=>!isDeclinedText(x.estado));items.sort((a,b)=>{const ra=riskInfo(a).cls==="high"?0:riskInfo(a).cls==="med"?1:2;const rb=riskInfo(b).cls==="high"?0:riskInfo(b).cls==="med"?1:2;return ra-rb || Number(b.hours_idle||0)-Number(a.hours_idle||0) || Number(a.days_to_event??999)-Number(b.days_to_event??999);});qs("#followRows").innerHTML=items.map(x=>{const r=riskInfo(x);return `<tr><td>#${x.id_lead}</td><td><b>${esc(x.cliente||"")}</b><div class="subline">${esc(x.marca||"")}</div></td><td>${esc(x.estado||"")}</td><td><b>${esc(idleText(x.hours_idle))}</b><div class="subline">${esc(x.label||"Sin movimiento")}</div></td><td><b>${esc(String(x.fecha_evento||"").slice(0,10)||"-")}</b><div class="subline">${esc(daysText(x.days_to_event))}</div></td><td><span class="risk ${esc(r.cls)}">${esc(r.label)}</span></td><td><div class="actionbar">${btnOpenLead(x.id_lead)}<button class="btn mini warn" type="button" data-load360="${esc(x.id_lead)}">360</button></div></td></tr>`}).join("")||`<tr><td colspan="7" class="muted">Sin seguimientos vencidos.</td></tr>`;}
+    async function refreshAll(){await Promise.all([loadSales(),loadFollow(),loadTasks()]);}
+    document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");["Resumen","Cotizaciones","Finanzas","Timeline","Operaciones"].forEach(n=>qs("#tab"+n).classList.toggle("hidden", t.dataset.tab!==n.toLowerCase()));});
+    qs("#btnSearch").onclick=()=>search().catch(e=>alert(e.message||e));
+    qs("#q").addEventListener("keydown",e=>{if(e.key==="Enter")search().catch(x=>alert(x.message||x));});
+    qs("#btnRefresh").onclick=()=>refreshAll().catch(e=>alert(e.message||e));
+    qs("#btnSyncTasks").onclick=()=>syncTasks().catch(e=>alert(e.message||e));
+    qs("#btnReloadTasks").onclick=()=>loadTasks().catch(e=>alert(e.message||e));
+    qs("#taskSort").onchange=()=>{taskSort=qs("#taskSort").value||"priority";renderTaskRows(lastTasks);};
+    qs("#opCosto").addEventListener("input",updateMargen);
+    qs("#btnSaveClosure").onclick=()=>saveClosure().catch(e=>alert(e.message||e));
+    document.querySelectorAll("[data-task-filter]").forEach(card=>card.onclick=()=>{taskFilter=card.getAttribute("data-task-filter")||"urgent";document.querySelectorAll("[data-task-filter]").forEach(x=>x.classList.toggle("active",x===card));renderTaskRows(lastTasks);});
+    document.addEventListener("click",(ev)=>{
+      const direct=ev.target?.closest?.("[data-open-direct]");
+      if(direct){ev.preventDefault();openLead(direct.getAttribute("data-open-direct"));return;}
+      const view=ev.target?.closest?.("[data-load360]");
+      if(view){ev.preventDefault();load360(view.getAttribute("data-load360")).catch(e=>alert(e.message||e));}
+      const follow=ev.target?.closest?.("[data-task-follow]");
+      if(follow){ev.preventDefault();followTask(follow.getAttribute("data-task-follow"),follow.getAttribute("data-lead")).catch(e=>alert(e.message||e));}
+    });
+    loadTaskUsers().catch(()=>{});
+    refreshAll().catch(e=>alert(e.message||e));
+  </script>
+</body>
+</html>

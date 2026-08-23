@@ -1,6 +1,9 @@
 (async function () {
   const qs = new URLSearchParams(location.search);
   const leadId = +(qs.get("id_lead") || qs.get("lead") || qs.get("lead_id") || 0);
+  const greenieConversationId = +(qs.get("conversation_id") || 0);
+  const greenieSource = String(qs.get("source") || "").toLowerCase();
+  const isGreenieEmbed = greenieSource === "greenie" && greenieConversationId > 0;
 
   // API base (prod: /crm). Many views are served under /crm/web/... but fetch() must hit /crm/*.
   const API_BASE = (() => {
@@ -39,6 +42,7 @@
   const comuna = $("comuna");
   const direccion = $("direccion");
   const fechaEvento = $("fechaEvento");
+  const tipoClienteSel = $("tipoClienteSel");
 
   const dlComunas = $("dlComunas");
   const dlProductos = $("dlProductos");
@@ -111,6 +115,18 @@
       .replace(/[^A-Z0-9]+/g, "");
   }
 
+  function normalizeTipoCliente(value){
+    const raw = String(value || "").trim().toUpperCase();
+    return raw.includes("EMP") || raw.includes("FACT") ? "EMPRESA" : "PARTICULAR";
+  }
+
+  function setTipoCliente(value){
+    tipoCliente = normalizeTipoCliente(value);
+    if (tipoClienteSel) tipoClienteSel.value = tipoCliente;
+    try{ $("tipoClienteLbl").textContent = tipoCliente; }catch(_){}
+    calcTotals();
+  }
+
   function getToken(){
     return (
       localStorage.getItem("token") ||
@@ -157,7 +173,7 @@
     comuna.value = lead.comuna_nombre || lead.comuna || lead.comuna_txt || "";
     direccion.value = lead.direccion || lead.direccion1 || lead.direccion_txt || "";
     fechaEvento.value = (lead.fecha_evento || "").substring(0,10);
-    tipoCliente = (lead.tipo_cliente_nombre || lead.tipo_cliente || "Persona");
+    tipoCliente = normalizeTipoCliente(lead.tipo_cliente_nombre || lead.tipo_cliente || "PARTICULAR");
     if (lead.logo_url) logoMarca.src = lead.logo_url;
     try{
       $("clienteText").textContent = String(cliente.value || "").trim() || "—";
@@ -168,6 +184,7 @@
       const fe = String(fechaEvento.value || "").trim();
       $("fechaEventoText").textContent = (/^\d{4}-\d{2}-\d{2}$/.test(fe)) ? `${fe.slice(8,10)}/${fe.slice(5,7)}/${fe.slice(0,4)}` : (fe || "—");
       $("tipoClienteLbl").textContent = String(tipoCliente || "—");
+      if (tipoClienteSel) tipoClienteSel.value = tipoCliente;
     }catch(_){}
   }
 
@@ -184,6 +201,20 @@
     if ((!logoMarca.src || logoMarca.src.endsWith("/")) && lead?.marca_nombre) {
       const m = (catalogos.marcas || []).find(x => (x.marca || x.nombre || "").toString().toUpperCase() === lead.marca_nombre.toString().toUpperCase());
       if (m && m.logo_path) logoMarca.src = m.logo_path;
+    }
+    if (tipoClienteSel){
+      const known = new Set(["PARTICULAR","EMPRESA"]);
+      for (const t of (catalogos.tipos_cliente || [])){
+        const name = normalizeTipoCliente(t.nombre || t.tipo || "");
+        if (!known.has(name)){
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          tipoClienteSel.appendChild(opt);
+          known.add(name);
+        }
+      }
+      tipoClienteSel.value = normalizeTipoCliente(tipoCliente);
     }
   }
 
@@ -315,7 +346,7 @@
   }
 
   function isEmpresa(){
-    return String(tipoCliente || "").toLowerCase().includes("empresa");
+    return normalizeTipoCliente(tipoCliente) === "EMPRESA";
   }
 
   function calcTraslado(){
@@ -490,6 +521,12 @@
     el.addEventListener("change", calcTotals);
   });
 
+  if (tipoClienteSel){
+    tipoClienteSel.addEventListener("change", ()=>{
+      setTipoCliente(tipoClienteSel.value);
+    });
+  }
+
   $("comuna").addEventListener("change", () => {
     traslado.value = calcTraslado();
     calcTotals();
@@ -520,6 +557,7 @@
       if (info.traslado != null) traslado.value = Number(info.traslado);
       if (info.descuento_valor != null) descuento.value = Number(info.descuento_valor);
       if (info.descuento_tipo) tipoDesc.value = info.descuento_tipo;
+      if (info.tipo_cliente) setTipoCliente(info.tipo_cliente);
 
       const it = await fetchJson(`/quotes/${val}/items`);
       items = (it.items || []).map((x, idx)=>({
@@ -593,7 +631,7 @@
       direccion: direccion.value || lead?.direccion || null,
       marca: lead?.marca_nombre || lead?.marca || "",
       fecha_evento: fechaEvento.value || lead?.fecha_evento || null,
-      tipo_cliente: tipoCliente || "",
+      tipo_cliente: normalizeTipoCliente(tipoClienteSel?.value || tipoCliente),
       traslado: +traslado.value || 0,
       descuento_valor: +descuento.value || 0,
       descuento_tipo: tipoDesc.value,
@@ -643,7 +681,45 @@
         alert("Cotización guardada. " + msg);
       }
 
-      // Descargar PDF de inmediato (sin abrir pestañas).
+      if (isGreenieEmbed && currentQuoteId){
+        try{
+          await fetchJson(`/gia/whatsapp/conversations/${greenieConversationId}/leads/${leadId}/send-quote`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id_cotizacion: currentQuoteId })
+          });
+          if (window.Swal){
+            await Swal.fire({
+              icon:"success",
+              title:"Cotización guardada y enviada",
+              text:"El PDF fue enviado al cliente por WhatsApp.",
+              timer:1200,
+              showConfirmButton:false
+            });
+          }
+          try{
+            window.parent?.postMessage({
+              type:"greenie:quote-sent",
+              lead_id:leadId,
+              conversation_id:greenieConversationId,
+              id_cotizacion:currentQuoteId
+            }, location.origin);
+          }catch(_){ }
+          return;
+        }catch(err){
+          console.error(err);
+          if (window.Swal){
+            await Swal.fire({
+              icon:"warning",
+              title:"Cotización guardada",
+              text:"Se guardó, pero no se pudo enviar automáticamente por WhatsApp: " + String(err?.message || err).slice(0,220)
+            });
+          }
+          return;
+        }
+      }
+
+      // Flujo normal fuera de Greenie: descarga y abre historial.
       if (currentQuoteId){
         try{
           await downloadQuotePdf(currentQuoteId, currentQuoteNumero, cliente.value || lead?.cliente || "");
@@ -737,7 +813,13 @@
     );
     window.open(`https://wa.me/${tel}?text=${msg}`, "_blank", "noopener,noreferrer");
   });
-  $("btnCerrar").addEventListener("click", () => { location.href = apiURL("/web/views/leads.html"); });
+  $("btnCerrar").addEventListener("click", () => {
+    if (isGreenieEmbed){
+      try{ window.parent?.postMessage({ type:"greenie:close-workspace" }, location.origin); }catch(_){}
+      return;
+    }
+    location.href = apiURL("/web/views/leads.html");
+  });
 
   // --- bootstrap ---
   try {

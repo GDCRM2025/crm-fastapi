@@ -126,6 +126,12 @@ def load_users() -> Dict[str, Dict[str, str]]:
 USERS = load_users()
 
 
+def _require_admin_user(user: Dict[str, Any]) -> None:
+    role = str(user.get("role") or user.get("rol") or "").upper().replace(" ", "").replace("_", "")
+    if role not in ("ADMIN", "SUPERADMIN"):
+        raise HTTPException(status_code=403, detail="Solo Admin")
+
+
 # -----------------------------
 # Schemas
 # -----------------------------
@@ -151,8 +157,7 @@ class RegisterIn(BaseModel):
     rut: str
     # Registro Operadores/CHOP:
     # - Usuario: EMAIL
-    # - Contraseña: RUT (sin puntos, con guion) — definitiva.
-    password: str | None = None  # compat (ignorado)
+    password: str
     telefono: str | None = None
     username: str | None = None
 
@@ -486,7 +491,7 @@ def register(data: RegisterIn):
     email = data.email.strip().lower()
     rut_in = (data.rut or "").strip()
     telefono_in = (data.telefono or "").strip()
-    # password/username entrantes se ignoran por regla negocio, se mantienen por compatibilidad
+    password = (data.password or "").strip()
 
     # Normaliza RUT: sin puntos, con guion, y en lower para comparar.
     def _rut_norm(s: str) -> str:
@@ -496,14 +501,16 @@ def register(data: RegisterIn):
         return s.lower()
 
     rut = _rut_norm(rut_in)
-    # Password definitiva: RUT (sin puntos, con guion).
-    password = rut
-
     # Username definitivo: EMAIL
     username = email
 
     if not nombre or not email or not rut or not telefono_in:
         raise HTTPException(status_code=400, detail="Faltan datos requeridos")
+    if len(password) < 12 or password.lower() in {rut.lower(), email.lower()}:
+        raise HTTPException(
+            status_code=400,
+            detail="La contraseña debe tener al menos 12 caracteres y no puede ser tu RUT ni tu email",
+        )
 
     # Normaliza teléfono a E.164 Chile.
     # UX: usuario ingresa solo 9 dígitos, pero aceptamos espacios, +56 o 56.
@@ -539,7 +546,10 @@ def register(data: RegisterIn):
         # Allowlist:
         # - Si hay registros en operadores_allowlist, se exige match por RUT (modo seguro).
         # - Si está vacía, permitimos registro libre PERO solo como OPERADOR.
-        enforce_allowlist = (os.getenv("OPERADORES_REQUIRE_ALLOWLIST") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+        # Seguro por defecto: el registro público nunca debe crear cuentas si
+        # la lista de personal autorizado está vacía o mal configurada.
+        allow_open_registration = (os.getenv("ALLOW_PUBLIC_OPERATOR_REGISTRATION") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+        enforce_allowlist = not allow_open_registration
         try:
             if not enforce_allowlist:
                 cnt = conn.execute(text("SELECT COUNT(*) FROM operadores_allowlist")).scalar() or 0
@@ -874,6 +884,16 @@ def logout(payload: dict = Body(default_factory=dict), user: dict = Depends(get_
       (El envío por cron también existe, pero este cubre el requisito "logout PM".)
     """
     reason = str(payload.get("reason") or "manual").strip().lower()[:40] or "manual"
+    inactivity_ms = None
+    inactivity_minutes = None
+    if reason == "idle":
+        try:
+            inactivity_ms = int(float(payload.get("inactivity_ms") or payload.get("idle_ms") or 0))
+            if inactivity_ms > 0:
+                inactivity_minutes = max(1, int(round(inactivity_ms / 60000)))
+        except Exception:
+            inactivity_ms = None
+            inactivity_minutes = None
 
     # Activity log (BD): LOGOUT (no escribe archivos)
     try:
@@ -889,7 +909,16 @@ def logout(payload: dict = Body(default_factory=dict), user: dict = Depends(get_
                 action="LOGOUT",
                 entity_type="auth",
                 entity_id=uid_int,
-                meta={"reason": reason},
+                meta={
+                    "reason": reason,
+                    "comment": (
+                        f"Cierre por inactividad: {inactivity_minutes} minuto(s) sin actividad."
+                        if inactivity_minutes
+                        else ("Cierre por inactividad." if reason == "idle" else "Cierre de sesión manual.")
+                    ),
+                    "inactivity_ms": inactivity_ms,
+                    "inactivity_minutes": inactivity_minutes,
+                },
             )
             c2.commit()
     except Exception:
@@ -1021,12 +1050,19 @@ def request_password_reset(data: ResetRequestIn):
         except Exception as e:
             email_error = f"SMTP error: {e}"
 
-    return {"ok": True, "email_sent": email_sent, "email_error": email_error, "reset_url": reset_url}
+    out: Dict[str, Any] = {"ok": True, "email_sent": email_sent}
+    if email_error:
+        out["email_error"] = email_error
+    # Nunca exponer el token de recuperacion en respuestas publicas. Solo para dev local explicito.
+    if str(os.getenv("CRM_DEBUG_RESET_URL") or "").strip().lower() in ("1", "true", "yes", "on"):
+        out["reset_url"] = reset_url
+    return out
 
 
 @router.get("/auth/password-requests")
 @router.get("/password-requests")
-def list_password_requests(status: str = "pendiente"):
+def list_password_requests(status: str = "pendiente", user: dict = Depends(get_current_user)):
+    _require_admin_user(user)
     with get_connection() as conn:
         conn.execute(
             text(
@@ -1051,7 +1087,8 @@ def list_password_requests(status: str = "pendiente"):
 
 
 @router.post("/auth/password-requests/{id_request}/resolve")
-def resolve_password_request(id_request: int):
+def resolve_password_request(id_request: int, user: dict = Depends(get_current_user)):
+    _require_admin_user(user)
     with get_connection() as conn:
         conn.execute(
             text("UPDATE password_requests SET status='resuelto' WHERE id_request=:id"),

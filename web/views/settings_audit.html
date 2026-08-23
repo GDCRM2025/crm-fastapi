@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/web/styles.css" />
+  <link rel="stylesheet" href="/web/ui_overrides.css" />
+  <title>Settings · Auditoría</title>
+  <style>
+    body{padding:18px;}
+    .wrap{max-width:none;margin:0 auto;}
+    .card{border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.10);border-radius:8px;padding:14px;margin-bottom:12px;}
+    .muted{opacity:.72;}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .filters{display:grid;grid-template-columns:1.2fr 1fr 1fr 140px 120px 110px auto auto;gap:8px;align-items:end;}
+    input,select{width:100%;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.13);color:inherit;padding:9px 10px;border-radius:8px;}
+    .btn{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:inherit;padding:9px 12px;border-radius:8px;font-weight:900;cursor:pointer;}
+    .btn.primary{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.45);}
+    .btn.warn{background:rgba(59,130,246,.14);border-color:rgba(59,130,246,.45);}
+    .btn:disabled{opacity:.55;cursor:not-allowed;}
+    .pill{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 8px;font-size:12px;font-weight:900;opacity:.85;}
+    .cards{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin-top:12px;}
+    .metric{border:1px solid rgba(255,255,255,.10);border-radius:8px;background:rgba(255,255,255,.04);padding:10px;cursor:pointer;}
+    .metric.active{border-color:rgba(59,130,246,.65);background:rgba(59,130,246,.12);}
+    .metric .n{font-size:24px;font-weight:1000;line-height:1;}
+    .metric .l{font-size:12px;opacity:.75;margin-top:5px;font-weight:800;}
+    .tableWrap{overflow:auto;border:1px solid rgba(255,255,255,.10);border-radius:8px;max-height:calc(100vh - 330px);min-height:260px;}
+    table{width:100%;border-collapse:collapse;min-width:980px;}
+    th,td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;vertical-align:top;font-size:13px;}
+    th{position:sticky;top:0;background:#111827;font-size:12px;text-transform:uppercase;letter-spacing:.03em;z-index:1;}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;}
+    .summary{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .help{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .help ul{margin:8px 0 0 18px;padding:0;}
+    .help li{margin:4px 0;}
+    .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;}
+    .pager .left,.pager .right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .miniTableWrap{overflow:auto;border:1px solid rgba(255,255,255,.10);border-radius:8px;max-height:320px;margin-top:10px;}
+    .previewBox{display:none;margin-top:10px;border:1px solid rgba(255,255,255,.10);border-radius:8px;background:rgba(0,0,0,.18);overflow:hidden;}
+    .previewBox.open{display:block;}
+    .previewHead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px;border-bottom:1px solid rgba(255,255,255,.10);}
+    .previewText{margin:0;max-height:360px;overflow:auto;padding:12px;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.4;}
+    .previewHtml{max-height:calc(100vh - 240px);overflow:auto;background:#f8fafc!important;color:#111827!important;padding:12px;}
+    .previewHtml *{box-sizing:border-box;}
+    .previewHtml .auditReport{background:#f8fafc!important;color:#111827!important;min-width:0;}
+    .previewHtml .auditReport table{color:#111827!important;background:#fff!important;border-collapse:collapse!important;width:100%!important;min-width:1180px!important;}
+    .previewHtml .auditReport td{color:#111827!important;background:#fff!important;font-weight:800!important;}
+    .previewHtml .auditReport th{color:#fff!important;background:#0f172a!important;font-weight:1000!important;}
+    .previewHtml .auditReport pre{color:#111827!important;background:#fff!important;}
+    .recipientBox{min-width:260px;}
+    .recipientBox select{min-height:74px;}
+    .sendBody{padding:12px;display:grid;gap:10px;}
+    .statusDot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+    .statusDot.verde{background:#22c55e;}
+    .statusDot.amarillo{background:#f59e0b;}
+    .statusDot.rojo{background:#ef4444;}
+    .leadModal{position:fixed;inset:0;z-index:9999;display:none;background:rgba(2,6,23,.72);backdrop-filter:blur(3px);padding:18px;}
+    .leadModal.open{display:flex;align-items:center;justify-content:center;}
+    .leadModalBox{width:min(1180px,96vw);height:min(820px,92vh);background:#0f172a;border:1px solid rgba(255,255,255,.18);border-radius:10px;overflow:hidden;display:grid;grid-template-rows:auto 1fr;box-shadow:0 24px 80px rgba(0,0,0,.45);}
+    .leadModalHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.12);}
+    .leadModal iframe{width:100%;height:100%;border:0;background:#08111f;}
+    @media(max-width:1000px){.filters{grid-template-columns:1fr 1fr}.cards{grid-template-columns:1fr 1fr}.help{grid-template-columns:1fr}.tableWrap{max-height:70vh;}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div class="row">
+        <div>
+          <h2 style="margin:0 0 4px 0;">Auditoría</h2>
+          <div class="muted">Auditoría diaria. Elige el día y revisa cotizaciones, leads atendidos, eliminados, cambios de estado y actividad real.</div>
+        </div>
+        <div class="row" style="justify-content:flex-end;">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:900;">
+            Día
+            <input id="reportDateTop" type="date" style="width:150px;" />
+          </label>
+          <select id="reportFormat" title="Formato del reporte" style="width:auto;min-width:98px;">
+            <option value="pdf" selected>PDF</option>
+            <option value="xlsx">XLSX</option>
+            <option value="html">HTML</option>
+          </select>
+          <button class="btn" id="previewReport" type="button">Previsualizar reporte</button>
+          <button class="btn" id="downloadReport" type="button" disabled>Descargar reporte</button>
+          <button class="btn warn" id="sendMail" type="button">Enviar correo a Admins</button>
+          <span class="pill" id="total">0</span>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="metric"><div class="n" id="mQuoteCreate">0</div><div class="l">Cotiz. creadas</div></div>
+        <div class="metric"><div class="n" id="mQuoteUpdate">0</div><div class="l">Cotiz. editadas</div></div>
+        <div class="metric"><div class="n" id="mLeadUpdate">0</div><div class="l">Leads editados</div></div>
+        <div class="metric"><div class="n" id="mStatus">0</div><div class="l">Cambios de estado</div></div>
+        <div class="metric"><div class="n" id="mDeleted">0</div><div class="l">Eliminados</div></div>
+        <div class="metric"><div class="n" id="mFollowups">0</div><div class="l">Seguimientos</div></div>
+      </div>
+      <div class="summary" id="summary"></div>
+      <div class="previewBox" id="reportPreviewBox">
+        <div class="previewHead">
+          <div>
+            <b id="reportTitle">Reporte</b>
+            <div class="muted" id="reportHint">Previsualización antes de enviar.</div>
+          </div>
+          <button class="btn" id="closePreview" type="button">Cerrar preview</button>
+        </div>
+        <div class="previewHtml" id="reportPreviewHtml"></div>
+        <pre class="previewText" id="reportPreview" style="display:none;"></pre>
+      </div>
+      <div class="previewBox" id="sendReportBox">
+        <div class="previewHead">
+          <div>
+            <b>Enviar reporte por correo</b>
+            <div class="muted">Selecciona los destinatarios ahora. No se envía nada hasta confirmar.</div>
+          </div>
+          <button class="btn" id="cancelSendMail" type="button">Cancelar</button>
+        </div>
+        <div class="sendBody">
+          <label class="recipientBox">
+            <div class="muted">Enviar a</div>
+            <select id="reportRecipients" multiple></select>
+          </label>
+          <div class="row" style="justify-content:flex-end;">
+            <button class="btn warn" id="confirmSendMail" type="button">Confirmar envío</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card help">
+      <div>
+        <div class="name">Cómo leer esto</div>
+        <ul class="muted">
+          <li><b>Quién:</b> usuario y rol que hizo la acción.</li>
+          <li><b>Qué hizo:</b> acción traducida a lenguaje normal.</li>
+          <li><b>Sobre qué:</b> lead, cotización, usuario o permiso afectado.</li>
+          <li><b>Detalle:</b> número de cotización, estado anterior/nuevo, monto o nota.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="name">Para qué sirve</div>
+        <ul class="muted">
+          <li>Ver si un ejecutivo trabajó leads antiguos.</li>
+          <li>Detectar leads eliminados o cambiados de estado.</li>
+          <li>Revisar cotizaciones hechas o editadas.</li>
+          <li>Enviar el resumen por correo a Admins sin salir del sistema.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="filters">
+        <label>
+          <div class="muted">Usuario / rol</div>
+          <select id="username"><option value="">Todos</option></select>
+        </label>
+        <label>
+          <div class="muted">Acción</div>
+          <select id="action">
+            <option value="">Todas</option>
+            <option value="quote">Cotizaciones</option>
+            <option value="quote.create">Cotizaciones creadas</option>
+            <option value="quote.update">Cotizaciones editadas</option>
+            <option value="lead">Todos los movimientos de lead</option>
+            <option value="lead.status.change">Cambios de estado</option>
+            <option value="FOLLOWUP">Todos los seguimientos</option>
+            <option value="lead.followup">Seguimientos</option>
+            <option value="LEAD_FOLLOWUP">Seguimientos automáticos</option>
+            <option value="lead.delete">Eliminados</option>
+            <option value="lead.update">Ediciones de lead</option>
+            <option value="LOGIN">Logins</option>
+            <option value="LOGOUT">Salidas</option>
+            <option value="permissions">Permisos</option>
+          </select>
+        </label>
+        <label>
+          <div class="muted">Entidad</div>
+          <input id="entityType" placeholder="usuario, lead, task..." />
+        </label>
+        <label>
+          <div class="muted">Día</div>
+          <input id="reportDate" type="date" />
+        </label>
+        <label>
+          <div class="muted">Horas</div>
+          <select id="hours">
+            <option value="24" selected>Solo si no eliges día</option>
+            <option value="72">72</option>
+            <option value="168">7 días</option>
+            <option value="720">30 días</option>
+          </select>
+        </label>
+        <label>
+          <div class="muted">Límite</div>
+          <select id="limit">
+            <option value="100" selected>100</option>
+            <option value="250">250</option>
+            <option value="500">500</option>
+          </select>
+        </label>
+        <button class="btn primary" id="search" type="button">Buscar</button>
+        <button class="btn" id="clearFilters" type="button">Limpiar</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <div>
+          <h3 style="margin:0 0 4px 0;">Semáforo de usuarios</h3>
+          <div class="muted">Quién trabajó, quién solo entró, quién quedó inactivo y quién tiene leads asignados sin movimiento.</div>
+        </div>
+        <div class="row" style="justify-content:flex-end;">
+          <button class="btn" id="refreshUsers" type="button">Actualizar semáforo</button>
+          <span class="pill" id="usersSummary">Cargando...</span>
+        </div>
+      </div>
+      <div class="miniTableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Semáforo</th>
+              <th>Usuario</th>
+              <th>Última actividad</th>
+              <th>Cotizaciones</th>
+              <th>Leads movidos</th>
+              <th>Inactividad</th>
+              <th>Motivo</th>
+            </tr>
+          </thead>
+          <tbody id="userRows">
+            <tr><td colspan="7" class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Quién</th>
+              <th>Qué hizo</th>
+              <th>Sobre qué</th>
+              <th>Detalle claro</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="5" class="muted">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <div class="left">
+          <button class="btn" id="prevPage" type="button">Anterior</button>
+          <button class="btn" id="nextPage" type="button">Siguiente</button>
+          <span class="pill" id="pageInfo">Página 1</span>
+        </div>
+        <div class="right muted" id="rangeInfo">Mostrando 0 de 0</div>
+      </div>
+    </section>
+  </div>
+  <div class="leadModal" id="leadModal">
+    <div class="leadModalBox">
+      <div class="leadModalHead">
+        <div>
+          <b id="leadModalTitle">Lead</b>
+          <div class="muted">Abierto desde auditoría.</div>
+        </div>
+        <button class="btn" id="closeLeadModal" type="button">Cerrar lead</button>
+      </div>
+      <iframe id="leadModalFrame" title="Lead"></iframe>
+    </div>
+  </div>
+
+  <script>
+    const qs = (s, el=document)=>el.querySelector(s);
+    const API_BASE = (()=> {
+      const h = String(location.hostname||"").toLowerCase();
+      return (h === "localhost" || h === "127.0.0.1") ? "" : "/crm";
+    })();
+    const apiURL = (p)=> API_BASE ? (String(p).startsWith("/crm/") ? p : API_BASE + p) : String(p).replace(/^\/crm/,"");
+    let currentOffset = 0;
+    let lastTotal = 0;
+    let lastReport = null;
+    const CATALOG = { marcas:new Map(), estados:new Map() };
+    function authHeaders(extra={}){
+      const GD = window.parent && window.parent.GD;
+      if (GD && GD.authHeaders) return GD.authHeaders(extra);
+      const t = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+      return t ? {...extra, Authorization:"Bearer "+t} : extra;
+    }
+    const esc = (s)=>String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+    function fmtDate(v){
+      try { return new Date(v).toLocaleString("es-CL", {dateStyle:"short", timeStyle:"medium"}); } catch (_) { return String(v||""); }
+    }
+    function fmtMaybeDate(v){ return v ? fmtDate(v) : "Sin actividad"; }
+    function errText(e){
+      if (!e) return "Error desconocido";
+      if (typeof e === "string") return e;
+      if (e.message) return e.message;
+      try { return JSON.stringify(e); } catch (_) { return String(e); }
+    }
+    function apiError(j, fallback){
+      const d = j && (j.detail || j.message || j.error || j.reason);
+      if (typeof d === "string") return d;
+      if (d && typeof d === "object") {
+        if (d.msg) return d.msg;
+        if (d.detail) return d.detail;
+        try { return JSON.stringify(d); } catch (_) {}
+      }
+      return fallback || "Error";
+    }
+    function reportHours(){
+      return String(Math.min(48, Number(qs("#hours").value || "48") || 48));
+    }
+    function todayISO(){
+      const d = new Date();
+      const off = d.getTimezoneOffset();
+      return new Date(d.getTime() - off * 60000).toISOString().slice(0,10);
+    }
+    function reportDate(){
+      return (qs("#reportDate")?.value || qs("#reportDateTop")?.value || "").trim();
+    }
+    function applyPeriodParams(p){
+      const day = reportDate();
+      if (day) p.set("date", day);
+      else p.set("hours", qs("#hours").value || "24");
+      return p;
+    }
+    function periodText(j){
+      const d = (j && j.date) || reportDate();
+      if (d) return `Día auditado: ${d} (00:00 a 23:59, Chile).`;
+      return `Periodo: últimas ${(j && j.hours) || reportHours()} horas.`;
+    }
+    function selectedRecipients(){
+      return Array.from(qs("#reportRecipients")?.selectedOptions || []).map(o=>o.value).filter(Boolean);
+    }
+    function downloadBlob(filename, content, type){
+      const blob = new Blob([content || ""], {type: type || "text/plain;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 500);
+    }
+    function metaText(v){
+      if (!v) return "";
+      try {
+        if (typeof v === "string") return v.length > 260 ? v.slice(0, 260) + "..." : v;
+        const parts = [];
+        Object.entries(v || {}).forEach(([k,val])=>{
+          if (val == null || val === "") return;
+          parts.push(`${k}: ${String(val)}`);
+        });
+        const s = parts.join(" · ");
+        return s.length > 260 ? s.slice(0, 260) + "..." : s;
+      } catch (_) {
+        return "";
+      }
+    }
+    function mapName(map, id, fallbackPrefix){
+      if (id == null || String(id).trim()==="") return "";
+      const key = String(id);
+      return map.get(key) || `${fallbackPrefix} ${key}`;
+    }
+    function estadoName(id){ return mapName(CATALOG.estados, id, "Estado"); }
+    function marcaName(id){ return mapName(CATALOG.marcas, id, "Marca"); }
+    function fieldLabel(k){
+      const labels = {
+        id_estado:"estado",
+        id_marca:"marca",
+        fecha_evento:"fecha evento",
+        monto_cotizado:"monto cotizado",
+        num_cotizacion:"N° cotización",
+        id_comuna:"comuna",
+        id_tipo_cliente:"tipo cliente"
+      };
+      return labels[k] || String(k || "").replace(/^id_/,"").replace(/_/g," ");
+    }
+    const ACTION_LABELS = {
+      "LOGIN":"Entró al CRM",
+      "LOGOUT":"Salió del CRM",
+      "quote.create":"Creó cotización",
+      "quote.update":"Editó cotización",
+      "lead.update":"Editó lead",
+      "lead.status.change":"Cambió estado del lead",
+      "lead.followup":"Registró seguimiento",
+      "LEAD_FOLLOWUP":"Registró seguimiento",
+      "lead.note":"Agregó nota",
+      "TASK_DONE":"Completó tarea",
+      "lead.delete":"Mandó lead a eliminados",
+      "attendance.mark":"Marcó asistencia",
+      "permissions.user.update":"Cambió permisos de usuario",
+      "permissions.role.update":"Cambió permisos de rol"
+    };
+    const QUICK_ACTIONS = {
+      mQuoteCreate: "quote.create",
+      mQuoteUpdate: "quote.update",
+      mLeadUpdate: "lead.update",
+      mStatus: "lead.status.change",
+      mDeleted: "lead.delete",
+      mFollowups: "FOLLOWUP"
+    };
+    function actionLabel(a){ return ACTION_LABELS[String(a||"")] || String(a||"Acción"); }
+    function quoteUrl(id){ return apiURL(`/quotes/${encodeURIComponent(id)}/pdf`); }
+    function leadUrl(id){ return apiURL(`/web/views/leads.html?v=20260720-audit-modal-fix1&open_lead=${encodeURIComponent(id)}&audit_focus=1`); }
+    function thingLabel(it){
+      const m = it.meta || {};
+      if (it.action === "quote.create" || it.action === "quote.update") {
+        const id = it.entity_id || "";
+        return `Cotización #${id}${m.numero ? " · N° "+m.numero : ""}`;
+      }
+      if (String(it.entity_type||"") === "lead") {
+        return `Lead #${it.entity_id || ""}${m.cliente ? " · "+m.cliente : ""}`;
+      }
+      if (it.action === "attendance.mark") return `Usuario #${it.entity_id || ""}`;
+      if (String(it.entity_type||"") === "usuario") return `Usuario #${it.entity_id || ""}`;
+      return [it.entity_type, it.entity_id ? "#"+it.entity_id : ""].filter(Boolean).join(" ") || "-";
+    }
+    function actionButtons(it){
+      const m = it.meta || {};
+      const buttons = [];
+      if ((it.action === "quote.create" || it.action === "quote.update") && it.entity_id) {
+        buttons.push(`<a class="btn" style="display:inline-block;padding:5px 8px;margin-top:6px;text-decoration:none" target="_blank" href="${esc(quoteUrl(it.entity_id))}">Ver cotización</a>`);
+      }
+      const lid = m.id_lead || (String(it.entity_type||"")==="lead" ? it.entity_id : "");
+      if (lid) {
+        buttons.push(`<button class="btn openLeadBtn" type="button" data-lead="${esc(lid)}" style="display:inline-block;padding:5px 8px;margin-top:6px;text-decoration:none">Abrir lead</button>`);
+      }
+      return buttons.join(" ");
+    }
+    function openLeadModal(id){
+      const modal = qs("#leadModal");
+      const frame = qs("#leadModalFrame");
+      const title = qs("#leadModalTitle");
+      if (!modal || !frame || !id) return;
+      if (title) title.textContent = `Lead #${id}`;
+      frame.src = leadUrl(id) + "&embed=1";
+      modal.classList.add("open");
+    }
+    qs("#closeLeadModal")?.addEventListener("click", ()=>{
+      qs("#leadModal")?.classList.remove("open");
+      const frame = qs("#leadModalFrame");
+      if (frame) frame.src = "about:blank";
+    });
+    qs("#leadModal")?.addEventListener("click", (ev)=>{
+      if (ev.target && ev.target.id === "leadModal") qs("#closeLeadModal")?.click();
+    });
+    function detailLabel(it){
+      const m = it.meta || {};
+      if (it.action === "quote.create" || it.action === "quote.update") {
+        const bits = [];
+        if (m.id_lead) bits.push(`Lead #${m.id_lead}`);
+        if (m.marca) bits.push(String(m.marca));
+        if (m.total != null) bits.push(`Total $${Number(m.total||0).toLocaleString("es-CL")}`);
+        if (m.version != null) bits.push(`Versión ${m.version}`);
+        return bits.join(" · ") || metaText(m);
+      }
+      if (it.action === "lead.status.change") {
+        const oldEstado = m.old_estado || estadoName(m.old_estado_id) || "Sin estado";
+        const newEstado = m.new_estado || estadoName(m.new_estado_id) || "Nuevo estado";
+        return `${oldEstado} → ${newEstado}${m.motivo ? " · Motivo: "+m.motivo : ""}`;
+      }
+      if (it.action === "lead.update") {
+        const bits = [];
+        const oldEstado = m.old_estado || estadoName(m.old_estado_id);
+        const newEstado = m.new_estado || estadoName(m.new_estado_id);
+        if (oldEstado || newEstado) bits.push(`Estado: ${oldEstado || "-"} → ${newEstado || oldEstado || "-"}`);
+        const oldMarca = m.old_marca || marcaName(m.old_id_marca);
+        const newMarca = m.new_marca || marcaName(m.new_id_marca);
+        if (oldMarca || newMarca) bits.push(`Marca: ${oldMarca || "-"} → ${newMarca || oldMarca || "-"}`);
+        const fields = Array.isArray(m.changed_fields) ? m.changed_fields.map(fieldLabel).join(", ") : "";
+        if (fields) bits.push(`Campos: ${fields}`);
+        return bits.join(" · ") || "Actualizó datos del lead";
+      }
+      if (it.action === "lead.followup" || it.action === "lead.note" || it.action === "LEAD_FOLLOWUP") {
+        return `${m.kind || "NOTA"}${m.title ? " · "+m.title : ""}${m.text_preview ? " · "+m.text_preview : ""}`;
+      }
+      if (it.action === "TASK_DONE") {
+        return `${m.action || "Tarea"}${m.id_lead ? " · Lead #"+m.id_lead : ""}${m.text_preview ? " · "+m.text_preview : ""}`;
+      }
+      if (it.action === "lead.delete") {
+        return `Estado anterior: ${m.old_estado || "-"} · Eliminado por ${m.deleted_by || it.actor || "-"}`;
+      }
+      if (it.action === "attendance.mark") {
+        return `${m.tipo || "Marca"} · ${m.sede || ""}${m.punto_code ? " · Punto "+m.punto_code : ""}${m.method ? " · "+m.method : ""}`;
+      }
+      if (it.action === "LOGOUT") {
+        if (m.comment) return String(m.comment);
+        if (m.reason === "idle") return m.inactivity_minutes ? `Cierre por inactividad: ${m.inactivity_minutes} minuto(s) sin actividad.` : "Cierre por inactividad.";
+        return "Cierre de sesión manual.";
+      }
+      if (String(it.action||"").startsWith("permissions")) {
+        return m.rol ? `Rol: ${m.rol}` : `Cambios guardados: ${m.after_count ?? "-"}`;
+      }
+      return metaText(m);
+    }
+    function countActions(items, byAction){
+      const map = new Map();
+      (byAction || []).forEach(x=>map.set(String(x.action||""), Number(x.total||0)));
+      if (!map.size) items.forEach(x=>map.set(String(x.action||""), (map.get(String(x.action||""))||0)+1));
+      const get=(...keys)=>keys.reduce((n,k)=>n+(map.get(k)||0),0);
+      qs("#mQuoteCreate").textContent = String(get("quote.create"));
+      qs("#mQuoteUpdate").textContent = String(get("quote.update"));
+      qs("#mLeadUpdate").textContent = String(get("lead.update"));
+      qs("#mStatus").textContent = String(get("lead.status.change"));
+      qs("#mDeleted").textContent = String(get("lead.delete"));
+      qs("#mFollowups").textContent = String(get("lead.followup","lead.note","LEAD_FOLLOWUP","TASK_DONE"));
+    }
+    async function loadUsersAndRoles(){
+      try{
+        const [u, r] = await Promise.all([
+          fetch(apiURL("/admin/permissions/users?include_ops=true"), { headers: authHeaders() }).then(x=>x.json()).catch(()=>null),
+          fetch(apiURL("/admin/permissions/roles"), { headers: authHeaders() }).then(x=>x.json()).catch(()=>null)
+        ]);
+        const opts = [`<option value="">Todos</option>`];
+        const roles = ((r && r.items) || []).map(x=>String(x.rol||"").trim()).filter(Boolean);
+        if (roles.length){
+          opts.push(`<option disabled>──────── Roles ────────</option>`);
+          roles.forEach(role=>opts.push(`<option value="${esc(role)}">Rol: ${esc(role)}</option>`));
+        }
+        const users = ((u && u.items) || []);
+        if (users.length){
+          opts.push(`<option disabled>─────── Usuarios ───────</option>`);
+          users.forEach(user=>{
+            const label = `${user.nombre || user.username || user.email || user.id_usuario} · ${user.rol || ""}`;
+            const val = user.email || user.username || user.nombre || user.rol || "";
+            opts.push(`<option value="${esc(val)}">${esc(label)}</option>`);
+          });
+        }
+        qs("#username").innerHTML = opts.join("");
+      }catch(_){}
+    }
+    async function loadCatalogMaps(){
+      try{
+        const r = await fetch(apiURL("/catalogos"), { headers: authHeaders() });
+        const j = await r.json().catch(()=>null);
+        ((j && j.marcas) || []).forEach(m=>{
+          const id = m.id_marca;
+          const name = m.marca || m.nombre;
+          if (id != null && name) CATALOG.marcas.set(String(id), String(name));
+        });
+        ((j && (j.estados_lead || j.estados)) || []).forEach(e=>{
+          const id = e.id_estado;
+          const name = e.nombre || e.estado;
+          if (id != null && name) CATALOG.estados.set(String(id), String(name));
+        });
+      }catch(_){}
+    }
+    async function loadRecipients(){
+      try{
+        const r = await fetch(apiURL("/activity/recipients"), { headers: authHeaders() });
+        const j = await r.json().catch(()=>null);
+        const items = (j && j.items) || [];
+        qs("#reportRecipients").innerHTML = items.map(x=>{
+          const label = `${x.nombre || x.email} · ${x.rol || ""}`;
+          const selected = x.default ? " selected" : "";
+          return `<option value="${esc(x.email)}"${selected}>${esc(label)}</option>`;
+        }).join("");
+      }catch(_){}
+    }
+    async function load(){
+      qs("#rows").innerHTML = `<tr><td colspan="5" class="muted">Cargando...</td></tr>`;
+      const p = new URLSearchParams();
+      const limit = Number(qs("#limit").value || "100") || 100;
+      p.set("limit", String(limit));
+      p.set("offset", String(Math.max(0, currentOffset)));
+      applyPeriodParams(p);
+      if (qs("#username").value.trim()) p.set("username", qs("#username").value.trim());
+      if (qs("#action").value.trim()) p.set("action", qs("#action").value.trim());
+      if (qs("#entityType").value.trim()) p.set("entity_type", qs("#entityType").value.trim());
+      const r = await fetch(apiURL(`/activity/logs?${p.toString()}`), {headers:authHeaders()});
+      const j = await r.json().catch(()=>null);
+      if (!r.ok) throw new Error((j && (j.detail || j.message)) || "HTTP "+r.status);
+      lastTotal = Number(j.total || 0) || 0;
+      qs("#total").textContent = `${lastTotal} eventos`;
+      const summary = ((j.summary && j.summary.by_action) || []).slice(0, 10);
+      qs("#summary").innerHTML = summary.map(x=>`<span class="pill">${esc(actionLabel(x.action))} · ${Number(x.total||0)}</span>`).join("");
+      const items = j.items || [];
+      countActions(items, (j.summary && j.summary.by_action) || []);
+      qs("#rows").innerHTML = items.map(it=>`
+        <tr>
+          <td>${esc(fmtDate(it.created_at))}</td>
+          <td><b>${esc(it.actor || it.username || "Sistema")}</b><div class="muted">${esc(it.role || "")}</div></td>
+          <td><b>${esc(actionLabel(it.action))}</b><div class="muted mono">${esc(it.action || "")}</div></td>
+          <td>${esc(thingLabel(it))}<div>${actionButtons(it)}</div></td>
+          <td>${esc(detailLabel(it))}</td>
+        </tr>
+      `).join("") || `<tr><td colspan="5" class="muted">Sin actividad para los filtros.</td></tr>`;
+      document.querySelectorAll(".openLeadBtn").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const id = btn.getAttribute("data-lead") || "";
+          if (!id) return;
+          openLeadModal(id);
+        });
+      });
+      const shownFrom = lastTotal ? currentOffset + 1 : 0;
+      const shownTo = Math.min(currentOffset + items.length, lastTotal);
+      const page = Math.floor(currentOffset / limit) + 1;
+      const pages = Math.max(1, Math.ceil(lastTotal / limit));
+      qs("#pageInfo").textContent = `Página ${page} de ${pages}`;
+      qs("#rangeInfo").textContent = `Mostrando ${shownFrom}-${shownTo} de ${lastTotal}`;
+      qs("#prevPage").disabled = currentOffset <= 0;
+      qs("#nextPage").disabled = currentOffset + limit >= lastTotal;
+    }
+    async function loadUserSummary(){
+      qs("#userRows").innerHTML = `<tr><td colspan="7" class="muted">Cargando...</td></tr>`;
+      const p = new URLSearchParams();
+      applyPeriodParams(p);
+      p.set("stale_hours", "48");
+      const r = await fetch(apiURL(`/activity/users_summary?${p.toString()}`), {headers:authHeaders()});
+      const j = await r.json().catch(()=>null);
+      if (!r.ok) throw new Error((j && (j.detail || j.message)) || "HTTP "+r.status);
+      const s = j.summary || {};
+      qs("#usersSummary").textContent = `Rojo ${s.red || 0} · Amarillo ${s.yellow || 0} · Verde ${s.green || 0}`;
+      const items = (j.items || []).slice(0, 250);
+      qs("#userRows").innerHTML = items.map(u=>`
+        <tr>
+          <td><span class="statusDot ${esc(u.status || "")}"></span><b>${esc(String(u.status || "").toUpperCase())}</b></td>
+          <td><b>${esc(u.nombre || u.username || "Usuario")}</b><div class="muted">${esc(u.rol || "")}${u.username ? " · "+esc(u.username) : ""}</div></td>
+          <td>${esc(fmtMaybeDate(u.last_activity))}<div class="muted">${Number(u.total || 0)} acciones</div></td>
+          <td>${Number(u.quotes || 0)}</td>
+          <td>${Number(u.lead_moves || 0)}<div class="muted">${Number(u.stale_assigned_leads || 0)} sin movimiento</div></td>
+          <td>${Number(u.idle_logouts || 0)} cierre(s)</td>
+          <td>${esc(u.reason || "")}</td>
+        </tr>
+      `).join("") || `<tr><td colspan="7" class="muted">Sin usuarios activos.</td></tr>`;
+    }
+    function resetAndLoad(){
+      currentOffset = 0;
+      return load();
+    }
+    function openSendBox(){
+      qs("#sendReportBox").classList.add("open");
+      qs("#reportRecipients")?.focus();
+    }
+    async function sendMail(){
+      const to = selectedRecipients();
+      if (!to.length) {
+        alert("Selecciona al menos un destinatario para enviar el reporte.");
+        return;
+      }
+      const btn = qs("#confirmSendMail");
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Enviando...";
+      try{
+        const p = new URLSearchParams();
+        applyPeriodParams(p);
+        p.set("send", "1");
+        p.set("to", to.join(","));
+        const r = await fetch(apiURL(`/activity/digest?${p.toString()}`), {headers:authHeaders()});
+        const j = await r.json().catch(()=>null);
+        if (!r.ok) throw new Error(apiError(j, "HTTP "+r.status));
+        qs("#sendReportBox").classList.remove("open");
+        alert(`Correo enviado. Destinatarios: ${j.sent || 0}. ${periodText(j)}`);
+      }catch(e){
+        alert(`No se pudo enviar el correo: ${errText(e)}`);
+      }finally{
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    }
+    async function previewReport(){
+      const btn = qs("#previewReport");
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Preparando...";
+      try{
+        const p = new URLSearchParams();
+        applyPeriodParams(p);
+        const r = await fetch(apiURL(`/activity/digest?${p.toString()}`), {headers:authHeaders()});
+        const j = await r.json().catch(()=>null);
+        if (!r.ok) throw new Error(apiError(j, "HTTP "+r.status));
+        lastReport = j || {};
+        qs("#reportTitle").textContent = j.subject || "Reporte de actividad";
+        qs("#reportHint").textContent = `${periodText(j)} Revisa antes de enviar.`;
+        qs("#reportPreview").textContent = j.preview || "Sin contenido.";
+        qs("#reportPreviewHtml").innerHTML = j.html || `<pre>${esc(j.preview || "Sin contenido.")}</pre>`;
+        qs("#reportPreviewBox").classList.add("open");
+        qs("#downloadReport").disabled = false;
+      }catch(e){
+        alert(`No se pudo previsualizar: ${errText(e)}`);
+      }finally{
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    }
+    async function downloadReport(){
+      if (!lastReport) {
+        await previewReport();
+        return;
+      }
+      const fmt = (qs("#reportFormat")?.value || "pdf").toLowerCase();
+      const p = new URLSearchParams();
+      applyPeriodParams(p);
+      p.set("format", fmt);
+      const r = await fetch(apiURL(`/activity/digest_download?${p.toString()}`), {headers:authHeaders()});
+      const blob = await r.blob();
+      if (!r.ok) throw new Error(await blob.text().catch(()=>`HTTP ${r.status}`));
+      const a = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      const disp = r.headers.get("content-disposition") || "";
+      const m = disp.match(/filename="?([^"]+)"?/i);
+      a.href = url;
+      a.download = m ? m[1] : `crm-reporte-actividad.${fmt}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 1200);
+    }
+    qs("#search").onclick = ()=>resetAndLoad().catch(e=>alert(e.message||e));
+    qs("#sendMail").onclick = ()=>openSendBox();
+    qs("#confirmSendMail").onclick = ()=>sendMail();
+    qs("#cancelSendMail").onclick = ()=>qs("#sendReportBox").classList.remove("open");
+    qs("#previewReport").onclick = ()=>previewReport();
+    qs("#downloadReport").onclick = ()=>downloadReport().catch(e=>alert(`No se pudo descargar: ${errText(e)}`));
+    qs("#closePreview").onclick = ()=>qs("#reportPreviewBox").classList.remove("open");
+    qs("#refreshUsers").onclick = ()=>loadUserSummary().catch(e=>alert(e.message||e));
+    qs("#clearFilters").onclick = ()=>{
+      qs("#username").value = "";
+      qs("#action").value = "";
+      qs("#entityType").value = "";
+      qs("#reportDate").value = todayISO();
+      qs("#reportDateTop").value = qs("#reportDate").value;
+      currentOffset = 0;
+      document.querySelectorAll(".metric.active").forEach(x=>x.classList.remove("active"));
+      Promise.all([load(), loadUserSummary()]).catch(e=>alert(e.message||e));
+    };
+    qs("#username").addEventListener("change", ()=>resetAndLoad().catch(e=>alert(e.message||e)));
+    ["entityType"].forEach(id=>qs("#"+id).addEventListener("keydown", ev=>{ if(ev.key==="Enter") resetAndLoad().catch(e=>alert(e.message||e)); }));
+    qs("#action").addEventListener("change", ()=>resetAndLoad().catch(e=>alert(e.message||e)));
+    qs("#hours").addEventListener("change", ()=>{ currentOffset = 0; Promise.all([load(), loadUserSummary()]).catch(e=>alert(e.message||e)); });
+    qs("#reportDate").addEventListener("change", ()=>{
+      qs("#reportDateTop").value = qs("#reportDate").value;
+      currentOffset = 0;
+      qs("#downloadReport").disabled = true;
+      Promise.all([load(), loadUserSummary()]).catch(e=>alert(e.message||e));
+    });
+    qs("#reportDateTop").addEventListener("change", ()=>{
+      qs("#reportDate").value = qs("#reportDateTop").value;
+      currentOffset = 0;
+      qs("#downloadReport").disabled = true;
+      Promise.all([load(), loadUserSummary()]).catch(e=>alert(e.message||e));
+    });
+    qs("#limit").addEventListener("change", ()=>resetAndLoad().catch(e=>alert(e.message||e)));
+    qs("#prevPage").addEventListener("click", ()=>{
+      const limit = Number(qs("#limit").value || "100") || 100;
+      currentOffset = Math.max(0, currentOffset - limit);
+      load().catch(e=>alert(e.message||e));
+    });
+    qs("#nextPage").addEventListener("click", ()=>{
+      const limit = Number(qs("#limit").value || "100") || 100;
+      if (currentOffset + limit >= lastTotal) return;
+      currentOffset += limit;
+      load().catch(e=>alert(e.message||e));
+    });
+    Object.entries(QUICK_ACTIONS).forEach(([id, action])=>{
+      const el = qs("#"+id)?.closest(".metric");
+      if (!el) return;
+      el.addEventListener("click", ()=>{
+        document.querySelectorAll(".metric.active").forEach(x=>x.classList.remove("active"));
+        el.classList.add("active");
+        qs("#action").value = action;
+        resetAndLoad().catch(e=>alert(e.message||e));
+      });
+    });
+    qs("#reportDate").value = todayISO();
+    qs("#reportDateTop").value = qs("#reportDate").value;
+    Promise.all([loadUsersAndRoles(), loadCatalogMaps(), loadRecipients()]).finally(()=>{
+      Promise.all([load(), loadUserSummary()]).catch(e=>{ qs("#rows").innerHTML = `<tr><td colspan="5">${esc(e.message||e)}</td></tr>`; });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+WG_INTERFACE="wg0"
+WG_CONFIG="/etc/wireguard/wg0.conf"
+REGISTRY="/etc/wireguard/crm-peers.tsv"
+EXPORT_DIR="/home/oscar/vpn-clients"
+ENDPOINT_FILE="/etc/wireguard/crm-endpoint"
+ENDPOINT="${WG_ENDPOINT:-}"
+if [[ -z "${ENDPOINT}" && -f "${ENDPOINT_FILE}" ]]; then
+  ENDPOINT="$(tr -d '[:space:]' < "${ENDPOINT_FILE}")"
+fi
+VPN_URL="http://10.77.0.1/crm/"
+
+usage() {
+  cat <<'EOF'
+Uso:
+  sudo crm-vpn-peer add nombre-dispositivo
+  sudo crm-vpn-peer list
+  sudo crm-vpn-peer delivered nombre-dispositivo
+  sudo crm-vpn-peer revoke nombre-dispositivo
+EOF
+}
+
+require_root() {
+  if [[ "${EUID}" -ne 0 ]]; then
+    echo "Ejecuta con sudo." >&2
+    exit 1
+  fi
+}
+
+validate_name() {
+  if [[ ! "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{2,39}$ ]]; then
+    echo "Usa 3-40 caracteres: letras, números, guion o guion bajo." >&2
+    exit 1
+  fi
+}
+
+ensure_registry() {
+  local config name address private public
+  touch "${REGISTRY}"
+  chmod 0600 "${REGISTRY}"
+  for config in "${EXPORT_DIR}"/*.conf; do
+    [[ -e "${config}" ]] || continue
+    name="$(basename "${config}" .conf)"
+    awk -F '\t' -v name="${name}" '$1 == name { found=1 } END { exit !found }' "${REGISTRY}" && continue
+    address="$(sed -n 's/^Address = //p' "${config}")"
+    private="$(sed -n 's/^PrivateKey = //p' "${config}")"
+    public="$(printf '%s' "${private}" | wg pubkey)"
+    printf '%s\t%s\t%s\n' "${name}" "${public}" "${address}" >> "${REGISTRY}"
+  done
+}
+
+next_address() {
+  local used octet
+  used="$(grep -E '^AllowedIPs = 10\.77\.0\.[0-9]+/32$' "${WG_CONFIG}" \
+    | sed -E 's#.*10\.77\.0\.([0-9]+)/32#\1#' | sort -n -u)"
+  for octet in $(seq 2 254); do
+    if ! grep -qx "${octet}" <<<"${used}"; then
+      printf '10.77.0.%s/32' "${octet}"
+      return
+    fi
+  done
+  echo "No quedan direcciones VPN disponibles." >&2
+  exit 1
+}
+
+add_peer() {
+  local name="$1" config address private public server_public
+  validate_name "${name}"
+  if [[ -z "${ENDPOINT}" || ! "${ENDPOINT}" =~ ^[^:[:space:]]+:[0-9]{1,5}$ ]]; then
+    echo "No hay endpoint WireGuard válido." >&2
+    echo "Después de confirmar la IPv4 pública, guarda IP_O_DNS:51820 en ${ENDPOINT_FILE}." >&2
+    exit 1
+  fi
+  config="${EXPORT_DIR}/${name}.conf"
+  if [[ -e "${config}" ]] || grep -q "^# CRM_PEER ${name}$" "${WG_CONFIG}"; then
+    echo "Ya existe el perfil ${name}." >&2
+    exit 1
+  fi
+
+  address="$(next_address)"
+  private="$(wg genkey)"
+  public="$(printf '%s' "${private}" | wg pubkey)"
+  server_public="$(wg show "${WG_INTERFACE}" public-key)"
+
+  install -d -o oscar -g oscar -m 0700 "${EXPORT_DIR}"
+  umask 077
+  cat > "${config}" <<EOF
+[Interface]
+PrivateKey = ${private}
+Address = ${address}
+
+[Peer]
+PublicKey = ${server_public}
+Endpoint = ${ENDPOINT}
+AllowedIPs = 10.77.0.1/32
+PersistentKeepalive = 25
+EOF
+  chown oscar:oscar "${config}"
+  chmod 0600 "${config}"
+
+  cat >> "${WG_CONFIG}" <<EOF
+
+# CRM_PEER ${name}
+[Peer]
+PublicKey = ${public}
+AllowedIPs = ${address}
+EOF
+  chmod 0600 "${WG_CONFIG}"
+  wg set "${WG_INTERFACE}" peer "${public}" allowed-ips "${address}"
+  printf '%s\t%s\t%s\n' "${name}" "${public}" "${address}" >> "${REGISTRY}"
+
+  echo "PEER_CREATED=${name}"
+  echo "PROFILE=${config}"
+  echo "ADDRESS=${address}"
+  echo "URL=${VPN_URL}"
+}
+
+list_peers() {
+  local name public address status
+  printf '%-42s %-18s %s\n' "PERFIL" "DIRECCION" "EXPORTACION"
+  while IFS=$'\t' read -r name public address; do
+    [[ -n "${name}" ]] || continue
+    status="entregada"
+    [[ -f "${EXPORT_DIR}/${name}.conf" ]] && status="pendiente"
+    printf '%-42s %-18s %s\n' "${name}" "${address}" "${status}"
+  done < "${REGISTRY}"
+}
+
+mark_delivered() {
+  local name="$1" config
+  validate_name "${name}"
+  awk -F '\t' -v name="${name}" '$1 == name { found=1 } END { exit !found }' "${REGISTRY}" || {
+    echo "No existe el perfil ${name}." >&2
+    exit 1
+  }
+  config="${EXPORT_DIR}/${name}.conf"
+  if [[ -f "${config}" ]]; then
+    rm -f "${config}"
+    echo "PRIVATE_EXPORT_REMOVED=${name}"
+  else
+    echo "El perfil ${name} ya estaba marcado como entregado."
+  fi
+}
+
+revoke_peer() {
+  local name="$1" config public temp
+  validate_name "${name}"
+  config="${EXPORT_DIR}/${name}.conf"
+  public="$(awk -F '\t' -v name="${name}" '$1 == name { print $2 }' "${REGISTRY}")"
+  if [[ -z "${public}" ]]; then
+    echo "No existe el perfil ${name}." >&2
+    exit 1
+  fi
+
+  wg set "${WG_INTERFACE}" peer "${public}" remove
+
+  temp="$(mktemp)"
+  awk -v key="${public}" '
+    BEGIN { RS=""; ORS="\n\n" }
+    index($0, "PublicKey = " key) == 0 { print }
+  ' "${WG_CONFIG}" > "${temp}"
+  install -o root -g root -m 0600 "${temp}" "${WG_CONFIG}"
+  awk -F '\t' -v name="${name}" '$1 != name' "${REGISTRY}" > "${temp}"
+  install -o root -g root -m 0600 "${temp}" "${REGISTRY}"
+  rm -f "${temp}" "${config}"
+
+  echo "PEER_REVOKED=${name}"
+}
+
+require_root
+ensure_registry
+case "${1:-}" in
+  add)
+    [[ $# -eq 2 ]] || { usage; exit 1; }
+    add_peer "$2"
+    ;;
+  list)
+    [[ $# -eq 1 ]] || { usage; exit 1; }
+    list_peers
+    ;;
+  delivered)
+    [[ $# -eq 2 ]] || { usage; exit 1; }
+    mark_delivered "$2"
+    ;;
+  revoke)
+    [[ $# -eq 2 ]] || { usage; exit 1; }
+    revoke_peer "$2"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
