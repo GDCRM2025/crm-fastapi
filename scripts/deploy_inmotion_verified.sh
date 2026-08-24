@@ -13,6 +13,7 @@ RSYNC_SSH="ssh -p $SSH_PORT"
 
 FILES=(
   backend/core/database.py
+  backend/core/pdf_integrity.py
   backend/core/feature_flags.py
   backend/core/rbac.py
   backend/core/settings.py
@@ -33,6 +34,7 @@ FILES=(
   web/login.html
   web/registrar.html
   web/views/historial_cotizaciones.html
+  web/views/cotizador.html
   web/views/pdf_wait.html
   web/views/satisfaccion.html
   web/views/settings_features.html

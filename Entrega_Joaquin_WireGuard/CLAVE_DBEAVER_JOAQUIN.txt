@@ -1,0 +1,10 @@
+CONEXION DBEAVER JOAQUIN
+Host PostgreSQL: 127.0.0.1
+Puerto PostgreSQL: 5432
+Base de datos: bf68ec5_crm2025b
+Usuario: joaquin_analytics
+Contrasena: 50dae091f86f9060aac95bc47ddfa5002d0b07f2A1
+SSH host: 10.77.0.1
+SSH puerto: 22
+SSH usuario: oscar
+SSH llave: joaquin-dbeaver-ed25519

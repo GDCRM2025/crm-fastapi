@@ -10,8 +10,10 @@ from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy import text
 
 from backend.core.db import get_connection
+from backend.core.storage import persistent_data_root
 from backend.routers.auth import get_current_user
 from backend.core.quote_assets import PDF_ASSETS, DRIVE_ASSET_FOLDERS, logo_for, normalize_marca
+from backend.core.pdf_integrity import is_deliverable_pdf_file, is_valid_pdf_file
 import base64
 import requests
 
@@ -381,7 +383,7 @@ def debug_assets(
     # Mostrar qué hay en drive_cache local (sin tocar Drive)
     cache = []
     try:
-        base = Path(__file__).resolve().parents[2] / "data" / "quote_assets" / "drive_cache"
+        base = persistent_data_root() / "quote_assets" / "drive_cache"
         if mk and base.exists():
             for pat in (
                 f"{mk}_portada_*",
@@ -541,14 +543,9 @@ def pdf_placeholder(
     try:
         from weasyprint import HTML  # type: ignore
     except Exception:
-        html = f"""
-        <html><head><title>Cotización #{id_cotizacion}</title></head>
-        <body style="font-family:Arial,sans-serif">
-          <h2>Cotización #{id_cotizacion}</h2>
-          <p>WeasyPrint no está instalado. Instala dependencias para generar PDF.</p>
-        </body></html>
-        """
-        return HTMLResponse(html)
+        # El servicio systemd puede no cargar las librerías nativas de WeasyPrint.
+        # Continuamos hasta el fallback Pillow en vez de devolver HTML con HTTP 200.
+        HTML = None  # type: ignore
 
     def _disp(filename: str) -> str:
         # inline para "Ver", attachment para "Descargar"
@@ -619,7 +616,7 @@ def pdf_placeholder(
                 p = Path(p0)
                 if not p.is_absolute():
                     p = root / p0
-                if p.exists() and p.is_file() and (not refresh_assets) and (not force_rebuild) and (not debug):
+                if is_deliverable_pdf_file(p) and (not refresh_assets) and (not force_rebuild) and (not debug):
                     # If the quote was updated after the PDF was generated (e.g., versioned templates/items),
                     # do not serve a stale PDF.
                     try:
@@ -687,7 +684,7 @@ def pdf_placeholder(
         root = Path(__file__).resolve().parents[2]
         bases = [
             root / "web" / "images" / "quote_assets",
-            root / "data" / "quote_assets",
+            persistent_data_root(root) / "quote_assets",
             root / "quote_assets",
         ]
         for base in bases:
@@ -808,7 +805,7 @@ def pdf_placeholder(
         return s2[:60]
 
     # path por marca y mes
-    base_dir = Path(__file__).resolve().parents[2] / "data" / "quotes"
+    base_dir = persistent_data_root() / "quotes"
     yymm = (fecha_evento[:7] if fecha_evento else datetime.now().strftime("%Y-%m"))
     out_dir = base_dir / (marca_key or "GENERICA") / yymm
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -847,7 +844,7 @@ def pdf_placeholder(
         if not mkey:
             return 0.0
         try:
-            base = Path(__file__).resolve().parents[2] / "data" / "quote_assets" / "drive_cache"
+            base = persistent_data_root() / "quote_assets" / "drive_cache"
             if not base.exists():
                 return 0.0
             pats = [
@@ -880,7 +877,7 @@ def pdf_placeholder(
 
     # Si ya existe el PDF cacheado, servirlo directo.
     try:
-        if pdf_path.exists() and pdf_path.is_file() and (not debug) and (not refresh_assets):
+        if is_deliverable_pdf_file(pdf_path) and (not debug) and (not refresh_assets) and (not force_rebuild):
             must_regen = False
             # Si la marca usa Drive assets, aseguramos que el cache esté actualizado
             # (sin forzar refresh) y regeneramos PDF si alguno de los assets cambió.
@@ -950,7 +947,7 @@ def pdf_placeholder(
             if "drive.google.com" in url or "googleusercontent.com" in url:
                 from backend.core.quote_assets import _drive_id
                 fid = _drive_id(url)
-                cache_dir = Path(__file__).resolve().parents[2] / "data" / "quote_assets" / "cache"
+                cache_dir = persistent_data_root() / "quote_assets" / "cache"
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 cache_path = cache_dir / f"{fid}"
                 # Cache con TTL: si el asset cambió en Drive (mismo id), refrescamos automático.
@@ -1195,7 +1192,7 @@ def pdf_placeholder(
         root = Path(__file__).resolve().parents[2]
         bases = [
             root / "web" / "images" / "quote_assets" / marca_key,
-            root / "data" / "quote_assets" / marca_key,
+            persistent_data_root(root) / "quote_assets" / marca_key,
             root / "quote_assets" / marca_key,
         ]
         def _looks_supported_image(p: Path) -> bool:
@@ -1537,7 +1534,7 @@ def pdf_placeholder(
 
     base_url = str(Path(__file__).resolve().parents[2])
     # Debug info file
-    debug_dir = Path(__file__).resolve().parents[2] / "data" / "debug"
+    debug_dir = persistent_data_root() / "debug"
     try:
         debug_dir.mkdir(parents=True, exist_ok=True)
         debug_info = {
@@ -1634,6 +1631,8 @@ def pdf_placeholder(
 
     # PDF optimizado (reduce peso)
     try:
+        if HTML is None:
+            raise RuntimeError("WeasyPrint no está disponible; usando fallback Pillow")
         # Preferir wkhtmltopdf si está disponible (mejor rendering en hosting con Pango roto).
         try:
             _wkhtmltopdf_generate(html, pdf_path, base_url)
@@ -1646,6 +1645,8 @@ def pdf_placeholder(
                 )
             except TypeError:
                 HTML(string=html, base_url=base_url).write_pdf(str(pdf_path))
+        if not is_deliverable_pdf_file(pdf_path):
+            raise RuntimeError("El renderizador produjo un PDF incompleto, inválido o demasiado pesado")
     except Exception as e:
         # Hosting cPanel/CentOS: WeasyPrint puede fallar por librerías Pango incompatibles.
         # Fallback 1: generar PDF con Pillow (sin depender de Pango).
@@ -2430,7 +2431,11 @@ def pdf_placeholder(
                 resolution=150.0,
                 save_all=True,
                 append_images=[cot_im, term_im, banco_im],
+                quality=72,
+                optimize=True,
             )
+            if not is_valid_pdf_file(pdf_path):
+                raise RuntimeError("Pillow produjo un PDF incompleto o inválido")
         except Exception:
             try:
                 # Log explícito: si este fallback falla, antes solo veíamos el error de Pango y no sabíamos por qué.
@@ -2442,12 +2447,13 @@ def pdf_placeholder(
             pass
 
         # Fallback 2: wkhtmltopdf (si existe)
+        if not is_deliverable_pdf_file(pdf_path):
+            try:
+                _wkhtmltopdf_generate(html, pdf_path, base_url)
+            except Exception:
+                pass
         try:
-            _wkhtmltopdf_generate(html, pdf_path, base_url)
-        except Exception:
-            pass
-        try:
-            if pdf_path.exists() and pdf_path.is_file():
+            if is_deliverable_pdf_file(pdf_path):
                 return FileResponse(
                     str(pdf_path),
                     media_type="application/pdf",
@@ -2464,7 +2470,7 @@ def pdf_placeholder(
                     p = Path(p0)
                     if not p.is_absolute():
                         p = root / p0
-                    if p.exists() and p.is_file():
+                    if is_deliverable_pdf_file(p):
                         return FileResponse(
                             str(p),
                             media_type="application/pdf",
@@ -2489,12 +2495,7 @@ def pdf_placeholder(
             "assets": assets_used,
             "pdf_path": str(pdf_path),
         }
-        return HTMLResponse(
-            f"<html><body style='font-family:Arial,sans-serif'>"
-            f"<h2>{msg}</h2>"
-            f"<pre>{json.dumps(dbg, ensure_ascii=False, indent=2)}</pre>"
-            f"</body></html>"
-        )
+        raise HTTPException(status_code=500, detail={"message": msg, "debug": dbg})
     # debug HTML para inspección si el PDF sale en blanco
     try:
         (debug_dir / f"quote_{id_cotizacion}.html").write_text(html, encoding="utf-8")
@@ -2508,8 +2509,10 @@ def pdf_placeholder(
                        {"p": str(pdf_path), "id": id_cotizacion})
             cn.commit()
 
-        return FileResponse(
-            str(pdf_path),
-            media_type="application/pdf",
-            headers=_pdf_headers(pdf_path.name),
-        )
+    if not is_deliverable_pdf_file(pdf_path):
+        raise HTTPException(500, "El PDF generado quedó incompleto; vuelve a intentar la descarga")
+    return FileResponse(
+        str(pdf_path),
+        media_type="application/pdf",
+        headers=_pdf_headers(pdf_path.name),
+    )

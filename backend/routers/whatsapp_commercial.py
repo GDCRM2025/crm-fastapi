@@ -20,7 +20,9 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db
 from backend.core.greenie_schema import acquire_greenie_schema_lock
 from backend.core.whatsapp_window import require_open_customer_window
+from backend.core.pdf_integrity import is_valid_pdf_bytes
 from backend.routers.auth import get_current_user
+from backend.gd_intelligence.tracking import attach_lead_attribution
 
 
 router = APIRouter(
@@ -54,6 +56,10 @@ class FollowupBody(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
     kind: str = Field(default="NOTE", max_length=24)
     title: str | None = Field(default=None, max_length=120)
+
+
+class SendQuoteBody(BaseModel):
+    id_cotizacion: int | None = Field(default=None, ge=1)
 
 
 def _env(name: str, default: str = "") -> str:
@@ -372,6 +378,34 @@ def _lead_belongs_to_phone(db: Session, lead_id: int, wa_id: str) -> dict[str, A
     return dict(row)
 
 
+def _try_attach_web_attribution(db: Session, conversation_id: int, lead_id: int) -> dict[str, Any] | None:
+    """Use an explicit Ref GD UUID only; never infer attribution from phone alone."""
+    ready = db.execute(text("""
+      SELECT to_regclass('public.wi_events') IS NOT NULL
+         AND to_regclass('public.wi_lead_attribution') IS NOT NULL
+    """)).scalar()
+    if not ready:
+        return None
+    rows = db.execute(text("""
+      SELECT body FROM public.whatsapp_messages
+      WHERE conversation_id=:conversation_id AND direction='inbound' AND body ILIKE '%Ref GD:%'
+      ORDER BY sent_at DESC LIMIT 20
+    """), {"conversation_id": conversation_id}).scalars().all()
+    import re
+    for body in rows:
+        match = re.search(r"Ref GD:([0-9a-fA-F-]{36})", str(body or ""))
+        if not match:
+            continue
+        session_id = db.execute(text("""
+          SELECT session_id FROM public.wi_events
+          WHERE event_id=CAST(:event_id AS uuid) AND event_type='click_whatsapp'
+          LIMIT 1
+        """), {"event_id": match.group(1)}).scalar()
+        if session_id:
+            return attach_lead_attribution(db, lead_id=lead_id, session_id=session_id, method="WABA_CLICK_ID", confidence=1.0)
+    return None
+
+
 def _find_quote_source(db: Session, lead: dict[str, Any]) -> tuple[str, str]:
     lead_cols = _cols(db, "leads")
     candidates: list[tuple[str, str]] = []
@@ -428,7 +462,7 @@ def _read_source(source: str) -> bytes:
             raise HTTPException(status_code=404, detail="No se encontró el archivo PDF en el servidor")
         data = path.read_bytes()
 
-    if not data or not data.startswith(b"%PDF"):
+    if not is_valid_pdf_bytes(data):
         raise HTTPException(status_code=422, detail="El archivo asociado no es un PDF válido")
     if len(data) > 30 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="El PDF supera 30 MB")
@@ -610,6 +644,7 @@ def select_lead(
         SET selected_lead_id=:lead_id, updated_at=now()
         WHERE id=:id
     """), {"lead_id": body.lead_id, "id": conversation_id})
+    _try_attach_web_attribution(db, conversation_id, body.lead_id)
     db.commit()
     return {"ok": True, "selected_lead_id": body.lead_id}
 
@@ -719,6 +754,7 @@ def add_followup(
 def send_quote(
     conversation_id: int,
     lead_id: int,
+    body: SendQuoteBody | None = None,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -726,7 +762,34 @@ def send_quote(
     conversation = _conversation(db, conversation_id)
     require_open_customer_window(db, conversation_id)
     lead = _lead_belongs_to_phone(db, lead_id, str(conversation["wa_id"]))
-    source, filename = _find_quote_source(db, lead)
+    selected_quote_id = int(body.id_cotizacion) if body and body.id_cotizacion else None
+    if selected_quote_id:
+        quote = db.execute(text("""
+            SELECT id_cotizacion, numero
+            FROM public.cotizaciones
+            WHERE id_cotizacion=:quote_id AND id_lead=:lead_id
+            LIMIT 1
+        """), {"quote_id": selected_quote_id, "lead_id": lead_id}).mappings().first()
+        if not quote:
+            raise HTTPException(status_code=404, detail="La cotización seleccionada no pertenece a este lead")
+        # Genera o recupera el PDF validado de la cotización exacta recién guardada.
+        from backend.routers.quotes_override import pdf_placeholder
+
+        response = pdf_placeholder(
+            selected_quote_id,
+            debug=0,
+            strict_assets=0,
+            download=1,
+            refresh=0,
+            rebuild=0,
+            user=user,
+        )
+        source = str(getattr(response, "path", "") or "")
+        if not source:
+            raise HTTPException(status_code=502, detail="No se pudo generar el PDF de la cotización seleccionada")
+        filename = Path(source).name or f"Cotizacion_{quote['numero']}.pdf"
+    else:
+        source, filename = _find_quote_source(db, lead)
     pdf = _read_source(source)
     media_id = _meta_upload(str(conversation["phone_number_id"]), filename, pdf)
     client = str(lead.get("cliente") or conversation.get("profile_name") or "cliente").strip()

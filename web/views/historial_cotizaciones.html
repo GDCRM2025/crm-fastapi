@@ -343,10 +343,13 @@
 	        const txt = await r.text();
 	        throw new Error(txt || `HTTP ${r.status}`);
 	      }
-	      const blob = await r.blob();
-	      if(!String(blob.type||"").toLowerCase().includes("pdf")){
+	      const contentType = String(r.headers.get("content-type") || "").toLowerCase();
+	      const bytes = await r.arrayBuffer();
+	      const magic = new TextDecoder("ascii").decode(bytes.slice(0,5));
+	      if(!contentType.includes("application/pdf") || magic !== "%PDF-"){
 	        throw new Error("El servidor no devolvió un PDF válido.");
 	      }
+	      const blob = new Blob([bytes], {type:"application/pdf"});
 	      const filename = filenameFromDisposition(
 	        r.headers.get("content-disposition"),
 	        `cotizacion_${id}.pdf`

@@ -1,0 +1,1221 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+
+  <link rel="stylesheet" href="/web/styles.css">
+  <link rel="stylesheet" href="/web/ui_overrides.css">
+
+  <title>Finanzas Green Diamond</title>
+
+  <style>
+    body{padding:18px;overflow:auto}
+    .wrap{max-width:none;margin:auto}
+    .tabs,.row,.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .tabs{margin-bottom:14px}
+    .tab,.btn{
+      border:1px solid rgba(255,255,255,.15);
+      border-radius:10px;
+      padding:8px 12px;
+      font-weight:800;
+      cursor:pointer
+    }
+    .tab,.btn.secondary{background:transparent;color:inherit}
+    .tab.active,.btn.primary{background:#22c55e;color:#062315}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+    .card{margin-bottom:14px}
+    .muted{opacity:.7}
+    .notice,.metric{
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:10px;
+      padding:9px 11px
+    }
+    .notice{margin-top:10px}
+    .metric{font-weight:800}
+    input,select{
+      background:rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.14);
+      color:inherit;
+      border-radius:9px;
+      padding:8px 10px
+    }
+    .table-wrap{overflow:auto;margin-top:12px}
+    table{
+      width:100%;
+      min-width:1050px;
+      border-collapse:collapse;
+      font-size:12px
+    }
+    th,td{
+      padding:8px 9px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      vertical-align:top
+    }
+    th{text-align:left;opacity:.7;white-space:nowrap}
+    td.money{text-align:right;white-space:nowrap}
+    tr.group td{font-weight:900;padding-top:16px}
+    tr.total td{font-weight:900;border-top:1px solid rgba(255,255,255,.25)}
+    tr.result td{font-weight:900;border-top:2px solid rgba(255,255,255,.35)}
+    .hidden{display:none!important}
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <div class="tabs">
+    <button class="tab" id="tabPnl" data-tab="pnl">P&L</button>
+    <button class="tab" data-tab="cartolas">Cartolas</button>
+  </div>
+
+  <section id="pnl" class="card">
+
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h2 style="margin:0">P&L GREEN DIAMOND</h2>
+        <div class="muted">
+          Consolidado · Sin distribución por marca
+        </div>
+      </div>
+
+      <div class="filters">
+        <input
+          id="pnlYear"
+          type="number"
+          min="2020"
+          max="2100"
+          style="width:105px"
+        >
+
+        <button class="btn secondary" id="reloadPnl">
+          Actualizar
+        </button>
+
+        <button class="btn primary" id="exportPnl">
+          Exportar Excel
+        </button>
+      </div>
+    </div>
+
+    <div class="filters" style="margin-top:12px">
+      <div class="metric" id="pendingMetric">
+        Pendiente clasificar: —
+      </div>
+    </div>
+
+    <div class="notice muted">
+      Los ingresos provienen del CRM.
+      Los gastos bancarios entran al P&L sólo después de ser clasificados.
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Cuenta</th>
+            <th>ENE</th>
+            <th>FEB</th>
+            <th>MAR</th>
+            <th>ABR</th>
+            <th>MAY</th>
+            <th>JUN</th>
+            <th>JUL</th>
+            <th>AGO</th>
+            <th>SEP</th>
+            <th>OCT</th>
+            <th>NOV</th>
+            <th>DIC</th>
+            <th>TOTAL</th>
+          </tr>
+        </thead>
+
+        <tbody id="pnlRows">
+          <tr>
+            <td colspan="14" class="muted">Cargando...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+
+  <section id="cartolas" class="card hidden">
+
+    <div>
+      <h2 style="margin:0">CARTOLAS GREEN DIAMOND</h2>
+      <div class="muted">
+        Las cuentas bancarias se administran en Tesorería / Bancos.
+      </div>
+    </div>
+
+    <div class="notice">
+      <strong>Flujo:</strong>
+      subir cartola → revisar movimientos →
+      seleccionar cuenta de gasto → imputar al P&L.
+      No se solicita marca.
+    </div>
+
+    <h3>1. Cuentas bancarias</h3>
+
+    <div class="filters" id="bankCreateControls" style="display:none">
+      <input id="bankName" placeholder="Banco">
+
+      <input
+        id="bankLabel"
+        placeholder="Nombre de la cuenta"
+      >
+
+      <button class="btn secondary" id="saveBank">
+        Agregar cuenta
+      </button>
+
+      <span class="metric" id="bankCount">0 / 2</span>
+    </div>
+
+    <div id="bankList" class="notice muted">
+      Sin cuentas configuradas.
+    </div>
+
+    <h3 id="uploadTitle">2. Cargar cartola</h3>
+
+    <div class="filters" id="bankUploadControls">
+      <select id="bankAccount">
+        <option value="">Cuenta bancaria...</option>
+      </select>
+
+      <input
+        id="statementFile"
+        type="file"
+        accept=".pdf,.xlsx,.xls,.csv,.txt"
+      >
+
+      <button class="btn primary" id="uploadStatement">
+        Cargar cartola
+      </button>
+    </div>
+
+    <div id="message" class="notice muted">
+      Esperando cartola.
+    </div>
+
+    <h3>3. Movimientos pendientes</h3>
+
+    <div class="filters">
+      <select id="expenseAccount">
+        <option value="">Cuenta de gasto...</option>
+      </select>
+
+      <button class="btn primary" id="classify">
+        Imputar seleccionados
+      </button>
+
+      <button class="btn secondary" id="ignore">
+        No corresponde a gasto
+      </button>
+
+      <button class="btn secondary" id="reloadMovements">
+        Actualizar
+      </button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>Fecha</th>
+            <th>Cuenta bancaria</th>
+            <th>Descripción original</th>
+            <th>Tipo</th>
+            <th>Monto</th>
+            <th>Referencia</th>
+          </tr>
+        </thead>
+
+        <tbody id="movementRows">
+          <tr>
+            <td colspan="7" class="muted">Cargando...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+const API_BASE =
+  location.pathname.startsWith("/crm/")
+    ? "/crm"
+    : "";
+
+
+let META = {
+  accounts: [],
+  bank_accounts: []
+};
+
+
+const FINANCE_ACCESS = {
+  role: "",
+  canViewPnl: false,
+  canUpload: false,
+  canClassify: false
+};
+
+function normalizeFinanceRole(value){
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[ _-]/g, "");
+}
+
+function tokenFinanceRole(){
+  try{
+    const token =
+      localStorage.getItem("token") ||
+      sessionStorage.getItem("token") ||
+      "";
+
+    if(!token){
+      return "";
+    }
+
+    const part = token.split(".")[1];
+
+    if(!part){
+      return "";
+    }
+
+    const normalized =
+      part
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+
+    const padded =
+      normalized +
+      "=".repeat(
+        (4 - normalized.length % 4) % 4
+      );
+
+    const payload =
+      JSON.parse(
+        decodeURIComponent(
+          escape(
+            atob(padded)
+          )
+        )
+      );
+
+    return normalizeFinanceRole(
+      payload.role ||
+      payload.rol ||
+      ""
+    );
+
+  }catch(_){
+    return "";
+  }
+}
+
+function resolveFinanceAccess(){
+  let role = "";
+
+  try{
+    const me =
+      window.parent &&
+      window.parent.GD &&
+      window.parent.GD.me
+        ? window.parent.GD.me
+        : {};
+
+    role = normalizeFinanceRole(
+      me.role ||
+      me.rol ||
+      ""
+    );
+
+  }catch(_){}
+
+  if(!role){
+    role = tokenFinanceRole();
+  }
+
+  const fullRoles = new Set([
+    "ADMIN",
+    "SUPERADMIN",
+    "FINANZAS"
+  ]);
+
+  const classifyRoles = new Set([
+    "ADMIN",
+    "SUPERADMIN",
+    "FINANZAS",
+    "COMPRAS",
+    "JEFEDEOPERACIONES"
+  ]);
+
+  FINANCE_ACCESS.role = role;
+
+  FINANCE_ACCESS.canViewPnl =
+    fullRoles.has(role);
+
+  FINANCE_ACCESS.canUpload =
+    fullRoles.has(role);
+
+  FINANCE_ACCESS.canClassify =
+    classifyRoles.has(role);
+}
+
+function applyFinanceAccess(){
+  resolveFinanceAccess();
+
+  if($("#tabPnl")){
+    $("#tabPnl").classList.toggle(
+      "hidden",
+      !FINANCE_ACCESS.canViewPnl
+    );
+  }
+
+  if($("#bankCreateControls")){
+    $("#bankCreateControls").classList.toggle(
+      "hidden",
+      !FINANCE_ACCESS.canUpload
+    );
+  }
+
+  if($("#uploadTitle")){
+    $("#uploadTitle").classList.toggle(
+      "hidden",
+      !FINANCE_ACCESS.canUpload
+    );
+  }
+
+  if($("#bankUploadControls")){
+    $("#bankUploadControls").classList.toggle(
+      "hidden",
+      !FINANCE_ACCESS.canUpload
+    );
+  }
+
+  if(
+    !FINANCE_ACCESS.canUpload &&
+    FINANCE_ACCESS.canClassify
+  ){
+    const section = $("#cartolas");
+
+    if(
+      section &&
+      !$("#financeRoleNotice")
+    ){
+      const note =
+        document.createElement("div");
+
+      note.id =
+        "financeRoleNotice";
+
+      note.className =
+        "notice";
+
+      note.innerHTML =
+        "<strong>Tu acceso:</strong> " +
+        "puedes revisar y clasificar " +
+        "movimientos pendientes. " +
+        "La carga de cartolas esta " +
+        "reservada a Finanzas.";
+
+      const firstNotice =
+        section.querySelector(".notice");
+
+      if(firstNotice){
+        firstNotice.insertAdjacentElement(
+          "afterend",
+          note
+        );
+      }
+    }
+  }
+}
+
+function authHeaders(extra = {}){
+  const GD = window.parent && window.parent.GD;
+
+  if(GD && GD.authHeaders){
+    return {
+      ...extra,
+      ...GD.authHeaders()
+    };
+  }
+
+  const token =
+    localStorage.getItem("token") ||
+    sessionStorage.getItem("token") ||
+    "";
+
+  return token
+    ? {...extra, Authorization: "Bearer " + token}
+    : extra;
+}
+
+function money(value){
+  return new Intl.NumberFormat(
+    "es-CL",
+    {
+      style: "currency",
+      currency: "CLP",
+      maximumFractionDigits: 0
+    }
+  ).format(Number(value || 0));
+}
+
+async function api(url, options = {}){
+  options.headers = authHeaders(options.headers || {});
+
+  const response = await fetch(API_BASE + url, options);
+
+  let data = {};
+
+  try{
+    data = await response.json();
+  }catch(_){}
+
+  if(!response.ok){
+    const fallback = `No se pudo completar la operación (HTTP ${response.status})`;
+    throw new Error(
+      window.humanizeApiError
+        ? window.humanizeApiError(data, fallback)
+        : (typeof data.detail === "string" ? data.detail : fallback)
+    );
+  }
+
+  return data;
+}
+
+function setTab(name){
+  if(
+    name === "pnl" &&
+    !FINANCE_ACCESS.canViewPnl
+  ){
+    name = "cartolas";
+  }
+
+  ["pnl","cartolas"].forEach(id => {
+    $("#" + id).classList.toggle(
+      "hidden",
+      id !== name
+    );
+  });
+
+  $$("[data-tab]").forEach(button => {
+    button.classList.toggle(
+      "active",
+      button.dataset.tab === name
+    );
+  });
+
+  location.hash = name;
+
+  if(name === "pnl"){
+    loadPnl();
+  }
+
+  if(name === "cartolas"){
+    loadMovements();
+  }
+}
+
+function accountOptions(){
+  const grouped = {};
+
+  META.accounts.forEach(account => {
+    if(!grouped[account.group]){
+      grouped[account.group] = [];
+    }
+
+    grouped[account.group].push(account);
+  });
+
+  return Object.entries(grouped)
+    .map(([group, items]) =>
+      `<optgroup label="${group}">` +
+      items.map(account =>
+        `<option value="${account.code}">` +
+        `${account.label}` +
+        `</option>`
+      ).join("") +
+      `</optgroup>`
+    )
+    .join("");
+}
+
+function renderMeta(){
+  $("#expenseAccount").innerHTML =
+    `<option value="">Cuenta de gasto...</option>` +
+    accountOptions();
+
+  $("#bankAccount").innerHTML =
+    `<option value="">Cuenta bancaria...</option>` +
+    META.bank_accounts.map(account =>
+      `<option value="${account.id_bank_account}">` +
+      `${account.bank_name} · ${account.label}` +
+      `</option>`
+    ).join("");
+
+  const count = META.bank_accounts.length;
+
+  $("#bankCount").textContent = `${count} cuenta(s)`;
+
+  $("#bankList").innerHTML =
+    count
+      ? META.bank_accounts.map(
+          (account, index) =>
+            `<div>` +
+            `<strong>Cuenta ${index + 1}:</strong> ` +
+            `${account.bank_name} · ${account.label}` +
+            `</div>`
+        ).join("")
+      : "Sin cuentas configuradas.";
+
+  const full = false;
+
+  $("#bankName").disabled = full;
+  $("#bankLabel").disabled = full;
+  $("#saveBank").disabled = full;
+
+  $("#saveBank").textContent =
+    full
+      ? "Agregar cuenta"
+      : "Agregar cuenta";
+}
+
+async function loadMeta(){
+  META = await api("/finanzas/simple/meta");
+  renderMeta();
+}
+
+async function loadPendingMetric(){
+  try{
+    const data = await api(
+      "/finanzas/simple/movements?status=PENDING&limit=1000"
+    );
+
+    const charges = (data.items || []).filter(
+      item => Number(item.amount || 0) < 0
+    );
+
+    const total = charges.reduce(
+      (sum, item) =>
+        sum + Math.abs(Number(item.amount || 0)),
+      0
+    );
+
+    $("#pendingMetric").textContent =
+      `Pendiente clasificar: ${charges.length} cargo(s) · ${money(total)}`;
+
+  }catch(_){
+    $("#pendingMetric").textContent =
+      "Pendiente clasificar: —";
+  }
+}
+
+async function loadPnl(){
+  const year = Number($("#pnlYear").value);
+
+  $("#pnlRows").innerHTML =
+    `<tr>` +
+    `<td colspan="14" class="muted">Cargando...</td>` +
+    `</tr>`;
+
+  try{
+    const data = await api(
+      `/finanzas/simple/pnl?year=${encodeURIComponent(year)}` +
+      `&brand=${encodeURIComponent($("#pnlBrand")?.value || "CAMALEON")}`
+    );
+
+    let html = "";
+    let previousGroup = null;
+
+    data.rows.forEach(row => {
+      if(
+        row.group &&
+        !["INGRESOS","TOTAL"].includes(row.group) &&
+        row.group !== previousGroup
+      ){
+        html +=
+          `<tr class="group">` +
+          `<td colspan="14">${row.group}</td>` +
+          `</tr>`;
+
+        previousGroup = row.group;
+      }
+
+      const cls =
+        row.key === "RESULTADO"
+          ? "result"
+          : (
+              row.key === "TOTAL_GASTOS"
+                ? "total"
+                : ""
+            );
+
+      html +=
+        `<tr class="${cls}">` +
+        `<td>${row.label}</td>` +
+        [1,2,3,4,5,6,7,8,9,10,11,12]
+          .map(month =>
+            `<td class="money">` +
+            `${money(row.values[month] || 0)}` +
+            `</td>`
+          )
+          .join("") +
+        `<td class="money">` +
+        `<strong>${money(row.total)}</strong>` +
+        `</td>` +
+        `</tr>`;
+    });
+
+    $("#pnlRows").innerHTML =
+      html ||
+      `<tr>` +
+      `<td colspan="14" class="muted">Sin datos.</td>` +
+      `</tr>`;
+
+    await loadPendingMetric();
+
+  }catch(error){
+    $("#pnlRows").innerHTML =
+      `<tr>` +
+      `<td colspan="14">${error.message}</td>` +
+      `</tr>`;
+  }
+}
+
+async function exportPnl(){
+  const year = Number($("#pnlYear").value);
+
+  const response = await fetch(
+    API_BASE + `/finanzas/simple/pnl/export?year=${encodeURIComponent(year)}` +
+    `&brand=${encodeURIComponent($("#pnlBrand")?.value || "CAMALEON")}`,
+    {
+      headers: authHeaders()
+    }
+  );
+
+  if(!response.ok){
+    alert("No se pudo exportar el P&L.");
+    return;
+  }
+
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+
+  link.href = href;
+  link.download = `PL_GREEN_DIAMOND_${year}.xlsx`;
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(href);
+}
+
+async function saveBank(){
+  if(!FINANCE_ACCESS.canUpload){
+    alert(
+      "Solo Finanzas o Administracion " +
+      "puede crear cuentas bancarias."
+    );
+    return;
+  }
+
+  const bank_name = $("#bankName").value.trim();
+  const label = $("#bankLabel").value.trim();
+
+  if(!bank_name || !label){
+    alert("Ingresa banco y nombre de cuenta.");
+    return;
+  }
+
+  try{
+    await api(
+      "/finanzas/simple/bank-accounts",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          bank_name,
+          label
+        })
+      }
+    );
+
+    $("#bankName").value = "";
+    $("#bankLabel").value = "";
+
+    await loadMeta();
+
+  }catch(error){
+    alert(error.message);
+  }
+}
+
+async function uploadStatement(){
+  if(!FINANCE_ACCESS.canUpload){
+    alert(
+      "Solo Finanzas o Administracion " +
+      "puede subir cartolas."
+    );
+    return;
+  }
+
+  const account = $("#bankAccount").value;
+  const file = $("#statementFile").files[0];
+
+  if(!account || !file){
+    alert("Selecciona cuenta bancaria y cartola PDF, XLSX o XLS.");
+    return;
+  }
+
+  const form = new FormData();
+
+  form.append(
+    "id_bank_account",
+    account
+  );
+
+  form.append(
+    "file",
+    file
+  );
+
+  try{
+    const data = await api(
+      "/finanzas/simple/cartolas/upload",
+      {
+        method: "POST",
+        body: form
+      }
+    );
+
+    $("#message").textContent =
+      data.duplicate_file
+        ? "La cartola ya estaba cargada. No se duplicaron movimientos."
+        : `Cartola cargada: ${data.imported_rows} movimiento(s) nuevo(s).`;
+
+    $("#statementFile").value = "";
+
+    await loadMovements();
+    await loadPendingMetric();
+
+  }catch(error){
+    $("#message").textContent = error.message;
+  }
+}
+
+async function loadMovements(){
+  try{
+    const data = await api(
+      "/finanzas/simple/movements?status=PENDING&limit=500"
+    );
+
+    const items = data.items || [];
+
+    $("#movementRows").innerHTML =
+      items.length
+        ? items.map(item => {
+            const amount = Number(item.amount || 0);
+            const isCharge = amount < 0;
+
+            return (
+              `<tr>` +
+                `<td>` +
+                  `<input ` +
+                  `type="checkbox" ` +
+                  `class="movementCheck" ` +
+                  `value="${item.id_bank_movement}">` +
+                `</td>` +
+                `<td>${item.tx_date || ""}</td>` +
+                `<td>` +
+                  `${item.bank_name} · ${item.bank_account}` +
+                `</td>` +
+                `<td>${item.description || ""}</td>` +
+                `<td>${isCharge ? "CARGO" : "ABONO"}</td>` +
+                `<td class="money">${money(amount)}</td>` +
+                `<td>${item.reference || ""}</td>` +
+              `</tr>`
+            );
+          }).join("")
+        : (
+            `<tr>` +
+            `<td colspan="7" class="muted">` +
+            `No hay movimientos pendientes.` +
+            `</td>` +
+            `</tr>`
+          );
+
+  }catch(error){
+    $("#movementRows").innerHTML =
+      `<tr>` +
+      `<td colspan="7">${error.message}</td>` +
+      `</tr>`;
+  }
+}
+
+function selected(){
+  return $$(".movementCheck:checked")
+    .map(input => Number(input.value));
+}
+
+async function classify(){
+  const movement_ids = selected();
+  const cuenta_code = $("#expenseAccount").value;
+
+  if(!movement_ids.length){
+    alert("Selecciona al menos un movimiento.");
+    return;
+  }
+
+  if(!cuenta_code){
+    alert("Selecciona la cuenta de gasto.");
+    return;
+  }
+
+  try{
+    const data = await api(
+      "/finanzas/simple/movements/classify",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          movement_ids,
+          cuenta_code,
+          marca: "GENERAL"
+        })
+      }
+    );
+
+    $("#message").textContent =
+      `${data.classified} movimiento(s) imputado(s) al P&L.`;
+
+    await loadMovements();
+    await loadPnl();
+
+  }catch(error){
+    alert(error.message);
+  }
+}
+
+async function ignore(){
+  const movement_ids = selected();
+
+  if(!movement_ids.length){
+    alert("Selecciona al menos un movimiento.");
+    return;
+  }
+
+  try{
+    const data = await api(
+      "/finanzas/simple/movements/ignore",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          movement_ids
+        })
+      }
+    );
+
+    $("#message").textContent =
+      `${data.ignored} movimiento(s) retirado(s) de pendientes.`;
+
+    await loadMovements();
+    await loadPendingMetric();
+
+  }catch(error){
+    alert(error.message);
+  }
+}
+
+$$("[data-tab]").forEach(button => {
+  button.addEventListener(
+    "click",
+    () => setTab(button.dataset.tab)
+  );
+});
+
+$("#reloadPnl").onclick = loadPnl;
+$("#exportPnl").onclick = exportPnl;
+
+$("#saveBank").onclick = saveBank;
+$("#uploadStatement").onclick = uploadStatement;
+$("#reloadMovements").onclick = loadMovements;
+$("#classify").onclick = classify;
+$("#ignore").onclick = ignore;
+
+(async () => {
+  $("#pnlYear").value =
+    String(new Date().getFullYear());
+
+  try{
+    await loadMeta();
+    applyFinanceAccess();
+
+    const requested =
+      (location.hash || "#pnl")
+        .replace("#","");
+
+    setTab(
+      ["pnl","cartolas"].includes(requested)
+        ? requested
+        : "pnl"
+    );
+
+  }catch(error){
+    document.body.innerHTML =
+      `<div style="padding:20px">` +
+      `No se pudo cargar Finanzas: ${error.message}` +
+      `</div>`;
+  }
+})();
+</script>
+
+<script src="../js/finance_api_errors.js?v=20260823-r4"></script>
+<script src="../js/finanzas_management.js?v=20260823-r4"></script>
+<script src="../js/finanzas_treasury_v5.js?v=20260824-control2"></script>
+<script src="../js/finanzas_pnl_v6.js?v=20260823_104952"></script>
+
+<!-- gd-pnl-brand-filter-v62 -->
+<script>
+(function(){
+
+  function installPnlBrandFilter(){
+
+    const year =
+      document.querySelector("#pnlYear");
+
+    if(
+      !year ||
+      document.querySelector("#pnlBrand")
+    ){
+      return;
+    }
+
+    const yearLabel =
+      year.closest("label");
+
+    const host =
+      yearLabel?.parentElement
+      || year.parentElement;
+
+    if(!host){
+      return;
+    }
+
+    const label =
+      document.createElement("label");
+
+    label.id =
+      "pnlBrandFilterLabel";
+
+    label.innerHTML = `
+      P&L
+      <select id="pnlBrand">
+        <option value="CAMALEON">
+          CAMALEÓN
+        </option>
+
+        <option value="GOURMET">
+          GOURMET
+        </option>
+
+        <option value="EXPRESS">
+          EXPRESS
+        </option>
+
+        <option value="DEL SABOR">
+          DEL SABOR
+        </option>
+
+        <option value="BRONTOS">
+          BRONTOS
+        </option>
+
+        <option value="PETRAS">
+          PETRAS
+        </option>
+
+        <option value="MAS FLOW">
+          MAS FLOW
+        </option>
+      
+        <option value="CORPORATIVO">
+          CORPORATIVO
+        </option>
+
+        <option value="HOLDING">
+          HOLDING
+        </option>
+
+      </select>
+    `;
+
+    if(yearLabel){
+      host.insertBefore(
+        label,
+        yearLabel
+      );
+    }else{
+      host.insertBefore(
+        label,
+        year
+      );
+    }
+
+    const select =
+      document.querySelector(
+        "#pnlBrand"
+      );
+
+    const saved =
+      localStorage.getItem(
+        "gd_pnl_selected"
+      );
+
+    if(
+      saved &&
+      Array.from(
+        select.options
+      ).some(
+        option =>
+          option.value === saved
+      )
+    ){
+      select.value = saved;
+    }
+
+    const section =
+      document.querySelector("#pnl");
+
+    if(section){
+      const title =
+        document.createElement("div");
+
+      title.id =
+        "pnlSelectedTitle";
+
+      title.style.fontSize =
+        "18px";
+
+      title.style.fontWeight =
+        "800";
+
+      title.style.margin =
+        "14px 0 8px";
+
+      const table =
+        section.querySelector(
+          ".table-wrap"
+        );
+
+      if(table){
+        section.insertBefore(
+          title,
+          table
+        );
+      }
+    }
+
+    function updateTitle(){
+
+      const title =
+        document.querySelector(
+          "#pnlSelectedTitle"
+        );
+
+      if(!title){
+        return;
+      }
+
+      const option =
+        select.options[
+          select.selectedIndex
+        ];
+
+      title.textContent =
+        "P&L · "
+        + (
+          option?.textContent
+          || select.value
+        ).trim();
+    }
+
+    select.addEventListener(
+      "change",
+      () => {
+
+        localStorage.setItem(
+          "gd_pnl_selected",
+          select.value
+        );
+
+        updateTitle();
+
+        if(
+          typeof window.loadPnl
+          === "function"
+        ){
+          window.loadPnl();
+        }else if(
+          typeof loadPnl
+          === "function"
+        ){
+          loadPnl();
+        }
+
+      }
+    );
+
+    updateTitle();
+  }
+
+  if(
+    document.readyState
+    === "loading"
+  ){
+    document.addEventListener(
+      "DOMContentLoaded",
+      installPnlBrandFilter
+    );
+  }else{
+    installPnlBrandFilter();
+  }
+
+  setTimeout(
+    installPnlBrandFilter,
+    500
+  );
+
+})();
+</script>
+
+
+<script src="../js/finanzas_pnl_master_v63.js?v=20260824-selector2"></script>
+
+<script src="../js/finanzas_creditos_v1.js?v=20260824-1"></script>
+
+<script src="../js/finanzas_v64_interactions.js?v=20260823-r4"></script>
+</body>
+</html>

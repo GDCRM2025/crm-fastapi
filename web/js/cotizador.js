@@ -598,7 +598,13 @@
       const txt = await r.text();
       throw new Error(`No pude descargar PDF (HTTP ${r.status}). ${txt.substring(0,160)}`);
     }
-    const blob = await r.blob();
+    const contentType = String(r.headers.get("content-type") || "").toLowerCase();
+    const bytes = await r.arrayBuffer();
+    const magic = new TextDecoder("ascii").decode(bytes.slice(0, 5));
+    if (!contentType.includes("application/pdf") || magic !== "%PDF-") {
+      throw new Error("El servidor no devolvió un PDF válido. La descarga fue detenida para evitar un archivo corrupto.");
+    }
+    const blob = new Blob([bytes], {type:"application/pdf"});
     const obj = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = obj;

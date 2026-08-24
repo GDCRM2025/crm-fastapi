@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  >
+
+  <title>GD Finance</title>
+
+  <link
+    rel="stylesheet"
+    href="/web/css/finanzas_r54_premium.css?v=20260824-r544"
+  >
+</head>
+
+<body>
+
+<div id="financeApp">
+
+  <header class="finance-header">
+
+    <div class="brand-block">
+      <span class="eyebrow">
+        GREEN DIAMOND · FINANCE
+      </span>
+
+      <h1>
+        Finanzas
+      </h1>
+
+      <p>
+        Facturas, pagos, movimientos bancarios
+        y contabilidad en un solo flujo.
+      </p>
+    </div>
+
+    <button
+      id="refreshFinance"
+      class="button ghost"
+      type="button"
+    >
+      Actualizar
+    </button>
+
+  </header>
+
+
+  <section class="context-bar">
+
+    <label>
+      <span>
+        Sociedad legal / RUT
+      </span>
+
+      <select id="globalEntity">
+        <option value="">
+          Seleccionando...
+        </option>
+      </select>
+    </label>
+
+
+    <label>
+      <span>
+        Período
+      </span>
+
+      <input
+        id="globalPeriod"
+        type="month"
+      >
+    </label>
+
+
+    <div
+      id="contextStatus"
+      class="context-status"
+    >
+      Cargando contexto financiero...
+    </div>
+
+  </section>
+
+
+  <section class="legal-scope-note" id="GD_FINANCE_LEGAL_SCOPE_R543">
+    <div><strong>Sociedad legal</strong><span>Facturas, cuentas por pagar, bancos y conciliación pertenecen a un RUT real.</span></div>
+    <div class="management-note"><strong>Holding / Corporativo</strong><span>Son vistas de gestión; no son sociedades bancarias.</span></div>
+  </section>
+
+  <nav class="finance-nav">
+
+    <button
+      data-view="summary"
+      class="active"
+    >
+      Resumen
+    </button>
+
+    <button data-view="invoices">
+      Facturas CxP
+    </button>
+
+    <button data-view="movements">
+      Movimientos bancarios
+    </button>
+
+    <button data-view="suppliers">
+      Proveedores
+    </button>
+
+    <button data-view="pnl">
+      P&amp;L
+    </button>
+
+    <button data-view="puc">
+      Plan de Cuentas
+    </button>
+
+    <button data-view="settings">
+      Configuración
+    </button>
+
+  </nav>
+
+
+  <main>
+
+    <section
+      id="view-summary"
+      class="finance-view active"
+    >
+      <div class="view-title">
+        <div>
+          <span class="eyebrow">
+            CONTROL FINANCIERO
+          </span>
+
+          <h2>
+            Resumen
+          </h2>
+
+          <p>
+            Qué queda por pagar,
+            conciliar y resolver.
+          </p>
+        </div>
+      </div>
+
+      <div
+        id="summaryCards"
+        class="metric-grid"
+      ></div>
+
+      <div class="workflow-card">
+
+        <div class="workflow-step">
+          <b>1</b>
+          <div>
+            <strong>
+              Facturas CxP
+            </strong>
+            <span>
+              Partimos desde la obligación.
+            </span>
+          </div>
+        </div>
+
+        <div class="workflow-arrow">
+          →
+        </div>
+
+        <div class="workflow-step">
+          <b>2</b>
+          <div>
+            <strong>
+              Buscar pago
+            </strong>
+            <span>
+              Sólo cartolas del mismo RUT.
+            </span>
+          </div>
+        </div>
+
+        <div class="workflow-arrow">
+          →
+        </div>
+
+        <div class="workflow-step">
+          <b>3</b>
+          <div>
+            <strong>
+              Conciliar
+            </strong>
+            <span>
+              Pago completo o parcial.
+            </span>
+          </div>
+        </div>
+
+        <div class="workflow-arrow">
+          →
+        </div>
+
+        <div class="workflow-step">
+          <b>4</b>
+          <div>
+            <strong>
+              Resolver residuos
+            </strong>
+            <span>
+              Gasto, obligación o transferencia.
+            </span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+
+    <section
+      id="view-invoices"
+      class="finance-view"
+    >
+
+      <div class="view-title">
+
+        <div>
+          <span class="eyebrow">
+            CUENTAS POR PAGAR
+          </span>
+
+          <h2>
+            Facturas CxP
+          </h2>
+
+          <p>
+            Selecciona una factura y encuentra
+            el pago bancario correspondiente.
+          </p>
+        </div>
+
+        <div class="view-actions">
+
+          <input
+            id="invoiceSearch"
+            class="search"
+            placeholder="Proveedor, RUT o folio..."
+          >
+
+          <button
+            id="invoiceSearchButton"
+            class="button ghost"
+            type="button"
+          >
+            Buscar
+          </button>
+
+        </div>
+      </div>
+
+
+      <div class="invoice-workbench">
+
+        <aside class="invoice-list-panel">
+
+          <div class="panel-heading">
+            <div>
+              <strong>
+                Facturas abiertas
+              </strong>
+
+              <span id="invoiceCount">
+                0 documentos
+              </span>
+            </div>
+          </div>
+
+          <div
+            id="invoiceList"
+            class="invoice-list"
+          ></div>
+
+        </aside>
+
+
+        <section class="invoice-detail-panel">
+
+          <div
+            id="invoiceDetail"
+            class="empty-state"
+          >
+            <div class="empty-icon">
+              ⇄
+            </div>
+
+            <strong>
+              Selecciona una factura
+            </strong>
+
+            <span>
+              Buscaremos automáticamente
+              sus pagos bancarios candidatos.
+            </span>
+          </div>
+
+        </section>
+
+      </div>
+
+    </section>
+
+
+    <section
+      id="view-movements"
+      class="finance-view"
+    >
+
+      <div class="view-title">
+
+        <div>
+          <span class="eyebrow">
+            CARTOLA RESIDUAL
+          </span>
+
+          <h2>
+            Movimientos bancarios
+          </h2>
+
+          <p>
+            Resuelve lo que quedó después
+            de conciliar las facturas.
+          </p>
+        </div>
+
+        <select id="movementBankAccount">
+          <option value="">
+            Seleccionar cuenta bancaria...
+          </option>
+        </select>
+
+      </div>
+
+
+      <div class="movement-workbench">
+
+        <section class="movement-list-panel">
+
+          <div class="panel-heading">
+
+            <div>
+              <strong>
+                Pendientes de resolver
+              </strong>
+
+              <span id="movementCount">
+                0 movimientos
+              </span>
+            </div>
+
+          </div>
+
+          <div
+            id="movementList"
+            class="movement-list"
+          ></div>
+
+        </section>
+
+
+        <aside class="resolution-panel">
+
+          <div
+            id="movementResolution"
+            class="empty-state"
+          >
+            <div class="empty-icon">
+              ✓
+            </div>
+
+            <strong>
+              Selecciona un movimiento
+            </strong>
+
+            <span>
+              Decide su naturaleza contable.
+            </span>
+          </div>
+
+        </aside>
+
+      </div>
+
+    </section>
+
+
+    <section
+      id="view-suppliers"
+      class="finance-view"
+    >
+
+      <div class="view-title">
+
+        <div>
+          <span class="eyebrow">
+            MAESTRO ÚNICO
+          </span>
+
+          <h2>
+            Proveedores
+          </h2>
+
+          <p>
+            El mismo maestro usado
+            por Operaciones y Finanzas.
+          </p>
+        </div>
+
+        <input
+          id="supplierSearch"
+          class="search"
+          placeholder="Razón social o RUT..."
+        >
+
+      </div>
+
+      <div class="premium-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Proveedor</th>
+              <th>RUT</th>
+              <th>Última compra</th>
+              <th class="money">Comprado</th>
+              <th class="money">Por pagar</th>
+              <th class="money">Facturas</th>
+            </tr>
+          </thead>
+
+          <tbody id="supplierRows"></tbody>
+        </table>
+      </div>
+
+    </section>
+
+
+    <section
+      id="view-pnl"
+      class="finance-view"
+    >
+
+      <div class="view-title">
+        <div>
+          <span class="eyebrow">
+            RESULTADO
+          </span>
+
+          <h2>
+            P&amp;L · Gestión
+          </h2>
+
+          <p>
+            El P&amp;L es el resultado
+            de la clasificación contable.
+          </p>
+        </div>
+      </div>
+
+      <iframe
+        id="pnlFrame"
+        class="module-frame"
+        title="P&L"
+      ></iframe>
+
+    </section>
+
+
+    <section
+      id="view-puc"
+      class="finance-view"
+    >
+
+      <div class="view-title">
+
+        <div>
+          <span class="eyebrow">
+            ESTRUCTURA CONTABLE
+          </span>
+
+          <h2>
+            Plan de Cuentas
+          </h2>
+
+          <p>
+            Una sola estructura para facturas,
+            cartolas y P&amp;L.
+          </p>
+        </div>
+
+        <button
+          id="newAccount"
+          class="button primary"
+          type="button"
+        >
+          + Nueva cuenta
+        </button>
+
+      </div>
+
+
+      <div class="puc-toolbar">
+
+        <input
+          id="pucSearch"
+          class="search"
+          placeholder="Buscar código, nombre o clasificación..."
+        >
+
+        <select id="pucTypeFilter">
+          <option value="">
+            Todos los tipos
+          </option>
+        </select>
+
+      </div>
+
+
+      <div class="puc-layout">
+
+        <div class="premium-table-wrap">
+
+          <table>
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Cuenta</th>
+                <th>Tipo</th>
+                <th>Clasificación</th>
+                <th>Padre</th>
+              </tr>
+            </thead>
+
+            <tbody id="pucRows"></tbody>
+          </table>
+
+        </div>
+
+
+        <aside
+          id="pucDrawer"
+          class="puc-drawer"
+          hidden
+        >
+
+          <div class="drawer-heading">
+
+            <div>
+              <span class="eyebrow">
+                PLAN DE CUENTAS
+              </span>
+
+              <h3>
+                Nueva cuenta
+              </h3>
+            </div>
+
+            <button
+              id="closePucDrawer"
+              class="icon-button"
+              type="button"
+            >
+              ×
+            </button>
+
+          </div>
+
+
+          <label>
+            <span>
+              Cuenta padre
+            </span>
+
+            <select id="pucParent"></select>
+          </label>
+
+
+          <div class="two-columns">
+
+            <label>
+              <span>
+                Código
+              </span>
+
+              <input
+                id="pucCode"
+                placeholder="Ej: 6115"
+              >
+            </label>
+
+
+            <label>
+              <span>
+                Tipo
+              </span>
+
+              <select id="pucType"></select>
+            </label>
+
+          </div>
+
+
+          <label>
+            <span>
+              Nombre
+            </span>
+
+            <input
+              id="pucName"
+              placeholder="Ej: Panadería"
+            >
+          </label>
+
+
+          <label>
+            <span>
+              Clasificación
+            </span>
+
+            <input
+              id="pucClassification"
+              list="pucClassificationList"
+              placeholder="Ej: Operacional"
+            >
+
+            <datalist
+              id="pucClassificationList"
+            ></datalist>
+          </label>
+
+
+          <label>
+            <span>
+              Descripción
+            </span>
+
+            <textarea
+              id="pucDescription"
+              rows="4"
+              placeholder="Descripción opcional"
+            ></textarea>
+          </label>
+
+
+          <div
+            id="pucPreview"
+            class="account-preview"
+          >
+            Nueva cuenta
+          </div>
+
+
+          <button
+            id="savePuc"
+            class="button primary wide"
+            type="button"
+          >
+            Crear cuenta
+          </button>
+
+        </aside>
+
+      </div>
+
+    </section>
+
+
+    <section
+      id="view-settings"
+      class="finance-view"
+    >
+
+      <div class="view-title">
+
+        <div>
+          <span class="eyebrow">
+            CONFIGURACIÓN
+          </span>
+
+          <h2>
+            SII e importaciones
+          </h2>
+
+          <p>
+            Configuración financiera
+            y carga oficial del RCV.
+          </p>
+        </div>
+
+      </div>
+
+
+      <div class="settings-grid">
+
+        <article class="settings-card">
+
+          <strong>
+            Importar RCV oficial
+          </strong>
+
+          <span>
+            CSV descargado desde el SII.
+          </span>
+
+          <input
+            id="rcvFile"
+            type="file"
+            accept=".csv,text/csv"
+          >
+
+          <button
+            id="importRcv"
+            class="button primary"
+            type="button"
+          >
+            Importar RCV
+          </button>
+
+        </article>
+
+
+        <article class="settings-card">
+
+          <strong>
+            Importar DTE XML
+          </strong>
+
+          <span>
+            XML recibido del proveedor.
+          </span>
+
+          <input
+            id="xmlFile"
+            type="file"
+            accept=".xml,application/xml,text/xml"
+          >
+
+          <button
+            id="importXml"
+            class="button ghost"
+            type="button"
+          >
+            Importar XML
+          </button>
+
+        </article>
+
+      </div>
+
+
+      <div
+        id="connectionCards"
+        class="connection-grid"
+      ></div>
+
+    </section>
+
+  </main>
+
+</div>
+
+
+<div
+  id="toast"
+  class="toast"
+></div>
+
+
+<script
+  src="/web/js/finanzas_r54_premium.js?v=20260824-r544"
+></script>
+
+</body>
+</html>

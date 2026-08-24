@@ -82,6 +82,10 @@ retry 3 scp "${SCP_OPTS[@]}" \
   "${REMOTE_USER}@${HOST}:${REMOTE_ROOT}/backend/core/quote_assets.py"
 
 retry 3 scp "${SCP_OPTS[@]}" \
+  backend/core/pdf_integrity.py \
+  "${REMOTE_USER}@${HOST}:${REMOTE_ROOT}/backend/core/pdf_integrity.py"
+
+retry 3 scp "${SCP_OPTS[@]}" \
   backend/routers/productos.py \
   "${REMOTE_USER}@${HOST}:${REMOTE_ROOT}/backend/routers/productos.py"
 

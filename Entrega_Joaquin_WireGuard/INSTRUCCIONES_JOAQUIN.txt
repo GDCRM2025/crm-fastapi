@@ -1,0 +1,87 @@
+ACCESO SEGURO GREEN DIAMOND - JOAQUIN
+=====================================
+
+ARCHIVO PERSONAL
+----------------
+El archivo joaquin-control-01.conf es una credencial privada y sirve para UN
+solo equipo a la vez. No enviarlo por correo, WhatsApp ni nube. Copiar esta
+carpeta directamente al pendrive y entregarlo personalmente.
+
+ANTES DE ENTREGAR
+-----------------
+1. En el Mac de Oscar, abrir CREAR_Y_DESCARGAR_PERFIL.command.
+2. Ingresar la clave sudo del servidor cuando Terminal la solicite.
+3. Esperar el mensaje LISTO y comprobar que apareció joaquin-control-01.conf.
+4. Copiar esta carpeta completa al pendrive.
+
+WINDOWS
+-------
+1. Instalar WireGuard desde https://www.wireguard.com/install/
+2. Abrir WireGuard.
+3. Seleccionar "Import tunnel(s) from file".
+4. Elegir joaquin-control-01.conf desde el pendrive.
+5. Activar el túnel.
+6. Comprobar que responde 10.77.0.1.
+7. Copiar el perfil a una carpeta privada del equipo y retirar el pendrive.
+
+ANDROID / IPHONE
+----------------
+1. Instalar la app oficial WireGuard.
+2. Copiar joaquin-control-01.conf al teléfono mediante cable, AirDrop o el
+   administrador local de archivos. No usar mensajería ni correo.
+3. En WireGuard, usar "Importar desde archivo" y activar el túnel.
+4. El mismo archivo no debe permanecer activo simultáneamente en PC y teléfono.
+   Si Joaquín necesita ambos dispositivos, se debe crear un segundo peer.
+
+DBEAVER - POSTGRESQL SOLO LECTURA
+---------------------------------
+IMPORTANTE: la conexión usa un túnel SSH privado. No intentar PostgreSQL
+directamente contra 10.77.0.1:5432 porque el firewall lo rechaza.
+
+Pestaña General / Principal:
+Host:       127.0.0.1
+Puerto:     5432
+Base:       bf68ec5_crm2025b
+Usuario:    joaquin_analytics
+SSL:        prefer
+Esquema:    analytics
+
+Pestaña SSH:
+Usar túnel SSH: Sí
+Host SSH:        10.77.0.1
+Puerto SSH:      22
+Usuario SSH:     oscar
+Autenticación:   Llave pública / Public key
+Llave privada:   joaquin-dbeaver-ed25519
+Passphrase:      dejar en blanco
+
+No usar el usuario usr_joaquinsal: no es el rol PostgreSQL autorizado.
+
+La contraseña de PostgreSQL se entrega por un canal distinto al pendrive. No
+marcar "guardar contraseña" en un equipo compartido. El rol es de solo lectura,
+con timeout y sin acceso directo a tablas operativas.
+
+ORDEN CORRECTO
+--------------
+1. Copiar joaquin-dbeaver-ed25519 a una carpeta privada del computador.
+2. Activar WireGuard.
+3. Abrir DBeaver y configurar General + SSH como se indica arriba.
+4. Probar conexión.
+5. Consultar únicamente vistas del esquema analytics.
+6. Al terminar, cerrar DBeaver y desactivar WireGuard.
+
+DIAGNOSTICO RAPIDO
+------------------
+- Sin handshake: revisar internet y que UDP 51820 llegue al servidor.
+- WireGuard conecta pero DBeaver no: comprobar que PostgreSQL use 127.0.0.1 y
+  que la pestaña SSH use 10.77.0.1, puerto 22 y la llave privada entregada.
+- Connection refused en 10.77.0.1:5432: se intentó conexión directa; activar
+  el túnel SSH y usar 127.0.0.1:5432 en la pestaña General.
+- Error de rol usr_joaquinsal: reemplazarlo por joaquin_analytics.
+- Error de contraseña: no regenerar el perfil; revisar la clave PostgreSQL.
+- Equipo perdido: revocar inmediatamente el peer joaquin-control-01.
+
+REVOCACION (ADMINISTRADOR)
+--------------------------
+ssh oscar@192.168.100.51
+sudo /opt/greendiamond/current/deploy/ubuntu/crm-vpn-peer revoke joaquin-control-01
