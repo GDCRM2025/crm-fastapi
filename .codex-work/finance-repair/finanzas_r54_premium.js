@@ -498,6 +498,12 @@
     }
 
     if (
+      name === "credits"
+    ) {
+      loadCredits();
+    }
+
+    if (
       name === "settings"
     ) {
       loadConnections();
@@ -519,6 +525,8 @@
       movements: "movements",
       suppliers: "suppliers",
       pnl: "pnl",
+      credits: "credits",
+      creditos: "credits",
       puc: "puc",
       sii: "settings",
       settings: "settings",
@@ -757,6 +765,7 @@
       const [
         payables,
         puc,
+        reconciliationAudit,
       ] = await Promise.all([
         api(
           "/api/finance/sii/reconciliation/open-payables"
@@ -766,6 +775,11 @@
 
         api(
           "/api/finance/sii/chart-of-accounts"
+        ),
+
+        api(
+          "/api/finance/sii/reconciliation/audit"
+          + `?legal_entity_id=${state.entityId}`
         ),
       ]);
 
@@ -923,6 +937,20 @@
 
             <small>
               Estructura contable activa
+            </small>
+          </article>
+
+          <article class="metric-card">
+            <span>
+              Conciliación asistida
+            </span>
+
+            <strong>
+              ${NUMBER.format(Number(reconciliationAudit.automatic_matches || 0))}
+            </strong>
+
+            <small>
+              Coincidencias fuertes · ${NUMBER.format(Number(reconciliationAudit.probable_matches || 0))} probables · ${NUMBER.format(Number(reconciliationAudit.manual_review || 0))} por clasificar o revisar RCV
             </small>
           </article>
         `;
@@ -2060,6 +2088,17 @@
       };
     }
 
+    if (
+      /pago.*cr[eé]dit|cuota.*cr[eé]dit|l[ií]nea de cr[eé]dit/.test(
+        text
+      )
+    ) {
+      return {
+        mode: "OBLIGATION",
+        text: "Probable cuota de crédito. El capital reduce la obligación; intereses, seguros y comisiones deben separarse y llevarse al P&L.",
+      };
+    }
+
     if (/calvac|maquin|equipo|activo fijo/.test(text)) {
       return {
         mode: "ASSET_PURCHASE",
@@ -2729,6 +2768,25 @@
     }
   }
 
+  function loadCredits() {
+    const frame = $("#creditsFrame");
+
+    if (!frame.src || frame.src === "about:blank") {
+      frame.src = apiURL("/web/views/finanzas_simple.html?v=20260824-finance1#creditos");
+
+      frame.onload = () => {
+        try {
+          const doc = frame.contentDocument;
+          doc.querySelector("#tabLoansV1")?.click();
+          const h1 = doc.querySelector("h1");
+          if (h1?.closest("header")?.style) {
+            h1.closest("header").style.display = "none";
+          }
+        } catch (_) {}
+      };
+    }
+  }
+
   async function loadPuc() {
     try {
       const response =
@@ -2753,17 +2811,20 @@
   }
 
   function renderPucFilters() {
-    const types =
-      Array.from(
-        new Set(
-          state.puc
-            .map(
-              item =>
-                item.type
-            )
-            .filter(Boolean)
-        )
-      ).sort();
+    const presentTypes = new Set(
+      state.puc
+        .map(item => String(item.type || "").toLowerCase())
+    );
+
+    const types = [
+      "asset",
+      "contra-asset",
+      "liability",
+      "equity",
+      "revenue",
+      "expense",
+      "other",
+    ].filter(type => presentTypes.has(type) || ["asset", "liability", "revenue", "expense"].includes(type));
 
     const select =
       $("#pucTypeFilter");
@@ -3328,6 +3389,31 @@
       return;
     }
 
+    const selectedEntity =
+      state.entities.find(
+        item =>
+          Number(item.id)
+          ===
+          Number(state.entityId)
+      );
+
+    if (
+      kind === "rcv"
+      &&
+      selectedEntity
+      &&
+      !window.confirm(
+        "CONFIRMA LA EMPRESA DEL RCV\n\n"
+        + `${selectedEntity.name}\n`
+        + `RUT ${selectedEntity.rut}\n\n`
+        + "El CSV oficial no informa el RUT receptor. "
+        + "Continúa solo si descargaste este RCV desde esta empresa en el SII."
+      )
+    ) {
+      toast("Importación cancelada: verifica la empresa/RUT del RCV.", true);
+      return;
+    }
+
     const form =
       new FormData();
 
@@ -3342,6 +3428,17 @@
       "file",
       file
     );
+
+    if (
+      kind === "rcv"
+      &&
+      selectedEntity
+    ) {
+      form.append(
+        "receiver_rut_confirmation",
+        selectedEntity.rut
+      );
+    }
 
     const endpoint =
       kind === "rcv"

@@ -1,0 +1,368 @@
+                        movement["amount"]
+                    )
+                )
+            )
+
+            total_amount += amount
+
+            gasto_rows.append(
+                {
+                    "fecha":
+                        movement["tx_date"],
+
+                    "cuenta":
+                        account_code,
+
+                    "monto":
+                        amount,
+
+                    "descripcion":
+                        movement["description"],
+
+                    "proveedor":
+                        str(
+                            movement[
+                                "description"
+                            ]
+                            or ""
+                        )[:200],
+
+                    "marca":
+                        unit,
+
+                    "doc_num":
+                        movement["reference"],
+
+                    "fecha_pago":
+                        movement["tx_date"],
+
+                    "movement":
+                        int(
+                            movement[
+                                "id_bank_movement"
+                            ]
+                        ),
+
+                    "responsable":
+                        responsible_id,
+
+                    "descripcion_interna":
+                        internal_description,
+
+                    "entity":
+                        int(
+                            movement[
+                                "id_legal_entity"
+                            ]
+                        ),
+                }
+            )
+
+        conn.execute(
+            text(
+                """
+                INSERT INTO public.fin_gastos(
+                  fecha,
+                  cuenta_code,
+                  monto,
+                  descripcion,
+                  proveedor,
+                  marca,
+                  centro_costo,
+                  created_at,
+                  doc_num,
+                  pagado,
+                  fecha_pago,
+                  tipo_doc,
+                  is_active,
+                  bank_movement_id,
+                  responsable_id,
+                  descripcion_interna,
+                  id_legal_entity
+                )
+                VALUES(
+                  :fecha,
+                  :cuenta,
+                  :monto,
+                  :descripcion,
+                  :proveedor,
+                  :marca,
+                  NULL,
+                  now(),
+                  :doc_num,
+                  TRUE,
+                  :fecha_pago,
+                  'CARTOLA',
+                  TRUE,
+                  :movement,
+                  :responsable,
+                  :descripcion_interna,
+                  :entity
+                )
+
+                ON CONFLICT (
+                  bank_movement_id
+                )
+
+                DO UPDATE SET
+                  cuenta_code=
+                    EXCLUDED.cuenta_code,
+
+                  monto=
+                    EXCLUDED.monto,
+
+                  descripcion=
+                    EXCLUDED.descripcion,
+
+                  proveedor=
+                    EXCLUDED.proveedor,
+
+                  marca=
+                    EXCLUDED.marca,
+
+                  fecha=
+                    EXCLUDED.fecha,
+
+                  pagado=TRUE,
+
+                  fecha_pago=
+                    EXCLUDED.fecha_pago,
+
+                  is_active=TRUE,
+
+                  responsable_id=
+                    EXCLUDED.responsable_id,
+
+                  descripcion_interna=
+                    EXCLUDED.descripcion_interna,
+
+                  id_legal_entity=
+                    EXCLUDED.id_legal_entity
+                """
+            ),
+            gasto_rows,
+        )
+
+        conn.execute(
+            text(
+                """
+                UPDATE public.fin_bank_movements
+
+                SET
+                  status='CLASSIFIED',
+                  cuenta_code=:cuenta,
+                  marca=:marca,
+                  responsable_id=:responsable,
+                  descripcion_interna=
+                    :descripcion_interna,
+                  classified_by=:actor,
+                  classified_at=now()
+
+                WHERE
+                  id_bank_movement=
+                    ANY(
+                      CAST(
+                        :ids
+                        AS bigint[]
+                      )
+                    )
+                """
+            ),
+            {
+                "cuenta":
+                    account_code,
+
+                "marca":
+                    unit,
+
+                "responsable":
+                    responsible_id,
+
+                "descripcion_interna":
+                    internal_description,
+
+                "actor":
+                    actor,
+
+                "ids":
+                    movement_ids,
+            },
+        )
+
+        conn.commit()
+
+    return {
+        "ok": True,
+        "message": (
+            "✓ Gasto clasificado\n\n"
+            f"Cuenta: {account_code} · {account['name']}\n"
+            "Monto: " + f"${float(total_amount):,.0f}".replace(",", ".") + "\n"
+            "Empresa: "
+            + ", ".join(sorted({str(row["legal_name"] or row["rut"] or "Sin empresa") for row in movements}))
+        ),
+        "classified":
+            len(movement_ids),
+
+        "movement_ids":
+            movement_ids,
+
+        "cuenta_code":
+            account_code,
+
+        "marca":
+            unit,
+
+        "responsable_id":
+            responsible_id,
+
+        "total_amount":
+            float(total_amount),
+
+        "account_name":
+            account["name"],
+
+        "companies":
+            sorted({
+                str(row["legal_name"] or row["rut"] or "Sin empresa")
+                for row in movements
+            }),
+    }
+
+
+# === GD FINANCE V64 DETAIL BATCH END ===
+
+
+# === GD FINANCE LOANS V1 BEGIN ===
+
+def _ensure_fin_loans_v1(conn) -> None:
+    conn.execute(text("""
+      CREATE TABLE IF NOT EXISTS public.fin_loans(
+        id_loan BIGSERIAL PRIMARY KEY,
+        external_key TEXT NOT NULL UNIQUE,
+        lender TEXT NOT NULL,
+        id_legal_entity INTEGER NOT NULL REFERENCES public.fin_legal_entities(id_legal_entity),
+        principal NUMERIC(18,2) NOT NULL CHECK(principal >= 0),
+        installment_amount NUMERIC(18,2) NOT NULL CHECK(installment_amount >= 0),
+        total_installments INTEGER NOT NULL CHECK(total_installments > 0),
+        paid_installments INTEGER NOT NULL DEFAULT 0 CHECK(paid_installments >= 0),
+        annual_rate NUMERIC(9,6),
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK(paid_installments <= total_installments)
+      )
+    """))
+    seeds = (
+        ("GREEN_BCH_01", "Banco de Chile", 1, 72656300, 2136950, 34, 16),
+        ("GREEN_BCH_02", "Banco de Chile", 1, 121888440, 3385790, 36, 2),
+        ("GD_FORUM_01", "Forum", 2, 38559024, 803313, 48, 12),
+        ("ROLFI_PEDIDOSYA_01", "PedidosYa", 4, 31960128, 1331672, 24, 21),
+    )
+    for key, lender, entity, principal, installment, total, paid in seeds:
+        conn.execute(text("""
+          INSERT INTO public.fin_loans(
+            external_key,lender,id_legal_entity,principal,installment_amount,
+            total_installments,paid_installments,status,notes
+          ) VALUES (
+            :key,:lender,:entity,:principal,:installment,:total,:paid,'ACTIVE',
+            'Carga inicial entregada por gerencia el 24-08-2026'
+          ) ON CONFLICT(external_key) DO NOTHING
+        """), {
+            "key": key, "lender": lender, "entity": entity,
+            "principal": principal, "installment": installment,
+            "total": total, "paid": paid,
+        })
+    conn.commit()
+
+
+@router.get("/loans-v1")
+def loans_v1(me: dict = Depends(legacy.get_current_user)):
+    legacy._ensure_roles(me, READ_ROLES)
+    with legacy.get_connection() as conn:
+        _ensure_fin_loans_v1(conn)
+        rows = conn.execute(text("""
+          SELECT l.id_loan,l.external_key,l.lender,l.id_legal_entity,
+                 e.legal_code,e.legal_name,e.rut,l.principal,l.installment_amount,
+                 l.total_installments,l.paid_installments,l.annual_rate,l.status,l.notes,
+                 (l.installment_amount*l.paid_installments)::numeric AS paid_amount,
+                 GREATEST(0,l.principal-(l.installment_amount*l.paid_installments))::numeric AS balance
+          FROM public.fin_loans l
+          JOIN public.fin_legal_entities e ON e.id_legal_entity=l.id_legal_entity
+          ORDER BY l.id_loan
+        """)).mappings().all()
+    items = [dict(row) for row in rows]
+    return {
+        "ok": True,
+        "items": items,
+        "monthly_installments": float(sum(Decimal(str(row["installment_amount"])) for row in rows)),
+        "principal_total": float(sum(Decimal(str(row["principal"])) for row in rows)),
+        "paid_total": float(sum(Decimal(str(row["paid_amount"])) for row in rows)),
+        "balance_total": float(sum(Decimal(str(row["balance"])) for row in rows)),
+    }
+
+
+@router.post("/loans-v1/simulate")
+def loans_v1_simulate(body: dict = Body(default_factory=dict), me: dict = Depends(legacy.get_current_user)):
+    legacy._ensure_roles(me, READ_ROLES)
+    try:
+        principal = Decimal(str(body.get("principal") or "0"))
+        annual_rate = Decimal(str(body.get("annual_rate") or "0"))
+        installments = int(body.get("installments") or 0)
+        monthly_insurance = Decimal(str(body.get("monthly_insurance") or "0"))
+        monthly_fees = Decimal(str(body.get("monthly_fees") or "0"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Parámetros de simulación inválidos.")
+    if principal <= 0 or principal > Decimal("10000000000"):
+        raise HTTPException(status_code=400, detail="El capital debe ser mayor que cero.")
+    if annual_rate < 0 or annual_rate > Decimal("200"):
+        raise HTTPException(status_code=400, detail="La tasa anual debe estar entre 0% y 200%.")
+    if installments < 1 or installments > 600:
+        raise HTTPException(status_code=400, detail="Las cuotas deben estar entre 1 y 600.")
+    if monthly_insurance < 0 or monthly_fees < 0:
+        raise HTTPException(status_code=400, detail="Seguros y comisiones no pueden ser negativos.")
+
+    monthly_rate = annual_rate / Decimal("1200")
+    if monthly_rate == 0:
+        base_payment = principal / installments
+    else:
+        factor = (Decimal("1") + monthly_rate) ** installments
+        base_payment = principal * monthly_rate * factor / (factor - Decimal("1"))
+
+    balance = principal
+    schedule = []
+    total_interest = Decimal("0")
+    total_cost = Decimal("0")
+    for number in range(1, installments + 1):
+        interest = balance * monthly_rate
+        amortization = base_payment - interest
+        if number == installments:
+            amortization = balance
+        payment = amortization + interest + monthly_insurance + monthly_fees
+        balance = max(Decimal("0"), balance - amortization)
+        total_interest += interest
+        total_cost += payment
+        schedule.append({
+            "installment": number,
+            "payment": float(payment.quantize(Decimal("1"))),
+            "principal": float(amortization.quantize(Decimal("1"))),
+            "interest": float(interest.quantize(Decimal("1"))),
+            "insurance": float(monthly_insurance.quantize(Decimal("1"))),
+            "fees": float(monthly_fees.quantize(Decimal("1"))),
+            "balance": float(balance.quantize(Decimal("1"))),
+        })
+    return {
+        "ok": True,
+        "assumption": "Sistema francés; tasa nominal anual dividida en 12 meses.",
+        "principal": float(principal),
+        "annual_rate": float(annual_rate),
+        "monthly_rate": float(monthly_rate * 100),
+        "installments": installments,
+        "base_installment": float(base_payment.quantize(Decimal("1"))),
+        "monthly_total": float((base_payment + monthly_insurance + monthly_fees).quantize(Decimal("1"))),
+        "total_interest": float(total_interest.quantize(Decimal("1"))),
+        "total_cost": float(total_cost.quantize(Decimal("1"))),
+        "schedule": schedule,
+    }
+
+# === GD FINANCE LOANS V1 END ===

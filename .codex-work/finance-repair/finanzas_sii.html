@@ -11,7 +11,7 @@
 
   <link
     rel="stylesheet"
-    href="/web/css/finanzas_r54_premium.css?v=20260824-r544"
+    href="/web/css/finanzas_r54_premium.css?v=20260824-finance2"
   >
 </head>
 
@@ -112,6 +112,10 @@
 
     <button data-view="pnl">
       P&amp;L
+    </button>
+
+    <button data-view="credits">
+      Créditos / Simulador
     </button>
 
     <button data-view="puc">
@@ -505,6 +509,28 @@
 
 
     <section
+      id="view-credits"
+      class="finance-view"
+    >
+
+      <div class="view-title">
+        <div>
+          <span class="eyebrow">FINANCIAMIENTO</span>
+          <h2>Créditos · Cuotas y simulador</h2>
+          <p>Deuda vigente, cuotas, saldos y evaluación de nuevos créditos.</p>
+        </div>
+      </div>
+
+      <iframe
+        id="creditsFrame"
+        class="module-frame"
+        title="Créditos y simulador"
+      ></iframe>
+
+    </section>
+
+
+    <section
       id="view-puc"
       class="finance-view"
     >
@@ -742,7 +768,7 @@
           </strong>
 
           <span>
-            CSV descargado desde el SII.
+            CSV descargado desde el SII. Antes de cargar se confirmará la empresa y su RUT para evitar cruces entre sociedades.
           </span>
 
           <input
@@ -810,7 +836,7 @@
 
 
 <script
-  src="/web/js/finanzas_r54_premium.js?v=20260824-chipax3"
+  src="/web/js/finanzas_r54_premium.js?v=20260824-finance6"
 ></script>
 
 </body>

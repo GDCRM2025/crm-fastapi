@@ -255,8 +255,32 @@ async def import_xml(legal_entity_id: Annotated[int, Form()], file: Annotated[Up
 
 
 @router.post("/import/rcv")
-async def import_rcv(legal_entity_id: Annotated[int, Form()], file: Annotated[UploadFile, File()], me=Depends(get_current_user)):
+async def import_rcv(
+    legal_entity_id: Annotated[int, Form()],
+    file: Annotated[UploadFile, File()],
+    receiver_rut_confirmation: Annotated[str | None, Form()] = None,
+    me=Depends(get_current_user),
+):
     _role(me, MANAGE_ROLES)
+    with get_connection() as conn:
+        entity = service.repository.legal_entity(conn, legal_entity_id)
+    if not entity:
+        raise HTTPException(404, "Entidad legal no encontrada")
+    expected_rut = normalize_chilean_rut(entity["rut_normalized"])
+    try:
+        confirmed_rut = normalize_chilean_rut(receiver_rut_confirmation or "")
+    except Exception:
+        confirmed_rut = ""
+    if confirmed_rut != expected_rut:
+        raise HTTPException(
+            409,
+            {
+                "code": "RCV_ENTITY_CONFIRMATION_REQUIRED",
+                "message": (
+                    "Carga detenida: confirma la empresa y su RUT antes de importar el RCV."
+                ),
+            },
+        )
     data = await file.read(25 * 1024 * 1024 + 1)
     try: return {"ok": True, **service.import_rcv_csv(legal_entity_id, data, actor=me)}
     except Exception as exc: raise _safe(exc)
@@ -462,6 +486,48 @@ def reconciliation_payable_detail(payable_id: int, me=Depends(get_current_user))
           WHERE a.payable_id=:id ORDER BY a.created_at DESC,a.id DESC
         """), {"id": payable_id}).mappings().all()
     return {"ok": True, "item": dict(payable), "allocations": [dict(row) for row in allocations]}
+
+
+@router.get("/reconciliation/audit")
+def reconciliation_audit(
+    legal_entity_id: int,
+    me=Depends(get_current_user),
+):
+    """Summarize which pending bank payments can already be matched to a CxP."""
+    _role(me, VIEW_ROLES)
+    with get_connection() as conn:
+        movements = matching.unreconciled_movements(
+            conn,
+            legal_entity_id=legal_entity_id,
+            limit=5000,
+        )
+        payables = matching.open_payables(conn, legal_entity_id)
+
+    automatic = 0
+    probable = 0
+    manual = 0
+    for movement in movements:
+        if Decimal(str(movement.get("amount") or 0)) >= 0:
+            continue
+        if movement.get("legacy_classified"):
+            manual += 1
+            continue
+        ranked = matching.rank_candidates(movement, payables)
+        score = int(ranked[0].score) if ranked else 0
+        if score >= 95:
+            automatic += 1
+        elif score >= 75:
+            probable += 1
+        else:
+            manual += 1
+
+    return {
+        "ok": True,
+        "outgoing_pending": automatic + probable + manual,
+        "automatic_matches": automatic,
+        "probable_matches": probable,
+        "manual_review": manual,
+    }
 
 
 @router.get("/health")
