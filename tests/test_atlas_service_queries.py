@@ -60,6 +60,7 @@ def test_bank_transactions_reads_real_bank_tables_and_allocations():
     assert "fin_bank_movements" in sql
     assert "fin_bank_accounts" in sql
     assert "fin_payable_bank_allocations" in sql
+    assert "CASE WHEN bm.amount < 0" in sql
     assert "UPDATE " not in sql.upper()
     assert "DELETE " not in sql.upper()
 
