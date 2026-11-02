@@ -54,7 +54,7 @@ def _patched_connection(fake):
 def test_bank_transactions_reads_real_bank_tables_and_allocations():
     fake = FakeConnection()
     with _patched_connection(fake):
-        result = atlas_service.bank_transactions()
+        result = atlas_service.bank_transactions(from_date=None, to_date=None, legal_entity_id=None)
     assert result["data"][0]["remaining_amount"] == 30000
     sql = "\\n".join(fake.statements)
     assert "fin_bank_movements" in sql
@@ -79,7 +79,7 @@ def test_payables_reads_received_dte_and_linked_balance():
 def test_sales_reads_net_vat_transport_and_brand():
     fake = FakeConnection()
     with _patched_connection(fake):
-        result = atlas_service.sales()
+        result = atlas_service.sales(from_date=__import__('datetime').date(2000,1,1), to_date=__import__('datetime').date.today())
     assert result["data"][0]["marca"] == "CAMALEON"
     sql = "\\n".join(fake.statements)
     for field in ("monto_neto","monto_bruto","iva","traslado","tipo_cliente"):
