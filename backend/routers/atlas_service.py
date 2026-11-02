@@ -120,11 +120,41 @@ def issued_documents(from_date: date | None = Query(default=None), to_date: date
     return {"data":rows}
 
 @router.get("/bankTransactions", dependencies=[Depends(require_atlas_service)])
-def bank_transactions():
+def bank_transactions(
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
+    legal_entity_id: int | None = Query(default=None)
+):
+    if from_date and to_date and to_date < from_date:
+        raise HTTPException(400, "Invalid date range")
     with get_connection() as conn:
-        candidates = ["fin_bank_movements","bank_movements","fin_movimientos_bancarios","cartola_movimientos"]
-        found = next((name for name in candidates if _table_exists(conn,name)), None)
-        if not found:
-            raise HTTPException(503, "CRM bank movement source table not identified; no empty result returned")
-        rows = _rows(conn, f"SELECT * FROM {found} ORDER BY 1 DESC LIMIT 10000")
+        required = ["fin_bank_movements","fin_bank_accounts","fin_payable_bank_allocations"]
+        missing = [name for name in required if not _table_exists(conn,name)]
+        if missing:
+            raise HTTPException(503, {"code":"CRM_BANK_SOURCE_INCOMPLETE","missingTables":missing})
+        rows = _rows(conn, """
+          WITH allocated AS (
+            SELECT bank_movement_id,
+                   COALESCE(sum(amount_applied) FILTER(WHERE status='CONFIRMED'),0) AS applied_amount,
+                   count(*) FILTER(WHERE status='CONFIRMED') AS confirmed_allocations,
+                   count(*) FILTER(WHERE status='SUGGESTED') AS suggested_allocations
+            FROM fin_payable_bank_allocations
+            GROUP BY bank_movement_id
+          )
+          SELECT bm.id_bank_movement, bm.tx_date, bm.description, bm.reference,
+                 bm.amount, bm.status AS bank_status, bm.id_bank_account,
+                 ba.id_legal_entity, ba.bank_name, ba.label AS account_label,
+                 COALESCE(a.applied_amount,0) AS applied_amount,
+                 abs(bm.amount)-COALESCE(a.applied_amount,0) AS remaining_amount,
+                 COALESCE(a.confirmed_allocations,0) AS confirmed_allocations,
+                 COALESCE(a.suggested_allocations,0) AS suggested_allocations
+          FROM fin_bank_movements bm
+          JOIN fin_bank_accounts ba ON ba.id_bank_account=bm.id_bank_account
+          LEFT JOIN allocated a ON a.bank_movement_id=bm.id_bank_movement
+          WHERE (:from_date IS NULL OR bm.tx_date >= :from_date)
+            AND (:to_date IS NULL OR bm.tx_date <= :to_date)
+            AND (:legal_entity_id IS NULL OR ba.id_legal_entity=:legal_entity_id)
+          ORDER BY bm.tx_date DESC,bm.id_bank_movement DESC
+          LIMIT 10000
+        """, {"from_date":from_date,"to_date":to_date,"legal_entity_id":legal_entity_id})
     return {"data":rows}
