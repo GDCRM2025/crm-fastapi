@@ -47,7 +47,7 @@ def source_health():
     ] + [{"source":"CRM_GREEN_DIAMOND","kind":"legal_entity","id":str(x["id_legal_entity"]),"legalCode":x["legal_code"],"legalName":x["legal_name"],"rut":x["rut"],"status":"ACTIVE"} for x in entities]}
 
 @router.get("/sales", dependencies=[Depends(require_atlas_service)])
-def sales(from_date: date = Query(..., alias="from"), to_date: date = Query(..., alias="to")):
+def sales(from_date: date = Query(default=date(2000,1,1), alias="from"), to_date: date = Query(default_factory=date.today, alias="to")):
     if to_date < from_date:
         raise HTTPException(400, "Invalid date range")
     with get_connection() as conn:
@@ -82,17 +82,22 @@ def receivables(as_of: date | None = Query(default=None)):
 @router.get("/payables", dependencies=[Depends(require_atlas_service)])
 def payables(from_date: date | None = Query(default=None), to_date: date | None = Query(default=None)):
     with get_connection() as conn:
-        if not _table_exists(conn, "fin_gastos"):
-            raise HTTPException(503, "CRM finance expenses table unavailable")
+        if not _table_exists(conn, "fin_sii_received_documents"):
+            raise HTTPException(503, "CRM received DTE table unavailable")
         rows = _rows(conn, """
-          SELECT id_gasto, fecha, cuenta_code, monto, descripcion, proveedor, marca,
-                 centro_costo, tipo_doc, doc_num, pagado, fecha_vencimiento, fecha_pago,
-                 is_active, created_at
-          FROM fin_gastos
-          WHERE COALESCE(is_active,TRUE) IS TRUE
-            AND (:from_date IS NULL OR fecha >= :from_date)
-            AND (:to_date IS NULL OR fecha <= :to_date)
-          ORDER BY fecha, proveedor, id_gasto
+          SELECT d.id, d.id_legal_entity, d.supplier_id, d.issuer_rut, d.issuer_name,
+                 d.receiver_rut, d.document_type, d.folio, d.issue_date, d.due_date,
+                 d.net_amount, d.exempt_amount, d.vat_amount, d.total_amount,
+                 d.financial_status, d.accounts_payable_id, d.source, d.xml_sha256,
+                 p.razon_social AS supplier_legal_name, p.nombre AS supplier_name,
+                 g.balance AS payable_balance, g.payable_status,
+                 g.pagado AS marked_paid, g.fecha_pago AS recorded_payment_date
+          FROM fin_sii_received_documents d
+          LEFT JOIN inv_proveedores p ON p.id_proveedor=d.supplier_id
+          LEFT JOIN fin_gastos g ON g.id_gasto=d.accounts_payable_id
+          WHERE (:from_date IS NULL OR d.issue_date >= :from_date)
+            AND (:to_date IS NULL OR d.issue_date <= :to_date)
+          ORDER BY d.issue_date, d.issuer_name, d.folio
         """, {"from_date":from_date,"to_date":to_date})
     return {"data":rows}
 
