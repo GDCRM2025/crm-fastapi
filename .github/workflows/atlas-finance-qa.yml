@@ -22,4 +22,4 @@ jobs:
       - name: Compile CRM read-only finance API
         run: python -m py_compile backend/routers/atlas_service.py backend/main.py
       - name: Test service-token fail-closed behavior
-        run: pytest -q tests/test_atlas_service_auth.py
+        run: PYTHONPATH=. pytest -q tests/test_atlas_service_auth.py
