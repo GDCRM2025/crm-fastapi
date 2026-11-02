@@ -1,4 +1,3 @@
-from fastapi.testclient import TestClient
 from backend.routers.atlas_service import require_atlas_service
 from fastapi import HTTPException
 import os
