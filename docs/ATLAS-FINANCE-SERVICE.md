@@ -11,10 +11,10 @@ Set ATLAS_FINANCE_SERVICE_TOKEN in the CRM API runtime environment to a randomly
 - GET /api/atlas/finance/receivables: positive event balances.
 - GET /api/atlas/finance/payables: received SII DTE with supplier, RUT, folio, net, VAT, total, SII status and linked payable balance. This is a document register; pending-review documents must not be treated as confirmed debt.
 - GET /api/atlas/finance/issuedDocuments: invoice metadata currently attached to CRM event records. It is not a full SII-issued boleta register.
-- GET /api/atlas/finance/bankTransactions: intentionally returns 503 until the actual CRM bank movement table is identified. It never returns an empty array pretending bank integration is complete.
+- GET /api/atlas/finance/bankTransactions: reads fin_bank_movements joined to fin_bank_accounts and confirmed/suggested fin_payable_bank_allocations; returns applied and remaining amounts by legal entity, with date and entity filters. Fails 503 if any required table is unavailable.
 
 ## Source data
-Reads fin_eventos, fin_gastos only through linked payable metadata, fin_sii_received_documents, inv_proveedores, fin_legal_entities and checks candidate bank table names. No CREATE/ALTER/INSERT/UPDATE/DELETE is performed by this router.
+Reads fin_eventos, fin_gastos only through linked payable metadata, fin_sii_received_documents, inv_proveedores, fin_legal_entities and checks candidate bank table names. No CREATE/ALTER/INSERT/UPDATE/DELETE is performed by this router. Bank movements are read from the identified CRM tables fin_bank_movements, fin_bank_accounts and fin_payable_bank_allocations.
 
 ## Production gate
 Before deploy: inspect active cPanel/Passenger app root and actual deployment ref, set secret in protected environment, verify endpoint access with the service token, validate returned RUTs and record counts, identify bank movement table and issued boleta source. Then configure Brontos ATLAS connector paths. All actions remain GET/read-only.
