@@ -1,0 +1,26 @@
+name: ATLAS CRM Finance Read-only QA
+on:
+  pull_request:
+    paths:
+      - 'backend/routers/atlas_service.py'
+      - 'backend/main.py'
+      - 'tests/test_atlas_service_auth.py'
+      - 'tests/test_atlas_service_queries.py'
+      - '.github/workflows/atlas-finance-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  atlas-crm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install minimal runtime and test dependencies
+        run: python -m pip install fastapi sqlalchemy psycopg[binary] pydantic-settings python-dotenv python-jose passlib python-multipart pytest
+      - name: Compile CRM read-only finance API
+        run: python -m py_compile backend/routers/atlas_service.py backend/main.py
+      - name: Test service-token fail-closed behavior
+        run: PYTHONPATH=. pytest -q tests/test_atlas_service_auth.py tests/test_atlas_service_queries.py
