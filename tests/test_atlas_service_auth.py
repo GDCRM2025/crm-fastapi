@@ -1,3 +1,6 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.routers.atlas_service import require_atlas_service
 from fastapi import HTTPException
 import os
