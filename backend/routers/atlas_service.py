@@ -145,7 +145,7 @@ def bank_transactions(
                  bm.amount, bm.status AS bank_status, bm.id_bank_account,
                  ba.id_legal_entity, ba.bank_name, ba.label AS account_label,
                  COALESCE(a.applied_amount,0) AS applied_amount,
-                 abs(bm.amount)-COALESCE(a.applied_amount,0) AS remaining_amount,
+                 CASE WHEN bm.amount < 0 THEN abs(bm.amount)-COALESCE(a.applied_amount,0) ELSE NULL END AS remaining_amount,
                  COALESCE(a.confirmed_allocations,0) AS confirmed_allocations,
                  COALESCE(a.suggested_allocations,0) AS suggested_allocations
           FROM fin_bank_movements bm
