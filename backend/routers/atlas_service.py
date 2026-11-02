@@ -34,7 +34,7 @@ def _rows(conn, sql: str, params: dict | None = None) -> list[dict]:
 
 @router.get("/sourceHealth", dependencies=[Depends(require_atlas_service)])
 def source_health():
-    required = ["fin_eventos", "fin_pagos", "fin_gastos", "fin_saldos", "fin_legal_entities", "wi_sii_connections", "fin_sii_received_documents"]
+    required = ["fin_eventos", "fin_pagos", "fin_gastos", "fin_saldos", "fin_legal_entities", "wi_sii_connections", "fin_sii_received_documents", "fin_bank_movements", "bank_movements", "fin_movimientos_bancarios", "cartola_movimientos"]
     with get_connection() as conn:
         tables = {name: _table_exists(conn, name) for name in required}
         entities = _rows(conn, """
@@ -47,7 +47,8 @@ def source_health():
     ] + [{"source":"CRM_GREEN_DIAMOND","kind":"legal_entity","id":str(x["id_legal_entity"]),"legalCode":x["legal_code"],"legalName":x["legal_name"],"rut":x["rut"],"status":"ACTIVE"} for x in entities]}
 
 @router.get("/sales", dependencies=[Depends(require_atlas_service)])
-def sales(from_date: date = Query(default=date(2000,1,1), alias="from"), to_date: date = Query(default_factory=date.today, alias="to")):
+def sales(from_date: date = Query(default=date(2000,1,1), alias="from"), to_date: date | None = Query(default=None, alias="to")):
+    to_date = to_date or date.today()
     if to_date < from_date:
         raise HTTPException(400, "Invalid date range")
     with get_connection() as conn:
