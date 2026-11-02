@@ -34,7 +34,7 @@ def _rows(conn, sql: str, params: dict | None = None) -> list[dict]:
 
 @router.get("/sourceHealth", dependencies=[Depends(require_atlas_service)])
 def source_health():
-    required = ["fin_eventos", "fin_pagos", "fin_gastos", "fin_saldos", "fin_legal_entities", "wi_sii_connections", "fin_sii_received_documents", "fin_bank_movements", "bank_movements", "fin_movimientos_bancarios", "cartola_movimientos"]
+    required = ["fin_eventos", "fin_pagos", "fin_gastos", "fin_saldos", "fin_legal_entities", "wi_sii_connections", "fin_sii_received_documents", "fin_bank_movements", "fin_bank_accounts", "fin_payable_bank_allocations"]
     with get_connection() as conn:
         tables = {name: _table_exists(conn, name) for name in required}
         entities = _rows(conn, """
